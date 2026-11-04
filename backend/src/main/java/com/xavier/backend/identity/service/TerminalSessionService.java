@@ -2,6 +2,7 @@ package com.xavier.backend.identity.service;
 
 import com.xavier.backend.identity.model.TerminalSession;
 import com.xavier.backend.identity.repository.TerminalSessionRepository;
+import com.xavier.backend.organization.model.event.StoreDeactivated;
 import com.xavier.backend.organization.model.event.TerminalRevoked;
 import java.time.Clock;
 import java.util.List;
@@ -13,7 +14,10 @@ import org.springframework.session.FindByIndexNameSessionRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Remembers which sessions run on which terminal, so revoking a terminal ends them (spec §5, D26). */
+/**
+ * Remembers which sessions run on which terminal of which store, so revoking a terminal (spec §5, D26) or
+ * deactivating a store (D45) ends them.
+ */
 @Service
 public class TerminalSessionService {
 
@@ -31,8 +35,8 @@ public class TerminalSessionService {
     }
 
     @Transactional
-    public void register(String sessionId, UUID terminalId, UUID employeeId) {
-        terminalSessions.save(new TerminalSession(sessionId, terminalId, employeeId, clock.instant()));
+    public void register(String sessionId, UUID terminalId, UUID storeId, UUID employeeId) {
+        terminalSessions.save(new TerminalSession(sessionId, terminalId, storeId, employeeId, clock.instant()));
     }
 
     @Transactional
@@ -43,9 +47,20 @@ public class TerminalSessionService {
     /** Idempotent: a second delivery finds nothing left to end. */
     @ApplicationModuleListener
     void on(TerminalRevoked event) {
-        List<TerminalSession> open = terminalSessions.findByTerminalId(event.terminalId());
+        int ended = end(terminalSessions.findByTerminalId(event.terminalId()));
+        log.info("Terminal {} revoked: ended {} POS session(s)", event.terminalId(), ended);
+    }
+
+    /** Idempotent: a second delivery finds nothing left to end. */
+    @ApplicationModuleListener
+    void on(StoreDeactivated event) {
+        int ended = end(terminalSessions.findByStoreId(event.storeId()));
+        log.info("Store {} deactivated: ended {} POS session(s)", event.storeId(), ended);
+    }
+
+    private int end(List<TerminalSession> open) {
         open.forEach(session -> sessions.deleteById(session.getSessionId()));
         terminalSessions.deleteAll(open);
-        log.info("Terminal {} revoked: ended {} POS session(s)", event.terminalId(), open.size());
+        return open.size();
     }
 }

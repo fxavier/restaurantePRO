@@ -39,7 +39,8 @@ import org.springframework.stereotype.Component;
  *       rule reads them, {@code AccessPolicy} reads the actor);</li>
  *   <li>the security context is saved in the session explicitly ({@link HttpSessionSecurityContextRepository}),
  *       which the security filter chain loads on every later request;</li>
- *   <li>a POS session is recorded against its terminal, so revoking the terminal ends it.</li>
+ *   <li>a POS session is recorded against its terminal and store, so revoking the terminal or deactivating the
+ *       store ends it.</li>
  * </ol>
  */
 @Component
@@ -86,7 +87,7 @@ class LoginSessions {
         holder.setContext(context);
         contexts.saveContext(context, request, response);
         if (actor.terminalId() != null) {
-            terminalSessions.register(session.getId(), actor.terminalId(), actor.employeeId());
+            terminalSessions.register(session.getId(), actor.terminalId(), actor.storeId(), actor.employeeId());
         }
         return session.getId();
     }
