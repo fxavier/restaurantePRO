@@ -65,9 +65,11 @@ if [[ "$(psql_in postgres -c "SELECT count(*) FROM pg_database WHERE datname = '
   then drop the other one."
 fi
 if [[ "$(psql_in postgres -c "SELECT datallowconn FROM pg_database WHERE datname = '$db'")" == f ]]; then
+  staged="$(psql_in postgres -c "SELECT string_agg(datname, ' ') FROM pg_database WHERE datname LIKE '${db}\_restore\_%'")"
   die "database $db refuses connections: an earlier --force was killed during the swap, before renaming it.
   Its data is intact; reopen it with: docker exec $container psql -U $DB_USER -d postgres -c 'ALTER DATABASE \"$db\" ALLOW_CONNECTIONS true'
-  then run the restore again."
+  ${staged:+then drop the unfinished staging copies ($staged), each with ... -c 'DROP DATABASE \"<name>\"'
+  }then run the restore again."
 fi
 
 work="$(mktemp -d "${TMPDIR:-/tmp}/rp-restore.XXXXXX")"
