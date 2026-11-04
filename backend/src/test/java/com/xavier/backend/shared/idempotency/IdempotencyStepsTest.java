@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.xavier.backend.TestcontainersConfiguration;
-import com.zaxxer.hikari.HikariDataSource;
 import java.net.URI;
 import java.sql.Timestamp;
 import java.time.Duration;
@@ -21,8 +20,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import javax.sql.DataSource;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -30,16 +27,16 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.test.context.TestPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.ResourceHolder;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * D63: {@link IdempotencyService#executeSteps} claims the key with a lease, runs its steps with no transaction and
- * no record lock, and stores the response only when its owner completes. Real PostgreSQL (spec §12).
+ * no record lock, and stores the response only when its owner completes. Real PostgreSQL (spec §12). The
+ * single-connection proof is {@link IdempotencyStepsSingleConnectionTest} (its own context; a top-level class, because
+ * Surefire's per-class text report counts a JUnit {@code @Nested} class's tests under the wrong name).
  */
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
@@ -293,57 +290,6 @@ class IdempotencyStepsTest {
         assertThat(jdbc.sql("SELECT key FROM shared.idempotency_record WHERE scope = :s")
                 .param("s", scope).query(String.class).list())
                 .containsExactly("old-live-lease");
-    }
-
-    /**
-     * With one pooled connection, a request that held a connection (a transaction or the record's lock) while its
-     * steps open their own transactions would time out: the steps would wait for the connection it holds.
-     */
-    @Nested
-    @TestPropertySource(properties = {
-            "spring.datasource.hikari.maximum-pool-size=1",
-            "spring.datasource.hikari.connection-timeout=1000"})
-    class WithASingleConnection {
-
-        @Autowired
-        IdempotencyService singleConnectionIdempotency;
-
-        @Autowired
-        PlatformTransactionManager singleConnectionTransactions;
-
-        @Autowired
-        JdbcClient singleConnectionJdbc;
-
-        @Autowired
-        DataSource dataSource;
-
-        @Test
-        void theClaimTheStepsTheirOwnTransactionsAndTheCompletionAllFitInOneConnection() throws Exception {
-            assertThat(dataSource.unwrap(HikariDataSource.class).getMaximumPoolSize()).isEqualTo(1);
-            TransactionTemplate stepTransaction = new TransactionTemplate(singleConnectionTransactions);
-            stepTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
-
-            assertThatThrownBy(() -> singleConnectionIdempotency.executeSteps(scope, key, target, body, Closed.class,
-                    () -> {
-                        stepTransaction.executeWithoutResult(tx -> singleConnectionJdbc.sql("SELECT 1")
-                                .query(Integer.class).single());
-                        throw new IllegalStateException("provider timeout");
-                    })).hasMessage("provider timeout");
-            ResponseEntity<Closed> retry = singleConnectionIdempotency.executeSteps(scope, key, target, body,
-                    Closed.class, () -> {
-                        stepTransaction.executeWithoutResult(tx -> singleConnectionJdbc.sql("SELECT 1")
-                                .query(Integer.class).single());
-                        singleConnectionJdbc.sql("SELECT 2").query(Integer.class).single();
-                        stepTransaction.executeWithoutResult(tx -> singleConnectionJdbc.sql("SELECT 3")
-                                .query(Integer.class).single());
-                        return ResponseEntity.ok(new Closed("CLOSED", 4));
-                    });
-            ResponseEntity<Closed> replay = singleConnectionIdempotency.executeSteps(scope, key, target, body,
-                    Closed.class, () -> ResponseEntity.ok(new Closed("must not run", 0)));
-
-            assertThat(retry.getBody()).isEqualTo(new Closed("CLOSED", 4));
-            assertThat(replay.getBody()).isEqualTo(new Closed("CLOSED", 4));
-        }
     }
 
     private void insertAbandonedClaim(Instant leaseUntil) {
