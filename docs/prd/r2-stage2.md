@@ -238,7 +238,9 @@ Conventions for every endpoint below:
 
 **Acceptance:** A4 (the production half), A5, the reprint half of A10 (DOCUMENT COPY). IT `PrintQueueTest` with `TcpFakePrinter`. An IGNORE printer → the ticket is `suppressed`, there is no job, and the audit row exists.
 
-### S16 — Settlement (after S13, S11, S12)
+### S16 — Settlement (after S13, S11, S12, S16a)
+**Prefactor S16a (D63), merged before S16:** `shared/idempotency/` + `db/migration/shared/V1005__shared_idempotency_step_lease.sql`. It adds `IdempotencyService.executeSteps(scope, key, target, body, Class<T>, Supplier<ResponseEntity<T>> steps)` (claim with lease → steps with no tx → complete by owner) and the lease columns, and leaves `execute` unchanged. Test: `rtk mvn test -Dtest=IdempotencyStepsTest`.
+
 **Write scope:** `settlement/`, `db/migration/settlement/V9xxx`.
 - Migrations `V9001…`:
   - `payment_method`: `CASH` is seeded; `UNIQUE(code)`
@@ -258,16 +260,16 @@ Conventions for every endpoint below:
 | `GET /api/v1/pos/payment-attempts/{id}` | `PAYMENT_COLLECT` | — | The source of truth for the outcome |
 | `POST /payment-attempts/{id}/confirm {authorizationCode?}` | `PAYMENT_COLLECT` | yes | EXTERNAL_TERMINAL PENDING → SUCCEEDED (D50 §7.5). No card data is stored or logged. |
 | `POST /payment-attempts/{id}/cancel {reason}` | `PAYMENT_COLLECT` | yes | CREATED or PENDING (not INTEGRATED once PENDING) → CANCELLED. Calls `releasePaymentLock` when nothing else is open or paid. |
-| `POST /payment-attempts/{id}/resolve {outcome?, reason?}` (+ Approver when `outcome` is given) | `PAYMENT_RESOLVE`; the approver needs `PAYMENT_RESOLVE` | yes | With no body it queries the provider. With `outcome` it is a manual reclassification (D50 §7.4). |
+| `POST /payment-attempts/{id}/resolve {outcome?, reason?}` (+ Approver when `outcome` is given) | `PAYMENT_RESOLVE`; the approver needs `PAYMENT_RESOLVE` | yes: `executeSteps` without `outcome`, `execute` with it (D63) | With no body it queries the provider. With `outcome` it is a manual reclassification (D50 §7.4). |
 | `GET /api/v1/pos/orders/{id}/settlement` | `ORDER_VIEW` | — | `due, paid, balance, financialState, fiscalState, openAttempts` |
 | `GET /api/v1/pos/settlement/open-orders` | `ORDER_VIEW` | — | The per-table consumption and balance for the map |
-| `POST /api/v1/pos/orders/{id}/documents {buyer?}` | `PAYMENT_COLLECT` | yes | `freezeForInvoice` + draft + issue (D55). 422 `FISCAL_PENDING` on adapter failure. |
-| `POST /api/v1/pos/orders/{id}/close {orderVersion}` | `PAYMENT_COLLECT` | yes | D55. 422 `NOT_SETTLED`, `FISCAL_PENDING`; 409 `PAYMENT_IN_DOUBT` / stale version |
+| `POST /api/v1/pos/orders/{id}/documents {buyer?}` | `PAYMENT_COLLECT` | yes, `executeSteps` (D63) | s1 tx `freezeForInvoice` + draft, s2 `FiscalApi.issue` with no tx (D55) → 201 `DocumentView` ISSUED. 422 `FISCAL_PENDING` {documentId} on adapter failure (not stored; a retry with the same key issues again). |
+| `POST /api/v1/pos/orders/{id}/close {orderVersion}` | `PAYMENT_COLLECT` | yes, `executeSteps` (D63) | D55 → 200 `OrderSettlementView` CLOSED. An order that is already CLOSED returns its view (idempotent by state). 422 `NOT_SETTLED`, `FISCAL_PENDING`; 409 `PAYMENT_IN_DOUBT` / stale version, or the same key still in progress (live lease) |
 | `POST /api/v1/pos/cash/sessions/{id}/close {version, counts[{methodCode, amount}]}` | `CASH_OPERATE` | yes | 409 when an attempt on the session is in doubt (§8.4) |
 | `POST /api/v1/pos/cash/days/{id}/operational-close {version}` | `CASH_DAY_CLOSE` | yes | 422 `OPEN_ORDERS`, `OPEN_SESSIONS`, `PAYMENT_IN_DOUBT`, `FISCAL_PENDING` |
 | `GET /api/v1/backoffice/settlement/pending?storeId` | `PAYMENT_RESOLVE@store` | — | In-doubt attempts, fiscal drafts, settled-but-open orders |
 
-**Acceptance:** A7, A8, A10 (no cash on issue), A11 (the coordination half), A12 (the payment and closing paths). IT `DoublePaymentRaceTest`, `IntegratedPaymentTest`, `OrderCloseTest`, `SessionCloseBlockedByUnknownTest`, `DayCloseBlockedByOpenOrderTest`.
+**Acceptance:** A7, A8, A10 (no cash on issue), A11 (the coordination half), A12 (the payment and closing paths). IT `DoublePaymentRaceTest`, `IntegratedPaymentTest`, `OrderCloseTest`, `OrderCloseResumeTest` (D63: a failure injected after each of s1, s2 and s3, then a retry with the same key → one document number, one close, the final-state response; a fiscal failure → 422, then a retry → ISSUED with no gap), `SessionCloseBlockedByUnknownTest`, `DayCloseBlockedByOpenOrderTest`.
 
 ---
 
