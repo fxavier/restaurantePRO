@@ -16,7 +16,8 @@
 #
 # Usage: deploy/test/real-schema-drill.sh [BACKEND_JAR]
 #   BACKEND_JAR defaults to backend/target/backend-*.jar; build it first with
-#   (cd backend && ./mvnw -q package -DskipTests). Needs Docker, Java 25, curl, openssl.
+#   (cd backend && ./mvnw -q package -DskipTests). Needs Docker, Java 25, curl, openssl, python3.
+# Takes about 1-2 minutes (two backend starts).
 # Leaves nothing behind (containers, volumes, processes, temp files). Exits non-zero on any mismatch.
 # Every credential is throwaway, generated per run, and never printed.
 set -euo pipefail
@@ -241,16 +242,27 @@ if [[ "$after" != "$expected_fp" ]]; then
   fail "restored data differs from the source"
 fi
 restored_schema="$(schema_of "$DST")"
-if [[ "$restored_schema" != "$source_schema" ]]; then
-  # PostgreSQL deparses a CHECK such as `status IN ('A','B')` on a varchar column as
-  # `(status)::text = ANY ((ARRAY['A'::character varying, ...])::text[])`; re-parsing that text from the
-  # dump stores the equivalent `ANY (ARRAY[('A'::character varying)::text, ...])`. Accept a difference
-  # only when it vanishes once those casts and parentheses are dropped, and say how many lines it was.
-  if [[ "$(without_casts <<<"$restored_schema")" != "$(without_casts <<<"$source_schema")" ]]; then
-    diff <(echo "$source_schema") <(echo "$restored_schema") >&2 || true
+# PostgreSQL deparses a CHECK such as `status IN ('A','B')` on a varchar column as
+# `(status)::text = ANY ((ARRAY['A'::character varying, ...])::text[])`; re-parsing that text from the
+# dump stores the equivalent `ANY (ARRAY[('A'::character varying)::text, ...])`. So compare line by line:
+# a line may differ only when both versions are CHECK constraints that become equal once those casts and
+# parentheses are dropped. Anything else (a missing, extra or other changed line) fails.
+if [[ "$(wc -l <<<"$restored_schema")" != "$(wc -l <<<"$source_schema")" ]]; then
+  diff <(echo "$source_schema") <(echo "$restored_schema") >&2 || true
+  fail "restored schema differs from the source (line count)"
+fi
+redeparsed=0
+while IFS= read -r src_line <&3 && IFS= read -r dst_line <&4; do
+  [[ "$src_line" == "$dst_line" ]] && continue
+  if [[ "$src_line" != *"CHECK ("* || "$dst_line" != *"CHECK ("* \
+        || "$(without_casts <<<"$src_line")" != "$(without_casts <<<"$dst_line")" ]]; then
+    printf 'source:   %s\nrestored: %s\n' "$src_line" "$dst_line" >&2
     fail "restored schema differs from the source"
   fi
-  echo "    schema identical except $(diff <(echo "$source_schema") <(echo "$restored_schema") | grep -c '^>') CHECK line(s) re-deparsed with equivalent casts" >&2
+  redeparsed=$((redeparsed + 1))
+done 3<<<"$source_schema" 4<<<"$restored_schema"
+if ((redeparsed)); then
+  echo "    schema identical except $redeparsed CHECK constraint line(s) re-deparsed with equivalent casts" >&2
 else
   echo "    schema identical" >&2
 fi

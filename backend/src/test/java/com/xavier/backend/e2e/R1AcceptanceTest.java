@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.Test;
+import com.xavier.backend.TestcontainersConfiguration;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -68,7 +69,8 @@ class R1AcceptanceTest {
         @Bean
         @ServiceConnection
         PostgreSQLContainer freshPostgres() {
-            return new PostgreSQLContainer("postgres:18.6-alpine").withUrlParam("sslmode", "disable");
+            return new PostgreSQLContainer(TestcontainersConfiguration.POSTGRES_IMAGE_NAME)
+                    .withUrlParam("sslmode", "disable");
         }
     }
 
@@ -124,12 +126,13 @@ class R1AcceptanceTest {
         assertThat(login.get("permissions")).isEmpty();
         assertThat(office.setCookieHeader("SESSION")).contains("; Secure").contains("; HttpOnly")
                 .contains("; SameSite=Lax");
-        assertThat(office.cookie("XSRF-TOKEN")).isNotEqualTo(csrfBeforeLogin); // rotated at login
+        assertThat(office.cookie("XSRF-TOKEN")).isNotNull().isNotEqualTo(csrfBeforeLogin); // rotated at login
 
         // 2. Until the password changes, only /api/v1/auth/** answers
         JsonNode blocked = office.get("/api/v1/backoffice/stores", 403);
         assertThat(blocked.get("detail").asString()).contains("change your password");
-        office.post("/api/v1/backoffice/stores", store("BLOCKED"), 403);
+        assertThat(office.post("/api/v1/backoffice/stores", store("BLOCKED"), 403).get("detail").asString())
+                .contains("change your password");
 
         String sessionBefore = office.cookie("SESSION");
         JsonNode changed = office.post("/api/v1/auth/password",
@@ -260,6 +263,8 @@ class R1AcceptanceTest {
 
         // 12. Criterion 4 against the real endpoints: the waiter's session is refused BackOffice catalog writes
         //     and anything of store B
+        // the POS client holds a CSRF token, so these 403s are authorization refusals, not CSRF rejections
+        assertThat(pos.cookie("XSRF-TOKEN")).isNotNull();
         itemBody.put("code", "SNEAKY");
         pos.post(catalog + "/items", itemBody, 403);
         pos.post(catalog + "/price-lists/" + priceList + "/prices",
@@ -367,12 +372,14 @@ class R1AcceptanceTest {
             return expect(send("POST", path, body, csrf, headers), expected, step);
         }
 
-        /** The body of a 200 response, or {@code null} for any other status (for polling). */
+        /** The body of a 200 response, {@code null} for a 401 (not there yet: keep polling); anything else fails. */
         JsonNode tryPost(String path, Object body) throws Exception {
             HttpResponse<String> response = send("POST", path, body, Csrf.SEND, Map.of());
-            if (response.statusCode() != 200) {
+            if (response.statusCode() == 401) {
                 return null;
             }
+            assertThat(response.statusCode()).as("POST %s (%s) answered %s", path, name, response.body())
+                    .isEqualTo(200);
             record("login", response);
             return JSON.readTree(response.body());
         }
