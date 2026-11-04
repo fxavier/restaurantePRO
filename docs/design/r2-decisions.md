@@ -361,3 +361,32 @@ The same gates as R1. G1 is this document. The PRD slices are G2/G3. Each slice 
 1. Approve the R2 scope (§1) and D34–D62, or override them by id. Check **D35** (three D13 amendments), **D38** (Actor kind), **D49** (order change locks) and **D54** (non-certified fiscal guard) in particular.
 2. Answer P7–P21, or accept the defaults. **P7** and **P11** gate launch (B4, B5). **P20** needs a stage.
 3. Confirm that approving this also counts as G2/G3 for the [PRD](../prd/r2-stage2.md).
+
+---
+
+## Amendment D63 — Idempotent multi-step commands (settlement)
+
+**Status:** PROPOSED for user review. It was requested by the orchestrator after the S12 review and is binding for S16 unless the user objects. It amends D47 and leaves D48, D50 §7.6, D51 and D55 unchanged.
+
+**Context.** Spec §9 requires an Idempotency-Key on financial and other repeatable confirmations. D47 runs the action inside the transaction that stores its response, while holding the record's row lock. Three S16 commands must run a step with no caller transaction: `POST /orders/{id}/documents` and `/close` call `FiscalApi.issue` (D55, with the S12 guard in `DocumentIssueService.issue`), and `POST /payment-attempts/{id}/resolve` without `outcome` calls `provider.status` (D48, `ExternalCalls.requireNoTransaction()`). Wrapping these in `execute` would fail on the guard. Relaxing the guard would nest a second connection (Hikari) and hold the key's row lock across the issue.
+
+**Decision.** Add a second mode, `IdempotencyService.executeSteps`, and use it only for those three commands. Every other command keeps `execute`. Each operation scope uses exactly one of the two modes.
+```java
+<T> ResponseEntity<T> executeSteps(String scope, String key, String target, Object body,
+                                   Class<T> responseType, Supplier<ResponseEntity<T>> steps)
+```
+1. **Claim** (short tx, committed): `INSERT … ON CONFLICT DO NOTHING`, with `lease_owner` (a random UUID per call) and `lease_until = now + restaurantpro.idempotency.step-lease` (default `PT30S`). The request hash is checked as in D47: a different body gives 422, and COMPLETED gives a replay. When the record is IN_PROGRESS, a live lease gives 409 `IdempotentRequestInProgressException`, and an expired lease is taken over by CAS: `UPDATE … SET lease_owner=:me, lease_until=… WHERE status='IN_PROGRESS' AND lease_until < now`.
+2. **Steps** run with **no transaction bound and no lock on the record**. `executeSteps` asserts this, like `execute`. Each step opens its own short transaction, so a request holds at most one connection at a time. **Every step is idempotent by domain state.** The lease only suppresses duplicate work; correctness never depends on it, because a takeover after expiry while the first owner still runs is safe.
+3. **Complete** (short tx): `UPDATE … SET COMPLETED … WHERE lease_owner=:me AND status='IN_PROGRESS'`. If 0 rows change, the lease was lost. The request then re-reads the record and replays it if it is COMPLETED, or returns its own response otherwise (same final state).
+4. **Failure:** a thrown exception expires the lease (`lease_until = now WHERE lease_owner=:me`), and nothing is stored (D47.3). A retry with the same key therefore runs the steps again at once. A crash leaves the lease to expire.
+
+**Steps of the S16 commands** (D51 lock order inside each transaction):
+- `/documents`: (s1) tx: `order_settlement FOR UPDATE` → `freezeForInvoice` (a no-op when already frozen) → `createSaleDraft` (returns the existing draft); (s2) `FiscalApi.issue` (an ISSUED document is returned unchanged). The response is 201 `DocumentView` ISSUED. An issue failure gives 422 `FISCAL_PENDING` with `documentId`. It is not stored, the DRAFT stays pending, and a retry with the same key issues again with no gap.
+- `/close`: s1 and s2 when there is no ISSUED SALE document. (s3) tx-C (D50 §7.8): if the order is already CLOSED, it returns the current view without the version check (idempotent by state); otherwise it checks and runs `OrdersApi.close(orderVersion)`. The response is 200 `OrderSettlementView` (`lifecycle=CLOSED, financialState=SETTLED, fiscalState=ISSUED`).
+- `/resolve` without `outcome`: (s1) tx: read the attempt (UNKNOWN or PENDING); (s2) `provider.status(ref)` with no tx; (s3) tx: `order_settlement FOR UPDATE` → CAS on the attempt status → `Payment` (`UNIQUE attempt_id`) + `recordReceipt` (`UNIQUE source`). A CAS that finds a final status returns the view. `/resolve` with `outcome` stays on `execute`.
+
+**Crash at each point** of `/close`: a takeover (or a retry after a 409) re-runs the steps. s1 finds the draft, s2 finds ISSUED (one number), s3 finds CLOSED, and complete stores the final state. Concurrent duplicates: the live lease gives 409, and two different keys are serialized by `order_settlement` and the document lock.
+
+**Alternatives rejected.** (b) No key, domain state only: contradicts §9 (stored response, and the same key with a different payload is rejected). (c1) `execute` wrapping only the last step, with the earlier steps before it: those steps would have side effects before the hash check and the in-progress check. (c2) Holding the record lock (an advisory lock or a row lock) on a second connection during the steps: two connections per request starve the pool at 10 clients (§12). (c3) Letting `issue` join the caller's tx: breaks D50 §7.6, the S12 guard and the D54 remote-adapter path.
+
+**Contract and scope.** A small prefactor **S16a** (write scope `shared/idempotency/`, `db/migration/shared/V1005__shared_idempotency_step_lease.sql`) adds `lease_owner uuid NULL`, `lease_until timestamptz NULL`, the store methods `claimWithLease`, `takeOverExpired`, `completeOwned` and `releaseOwned`, the property `restaurantpro.idempotency.step-lease`, and `executeSteps`. `execute` is unchanged. S16a is merged before S16. Proof: IT `IdempotencyStepsTest` (real PostgreSQL), covering a live lease → 409, an expired lease → takeover with one effect, lost-lease completion → the winner's replay, an exception → an immediate retry runs, steps see no transaction, and a context with `maximum-pool-size=1` completes (no nested connection). S17 adds `executeSteps` to backend-conventions.md.
