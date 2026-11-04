@@ -49,6 +49,11 @@ Module layout (D12): `model/`, `model/dto/`, `model/event/`, `repository/`, `ser
 - `spring.jpa.hibernate.ddl-auto=validate`: entities must match the migrations, and every context start checks it.
 - UUIDv7 ids: `@UuidGenerator(style = VERSION_7)`.
 
+## Events
+
+- Cross-module events go through the Spring Modulith JPA publication registry (`event_publication`, D19). Listeners use `@ApplicationModuleListener` and must be idempotent.
+- `spring.modulith.events.republish-outstanding-events-on-restart=true`: when the application starts, it delivers again every publication whose listener had not completed. This is safe because each installation runs one instance. `EventRepublicationTest` proves it with a real second application context started on the same database.
+
 ## Web and security
 
 - Routes: `/api/v1/auth/**` (open), `/api/v1/pos/**`, `/api/v1/backoffice/**` (authenticated session). POS and BackOffice call the same service.
