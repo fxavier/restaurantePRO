@@ -10,11 +10,15 @@ import java.util.UUID;
  * publication; orders (R2) copy name, price and tax from it onto a line at confirmation. Money is written as
  * strings ({@code "12.50"}, currency {@code "MZN"}) so no client parses it as a float. Lists are ordered by code.
  *
+ * <p>Tax is fixed when a line is confirmed (spec §8.4), not when the catalog is published: each tax category
+ * carries its full rate schedule, and R2 picks the rate whose {@code effectiveFrom} ≤ confirmation instant,
+ * the latest one.
+ *
  * @param schemaVersion   shape version of this document (1)
  * @param currency        ISO-4217 code of every price
  * @param families        all families and subfamilies
  * @param units           all units
- * @param taxCategories   categories used by the items, with the rate in effect at {@code effectiveAt}
+ * @param taxCategories   categories used by the items, with their rate schedule
  * @param items           ACTIVE items only
  */
 public record CatalogSnapshot(int schemaVersion, UUID storeId, UUID releaseId, long version, Instant effectiveAt,
@@ -30,17 +34,28 @@ public record CatalogSnapshot(int schemaVersion, UUID storeId, UUID releaseId, l
     public record Unit(UUID id, String code, String name) {
     }
 
-    /** {@code ratePercent} is a decimal percent as a string ("16" = 16%). */
-    public record TaxCategory(UUID id, String code, String name, String ratePercent, Instant rateEffectiveFrom) {
+    /**
+     * @param ratePercent       the rate in effect at publication (informational), a decimal percent as a string
+     *                          ("16" = 16%)
+     * @param rateEffectiveFrom when that rate started
+     * @param rates             the whole schedule ordered by {@code effectiveFrom}, past and future: the source
+     *                          for the rate at line confirmation
+     */
+    public record TaxCategory(UUID id, String code, String name, String ratePercent, Instant rateEffectiveFrom,
+                              List<Rate> rates) {
+    }
+
+    /** One entry of a rate schedule: {@code ratePercent} applies from {@code effectiveFrom} on. */
+    public record Rate(String ratePercent, Instant effectiveFrom) {
     }
 
     /**
-     * @param taxRatePercent        the item's tax rate in effect at publication, copied from its category
+     * @param taxCategoryId         its rate at confirmation comes from that category's schedule
      * @param productionDestination KITCHEN, BAR… or {@code null} when nothing is prepared
      * @param price                 the item's price in the store's price list
      */
     public record Item(UUID id, String code, String name, UUID familyId, UUID unitId, UUID taxCategoryId,
-                       String taxRatePercent, String productionDestination, boolean soldByWeight, Price price,
+                       String productionDestination, boolean soldByWeight, Price price,
                        List<Variant> variants, List<Barcode> barcodes) {
     }
 

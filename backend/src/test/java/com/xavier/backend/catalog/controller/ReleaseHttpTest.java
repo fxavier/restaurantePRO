@@ -315,7 +315,6 @@ class ReleaseHttpTest {
         assertThat(item.get("price").get("amount").isString()).isTrue();
         assertThat(item.get("price").get("amount").asString()).isEqualTo("12.50");
         assertThat(item.get("price").get("currency").asString()).isEqualTo("MZN");
-        assertThat(item.get("taxRatePercent").asString()).isEqualTo("16");
         assertThat(item.get("variants").get(0).get("price").get("amount").asString()).isEqualTo("15.00");
         assertThat(item.get("barcodes").get(0).get("variantId").asString()).isEqualTo(id(variant).toString());
         assertThat(catalog.get("families").findValues("id").stream().map(JsonNode::asString))
@@ -325,6 +324,57 @@ class ReleaseHttpTest {
         assertThat(catalog.get("taxCategories").valueStream()
                 .filter(category -> category.get("id").asString().equals(item.get("taxCategoryId").asString()))
                 .findFirst().orElseThrow().get("ratePercent").asString()).isEqualTo("16");
+    }
+
+    @Test
+    void theSnapshotFreezesEachCategorysRateScheduleAndTheRateInEffectAtPublication() throws Exception {
+        SellableStore sellable = sellableStore();
+        UUID category = untaxedCategory();
+        addRate(category, "5", "2000-01-01T00:00:00Z");
+        addRate(category, "20", "2999-01-01T00:00:00Z");
+        addRate(category, "10", "2020-01-01T00:00:00Z");
+        JsonNode item = fixtures().item(fixtures().family(), fixtures().unit(), category);
+        fixtures().price(sellable.store(), sellable.priceList(), id(item), null, "4.00");
+        UUID release = validatedRelease(sellable.store());
+        publish(sellable.store(), release, UUID.randomUUID().toString(), "{}").andExpect(status().isOk());
+
+        JsonNode catalog = json(posCatalog(sellable.store())).get("catalog");
+        JsonNode frozen = catalog.get("taxCategories").valueStream()
+                .filter(node -> node.get("id").asString().equals(category.toString())).findFirst().orElseThrow();
+
+        // the latest rate that started at or before publication: not the oldest, not the future one
+        assertThat(frozen.get("ratePercent").asString()).isEqualTo("10");
+        assertThat(frozen.get("rateEffectiveFrom").asString()).isEqualTo("2020-01-01T00:00:00Z");
+        // the whole schedule, so orders (R2) pick the rate in effect at line confirmation (spec §8.4)
+        assertThat(frozen.get("rates").valueStream().map(rate -> rate.get("ratePercent").asString() + "@"
+                + rate.get("effectiveFrom").asString())).containsExactly("5@2000-01-01T00:00:00Z",
+                "10@2020-01-01T00:00:00Z", "20@2999-01-01T00:00:00Z");
+        assertThat(itemIn(catalog, id(item)).has("taxRatePercent")).isFalse();
+    }
+
+    @Test
+    void aTaxCategoryWithOnlyAFutureRateHasNoRateInEffect() throws Exception {
+        SellableStore sellable = sellableStore();
+        UUID category = untaxedCategory();
+        addRate(category, "20", "2999-01-01T00:00:00Z");
+        JsonNode item = fixtures().item(fixtures().family(), fixtures().unit(), category);
+        try {
+            fixtures().price(sellable.store(), sellable.priceList(), id(item), null, "4.00");
+            UUID release = id(createDraft(sellable.store()));
+
+            mvc.perform(post(RELEASES + "/" + release + "/validate")
+                            .with(inStore(sellable.store(), Permission.CATALOG_MANAGE)).with(csrf()))
+                    .andExpect(status().isUnprocessableContent())
+                    .andExpect(jsonPath("$.errors[?(@.itemId == '%s')].code".formatted(id(item)))
+                            .value("ITEM_WITHOUT_TAX_RATE"));
+        } finally {
+            deactivate(item); // company-wide: it would block every later publication
+        }
+    }
+
+    private void addRate(UUID category, String percent, String effectiveFrom) throws Exception {
+        fixtures().created(post(CATALOG + "/tax-categories/" + category + "/rates").with(admin(Permission.CATALOG_MANAGE)),
+                "{\"ratePercent\": %s, \"effectiveFrom\": \"%s\"}".formatted(percent, effectiveFrom));
     }
 
     private static JsonNode itemIn(JsonNode catalog, UUID itemId) {

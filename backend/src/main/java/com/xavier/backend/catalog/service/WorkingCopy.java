@@ -78,7 +78,7 @@ class WorkingCopy {
         Map<PriceKey, ItemPrice> pricesByKey = priceList.map(list -> prices.findAllByPriceListId(list.getId())).orElse(List.of())
                 .stream().collect(Collectors.toMap(price -> new PriceKey(price.getItemId(), price.getVariantId()),
                         Function.identity()));
-        return new View(storeId, at, priceList, active, rateInEffect, pricesByKey);
+        return new View(storeId, at, priceList, active, ratesByCategory, rateInEffect, pricesByKey);
     }
 
     private record PriceKey(UUID itemId, UUID variantId) {
@@ -90,15 +90,18 @@ class WorkingCopy {
         private final Instant at;
         private final Optional<PriceList> priceList;
         private final List<Item> activeItems;
+        private final Map<UUID, List<TaxRate>> ratesByCategory;
         private final Map<UUID, TaxRate> rateInEffect;
         private final Map<PriceKey, ItemPrice> prices;
 
         private View(UUID storeId, Instant at, Optional<PriceList> priceList, List<Item> activeItems,
-                     Map<UUID, TaxRate> rateInEffect, Map<PriceKey, ItemPrice> prices) {
+                     Map<UUID, List<TaxRate>> ratesByCategory, Map<UUID, TaxRate> rateInEffect,
+                     Map<PriceKey, ItemPrice> prices) {
             this.storeId = storeId;
             this.at = at;
             this.priceList = priceList;
             this.activeItems = activeItems;
+            this.ratesByCategory = ratesByCategory;
             this.rateInEffect = rateInEffect;
             this.prices = prices;
         }
@@ -141,9 +144,7 @@ class WorkingCopy {
 
         private CatalogSnapshot.Item item(Item item, List<ItemVariant> itemVariants, List<Barcode> itemBarcodes) {
             return new CatalogSnapshot.Item(item.getId(), item.getCode(), item.getName(), item.getFamilyId(),
-                    item.getUnitId(), item.getTaxCategoryId(),
-                    rateInEffect.get(item.getTaxCategoryId()).getRatePercent().toPlainString(),
-                    item.getProductionDestination(), item.isSoldByWeight(), price(item.getId(), null),
+                    item.getUnitId(), item.getTaxCategoryId(), item.getProductionDestination(), item.isSoldByWeight(), price(item.getId(), null),
                     itemVariants.stream().map(variant -> new CatalogSnapshot.Variant(variant.getId(), variant.getCode(),
                             variant.getName(), price(item.getId(), variant.getId()))).toList(),
                     itemBarcodes.stream().map(barcode -> new CatalogSnapshot.Barcode(barcode.getCode(),
@@ -153,6 +154,13 @@ class WorkingCopy {
         private CatalogSnapshot.Price price(UUID itemId, UUID variantId) {
             ItemPrice price = prices.get(new PriceKey(itemId, variantId));
             return price == null ? null : CatalogSnapshot.Price.of(price.getPrice());
+        }
+
+        private List<CatalogSnapshot.Rate> schedule(UUID categoryId) {
+            return ratesByCategory.get(categoryId).stream()
+                    .sorted(Comparator.comparing(TaxRate::getEffectiveFrom))
+                    .map(rate -> new CatalogSnapshot.Rate(rate.getRatePercent().toPlainString(), rate.getEffectiveFrom()))
+                    .toList();
         }
 
         private List<CatalogSnapshot.Family> families() {
@@ -171,7 +179,8 @@ class WorkingCopy {
                     .map(category -> {
                         TaxRate rate = rateInEffect.get(category.getId());
                         return new CatalogSnapshot.TaxCategory(category.getId(), category.getCode(), category.getName(),
-                                rate.getRatePercent().toPlainString(), rate.getEffectiveFrom());
+                                rate.getRatePercent().toPlainString(), rate.getEffectiveFrom(),
+                                schedule(category.getId()));
                     }).toList();
         }
     }
