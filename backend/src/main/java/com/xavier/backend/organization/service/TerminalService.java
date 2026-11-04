@@ -13,6 +13,7 @@ import com.xavier.backend.organization.model.dto.EnrollmentCodeResponse;
 import com.xavier.backend.organization.model.dto.TerminalCreateRequest;
 import com.xavier.backend.organization.model.dto.TerminalEnrollmentResponse;
 import com.xavier.backend.organization.model.dto.TerminalSummary;
+import com.xavier.backend.organization.model.event.TerminalRevoked;
 import com.xavier.backend.organization.repository.StoreRepository;
 import com.xavier.backend.organization.repository.TerminalRepository;
 import com.xavier.backend.shared.web.PageResponse;
@@ -23,6 +24,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -40,14 +42,16 @@ public class TerminalService {
     private final StoreRepository stores;
     private final AccessPolicy accessPolicy;
     private final AuditLog auditLog;
+    private final ApplicationEventPublisher events;
     private final Clock clock;
 
     TerminalService(TerminalRepository terminals, StoreRepository stores, AccessPolicy accessPolicy,
-                    AuditLog auditLog, Clock clock) {
+                    AuditLog auditLog, ApplicationEventPublisher events, Clock clock) {
         this.terminals = terminals;
         this.stores = stores;
         this.accessPolicy = accessPolicy;
         this.auditLog = auditLog;
+        this.events = events;
         this.clock = clock;
     }
 
@@ -110,14 +114,19 @@ public class TerminalService {
         return new TerminalEnrollmentResponse(terminal.getId(), terminal.getStoreId(), token);
     }
 
-    /** The terminal can no longer log in; its device token stops working. Final: enroll a new terminal instead. */
+    /**
+     * The terminal can no longer log in; its device token stops working. Final: enroll a new terminal instead.
+     * Publishes {@link TerminalRevoked} so the sessions already open on it end too.
+     */
     @Transactional
     public TerminalSummary revoke(UUID terminalId) {
         Terminal terminal = terminal(terminalId);
         accessPolicy.require(Permission.TERMINAL_MANAGE, terminal.getStoreId());
-        terminal.revoke(clock.instant());
+        Instant now = clock.instant();
+        terminal.revoke(now);
         terminals.saveAndFlush(terminal);
         audit("TERMINAL_REVOKED", terminal, accessPolicy.current().userId());
+        events.publishEvent(new TerminalRevoked(terminal.getId(), terminal.getStoreId(), now));
         return terminal.toSummary();
     }
 
