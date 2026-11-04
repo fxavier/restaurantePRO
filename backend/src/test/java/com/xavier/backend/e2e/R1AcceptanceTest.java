@@ -232,7 +232,10 @@ class R1AcceptanceTest {
         assertThat(posSession.get("storeId").asString()).isEqualTo(storeA.toString());
         assertThat(posSession.get("terminalId").asString()).isEqualTo(terminal.toString());
         assertThat(posSession.get("permissions").valueStream().map(JsonNode::asString))
-                .containsExactlyInAnyOrder("PERM_DINING_VIEW@" + storeA, "PERM_CATALOG_VIEW@" + storeA);
+                .containsExactlyInAnyOrder("PERM_DINING_VIEW@" + storeA, "PERM_CATALOG_VIEW@" + storeA,
+                        // the D62 defaults of the seeded waiter role (V3005)
+                        "PERM_ORDER_VIEW@" + storeA, "PERM_ORDER_EDIT@" + storeA, "PERM_ORDER_VOID@" + storeA,
+                        "PERM_ORDER_TRANSFER@" + storeA);
 
         // 10. GET /pos/catalog: the published version, with the item, its price and its tax schedule
         JsonNode posCatalog = pos.get("/api/v1/pos/catalog?storeId=" + storeA, 200);

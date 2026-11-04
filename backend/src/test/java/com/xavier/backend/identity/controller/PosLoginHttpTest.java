@@ -77,8 +77,7 @@ class PosLoginHttpTest {
                 .andExpect(jsonPath("$.terminalId").value(terminalA.id().toString()))
                 .andExpect(jsonPath("$.storeId").value(storeA.toString()))
                 .andExpect(jsonPath("$.name").value("Ana"))
-                .andExpect(jsonPath("$.permissions", containsInAnyOrder(
-                        Permission.DINING_VIEW.authority(storeA), Permission.CATALOG_VIEW.authority(storeA))));
+                .andExpect(jsonPath("$.permissions", containsInAnyOrder(IdentityFixtures.waiterAuthorities(storeA))));
     }
 
     @Test
@@ -146,8 +145,10 @@ class PosLoginHttpTest {
         Employee employee = lockedEmployee();
 
         mvc.perform(post("/api/v1/backoffice/employees/" + employee.id() + "/unlock")
-                        .with(IdentityFixtures.as(java.util.Set.of(Permission.EMPLOYEE_MANAGE.authority(storeA),
-                                Permission.DINING_VIEW.authority(storeA), Permission.CATALOG_VIEW.authority(storeA))))
+                        .with(IdentityFixtures.as(java.util.stream.Stream.concat(
+                                java.util.stream.Stream.of(Permission.EMPLOYEE_MANAGE.authority(storeA)),
+                                java.util.Arrays.stream(IdentityFixtures.waiterAuthorities(storeA)))
+                                .collect(java.util.stream.Collectors.toSet())))
                         .with(csrf()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.locked").value(false));
