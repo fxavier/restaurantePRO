@@ -39,12 +39,12 @@ public class RestaurantTableService {
     private final TableOccupationRepository occupations;
     private final OrganizationApi organization;
     private final AccessPolicy accessPolicy;
-    private final DiningAudit audit;
+    private final DiningChanges audit;
     private final Clock clock;
 
     RestaurantTableService(RestaurantTableRepository tables, RoomAreaRepository areas,
                            TableOccupationRepository occupations, OrganizationApi organization,
-                           AccessPolicy accessPolicy, DiningAudit audit, Clock clock) {
+                           AccessPolicy accessPolicy, DiningChanges audit, Clock clock) {
         this.tables = tables;
         this.areas = areas;
         this.occupations = occupations;

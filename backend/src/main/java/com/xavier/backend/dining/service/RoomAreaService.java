@@ -35,11 +35,11 @@ public class RoomAreaService {
     private final TableOccupationRepository occupations;
     private final OrganizationApi organization;
     private final AccessPolicy accessPolicy;
-    private final DiningAudit audit;
+    private final DiningChanges audit;
     private final Clock clock;
 
     RoomAreaService(RoomAreaRepository areas, TableOccupationRepository occupations, OrganizationApi organization,
-                    AccessPolicy accessPolicy, DiningAudit audit, Clock clock) {
+                    AccessPolicy accessPolicy, DiningChanges audit, Clock clock) {
         this.areas = areas;
         this.occupations = occupations;
         this.organization = organization;

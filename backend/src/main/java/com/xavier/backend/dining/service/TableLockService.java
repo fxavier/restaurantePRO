@@ -8,8 +8,6 @@ import com.xavier.backend.dining.model.RestaurantTable;
 import com.xavier.backend.dining.model.dto.TableMap;
 import com.xavier.backend.dining.repository.RestaurantTableRepository;
 import com.xavier.backend.dining.repository.TableOccupationRepository;
-import com.xavier.backend.shared.notify.ChangeNotifier;
-import com.xavier.backend.shared.notify.ChangeTopic;
 import java.time.Clock;
 import java.util.Map;
 import java.util.UUID;
@@ -19,8 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * POS table lock and unlock (spec §4, §8.4): {@code TABLE_LOCK} in the session's store (D39). Locking a locked
- * table, or unlocking an unlocked one, changes nothing and records nothing. A change is audited (D41) and notifies
- * {@code TABLES} after commit.
+ * table, or unlocking an unlocked one, changes nothing and records nothing.
  */
 @Service
 public class TableLockService {
@@ -30,17 +27,15 @@ public class TableLockService {
     private final RestaurantTableRepository tables;
     private final TableOccupationRepository occupations;
     private final AccessPolicy accessPolicy;
-    private final DiningAudit audit;
-    private final ChangeNotifier changeNotifier;
+    private final DiningChanges changes;
     private final Clock clock;
 
     TableLockService(RestaurantTableRepository tables, TableOccupationRepository occupations,
-                     AccessPolicy accessPolicy, DiningAudit audit, ChangeNotifier changeNotifier, Clock clock) {
+                     AccessPolicy accessPolicy, DiningChanges changes, Clock clock) {
         this.tables = tables;
         this.occupations = occupations;
         this.accessPolicy = accessPolicy;
-        this.audit = audit;
-        this.changeNotifier = changeNotifier;
+        this.changes = changes;
         this.clock = clock;
     }
 
@@ -75,8 +70,7 @@ public class TableLockService {
 
     private void changed(String action, RestaurantTable table, Map<String, Object> details) {
         tables.saveAndFlush(table); // the response carries the committed state
-        audit.record(action, ENTITY, table.getId(), table.getStoreId(), details);
-        changeNotifier.notifyAfterCommit(table.getStoreId(), ChangeTopic.TABLES, table.getId());
+        changes.record(action, ENTITY, table.getId(), table.getStoreId(), details);
     }
 
     private TableMap.Table viewOf(RestaurantTable table) {

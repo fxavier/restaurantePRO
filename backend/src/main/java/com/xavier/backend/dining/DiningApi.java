@@ -1,7 +1,6 @@
 package com.xavier.backend.dining;
 
 import com.xavier.backend.access.AccessPolicy;
-import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.dining.exception.DiningNotFoundException;
 import com.xavier.backend.dining.exception.IllegalOccupationStateException;
 import com.xavier.backend.dining.exception.TableOccupiedException;
@@ -14,8 +13,7 @@ import com.xavier.backend.dining.model.dto.TableState;
 import com.xavier.backend.dining.repository.RestaurantTableRepository;
 import com.xavier.backend.dining.repository.RoomAreaRepository;
 import com.xavier.backend.dining.repository.TableOccupationRepository;
-import com.xavier.backend.shared.notify.ChangeNotifier;
-import com.xavier.backend.shared.notify.ChangeTopic;
+import com.xavier.backend.dining.service.DiningChanges;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
 import java.time.Clock;
 import java.util.HashMap;
@@ -41,18 +39,16 @@ public class DiningApi {
     private final RestaurantTableRepository tables;
     private final RoomAreaRepository areas;
     private final AccessPolicy accessPolicy;
-    private final AuditLog auditLog;
-    private final ChangeNotifier changeNotifier;
+    private final DiningChanges changes;
     private final Clock clock;
 
     DiningApi(TableOccupationRepository occupations, RestaurantTableRepository tables, RoomAreaRepository areas,
-              AccessPolicy accessPolicy, AuditLog auditLog, ChangeNotifier changeNotifier, Clock clock) {
+              AccessPolicy accessPolicy, DiningChanges changes, Clock clock) {
         this.occupations = occupations;
         this.tables = tables;
         this.areas = areas;
         this.accessPolicy = accessPolicy;
-        this.auditLog = auditLog;
-        this.changeNotifier = changeNotifier;
+        this.changes = changes;
         this.clock = clock;
     }
 
@@ -107,7 +103,7 @@ public class DiningApi {
         TableOccupation to = from.moveTo(toTableId, clock.instant());
         occupations.saveAndFlush(from); // close first: the open-order index allows one open occupation per order
         save(to);
-        changeNotifier.notifyAfterCommit(from.getStoreId(), ChangeTopic.TABLES, from.getTableId());
+        changed("TABLE_OCCUPATION_CLOSED", from, Map.of("reason", CloseReason.MOVED.name()));
         changed("TABLE_OCCUPATION_MOVED", to, Map.of("fromTableId", from.getTableId().toString(),
                 "fromOccupationId", from.getId().toString()));
         return to.toView();
@@ -169,9 +165,7 @@ public class DiningApi {
         Map<String, Object> details = new HashMap<>(extra);
         details.put("tableId", occupation.getTableId().toString());
         details.put("orderId", occupation.getOrderId().toString());
-        auditLog.recordAsCurrentActor(action, ENTITY, occupation.getId().toString(), occupation.getStoreId(), null,
-                null, details);
-        changeNotifier.notifyAfterCommit(occupation.getStoreId(), ChangeTopic.TABLES, occupation.getTableId());
+        changes.record(action, ENTITY, occupation.getId(), occupation.getStoreId(), occupation.getTableId(), details);
     }
 
     private RestaurantTable table(UUID tableId) {
