@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.dining.DiningFixtures;
 import com.xavier.backend.dining.DiningModuleTest;
+import com.xavier.backend.shared.exception.BusinessRuleException;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,7 +24,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
-import org.springframework.web.ErrorResponseException;
 
 /** {@code POST /api/v1/pos/tables/{id}/lock|unlock}: TABLE_LOCK in the session's store, Idempotency-Key, audited. */
 @DiningModuleTest
@@ -98,8 +98,8 @@ class PosTableLockHttpTest {
     void aLockedTableCannotBeOpenedUntilItIsUnlocked() throws Exception {
         mvc.perform(lock(table, key()).with(pos(store, manager, Permission.TABLE_LOCK))).andExpect(status().isOk());
 
-        assertThatThrownBy(() -> fixtures.seat(store, table)).isInstanceOfSatisfying(ErrorResponseException.class,
-                e -> assertThat(e.getBody().getProperties()).containsEntry("code", "TABLE_LOCKED"));
+        assertThatThrownBy(() -> fixtures.seat(store, table)).isInstanceOfSatisfying(BusinessRuleException.class,
+                e -> assertThat(e.code()).isEqualTo("TABLE_LOCKED"));
 
         mvc.perform(unlock(table, key()).with(pos(store, manager, Permission.TABLE_LOCK))).andExpect(status().isOk());
         fixtures.seat(store, table);

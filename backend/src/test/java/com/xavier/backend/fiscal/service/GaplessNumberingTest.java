@@ -32,7 +32,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.LongStream;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
 
 /**
  * A9 (D50 §7.6): numbers are taken under the series lock inside the issuing transaction, so concurrent issues get
@@ -96,9 +95,8 @@ class GaplessNumberingTest {
 
         assertThatThrownBy(() -> issueAsEmployee(store, first))
                 .isInstanceOfSatisfying(FiscalIssueFailedException.class, e -> {
-                    assertThat(e.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
-                    assertThat(e.getBody().getProperties()).containsEntry("code", "FISCAL_PENDING")
-                            .containsEntry("documentId", first);
+                    assertThat(e.code()).isEqualTo("FISCAL_PENDING");
+                    assertThat(e.properties()).containsEntry("documentId", first);
                     assertThat(e.getDocumentId()).isEqualTo(first);
                 });
 

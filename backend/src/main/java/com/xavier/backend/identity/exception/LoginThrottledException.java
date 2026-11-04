@@ -8,7 +8,9 @@ import org.springframework.web.ErrorResponseException;
 
 /**
  * Too many password attempts for this username from this address (429, code {@value #CODE}, {@code Retry-After} in
- * seconds). An {@link ErrorResponseException} so the shared handler keeps the status, header and {@code code}.
+ * seconds). Deliberately an {@link ErrorResponseException}, not a shared {@code CodedException}: a 429 is neither a
+ * business rule nor a conflict, and it needs a response header, which the ErrorResponse carries and the shared
+ * handler keeps.
  */
 public class LoginThrottledException extends ErrorResponseException {
 
