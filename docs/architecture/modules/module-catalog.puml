@@ -26,13 +26,13 @@ System_Boundary("BackendApplication_boundary", "BackendApplication", $tags="") {
 
 }
 
+Rel(BackendApplication.BackendApplication.Organization, BackendApplication.BackendApplication.Sharedkernel, "depends on", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Organization, BackendApplication.BackendApplication.Audit, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Organization, BackendApplication.BackendApplication.Access, "uses", $techn="", $tags="", $link="")
 Rel(BackendApplication.BackendApplication.Catalog, BackendApplication.BackendApplication.Sharedkernel, "uses", $techn="", $tags="", $link="")
 Rel(BackendApplication.BackendApplication.Catalog, BackendApplication.BackendApplication.Access, "uses", $techn="", $tags="", $link="")
 Rel(BackendApplication.BackendApplication.Catalog, BackendApplication.BackendApplication.Audit, "uses", $techn="", $tags="", $link="")
 Rel(BackendApplication.BackendApplication.Catalog, BackendApplication.BackendApplication.Organization, "uses", $techn="", $tags="", $link="")
-Rel(BackendApplication.BackendApplication.Organization, BackendApplication.BackendApplication.Sharedkernel, "depends on", $techn="", $tags="", $link="")
-Rel(BackendApplication.BackendApplication.Organization, BackendApplication.BackendApplication.Audit, "uses", $techn="", $tags="", $link="")
-Rel(BackendApplication.BackendApplication.Organization, BackendApplication.BackendApplication.Access, "uses", $techn="", $tags="", $link="")
 
 SHOW_LEGEND(true)
 hide stereotypes
