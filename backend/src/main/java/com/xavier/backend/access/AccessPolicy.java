@@ -29,7 +29,8 @@ import org.springframework.web.context.request.RequestContextHolder;
  *
  * <p>POS use cases call {@link #requirePos} instead (D39): it also proves the caller is an employee on an enrolled
  * terminal of an active store, and returns that context, so POS commands never take store or terminal from the
- * request. Store scope order (D42): when the store is an input, call {@code require} before any read; for a
+ * request; {@link #requirePos(Permission, UUID)} also refuses another store named by the request or owning the
+ * addressed resource. Store scope order (D42): when the store is an input, call {@code require} before any read; for a
  * resource addressed by id, read only its {@code storeId} (absent → 404), then {@code require} (→ 403).
  */
 @Component
@@ -71,6 +72,23 @@ public class AccessPolicy {
     }
 
     /**
+     * Requires any one of {@code permissions} in {@code storeId}, each either store-scoped or installation-wide (e.g.
+     * a closing list that cash viewers and closing approvers may both read). One denial log line, naming all of them.
+     */
+    public void requireAny(UUID storeId, Permission... permissions) {
+        Objects.requireNonNull(storeId, "storeId");
+        if (permissions.length == 0) {
+            throw new IllegalArgumentException("at least one permission");
+        }
+        Actor actor = current();
+        boolean granted = Arrays.stream(permissions).anyMatch(p ->
+                actor.authorities().contains(p.authority()) || actor.authorities().contains(p.authority(storeId)));
+        if (!granted) {
+            throw denied(actor, permissions.length == 1 ? permissions[0] : List.of(permissions), storeId);
+        }
+    }
+
+    /**
      * The gate of every POS use case (D39). Requires an {@link ActorKind#EMPLOYEE} session on an enrolled terminal
      * that holds {@code permission} in the session's store, and that store to be active (D45, through
      * {@link StoreActivity}, asked once per request). A BackOffice session is refused even with an
@@ -81,6 +99,44 @@ public class AccessPolicy {
      */
     public PosContext requirePos(Permission permission) {
         return requirePosAny(Objects.requireNonNull(permission, "permission"));
+    }
+
+    /**
+     * {@link #requirePos(Permission)} for a use case that names a store, e.g. an optional {@code ?storeId=} that must
+     * be the session's (D39). For a resource addressed by id use {@link #requireSessionStore} after the 404 read.
+     *
+     * @param requestedStoreId {@code null} means the session's store
+     * @return the session's context; its store is {@code requestedStoreId} when that was given
+     * @throws AccessDeniedException (403, logged) for any {@link #requirePos(Permission)} refusal, or when
+     *                               {@code requestedStoreId} is not the session's store
+     */
+    public PosContext requirePos(Permission permission, UUID requestedStoreId) {
+        PosContext pos = requirePos(permission);
+        if (requestedStoreId != null && !requestedStoreId.equals(pos.storeId())) {
+            log.warn("Access denied: not the session's store: kind=EMPLOYEE employee={} terminal={} permission={} "
+                    + "sessionStore={} store={}", pos.employeeId(), pos.terminalId(), permission, pos.storeId(),
+                    requestedStoreId);
+            throw new AccessDeniedException("Store " + requestedStoreId + " is not the POS session's store");
+        }
+        return pos;
+    }
+
+    /**
+     * D42 (b) for a POS command on a resource addressed by id: after {@link #requirePos(Permission)}, and after reading
+     * only the resource's store (absent → 404), refuse a resource of another store than the session's. The denial log
+     * names the resource.
+     *
+     * @throws AccessDeniedException (403, logged) when {@code resourceStoreId} is not {@code pos.storeId()}
+     */
+    public void requireSessionStore(PosContext pos, UUID resourceStoreId, String entityType, Object entityId) {
+        Objects.requireNonNull(pos, "pos");
+        Objects.requireNonNull(resourceStoreId, "resourceStoreId");
+        if (!resourceStoreId.equals(pos.storeId())) {
+            log.warn("Access denied: {} {} is not in the session's store: kind=EMPLOYEE employee={} terminal={} "
+                    + "sessionStore={} store={}", entityType, entityId, pos.employeeId(), pos.terminalId(),
+                    pos.storeId(), resourceStoreId);
+            throw new AccessDeniedException(entityType + " " + entityId + " is not in the session's store");
+        }
     }
 
     /**

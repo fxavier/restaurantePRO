@@ -149,6 +149,68 @@ class AccessPolicyTest {
     }
 
     @Test
+    void requireAnyAcceptsAnyOnePermissionInstallationWideOrInTheStore() {
+        Actor storeScoped = Actor.account(UUID.randomUUID(), Set.of(Permission.CASH_CLOSING_APPROVE.authority(uuid(STORE_A))));
+        runAs(storeScoped, () -> assertThatCode(() -> accessPolicy.requireAny(uuid(STORE_A),
+                Permission.CASH_VIEW, Permission.CASH_CLOSING_APPROVE)).doesNotThrowAnyException());
+        Actor global = Actor.account(UUID.randomUUID(), Set.of(Permission.CASH_VIEW.authority()));
+        runAs(global, () -> assertThatCode(() -> accessPolicy.requireAny(uuid(STORE_B),
+                Permission.CASH_VIEW, Permission.CASH_CLOSING_APPROVE)).doesNotThrowAnyException());
+    }
+
+    @Test
+    void requireAnyRefusesWhenNoneIsHeldInTheStoreAndLogsThemAllOnce(CapturedOutput output) {
+        Actor elsewhere = Actor.account(UUID.randomUUID(), Set.of(Permission.CASH_VIEW.authority(uuid(STORE_A))));
+        runAs(elsewhere, () -> assertThatThrownBy(() -> accessPolicy.requireAny(uuid(STORE_B),
+                Permission.CASH_VIEW, Permission.CASH_CLOSING_APPROVE)).isInstanceOf(AccessDeniedException.class));
+
+        assertThat(output.getOut()).containsOnlyOnce("Access denied")
+                .contains("[CASH_VIEW, CASH_CLOSING_APPROVE]").contains(STORE_B);
+        assertThatThrownBy(() -> accessPolicy.requireAny(uuid(STORE_A)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @WithActor(permissions = Permission.DINING_VIEW, storeId = STORE_A, employeeId = EMPLOYEE, terminalId = TERMINAL)
+    void requirePosForAStoreAcceptsNoStoreOrTheSessionStore() {
+        PosContext expected = new PosContext(uuid(EMPLOYEE), uuid(TERMINAL), uuid(STORE_A));
+
+        assertThat(accessPolicy.requirePos(Permission.DINING_VIEW, null)).isEqualTo(expected);
+        assertThat(accessPolicy.requirePos(Permission.DINING_VIEW, uuid(STORE_A))).isEqualTo(expected);
+    }
+
+    @Test
+    @WithActor(permissions = Permission.DINING_VIEW, storeId = STORE_A, employeeId = EMPLOYEE, terminalId = TERMINAL)
+    void requirePosForAnotherStoreIsRefusedAndLogged(CapturedOutput output) {
+        assertThatThrownBy(() -> accessPolicy.requirePos(Permission.DINING_VIEW, uuid(STORE_B)))
+                .isInstanceOf(AccessDeniedException.class);
+
+        assertThat(output.getOut()).contains("Access denied").contains("DINING_VIEW").contains(EMPLOYEE)
+                .contains(STORE_A).contains(STORE_B);
+    }
+
+    @Test
+    void aResourceOfTheSessionStorePassesAndOneOfAnotherStoreIsRefusedAndLoggedWithTheResource(
+            CapturedOutput output) {
+        PosContext pos = new PosContext(uuid(EMPLOYEE), uuid(TERMINAL), uuid(STORE_A));
+        UUID table = UUID.randomUUID();
+
+        assertThatCode(() -> accessPolicy.requireSessionStore(pos, uuid(STORE_A), "Table", table))
+                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> accessPolicy.requireSessionStore(pos, uuid(STORE_B), "Table", table))
+                .isInstanceOf(AccessDeniedException.class);
+        assertThat(output.getOut()).containsOnlyOnce("Access denied").contains("Table " + table)
+                .contains(EMPLOYEE).contains(STORE_A).contains(STORE_B);
+    }
+
+    @Test
+    @WithActor(permissions = Permission.DINING_VIEW)
+    void requirePosForAStoreStillRefusesABackOfficeSession() {
+        assertThatThrownBy(() -> accessPolicy.requirePos(Permission.DINING_VIEW, uuid(STORE_A)))
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
     void anEmployeeActorsPrincipalIdIsItsEmployeeId() {
         assertThatThrownBy(() -> new Actor(ActorKind.EMPLOYEE, UUID.randomUUID(), UUID.randomUUID(), null, null,
                 Set.of())).isInstanceOf(IllegalArgumentException.class);
