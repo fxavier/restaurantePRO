@@ -77,6 +77,20 @@ class SessionHttpTest {
     }
 
     @Test
+    void repeatingAnOpenWithTheSameKeyReplaysTheSessionAndOpensNothingMore() throws Exception {
+        String key = UUID.randomUUID().toString();
+        String first = mvc.perform(open(operator, register, "100.00", key))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+
+        String replay = mvc.perform(open(operator, register, "100.00", key))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+
+        assertThat(CashFixtures.json(replay)).isEqualTo(CashFixtures.json(first));
+        assertThat(fixtures.count("SELECT count(*) FROM cash.cash_session WHERE register_id = ?", register))
+                .isEqualTo(1);
+    }
+
+    @Test
     void aZeroOpeningFloatRecordsNoMovement() throws Exception {
         UUID session = CashFixtures.id(mvc.perform(open(operator, register, "0"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
@@ -192,7 +206,12 @@ class SessionHttpTest {
 
     private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder open(
             Pos who, UUID register, String openingFloat) {
-        return idem(post(SESSIONS)).with(who.with(Permission.CASH_OPERATE))
+        return open(who, register, openingFloat, UUID.randomUUID().toString());
+    }
+
+    private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder open(
+            Pos who, UUID register, String openingFloat, String key) {
+        return idem(post(SESSIONS), key).with(who.with(Permission.CASH_OPERATE))
                 .contentType(MediaType.APPLICATION_JSON).content(openSessionBody(register, openingFloat));
     }
 }

@@ -108,6 +108,20 @@ class ClosingHttpTest {
     }
 
     @Test
+    void repeatingADraftWithTheSameKeyReplaysItsLines() throws Exception {
+        String key = UUID.randomUUID().toString();
+        String first = mvc.perform(create(register, key))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+
+        String replay = mvc.perform(create(register, key))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+
+        assertThat(CashFixtures.json(replay)).isEqualTo(CashFixtures.json(first));
+        assertThat(fixtures.count("SELECT count(*) FROM cash.cash_closing WHERE register_id = ?", register))
+                .isEqualTo(1);
+    }
+
+    @Test
     void aRegisterWithASessionStillOpenCannotBeClosed() throws Exception {
         Pos late = pos(store);
         UUID otherRegister = fixtures.newRegister(store);
@@ -224,7 +238,11 @@ class ClosingHttpTest {
     }
 
     MockHttpServletRequestBuilder create(UUID registerId) {
-        return idem(post(POS_CLOSINGS)).with(operator.with(Permission.CASH_OPERATE))
+        return create(registerId, UUID.randomUUID().toString());
+    }
+
+    MockHttpServletRequestBuilder create(UUID registerId, String key) {
+        return idem(post(POS_CLOSINGS), key).with(operator.with(Permission.CASH_OPERATE))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                         {"registerId": "%s", "cashDayId": "%s"}""".formatted(registerId, day));

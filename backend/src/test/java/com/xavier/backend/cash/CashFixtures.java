@@ -102,7 +102,12 @@ public class CashFixtures {
 
     /** A POST/PUT with a fresh Idempotency-Key and CSRF. */
     public static MockHttpServletRequestBuilder idem(MockHttpServletRequestBuilder request) {
-        return request.header("Idempotency-Key", UUID.randomUUID().toString()).with(csrf());
+        return idem(request, UUID.randomUUID().toString());
+    }
+
+    /** A POST/PUT with the given Idempotency-Key and CSRF, e.g. to replay a request. */
+    public static MockHttpServletRequestBuilder idem(MockHttpServletRequestBuilder request, String key) {
+        return request.header("Idempotency-Key", key).with(csrf());
     }
 
     /** A BackOffice account holding {@code permissions} in {@code store} (installation-wide when null). */
