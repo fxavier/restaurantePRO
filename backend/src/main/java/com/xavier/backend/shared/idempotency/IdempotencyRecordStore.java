@@ -12,12 +12,16 @@ import org.springframework.stereotype.Repository;
 @Repository
 class IdempotencyRecordStore {
 
-    /** What is stored for a key; {@code responseStatus}/{@code responseBody} are null while in progress. */
-    record StoredRecord(String requestHash, boolean completed, Integer responseStatus, String responseBody) {
+    /**
+     * What is stored for a key; {@code responseStatus}/{@code responseBody} are null while in progress, and
+     * {@code responseLocation} is null when the response had no {@code Location} header.
+     */
+    record StoredRecord(String requestHash, boolean completed, Integer responseStatus, String responseBody,
+                        String responseLocation) {
     }
 
     private static final String SELECT = """
-            SELECT request_hash, status, response_status, response_body::text AS response_body
+            SELECT request_hash, status, response_status, response_body::text AS response_body, response_location
             FROM shared.idempotency_record WHERE scope = :scope AND key = :key
             """;
 
@@ -75,15 +79,26 @@ class IdempotencyRecordStore {
         return false;
     }
 
-    void complete(String scope, String key, int responseStatus, String responseBody, Instant now) {
+    void complete(String scope, String key, int responseStatus, String responseBody, String responseLocation,
+                  Instant now) {
         jdbc.sql("""
                         UPDATE shared.idempotency_record
                         SET status = 'COMPLETED', response_status = :status,
-                            response_body = CAST(:body AS jsonb), completed_at = :now
+                            response_body = CAST(:body AS jsonb), response_location = :location, completed_at = :now
                         WHERE scope = :scope AND key = :key AND status = 'IN_PROGRESS'
                         """)
-                .param("status", responseStatus).param("body", responseBody).param("now", Timestamp.from(now))
-                .param("scope", scope).param("key", key)
+                .param("status", responseStatus).param("body", responseBody).param("location", responseLocation)
+                .param("now", Timestamp.from(now)).param("scope", scope).param("key", key)
+                .update();
+    }
+
+    /** D47.4. @return the number of deleted records */
+    int deleteCompletedBefore(Instant cutoff) {
+        return jdbc.sql("""
+                        DELETE FROM shared.idempotency_record
+                        WHERE status = 'COMPLETED' AND completed_at < :cutoff
+                        """)
+                .param("cutoff", Timestamp.from(cutoff))
                 .update();
     }
 
@@ -92,6 +107,7 @@ class IdempotencyRecordStore {
                 rs.getString("request_hash"),
                 "COMPLETED".equals(rs.getString("status")),
                 (Integer) rs.getObject("response_status"),
-                rs.getString("response_body"));
+                rs.getString("response_body"),
+                rs.getString("response_location"));
     }
 }
