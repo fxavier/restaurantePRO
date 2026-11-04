@@ -14,8 +14,8 @@ import java.util.stream.IntStream;
  * An amount of money in one currency (D15, spec §8.4).
  *
  * <p>The amount always has exactly the currency's minor-unit scale (2 for MZN/EUR). Construction never
- * rounds: an amount with more precision is rejected. The only rounding happens in {@link #times}
- * (HALF_UP, line level). Splitting uses {@code allocate}, whose parts always sum to the total.
+ * rounds: an amount with more precision is rejected. The only rounding happens in {@link #times} and
+ * {@link #divide} (HALF_UP, line level, D59). Splitting uses {@code allocate}, whose parts always sum to the total.
  * Combining two currencies is rejected (single currency per installation, P2).
  */
 public record Money(BigDecimal amount, Currency currency) {
@@ -55,6 +55,20 @@ public record Money(BigDecimal amount, Currency currency) {
     public Money times(BigDecimal quantity) {
         Objects.requireNonNull(quantity, "quantity");
         return new Money(amount.multiply(quantity).setScale(currency.getDefaultFractionDigits(), ROUNDING), currency);
+    }
+
+    /**
+     * Division rounded HALF_UP to the currency minor unit, e.g. the net of a tax-inclusive gross,
+     * {@code gross.divide(1 + rate/100)} (D59). With {@link #times} it is the only rounding point.
+     *
+     * @throws IllegalArgumentException for a zero divisor
+     */
+    public Money divide(BigDecimal divisor) {
+        Objects.requireNonNull(divisor, "divisor");
+        if (divisor.signum() == 0) {
+            throw new IllegalArgumentException("Cannot divide " + this + " by zero");
+        }
+        return new Money(amount.divide(divisor, currency.getDefaultFractionDigits(), ROUNDING), currency);
     }
 
     /** Splits into {@code parts} equal shares; leftover minor units go to the first shares. */
