@@ -14,9 +14,13 @@ import com.xavier.backend.TestcontainersConfiguration;
 import com.xavier.backend.shared.exception.BusinessRuleException;
 import com.xavier.backend.shared.exception.ConflictException;
 import com.xavier.backend.shared.exception.NotFoundException;
+import com.xavier.backend.shared.web.GlobalExceptionHandler.FieldViolation;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Positive;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -75,6 +79,41 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void aCodedBusinessRuleCarriesItsCodeAndExtraProperties() throws Exception {
+        mvc.perform(get("/api/v1/backoffice/test-probe/coded-business-rule"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.detail").value("The fiscal document stays pending"))
+                .andExpect(jsonPath("$.code").value("FISCAL_PENDING"))
+                .andExpect(jsonPath("$.documentId").value("0190a000-0000-7000-8000-0000000000d1"))
+                .andExpect(jsonPath("$.errors[0].field").value("price"));
+    }
+
+    @Test
+    void aCodedConflictCarriesItsCode() throws Exception {
+        mvc.perform(get("/api/v1/backoffice/test-probe/coded-conflict"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("Table 7 is occupied."))
+                .andExpect(jsonPath("$.code").value("TABLE_OCCUPIED"));
+    }
+
+    @Test
+    void aCodedNotFoundCarriesItsCode() throws Exception {
+        mvc.perform(get("/api/v1/backoffice/test-probe/coded-not-found"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.detail").value("No published catalog"))
+                .andExpect(jsonPath("$.code").value("NO_PUBLISHED_CATALOG"));
+    }
+
+    @Test
+    void anUncodedErrorHasNoCodeProperty() throws Exception {
+        mvc.perform(get("/api/v1/backoffice/test-probe/business-rule"))
+                .andExpect(jsonPath("$.code").doesNotExist());
+        mvc.perform(get("/api/v1/backoffice/test-probe/conflict"))
+                .andExpect(jsonPath("$.code").doesNotExist());
+    }
+
+    @Test
     void invalidRequestBodyBecomes400WithFieldErrors() throws Exception {
         mvc.perform(post("/api/v1/backoffice/test-probe/validated").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -124,6 +163,23 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/business-rule")
         void businessRule() {
             throw new BusinessRuleException("Currency cannot change after the first store");
+        }
+
+        @GetMapping("/coded-business-rule")
+        void codedBusinessRule() {
+            throw new BusinessRuleException("FISCAL_PENDING", "The fiscal document stays pending",
+                    Map.of("documentId", UUID.fromString("0190a000-0000-7000-8000-0000000000d1"),
+                            "errors", List.of(new FieldViolation("price", "must be positive"))));
+        }
+
+        @GetMapping("/coded-conflict")
+        void codedConflict() {
+            throw new ConflictException("TABLE_OCCUPIED", "Table 7 is occupied.");
+        }
+
+        @GetMapping("/coded-not-found")
+        void codedNotFound() {
+            throw new NotFoundException("NO_PUBLISHED_CATALOG", "No published catalog");
         }
 
         @PostMapping("/validated")
