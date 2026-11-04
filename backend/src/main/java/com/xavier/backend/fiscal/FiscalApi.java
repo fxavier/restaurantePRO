@@ -45,14 +45,17 @@ public class FiscalApi {
     }
 
     /**
-     * tx-B (D50 §7.6) in a new transaction ({@code REQUIRES_NEW}; the caller's, if any, is suspended, so commit the
-     * draft first): numbers the draft from its store's active series without gaps, issues it through the adapter and
-     * publishes {@link com.xavier.backend.fiscal.model.event.FiscalDocumentIssued}. An ISSUED document is returned
-     * unchanged. Runs as the current actor: its terminal is where the original prints.
+     * tx-B (D50 §7.6) in its own transaction. Commit the draft first, then call issue with no transaction bound:
+     * called inside one it throws {@link IllegalStateException} before doing anything. It numbers the draft from
+     * its store's active series without gaps, issues it through the adapter and publishes
+     * {@link com.xavier.backend.fiscal.model.event.FiscalDocumentIssued}. An ISSUED document is returned unchanged.
+     * Runs as the current actor: its terminal is where the original prints. A failure's {@code lastError} is the
+     * business reason, or only the failure type for a technical error (details in the server log).
      *
      * @throws FiscalIssueFailedException (422 {@code FISCAL_PENDING}) when issuing failed: no number was used and
      *         the draft keeps {@code lastError}, recorded in a separate transaction
      * @throws com.xavier.backend.shared.exception.NotFoundException (404) for an unknown document
+     * @throws IllegalStateException when the caller has a transaction open
      */
     public DocumentView issue(UUID documentId, UUID actorEmployeeId) {
         return issuer.issue(documentId, actorEmployeeId);

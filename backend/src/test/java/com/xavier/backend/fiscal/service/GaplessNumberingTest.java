@@ -15,7 +15,9 @@ import com.xavier.backend.fiscal.IssueRequest;
 import com.xavier.backend.shared.Money;
 import java.time.OffsetDateTime;
 import java.util.Currency;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.transaction.support.TransactionTemplate;
 import com.xavier.backend.fiscal.adapter.internal.InternalFiscalAdapter;
 import com.xavier.backend.fiscal.model.dto.DocumentView;
 import java.util.ArrayList;
@@ -49,6 +51,9 @@ class GaplessNumberingTest {
 
     @Autowired
     JdbcClient jdbc;
+
+    @Autowired
+    TransactionTemplate tx;
 
     @Autowired
     InternalFiscalAdapter adapter; // a Mockito spy (FiscalModuleTest), reset after each test
@@ -100,7 +105,7 @@ class GaplessNumberingTest {
         DocumentView pending = fiscal.saleDocumentFor(sourceOf(first)).orElseThrow();
         assertThat(pending.status()).isEqualTo("DRAFT");
         assertThat(pending.number()).isNull();
-        assertThat(pending.lastError()).contains("fiscal adapter offline");
+        assertThat(pending.lastError()).isEqualTo("Technical failure (IllegalStateException); see the server log");
         assertThat(pending.lastErrorAt()).isNotNull();
         assertThat(fiscal.countDrafts(store)).isEqualTo(2);
         assertThat(fixtures.nextNumber(series)).isEqualTo(41);
@@ -108,6 +113,40 @@ class GaplessNumberingTest {
         assertThat(issueAsEmployee(store, first).number()).isEqualTo(41L);
         assertThat(issueAsEmployee(store, second).number()).isEqualTo(42L);
         assertThat(fiscal.saleDocumentFor(sourceOf(first)).orElseThrow().lastError()).isNull();
+    }
+
+    @Test
+    void aTechnicalFailureIsRecordedWithoutItsSqlDetail() throws Exception {
+        UUID store = fixtures.newStore();
+        fixtures.newSeries(store, "A", 1);
+        UUID draft = fixtures.newDraft(store);
+        doThrow(new DataIntegrityViolationException(
+                "ERROR: duplicate key value violates unique constraint \"fiscal_document_number_uk\""))
+                .when(adapter).issue(any());
+
+        assertThatThrownBy(() -> issueAsEmployee(store, draft)).isInstanceOf(FiscalIssueFailedException.class);
+
+        assertThat(fiscal.saleDocumentFor(sourceOf(draft)).orElseThrow().lastError())
+                .isEqualTo("Technical failure (DataIntegrityViolationException); see the server log")
+                .doesNotContain("constraint");
+    }
+
+    @Test
+    void issuingInsideTheCallersTransactionIsRefusedBeforeAnythingHappens() throws Exception {
+        UUID store = fixtures.newStore();
+        UUID series = fixtures.newSeries(store, "A", 1);
+        UUID draft = fixtures.newDraft(store);
+        UUID employee = UUID.randomUUID();
+
+        assertThatThrownBy(() -> asEmployee(store, employee, UUID.randomUUID(),
+                () -> tx.execute(status -> fiscal.issue(draft, employee))))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("commit");
+
+        DocumentView untouched = fiscal.saleDocumentFor(sourceOf(draft)).orElseThrow();
+        assertThat(untouched.status()).isEqualTo("DRAFT");
+        assertThat(untouched.lastError()).isNull();
+        assertThat(fixtures.nextNumber(series)).isEqualTo(1);
     }
 
     @Test

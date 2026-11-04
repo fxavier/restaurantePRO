@@ -13,6 +13,9 @@ import com.xavier.backend.fiscal.model.dto.DocumentView;
 import com.xavier.backend.fiscal.model.event.FiscalDocumentIssued;
 import com.xavier.backend.fiscal.repository.FiscalDocumentRepository;
 import com.xavier.backend.fiscal.repository.FiscalSeriesRepository;
+import com.xavier.backend.shared.exception.BusinessRuleException;
+import com.xavier.backend.shared.exception.ConflictException;
+import com.xavier.backend.shared.exception.NotFoundException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -23,6 +26,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
@@ -60,6 +64,11 @@ public class DocumentIssueService {
 
     /** Issues as the current actor; its terminal is where the original prints. Already ISSUED → returned as is. */
     public DocumentView issue(UUID documentId, UUID actorEmployeeId) {
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            // REQUIRES_NEW would not see the caller's uncommitted draft and would hold a second connection
+            throw new IllegalStateException("Issue a fiscal document outside any transaction: commit the draft "
+                    + "first (D50 §7.6 tx-A), then call issue");
+        }
         UUID terminalId = accessPolicy.current().terminalId();
         try {
             return inNewTransaction.execute(status -> issueNow(documentId, actorEmployeeId, terminalId));
@@ -93,6 +102,18 @@ public class DocumentIssueService {
         return document.toView();
     }
 
+    /**
+     * What the BackOffice may see: a business rule's own message, otherwise only the failure type (a technical
+     * message can carry SQL or constraint names). The full trace is in the WARN log line above.
+     */
+    static String reasonFor(RuntimeException failure) {
+        if (failure instanceof BusinessRuleException || failure instanceof ConflictException
+                || failure instanceof NotFoundException) {
+            return failure.getMessage();
+        }
+        return "Technical failure (" + failure.getClass().getSimpleName() + "); see the server log";
+    }
+
     private String previousAdapterData(FiscalSeries numbering, long number) {
         if (number == numbering.getFirstNumber()) {
             return null;
@@ -102,7 +123,7 @@ public class DocumentIssueService {
     }
 
     private void recordFailure(UUID documentId, RuntimeException failure) {
-        String reason = failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage();
+        String reason = reasonFor(failure);
         try {
             inNewTransaction.executeWithoutResult(status -> documents.findById(documentId)
                     .filter(document -> !document.isIssued())
