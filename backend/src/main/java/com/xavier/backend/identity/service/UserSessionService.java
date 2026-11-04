@@ -18,7 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Lists and revokes a BackOffice user's open sessions (spec §5 "sessões", D25). Sessions are found through Spring
- * Session's principal-name index, which login sets to the user id. Needs {@code USER_MANAGE} installation-wide.
+ * Session's principal-name index ({@link SessionPrincipals}: kind and account id). Needs {@code USER_MANAGE} installation-wide.
  */
 @Service
 public class UserSessionService {
@@ -61,6 +61,6 @@ public class UserSessionService {
         if (!accounts.existsById(userId)) {
             throw new UserNotFoundException(userId);
         }
-        return List.copyOf(sessions.findByPrincipalName(userId.toString()).values());
+        return List.copyOf(sessions.findByPrincipalName(SessionPrincipals.account(userId)).values());
     }
 }

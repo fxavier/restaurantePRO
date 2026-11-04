@@ -93,7 +93,7 @@ public class UserAccountService {
         save(account);
         audit("USER_UPDATED", account);
         if (authoritiesMayShrink) {
-            sessions.endAll(account.getId()); // its sessions hold the authorities resolved at login
+            sessions.endAccountSessions(account.getId()); // its sessions hold the authorities resolved at login
         }
         return account.toSummary();
     }

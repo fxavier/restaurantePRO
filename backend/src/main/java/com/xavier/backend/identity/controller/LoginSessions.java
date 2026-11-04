@@ -3,6 +3,7 @@ package com.xavier.backend.identity.controller;
 import com.xavier.backend.access.Actor;
 import com.xavier.backend.identity.model.dto.SessionView;
 import com.xavier.backend.identity.service.LoginAudit;
+import com.xavier.backend.identity.service.SessionPrincipals;
 import com.xavier.backend.identity.service.TerminalSessionService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -33,8 +34,9 @@ import org.springframework.stereotype.Component;
  * <ol>
  *   <li>the session id changes (session fixation protection) or a new session starts, and the CSRF token is
  *       replaced; the login response already carries the new {@code XSRF-TOKEN} cookie;</li>
- *   <li>the principal name index is set to {@code Actor.userId()} so sessions can be listed and revoked per user
- *       ({@link FindByIndexNameSessionRepository}); without it Spring Session would index {@code Actor.toString()};</li>
+ *   <li>the principal name index is set to the actor kind and id ({@link SessionPrincipals}, D38) so sessions can
+ *       be listed and revoked per account or employee ({@link FindByIndexNameSessionRepository}); without it Spring
+ *       Session would index {@code Actor.toString()};</li>
  *   <li>the {@code Authentication}'s granted authorities are exactly {@code Actor.authorities()} (the actuator URL
  *       rule reads them, {@code AccessPolicy} reads the actor);</li>
  *   <li>the security context is saved in the session explicitly ({@link HttpSessionSecurityContextRepository}),
@@ -76,7 +78,7 @@ class LoginSessions {
             csrf.getToken(); // generates and saves the new token now, so this response sets the cookie
         }
         HttpSession session = request.getSession(true);
-        session.setAttribute(FindByIndexNameSessionRepository.PRINCIPAL_NAME_INDEX_NAME, actor.userId().toString());
+        session.setAttribute(FindByIndexNameSessionRepository.PRINCIPAL_NAME_INDEX_NAME, SessionPrincipals.of(actor));
         if (view.mustChangePassword()) {
             session.setAttribute(MUST_CHANGE_PASSWORD, Boolean.TRUE);
         } else {

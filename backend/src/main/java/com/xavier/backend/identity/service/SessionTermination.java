@@ -7,9 +7,9 @@ import org.springframework.session.FindByIndexNameSessionRepository;
 import org.springframework.stereotype.Component;
 
 /**
- * Ends open sessions through Spring Session's principal-name index, which login sets to {@code Actor.userId()}:
- * the account id for BackOffice sessions, the employee id for POS sessions. Authorities are resolved once at
- * login, so every change that can take authorities away ends the sessions that hold them.
+ * Ends open sessions through Spring Session's principal-name index, which login sets to {@link SessionPrincipals}
+ * (actor kind and id, D38): an account's BackOffice sessions and an employee's POS sessions never mix. Authorities
+ * are resolved once at login, so every change that can take authorities away ends the sessions that hold them.
  */
 @Component
 class SessionTermination {
@@ -25,15 +25,13 @@ class SessionTermination {
         this.assignments = assignments;
     }
 
-    void endAll(UUID principal) {
-        endAllExcept(principal, null);
+    void endAccountSessions(UUID accountId) {
+        endAccountSessionsExcept(accountId, null);
     }
 
     /** @param keepSessionId the caller's own session, or {@code null} */
-    void endAllExcept(UUID principal, String keepSessionId) {
-        sessions.findByPrincipalName(principal.toString()).keySet().stream()
-                .filter(id -> !id.equals(keepSessionId))
-                .forEach(sessions::deleteById);
+    void endAccountSessionsExcept(UUID accountId, String keepSessionId) {
+        end(SessionPrincipals.account(accountId), keepSessionId);
     }
 
     /**
@@ -41,13 +39,19 @@ class SessionTermination {
      * any store (their POS sessions and their linked accounts).
      */
     void endRoleSessions(UUID roleId) {
-        accounts.findIdsHoldingRole(roleId).forEach(this::endAll);
+        accounts.findIdsHoldingRole(roleId).forEach(this::endAccountSessions);
         assignments.findEmployeeIdsWithRole(roleId).forEach(this::endEmployeeSessions);
     }
 
     /** The employee's POS sessions and the sessions of the account linked to the employee (store authorities). */
     void endEmployeeSessions(UUID employeeId) {
-        endAll(employeeId);
-        accounts.findByEmployeeId(employeeId).ifPresent(account -> endAll(account.getId()));
+        end(SessionPrincipals.employee(employeeId), null);
+        accounts.findByEmployeeId(employeeId).ifPresent(account -> endAccountSessions(account.getId()));
+    }
+
+    private void end(String principalName, String keepSessionId) {
+        sessions.findByPrincipalName(principalName).keySet().stream()
+                .filter(id -> !id.equals(keepSessionId))
+                .forEach(sessions::deleteById);
     }
 }
