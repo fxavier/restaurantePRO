@@ -1,0 +1,7 @@
+[%autowidth.stretch, cols="h,a"]
+|===
+|Base package
+|`com.xavier.backend.organization`
+|Bean references
+|* `c.x.b.a.AuditLog` (in Audit)
+|===
