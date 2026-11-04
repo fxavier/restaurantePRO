@@ -7,6 +7,7 @@ import com.xavier.backend.identity.model.dto.SessionView;
 import com.xavier.backend.identity.service.LoginService;
 import com.xavier.backend.identity.service.PasswordService;
 import com.xavier.backend.identity.service.PosLoginService;
+import com.xavier.backend.identity.service.SessionHandles;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -43,8 +44,7 @@ class AuthController {
     SessionView login(@Valid @RequestBody LoginRequest body, HttpServletRequest request,
                       HttpServletResponse response) {
         SessionView session = logins.passwordLogin(body.username(), body.password());
-        sessions.start(session, request, response);
-        return session;
+        return session.withSessionHandle(SessionHandles.of(sessions.start(session, request, response)));
     }
 
     /** The terminal is identified by its device token (from enrollment); a missing header is refused like a bad one. */
@@ -53,8 +53,7 @@ class AuthController {
                          @Valid @RequestBody PosLoginRequest body, HttpServletRequest request,
                          HttpServletResponse response) {
         SessionView session = posLogins.login(terminalToken, body.employeeCode(), body.pin());
-        sessions.start(session, request, response);
-        return session;
+        return session.withSessionHandle(SessionHandles.of(sessions.start(session, request, response)));
     }
 
     /** The session is restarted (new id) with the account's real authorities. */
@@ -62,13 +61,14 @@ class AuthController {
     SessionView changePassword(@Valid @RequestBody PasswordChangeRequest body, HttpServletRequest request,
                                HttpServletResponse response) {
         SessionView session = passwords.change(body.currentPassword(), body.newPassword());
-        sessions.start(session, request, response);
-        return session;
+        return session.withSessionHandle(SessionHandles.of(sessions.start(session, request, response)));
     }
 
     @GetMapping("/session")
-    SessionView session() {
-        return logins.currentSession();
+    SessionView session(HttpServletRequest request) {
+        SessionView session = logins.currentSession();
+        return request.getSession(false) == null ? session
+                : session.withSessionHandle(SessionHandles.of(request.getSession(false).getId()));
     }
 
     @PostMapping("/logout")
