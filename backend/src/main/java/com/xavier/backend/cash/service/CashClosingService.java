@@ -103,7 +103,8 @@ public class CashClosingService {
                 CashClosingStatus.LIVE)) {
             throw liveClosingExists(register);
         }
-        Currency currency = organization.companyProfile().currency();
+        Currency currency = organization.findStore(pos.storeId())
+                .orElseThrow(() -> new CashNotFoundException("Store", pos.storeId())).currency();
         // no live closing exists, so the latest attempt (if any) was REJECTED: the new one supersedes it
         Optional<CashClosing> rejected = closings.findFirstByRegisterIdAndCashDayIdOrderByAttemptNoDesc(
                 register.getId(), day.getId());
