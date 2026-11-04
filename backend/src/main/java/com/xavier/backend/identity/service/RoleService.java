@@ -31,12 +31,15 @@ public class RoleService {
     private final RoleRepository roles;
     private final AccessPolicy accessPolicy;
     private final AuditLog auditLog;
+    private final SessionTermination sessions;
     private final Clock clock;
 
-    RoleService(RoleRepository roles, AccessPolicy accessPolicy, AuditLog auditLog, Clock clock) {
+    RoleService(RoleRepository roles, AccessPolicy accessPolicy, AuditLog auditLog, SessionTermination sessions,
+                Clock clock) {
         this.roles = roles;
         this.accessPolicy = accessPolicy;
         this.auditLog = auditLog;
+        this.sessions = sessions;
         this.clock = clock;
     }
 
@@ -59,9 +62,13 @@ public class RoleService {
         OptimisticLocking.requireVersion(Role.class, id, role.getVersion(), request.version());
         request.permissions().stream().filter(permission -> !role.getPermissions().contains(permission))
                 .forEach(accessPolicy::require);
+        boolean permissionsShrink = !request.permissions().containsAll(role.getPermissions());
         role.redefine(request.name(), request.permissions(), clock.instant());
         save(role);
         audit("ROLE_UPDATED", role);
+        if (permissionsShrink) {
+            sessions.endRoleSessions(id); // they hold the permissions resolved at login
+        }
         return role.toSummary();
     }
 

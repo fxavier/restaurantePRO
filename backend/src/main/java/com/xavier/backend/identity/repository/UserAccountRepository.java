@@ -1,6 +1,7 @@
 package com.xavier.backend.identity.repository;
 
 import com.xavier.backend.identity.model.UserAccount;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -17,4 +18,7 @@ public interface UserAccountRepository extends JpaRepository<UserAccount, UUID> 
     @Query("select count(a) from UserAccount a join a.roleIds r "
             + "where r = :roleId and a.active = true and a.id <> :excluded")
     long countActiveHoldersExcept(UUID roleId, UUID excluded);
+
+    @Query("select a.id from UserAccount a join a.roleIds r where r = :roleId")
+    List<UUID> findIdsHoldingRole(UUID roleId);
 }
