@@ -84,6 +84,75 @@ class OrdersSchemaTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    @Test
+    void aConfirmedLineNamesWhoConfirmedIt() {
+        UUID order = order("COUNTER", null);
+        UUID line = confirmedLine(order);
+        UUID unattributed = draftLine(order);
+
+        assertThatThrownBy(() -> jdbc.sql(CONFIRM.replace("confirmed_by_employee_id = gen_random_uuid()",
+                        "confirmed_by_employee_id = NULL")).param(batch(order, 2)).param(unattributed).update())
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThat(line).isNotNull();
+    }
+
+    @Test
+    void aVoidOnlyTakesFromALineOfItsOwnOrder() {
+        UUID line = confirmedLine(order("COUNTER", null));
+        UUID other = order("COUNTER", null);
+
+        assertThatThrownBy(() -> jdbc.sql(VOID).param(other).param(line).update())
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void aTransferLineMovesFromALineOfTheSourceToALineOfTheTarget() {
+        UUID source = order("COUNTER", null);
+        UUID target = order("COUNTER", null);
+        UUID stranger = order("COUNTER", null);
+        UUID transfer = transfer(source, target);
+        UUID sourceLine = confirmedLine(source);
+        UUID strangerLine = confirmedLine(stranger);
+        UUID targetLine = transferredLine(target, transfer);
+
+        jdbc.sql(TRANSFER_LINE).param(transfer).param(source).param(target).param(sourceLine).param(targetLine)
+                .update();
+        assertThatThrownBy(() -> jdbc.sql(TRANSFER_LINE).param(transfer).param(source).param(target)
+                .param(strangerLine).param(transferredLine(target, transfer)).update())
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.sql(TRANSFER_LINE).param(transfer).param(stranger).param(target)
+                .param(strangerLine).param(transferredLine(target, transfer)).update())
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    static final String VOID = """
+            INSERT INTO orders.order_line_void (id, order_id, line_id, quantity, reason, wasted, operator_employee_id,
+                approver_employee_id, terminal_id, voided_at)
+            VALUES (gen_random_uuid(), ?, ?, 1, 'x', false, gen_random_uuid(), gen_random_uuid(), gen_random_uuid(),
+                now())""";
+
+    static final String TRANSFER_LINE = """
+            INSERT INTO orders.order_transfer_line (id, transfer_id, source_order_id, target_order_id, source_line_id,
+                target_line_id, quantity)
+            VALUES (gen_random_uuid(), ?, ?, ?, ?, ?, 1)""";
+
+    UUID transfer(UUID source, UUID target) {
+        UUID id = UUID.randomUUID();
+        jdbc.sql("""
+                INSERT INTO orders.order_transfer (id, store_id, source_order_id, target_order_id, employee_id,
+                    terminal_id, transferred_at)
+                VALUES (?, gen_random_uuid(), ?, ?, gen_random_uuid(), gen_random_uuid(), now())""")
+                .param(id).param(source).param(target).update();
+        return id;
+    }
+
+    /** A confirmed copy on the target, originating from the transfer (no batch). */
+    UUID transferredLine(UUID target, UUID transfer) {
+        UUID id = draftLine(target);
+        jdbc.sql(CONFIRM.replace("batch_id = ?", "origin_transfer_id = ?")).param(transfer).param(id).update();
+        return id;
+    }
+
     UUID order(String mode, UUID table) {
         UUID id = UUID.randomUUID();
         jdbc.sql("""
@@ -119,14 +188,16 @@ class OrdersSchemaTest {
         return confirmedLine(order, batch(order, 1));
     }
 
+    static final String CONFIRM = """
+            UPDATE orders.order_line SET status = 'CONFIRMED', item_code = 'X', description = 'X',
+                unit_price = 1, currency = 'MZN', tax_category_id = gen_random_uuid(), tax_code = 'T',
+                tax_rate = 16, release_id = gen_random_uuid(), catalog_version = 1, confirmed_at = now(),
+                confirmed_by_employee_id = gen_random_uuid(), batch_id = ?
+            WHERE id = ?""";
+
     UUID confirmedLine(UUID order, UUID batch) {
         UUID id = draftLine(order);
-        jdbc.sql("""
-                UPDATE orders.order_line SET status = 'CONFIRMED', item_code = 'X', description = 'X',
-                    unit_price = 1, currency = 'MZN', tax_category_id = gen_random_uuid(), tax_code = 'T',
-                    tax_rate = 16, release_id = gen_random_uuid(), catalog_version = 1, confirmed_at = now(),
-                    confirmed_by_employee_id = gen_random_uuid(), batch_id = ?
-                WHERE id = ?""").param(batch).param(id).update();
+        jdbc.sql(CONFIRM).param(batch).param(id).update();
         return id;
     }
 }

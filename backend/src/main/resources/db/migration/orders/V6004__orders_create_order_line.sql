@@ -32,6 +32,8 @@ CREATE TABLE orders.order_line
     version                  BIGINT                   NOT NULL,
     CONSTRAINT order_line_pk PRIMARY KEY (id),
     CONSTRAINT order_line_order_fk FOREIGN KEY (order_id) REFERENCES orders.order_header (id),
+    -- target of the same-order foreign keys of voids and transfer lines
+    CONSTRAINT order_line_id_order_uk UNIQUE (id, order_id),
     CONSTRAINT order_line_batch_same_order_fk FOREIGN KEY (batch_id, order_id)
         REFERENCES orders.order_batch (id, order_id),
     CONSTRAINT order_line_origin_transfer_same_order_fk FOREIGN KEY (origin_transfer_id, order_id)
@@ -44,9 +46,11 @@ CREATE TABLE orders.order_line
     CONSTRAINT order_line_confirmed_snapshot_ck CHECK (status = 'DRAFT' OR (
         item_code IS NOT NULL AND description IS NOT NULL AND unit_price IS NOT NULL AND currency IS NOT NULL
             AND tax_category_id IS NOT NULL AND tax_code IS NOT NULL AND tax_rate IS NOT NULL
-            AND release_id IS NOT NULL AND catalog_version IS NOT NULL AND confirmed_at IS NOT NULL)),
+            AND release_id IS NOT NULL AND catalog_version IS NOT NULL AND confirmed_at IS NOT NULL
+            AND confirmed_by_employee_id IS NOT NULL)),
     CONSTRAINT order_line_draft_has_no_origin_ck CHECK (status = 'CONFIRMED' OR (
-        batch_id IS NULL AND origin_transfer_id IS NULL AND confirmed_at IS NULL)),
+        batch_id IS NULL AND origin_transfer_id IS NULL AND confirmed_at IS NULL
+            AND confirmed_by_employee_id IS NULL)),
     CONSTRAINT order_line_one_origin_ck CHECK (status = 'DRAFT' OR ((batch_id IS NULL) <> (origin_transfer_id IS NULL)))
 );
 

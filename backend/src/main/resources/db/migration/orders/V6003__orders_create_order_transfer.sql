@@ -14,6 +14,8 @@ CREATE TABLE orders.order_transfer
     CONSTRAINT order_transfer_target_fk FOREIGN KEY (target_order_id) REFERENCES orders.order_header (id),
     -- target of order_line_origin_transfer_same_order_fk
     CONSTRAINT order_transfer_id_target_uk UNIQUE (id, target_order_id),
+    -- target of order_transfer_line_transfer_orders_fk
+    CONSTRAINT order_transfer_id_orders_uk UNIQUE (id, source_order_id, target_order_id),
     CONSTRAINT order_transfer_distinct_orders_ck CHECK (source_order_id <> target_order_id)
 );
 
