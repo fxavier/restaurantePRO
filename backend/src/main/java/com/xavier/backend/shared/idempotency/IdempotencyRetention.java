@@ -6,7 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
 
 /**
  * D47.4: completed Idempotency-Key records older than {@code restaurantpro.idempotency.retention} (default
@@ -14,7 +14,7 @@ import org.springframework.stereotype.Component;
  * {@code IN_PROGRESS} are left alone: they are the claim of a request that may still be running or be retried.
  * Safe under overlap (one statement, D46).
  */
-@Component
+@Service
 class IdempotencyRetention {
 
     private static final Logger log = LoggerFactory.getLogger(IdempotencyRetention.class);
