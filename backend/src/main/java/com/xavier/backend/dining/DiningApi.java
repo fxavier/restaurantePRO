@@ -3,10 +3,12 @@ package com.xavier.backend.dining;
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.dining.exception.DiningNotFoundException;
+import com.xavier.backend.dining.exception.IllegalOccupationStateException;
 import com.xavier.backend.dining.exception.TableOccupiedException;
 import com.xavier.backend.dining.model.RestaurantTable;
 import com.xavier.backend.dining.model.RoomArea;
 import com.xavier.backend.dining.model.TableOccupation;
+import com.xavier.backend.dining.model.dto.CloseReason;
 import com.xavier.backend.dining.model.dto.OccupationView;
 import com.xavier.backend.dining.model.dto.TableState;
 import com.xavier.backend.dining.repository.RestaurantTableRepository;
@@ -16,6 +18,7 @@ import com.xavier.backend.shared.notify.ChangeNotifier;
 import com.xavier.backend.shared.notify.ChangeTopic;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
 import java.time.Clock;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -67,8 +70,56 @@ public class DiningApi {
         RestaurantTable table = lockedOpenableTable(tableId, accessPolicy.current().storeId());
         TableOccupation occupation = save(TableOccupation.open(table.getStoreId(), tableId, orderId, guests,
                 employeeId, clock.instant()));
-        changed("TABLE_OCCUPATION_OPENED", occupation);
+        changed("TABLE_OCCUPATION_OPENED", occupation, Map.of("guests", guests));
         return occupation.toView();
+    }
+
+    /**
+     * Frees the order's table when the order closes or is cancelled.
+     *
+     * @param reason {@code ORDER_CLOSED} or {@code ORDER_CANCELLED}; {@code MOVED} belongs to {@link #moveOccupation}
+     * @throws com.xavier.backend.dining.exception.IllegalOccupationStateException 409 {@code NO_OPEN_OCCUPATION}
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void closeOccupation(UUID orderId, CloseReason reason) {
+        if (reason == CloseReason.MOVED) {
+            throw new IllegalArgumentException("A move closes an occupation through moveOccupation");
+        }
+        TableOccupation occupation = openOccupationOf(orderId);
+        occupation.close(reason, clock.instant());
+        occupations.saveAndFlush(occupation);
+        changed("TABLE_OCCUPATION_CLOSED", occupation, Map.of("reason", reason.name()));
+    }
+
+    /**
+     * Moves the order's party to {@code toTableId}: the current occupation closes as {@code MOVED} and the target gets
+     * a new one with the same seating time, opening employee, guests and subtotal mark.
+     *
+     * @throws TableOccupiedException 409 {@code TABLE_OCCUPIED} (also for the order's own table)
+     * @throws com.xavier.backend.dining.exception.TableUnavailableException 422, as for {@link #openOccupation};
+     *         {@code STORE_MISMATCH} when the target is in another store than the occupation
+     * @throws com.xavier.backend.dining.exception.IllegalOccupationStateException 409 {@code NO_OPEN_OCCUPATION}
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public OccupationView moveOccupation(UUID orderId, UUID toTableId) {
+        TableOccupation from = openOccupationOf(orderId);
+        lockedOpenableTable(toTableId, from.getStoreId());
+        TableOccupation to = from.moveTo(toTableId, clock.instant());
+        occupations.saveAndFlush(from); // close first: the open-order index allows one open occupation per order
+        save(to);
+        changeNotifier.notifyAfterCommit(from.getStoreId(), ChangeTopic.TABLES, from.getTableId());
+        changed("TABLE_OCCUPATION_MOVED", to, Map.of("fromTableId", from.getTableId().toString(),
+                "fromOccupationId", from.getId().toString()));
+        return to.toView();
+    }
+
+    /** Marks that the order's subtotal (a non-fiscal bill) was printed, a table map indicator (spec §8.4). */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void markSubtotalPrinted(UUID orderId) {
+        TableOccupation occupation = openOccupationOf(orderId);
+        occupation.markSubtotalPrinted(clock.instant());
+        occupations.saveAndFlush(occupation);
+        changed("TABLE_SUBTOTAL_PRINTED", occupation, Map.of());
     }
 
     @Transactional(readOnly = true)
@@ -109,10 +160,17 @@ public class DiningApi {
         }
     }
 
-    private void changed(String action, TableOccupation occupation) {
+    private TableOccupation openOccupationOf(UUID orderId) {
+        return occupations.findByOrderIdAndClosedAtIsNull(orderId)
+                .orElseThrow(() -> IllegalOccupationStateException.noOpenOccupation(orderId));
+    }
+
+    private void changed(String action, TableOccupation occupation, Map<String, Object> extra) {
+        Map<String, Object> details = new HashMap<>(extra);
+        details.put("tableId", occupation.getTableId().toString());
+        details.put("orderId", occupation.getOrderId().toString());
         auditLog.recordAsCurrentActor(action, ENTITY, occupation.getId().toString(), occupation.getStoreId(), null,
-                null, Map.of("tableId", occupation.getTableId().toString(),
-                        "orderId", occupation.getOrderId().toString()));
+                null, details);
         changeNotifier.notifyAfterCommit(occupation.getStoreId(), ChangeTopic.TABLES, occupation.getTableId());
     }
 

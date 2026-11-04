@@ -3,6 +3,7 @@ package com.xavier.backend.dining;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.xavier.backend.dining.model.dto.CloseReason;
 import com.xavier.backend.dining.model.dto.OccupationView;
 import com.xavier.backend.dining.model.dto.TableState;
 import java.util.List;
@@ -112,6 +113,102 @@ class DiningApiTest {
     }
 
     @Test
+    void closingTheOccupationFreesTheTableForTheNextOrderAndIsAudited() {
+        UUID order = UUID.randomUUID();
+        OccupationView occupation = open(table, order);
+
+        inPosTransaction(() -> run(() -> dining.closeOccupation(order, CloseReason.ORDER_CLOSED)));
+
+        assertThat(tableState().openOrderId()).isNull();
+        assertThat(fixtures.audits("TABLE_OCCUPATION_CLOSED", occupation.id().toString(), store)).isEqualTo(1);
+        UUID next = UUID.randomUUID();
+        open(table, next);
+        assertThat(tableState().openOrderId()).isEqualTo(next);
+    }
+
+    @Test
+    void closingAnOrderWithoutAnOpenOccupationIsAConflict() {
+        UUID order = UUID.randomUUID();
+        open(table, order);
+        inPosTransaction(() -> run(() -> dining.closeOccupation(order, CloseReason.ORDER_CANCELLED)));
+
+        assertRefused(() -> inPosTransaction(() -> run(() -> dining.closeOccupation(order, CloseReason.ORDER_CLOSED))),
+                409, "NO_OPEN_OCCUPATION");
+    }
+
+    @Test
+    void onlyAMoveClosesAnOccupationAsMoved() {
+        UUID order = UUID.randomUUID();
+        open(table, order);
+
+        assertThatThrownBy(() -> inPosTransaction(() -> run(() -> dining.closeOccupation(order, CloseReason.MOVED))))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(tableState().openOrderId()).isEqualTo(order);
+    }
+
+    @Test
+    void movingTheOrderFreesItsTableAndOccupiesTheTargetWithTheSameParty() throws Exception {
+        UUID order = UUID.randomUUID();
+        OccupationView before = open(table, order);
+        UUID target = fixtures.createTable(store, area, "M2");
+
+        OccupationView after = inPosTransaction(() -> dining.moveOccupation(order, target));
+
+        assertThat(after.tableId()).isEqualTo(target);
+        assertThat(after.id()).isNotEqualTo(before.id());
+        assertThat(after.openedAt()).isEqualTo(before.openedAt());
+        assertThat(after.guests()).isEqualTo(before.guests());
+        assertThat(tableState().openOrderId()).isNull();
+        assertThat(inPosTransaction(() -> dining.tableState(target)).openOrderId()).isEqualTo(order);
+        assertThat(fixtures.audits("TABLE_OCCUPATION_MOVED", after.id().toString(), store)).isEqualTo(1);
+    }
+
+    @Test
+    void anOrderCannotMoveToAnOccupiedTableOrToItsOwnTable() throws Exception {
+        UUID order = UUID.randomUUID();
+        open(table, order);
+        UUID target = fixtures.createTable(store, area, "M2");
+        open(target, UUID.randomUUID());
+
+        assertRefused(() -> inPosTransaction(() -> dining.moveOccupation(order, target)), 409, "TABLE_OCCUPIED");
+        assertRefused(() -> inPosTransaction(() -> dining.moveOccupation(order, table)), 409, "TABLE_OCCUPIED");
+        assertThat(tableState().openOrderId()).isEqualTo(order);
+    }
+
+    @Test
+    void anOrderCannotMoveToAnInactiveTableOrATableOfAnotherStore() throws Exception {
+        UUID order = UUID.randomUUID();
+        open(table, order);
+        UUID inactive = fixtures.createTable(store, area, "M2");
+        fixtures.deactivateTable(store, inactive, area, "M2");
+        UUID otherStore = fixtures.newStore();
+        UUID foreign = fixtures.createTable(otherStore, fixtures.createArea(otherStore, "SALA"), "M1");
+
+        assertRefused(() -> inPosTransaction(() -> dining.moveOccupation(order, inactive)), 422, "TABLE_INACTIVE");
+        assertRefused(() -> inPosTransaction(() -> dining.moveOccupation(order, foreign)), 422, "STORE_MISMATCH");
+    }
+
+    @Test
+    void movingAnOrderWithoutAnOpenOccupationIsAConflict() throws Exception {
+        UUID target = fixtures.createTable(store, area, "M2");
+
+        assertRefused(() -> inPosTransaction(() -> dining.moveOccupation(UUID.randomUUID(), target)),
+                409, "NO_OPEN_OCCUPATION");
+    }
+
+    @Test
+    void printingTheSubtotalMarksTheOpenOccupationAndIsAudited() {
+        UUID order = UUID.randomUUID();
+        OccupationView occupation = open(table, order);
+
+        inPosTransaction(() -> run(() -> dining.markSubtotalPrinted(order)));
+
+        assertThat(fixtures.audits("TABLE_SUBTOTAL_PRINTED", occupation.id().toString(), store)).isEqualTo(1);
+        assertRefused(() -> inPosTransaction(() -> run(() -> dining.markSubtotalPrinted(UUID.randomUUID()))),
+                409, "NO_OPEN_OCCUPATION");
+    }
+
+    @Test
     void writesRequireTheCallersTransaction() {
         assertThatThrownBy(() -> DiningActors.runAsPos(store, employee,
                 () -> dining.openOccupation(table, UUID.randomUUID(), 2, employee)))
@@ -127,6 +224,11 @@ class DiningApiTest {
             assertThat(e.getStatusCode().value()).isEqualTo(status);
             assertThat(e.getBody().getProperties()).containsEntry("code", code);
         });
+    }
+
+    static Void run(Runnable action) {
+        action.run();
+        return null;
     }
 
     TableState tableState() {
