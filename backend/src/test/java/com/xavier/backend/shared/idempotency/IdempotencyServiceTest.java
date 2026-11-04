@@ -282,18 +282,20 @@ class IdempotencyServiceTest {
     }
 
     @Test
-    void retentionDeletesOnlyCompletedRecordsOlderThanTheRetentionPeriod() {
+    void retentionDeletesCompletedRecordsAndAbandonedClaimsOlderThanTheRetentionPeriod() {
         Instant now = Instant.now();
         insert("old-completed", "COMPLETED", now.minus(Duration.ofDays(120)), now.minus(Duration.ofDays(91)));
         insert("recent-completed", "COMPLETED", now.minus(Duration.ofDays(120)), now.minus(Duration.ofDays(89)));
-        insert("old-in-progress", "IN_PROGRESS", now.minus(Duration.ofDays(120)), null);
+        // a claim left behind by a crash or a refused (422) action: nobody retries it after the retention period
+        insert("old-in-progress", "IN_PROGRESS", now.minus(Duration.ofDays(91)), null);
+        insert("recent-in-progress", "IN_PROGRESS", now.minus(Duration.ofDays(89)), null);
 
         int deleted = retention.purgeExpired();
 
-        assertThat(deleted).isPositive();
+        assertThat(deleted).isGreaterThanOrEqualTo(2);
         assertThat(jdbc.sql("SELECT key FROM shared.idempotency_record WHERE scope = :s")
                 .param("s", scope).query(String.class).list())
-                .containsExactlyInAnyOrder("recent-completed", "old-in-progress");
+                .containsExactlyInAnyOrder("recent-completed", "recent-in-progress");
     }
 
     private void insert(String recordKey, String status, Instant createdAt, Instant completedAt) {

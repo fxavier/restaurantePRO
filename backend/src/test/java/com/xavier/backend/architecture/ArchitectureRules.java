@@ -123,6 +123,16 @@ final class ArchitectureRules {
             .allowEmptyShould(true)
             .because("events are immutable facts named in the past tense");
 
+    /**
+     * Coded errors (stable {@code code}, extra properties) extend the shared NotFound/Conflict/BusinessRule
+     * exceptions, which the GlobalExceptionHandler renders; module-local ErrorResponseException workarounds drifted
+     * (S7b). The one exception is a status that is none of 404/409/422 and needs a header: the 429 login throttle.
+     */
+    static final ArchRule CODED_ERRORS_USE_THE_SHARED_EXCEPTIONS = noClasses()
+            .that().doNotHaveFullyQualifiedName("com.xavier.backend.identity.exception.LoginThrottledException")
+            .should().beAssignableTo(org.springframework.web.ErrorResponseException.class)
+            .because("extend shared BusinessRuleException/ConflictException/NotFoundException with a code (S7b)");
+
     static final ArchRule[] ALL = {
             CONTROLLERS_DO_NOT_TOUCH_REPOSITORIES_OR_ENTITIES,
             REPOSITORIES_ARE_USED_ONLY_BY_SERVICES,
@@ -132,5 +142,6 @@ final class ArchitectureRules {
             TIME_COMES_FROM_THE_CLOCK,
             NO_FIELD_INJECTION,
             EVENTS_ARE_RECORDS,
+            CODED_ERRORS_USE_THE_SHARED_EXCEPTIONS,
     };
 }

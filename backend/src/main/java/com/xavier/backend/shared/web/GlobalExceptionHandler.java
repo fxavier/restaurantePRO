@@ -1,6 +1,7 @@
 package com.xavier.backend.shared.web;
 
 import com.xavier.backend.shared.exception.BusinessRuleException;
+import com.xavier.backend.shared.exception.CodedException;
 import com.xavier.backend.shared.exception.ConflictException;
 import com.xavier.backend.shared.exception.NotFoundException;
 import java.util.List;
@@ -28,7 +29,8 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 /**
  * The single place that turns exceptions into RFC 9457 {@link ProblemDetail} responses (D22):
  * 400 validation (with {@code errors: [{field, message}]}) and unknown sort property, 401, 403, 404,
- * 409 conflict/stale version, 422 business rule, 500 without internals. Framework exceptions (405, 415, missing header…) keep
+ * 409 conflict/stale version, 422 business rule, 500 without internals. A 404/409/422 from a shared exception
+ * carries its stable {@code code} and extra properties ({@link CodedException}). Framework exceptions (405, 415, missing header…) keep
  * the {@link ResponseEntityExceptionHandler} defaults, which are already ProblemDetails.
  */
 @RestControllerAdvice
@@ -43,12 +45,12 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler(NotFoundException.class)
     ProblemDetail notFound(NotFoundException e) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
+        return problem(HttpStatus.NOT_FOUND, e);
     }
 
     @ExceptionHandler(ConflictException.class)
     ProblemDetail conflict(ConflictException e) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, e.getMessage());
+        return problem(HttpStatus.CONFLICT, e);
     }
 
     @ExceptionHandler(OptimisticLockingFailureException.class)
@@ -59,7 +61,17 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler(BusinessRuleException.class)
     ProblemDetail businessRule(BusinessRuleException e) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_CONTENT, e.getMessage());
+        return problem(HttpStatus.UNPROCESSABLE_CONTENT, e);
+    }
+
+    /** {@code detail} is the message; the stable {@code code} (when set) and the extra properties are added. */
+    private static ProblemDetail problem(HttpStatus status, CodedException e) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, e.getMessage());
+        if (e.code() != null) {
+            problem.setProperty("code", e.code());
+        }
+        e.properties().forEach(problem::setProperty);
+        return problem;
     }
 
     /**

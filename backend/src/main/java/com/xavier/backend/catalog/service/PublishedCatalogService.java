@@ -37,10 +37,7 @@ public class PublishedCatalogService {
      */
     @Transactional(readOnly = true)
     public PosCatalogResponse current(UUID requestedStoreId) {
-        UUID storeId = accessPolicy.requirePos(Permission.CATALOG_VIEW).storeId();
-        if (requestedStoreId != null && !requestedStoreId.equals(storeId)) {
-            throw new AccessDeniedException("The POS session belongs to store " + storeId + ", not " + requestedStoreId);
-        }
+        UUID storeId = accessPolicy.requirePos(Permission.CATALOG_VIEW, requestedStoreId).storeId();
         ConfigurationRelease release = releases.findByStoreIdAndStatus(storeId, ReleaseStatus.PUBLISHED)
                 .orElseThrow(() -> new NoPublishedCatalogException(storeId));
         return new PosCatalogResponse(release.getId(), storeId, release.getCatalogVersion(), release.getEffectiveAt(),

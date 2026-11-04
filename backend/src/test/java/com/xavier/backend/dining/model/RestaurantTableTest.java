@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.xavier.backend.dining.exception.AreaNotInStoreException;
 import com.xavier.backend.dining.exception.InvalidDiningSetupException;
 import com.xavier.backend.dining.exception.TableUnavailableException;
+import com.xavier.backend.shared.exception.BusinessRuleException;
 import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -143,7 +144,7 @@ class RestaurantTableTest {
     private static void assertRefused(Runnable check, String code) {
         assertThatThrownBy(check::run).isInstanceOf(TableUnavailableException.class)
                 .satisfies(e -> assertThat(((TableUnavailableException) e).code()).isEqualTo(code))
-                .satisfies(e -> assertThat(((TableUnavailableException) e).getStatusCode().value()).isEqualTo(422));
+                .isInstanceOf(BusinessRuleException.class); // 422
     }
 
     private static RestaurantTable table() {

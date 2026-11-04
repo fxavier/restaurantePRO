@@ -18,7 +18,8 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>Errors: an unknown session or day → {@link com.xavier.backend.shared.exception.NotFoundException} (404); an
  * illegal transition → {@link com.xavier.backend.shared.exception.ConflictException} (409); a stale
  * {@code expectedVersion} → {@link org.springframework.dao.OptimisticLockingFailureException} (409); a cash rule →
- * {@link org.springframework.web.ErrorResponseException} 422 with a stable {@code code} property
+ * {@link com.xavier.backend.cash.exception.CashRuleViolationException} (a {@code BusinessRuleException}) 422 with a
+ * stable {@code code} property
  * ({@code SESSION_NOT_OPEN}, {@code OPEN_SESSIONS}, {@code DUPLICATE_METHOD}, {@code INVALID_AMOUNT},
  * {@code CURRENCY_MISMATCH}).
  */

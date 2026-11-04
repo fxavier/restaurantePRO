@@ -6,6 +6,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.xavier.backend.dining.model.dto.CloseReason;
 import com.xavier.backend.dining.model.dto.OccupationView;
 import com.xavier.backend.dining.model.dto.TableState;
+import com.xavier.backend.shared.exception.BusinessRuleException;
+import com.xavier.backend.shared.exception.CodedException;
+import com.xavier.backend.shared.exception.ConflictException;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -16,7 +19,6 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.springframework.web.ErrorResponseException;
 
 /**
  * {@code DiningApi} as orders (S13) calls it: inside the calling use case's transaction, with a POS session in the
@@ -70,9 +72,9 @@ class DiningApiTest {
             try {
                 inPosTransaction(() -> dining.openOccupation(table, UUID.randomUUID(), 2, employee));
                 return 200;
-            } catch (ErrorResponseException e) {
-                assertThat(e.getBody().getProperties()).containsEntry("code", "TABLE_OCCUPIED");
-                return e.getStatusCode().value();
+            } catch (ConflictException e) {
+                assertThat(e.code()).isEqualTo("TABLE_OCCUPIED");
+                return 409;
             }
         });
 
@@ -277,9 +279,9 @@ class DiningApiTest {
     }
 
     static void assertRefused(Runnable call, int status, String code) {
-        assertThatThrownBy(call::run).isInstanceOfSatisfying(ErrorResponseException.class, e -> {
-            assertThat(e.getStatusCode().value()).isEqualTo(status);
-            assertThat(e.getBody().getProperties()).containsEntry("code", code);
+        assertThatThrownBy(call::run).isInstanceOfSatisfying(CodedException.class, e -> {
+            assertThat(e).isInstanceOf(status == 409 ? ConflictException.class : BusinessRuleException.class);
+            assertThat(e.code()).isEqualTo(code);
         });
     }
 

@@ -29,7 +29,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  * <p>The registry is in memory (one backend per installation, D19) and a lost notice is harmless: clients refresh
  * after reconnecting and poll while the stream is down. Notices are written off the committing thread by one
  * sender thread with a bounded queue (a full queue drops notices), so a slow client never delays a commit. A
- * comment heartbeat every 25 s keeps proxies from closing idle streams; an emitter times out after 30 minutes.
+ * comment heartbeat every 25 s, written by the same sender thread, keeps proxies from closing idle streams; an
+ * emitter times out after 30 minutes and is then completed (the client reconnects).
  */
 @Service
 public class ChangeNotifier implements DisposableBean {
@@ -72,15 +73,19 @@ public class ChangeNotifier implements DisposableBean {
         store.add(emitter);
         Runnable remove = () -> store.remove(emitter);
         emitter.onCompletion(remove);
-        emitter.onTimeout(remove);
+        emitter.onTimeout(() -> {
+            remove.run();
+            emitter.complete(); // ends the stream normally; otherwise the timeout becomes an error dispatch (503)
+        });
         emitter.onError(error -> remove.run());
         return emitter;
     }
 
+    /** Queued on the sender thread like a notice: one writer per stream, and the scheduler never blocks on a client. */
     @Scheduled(fixedRateString = "${restaurantpro.notifications.heartbeat:PT25S}")
     void heartbeat() {
-        subscribers.forEach((storeId, emitters) -> emitters.forEach(emitter ->
-                write(storeId, emitters, emitter, SseEmitter.event().comment("heartbeat"))));
+        sender.execute(() -> subscribers.forEach((storeId, emitters) -> emitters.forEach(emitter ->
+                write(storeId, emitters, emitter, SseEmitter.event().comment("heartbeat")))));
     }
 
     private void send(UUID storeId, ChangeNotice notice) {
