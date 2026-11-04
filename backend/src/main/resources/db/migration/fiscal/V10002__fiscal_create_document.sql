@@ -53,7 +53,8 @@ CREATE TABLE fiscal.fiscal_document
 );
 
 -- One SALE per order (P8): createSaleDraft is idempotent per source, and two closes of one order collide here.
+-- Written as OR, not IN: PostgreSQL deparses IN on a VARCHAR differently after pg_dump/restore (real-schema drill).
 CREATE UNIQUE INDEX fiscal_document_source_uk ON fiscal.fiscal_document (source_type, source_id, document_type)
-    WHERE status IN ('DRAFT', 'ISSUED');
+    WHERE status = 'DRAFT' OR status = 'ISSUED';
 CREATE INDEX fiscal_document_store_issued_ix ON fiscal.fiscal_document (store_id, issued_at);
 CREATE INDEX fiscal_document_store_status_ix ON fiscal.fiscal_document (store_id, status);

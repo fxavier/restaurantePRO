@@ -24,6 +24,8 @@ One stack per company (spec §2): Caddy (HTTPS on the LAN), the backend, and Pos
 
    `.env` and `secrets/` are git-ignored. Never commit them. The `RESTAURANTPRO_BOOTSTRAP_*` values and `secrets/admin_initial_password` are consumed once, at the first start against an empty database (D30). After that, edit the company profile in the BackOffice. The admin must change the initial password at first login. After that login you may empty `secrets/admin_initial_password`, but keep the file: Compose needs it to start.
 3. Start: `docker compose up -d --build`, then wait until `docker compose ps` shows all three services `healthy`.
+
+   **Fiscal adapter (B4).** This release has only a NON-CERTIFIED fiscal adapter: with the default `RESTAURANTPRO_FISCAL_ALLOW_NON_CERTIFIED=false` the backend refuses to start (its log says why) and never becomes healthy. Set it to `true` in `.env` only for a pilot without fiscal obligations, until a certified adapter for your market exists. Every document is then printed as `DOCUMENTO NÃO FISCAL`, and the health check reports the component `fiscal: NON_CERTIFIED` while the overall status stays `UP`: `docker compose exec backend wget -qO- http://127.0.0.1:8081/actuator/health`.
 4. Trust the certificate. Caddy signs with its own local CA (`tls internal`). Install its root certificate once on each POS terminal and BackOffice browser:
 
    ```bash
