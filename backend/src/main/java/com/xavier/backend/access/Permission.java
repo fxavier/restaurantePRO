@@ -1,4 +1,4 @@
-package com.xavier.backend.identity;
+package com.xavier.backend.access;
 
 import java.util.Objects;
 import java.util.UUID;

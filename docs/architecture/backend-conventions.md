@@ -6,6 +6,7 @@ Owner: `software-architect`. Sources: [product_description.md](../product_descri
 
 - One module per direct subpackage of `com.xavier.backend`. Every module has a `package-info.java` with `@ApplicationModule(allowedDependencies = {...})` following D13. Name only modules that already exist: Modulith rejects an unknown name. **Enforced by** `ModularityTests.modulesRespectTheirDeclaredBoundaries`. The `ModularityTests.anIllegalModuleDependencyIsDetected` test proves that verify fails.
 - `shared` is `Type.OPEN`. It holds only technical types (D14) and depends on nothing.
+- `access` holds the authorization primitives `com.xavier.backend.access.Permission`, `com.xavier.backend.access.Actor` and `com.xavier.backend.access.AccessPolicy` (D13 amendment, S0b). It depends only on `shared`, and its root types are public API for every module, so `organization` and `identity` can both use it without a cycle.
 - `config` holds the security filter chains and the correlation-id filter. Nothing depends on it.
 - Public API is the module's **root package** plus any `@NamedInterface` (`model/dto`, `model/event`, a `<Module>Api` facade). Entities, repositories, services and controllers stay in subpackages and are internal (D12).
 - Module docs are written on every test run to [modules/](modules/) (`ModularityTests.generatesModuleDocumentation`, a generator that also asserts each file exists). Commit them when they change.
@@ -66,6 +67,6 @@ Module layout (D12): `model/`, `model/dto/`, `model/event/`, `repository/`, `ser
 
 - Real PostgreSQL only: `@Import(TestcontainersConfiguration.class)`. One `postgres:18.6-alpine` container serves the whole JVM. Tests share the database, so use fresh UUIDs and keys per test and never assume empty tables.
 - Module tests: `@ApplicationModuleTest(extraIncludes = "shared")` + `@Import(TestcontainersConfiguration.class)`. `shared` holds the `Clock` and JSON beans, and a module test does not include it by default.
-- Act as a user with `@WithActor(permissions = {...}, storeId = "...")` (`com.xavier.backend.identity.WithActor`, test sources).
+- Act as a user with `@WithActor(permissions = {...}, storeId = "...")` (`com.xavier.backend.access.WithActor`, test sources).
 - Throw-away controllers for HTTP tests are static nested `@RestController`s pulled in with `@Import(Test.Probe.class)`. Spring's test scan skips nested classes of test classes.
 - Architecture fixtures live in `com.xavier.archfixture.*`, outside the scanned base package.

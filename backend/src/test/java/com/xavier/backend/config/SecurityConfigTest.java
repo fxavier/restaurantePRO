@@ -8,9 +8,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.xavier.backend.TestcontainersConfiguration;
-import com.xavier.backend.identity.AccessPolicy;
-import com.xavier.backend.identity.Permission;
-import com.xavier.backend.identity.WithActor;
+import com.xavier.backend.access.AccessPolicy;
+import com.xavier.backend.access.Permission;
+import com.xavier.backend.access.WithActor;
 import jakarta.servlet.http.Cookie;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;

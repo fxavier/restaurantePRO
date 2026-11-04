@@ -1,4 +1,4 @@
-package com.xavier.backend.identity;
+package com.xavier.backend.access;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;

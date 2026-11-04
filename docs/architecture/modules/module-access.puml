@@ -1,5 +1,5 @@
 @startuml
-title <size:24>Identity</size>
+title <size:24>Access</size>
 
 set separator none
 top to bottom direction
@@ -17,7 +17,7 @@ top to bottom direction
 
 System_Boundary("BackendApplication_boundary", "BackendApplication", $tags="") {
   Container_Boundary("BackendApplication.BackendApplication_boundary", "BackendApplication", $tags="") {
-    Component(BackendApplication.BackendApplication.Identity, "Identity", $techn="Module", $descr="", $tags="", $link="")
+    Component(BackendApplication.BackendApplication.Access, "Access", $techn="Module", $descr="", $tags="", $link="")
   }
 
 }
