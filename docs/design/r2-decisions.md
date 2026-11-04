@@ -1,6 +1,6 @@
 # restaurantPRO backend — R2 decisions for approval (spec Stage 2)
 
-Status: **PROPOSED**. This draft is for G1 approval of R2, and nothing is coded until you approve it. It continues [backend-decisions.md](backend-decisions.md): D1–D33, P1–P6 and B1–B3 stay in force, and the ids here continue from D34, P7 and B4. Answer by id, for example "P9: prices are net". After approval, the decisions marked ★ become ADRs in `docs/adr/`.
+Status: **ACCEPTED** by Xavier Francisco, 2026-11-04 ("aprovado"), including all recommendations P7–P21 and B4–B5; approval also counts as G2 (PRD) and G3 (slices) for R2. It continues [backend-decisions.md](backend-decisions.md): D1–D33, P1–P6 and B1–B3 stay in force, and the ids here continue from D34, P7 and B4. Answer by id, for example "P9: prices are net". After approval, the decisions marked ★ become ADRs in `docs/adr/`.
 Source of truth: [product_description.md](../product_description.md), cited as §n. The slices, contracts and graph are in [PRD R2](../prd/r2-stage2.md). The glossary is in [CONTEXT.md](../../CONTEXT.md), and the coding rules are in [backend-conventions.md](../architecture/backend-conventions.md).
 
 ---

@@ -1,6 +1,6 @@
 # PRD R2 — Stage 2 "Operação integrada" (backend)
 
-Status: **PROPOSED**, pending approval together with [r2-decisions.md](../design/r2-decisions.md) (cited as Dn and Pn). R1 decisions: [backend-decisions.md](../design/backend-decisions.md). Glossary: [CONTEXT.md](../../CONTEXT.md). Spec: [product_description.md](../product_description.md). Conventions: [backend-conventions.md](../architecture/backend-conventions.md).
+Status: **ACCEPTED** 2026-11-04 together with [r2-decisions.md](../design/r2-decisions.md) (cited as Dn and Pn). R1 decisions: [backend-decisions.md](../design/backend-decisions.md). Glossary: [CONTEXT.md](../../CONTEXT.md). Spec: [product_description.md](../product_description.md). Conventions: [backend-conventions.md](../architecture/backend-conventions.md).
 
 Base package `com.xavier.backend`, per-module layout D12, Flyway blocks D61. Every slice: TDD, no `@Disabled`, full `rtk mvn test` green at exit.
 - Slices **do not commit `docs/architecture/modules/`** (D44). Only S17 does.
