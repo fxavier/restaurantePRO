@@ -15,6 +15,9 @@ import com.xavier.backend.dining.DiningModuleTest;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -114,6 +117,18 @@ class PosTableLockHttpTest {
         mvc.perform(unlock(table, key()).with(pos(otherStore, manager, Permission.TABLE_LOCK)))
                 .andExpect(status().isForbidden());
         assertThat(fixtures.audits("TABLE_LOCKED", table.toString(), store)).isZero();
+    }
+
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    void lockingATableOfAnotherStoreIsLoggedAsADenial(CapturedOutput output) throws Exception {
+        UUID otherStore = fixtures.newStore();
+
+        mvc.perform(lock(table, key()).with(pos(otherStore, manager, Permission.TABLE_LOCK)))
+                .andExpect(status().isForbidden());
+
+        assertThat(output.getOut()).contains("Access denied").contains(table.toString())
+                .contains(manager.toString()).contains(otherStore.toString());
     }
 
     @Test

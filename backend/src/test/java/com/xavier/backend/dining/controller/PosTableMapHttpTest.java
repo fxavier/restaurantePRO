@@ -2,6 +2,7 @@ package com.xavier.backend.dining.controller;
 
 import static com.xavier.backend.dining.DiningActors.inStore;
 import static com.xavier.backend.dining.DiningActors.pos;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.is;
@@ -19,6 +20,9 @@ import com.xavier.backend.dining.DiningModuleTest;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -102,6 +106,18 @@ class PosTableMapHttpTest {
                 .with(pos(store, waiter, Permission.DINING_VIEW))).andExpect(status().isOk());
         mvc.perform(get(DiningFixtures.POS_TABLES).param("storeId", otherStore.toString())
                 .with(pos(store, waiter, Permission.DINING_VIEW))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    void askingForAnotherStoresMapIsLoggedAsADenial(CapturedOutput output) throws Exception {
+        UUID otherStore = fixtures.newStore();
+
+        mvc.perform(get(DiningFixtures.POS_TABLES).param("storeId", otherStore.toString())
+                .with(pos(store, waiter, Permission.DINING_VIEW))).andExpect(status().isForbidden());
+
+        assertThat(output.getOut()).contains("Access denied").contains(otherStore.toString())
+                .contains(waiter.toString());
     }
 
     @Test

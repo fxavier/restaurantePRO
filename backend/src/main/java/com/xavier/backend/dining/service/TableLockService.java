@@ -11,6 +11,8 @@ import com.xavier.backend.dining.repository.TableOccupationRepository;
 import java.time.Clock;
 import java.util.Map;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +25,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class TableLockService {
 
     static final String ENTITY = RestaurantTableService.ENTITY;
+
+    private static final Logger log = LoggerFactory.getLogger(TableLockService.class);
 
     private final RestaurantTableRepository tables;
     private final TableOccupationRepository occupations;
@@ -65,6 +69,9 @@ public class TableLockService {
     private RestaurantTable tableOfSessionStore(UUID tableId, PosContext pos) {
         UUID storeId = tables.findStoreIdById(tableId).orElseThrow(() -> new DiningNotFoundException(ENTITY, tableId));
         if (!storeId.equals(pos.storeId())) {
+            log.warn("Access denied: table not in the session's store: kind=EMPLOYEE employee={} terminal={} "
+                    + "permission={} sessionStore={} store={} table={}", pos.employeeId(), pos.terminalId(),
+                    Permission.TABLE_LOCK, pos.storeId(), storeId, tableId);
             throw new AccessDeniedException("Table " + tableId + " is not in the session's store");
         }
         return rows.lockTable(tableId);
