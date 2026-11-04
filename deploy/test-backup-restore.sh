@@ -68,6 +68,27 @@ SELECT 'sequence ' || schemaname || '.' || sequencename, coalesce(last_value::te
 SQL
 }
 
+# Normalised schema (DDL incl. indexes, constraints, triggers), so lost structure fails the drill too.
+# Drops comments and the per-run random \restrict token that pg_dump 18 emits.
+schema_of() {
+  docker exec "$1" pg_dump -U "$DB_USER" -d "$DB" --schema-only --no-owner --no-privileges \
+    | grep -vE '^(--|\\(un)?restrict )' | sed '/^$/d'
+}
+
+same_as_source() { # $1 container, $2 what is being checked
+  local fp schema
+  fp="$(fingerprint "$1")"
+  if [[ "$fp" != "$expected_fp" ]]; then
+    diff <(echo "$expected_fp") <(echo "$fp") >&2 || true
+    fail "$2: data differs from the source"
+  fi
+  schema="$(schema_of "$1")"
+  if [[ "$schema" != "$source_schema" ]]; then
+    diff <(echo "$source_schema") <(echo "$schema") >&2 || true
+    fail "$2: schema differs from the source"
+  fi
+}
+
 step "starting throwaway containers $SRC and $DST ($PG_IMAGE)"
 start_pg "$SRC"
 start_pg "$DST"
@@ -78,14 +99,19 @@ step "loading sample data"
 psql_in "$SRC" <"$DEPLOY_DIR/test/sample.sql"
 before="$(fingerprint "$SRC")"
 grep -q '^organization.price_sample|5000|' <<<"$before" || fail "sample data not loaded as expected"
+grep -q '^shared.spring_session|3|' <<<"$before" || fail "sample sessions not loaded as expected"
+source_schema="$(schema_of "$SRC")"
+# Expected after restore: everything identical, except that session rows are not backed up.
+expected_fp="$(sed -E 's/^(shared\.spring_session(_attributes)?)\|[0-9]+\|[0-9a-f]+$/\1|0|d41d8cd98f00b204e9800998ecf8427e/' <<<"$before")"
 
-step "backup with retention 2 (two older archives already present)"
+step "backup with retention 2 (two older archives and one hand-named file already present)"
 mkdir -p "$WORK/backups"
-touch "$WORK/backups/restaurantpro-20000101T000000Z.tar" "$WORK/backups/restaurantpro-20000102T000000Z.tar"
+touch "$WORK/backups/restaurantpro-20000101T000000Z.tar" "$WORK/backups/restaurantpro-20000102T000000Z.tar" \
+  "$WORK/backups/restaurantpro-before-upgrade.tar"
 archive="$("$DEPLOY_DIR/backup.sh" --container "$SRC" --dir "$WORK/backups" --keep 2)"
 [[ -f "$archive" ]] || fail "backup.sh did not report an existing archive (got '$archive')"
 kept="$(cd "$WORK/backups" && ls)"
-expected="$(printf '%s\n' restaurantpro-20000102T000000Z.tar "$(basename "$archive")")"
+expected="$(printf '%s\n' restaurantpro-20000102T000000Z.tar "$(basename "$archive")" restaurantpro-before-upgrade.tar | sort)"
 [[ "$kept" == "$expected" ]] || fail "retention kept: $(tr '\n' ' ' <<<"$kept"); expected: $(tr '\n' ' ' <<<"$expected")"
 
 step "corrupted archive is rejected before touching the target"
@@ -99,20 +125,27 @@ grep -q 'checksum mismatch' "$WORK/corrupt.err" || fail "corruption not caught b
 
 step "restore into the fresh container"
 "$DEPLOY_DIR/restore.sh" --container "$DST" "$archive"
-after="$(fingerprint "$DST")"
-if [[ "$before" != "$after" ]]; then
-  diff <(echo "$before") <(echo "$after") >&2 || true
-  fail "restored data differs from the source"
-fi
-while IFS= read -r line; do echo "    $line" >&2; done <<<"$after"
+same_as_source "$DST" "restore"
+while IFS= read -r line; do echo "    $line" >&2; done <<<"$(fingerprint "$DST")"
 
 step "append-only trigger survived the restore"
 if psql_in "$DST" -c "UPDATE audit.audit_event SET action = 'x' WHERE id = 1" 2>/dev/null; then
   fail "audit trigger missing after restore"
 fi
 
-step "non-empty target is refused without --force, replaced with --force"
-if "$DEPLOY_DIR/restore.sh" --container "$DST" "$archive" 2>/dev/null; then fail "restore.sh overwrote a non-empty target without --force"; fi
-psql_in "$DST" -c "INSERT INTO organization.price_sample (store_id, amount) SELECT id, 1 FROM organization.store LIMIT 1"
+step "non-empty target is refused without --force"
+# Simulate a later state (as after an upgrade): a changed row, a new table, a new schema.
+psql_in "$DST" <<'SQL'
+INSERT INTO organization.price_sample (store_id, amount) SELECT id, 1 FROM organization.store LIMIT 1;
+CREATE TABLE organization.added_by_upgrade (id int PRIMARY KEY);
+CREATE SCHEMA added_module;
+CREATE TABLE added_module.thing (id int);
+SQL
+changed="$(fingerprint "$DST")"
+if "$DEPLOY_DIR/restore.sh" --container "$DST" "$archive" 2>"$WORK/refused.err"; then fail "restore.sh overwrote a non-empty target without --force"; fi
+grep -q 'is not empty' "$WORK/refused.err" || fail "not refused by the non-empty guard: $(cat "$WORK/refused.err")"
+[[ "$(fingerprint "$DST")" == "$changed" ]] || fail "refused restore changed the target"
+
+step "--force recreates the target: later objects are gone (rollback after an upgrade)"
 "$DEPLOY_DIR/restore.sh" --container "$DST" --force "$archive"
-[[ "$(fingerprint "$DST")" == "$before" ]] || fail "--force restore did not reproduce the source"
+same_as_source "$DST" "--force restore"

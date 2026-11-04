@@ -70,3 +70,33 @@ SELECT 'STORE_UPDATED',
        jsonb_build_object('storeCode', 'S' || lpad((1 + g % 12)::text, 3, '0'), 'seq', g),
        timestamptz '2026-02-01 00:00:00Z' + g * interval '1 minute'
 FROM generate_series(1, 300) AS g;
+
+-- Spring Session JDBC tables (same names as the backend's shared schema). backup.sh dumps their
+-- structure but not their rows: restored sessions are useless and only expose session data.
+CREATE SCHEMA shared;
+
+CREATE TABLE shared.spring_session (
+    primary_id            char(36) PRIMARY KEY,
+    session_id            char(36) NOT NULL UNIQUE,
+    creation_time         bigint NOT NULL,
+    last_access_time      bigint NOT NULL,
+    max_inactive_interval int NOT NULL,
+    expiry_time           bigint NOT NULL,
+    principal_name        varchar(100)
+);
+CREATE INDEX spring_session_ix2 ON shared.spring_session (expiry_time);
+
+CREATE TABLE shared.spring_session_attributes (
+    session_primary_id char(36) NOT NULL REFERENCES shared.spring_session (primary_id) ON DELETE CASCADE,
+    attribute_name     varchar(200) NOT NULL,
+    attribute_bytes    bytea NOT NULL,
+    PRIMARY KEY (session_primary_id, attribute_name)
+);
+
+INSERT INTO shared.spring_session
+SELECT md5('p' || g)::uuid::text, md5('s' || g)::uuid::text, 0, 0, 1800, 1800, 'user' || g
+FROM generate_series(1, 3) AS g;
+
+INSERT INTO shared.spring_session_attributes
+SELECT md5('p' || g)::uuid::text, 'SPRING_SECURITY_CONTEXT', '\xdeadbeef'::bytea
+FROM generate_series(1, 3) AS g;

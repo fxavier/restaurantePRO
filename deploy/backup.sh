@@ -3,9 +3,10 @@
 #
 # Writes one archive per run: <dir>/restaurantpro-<UTC timestamp>.tar[.age] containing
 #   db.dump          pg_dump -Fc of the database, taken inside the running postgres container
+#                    (Spring Session rows excluded: restored sessions are useless and only expose data)
 #   config/          compose.yaml, Caddyfile, .env (and secrets/ only when the archive is encrypted)
 #   SHA256SUMS       checksums of the above, verified by restore.sh
-# then deletes the oldest archives beyond --keep.
+# then deletes the oldest archives beyond --keep (only names this script writes count).
 #
 # Usage: deploy/backup.sh [--dir DIR] [--keep N] [--container NAME] [--age-recipient RECIPIENT]
 #   --dir            where archives go (default: $BACKUP_DIR or deploy/backups)
@@ -46,6 +47,11 @@ if [[ -z "$container" ]]; then
 fi
 
 mkdir -p "$dir"
+# A run killed mid-way leaves a .work.* dir that may hold a plaintext dump: sweep old ones.
+find "$dir" -maxdepth 1 -type d -name '.work.*' -mmin +60 -exec rm -rf {} +
+if [[ -z "$recipient" ]]; then
+  log "WARNING: backup is NOT encrypted (spec §10 asks for encrypted backups); set BACKUP_AGE_RECIPIENT"
+fi
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 name="restaurantpro-$stamp.tar"
 [[ -n "$recipient" ]] && name="$name.age"
@@ -56,7 +62,8 @@ work="$(mktemp -d "$dir/.work.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 
 log "dumping database $DB from container $container"
-docker exec "$container" pg_dump -U "$DB_USER" -d "$DB" -Fc >"$work/db.dump"
+docker exec "$container" pg_dump -U "$DB_USER" -d "$DB" -Fc \
+  --exclude-table-data=shared.spring_session --exclude-table-data=shared.spring_session_attributes >"$work/db.dump"
 docker exec -i "$container" pg_restore --list >/dev/null <"$work/db.dump" || die "dump is not a readable archive"
 
 mkdir "$work/config"
@@ -64,7 +71,7 @@ for f in compose.yaml Caddyfile .env; do
   if [[ -f "$DEPLOY_DIR/$f" ]]; then cp "$DEPLOY_DIR/$f" "$work/config/"; fi
 done
 if [[ -n "$recipient" && -d "$DEPLOY_DIR/secrets" ]]; then
-  cp -R "$DEPLOY_DIR/secrets" "$work/config/secrets"
+  cp -Rp "$DEPLOY_DIR/secrets" "$work/config/secrets"
 elif [[ -d "$DEPLOY_DIR/secrets" ]]; then
   log "secrets/ not included: archive is not encrypted (set BACKUP_AGE_RECIPIENT to include it)"
 fi
@@ -83,7 +90,7 @@ log "wrote $final ($(wc -c <"$final" | tr -d ' ') bytes)"
 
 # Retention: UTC timestamps sort lexically, so everything before the last N names goes.
 archives=()
-while IFS= read -r f; do archives+=("$f"); done < <(cd "$dir" && find . -maxdepth 1 -type f -name 'restaurantpro-*.tar*' | sed 's|^\./||' | sort)
+while IFS= read -r f; do archives+=("$f"); done < <(cd "$dir" && find . -maxdepth 1 -type f \( -name 'restaurantpro-[0-9]*T[0-9]*Z.tar' -o -name 'restaurantpro-[0-9]*T[0-9]*Z.tar.age' \) | sed 's|^\./||' | sort)
 for ((i = 0; i < ${#archives[@]} - keep; i++)); do
   rm -f -- "${dir:?}/${archives[i]}"
   log "retention: deleted ${archives[i]}"

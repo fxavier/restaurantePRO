@@ -3,11 +3,13 @@
 #
 # Steps: decrypt (.age), check SHA256SUMS, check the dump with pg_restore --list, refuse a
 # target database that already holds user objects unless --force, then pg_restore in a single
-# transaction (all or nothing). Configuration files are not touched: extract them by hand
+# transaction (all or nothing). With --force the archive is restored into a new database which
+# then replaces the target, so nothing created after the backup survives (rollback after an
+# upgrade: newer schemas, tables and Flyway history rows all go). Configuration files are not touched: extract them by hand
 # (see deploy/README.md, "Restore drill").
 #
 # Usage: deploy/restore.sh [--force] [--container NAME] [--db NAME] [--identity AGE_KEY_FILE] ARCHIVE
-#   --force      replace the objects of a non-empty target (pg_restore --clean --if-exists)
+#   --force      replace a non-empty target database entirely (drops it, open connections included)
 #   --container  postgres container (default: the compose service "postgres" of deploy/compose.yaml)
 #   --db         target database (default: restaurantpro)
 #   --identity   age identity file, needed for .age archives (default: $BACKUP_AGE_IDENTITY)
@@ -59,20 +61,32 @@ fi
 log "verifying $archive"
 tar -xf "$work/payload.tar" -C "$work" SHA256SUMS db.dump || die "not a backup.sh archive"
 tar -xf "$work/payload.tar" -C "$work" config 2>/dev/null || true
-(cd "$work" && sha256_check SHA256SUMS) || die "checksum mismatch: archive is corrupted"
+(cd "$work" && sha256_check SHA256SUMS >&2) || die "checksum mismatch: archive is corrupted"
 docker exec -i "$container" pg_restore --list >/dev/null <"$work/db.dump" || die "dump is not a readable archive"
 
-psql_target() { docker exec -i "$container" psql -X -q -At -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$db" "$@"; }
-objects="$(psql_target -c "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-  WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg_toast%'")"
-if [[ "$objects" != 0 ]]; then
-  $force || die "target database $db is not empty ($objects relations); use --force to replace it"
-  log "--force: replacing $objects existing relations in $db"
-fi
+psql_in() { local d=$1; shift; docker exec -i "$container" psql -X -q -At -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$d" "$@"; }
+restore_into() {
+  docker exec -i "$container" pg_restore -U "$DB_USER" -d "$1" --no-owner --exit-on-error --single-transaction <"$work/db.dump"
+}
 
-clean=()
-$force && clean=(--clean --if-exists)
-log "restoring into database $db in container $container"
-docker exec -i "$container" pg_restore -U "$DB_USER" -d "$db" --no-owner --exit-on-error --single-transaction \
-  "${clean[@]+"${clean[@]}"}" <"$work/db.dump" || die "pg_restore failed; target left unchanged"
+objects="$(psql_in "$db" -c "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg_toast%'")"
+if [[ "$objects" == 0 ]]; then
+  log "restoring into database $db in container $container"
+  restore_into "$db" || die "pg_restore failed; target left unchanged"
+  log "done"
+  exit 0
+fi
+$force || die "target database $db is not empty ($objects relations); use --force to replace it"
+
+staging="${db}_restore_$$"
+log "--force: restoring into new database $staging, then replacing $db ($objects relations)"
+psql_in postgres -c "CREATE DATABASE \"$staging\" OWNER \"$DB_USER\" TEMPLATE template0"
+if ! restore_into "$staging"; then
+  psql_in postgres -c "DROP DATABASE IF EXISTS \"$staging\"" || true
+  die "pg_restore failed; target left unchanged"
+fi
+psql_in postgres -c "DROP DATABASE \"$db\" WITH (FORCE)" \
+  -c "ALTER DATABASE \"$staging\" RENAME TO \"$db\"" \
+  || die "could not swap databases; the restored data is in database $staging (rename it to $db by hand)"
 log "done"
