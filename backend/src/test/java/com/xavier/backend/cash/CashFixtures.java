@@ -125,19 +125,22 @@ public class CashFixtures {
         return JSON.readTree(body);
     }
 
-    /** Fires {@code request} twice at the same instant (latch) and returns both results. */
-    public static <T> List<T> race(Callable<T> request) throws Exception {
+    /** Fires {@code first} and {@code second} at the same instant (latch) and returns both results, in order. */
+    public static <T> List<T> race(Callable<T> first, Callable<T> second) throws Exception {
         CountDownLatch start = new CountDownLatch(1);
-        Callable<T> gated = () -> {
+        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+            Future<T> a = pool.submit(gated(start, first));
+            Future<T> b = pool.submit(gated(start, second));
+            start.countDown();
+            return List.of(a.get(30, TimeUnit.SECONDS), b.get(30, TimeUnit.SECONDS));
+        }
+    }
+
+    private static <T> Callable<T> gated(CountDownLatch start, Callable<T> request) {
+        return () -> {
             start.await();
             return request.call();
         };
-        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
-            Future<T> first = pool.submit(gated);
-            Future<T> second = pool.submit(gated);
-            start.countDown();
-            return List.of(first.get(30, TimeUnit.SECONDS), second.get(30, TimeUnit.SECONDS));
-        }
     }
 
     static RequestPostProcessor authenticated(Actor actor) {
