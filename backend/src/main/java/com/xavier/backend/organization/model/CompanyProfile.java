@@ -2,6 +2,7 @@ package com.xavier.backend.organization.model;
 
 import com.xavier.backend.organization.exception.CurrencyLockedException;
 import com.xavier.backend.organization.exception.InvalidCompanyProfileException;
+import com.xavier.backend.organization.model.dto.CompanyProfileView;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -102,6 +103,10 @@ public class CompanyProfile {
                     "currency '" + code + "' has no minor units, so it cannot hold money amounts");
         }
         return parsed;
+    }
+
+    public CompanyProfileView toView() {
+        return new CompanyProfileView(name, taxId, country, getCurrency(), version);
     }
 
     public String getName() {

@@ -58,13 +58,13 @@ public class TerminalService {
         Terminal terminal = terminals.saveAndFlush(
                 Terminal.register(request.storeId(), request.code(), request.name(), clock.instant()));
         audit("TERMINAL_CREATED", terminal, accessPolicy.current().userId());
-        return TerminalSummary.from(terminal);
+        return terminal.toSummary();
     }
 
     @Transactional(readOnly = true)
     public PageResponse<TerminalSummary> list(UUID storeId, Pageable pageable) {
         accessPolicy.require(Permission.TERMINAL_MANAGE, storeId);
-        return PageResponse.from(terminals.findByStoreId(storeId, pageable).map(TerminalSummary::from));
+        return PageResponse.from(terminals.findByStoreId(storeId, pageable).map(Terminal::toSummary));
     }
 
     /** A new one-time code for a terminal that is not enrolled yet; valid {@link #ENROLLMENT_CODE_VALIDITY}. */
@@ -104,7 +104,7 @@ public class TerminalService {
         terminal.revoke(clock.instant());
         terminals.saveAndFlush(terminal);
         audit("TERMINAL_REVOKED", terminal, accessPolicy.current().userId());
-        return TerminalSummary.from(terminal);
+        return terminal.toSummary();
     }
 
     private Terminal terminal(UUID id) {

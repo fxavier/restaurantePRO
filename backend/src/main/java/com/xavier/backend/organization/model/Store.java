@@ -2,6 +2,7 @@ package com.xavier.backend.organization.model;
 
 import com.xavier.backend.organization.BusinessDays;
 import com.xavier.backend.organization.exception.InvalidStoreException;
+import com.xavier.backend.organization.model.dto.StoreSummary;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -11,6 +12,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.util.Currency;
 import java.util.UUID;
 import org.hibernate.annotations.UuidGenerator;
 
@@ -104,6 +106,11 @@ public class Store {
             throw new InvalidStoreException("businessDayCutoff is required");
         }
         return cutoff;
+    }
+
+    /** {@code currency} is the company currency (single currency, spec §8.4). */
+    public StoreSummary toSummary(Currency currency) {
+        return new StoreSummary(id, code, name, getTimezone(), businessDayCutoff, currency, active, version);
     }
 
     public UUID getId() {

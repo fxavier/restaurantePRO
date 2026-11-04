@@ -2,6 +2,7 @@ package com.xavier.backend.organization.model;
 
 import com.xavier.backend.organization.exception.IllegalTerminalStateException;
 import com.xavier.backend.organization.exception.InvalidEnrollmentCodeException;
+import com.xavier.backend.organization.model.dto.TerminalSummary;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -105,6 +106,11 @@ public class Terminal {
         this.enrollmentCodeHash = null;
         this.enrollmentCodeExpiresAt = null;
         this.updatedAt = now;
+    }
+
+    /** Never carries the code or token hashes. */
+    public TerminalSummary toSummary() {
+        return new TerminalSummary(id, storeId, code, name, status.name());
     }
 
     public UUID getId() {

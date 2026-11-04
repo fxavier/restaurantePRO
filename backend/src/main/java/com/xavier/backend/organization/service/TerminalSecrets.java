@@ -13,7 +13,7 @@ import java.util.Locale;
  * is enough to store them (no slow password hash needed) and lets the server find the row by hash.
  * Plaintext values are returned to the caller once and never stored or logged.
  */
-final class TerminalSecrets {
+public final class TerminalSecrets {
 
     /** Crockford base32: no I, L, O, U, so a code typed by hand is not misread. */
     private static final char[] CODE_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ".toCharArray();
@@ -43,7 +43,8 @@ final class TerminalSecrets {
         return sha256(code.strip().toUpperCase(Locale.ROOT));
     }
 
-    static String hashDeviceToken(String token) {
+    /** Also used by {@code OrganizationApi} to find a terminal by the token a device presents. */
+    public static String hashDeviceToken(String token) {
         return sha256(token);
     }
 

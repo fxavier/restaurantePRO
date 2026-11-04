@@ -37,7 +37,7 @@ public class CompanyProfileService {
     @Transactional(readOnly = true)
     public CompanyProfileView get() {
         accessPolicy.require(Permission.COMPANY_MANAGE);
-        return CompanyProfileView.from(company());
+        return company().toView();
     }
 
     @Transactional
@@ -51,7 +51,7 @@ public class CompanyProfileService {
         auditLog.record(new AuditEntry(accessPolicy.current().userId(), null, "COMPANY_PROFILE_UPDATED",
                 "CompanyProfile", CompanyBootstrapService.AUDIT_ENTITY_ID, null, null, null,
                 Map.of("country", company.getCountry(), "currency", company.getCurrency().getCurrencyCode())));
-        return CompanyProfileView.from(company);
+        return company.toView();
     }
 
     private CompanyProfile company() {

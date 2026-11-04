@@ -55,7 +55,7 @@ public class StoreService {
         Store store = stores.saveAndFlush(Store.create(request.code(), request.name(), request.timezone(),
                 request.businessDayCutoff(), clock.instant()));
         audit("STORE_CREATED", store);
-        return StoreSummary.from(store, currency);
+        return store.toSummary(currency);
     }
 
     @Transactional
@@ -70,20 +70,20 @@ public class StoreService {
                 request.active(), clock.instant());
         stores.saveAndFlush(store); // flush now: a concurrent writer fails here (409), and the response has the new version
         audit("STORE_UPDATED", store);
-        return StoreSummary.from(store, companyCurrency());
+        return store.toSummary(companyCurrency());
     }
 
     @Transactional(readOnly = true)
     public StoreSummary get(UUID id) {
         accessPolicy.require(Permission.STORE_MANAGE, id);
-        return StoreSummary.from(store(id), companyCurrency());
+        return store(id).toSummary(companyCurrency());
     }
 
     @Transactional(readOnly = true)
     public PageResponse<StoreSummary> list(Pageable pageable) {
         accessPolicy.require(Permission.STORE_MANAGE);
         Currency currency = companyCurrency();
-        return PageResponse.from(stores.findAll(pageable).map(store -> StoreSummary.from(store, currency)));
+        return PageResponse.from(stores.findAll(pageable).map(store -> store.toSummary(currency)));
     }
 
     private Store store(UUID id) {

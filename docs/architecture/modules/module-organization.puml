@@ -17,6 +17,7 @@ top to bottom direction
 
 System_Boundary("BackendApplication_boundary", "BackendApplication", $tags="") {
   Container_Boundary("BackendApplication.BackendApplication_boundary", "BackendApplication", $tags="") {
+    Component(BackendApplication.BackendApplication.Access, "Access", $techn="Module", $descr="", $tags="", $link="")
     Component(BackendApplication.BackendApplication.Audit, "Audit", $techn="Module", $descr="", $tags="", $link="")
     Component(BackendApplication.BackendApplication.Sharedkernel, "Shared kernel", $techn="Module", $descr="", $tags="", $link="")
     Component(BackendApplication.BackendApplication.Organization, "Organization", $techn="Module", $descr="", $tags="", $link="")
@@ -25,6 +26,7 @@ System_Boundary("BackendApplication_boundary", "BackendApplication", $tags="") {
 }
 
 Rel(BackendApplication.BackendApplication.Organization, BackendApplication.BackendApplication.Audit, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Organization, BackendApplication.BackendApplication.Access, "uses", $techn="", $tags="", $link="")
 Rel(BackendApplication.BackendApplication.Organization, BackendApplication.BackendApplication.Sharedkernel, "depends on", $techn="", $tags="", $link="")
 
 SHOW_LEGEND(true)
