@@ -137,6 +137,18 @@ class AccessPolicyTest {
     }
 
     @Test
+    @WithActor(permissions = Permission.PRODUCTION_VIEW, storeId = STORE_A, employeeId = EMPLOYEE,
+            terminalId = TERMINAL)
+    void requirePosAnyAcceptsAnyOneOfThePermissionsAndRefusesNone(CapturedOutput output) {
+        assertThat(accessPolicy.requirePosAny(Permission.DINING_VIEW, Permission.PRODUCTION_VIEW).storeId())
+                .isEqualTo(uuid(STORE_A));
+
+        assertThatThrownBy(() -> accessPolicy.requirePosAny(Permission.DINING_VIEW, Permission.ORDER_VIEW))
+                .isInstanceOf(AccessDeniedException.class);
+        assertThat(output.getOut()).contains("[DINING_VIEW, ORDER_VIEW]");
+    }
+
+    @Test
     void anEmployeeActorsPrincipalIdIsItsEmployeeId() {
         assertThatThrownBy(() -> new Actor(ActorKind.EMPLOYEE, UUID.randomUUID(), UUID.randomUUID(), null, null,
                 Set.of())).isInstanceOf(IllegalArgumentException.class);

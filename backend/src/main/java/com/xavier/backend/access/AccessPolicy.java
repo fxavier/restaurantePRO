@@ -1,5 +1,7 @@
 package com.xavier.backend.access;
 
+import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -78,17 +80,30 @@ public class AccessPolicy {
      * @throws AccessDeniedException (403) for any refusal
      */
     public PosContext requirePos(Permission permission) {
-        Objects.requireNonNull(permission, "permission");
+        return requirePosAny(Objects.requireNonNull(permission, "permission"));
+    }
+
+    /**
+     * {@link #requirePos} for a use case that any one of {@code permissions} allows (e.g. the change stream: dining
+     * or production staff). One denial log line, naming all of them.
+     */
+    public PosContext requirePosAny(Permission... permissions) {
+        if (permissions.length == 0) {
+            throw new IllegalArgumentException("at least one permission");
+        }
         Actor actor = current();
+        Permission permission = permissions[0];
         if (actor.kind() != ActorKind.EMPLOYEE || actor.terminalId() == null || actor.storeId() == null) {
             log.warn("Access denied: POS session required: kind={} user={} terminal={} store={} permission={}",
-                    actor.kind(), actor.userId(), actor.terminalId(), actor.storeId(), permission);
+                    actor.kind(), actor.userId(), actor.terminalId(), actor.storeId(),
+                    permissions.length == 1 ? permission : List.of(permissions));
             throw new AccessDeniedException("A POS session on an enrolled terminal is required");
         }
         UUID storeId = actor.storeId();
-        if (!actor.authorities().contains(permission.authority())
-                && !actor.authorities().contains(permission.authority(storeId))) {
-            throw denied(actor, permission, storeId);
+        boolean granted = Arrays.stream(permissions).anyMatch(p ->
+                actor.authorities().contains(p.authority()) || actor.authorities().contains(p.authority(storeId)));
+        if (!granted) {
+            throw denied(actor, permissions.length == 1 ? permission : List.of(permissions), storeId);
         }
         if (!storeIsActive(storeId)) {
             log.warn("Access denied: store inactive: employee={} terminal={} store={} permission={}",
@@ -117,7 +132,7 @@ public class AccessPolicy {
         return active;
     }
 
-    private static AccessDeniedException denied(Actor actor, Permission permission, UUID storeId) {
+    private static AccessDeniedException denied(Actor actor, Object permission, UUID storeId) {
         log.warn("Access denied: kind={} user={} employee={} terminal={} permission={} store={}",
                 actor.kind(), actor.userId(), actor.employeeId(), actor.terminalId(), permission,
                 storeId == null ? "(installation-wide)" : storeId);

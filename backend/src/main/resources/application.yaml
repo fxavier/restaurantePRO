@@ -10,6 +10,9 @@ spring:
     url: ${RESTAURANTPRO_DB_URL:jdbc:postgresql://localhost:5432/restaurantpro}
     username: ${RESTAURANTPRO_DB_USERNAME:restaurantpro}
     password: ${RESTAURANTPRO_DB_PASSWORD:}
+    hikari:
+      # D40: 10 POS terminals (spec §12); approver verification commits on its own connection before the use case.
+      maximum-pool-size: 20
   jpa:
     open-in-view: false
     hibernate:
@@ -61,3 +64,6 @@ restaurantpro:
     # D47.4: completed Idempotency-Key records are deleted after this period (daily job, 03:30 server time).
     retention: P90D
     retention-cron: "0 30 3 * * *"
+  notifications:
+    # D60: SSE comment heartbeat on /api/v1/pos/notifications.
+    heartbeat: PT25S
