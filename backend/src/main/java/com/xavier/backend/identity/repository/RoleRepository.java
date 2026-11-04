@@ -6,5 +6,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface RoleRepository extends JpaRepository<Role, UUID> {
 
-    boolean existsByNameIgnoreCase(String name);
+    boolean existsByName(String name);
 }
