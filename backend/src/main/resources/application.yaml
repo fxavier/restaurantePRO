@@ -54,6 +54,11 @@ logging:
 management:
   server:
     port: ${RESTAURANTPRO_MANAGEMENT_PORT:8081}
+  # Component statuses only (no details), e.g. fiscal: NON_CERTIFIED (D54). The management port is not reachable
+  # from the LAN (D33).
+  endpoint:
+    health:
+      show-components: always
   endpoints:
     web:
       exposure:
