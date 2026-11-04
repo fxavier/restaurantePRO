@@ -34,7 +34,11 @@ STARTED=()
 APP_PID=""
 
 jar="${1:-}"
-if [[ -z "$jar" ]]; then jar="$(ls "$DEPLOY_DIR"/../backend/target/backend-*.jar 2>/dev/null | grep -v plain | head -1 || true)"; fi
+if [[ -z "$jar" ]]; then
+  for candidate in "$DEPLOY_DIR"/../backend/target/backend-*.jar; do
+    if [[ -f "$candidate" && "$candidate" != *plain* ]]; then jar="$candidate"; break; fi
+  done
+fi
 
 stop_app() {
   if [[ -n "$APP_PID" ]]; then
@@ -250,7 +254,7 @@ if [[ "$restored_schema" != "$source_schema" ]]; then
 else
   echo "    schema identical" >&2
 fi
-sed 's/^/    /' <<<"$after" >&2
+while IFS= read -r line; do echo "    $line"; done <<<"$after" >&2
 grep -q '^shared.spring_session|0|' <<<"$after" || fail "sessions were restored"
 
 step "backend against the restored $DST: sessions are gone, same GET /backoffice/stores"
