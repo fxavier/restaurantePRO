@@ -58,7 +58,8 @@ public class AdminBootstrapService {
      * {@code CompanyBootstrapped} is published once per installation. Whenever the admin account does not exist
      * afterwards (settings missing, password file unreadable, password too weak), this fails after the WARN, so
      * the publication stays outstanding and the next start with fixed settings creates the admin (republish on
-     * restart, D19).
+     * restart, D19). From the listener it runs in the listener's transaction; {@code @Transactional} only matters
+     * when it is called directly through the bean (tests).
      */
     @Transactional
     void onCompanyBootstrapped(AdminBootstrapProperties configured) {
