@@ -7,13 +7,15 @@ import com.xavier.backend.identity.repository.EmployeeStoreAssignmentRepository;
 import com.xavier.backend.organization.OrganizationApi;
 import com.xavier.backend.organization.model.dto.StoreSummary;
 import com.xavier.backend.organization.model.dto.TerminalSummary;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
  * POS login: employee code + PIN on an enrolled terminal (D26). The session is scoped to the terminal's store:
- * it holds only the employee's authorities in that store (D27 amended). Every refusal is the same
+ * it holds only the employee's authorities in that store (D27 amended), and none at all while the employee still has
+ * a PIN a manager set ({@code mustChangePin}, see {@link PinChangeService}). Every refusal is the same
  * {@link InvalidCredentialsException} (401); the reason goes to a WARN log line, never the PIN or the token.
  */
 @Service
@@ -50,10 +52,10 @@ public class PosLoginService {
         if (assignments.findByEmployeeIdAndStoreId(check.employeeId(), terminal.storeId()).isEmpty()) {
             throw refused(employeeCode, terminal, "employee not assigned to the terminal's store");
         }
-        Actor actor = new Actor(check.employeeId(), check.employeeId(), terminal.id(), terminal.storeId(),
-                authorities.ofEmployeeInStore(check.employeeId(), terminal.storeId()));
+        Actor actor = Actor.employee(check.employeeId(), terminal.id(), terminal.storeId(), check.mustChangePin()
+                ? Set.of() : authorities.ofEmployeeInStore(check.employeeId(), terminal.storeId()));
         audit.loggedIn(actor);
-        return SessionView.of(actor, check.name(), false);
+        return SessionView.employee(actor, check.name(), check.mustChangePin());
     }
 
     private static InvalidCredentialsException refused(String employeeCode, TerminalSummary terminal, String reason) {

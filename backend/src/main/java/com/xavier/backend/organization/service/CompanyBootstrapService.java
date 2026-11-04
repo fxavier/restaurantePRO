@@ -1,6 +1,5 @@
 package com.xavier.backend.organization.service;
 
-import com.xavier.backend.audit.AuditEntry;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.organization.exception.InvalidCompanyProfileException;
 import com.xavier.backend.organization.model.CompanyProfile;
@@ -53,9 +52,8 @@ public class CompanyBootstrapService {
             return false;
         }
         CompanyProfile company = companies.save(create(settings));
-        auditLog.record(new AuditEntry(null, null, "COMPANY_BOOTSTRAPPED", "CompanyProfile", AUDIT_ENTITY_ID,
-                null, null, null, Map.of("country", company.getCountry(),
-                "currency", company.getCurrency().getCurrencyCode())));
+        auditLog.recordAsSystem("COMPANY_BOOTSTRAPPED", "CompanyProfile", AUDIT_ENTITY_ID, null, null, null,
+                Map.of("country", company.getCountry(), "currency", company.getCurrency().getCurrencyCode()));
         events.publishEvent(new CompanyBootstrapped(company.getName(), company.getTaxId(), company.getCountry(),
                 company.getCurrency().getCurrencyCode(), company.getUpdatedAt()));
         log.info("Company bootstrapped (country {}, currency {})", company.getCountry(), company.getCurrency());

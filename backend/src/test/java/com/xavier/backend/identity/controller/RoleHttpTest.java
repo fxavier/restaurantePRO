@@ -57,7 +57,8 @@ class RoleHttpTest {
         mvc.perform(get(ROLES).param("size", "200").with(admin()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[?(@.name == 'Empregado de sala')].permissions[*]",
-                        containsInAnyOrder("DINING_VIEW", "CATALOG_VIEW")));
+                        containsInAnyOrder("DINING_VIEW", "CATALOG_VIEW", "ORDER_VIEW", "ORDER_EDIT", "ORDER_VOID",
+                                "ORDER_TRANSFER"))); // R1 + D62 defaults
     }
 
     @Test

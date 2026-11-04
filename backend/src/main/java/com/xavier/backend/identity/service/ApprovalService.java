@@ -29,6 +29,9 @@ public class ApprovalService {
         if (!check.isAccepted()) {
             throw refused(employeeCode, permission, storeId, check.refusal());
         }
+        if (check.mustChangePin()) {
+            throw refused(employeeCode, permission, storeId, "PIN set by a manager, not yet changed");
+        }
         if (!authorities.ofEmployeeInStore(check.employeeId(), storeId).contains(permission.authority(storeId))) {
             throw refused(employeeCode, permission, storeId, "approver lacks the permission in this store");
         }

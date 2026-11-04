@@ -2,7 +2,7 @@ package com.xavier.backend.identity.service;
 
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Actor;
-import com.xavier.backend.audit.AuditEntry;
+import com.xavier.backend.access.ActorKind;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.identity.exception.InvalidCredentialsException;
 import com.xavier.backend.identity.exception.NoPasswordException;
@@ -56,7 +56,7 @@ public class PasswordService {
     @Transactional
     public SessionView change(String currentPassword, String newPassword, String currentSessionId) {
         Actor actor = accessPolicy.current();
-        if (actor.employeeId() != null) {
+        if (actor.kind() != ActorKind.ACCOUNT) {
             throw new NoPasswordException();
         }
         UserAccount account = accounts.findById(actor.userId())
@@ -75,9 +75,9 @@ public class PasswordService {
         }
         account.changePassword(encoder.encode(newPassword), clock.instant());
         accounts.saveAndFlush(account);
-        auditLog.record(new AuditEntry(account.getId(), null, "USER_PASSWORD_CHANGED", "UserAccount",
-                account.getId().toString(), null, null, null, Map.of("username", account.getUsername())));
-        sessions.endAllExcept(account.getId(), currentSessionId);
+        auditLog.recordAsCurrentActor("USER_PASSWORD_CHANGED", "UserAccount", account.getId().toString(), null,
+                null, null, Map.of("username", account.getUsername()));
+        sessions.endAccountSessionsExcept(account.getId(), currentSessionId);
         return logins.sessionOf(account);
     }
 }

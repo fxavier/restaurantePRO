@@ -1,7 +1,5 @@
 package com.xavier.backend.catalog.service;
 
-import com.xavier.backend.access.AccessPolicy;
-import com.xavier.backend.audit.AuditEntry;
 import com.xavier.backend.audit.AuditLog;
 import java.util.Map;
 import java.util.UUID;
@@ -12,16 +10,13 @@ import org.springframework.stereotype.Component;
 class CatalogAudit {
 
     private final AuditLog auditLog;
-    private final AccessPolicy accessPolicy;
 
-    CatalogAudit(AuditLog auditLog, AccessPolicy accessPolicy) {
+    CatalogAudit(AuditLog auditLog) {
         this.auditLog = auditLog;
-        this.accessPolicy = accessPolicy;
     }
 
     /** {@code storeId} is null for company-wide entries (families, items, …). */
     void record(String action, String entityType, UUID entityId, UUID storeId, Map<String, Object> details) {
-        auditLog.record(new AuditEntry(accessPolicy.current().userId(), null, action, entityType,
-                entityId.toString(), storeId, null, null, details));
+        auditLog.recordAsCurrentActor(action, entityType, entityId.toString(), storeId, null, null, details);
     }
 }

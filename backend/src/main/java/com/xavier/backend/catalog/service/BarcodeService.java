@@ -12,6 +12,8 @@ import com.xavier.backend.catalog.model.dto.BarcodeUpdateRequest;
 import com.xavier.backend.catalog.repository.BarcodeRepository;
 import com.xavier.backend.catalog.repository.ItemRepository;
 import com.xavier.backend.catalog.repository.ItemVariantRepository;
+import com.xavier.backend.shared.persistence.OptimisticLocking;
+import com.xavier.backend.shared.persistence.UniqueConstraints;
 import java.time.Clock;
 import java.util.HashMap;
 import java.util.List;
@@ -84,7 +86,7 @@ public class BarcodeService {
     }
 
     private Barcode save(Barcode barcode) {
-        return UniqueConstraint.saveAndFlush(barcodes, barcode,
+        return UniqueConstraints.saveAndFlush(barcodes, barcode,
                 () -> new CatalogCodeTakenException("Barcode '" + barcode.getCode() + "'"), "barcode_code_uk");
     }
 

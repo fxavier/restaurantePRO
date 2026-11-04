@@ -3,6 +3,7 @@ package com.xavier.backend.identity.controller;
 import com.xavier.backend.access.Actor;
 import com.xavier.backend.identity.model.dto.SessionView;
 import com.xavier.backend.identity.service.LoginAudit;
+import com.xavier.backend.identity.service.SessionPrincipals;
 import com.xavier.backend.identity.service.TerminalSessionService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -33,20 +34,24 @@ import org.springframework.stereotype.Component;
  * <ol>
  *   <li>the session id changes (session fixation protection) or a new session starts, and the CSRF token is
  *       replaced; the login response already carries the new {@code XSRF-TOKEN} cookie;</li>
- *   <li>the principal name index is set to {@code Actor.userId()} so sessions can be listed and revoked per user
- *       ({@link FindByIndexNameSessionRepository}); without it Spring Session would index {@code Actor.toString()};</li>
+ *   <li>the principal name index is set to the actor kind and id ({@link SessionPrincipals}, D38) so sessions can
+ *       be listed and revoked per account or employee ({@link FindByIndexNameSessionRepository}); without it Spring
+ *       Session would index {@code Actor.toString()};</li>
  *   <li>the {@code Authentication}'s granted authorities are exactly {@code Actor.authorities()} (the actuator URL
  *       rule reads them, {@code AccessPolicy} reads the actor);</li>
  *   <li>the security context is saved in the session explicitly ({@link HttpSessionSecurityContextRepository}),
  *       which the security filter chain loads on every later request;</li>
- *   <li>a POS session is recorded against its terminal, so revoking the terminal ends it.</li>
+ *   <li>a POS session is recorded against its terminal and store, so revoking the terminal or deactivating the
+ *       store ends it.</li>
  * </ol>
  */
 @Component
 class LoginSessions {
 
-    /** Session attribute: set while the account must change its password (see {@code MustChangePasswordFilter}). */
+    /** Session attribute: set while the account must change its password (see {@code MustChangeCredentialFilter}). */
     static final String MUST_CHANGE_PASSWORD = "identity.mustChangePassword";
+    /** Session attribute: set while the employee must replace a manager-set PIN (see {@code MustChangeCredentialFilter}). */
+    static final String MUST_CHANGE_PIN = "identity.mustChangePin";
 
     /**
      * The same cookie repository {@code csrf.spa()} configures in {@code SecurityConfig}; it keeps no state, so this
@@ -70,25 +75,34 @@ class LoginSessions {
         Actor actor = view.toActor();
         Authentication authentication = UsernamePasswordAuthenticationToken.authenticated(actor, null,
                 actor.authorities().stream().map(SimpleGrantedAuthority::new).toList());
+        String previousSessionId = request.getSession(false) == null ? null : request.getSession(false).getId();
         loginStrategy.onAuthentication(authentication, request, response);
         if (request.getAttribute(CsrfToken.class.getName()) instanceof CsrfToken csrf) {
             csrf.getToken(); // generates and saves the new token now, so this response sets the cookie
         }
         HttpSession session = request.getSession(true);
-        session.setAttribute(FindByIndexNameSessionRepository.PRINCIPAL_NAME_INDEX_NAME, actor.userId().toString());
-        if (view.mustChangePassword()) {
-            session.setAttribute(MUST_CHANGE_PASSWORD, Boolean.TRUE);
-        } else {
-            session.removeAttribute(MUST_CHANGE_PASSWORD);
-        }
+        session.setAttribute(FindByIndexNameSessionRepository.PRINCIPAL_NAME_INDEX_NAME, SessionPrincipals.of(actor));
+        flag(session, MUST_CHANGE_PASSWORD, view.mustChangePassword());
+        flag(session, MUST_CHANGE_PIN, view.mustChangePin());
         SecurityContext context = holder.createEmptyContext();
         context.setAuthentication(authentication);
         holder.setContext(context);
         contexts.saveContext(context, request, response);
         if (actor.terminalId() != null) {
-            terminalSessions.register(session.getId(), actor.terminalId(), actor.employeeId());
+            if (previousSessionId != null) {
+                terminalSessions.forget(previousSessionId); // the id changed: the old one is gone
+            }
+            terminalSessions.register(session.getId(), actor.terminalId(), actor.storeId(), actor.employeeId());
         }
         return session.getId();
+    }
+
+    private static void flag(HttpSession session, String attribute, boolean set) {
+        if (set) {
+            session.setAttribute(attribute, Boolean.TRUE);
+        } else {
+            session.removeAttribute(attribute);
+        }
     }
 
     void end(HttpServletRequest request, HttpServletResponse response) {

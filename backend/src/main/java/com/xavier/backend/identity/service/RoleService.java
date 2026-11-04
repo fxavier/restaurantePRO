@@ -2,7 +2,6 @@ package com.xavier.backend.identity.service;
 
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
-import com.xavier.backend.audit.AuditEntry;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.identity.exception.RoleNameTakenException;
 import com.xavier.backend.identity.exception.RoleNotFoundException;
@@ -11,11 +10,12 @@ import com.xavier.backend.identity.model.dto.RoleCreateRequest;
 import com.xavier.backend.identity.model.dto.RoleSummary;
 import com.xavier.backend.identity.model.dto.RoleUpdateRequest;
 import com.xavier.backend.identity.repository.RoleRepository;
+import com.xavier.backend.shared.persistence.OptimisticLocking;
+import com.xavier.backend.shared.persistence.UniqueConstraints;
 import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
 import java.util.Map;
 import java.util.UUID;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,12 +31,15 @@ public class RoleService {
     private final RoleRepository roles;
     private final AccessPolicy accessPolicy;
     private final AuditLog auditLog;
+    private final SessionTermination sessions;
     private final Clock clock;
 
-    RoleService(RoleRepository roles, AccessPolicy accessPolicy, AuditLog auditLog, Clock clock) {
+    RoleService(RoleRepository roles, AccessPolicy accessPolicy, AuditLog auditLog, SessionTermination sessions,
+                Clock clock) {
         this.roles = roles;
         this.accessPolicy = accessPolicy;
         this.auditLog = auditLog;
+        this.sessions = sessions;
         this.clock = clock;
     }
 
@@ -59,9 +62,13 @@ public class RoleService {
         OptimisticLocking.requireVersion(Role.class, id, role.getVersion(), request.version());
         request.permissions().stream().filter(permission -> !role.getPermissions().contains(permission))
                 .forEach(accessPolicy::require);
+        boolean permissionsShrink = !request.permissions().containsAll(role.getPermissions());
         role.redefine(request.name(), request.permissions(), clock.instant());
         save(role);
         audit("ROLE_UPDATED", role);
+        if (permissionsShrink) {
+            sessions.endRoleSessions(id); // they hold the permissions resolved at login
+        }
         return role.toSummary();
     }
 
@@ -82,19 +89,13 @@ public class RoleService {
     }
 
     private Role save(Role role) {
-        try {
-            return roles.saveAndFlush(role);
-        } catch (DataIntegrityViolationException e) {
-            if (UniqueConstraint.isViolated(e, "role_name_uk")) {
-                throw new RoleNameTakenException(role.getName());
-            }
-            throw e;
-        }
+        return UniqueConstraints.saveAndFlush(roles, role,
+                () -> new RoleNameTakenException(role.getName()), "role_name_uk");
     }
 
     private void audit(String action, Role role) {
-        auditLog.record(new AuditEntry(accessPolicy.current().userId(), null, action, "Role", role.getId().toString(),
-                null, null, null, Map.of("name", role.getName(),
-                "permissions", role.getPermissions().stream().map(Enum::name).sorted().toList())));
+        auditLog.recordAsCurrentActor(action, "Role", role.getId().toString(), null, null, null,
+                Map.of("name", role.getName(),
+                        "permissions", role.getPermissions().stream().map(Enum::name).sorted().toList()));
     }
 }

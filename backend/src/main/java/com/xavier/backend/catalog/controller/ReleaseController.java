@@ -64,11 +64,11 @@ class ReleaseController {
 
     /** Repeatable (D24): the same key and body replay the first response; the key is scoped to the actor. */
     @PostMapping("/{id}/publish")
-    ResponseEntity<?> publish(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
+    ResponseEntity<ReleaseSummary> publish(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
                               @Valid @RequestBody(required = false) PublishRequest body, HttpServletRequest request) {
         PublishRequest publish = body == null ? PublishRequest.EMPTY : body;
-        return idempotency.execute("catalog.release.publish:" + accessPolicy.current().userId(), key,
-                request.getMethod() + " " + request.getRequestURI(), publish,
+        return idempotency.execute(accessPolicy.current().idempotencyScope("catalog.release.publish"), key,
+                request.getMethod() + " " + request.getRequestURI(), publish, ReleaseSummary.class,
                 () -> ResponseEntity.ok(releases.publish(id, publish)));
     }
 }

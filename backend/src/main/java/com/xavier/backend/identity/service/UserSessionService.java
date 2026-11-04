@@ -2,7 +2,6 @@ package com.xavier.backend.identity.service;
 
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
-import com.xavier.backend.audit.AuditEntry;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.identity.exception.SessionNotFoundException;
 import com.xavier.backend.identity.exception.UserNotFoundException;
@@ -19,7 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Lists and revokes a BackOffice user's open sessions (spec §5 "sessões", D25). Sessions are found through Spring
- * Session's principal-name index, which login sets to the user id. Needs {@code USER_MANAGE} installation-wide.
+ * Session's principal-name index ({@link SessionPrincipals}: kind and account id). Needs {@code USER_MANAGE} installation-wide.
  */
 @Service
 public class UserSessionService {
@@ -53,8 +52,8 @@ public class UserSessionService {
                 .findFirst()
                 .orElseThrow(SessionNotFoundException::new);
         sessions.deleteById(session.getId());
-        auditLog.record(new AuditEntry(accessPolicy.current().userId(), null, "USER_SESSION_REVOKED", "UserAccount",
-                userId.toString(), null, null, null, Map.of("sessionHandle", handle)));
+        auditLog.recordAsCurrentActor("USER_SESSION_REVOKED", "UserAccount", userId.toString(), null, null, null,
+                Map.of("sessionHandle", handle));
     }
 
     private List<? extends Session> sessionsOf(UUID userId) {
@@ -62,6 +61,6 @@ public class UserSessionService {
         if (!accounts.existsById(userId)) {
             throw new UserNotFoundException(userId);
         }
-        return List.copyOf(sessions.findByPrincipalName(userId.toString()).values());
+        return List.copyOf(sessions.findByPrincipalName(SessionPrincipals.account(userId)).values());
     }
 }

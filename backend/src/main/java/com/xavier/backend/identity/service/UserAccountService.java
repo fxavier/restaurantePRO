@@ -2,7 +2,6 @@ package com.xavier.backend.identity.service;
 
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
-import com.xavier.backend.audit.AuditEntry;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.identity.exception.EmployeeAccountTakenException;
 import com.xavier.backend.identity.exception.EmployeeNotFoundException;
@@ -18,6 +17,8 @@ import com.xavier.backend.identity.model.dto.UserUpdateRequest;
 import com.xavier.backend.identity.repository.EmployeeRepository;
 import com.xavier.backend.identity.repository.RoleRepository;
 import com.xavier.backend.identity.repository.UserAccountRepository;
+import com.xavier.backend.shared.persistence.OptimisticLocking;
+import com.xavier.backend.shared.persistence.UniqueConstraints;
 import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
 import java.util.HashMap;
@@ -32,7 +33,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** BackOffice accounts (spec §5 "Acessos"). Installation-wide: every use case needs {@code USER_MANAGE}. */
+/**
+ * BackOffice accounts (spec §5 "Acessos"). Installation-wide: every use case needs {@code USER_MANAGE}; granting a
+ * role or linking an employee also needs what is being handed out.
+ */
 @Service
 public class UserAccountService {
 
@@ -43,11 +47,12 @@ public class UserAccountService {
     private final AccessPolicy accessPolicy;
     private final AuditLog auditLog;
     private final SessionTermination sessions;
+    private final EmployeeControl employeeControl;
     private final Clock clock;
 
     UserAccountService(UserAccountRepository accounts, RoleRepository roles, EmployeeRepository employees,
                        PasswordEncoder encoder, AccessPolicy accessPolicy, AuditLog auditLog,
-                       SessionTermination sessions, Clock clock) {
+                       SessionTermination sessions, EmployeeControl employeeControl, Clock clock) {
         this.accounts = accounts;
         this.roles = roles;
         this.employees = employees;
@@ -55,6 +60,7 @@ public class UserAccountService {
         this.accessPolicy = accessPolicy;
         this.auditLog = auditLog;
         this.sessions = sessions;
+        this.employeeControl = employeeControl;
         this.clock = clock;
     }
 
@@ -68,6 +74,7 @@ public class UserAccountService {
         }
         requireLinks(request.employeeId(), request.roleIds());
         requireCanGrant(request.roleIds());
+        requireCanLink(null, request.employeeId());
         UserAccount account = save(UserAccount.open(username, encoder.encode(request.initialPassword()),
                 request.employeeId(), request.roleIds(), clock.instant()));
         audit("USER_CREATED", account);
@@ -82,6 +89,7 @@ public class UserAccountService {
         requireLinks(request.employeeId(), request.roleIds());
         requireCanGrant(request.roleIds().stream().filter(role -> !account.getRoleIds().contains(role))
                 .collect(Collectors.toSet()));
+        requireCanLink(account.getEmployeeId(), request.employeeId());
         boolean wasAdministrator = isActiveAdministrator(account);
         boolean authoritiesMayShrink = !request.active() || !account.getRoleIds().equals(request.roleIds())
                 || !Objects.equals(account.getEmployeeId(), request.employeeId());
@@ -92,7 +100,7 @@ public class UserAccountService {
         save(account);
         audit("USER_UPDATED", account);
         if (authoritiesMayShrink) {
-            sessions.endAll(account.getId()); // its sessions hold the authorities resolved at login
+            sessions.endAccountSessions(account.getId()); // its sessions hold the authorities resolved at login
         }
         return account.toSummary();
     }
@@ -112,6 +120,16 @@ public class UserAccountService {
     /** Nobody gives an account a role with a permission they do not hold installation-wide themselves. */
     private void requireCanGrant(Set<UUID> roleIds) {
         roles.findAllById(roleIds).forEach(role -> role.getPermissions().forEach(accessPolicy::require));
+    }
+
+    /**
+     * A linked account holds the employee's store authorities, so a new link needs what controlling the employee
+     * needs ({@link EmployeeControl}). Removing or keeping a link grants nothing.
+     */
+    private void requireCanLink(UUID currentEmployeeId, UUID newEmployeeId) {
+        if (newEmployeeId != null && !newEmployeeId.equals(currentEmployeeId)) {
+            employeeControl.require(newEmployeeId);
+        }
     }
 
     private static boolean isActiveAdministrator(UserAccount account) {
@@ -142,10 +160,10 @@ public class UserAccountService {
         try {
             return accounts.saveAndFlush(account);
         } catch (DataIntegrityViolationException e) {
-            if (UniqueConstraint.isViolated(e, "user_account_username_uk")) {
+            if (UniqueConstraints.isViolated(e, "user_account_username_uk")) {
                 throw new UsernameTakenException(account.getUsername());
             }
-            if (UniqueConstraint.isViolated(e, "user_account_employee_uk")) {
+            if (UniqueConstraints.isViolated(e, "user_account_employee_uk")) {
                 throw new EmployeeAccountTakenException(account.getEmployeeId());
             }
             throw e;
@@ -162,7 +180,6 @@ public class UserAccountService {
         details.put("employeeId", account.getEmployeeId());
         details.put("roleIds", account.getRoleIds());
         details.put("active", account.isActive());
-        auditLog.record(new AuditEntry(accessPolicy.current().userId(), null, action, "UserAccount",
-                account.getId().toString(), null, null, null, details));
+        auditLog.recordAsCurrentActor(action, "UserAccount", account.getId().toString(), null, null, null, details);
     }
 }

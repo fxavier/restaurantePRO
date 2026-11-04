@@ -24,6 +24,8 @@ One stack per company (spec §2): Caddy (HTTPS on the LAN), the backend, and Pos
 
    `.env` and `secrets/` are git-ignored. Never commit them. The `RESTAURANTPRO_BOOTSTRAP_*` values and `secrets/admin_initial_password` are consumed once, at the first start against an empty database (D30). After that, edit the company profile in the BackOffice. The admin must change the initial password at first login. After that login you may empty `secrets/admin_initial_password`, but keep the file: Compose needs it to start.
 3. Start: `docker compose up -d --build`, then wait until `docker compose ps` shows all three services `healthy`.
+
+   **Fiscal adapter (B4).** This release has only a NON-CERTIFIED fiscal adapter: with the default `RESTAURANTPRO_FISCAL_ALLOW_NON_CERTIFIED=false` the backend refuses to start (its log says why) and never becomes healthy. Set it to `true` in `.env` only for a pilot without fiscal obligations, until a certified adapter for your market exists. Every document is then printed as `DOCUMENTO NÃO FISCAL`, and the health check reports the component `fiscal: NON_CERTIFIED` while the overall status stays `UP`: `docker compose exec backend wget -qO- http://127.0.0.1:8081/actuator/health`.
 4. Trust the certificate. Caddy signs with its own local CA (`tls internal`). Install its root certificate once on each POS terminal and BackOffice browser:
 
    ```bash
@@ -110,6 +112,8 @@ The database password in `secrets/db_password` must be the one the new PostgreSQ
 ### Restore drill
 
 `./test-backup-restore.sh` is the automated drill (acceptance criterion 10). It needs only Docker. It starts two throwaway PostgreSQL containers, loads `test/sample.sql`, runs `backup.sh`, restores into the second container with `restore.sh`, and compares per-table row counts and checksums and the sequence positions. It also compares the normalised schema (`pg_dump --schema-only`), and checks retention, that Spring Session rows are left out, the refusal without `--force`, that `--force` works while a client is still connected and removes objects created after the backup, that a `--force` restore failing mid-way leaves the target unchanged with no leftover databases, and that a corrupted archive is rejected. It removes everything it created and exits non-zero on any mismatch.
+
+`test/real-schema-drill.sh` runs the same round trip on the schema the application really creates. It starts a throwaway PostgreSQL and runs the backend jar against it, so Flyway applies the real migrations and the bootstrap creates the company and the admin. It then fills every module through the HTTP API, runs `backup.sh`, and restores into a second fresh container with `restore.sh`. It checks that every table and the schema match, and that the Spring Session tables come back empty. Last, it runs the backend on the restored database and checks that `GET /backoffice/stores` and the release list answer the same. PostgreSQL rewrites some CHECK constraints with equivalent casts after a dump; the drill accepts only those differences and counts them. Build the jar first with `(cd ../backend && ./mvnw -q package -DskipTests)`, then run `test/real-schema-drill.sh [JAR]`. It needs Docker, Java 25, curl, openssl and python3, takes about 1–2 minutes, generates throwaway credentials and never prints them, and removes everything it created.
 
 Spec §11 asks for restore tests. Run the drill after every upgrade. Also restore a real archive into a scratch server from time to time.
 

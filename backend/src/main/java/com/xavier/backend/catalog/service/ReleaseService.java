@@ -15,6 +15,9 @@ import com.xavier.backend.catalog.model.dto.ReleaseValidationError;
 import com.xavier.backend.catalog.model.event.CatalogPublished;
 import com.xavier.backend.catalog.repository.ConfigurationReleaseRepository;
 import com.xavier.backend.organization.OrganizationApi;
+import com.xavier.backend.shared.notify.ChangeNotifier;
+import com.xavier.backend.shared.notify.ChangeTopic;
+import com.xavier.backend.shared.persistence.UniqueConstraints;
 import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
 import java.time.Instant;
@@ -42,18 +45,20 @@ public class ReleaseService {
     private final AccessPolicy accessPolicy;
     private final CatalogAudit audit;
     private final ApplicationEventPublisher events;
+    private final ChangeNotifier notifier;
     private final JsonMapper json;
     private final Clock clock;
 
     ReleaseService(ConfigurationReleaseRepository releases, WorkingCopy workingCopy, OrganizationApi organization,
-                   AccessPolicy accessPolicy, CatalogAudit audit, ApplicationEventPublisher events, JsonMapper json,
-                   Clock clock) {
+                   AccessPolicy accessPolicy, CatalogAudit audit, ApplicationEventPublisher events,
+                   ChangeNotifier notifier, JsonMapper json, Clock clock) {
         this.releases = releases;
         this.workingCopy = workingCopy;
         this.organization = organization;
         this.accessPolicy = accessPolicy;
         this.audit = audit;
         this.events = events;
+        this.notifier = notifier;
         this.json = json;
         this.clock = clock;
     }
@@ -88,7 +93,8 @@ public class ReleaseService {
      * Freezes the store's working copy into this VALIDATED release and makes it the one the POS sells from; the
      * previous publication is retired. The working copy is validated again, because it may have changed since
      * the release was validated. A concurrent publication for the same store loses with 409 (partial unique
-     * index, version uniqueness, or {@code @Version} on the retired release).
+     * index, version uniqueness, or {@code @Version} on the retired release). After the commit the store's POS
+     * clients get a {@code CATALOG} change notice (D60).
      */
     @Transactional
     public ReleaseSummary publish(UUID releaseId, PublishRequest request) {
@@ -108,12 +114,13 @@ public class ReleaseService {
         long version = releases.maxCatalogVersion(storeId) + 1;
         UUID author = accessPolicy.current().userId();
         release.publish(version, json.writeValueAsString(view.snapshot(releaseId, version)), author, now);
-        UniqueConstraint.saveAndFlush(releases, release,
+        UniqueConstraints.saveAndFlush(releases, release,
                 () -> new IllegalReleaseStateException("Another release of store " + storeId + " was published at the same time"),
                 "configuration_release_one_published_per_store_ux", "configuration_release_store_version_uk");
 
         auditPublication(release, previous, request);
         events.publishEvent(new CatalogPublished(storeId, releaseId, version, now));
+        notifier.notifyAfterCommit(storeId, ChangeTopic.CATALOG, null); // store-wide: the POS re-reads its catalog
         return release.toSummary();
     }
 
