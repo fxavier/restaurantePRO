@@ -2,7 +2,6 @@ package com.xavier.backend.identity.service;
 
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
-import com.xavier.backend.audit.AuditEntry;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.identity.exception.EmployeeAccountTakenException;
 import com.xavier.backend.identity.exception.EmployeeNotFoundException;
@@ -164,7 +163,6 @@ public class UserAccountService {
         details.put("employeeId", account.getEmployeeId());
         details.put("roleIds", account.getRoleIds());
         details.put("active", account.isActive());
-        auditLog.record(new AuditEntry(accessPolicy.current().userId(), null, action, "UserAccount",
-                account.getId().toString(), null, null, null, details));
+        auditLog.recordAsCurrentActor(action, "UserAccount", account.getId().toString(), null, null, null, details);
     }
 }

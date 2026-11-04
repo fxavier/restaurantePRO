@@ -2,7 +2,6 @@ package com.xavier.backend.organization.service;
 
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
-import com.xavier.backend.audit.AuditEntry;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.organization.exception.CompanyNotBootstrappedException;
 import com.xavier.backend.organization.exception.StoreCodeTakenException;
@@ -98,8 +97,8 @@ public class StoreService {
     }
 
     private void audit(String action, Store store) {
-        auditLog.record(new AuditEntry(accessPolicy.current().userId(), null, action, "Store",
-                store.getId().toString(), store.getId(), null, null, Map.of("code", store.getCode())));
+        auditLog.recordAsCurrentActor(action, "Store", store.getId().toString(), store.getId(), null, null,
+                Map.of("code", store.getCode()));
     }
 
     private Currency companyCurrency() {

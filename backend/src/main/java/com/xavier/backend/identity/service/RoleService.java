@@ -2,7 +2,6 @@ package com.xavier.backend.identity.service;
 
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
-import com.xavier.backend.audit.AuditEntry;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.identity.exception.RoleNameTakenException;
 import com.xavier.backend.identity.exception.RoleNotFoundException;
@@ -95,8 +94,8 @@ public class RoleService {
     }
 
     private void audit(String action, Role role) {
-        auditLog.record(new AuditEntry(accessPolicy.current().userId(), null, action, "Role", role.getId().toString(),
-                null, null, null, Map.of("name", role.getName(),
-                "permissions", role.getPermissions().stream().map(Enum::name).sorted().toList())));
+        auditLog.recordAsCurrentActor(action, "Role", role.getId().toString(), null, null, null,
+                Map.of("name", role.getName(),
+                        "permissions", role.getPermissions().stream().map(Enum::name).sorted().toList()));
     }
 }

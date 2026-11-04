@@ -3,7 +3,6 @@ package com.xavier.backend.identity.service;
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Actor;
 import com.xavier.backend.access.Permission;
-import com.xavier.backend.audit.AuditEntry;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.identity.exception.AssignmentNotFoundException;
 import com.xavier.backend.identity.exception.DuplicateAssignmentException;
@@ -154,9 +153,8 @@ public class EmployeeService {
         accessPolicy.require(Permission.EMPLOYEE_MANAGE, assignment.getStoreId());
         assignments.delete(assignment);
         sessions.endEmployeeSessions(employeeId);
-        auditLog.record(new AuditEntry(accessPolicy.current().userId(), null, "EMPLOYEE_UNASSIGNED", "Employee",
-                employeeId.toString(), assignment.getStoreId(), null, null,
-                Map.of("roleId", assignment.getRoleId().toString())));
+        auditLog.recordAsCurrentActor("EMPLOYEE_UNASSIGNED", "Employee", employeeId.toString(),
+                assignment.getStoreId(), null, null, Map.of("roleId", assignment.getRoleId().toString()));
     }
 
     /**
@@ -228,7 +226,6 @@ public class EmployeeService {
     }
 
     private void audit(String action, Employee employee, UUID storeId, Map<String, Object> details) {
-        auditLog.record(new AuditEntry(accessPolicy.current().userId(), null, action, "Employee",
-                employee.getId().toString(), storeId, null, null, details));
+        auditLog.recordAsCurrentActor(action, "Employee", employee.getId().toString(), storeId, null, null, details);
     }
 }

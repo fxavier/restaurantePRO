@@ -5,6 +5,10 @@ import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.xavier.backend.TestcontainersConfiguration;
+import com.xavier.backend.access.Actor;
+import com.xavier.backend.access.Permission;
+import com.xavier.backend.access.WithActor;
+import java.util.Set;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.IllegalTransactionStateException;
 import java.util.Map;
@@ -17,7 +21,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.modulith.test.ApplicationModuleTest;
 import org.springframework.transaction.support.TransactionTemplate;
 
-@ApplicationModuleTest(extraIncludes = "shared")
+@ApplicationModuleTest(extraIncludes = {"shared", "access"})
 @Import(TestcontainersConfiguration.class)
 class AuditLogTest {
 
@@ -29,6 +33,10 @@ class AuditLogTest {
 
     @Autowired
     JdbcClient jdbc;
+
+    static final String STORE = "0190a000-0000-7000-8000-00000000000a";
+    static final String EMPLOYEE = "0190e000-0000-7000-8000-00000000000e";
+    static final String TERMINAL = "0190f000-0000-7000-8000-00000000000f";
 
     private final UUID actorId = UUID.randomUUID();
     private final UUID approverId = UUID.randomUUID();
@@ -116,13 +124,84 @@ class AuditLogTest {
         assertThat(details).isEqualTo("{}");
     }
 
+    @Test
+    @WithActor(permissions = Permission.DINING_VIEW, storeId = STORE, employeeId = EMPLOYEE, terminalId = TERMINAL)
+    void recordAsCurrentActorTakesWhoAndWhichTerminalFromTheSession() {
+        transaction.executeWithoutResult(tx -> auditLog.recordAsCurrentActor("ORDER_LINE_VOIDED", "Order", entityId,
+                UUID.fromString(STORE), approverId, "wrong dish", Map.of("lineId", "l-1")));
+
+        assertThat(row()).containsEntry("actor_id", UUID.fromString(EMPLOYEE))
+                .containsEntry("actor_kind", "EMPLOYEE")
+                .containsEntry("terminal_id", UUID.fromString(TERMINAL))
+                .containsEntry("store_id", UUID.fromString(STORE))
+                .containsEntry("approver_id", approverId)
+                .containsEntry("reason", "wrong dish");
+    }
+
+    @Test
+    @WithActor(permissions = Permission.STORE_MANAGE)
+    void aBackOfficeActorIsRecordedAsAnAccountWithoutATerminal() {
+        transaction.executeWithoutResult(tx -> auditLog.recordAsCurrentActor("STORE_UPDATED", "Store", entityId,
+                storeId, null, null, Map.of()));
+
+        assertThat(row()).containsEntry("actor_id", UUID.fromString(WithActor.DEFAULT_USER_ID))
+                .containsEntry("actor_kind", "ACCOUNT")
+                .containsEntry("terminal_id", null)
+                .containsEntry("approver_id", null);
+    }
+
+    @Test
+    void recordAsSystemHasNoActorAndTheSystemKind() {
+        transaction.executeWithoutResult(tx -> auditLog.recordAsSystem("PRINT_JOB_FAILED", "PrintJob", entityId,
+                storeId, terminalId, "printer offline", Map.of("attempts", 5)));
+
+        assertThat(row()).containsEntry("actor_id", null)
+                .containsEntry("actor_kind", "SYSTEM")
+                .containsEntry("terminal_id", terminalId)
+                .containsEntry("store_id", storeId);
+    }
+
+    @Test
+    void recordAsNamesAnActorThatIsNotYetTheSessionsPrincipal() {
+        Actor loggingIn = Actor.employee(actorId, terminalId, storeId, Set.of());
+        transaction.executeWithoutResult(tx -> auditLog.recordAs(loggingIn, "EMPLOYEE_LOGGED_IN", "Employee", entityId,
+                storeId, null, Map.of()));
+
+        assertThat(row()).containsEntry("actor_id", actorId).containsEntry("actor_kind", "EMPLOYEE")
+                .containsEntry("terminal_id", terminalId);
+    }
+
+    @Test
+    void recordAsCurrentActorWithoutASessionIsRefusedAndWritesNothing() {
+        assertThatThrownBy(() -> transaction.executeWithoutResult(tx -> auditLog.recordAsCurrentActor("STORE_UPDATED",
+                "Store", entityId, storeId, null, null, Map.of())))
+                .isInstanceOf(org.springframework.security.authentication.AuthenticationCredentialsNotFoundException.class);
+        assertThat(countRows()).isZero();
+    }
+
+    @Test
+    void theDatabaseRefusesASystemRowThatNamesAnActor() {
+        assertThatThrownBy(() -> jdbc.sql("""
+                        INSERT INTO audit.audit_event (id, occurred_at, actor_id, actor_kind, action, entity_type, entity_id)
+                        VALUES (:id, now(), :actor, 'SYSTEM', 'X_DONE', 'X', :entity)""")
+                .param("id", UUID.randomUUID()).param("actor", actorId).param("entity", entityId).update())
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    private Map<String, Object> row() {
+        return jdbc.sql("""
+                        SELECT actor_id, actor_kind, approver_id, store_id, terminal_id, reason
+                        FROM audit.audit_event WHERE entity_id = :entityId""")
+                .param("entityId", entityId).query().singleRow();
+    }
+
     private long countRows() {
         return jdbc.sql("SELECT count(*) FROM audit.audit_event WHERE entity_id = :id")
                 .param("id", entityId).query(Long.class).single();
     }
 
     private AuditEntry entry(String action, Map<String, Object> details) {
-        return new AuditEntry(actorId, approverId, action, "Store", entityId, storeId, terminalId,
+        return new AuditEntry(actorId, "ACCOUNT", approverId, action, "Store", entityId, storeId, terminalId,
                 "customer asked", details);
     }
 }

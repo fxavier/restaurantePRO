@@ -1,6 +1,5 @@
 package com.xavier.backend.identity.service;
 
-import com.xavier.backend.audit.AuditEntry;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.identity.exception.WeakPasswordException;
 import com.xavier.backend.identity.model.Role;
@@ -97,8 +96,8 @@ public class AdminBootstrapService {
             }
             throw e;
         }
-        auditLog.record(new AuditEntry(null, null, "USER_CREATED", "UserAccount", admin.getId().toString(), null,
-                null, "Administrator bootstrap", Map.of("username", username, "roleIds", admin.getRoleIds())));
+        auditLog.recordAsSystem("USER_CREATED", "UserAccount", admin.getId().toString(), null, null,
+                "Administrator bootstrap", Map.of("username", username, "roleIds", admin.getRoleIds()));
         log.info("Administrator '{}' created; the initial password must be changed at first login", username);
         return true;
     }

@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.xavier.backend.TestcontainersConfiguration;
-import com.xavier.backend.audit.AuditEntry;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.shared.exception.BusinessRuleException;
 import com.xavier.backend.shared.exception.ConflictException;
@@ -186,7 +185,7 @@ class IdempotencyServiceTest {
 
         // the action writes, then storing its response fails while serializing it
         assertThatThrownBy(() -> idempotency.execute(scope, key, target, body, UnserializableResponse.class, () -> {
-            auditLog.record(new AuditEntry(null, null, "PROBE_WRITTEN", "Probe", entityId, null, null, null, null));
+            auditLog.recordAsSystem("PROBE_WRITTEN", "Probe", entityId, null, null, null, null);
             return ResponseEntity.ok(new UnserializableResponse("x"));
         })).hasMessageContaining("cannot be serialized");
 
@@ -273,7 +272,7 @@ class IdempotencyServiceTest {
         Map<String, Object> body = Map.of("amount", "5.00");
 
         assertThatThrownBy(() -> idempotency.execute(scope, key, target, body, String.class, () -> {
-            auditLog.record(new AuditEntry(null, null, "PROBE_WRITTEN", "Probe", entityId, null, null, null, null));
+            auditLog.recordAsSystem("PROBE_WRITTEN", "Probe", entityId, null, null, null, null);
             return ResponseEntity.unprocessableContent().body("balance exceeded");
         })).isInstanceOf(IllegalStateException.class).hasMessageContaining("2xx");
 
