@@ -26,7 +26,7 @@ The full spec is 14 modules and 4 delivery stages (§13). That is too big for on
 | R3 | Stage 3: split/partial, `customers` + credit, reconciliation, audit query, `reporting`, failure recovery | outlined only |
 | R4 | Stage 4: `inventory` (purchases, recipes, counts), `promotions` + loyalty, reservations, delivery | outlined only |
 
-**D1 — Modules are created only when their stage starts** (YAGNI). R1 creates `shared`, `audit`, `organization`, `identity`, `dining`, `catalog`. Their dependency rules for later modules are fixed now (§4) so R1 cannot paint us into a corner.
+**D1 — Modules are created only when their stage starts** (YAGNI). R1 creates `shared`, `audit`, `access`, `organization`, `identity`, `dining`, `catalog`. Their dependency rules for later modules are fixed now (§4) so R1 cannot paint us into a corner.
 
 ---
 
@@ -71,23 +71,24 @@ New dependencies, all added once in slice S0 (the only slice that touches `pom.x
 ```
 shared        → (nothing)                     OPEN module: Money, ids, errors, idempotency, Clock
 audit         → shared
-organization  → shared, audit
-identity      → shared, audit, organization
-dining        → shared, audit, organization, identity
-catalog       → shared, audit, organization, identity
+access        → shared                          Permission, Actor, AccessPolicy (authorization primitives)
+organization  → shared, audit, access
+identity      → shared, audit, access, organization
+dining        → shared, audit, access, organization
+catalog       → shared, audit, access, organization
 --- later runs ---
-customers     → shared, audit, organization, identity
-promotions    → shared, audit, organization, identity, catalog, customers
-orders        → shared, audit, organization, identity, dining, catalog, promotions     (NOT settlement)
-production    → shared, audit, organization, identity, orders::event                   (events only)
-cash          → shared, audit, organization, identity                                  (NOT orders)
-fiscal        → shared, audit, organization, identity, customers
-settlement    → shared, audit, organization, identity, orders, cash, fiscal, customers
-inventory     → shared, audit, organization, identity, catalog::event, orders::event, production::event
+customers     → shared, audit, access, organization
+promotions    → shared, audit, access, organization, catalog, customers
+orders        → shared, audit, access, organization, dining, catalog, promotions     (NOT settlement)
+production    → shared, audit, access, organization, orders::event                   (events only)
+cash          → shared, audit, access, organization                                  (NOT orders)
+fiscal        → shared, audit, access, organization, customers
+settlement    → shared, audit, access, organization, orders, cash, fiscal, customers
+inventory     → shared, audit, access, organization, catalog::event, orders::event, production::event
 reporting     → events only from any module; nobody depends on reporting
 ```
 
-Every module depends on `identity` for one reason: `identity` exposes `AccessPolicy.require(Permission, storeId)`, the single server-side authorization check. Spec §6's direction rules (`orders ↛ settlement`, `cash ↛ orders`) are enforced by this table.
+Every module depends on `access` for one reason: it holds `AccessPolicy.require(Permission, storeId)`, the single server-side authorization check, plus `Permission` and `Actor`. `identity` (accounts, employees, roles, login) builds the `Actor` at login and depends on `organization` for stores and terminals; nothing depends on `identity` except through events. *Amended 2026-11-04 (user decision): the original table put `AccessPolicy` in `identity`, which created an organization ↔ identity cycle.* Spec §6's direction rules (`orders ↛ settlement`, `cash ↛ orders`) are enforced by this table.
 
 **D14 — `shared` is technical only:** `Money`, `Currency` handling, id helpers, `ProblemDetail` mapping and base exceptions, the idempotency mechanism, the clock bean, pagination DTO. No business rules.
 
@@ -120,12 +121,12 @@ Every module depends on `identity` for one reason: `identity` exposes `AccessPol
 - **D26 — Two login flows, one identity model:**
   - BackOffice: `username + password`, BCrypt (an adaptive hash, built in). Strong-password rule. MFA (TOTP) is **deferred**; spec says "conforme implantação". It needs a decision later if remote admin access is planned.
   - POS: `employee code + PIN` **on a registered terminal**. A terminal is enrolled once by an admin (one-time enrollment code → long-lived device token stored hashed). The PIN is BCrypt-hashed. 5 failed attempts lock the employee until a manager unlocks it. The session carries `employeeId, terminalId, storeId`.
-- **D27 — RBAC:** `Permission` is a **code-defined enum** (e.g. `CATALOG_PUBLISH`, `ORDER_VOID`, `CASH_CLOSE_APPROVE`), because permissions are tied to code paths. `Role` is data (a named set of permissions), seeded with the 7 profiles from §3 and editable. `EmployeeStoreAssignment(employee, store, role)` gives per-store scope, and an employee can have many. Every service use case calls `AccessPolicy.require(permission, storeId)`. Controllers do not decide authorization.
+- **D27 — RBAC:** `Permission` is a **code-defined enum** (e.g. `CATALOG_PUBLISH`, `ORDER_VOID`, `CASH_CLOSE_APPROVE`), because permissions are tied to code paths. `Role` is data (a named set of permissions), seeded with the 7 profiles from §3 and editable. `EmployeeStoreAssignment(employee, store, role)` gives per-store scope, and an employee can have many. Every service use case calls `AccessPolicy.require(permission, storeId)`. Controllers do not decide authorization. **POS sessions are scoped to the terminal's store** (user decision 2026-11-04): a PIN login on a terminal grants only the store-scoped authorities of that store; BackOffice sessions carry all assigned stores.
 - **D28 — Supervisor approval** (void, discount, reopen…): the request carries the approver's credentials (code + PIN). The server verifies the approver has the permission in that store, and the audit row records both operator and approver. The pattern is built in R1, first used in R2.
 - **D29 — Support access** (§5): a time-boxed account an admin enables, with audit. Deferred to R3 unless you want it in R1.
 
 ### Bootstrap
-- **D30 — Company is created at first startup**, not via API. Properties or env (`RESTAURANTPRO_COMPANY_NAME`, `_TAX_ID`, `_COUNTRY`, `_CURRENCY`, `_ADMIN_USERNAME`, `_ADMIN_INITIAL_PASSWORD` from a secret file). A single-row constraint (`id boolean PRIMARY KEY CHECK (id)`) makes a second company impossible. The admin must change the initial password at first login. After bootstrap: `GET/PUT /backoffice/company-profile` only.
+- **D30 — Company is created at first startup**, not via API. Properties `restaurantpro.bootstrap.company.{name,tax-id,country,currency}` and `restaurantpro.bootstrap.admin.{username,initial-password-file}`, set from env `RESTAURANTPRO_BOOTSTRAP_COMPANY_{NAME,TAX_ID,COUNTRY,CURRENCY}`, `RESTAURANTPRO_BOOTSTRAP_ADMIN_USERNAME`, `RESTAURANTPRO_BOOTSTRAP_ADMIN_INITIAL_PASSWORD_FILE` (secret file). A single-row constraint (`id boolean PRIMARY KEY CHECK (id)`) makes a second company impossible. The admin must change the initial password at first login. After bootstrap: `GET/PUT /backoffice/company-profile` only.
 
 ### Catalog publication (spec §5, §8.3)
 - **D31 — Working copy + frozen release.** Admins edit normal relational tables (families, items, variants, units, barcodes, tax categories/rates, price lists, production destination). `ConfigurationRelease` follows DRAFT → VALIDATED → PUBLISHED → RETIRED. **Publish freezes a complete per-store snapshot as `jsonb`** with version, effective time and author. The previous published release becomes RETIRED. POS reads only `GET /pos/catalog` (current published snapshot plus its version). Orders (R2) copy description/price/tax from the snapshot onto the line at confirmation. So republishing can never change past sales (acceptance criterion §14 #7).
