@@ -8,7 +8,7 @@ Owner: `software-architect`. Sources: [product_description.md](../product_descri
 - `shared` is `Type.OPEN`. It holds only technical types (D14) and depends on nothing.
 - `config` holds the security filter chains and the correlation-id filter. Nothing depends on it.
 - Public API is the module's **root package** plus any `@NamedInterface` (`model/dto`, `model/event`, a `<Module>Api` facade). Entities, repositories, services and controllers stay in subpackages and are internal (D12).
-- Module docs are written on every test run to [modules/](modules/) (`ModularityTests.writesModuleDocumentation`). Commit them when they change.
+- Module docs are written on every test run to [modules/](modules/) (`ModularityTests.generatesModuleDocumentation`, a generator that also asserts each file exists). Commit them when they change.
 
 Module layout (D12): `model/`, `model/dto/`, `model/event/`, `repository/`, `service/`, `controller/`, `exception/`. Create a package only when it has content.
 
@@ -31,9 +31,16 @@ Module layout (D12): `model/`, `model/dto/`, `model/event/`, `repository/`, `ser
 - **Time**: inject `java.time.Clock` (UTC). Tests pin it with a `@TestConfiguration` that declares a `@Primary Clock`.
 - **Pagination**: accept a `Pageable` and return `PageResponse.from(page)`. Size is capped at 200 (`PageResponseTest`).
 - **Idempotency** (D24): controllers of repeatable commands return
-  `idempotencyService.execute("<module>.<operation>:" + actorId, key, body, () -> ResponseEntity...)`, with `key` from `@RequestHeader("Idempotency-Key")`. Same key and body replay the stored response. Same key with a different body gives 422. A duplicate while the first is still running gives 409. If the action fails, the key is released. Never write your own (`IdempotencyServiceTest`).
-- **Audit** (D20): call `AuditLog.record(new AuditEntry(...))` inside the use case's `@Transactional` method. It requires an existing transaction (`MANDATORY`). Details carry no PIN, password, token or card data, and keys that look like secrets are rejected. The database refuses UPDATE, DELETE and TRUNCATE on `audit.audit_event` (`AuditLogTest`).
-- **Authorization** (D27): the first line of every use case is `accessPolicy.require(Permission.X, storeId)` (or `require(Permission.X)` for installation-wide operations). Controllers never authorize. Authorities are `PERM_X` (all stores) and `PERM_X@<storeId>` (`AccessPolicyTest`, `SecurityConfigTest`).
+  `idempotencyService.execute("<module>.<operation>:" + actorId, key, request.getMethod() + " " + request.getRequestURI(), body, () -> ResponseEntity...)`, with `key` from `@RequestHeader("Idempotency-Key")`. Call it from the controller, outside any transaction. The request identity is the SHA-256 of `target` plus the canonical JSON body.
+  - Same key and same target+body → the stored response is replayed.
+  - Same key with a different target or body → 422.
+  - A duplicate while another request holds the key → 409.
+  - A missing, blank or over-255-character key → 400.
+  - Crash-safe: the action runs only while holding the record's row lock (`FOR UPDATE NOWAIT`), and its effects and the stored response commit together. After a crash or a failed action, the next request with that key takes the claim over and runs it once.
+  - Never write your own (`IdempotencyServiceTest`).
+  - Known limits: a replay returns the status and JSON body only, no headers such as `Location`; a `String` body comes back as a JSON string. There is no retention yet. The action runs inside a DB transaction, so R2 external calls (payment, fiscal) need another pattern (spec §7).
+- **Audit** (D20): call `AuditLog.record(new AuditEntry(...))` inside the use case's `@Transactional` method. It requires an existing transaction (`MANDATORY`). Details carry no PIN, password, token or card data, and keys that look like secrets are rejected. The secret-key guard checks top-level keys only. The database refuses UPDATE, DELETE and TRUNCATE on `audit.audit_event` (`AuditLogTest`).
+- **Authorization** (D27): the first line of every use case is `accessPolicy.require(Permission.X, storeId)` (or `require(Permission.X)` for installation-wide operations). Controllers never authorize. Authorities are `PERM_X` (all stores) and `PERM_X@<storeId>`. `Actor.authorities()` is the only source for these decisions; S2 must build the `Authentication`'s granted authorities from the same set (actuator URL rules read those). Denials are logged at WARN (`AccessPolicyTest`, `SecurityConfigTest`).
 
 ## Persistence
 
@@ -41,6 +48,11 @@ Module layout (D12): `model/`, `model/dto/`, `model/event/`, `repository/`, `ser
 - One schema per module (`CREATE SCHEMA IF NOT EXISTS <module>`), with no cross-module foreign keys (D6). Constraints back every invariant they can express.
 - `spring.jpa.hibernate.ddl-auto=validate`: entities must match the migrations, and every context start checks it.
 - UUIDv7 ids: `@UuidGenerator(style = VERSION_7)`.
+
+## Events
+
+- Cross-module events go through the Spring Modulith JPA publication registry (`event_publication`, D19). Listeners use `@ApplicationModuleListener` and must be idempotent.
+- `spring.modulith.events.republish-outstanding-events-on-restart=true`: when the application starts, it delivers again every publication whose listener had not completed. This is safe because each installation runs one instance. `EventRepublicationTest` proves it with a real second application context started on the same database.
 
 ## Web and security
 

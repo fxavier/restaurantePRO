@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.xavier.backend.BackendApplication;
+import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.springframework.modulith.core.ApplicationModules;
 import org.springframework.modulith.core.Violations;
@@ -34,10 +35,17 @@ class ModularityTests {
         assertThat(violations.getMessages()).anySatisfy(message -> assertThat(message).contains("settlement"));
     }
 
+    /** Generator, not a rule: refreshes docs/architecture/modules/ and checks every module was documented. */
     @Test
-    void writesModuleDocumentation() {
-        new Documenter(MODULES, Documenter.Options.defaults().withOutputFolder("../docs/architecture/modules"))
+    void generatesModuleDocumentation() {
+        Path folder = Path.of("../docs/architecture/modules");
+        new Documenter(MODULES, Documenter.Options.defaults().withOutputFolder(folder.toString()))
                 .writeDocumentation()
                 .writeAggregatingDocument();
+
+        assertThat(folder.resolve("components.puml")).isNotEmptyFile();
+        assertThat(folder.resolve("all-docs.adoc")).isNotEmptyFile();
+        MODULES.forEach(module -> assertThat(folder.resolve("module-" + module.getIdentifier() + ".adoc"))
+                .isNotEmptyFile());
     }
 }

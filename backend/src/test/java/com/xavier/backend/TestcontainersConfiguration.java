@@ -28,6 +28,11 @@ public class TestcontainersConfiguration {
         POSTGRES.start();
     }
 
+    /** For tests that start a second application (e.g. a simulated restart) on the same database. */
+    public static PostgreSQLContainer postgres() {
+        return POSTGRES;
+    }
+
     // destroyMethod = "": closing one cached context must not stop the container the others use.
     @Bean(destroyMethod = "")
     @ServiceConnection

@@ -18,6 +18,12 @@ spring:
   flyway:
     # Scanned recursively: db/migration/<module>/V<block>__<module>_<what>.sql (D5 version blocks).
     locations: classpath:db/migration
+  modulith:
+    events:
+      # D19 / spec §7: deliver again, at startup, every publication whose listener did not complete
+      # (crash or failure). Safe because there is one backend instance per installation and listeners
+      # are idempotent. Default is false in Spring Modulith 2.1.
+      republish-outstanding-events-on-restart: true
   session:
     jdbc:
       table-name: shared.spring_session
