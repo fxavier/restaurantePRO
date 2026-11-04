@@ -1,6 +1,9 @@
 spring:
   application:
     name: backend
+  autoconfigure:
+    # No in-memory user with a generated password (spec §10). Identity (S2) owns authentication.
+    exclude: org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration
   datasource:
     # Dev defaults match backend/compose.yaml. The password is never committed (spec §10):
     # export RESTAURANTPRO_DB_PASSWORD before running. Tests use Testcontainers (@ServiceConnection).
