@@ -371,6 +371,14 @@ public class FiscalDocument {
         return number;
     }
 
+    public Money getTotalGross() {
+        return Money.of(totalGross, Currency.getInstance(currency));
+    }
+
+    public Money getTotalTax() {
+        return Money.of(totalTax, Currency.getInstance(currency));
+    }
+
     public String getAdapterData() {
         return adapterData;
     }
