@@ -34,6 +34,7 @@ import java.time.Instant;
 import java.util.Currency;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -100,11 +101,13 @@ public class CashClosingService {
             throw liveClosingExists(register);
         }
         Currency currency = organization.companyProfile().currency();
-        UUID previous = closings.findFirstByRegisterIdAndCashDayIdOrderByAttemptNoDesc(register.getId(),
-                day.getId()).map(CashClosing::getId).orElse(null);
-        int attemptNo = previous == null ? 1 : closings.findById(previous).orElseThrow().getAttemptNo() + 1;
+        // no live closing exists, so the latest attempt (if any) was REJECTED: the new one supersedes it
+        Optional<CashClosing> rejected = closings.findFirstByRegisterIdAndCashDayIdOrderByAttemptNoDesc(
+                register.getId(), day.getId());
         CashClosing closing = UniqueConstraints.saveAndFlush(closings,
-                CashClosing.draft(pos.storeId(), register.getId(), day.getId(), attemptNo, previous,
+                CashClosing.draft(pos.storeId(), register.getId(), day.getId(),
+                        rejected.map(r -> r.getAttemptNo() + 1).orElse(1),
+                        rejected.map(CashClosing::getId).orElse(null),
                         CashAmounts.byMethod(movements.expectedByRegisterAndDay(register.getId(), day.getId()),
                                 currency),
                         CashAmounts.byMethod(counts.countedByRegisterAndDay(register.getId(), day.getId()),
