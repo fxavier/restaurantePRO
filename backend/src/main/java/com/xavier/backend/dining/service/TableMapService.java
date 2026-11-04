@@ -4,6 +4,8 @@ import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.dining.model.RestaurantTable;
 import com.xavier.backend.dining.model.RoomArea;
+import com.xavier.backend.dining.model.TableOccupation;
+import com.xavier.backend.dining.model.dto.OccupationView;
 import com.xavier.backend.dining.model.dto.TableMap;
 import com.xavier.backend.dining.model.dto.TableStatus;
 import com.xavier.backend.dining.repository.RestaurantTableRepository;
@@ -47,15 +49,25 @@ public class TableMapService {
     }
 
     private TableMap.Table toMapTable(RestaurantTable table) {
-        return new TableMap.Table(table.getId(), table.getCode(), table.getSeats(), statusOf(table));
+        return statusOf(table, null);
     }
 
     private static TableMap.Area toMapArea(RoomArea area, List<TableMap.Table> tables) {
         return new TableMap.Area(area.getId(), area.getCode(), area.getName(), tables);
     }
 
-    /** The one place a table's state is decided. R2 derives it from the open TableOccupation. */
-    private TableStatus statusOf(RestaurantTable table) {
-        return TableStatus.FREE;
+    /**
+     * The one place a table's state is decided (r2-decisions §4 dining): OCCUPIED from its open occupation (or
+     * {@code null}), plus the independent locked and subtotal-printed indicators.
+     */
+    static TableMap.Table statusOf(RestaurantTable table, TableOccupation open) {
+        if (open == null) {
+            return new TableMap.Table(table.getId(), table.getCode(), table.getSeats(), TableStatus.FREE,
+                    table.isLocked(), false, null, null, null);
+        }
+        OccupationView occupation = open.toView();
+        return new TableMap.Table(table.getId(), table.getCode(), table.getSeats(), TableStatus.OCCUPIED,
+                table.isLocked(), occupation.subtotalPrintedAt() != null, occupation.openedAt(), occupation.guests(),
+                occupation.openedByEmployeeId());
     }
 }
