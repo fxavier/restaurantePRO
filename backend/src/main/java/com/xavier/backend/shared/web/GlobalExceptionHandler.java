@@ -7,6 +7,7 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.data.core.PropertyReferenceException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -24,8 +25,8 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 
 /**
  * The single place that turns exceptions into RFC 9457 {@link ProblemDetail} responses (D22):
- * 400 validation (with {@code errors: [{field, message}]}), 401, 403, 404, 409 conflict/stale version,
- * 422 business rule, 500 without internals. Framework exceptions (405, 415, missing header…) keep
+ * 400 validation (with {@code errors: [{field, message}]}) and unknown sort property, 401, 403, 404,
+ * 409 conflict/stale version, 422 business rule, 500 without internals. Framework exceptions (405, 415, missing header…) keep
  * the {@link ResponseEntityExceptionHandler} defaults, which are already ProblemDetails.
  */
 @RestControllerAdvice
@@ -56,6 +57,12 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(BusinessRuleException.class)
     ProblemDetail businessRule(BusinessRuleException e) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_CONTENT, e.getMessage());
+    }
+
+    /** A client {@code ?sort=} naming a property the entity does not have is the client's mistake, not ours. */
+    @ExceptionHandler(PropertyReferenceException.class)
+    ProblemDetail unknownSortProperty(PropertyReferenceException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Unknown sort property: " + e.getPropertyName());
     }
 
     @ExceptionHandler(AccessDeniedException.class)

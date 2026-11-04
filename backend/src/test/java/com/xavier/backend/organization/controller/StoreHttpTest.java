@@ -7,6 +7,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -21,7 +22,10 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
@@ -99,6 +103,16 @@ class StoreHttpTest {
                 .andExpect(jsonPath("$.totalElements").isNumber());
         mvc.perform(get(STORES).with(inStore(store, Permission.STORE_MANAGE)))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    void sortingByAnUnknownPropertyIsABadRequestNotAnError(CapturedOutput output) throws Exception {
+        mvc.perform(get(STORES).param("sort", "nope").with(admin(Permission.STORE_MANAGE)))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.detail").value("Unknown sort property: nope"));
+        assertThat(output.getAll()).doesNotContain("Unhandled exception");
     }
 
     @Test
