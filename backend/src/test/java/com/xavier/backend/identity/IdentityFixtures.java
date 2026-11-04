@@ -51,13 +51,12 @@ public final class IdentityFixtures {
 
     /** An authenticated session of account {@code userId} without permissions (as after a real login). */
     public static RequestPostProcessor asAccount(UUID userId) {
-        Actor actor = new Actor(userId, null, null, null, Set.of());
+        Actor actor = Actor.account(userId, Set.of());
         return authentication(UsernamePasswordAuthenticationToken.authenticated(actor, null, java.util.List.of()));
     }
 
     public static RequestPostProcessor as(Set<String> authorities) {
-        Actor actor = new Actor(UUID.fromString("00000000-0000-7000-8000-000000000001"), null, null, null,
-                authorities);
+        Actor actor = Actor.account(UUID.fromString("00000000-0000-7000-8000-000000000001"), authorities);
         return authentication(UsernamePasswordAuthenticationToken.authenticated(actor, null,
                 authorities.stream().map(SimpleGrantedAuthority::new).toList()));
     }

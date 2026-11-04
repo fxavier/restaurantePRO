@@ -67,7 +67,7 @@ class ReleaseController {
     ResponseEntity<ReleaseSummary> publish(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
                               @Valid @RequestBody(required = false) PublishRequest body, HttpServletRequest request) {
         PublishRequest publish = body == null ? PublishRequest.EMPTY : body;
-        return idempotency.execute("catalog.release.publish:" + accessPolicy.current().userId(), key,
+        return idempotency.execute(accessPolicy.current().idempotencyScope("catalog.release.publish"), key,
                 request.getMethod() + " " + request.getRequestURI(), publish, ReleaseSummary.class,
                 () -> ResponseEntity.ok(releases.publish(id, publish)));
     }

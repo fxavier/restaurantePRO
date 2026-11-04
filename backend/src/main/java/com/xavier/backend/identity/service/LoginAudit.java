@@ -1,6 +1,6 @@
 package com.xavier.backend.identity.service;
 
-import com.xavier.backend.access.Actor;
+import com.xavier.backend.access.Actor; import com.xavier.backend.access.ActorKind;
 import com.xavier.backend.audit.AuditEntry;
 import com.xavier.backend.audit.AuditLog;
 import java.util.Map;
@@ -31,7 +31,7 @@ public class LoginAudit {
     }
 
     private void record(Actor actor, String what) {
-        boolean pos = actor.employeeId() != null;
+        boolean pos = actor.kind() == ActorKind.EMPLOYEE;
         auditLog.record(new AuditEntry(actor.userId(), null, (pos ? "EMPLOYEE_" : "USER_") + what,
                 pos ? "Employee" : "UserAccount", actor.userId().toString(), actor.storeId(), actor.terminalId(), null,
                 Map.of()));
