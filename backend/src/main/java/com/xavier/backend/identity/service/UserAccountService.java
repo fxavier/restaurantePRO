@@ -6,9 +6,11 @@ import com.xavier.backend.audit.AuditEntry;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.identity.exception.EmployeeAccountTakenException;
 import com.xavier.backend.identity.exception.EmployeeNotFoundException;
+import com.xavier.backend.identity.exception.LastAdministratorException;
 import com.xavier.backend.identity.exception.RoleNotFoundException;
 import com.xavier.backend.identity.exception.UserNotFoundException;
 import com.xavier.backend.identity.exception.UsernameTakenException;
+import com.xavier.backend.identity.model.Role;
 import com.xavier.backend.identity.model.UserAccount;
 import com.xavier.backend.identity.model.dto.UserCreateRequest;
 import com.xavier.backend.identity.model.dto.UserSummary;
@@ -75,7 +77,11 @@ public class UserAccountService {
         UserAccount account = account(id);
         OptimisticLocking.requireVersion(UserAccount.class, id, account.getVersion(), request.version());
         requireLinks(request.employeeId(), request.roleIds());
+        boolean wasAdministrator = isActiveAdministrator(account);
         account.update(request.employeeId(), request.roleIds(), request.active(), clock.instant());
+        if (wasAdministrator && !isActiveAdministrator(account)) {
+            requireAnotherActiveAdministrator(account);
+        }
         save(account);
         audit("USER_UPDATED", account);
         if (!account.isActive()) {
@@ -94,6 +100,21 @@ public class UserAccountService {
     public PageResponse<UserSummary> list(Pageable pageable) {
         accessPolicy.require(Permission.USER_MANAGE);
         return PageResponse.from(accounts.findAll(pageable).map(UserAccount::toSummary));
+    }
+
+    private static boolean isActiveAdministrator(UserAccount account) {
+        return account.isActive() && account.getRoleIds().contains(Role.ADMINISTRATOR_ID);
+    }
+
+    /**
+     * Locks the administrator role row first, so two concurrent demotions run this check one after the other and
+     * the second sees the first one's committed result.
+     */
+    private void requireAnotherActiveAdministrator(UserAccount account) {
+        roles.lockRow(Role.ADMINISTRATOR_ID);
+        if (accounts.countActiveHoldersExcept(Role.ADMINISTRATOR_ID, account.getId()) == 0) {
+            throw new LastAdministratorException();
+        }
     }
 
     private void requireLinks(UUID employeeId, Set<UUID> roleIds) {
