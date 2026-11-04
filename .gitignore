@@ -1,3 +1,24 @@
 .scratch/
 .DS_Store
 .metrics/
+
+## Visual Studio Code
+.vscode/
+
+### JetBrains IDEs
+.idea/
+
+#### Environment files
+.env
+
+#### Node.js
+node_modules/
+
+#### Logs
+logs/
+*.log   
+
+### OS generated files
+Thumbs.db   
+
+
