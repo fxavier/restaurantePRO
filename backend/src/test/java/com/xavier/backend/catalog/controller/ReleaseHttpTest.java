@@ -264,6 +264,44 @@ class ReleaseHttpTest {
     }
 
     @Test
+    void racingTwoValidatedReleasesAfterAFirstPublicationLeavesOnePublishedAndRetiresTheFirst() throws Exception {
+        for (int round = 0; round < 3; round++) {
+            SellableStore sellable = sellableStore();
+            UUID v1 = validatedRelease(sellable.store());
+            publish(sellable.store(), v1, UUID.randomUUID().toString(), "{}").andExpect(status().isOk());
+            UUID first = validatedRelease(sellable.store());
+            UUID second = validatedRelease(sellable.store());
+
+            List<Integer> statuses = Race.run(List.of(
+                    () -> publish(sellable.store(), first, UUID.randomUUID().toString(), "{}")
+                            .andReturn().getResponse().getStatus(),
+                    () -> publish(sellable.store(), second, UUID.randomUUID().toString(), "{}")
+                            .andReturn().getResponse().getStatus()));
+
+            assertThat(statuses).as("round %d", round).contains(200).allMatch(s -> s == 200 || s == 409);
+            assertThat(jdbc.sql("SELECT count(*) FROM catalog.configuration_release WHERE store_id = :store"
+                            + " AND status = 'PUBLISHED'").param("store", sellable.store()).query(Long.class).single())
+                    .isEqualTo(1);
+            assertThat(jdbc.sql("SELECT status FROM catalog.configuration_release WHERE id = :id").param("id", v1)
+                    .query(String.class).single()).isEqualTo("RETIRED");
+        }
+    }
+
+    @Test
+    void racingOneReleaseUnderTwoKeysPublishesItOnce() throws Exception {
+        for (int round = 0; round < 3; round++) {
+            SellableStore sellable = sellableStore();
+            UUID release = validatedRelease(sellable.store());
+
+            List<Integer> statuses = Race.twice(() -> publish(sellable.store(), release, UUID.randomUUID().toString(),
+                    "{}").andReturn().getResponse().getStatus());
+
+            assertThat(statuses).as("round %d", round).containsExactlyInAnyOrder(200, 409);
+            assertThat(publications(release)).isEqualTo(1);
+        }
+    }
+
+    @Test
     void thePosReadsNothingBeforeTheFirstPublicationAndOnlyItsOwnStore() throws Exception {
         SellableStore sellable = sellableStore();
         UUID other = fixtures().store();
