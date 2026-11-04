@@ -4,6 +4,7 @@ import static com.xavier.backend.dining.DiningActors.admin;
 import static com.xavier.backend.dining.DiningActors.inStore;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.xavier.backend.access.Permission;
@@ -19,6 +20,9 @@ import org.springframework.boot.test.context.TestComponent;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.RequestBuilder;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
@@ -35,10 +39,33 @@ public class DiningFixtures {
 
     private final MockMvc mvc;
     private final JdbcClient jdbc;
+    private final DiningApi dining;
+    private final TransactionTemplate tx;
 
-    DiningFixtures(MockMvc mvc, JdbcClient jdbc) {
+    DiningFixtures(MockMvc mvc, JdbcClient jdbc, DiningApi dining, PlatformTransactionManager transactionManager) {
         this.mvc = mvc;
         this.jdbc = jdbc;
+        this.dining = dining;
+        this.tx = new TransactionTemplate(transactionManager);
+    }
+
+    /** Seats a new order at {@code table}, as orders does in a POS request; returns the order id. */
+    public UUID seat(UUID store, UUID table) {
+        return seat(store, table, UUID.randomUUID(), 2);
+    }
+
+    public UUID seat(UUID store, UUID table, UUID employee, int guests) {
+        UUID order = UUID.randomUUID();
+        DiningActors.runAsPos(store, employee,
+                () -> tx.execute(status -> dining.openOccupation(table, order, guests, employee)));
+        return order;
+    }
+
+    public void markSubtotalPrinted(UUID store, UUID order) {
+        DiningActors.runAsPos(store, UUID.randomUUID(), () -> tx.execute(status -> {
+            dining.markSubtotalPrinted(order);
+            return null;
+        }));
     }
 
     public UUID newStore() throws Exception {
@@ -61,6 +88,29 @@ public class DiningFixtures {
         return id(mvc.perform(post(TABLES).with(inStore(store, Permission.DINING_MANAGE)).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content(newTable(store, area, code, 4)))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+    }
+
+    public void deactivateTable(UUID store, UUID table, UUID area, String code) throws Exception {
+        mvc.perform(updateTable(store, table, area, code, false)).andExpect(status().isOk());
+    }
+
+    public void deactivateArea(UUID store, UUID area, String code) throws Exception {
+        mvc.perform(updateArea(store, area, code, false)).andExpect(status().isOk());
+    }
+
+    /** PUT of a table as created by {@link #createTable} (version 0, 4 seats), with {@code active}. */
+    public static RequestBuilder updateTable(UUID store, UUID table, UUID area, String code, boolean active) {
+        return put(TABLES + "/" + table).with(inStore(store, Permission.DINING_MANAGE)).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content("""
+                        {"areaId": "%s", "code": "%s", "seats": 4, "active": %s, "version": 0}"""
+                        .formatted(area, code, active));
+    }
+
+    /** PUT of an area as created by {@link #createArea} (version 0), with {@code active}. */
+    public static RequestBuilder updateArea(UUID store, UUID area, String code, boolean active) {
+        return put(AREAS + "/" + area).with(inStore(store, Permission.DINING_MANAGE)).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content("""
+                        {"code": "%s", "name": "Sala", "active": %s, "version": 0}""".formatted(code, active));
     }
 
     public long audits(String action, String entityId, UUID store) {
