@@ -5,6 +5,7 @@ import com.xavier.backend.fiscal.IssuedDocument;
 import com.xavier.backend.fiscal.exception.IllegalDocumentStateException;
 import com.xavier.backend.fiscal.exception.InvalidSaleDraftException;
 import com.xavier.backend.fiscal.model.dto.Buyer;
+import com.xavier.backend.fiscal.model.dto.DocumentSummary;
 import com.xavier.backend.fiscal.model.dto.DocumentView;
 import com.xavier.backend.fiscal.model.dto.DraftLine;
 import com.xavier.backend.fiscal.model.dto.SaleDraftCommand;
@@ -255,6 +256,11 @@ public class FiscalDocument {
                 storeCode, storeName, buyer(), lines.stream().map(l -> l.toView(c)).toList(),
                 taxes.stream().map(t -> t.toView(c)).toList(), Money.of(totalGross, c), Money.of(totalNet, c),
                 Money.of(totalTax, c), adapterCode, nonFiscal, lastError, lastErrorAt, version);
+    }
+
+    public DocumentSummary toSummary() {
+        return new DocumentSummary(id, storeId, documentType.name(), status.name(), sourceId, seriesCode, number,
+                issuedAt, getTotalGross(), buyerName);
     }
 
     /** What an adapter renders; only for an ISSUED document. */

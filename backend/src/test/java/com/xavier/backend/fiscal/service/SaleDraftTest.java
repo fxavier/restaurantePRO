@@ -15,6 +15,8 @@ import com.xavier.backend.fiscal.FiscalFixtures;
 import com.xavier.backend.fiscal.FiscalModuleTest;
 import com.xavier.backend.fiscal.model.dto.Buyer;
 import com.xavier.backend.fiscal.model.dto.DocumentView;
+import com.xavier.backend.organization.OrganizationApi;
+import com.xavier.backend.organization.model.dto.CompanyProfileView;
 import com.xavier.backend.shared.exception.NotFoundException;
 import java.util.ArrayList;
 import java.util.List;
@@ -52,6 +54,9 @@ class SaleDraftTest {
     @Autowired
     JdbcClient jdbc;
 
+    @Autowired
+    OrganizationApi organization;
+
     @Test
     void aDraftNeedsTheCallersTransaction() {
         assertThatThrownBy(() -> fiscal.createSaleDraft(saleDraft(UUID.randomUUID(), UUID.randomUUID(), null)))
@@ -82,15 +87,16 @@ class SaleDraftTest {
         UUID store = fixtures.newStore();
         UUID order = UUID.randomUUID();
         Buyer buyer = new Buyer("Cliente Lda", "500999888", "Av. 24 de Julho");
+        CompanyProfileView company = organization.companyProfile(); // other tests rename the shared company
         tx.execute(s -> fiscal.createSaleDraft(saleDraft(store, order, buyer)));
 
         renameStore(store, "Loja Renomeada");
 
         DocumentView document = fiscal.saleDocumentFor(order).orElseThrow();
         assertThat(document.storeName()).isEqualTo("Loja Fiscal");
-        assertThat(document.companyName()).isEqualTo("Test Company");
-        assertThat(document.companyTaxId()).isEqualTo("TEST-TAX-ID");
-        assertThat(document.companyCountry()).isEqualTo("MZ");
+        assertThat(document.companyName()).isEqualTo(company.name());
+        assertThat(document.companyTaxId()).isEqualTo(company.taxId());
+        assertThat(document.companyCountry()).isEqualTo(company.country());
         assertThat(document.buyer()).isEqualTo(buyer);
         assertThat(document.lines()).singleElement().satisfies(line -> {
             assertThat(line.description()).isEqualTo("Cerveja 2M");
