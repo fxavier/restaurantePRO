@@ -1,0 +1,16 @@
+[%autowidth.stretch, cols="h,a"]
+|===
+|Base package
+|`com.xavier.backend.identity`
+|Spring components
+|_Services_
+
+* `c.x.b.i.ApproverVerifier`
+|Bean references
+|* `c.x.b.a.AuditLog` (in Audit)
+* `c.x.b.o.OrganizationApi` (in Organization)
+* `c.x.b.a.AccessPolicy` (in Access)
+|Events listened to
+|* `c.x.b.o.model.event.CompanyBootstrapped` (async) 
+* `c.x.b.o.model.event.TerminalRevoked` (async) 
+|===
