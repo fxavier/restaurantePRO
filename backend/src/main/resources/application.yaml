@@ -1,3 +1,57 @@
 spring:
   application:
     name: backend
+  autoconfigure:
+    # No in-memory user with a generated password (spec §10). Identity (S2) owns authentication.
+    exclude: org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration
+  datasource:
+    # Dev defaults match backend/compose.yaml. The password is never committed (spec §10):
+    # export RESTAURANTPRO_DB_PASSWORD before running. Tests use Testcontainers (@ServiceConnection).
+    url: ${RESTAURANTPRO_DB_URL:jdbc:postgresql://localhost:5432/restaurantpro}
+    username: ${RESTAURANTPRO_DB_USERNAME:restaurantpro}
+    password: ${RESTAURANTPRO_DB_PASSWORD:}
+  jpa:
+    open-in-view: false
+    hibernate:
+      # Flyway owns the schema (D5); Hibernate only checks entities against it.
+      ddl-auto: validate
+  flyway:
+    # Scanned recursively: db/migration/<module>/V<block>__<module>_<what>.sql (D5 version blocks).
+    locations: classpath:db/migration
+  modulith:
+    events:
+      # D19 / spec §7: deliver again, at startup, every publication whose listener did not complete
+      # (crash or failure). Safe because there is one backend instance per installation and listeners
+      # are idempotent. Default is false in Spring Modulith 2.1.
+      republish-outstanding-events-on-restart: true
+  session:
+    jdbc:
+      table-name: shared.spring_session
+      initialize-schema: never
+  data:
+    web:
+      pageable:
+        max-page-size: 200 # D23
+
+server:
+  servlet:
+    session:
+      cookie:
+        # D25 / spec §10
+        secure: true
+        http-only: true
+        same-site: lax
+
+logging:
+  structured:
+    # D33: one JSON object per line (Elastic Common Schema); MDC keys such as correlationId are included.
+    format:
+      console: ecs
+
+management:
+  server:
+    port: ${RESTAURANTPRO_MANAGEMENT_PORT:8081}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus

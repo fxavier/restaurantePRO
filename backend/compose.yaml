@@ -1,0 +1,24 @@
+# Local development database only (PRD S0). The deploy stack lives in deploy/ (S5).
+# Usage (from backend/):
+#   export RESTAURANTPRO_DB_PASSWORD=<choose one locally>
+#   docker compose up -d
+# The password is read from your environment and never committed (spec §10).
+services:
+  postgres:
+    image: postgres:18.6-alpine # same image as TestcontainersConfiguration (D4)
+    environment:
+      POSTGRES_DB: restaurantpro
+      POSTGRES_USER: restaurantpro
+      POSTGRES_PASSWORD: ${RESTAURANTPRO_DB_PASSWORD:?set RESTAURANTPRO_DB_PASSWORD}
+    ports:
+      - "127.0.0.1:5432:5432" # never exposed beyond localhost (spec §10)
+    volumes:
+      - restaurantpro-dev-db:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U restaurantpro -d restaurantpro"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  restaurantpro-dev-db:

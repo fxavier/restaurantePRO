@@ -1,0 +1,19 @@
+== BackendApplication
+plantuml::components.puml[,,format=svg]
+
+== Audit
+plantuml::module-audit.puml[,,format=svg]
+include::module-audit.adoc[]
+
+== Identity
+plantuml::module-identity.puml[,,format=svg]
+include::module-identity.adoc[]
+
+== Shared kernel
+plantuml::module-shared.puml[,,format=svg]
+include::module-shared.adoc[]
+
+== Configuration
+plantuml::module-config.puml[,,format=svg]
+include::module-config.adoc[]
+

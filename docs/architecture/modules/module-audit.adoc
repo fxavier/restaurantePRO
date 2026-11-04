@@ -1,0 +1,9 @@
+[%autowidth.stretch, cols="h,a"]
+|===
+|Base package
+|`com.xavier.backend.audit`
+|Spring components
+|_Services_
+
+* `c.x.b.a.AuditLog`
+|===

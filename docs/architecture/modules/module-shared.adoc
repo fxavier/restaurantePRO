@@ -1,0 +1,13 @@
+[%autowidth.stretch, cols="h,a"]
+|===
+|Base package
+|`com.xavier.backend.shared`
+|Spring components
+|_Services_
+
+* `c.x.b.s.idempotency.IdempotencyService`
+
+_Others_
+
+* `c.x.b.s.web.GlobalExceptionHandler`
+|===
