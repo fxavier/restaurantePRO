@@ -47,7 +47,7 @@ class AuthController {
     @PostMapping("/login")
     SessionView login(@Valid @RequestBody LoginRequest body, HttpServletRequest request,
                       HttpServletResponse response) {
-        SessionView session = logins.passwordLogin(body.username(), body.password());
+        SessionView session = logins.passwordLogin(body.username(), body.password(), request.getRemoteAddr());
         return session.withSessionHandle(SessionHandles.of(sessions.start(session, request, response)));
     }
 

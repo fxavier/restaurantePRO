@@ -17,7 +17,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * BackOffice login (username + password, D26) and the description of the current session. Every refusal is the
- * same {@link InvalidCredentialsException} (401); the reason goes to a WARN log line, never the password.
+ * same {@link InvalidCredentialsException} (401); the reason goes to a WARN log line, never the password. Password
+ * guessing is throttled per username and client address ({@link LoginThrottling}, 429).
  */
 @Service
 public class LoginService {
@@ -30,23 +31,32 @@ public class LoginService {
     private final PasswordEncoder encoder;
     private final AccessPolicy accessPolicy;
     private final LoginAudit audit;
+    private final LoginThrottling throttling;
     /** Checked against when the username is unknown, so the answer takes as long as for a wrong password. */
     private final String unknownAccountHash;
 
     LoginService(UserAccountRepository accounts, EmployeeRepository employees, AuthorityResolver authorities,
-                 PasswordEncoder encoder, AccessPolicy accessPolicy, LoginAudit audit) {
+                 PasswordEncoder encoder, AccessPolicy accessPolicy, LoginAudit audit, LoginThrottling throttling) {
         this.accounts = accounts;
         this.employees = employees;
         this.authorities = authorities;
         this.encoder = encoder;
         this.accessPolicy = accessPolicy;
         this.audit = audit;
+        this.throttling = throttling;
         this.unknownAccountHash = encoder.encode("no such account");
     }
 
-    @Transactional
-    public SessionView passwordLogin(String username, String password) {
-        UserAccount account = accounts.findByUsername(UserAccount.normalize(username)).orElse(null);
+    /**
+     * Not transactional: the attempt count commits on its own (a refusal rolls nothing back), and the BCrypt check
+     * holds no connection.
+     *
+     * @param clientAddress where the attempt comes from, for throttling
+     */
+    public SessionView passwordLogin(String username, String password, String clientAddress) {
+        String normalized = UserAccount.normalize(username);
+        UserAccount account = accounts.findByUsername(normalized).orElse(null);
+        throttling.countAttempt(normalized, clientAddress, account == null ? null : account.getId());
         if (account == null) {
             encoder.matches(password, unknownAccountHash);
             throw refused(username, "unknown username");
@@ -57,6 +67,7 @@ public class LoginService {
         if (!account.isActive()) {
             throw refused(username, "account inactive");
         }
+        throttling.succeeded(normalized, clientAddress);
         SessionView session = sessionOf(account);
         audit.loggedIn(session.toActor());
         return session;
