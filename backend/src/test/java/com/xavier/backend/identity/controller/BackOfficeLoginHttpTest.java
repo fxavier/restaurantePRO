@@ -226,6 +226,70 @@ class BackOfficeLoginHttpTest {
     }
 
     @Test
+    void deactivatingTheLinkedEmployeeEndsTheAccountsSessionsAndItsStoreAuthorities() throws Exception {
+        UUID storeA = fixtures.store();
+        Employee employee = fixtures.employee("1234", storeA, IdentityFixtures.MANAGER);
+        User user = fixtures.user(Set.of(), employee.id());
+        Cookie session = fixtures.login(user.username(), IdentityFixtures.STRONG_PASSWORD);
+
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .put("/api/v1/backoffice/employees/" + employee.id()).with(IdentityFixtures.admin())
+                        .with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content(json("name", "Ana", "active", false, "version", employeeVersion(employee))))
+                .andExpect(status().isOk());
+
+        mvc.perform(get("/api/v1/auth/session").cookie(session)).andExpect(status().isUnauthorized());
+        Cookie again = fixtures.login(user.username(), IdentityFixtures.STRONG_PASSWORD);
+        mvc.perform(get("/api/v1/auth/session").cookie(again)).andExpect(jsonPath("$.permissions", empty()));
+    }
+
+    @Test
+    void removingAnAccountsRoleEndsItsSessions() throws Exception {
+        User user = fixtures.user(Set.of(IdentityFixtures.ADMINISTRATOR), null);
+        Cookie session = fixtures.login(user.username(), IdentityFixtures.STRONG_PASSWORD);
+
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .put("/api/v1/backoffice/users/" + user.id()).with(IdentityFixtures.admin()).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json("roleIds", Set.of(), "active", true, "version", userVersion(user))))
+                .andExpect(status().isOk());
+
+        mvc.perform(get("/api/v1/backoffice/users").cookie(session)).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void removingAnAssignmentEndsTheEmployeesAndTheLinkedAccountsSessions() throws Exception {
+        UUID storeA = fixtures.store();
+        IdentityFixtures.Terminal terminal = fixtures.enrolledTerminal(storeA);
+        Employee employee = fixtures.employee("1234", storeA, IdentityFixtures.MANAGER);
+        User user = fixtures.user(Set.of(), employee.id());
+        Cookie backOffice = fixtures.login(user.username(), IdentityFixtures.STRONG_PASSWORD);
+        Cookie pos = fixtures.posLogin(terminal, employee, "1234");
+        String assignment = IdentityFixtures.JSON.readTree(mvc.perform(
+                        get("/api/v1/backoffice/employees/" + employee.id() + "/assignments")
+                                .with(IdentityFixtures.admin()))
+                .andReturn().getResponse().getContentAsString()).get(0).get("id").asString();
+
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .delete("/api/v1/backoffice/employees/" + employee.id() + "/assignments/" + assignment)
+                        .with(IdentityFixtures.admin()).with(csrf()))
+                .andExpect(status().isNoContent());
+
+        mvc.perform(get("/api/v1/auth/session").cookie(backOffice)).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/auth/session").cookie(pos)).andExpect(status().isUnauthorized());
+    }
+
+    private long employeeVersion(Employee employee) {
+        return jdbc.sql("SELECT version FROM identity.employee WHERE id = :id").param("id", employee.id())
+                .query(Long.class).single();
+    }
+
+    private long userVersion(User user) {
+        return jdbc.sql("SELECT version FROM identity.user_account WHERE id = :id").param("id", user.id())
+                .query(Long.class).single();
+    }
+
+    @Test
     void loggingOutEndsTheSession() throws Exception {
         User user = fixtures.newUser(INITIAL, Set.of());
         Cookie session = fixtures.login(user.username(), INITIAL);

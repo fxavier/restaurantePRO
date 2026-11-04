@@ -94,6 +94,15 @@ class UserHttpTest {
     }
 
     @Test
+    void nobodyGivesAnAccountARoleWithPermissionsTheyDoNotHold() throws Exception {
+        mvc.perform(post(USERS).with(as(Set.of(Permission.USER_MANAGE.authority()))).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json("username", unique("u"), "initialPassword", PASSWORD,
+                                "roleIds", Set.of(IdentityFixtures.ADMINISTRATOR))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void anEmployeeHasAtMostOneAccount() throws Exception {
         IdentityFixtures fixtures = new IdentityFixtures(mvc);
         UUID employee = fixtures.employee("4821", fixtures.store(), IdentityFixtures.WAITER).id();

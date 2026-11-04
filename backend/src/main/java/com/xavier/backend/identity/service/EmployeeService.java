@@ -88,7 +88,7 @@ public class EmployeeService {
         employees.saveAndFlush(employee);
         audit("EMPLOYEE_UPDATED", employee, null, Map.of("name", employee.getName(), "active", request.active()));
         if (!request.active()) {
-            sessions.endAll(employee.getId()); // POS sessions are indexed by the employee id
+            sessions.endEmployeeSessions(employee.getId());
         }
         return employee.toSummary();
     }
@@ -151,6 +151,7 @@ public class EmployeeService {
                 .orElseThrow(() -> new AssignmentNotFoundException(assignmentId));
         accessPolicy.require(Permission.EMPLOYEE_MANAGE, assignment.getStoreId());
         assignments.delete(assignment);
+        sessions.endEmployeeSessions(employeeId);
         auditLog.record(new AuditEntry(accessPolicy.current().userId(), null, "EMPLOYEE_UNASSIGNED", "Employee",
                 employeeId.toString(), assignment.getStoreId(), null, null,
                 Map.of("roleId", assignment.getRoleId().toString())));

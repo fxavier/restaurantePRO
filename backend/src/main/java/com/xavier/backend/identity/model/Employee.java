@@ -132,6 +132,10 @@ public class Employee {
         return failedPinAttempts;
     }
 
+    public boolean isActive() {
+        return active;
+    }
+
     public boolean isLocked() {
         return locked;
     }

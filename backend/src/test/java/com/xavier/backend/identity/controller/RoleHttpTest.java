@@ -104,6 +104,26 @@ class RoleHttpTest {
     }
 
     @Test
+    void nobodyAddsToARolePermissionsTheyDoNotHold() throws Exception {
+        UUID role = IdentityFixtures.id(mvc.perform(post(ROLES).with(admin()).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json("name", unique("RoleAdmin"), "permissions", List.of("ROLE_MANAGE"))))
+                .andExpect(status().isCreated()).andReturn().getResponse());
+        long version = IdentityFixtures.JSON.readTree(mvc.perform(get(ROLES + "/" + role).with(admin()))
+                .andReturn().getResponse().getContentAsString()).get("version").asLong();
+
+        mvc.perform(put(ROLES + "/" + role).with(as(Set.of(Permission.ROLE_MANAGE.authority()))).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json("name", unique("RoleAdmin"), "permissions", List.of("ROLE_MANAGE", "USER_MANAGE"),
+                                "version", version)))
+                .andExpect(status().isForbidden());
+        mvc.perform(post(ROLES).with(as(Set.of(Permission.ROLE_MANAGE.authority()))).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json("name", unique("X"), "permissions", List.of("USER_MANAGE"))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void anUnknownPermissionIsABadRequest() throws Exception {
         mvc.perform(post(ROLES).with(admin()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
                         .content(json("name", unique("X"), "permissions", List.of("FLY"))))

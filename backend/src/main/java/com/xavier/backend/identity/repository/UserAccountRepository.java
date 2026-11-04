@@ -12,6 +12,8 @@ public interface UserAccountRepository extends JpaRepository<UserAccount, UUID> 
 
     boolean existsByUsername(String username);
 
+    Optional<UserAccount> findByEmployeeId(UUID employeeId);
+
     @Query("select count(a) from UserAccount a join a.roleIds r "
             + "where r = :roleId and a.active = true and a.id <> :excluded")
     long countActiveHoldersExcept(UUID roleId, UUID excluded);

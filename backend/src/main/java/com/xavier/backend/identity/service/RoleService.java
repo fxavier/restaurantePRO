@@ -21,7 +21,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Roles (D27): installation-wide data, every use case needs {@code ROLE_MANAGE} installation-wide. No delete:
+ * Roles (D27): installation-wide data, every use case needs {@code ROLE_MANAGE} installation-wide, and nobody puts
+ * into a role a permission they do not hold installation-wide. No delete:
  * assignments and the audit trail refer to roles; an unused role can simply be left unassigned.
  */
 @Service
@@ -45,6 +46,7 @@ public class RoleService {
         if (roles.existsByName(request.name().strip())) {
             throw new RoleNameTakenException(request.name().strip());
         }
+        request.permissions().forEach(accessPolicy::require);
         Role role = save(Role.define(request.name(), request.permissions(), clock.instant()));
         audit("ROLE_CREATED", role);
         return role.toSummary();
@@ -55,6 +57,8 @@ public class RoleService {
         accessPolicy.require(Permission.ROLE_MANAGE);
         Role role = role(id);
         OptimisticLocking.requireVersion(Role.class, id, role.getVersion(), request.version());
+        request.permissions().stream().filter(permission -> !role.getPermissions().contains(permission))
+                .forEach(accessPolicy::require);
         role.redefine(request.name(), request.permissions(), clock.instant());
         save(role);
         audit("ROLE_UPDATED", role);

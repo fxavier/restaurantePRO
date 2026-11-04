@@ -22,8 +22,10 @@ import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -65,6 +67,7 @@ public class UserAccountService {
             throw new UsernameTakenException(username);
         }
         requireLinks(request.employeeId(), request.roleIds());
+        requireCanGrant(request.roleIds());
         UserAccount account = save(UserAccount.open(username, encoder.encode(request.initialPassword()),
                 request.employeeId(), request.roleIds(), clock.instant()));
         audit("USER_CREATED", account);
@@ -77,15 +80,19 @@ public class UserAccountService {
         UserAccount account = account(id);
         OptimisticLocking.requireVersion(UserAccount.class, id, account.getVersion(), request.version());
         requireLinks(request.employeeId(), request.roleIds());
+        requireCanGrant(request.roleIds().stream().filter(role -> !account.getRoleIds().contains(role))
+                .collect(Collectors.toSet()));
         boolean wasAdministrator = isActiveAdministrator(account);
+        boolean authoritiesMayShrink = !request.active() || !account.getRoleIds().equals(request.roleIds())
+                || !Objects.equals(account.getEmployeeId(), request.employeeId());
         account.update(request.employeeId(), request.roleIds(), request.active(), clock.instant());
         if (wasAdministrator && !isActiveAdministrator(account)) {
             requireAnotherActiveAdministrator(account);
         }
         save(account);
         audit("USER_UPDATED", account);
-        if (!account.isActive()) {
-            sessions.endAll(account.getId());
+        if (authoritiesMayShrink) {
+            sessions.endAll(account.getId()); // its sessions hold the authorities resolved at login
         }
         return account.toSummary();
     }
@@ -100,6 +107,11 @@ public class UserAccountService {
     public PageResponse<UserSummary> list(Pageable pageable) {
         accessPolicy.require(Permission.USER_MANAGE);
         return PageResponse.from(accounts.findAll(pageable).map(UserAccount::toSummary));
+    }
+
+    /** Nobody gives an account a role with a permission they do not hold installation-wide themselves. */
+    private void requireCanGrant(Set<UUID> roleIds) {
+        roles.findAllById(roleIds).forEach(role -> role.getPermissions().forEach(accessPolicy::require));
     }
 
     private static boolean isActiveAdministrator(UserAccount account) {

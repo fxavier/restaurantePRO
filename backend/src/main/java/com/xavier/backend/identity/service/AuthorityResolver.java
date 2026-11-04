@@ -1,9 +1,11 @@
 package com.xavier.backend.identity.service;
 
 import com.xavier.backend.access.Permission;
+import com.xavier.backend.identity.model.Employee;
 import com.xavier.backend.identity.model.EmployeeStoreAssignment;
 import com.xavier.backend.identity.model.Role;
 import com.xavier.backend.identity.model.UserAccount;
+import com.xavier.backend.identity.repository.EmployeeRepository;
 import com.xavier.backend.identity.repository.EmployeeStoreAssignmentRepository;
 import com.xavier.backend.identity.repository.RoleRepository;
 import java.util.Collection;
@@ -26,18 +28,25 @@ class AuthorityResolver {
 
     private final RoleRepository roles;
     private final EmployeeStoreAssignmentRepository assignments;
+    private final EmployeeRepository employees;
 
-    AuthorityResolver(RoleRepository roles, EmployeeStoreAssignmentRepository assignments) {
+    AuthorityResolver(RoleRepository roles, EmployeeStoreAssignmentRepository assignments,
+                      EmployeeRepository employees) {
         this.roles = roles;
         this.assignments = assignments;
+        this.employees = employees;
     }
 
-    /** BackOffice: installation-wide roles as {@code PERM_X}, plus every assigned store as {@code PERM_X@store}. */
+    /**
+     * BackOffice: installation-wide roles as {@code PERM_X}, plus the linked employee's assigned stores as
+     * {@code PERM_X@store} while that employee is active.
+     */
     Set<String> ofAccount(UserAccount account) {
         Set<String> authorities = new HashSet<>();
         roles.findAllById(account.getRoleIds()).forEach(role ->
                 role.getPermissions().forEach(permission -> authorities.add(permission.authority())));
-        if (account.getEmployeeId() != null) {
+        if (account.getEmployeeId() != null
+                && employees.findById(account.getEmployeeId()).map(Employee::isActive).orElse(false)) {
             authorities.addAll(storeScoped(assignments.findByEmployeeId(account.getEmployeeId())));
         }
         return authorities;
