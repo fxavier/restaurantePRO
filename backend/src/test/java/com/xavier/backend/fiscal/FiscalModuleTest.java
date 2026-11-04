@@ -23,7 +23,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 @Documented
 @ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization"})
 @AutoConfigureMockMvc
-@Import({TestcontainersConfiguration.class, FiscalFixtures.class})
+@Import({TestcontainersConfiguration.class, FiscalFixtures.class, NanoClock.Config.class})
 @TestPropertySource(properties = {
         "restaurantpro.bootstrap.company.name=Test Company",
         "restaurantpro.bootstrap.company.tax-id=TEST-TAX-ID",

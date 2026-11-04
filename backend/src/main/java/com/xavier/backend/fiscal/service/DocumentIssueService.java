@@ -15,6 +15,7 @@ import com.xavier.backend.fiscal.repository.FiscalDocumentRepository;
 import com.xavier.backend.fiscal.repository.FiscalSeriesRepository;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -79,7 +80,8 @@ public class DocumentIssueService {
         }
         FiscalSeries numbering = series.lockActive(document.getStoreId(), document.getDocumentType())
                 .orElseThrow(() -> new NoActiveSeriesException(document.getStoreId()));
-        Instant now = clock.instant();
+        // PostgreSQL keeps microseconds: the hashed and returned time must be the stored one (D54 chain re-derivable)
+        Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
         long number = numbering.takeNextNumber(now);
         IssueResult result = adapter.issue(new IssueRequest(document.getId(), document.getDocumentType().name(),
                 numbering.getCode(), number, now, document.getTotalGross(), document.getTotalTax(),

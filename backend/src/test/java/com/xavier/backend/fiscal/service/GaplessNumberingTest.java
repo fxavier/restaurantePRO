@@ -11,6 +11,11 @@ import com.xavier.backend.fiscal.FiscalApi;
 import com.xavier.backend.fiscal.FiscalFixtures;
 import com.xavier.backend.fiscal.FiscalIssueFailedException;
 import com.xavier.backend.fiscal.FiscalModuleTest;
+import com.xavier.backend.fiscal.IssueRequest;
+import com.xavier.backend.shared.Money;
+import java.time.OffsetDateTime;
+import java.util.Currency;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import com.xavier.backend.fiscal.adapter.internal.InternalFiscalAdapter;
 import com.xavier.backend.fiscal.model.dto.DocumentView;
 import java.util.ArrayList;
@@ -41,6 +46,9 @@ class GaplessNumberingTest {
 
     @Autowired
     FiscalFixtures fixtures;
+
+    @Autowired
+    JdbcClient jdbc;
 
     @Autowired
     InternalFiscalAdapter adapter; // a Mockito spy (FiscalModuleTest), reset after each test
@@ -142,6 +150,27 @@ class GaplessNumberingTest {
         assertThat(two.nonFiscal()).isTrue();
         assertThat(fixtures.adapterData(two.id())).isNotEqualTo(fixtures.adapterData(one.id()))
                 .matches("[0-9a-f]{64}");
+    }
+
+    @Test
+    void theStoredChainLinkCanBeRecomputedFromTheStoredRowsAlone() throws Exception {
+        UUID store = fixtures.newStore();
+        fixtures.newSeries(store, "C", 1);
+        UUID first = issueAsEmployee(store, fixtures.newDraft(store)).id();
+        UUID second = issueAsEmployee(store, fixtures.newDraft(store)).id();
+
+        IssueRequest fromStoredRow = jdbc.sql("""
+                        SELECT document_type, series_code, number, issued_at, total_gross, currency
+                        FROM fiscal.fiscal_document WHERE id = :id""").param("id", second)
+                .query((rs, n) -> new IssueRequest(second, rs.getString("document_type"),
+                        rs.getString("series_code"), rs.getLong("number"),
+                        rs.getObject("issued_at", OffsetDateTime.class).toInstant(),
+                        Money.of(rs.getBigDecimal("total_gross"), Currency.getInstance(rs.getString("currency"))),
+                        null, fixtures.adapterData(first)))
+                .single();
+
+        assertThat(new InternalFiscalAdapter().issue(fromStoredRow).adapterData())
+                .isEqualTo(fixtures.adapterData(second));
     }
 
     private DocumentView issueAsEmployee(UUID store, UUID draft) {
