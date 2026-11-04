@@ -1,0 +1,27 @@
+@startuml
+title <size:24>Shared kernel</size>
+
+set separator none
+top to bottom direction
+
+<style>
+  root {
+    BackgroundColor: #ffffff
+    FontColor: #444444
+  }
+</style>
+
+!include <C4/C4>
+!include <C4/C4_Context>
+!include <C4/C4_Component>
+
+System_Boundary("BackendApplication_boundary", "BackendApplication", $tags="") {
+  Container_Boundary("BackendApplication.BackendApplication_boundary", "BackendApplication", $tags="") {
+    Component(BackendApplication.BackendApplication.Sharedkernel, "Shared kernel", $techn="Module", $descr="", $tags="", $link="")
+  }
+
+}
+
+SHOW_LEGEND(true)
+hide stereotypes
+@enduml
