@@ -4,7 +4,6 @@ import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Actor;
 import com.xavier.backend.access.ActorKind;
 import com.xavier.backend.identity.exception.InvalidCredentialsException;
-import com.xavier.backend.identity.model.Employee;
 import com.xavier.backend.identity.model.UserAccount;
 import com.xavier.backend.identity.model.dto.SessionView;
 import com.xavier.backend.identity.repository.EmployeeRepository;
@@ -69,7 +68,7 @@ public class LoginService {
      */
     SessionView sessionOf(UserAccount account) {
         Set<String> granted = account.isMustChangePassword() ? Set.of() : authorities.ofAccount(account);
-        return SessionView.of(Actor.account(account.getId(), granted), account.getUsername(),
+        return SessionView.account(Actor.account(account.getId(), granted), account.getUsername(),
                 account.isMustChangePassword());
     }
 
@@ -77,12 +76,13 @@ public class LoginService {
     public SessionView currentSession() {
         Actor actor = accessPolicy.current();
         if (actor.kind() == ActorKind.EMPLOYEE) {
-            return SessionView.of(actor, employees.findById(actor.employeeId()).map(Employee::getName).orElse(null),
-                    false);
+            return employees.findById(actor.employeeId())
+                    .map(employee -> SessionView.employee(actor, employee.getName(), employee.isMustChangePin()))
+                    .orElseGet(() -> SessionView.employee(actor, null, false));
         }
         return accounts.findById(actor.userId())
-                .map(account -> SessionView.of(actor, account.getUsername(), account.isMustChangePassword()))
-                .orElseGet(() -> SessionView.of(actor, null, false));
+                .map(account -> SessionView.account(actor, account.getUsername(), account.isMustChangePassword()))
+                .orElseGet(() -> SessionView.account(actor, null, false));
     }
 
     private static InvalidCredentialsException refused(String username, String reason) {

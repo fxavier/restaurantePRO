@@ -2,10 +2,12 @@ package com.xavier.backend.identity.controller;
 
 import com.xavier.backend.identity.model.dto.LoginRequest;
 import com.xavier.backend.identity.model.dto.PasswordChangeRequest;
+import com.xavier.backend.identity.model.dto.PinChangeRequest;
 import com.xavier.backend.identity.model.dto.PosLoginRequest;
 import com.xavier.backend.identity.model.dto.SessionView;
 import com.xavier.backend.identity.service.LoginService;
 import com.xavier.backend.identity.service.PasswordService;
+import com.xavier.backend.identity.service.PinChangeService;
 import com.xavier.backend.identity.service.PosLoginService;
 import com.xavier.backend.identity.service.SessionHandles;
 import jakarta.servlet.http.HttpServletRequest;
@@ -30,13 +32,15 @@ class AuthController {
     private final LoginService logins;
     private final PosLoginService posLogins;
     private final PasswordService passwords;
+    private final PinChangeService pins;
     private final LoginSessions sessions;
 
-    AuthController(LoginService logins, PosLoginService posLogins, PasswordService passwords,
+    AuthController(LoginService logins, PosLoginService posLogins, PasswordService passwords, PinChangeService pins,
                    LoginSessions sessions) {
         this.logins = logins;
         this.posLogins = posLogins;
         this.passwords = passwords;
+        this.pins = pins;
         this.sessions = sessions;
     }
 
@@ -62,6 +66,14 @@ class AuthController {
                                HttpServletResponse response) {
         SessionView session = passwords.change(body.currentPassword(), body.newPassword(),
                 request.getSession(false) == null ? null : request.getSession(false).getId());
+        return session.withSessionHandle(SessionHandles.of(sessions.start(session, request, response)));
+    }
+
+    /** After a manager's PIN reset: this POS session is restarted (new id) with the employee's authorities. */
+    @PostMapping("/pos-pin")
+    SessionView choosePin(@Valid @RequestBody PinChangeRequest body, HttpServletRequest request,
+                          HttpServletResponse response) {
+        SessionView session = pins.choosePin(body.newPin());
         return session.withSessionHandle(SessionHandles.of(sessions.start(session, request, response)));
     }
 

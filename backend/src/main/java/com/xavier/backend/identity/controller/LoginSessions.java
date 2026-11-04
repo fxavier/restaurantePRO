@@ -48,8 +48,10 @@ import org.springframework.stereotype.Component;
 @Component
 class LoginSessions {
 
-    /** Session attribute: set while the account must change its password (see {@code MustChangePasswordFilter}). */
+    /** Session attribute: set while the account must change its password (see {@code MustChangeCredentialFilter}). */
     static final String MUST_CHANGE_PASSWORD = "identity.mustChangePassword";
+    /** Session attribute: set while the employee must replace a manager-set PIN (see {@code MustChangeCredentialFilter}). */
+    static final String MUST_CHANGE_PIN = "identity.mustChangePin";
 
     /**
      * The same cookie repository {@code csrf.spa()} configures in {@code SecurityConfig}; it keeps no state, so this
@@ -73,25 +75,34 @@ class LoginSessions {
         Actor actor = view.toActor();
         Authentication authentication = UsernamePasswordAuthenticationToken.authenticated(actor, null,
                 actor.authorities().stream().map(SimpleGrantedAuthority::new).toList());
+        String previousSessionId = request.getSession(false) == null ? null : request.getSession(false).getId();
         loginStrategy.onAuthentication(authentication, request, response);
         if (request.getAttribute(CsrfToken.class.getName()) instanceof CsrfToken csrf) {
             csrf.getToken(); // generates and saves the new token now, so this response sets the cookie
         }
         HttpSession session = request.getSession(true);
         session.setAttribute(FindByIndexNameSessionRepository.PRINCIPAL_NAME_INDEX_NAME, SessionPrincipals.of(actor));
-        if (view.mustChangePassword()) {
-            session.setAttribute(MUST_CHANGE_PASSWORD, Boolean.TRUE);
-        } else {
-            session.removeAttribute(MUST_CHANGE_PASSWORD);
-        }
+        flag(session, MUST_CHANGE_PASSWORD, view.mustChangePassword());
+        flag(session, MUST_CHANGE_PIN, view.mustChangePin());
         SecurityContext context = holder.createEmptyContext();
         context.setAuthentication(authentication);
         holder.setContext(context);
         contexts.saveContext(context, request, response);
         if (actor.terminalId() != null) {
+            if (previousSessionId != null) {
+                terminalSessions.forget(previousSessionId); // the id changed: the old one is gone
+            }
             terminalSessions.register(session.getId(), actor.terminalId(), actor.storeId(), actor.employeeId());
         }
         return session.getId();
+    }
+
+    private static void flag(HttpSession session, String attribute, boolean set) {
+        if (set) {
+            session.setAttribute(attribute, Boolean.TRUE);
+        } else {
+            session.removeAttribute(attribute);
+        }
     }
 
     void end(HttpServletRequest request, HttpServletResponse response) {

@@ -56,7 +56,7 @@ class PinVerification {
             return recordFailure(employee, storeId, terminalId);
         }
         employee.recordSuccessfulPin(clock.instant());
-        return PinCheck.accepted(employee.getId(), employee.getName());
+        return PinCheck.accepted(employee.getId(), employee.getName(), employee.isMustChangePin());
     }
 
     private PinCheck recordFailure(Employee employee, UUID storeId, UUID terminalId) {
