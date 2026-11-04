@@ -23,8 +23,14 @@ import org.testcontainers.utility.DockerImageName;
 @TestConfiguration(proxyBeanMethods = false)
 public class TestcontainersConfiguration {
 
+    /**
+     * The pin as a compile-time constant: reading it does not initialise this class, so it does not start the
+     * shared container (for tests that run their own database, e.g. {@code R1AcceptanceTest}).
+     */
+    public static final String POSTGRES_IMAGE_NAME = "postgres:18.6-alpine";
+
     /** Same image as {@code backend/compose.yaml} (D4: tests = production). */
-    public static final DockerImageName POSTGRES_IMAGE = DockerImageName.parse("postgres:18.6-alpine");
+    public static final DockerImageName POSTGRES_IMAGE = DockerImageName.parse(POSTGRES_IMAGE_NAME);
 
     static final int MAX_CONNECTIONS = 300;
     static final int POOL_SIZE = 5;

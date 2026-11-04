@@ -1,0 +1,428 @@
+package com.xavier.backend.e2e;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import org.awaitility.Awaitility;
+import org.junit.jupiter.api.Test;
+import com.xavier.backend.TestcontainersConfiguration;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+
+/**
+ * R1 end to end (PRD S6, decisions §7): the whole Foundation + Stage 1 journey through the real HTTP API of a
+ * real embedded server, with the real security chain, sessions in PostgreSQL and CSRF, and no mocks.
+ *
+ * <p>It runs against its own, empty PostgreSQL (same pinned image as production), not the database shared by
+ * the other tests, so the first start is real: the company and the administrator come from the bootstrap
+ * settings (D30), and the catalog holds only what this journey creates. The container is a bean of this
+ * context, and the context is closed after the class, so the container goes with it.
+ *
+ * <p>The clients keep their own cookie jar ({@link Browser}) because {@code java.net.CookieManager} never sends a
+ * {@code Secure} cookie over plain HTTP; in production Caddy terminates TLS in front of this same server, so a
+ * browser does send them. Each client behaves like the SPA: any GET hands out {@code XSRF-TOKEN}, every mutating
+ * request echoes it in {@code X-XSRF-TOKEN}.
+ */
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Import(R1AcceptanceTest.FreshDatabase.class)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+class R1AcceptanceTest {
+
+    private static final JsonMapper JSON =
+            JsonMapper.builder().enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS).build();
+    private static final String ADMIN = "owner";
+    private static final String INITIAL_PASSWORD = "initial " + UUID.randomUUID();
+    private static final String NEW_PASSWORD = "changed " + UUID.randomUUID();
+    private static final String PIN = "4831";
+    private static final UUID WAITER_ROLE = UUID.fromString("01900000-0000-7000-8000-000000000303");
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class FreshDatabase {
+
+        /** Stopped when this test's context closes (Spring Boot manages a container bean's lifecycle). */
+        @Bean
+        @ServiceConnection
+        PostgreSQLContainer freshPostgres() {
+            return new PostgreSQLContainer(TestcontainersConfiguration.POSTGRES_IMAGE_NAME)
+                    .withUrlParam("sslmode", "disable");
+        }
+    }
+
+    @DynamicPropertySource
+    static void bootstrapSettings(DynamicPropertyRegistry registry) throws IOException {
+        Path secret = Files.createTempFile("admin-initial-password", "");
+        secret.toFile().deleteOnExit();
+        Files.writeString(secret, INITIAL_PASSWORD + "\n"); // a trailing newline, as `echo` writes it
+        registry.add("restaurantpro.bootstrap.company.name", () -> "Restaurante Acceptance");
+        registry.add("restaurantpro.bootstrap.company.tax-id", () -> "400000001");
+        registry.add("restaurantpro.bootstrap.company.country", () -> "MZ");
+        registry.add("restaurantpro.bootstrap.company.currency", () -> "MZN");
+        registry.add("restaurantpro.bootstrap.admin.username", () -> ADMIN);
+        registry.add("restaurantpro.bootstrap.admin.initial-password-file", secret::toString);
+    }
+
+    @LocalServerPort
+    int port;
+
+    @Autowired
+    JdbcClient jdbc;
+
+    private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+    private final List<String> journey = new ArrayList<>();
+
+    @Test
+    void foundationAndStage1FromFirstStartToARevokedTerminal() throws Exception {
+        try {
+            run();
+        } finally {
+            System.out.println("R1 acceptance journey (step -> HTTP status):\n  " + String.join("\n  ", journey));
+        }
+    }
+
+    private void run() throws Exception {
+        // 1. First start: exactly one company (criterion 1), and its administrator from the bootstrap settings
+        assertThat(jdbc.sql("SELECT count(*) FROM organization.company_profile").query(Long.class).single())
+                .isEqualTo(1);
+        assertThat(audits("COMPANY_BOOTSTRAPPED")).isEqualTo(1);
+
+        Browser office = new Browser("backoffice");
+        office.get("/api/v1/auth/session", 401);
+        assertThat(office.cookie("XSRF-TOKEN")).isNotNull();
+        office.post("/api/v1/auth/login", Map.of("username", ADMIN, "password", INITIAL_PASSWORD), 403,
+                Csrf.OMIT); // criterion 2: a mutating request without the CSRF token
+
+        // the admin is created by a listener of CompanyBootstrapped, after the bootstrap transaction commits
+        String csrfBeforeLogin = office.cookie("XSRF-TOKEN");
+        JsonNode login = Awaitility.await().atMost(Duration.ofSeconds(20)).until(() -> office.tryPost(
+                "/api/v1/auth/login", Map.of("username", ADMIN, "password", INITIAL_PASSWORD)), r -> r != null);
+        UUID adminId = UUID.fromString(login.get("userId").asString());
+        assertThat(login.get("mustChangePassword").asBoolean()).isTrue();
+        assertThat(login.get("permissions")).isEmpty();
+        assertThat(office.setCookieHeader("SESSION")).contains("; Secure").contains("; HttpOnly")
+                .contains("; SameSite=Lax");
+        assertThat(office.cookie("XSRF-TOKEN")).isNotNull().isNotEqualTo(csrfBeforeLogin); // rotated at login
+
+        // 2. Until the password changes, only /api/v1/auth/** answers
+        JsonNode blocked = office.get("/api/v1/backoffice/stores", 403);
+        assertThat(blocked.get("detail").asString()).contains("change your password");
+        assertThat(office.post("/api/v1/backoffice/stores", store("BLOCKED"), 403).get("detail").asString())
+                .contains("change your password");
+
+        String sessionBefore = office.cookie("SESSION");
+        JsonNode changed = office.post("/api/v1/auth/password",
+                Map.of("currentPassword", INITIAL_PASSWORD, "newPassword", NEW_PASSWORD), 200);
+        assertThat(changed.get("mustChangePassword").asBoolean()).isFalse();
+        assertThat(changed.get("permissions").valueStream().map(JsonNode::asString))
+                .contains("PERM_STORE_MANAGE", "PERM_CATALOG_PUBLISH");
+        assertThat(office.cookie("SESSION")).isNotEqualTo(sessionBefore); // the session restarts
+        assertThat(audits("USER_PASSWORD_CHANGED", adminId.toString())).isEqualTo(1);
+
+        // 3. Store A (the journey's) and store B (for the store-scope checks)
+        UUID storeA = id(office.post("/api/v1/backoffice/stores", store("A"), 201));
+        UUID storeB = id(office.post("/api/v1/backoffice/stores", store("B"), 201));
+        assertThat(auditsBy(adminId, "STORE_CREATED", storeA)).isEqualTo(1);
+
+        // 4. Terminal + one-time enrollment code; the POS device enrolls with it and gets its token once
+        UUID terminal = id(office.post("/api/v1/backoffice/terminals",
+                Map.of("storeId", storeA, "code", "POS1", "name", "Bar"), 201));
+        String code = office.post("/api/v1/backoffice/terminals/" + terminal + "/enrollment-code", null, 200)
+                .get("code").asString();
+        Browser pos = new Browser("pos");
+        pos.get("/api/v1/auth/session", 401);
+        String deviceToken = pos.post("/api/v1/auth/terminals/enroll", Map.of("code", code), 200)
+                .get("deviceToken").asString();
+        pos.post("/api/v1/auth/terminals/enroll", Map.of("code", code), 422, "enroll again with the used code");
+        assertThat(auditsBy(adminId, "TERMINAL_CREATED", terminal)).isEqualTo(1);
+        assertThat(audits("TERMINAL_ENROLLED", terminal.toString())).isEqualTo(1);
+
+        // 5. A waiter (Empregado de sala) of store A, with a PIN
+        String waiterCode = "W" + UUID.randomUUID().toString().substring(0, 6);
+        JsonNode waiter = office.post("/api/v1/backoffice/employees", Map.of("code", waiterCode, "name", "Ana",
+                "pin", PIN, "storeId", storeA, "roleId", WAITER_ROLE), 201);
+        JsonNode assignments = office.get("/api/v1/backoffice/employees/" + id(waiter) + "/assignments", 200);
+        assertThat(assignments).hasSize(1);
+        assertThat(assignments.get(0).get("storeId").asString()).isEqualTo(storeA.toString());
+        assertThat(assignments.get(0).get("roleId").asString()).isEqualTo(WAITER_ROLE.toString());
+        assertThat(auditedEntity(adminId, id(waiter))).isPositive();
+
+        // 6. Dining: one area and one table in store A, so the POS table map has content
+        UUID area = id(office.post("/api/v1/backoffice/areas",
+                Map.of("storeId", storeA, "code", "SALA", "name", "Sala"), 201));
+        UUID table = id(office.post("/api/v1/backoffice/tables",
+                Map.of("storeId", storeA, "areaId", area, "code", "M1", "seats", 4), 201));
+
+        // 7. Catalog working copy: family, unit, tax category + rate, item, store A's price list + price
+        String catalog = "/api/v1/backoffice/catalog";
+        UUID family = id(office.post(catalog + "/families", Map.of("code", "BEB", "name", "Bebidas"), 201));
+        UUID unit = id(office.post(catalog + "/units", Map.of("code", "UN", "name", "Unidade"), 201));
+        UUID tax = id(office.post(catalog + "/tax-categories", Map.of("code", "IVA16", "name", "IVA"), 201));
+        office.post(catalog + "/tax-categories/" + tax + "/rates",
+                Map.of("ratePercent", new BigDecimal("16"), "effectiveFrom", "2000-01-01T00:00:00Z"), 201);
+        Map<String, Object> itemBody = new LinkedHashMap<>();
+        itemBody.put("code", "COCA33");
+        itemBody.put("name", "Coca-Cola 33cl");
+        itemBody.put("familyId", family);
+        itemBody.put("unitId", unit);
+        itemBody.put("taxCategoryId", tax);
+        itemBody.put("productionDestination", "BAR");
+        itemBody.put("soldByWeight", false);
+        UUID item = id(office.post(catalog + "/items", itemBody, 201));
+        UUID priceList = id(office.post(catalog + "/price-lists", Map.of("storeId", storeA, "name", "Sala"), 201));
+        office.post(catalog + "/price-lists/" + priceList + "/prices",
+                Map.of("itemId", item, "amount", new BigDecimal("45.00")), 201);
+        assertThat(auditsBy(adminId, "ITEM_CREATED", item)).isEqualTo(1);
+
+        // 8. Release: DRAFT -> VALIDATED -> PUBLISHED, publish idempotent (criterion 7)
+        String releases = catalog + "/releases";
+        UUID release = id(office.post(releases, Map.of("storeId", storeA), 201));
+        office.post(releases + "/" + release + "/publish", Map.of(), 409, Csrf.SEND,
+                Map.of("Idempotency-Key", UUID.randomUUID().toString()), "publish a DRAFT");
+        assertThat(office.post(releases + "/" + release + "/validate", null, 200).get("status").asString())
+                .isEqualTo("VALIDATED");
+        String key = UUID.randomUUID().toString();
+        Map<String, String> idempotent = Map.of("Idempotency-Key", key);
+        HttpResponse<String> first = office.send("POST", releases + "/" + release + "/publish",
+                Map.of("note", "v1"), Csrf.SEND, idempotent);
+        record("publish", first);
+        assertThat(first.statusCode()).isEqualTo(200);
+        HttpResponse<String> replay = office.send("POST", releases + "/" + release + "/publish",
+                Map.of("note", "v1"), Csrf.SEND, idempotent);
+        record("publish replay (same key, same body)", replay);
+        assertThat(replay.statusCode()).isEqualTo(200);
+        assertThat(JSON.readTree(replay.body())).isEqualTo(JSON.readTree(first.body()));
+        office.post(releases + "/" + release + "/publish", Map.of("note", "other"), 422, Csrf.SEND, idempotent,
+                "publish (same key, different body)");
+        JsonNode published = JSON.readTree(first.body());
+        assertThat(published.get("status").asString()).isEqualTo("PUBLISHED");
+        assertThat(published.get("version").asLong()).isEqualTo(1);
+        assertThat(published.get("publishedBy").asString()).isEqualTo(adminId.toString());
+        assertThat(auditsBy(adminId, "CATALOG_RELEASE_PUBLISHED", release)).isEqualTo(1);
+
+        // 9. POS: PIN login on the enrolled terminal; the session is bound to the terminal's store
+        pos.post("/api/v1/auth/pos-login", Map.of("employeeCode", waiterCode, "pin", PIN), 401, Csrf.SEND,
+                Map.of(), "pos-login without X-Terminal-Token");
+        JsonNode posSession = pos.post("/api/v1/auth/pos-login", Map.of("employeeCode", waiterCode, "pin", PIN),
+                200, Csrf.SEND, Map.of("X-Terminal-Token", deviceToken), "pos-login");
+        assertThat(posSession.get("storeId").asString()).isEqualTo(storeA.toString());
+        assertThat(posSession.get("terminalId").asString()).isEqualTo(terminal.toString());
+        assertThat(posSession.get("permissions").valueStream().map(JsonNode::asString))
+                .containsExactlyInAnyOrder("PERM_DINING_VIEW@" + storeA, "PERM_CATALOG_VIEW@" + storeA);
+
+        // 10. GET /pos/catalog: the published version, with the item, its price and its tax schedule
+        JsonNode posCatalog = pos.get("/api/v1/pos/catalog?storeId=" + storeA, 200);
+        assertThat(posCatalog.get("releaseId").asString()).isEqualTo(release.toString());
+        assertThat(posCatalog.get("version").asLong()).isEqualTo(1);
+        JsonNode snapshot = posCatalog.get("catalog");
+        assertThat(snapshot.get("currency").asString()).isEqualTo("MZN");
+        assertThat(snapshot.get("items")).hasSize(1);
+        JsonNode sold = snapshot.get("items").get(0);
+        assertThat(sold.get("id").asString()).isEqualTo(item.toString());
+        assertThat(sold.get("code").asString()).isEqualTo("COCA33");
+        assertThat(new BigDecimal(sold.get("price").get("amount").asString())).isEqualByComparingTo("45.00");
+        assertThat(sold.get("price").get("currency").asString()).isEqualTo("MZN");
+        assertThat(sold.get("taxCategoryId").asString()).isEqualTo(tax.toString());
+        JsonNode schedule = snapshot.get("taxCategories").get(0);
+        assertThat(schedule.get("id").asString()).isEqualTo(tax.toString());
+        assertThat(schedule.get("rates")).hasSize(1);
+        assertThat(new BigDecimal(schedule.get("rates").get(0).get("ratePercent").asString()))
+                .isEqualByComparingTo("16");
+
+        // 11. GET /pos/tables for the terminal's store
+        JsonNode tables = pos.get("/api/v1/pos/tables?storeId=" + storeA, 200);
+        assertThat(tables.get("areas")).hasSize(1);
+        assertThat(tables.get("areas").get(0).get("id").asString()).isEqualTo(area.toString());
+        assertThat(tables.get("areas").get(0).get("tables").get(0).get("id").asString())
+                .isEqualTo(table.toString());
+        assertThat(tables.get("areas").get(0).get("tables").get(0).get("status").asString()).isEqualTo("FREE");
+
+        // 12. Criterion 4 against the real endpoints: the waiter's session is refused BackOffice catalog writes
+        //     and anything of store B
+        // the POS client holds a CSRF token, so these 403s are authorization refusals, not CSRF rejections
+        assertThat(pos.cookie("XSRF-TOKEN")).isNotNull();
+        itemBody.put("code", "SNEAKY");
+        pos.post(catalog + "/items", itemBody, 403);
+        pos.post(catalog + "/price-lists/" + priceList + "/prices",
+                Map.of("itemId", item, "amount", new BigDecimal("1.00")), 403);
+        pos.post(releases, Map.of("storeId", storeA), 403);
+        pos.post(releases + "/" + release + "/publish", Map.of(), 403, Csrf.SEND,
+                Map.of("Idempotency-Key", UUID.randomUUID().toString()), "waiter publish");
+        pos.get("/api/v1/pos/catalog?storeId=" + storeB, 403);
+        pos.get("/api/v1/pos/tables?storeId=" + storeB, 403);
+        pos.get("/api/v1/backoffice/stores/" + storeB, 403);
+        assertThat(jdbc.sql("SELECT count(*) FROM catalog.item WHERE code = 'SNEAKY'").query(Long.class).single())
+                .isZero();
+        assertThat(jdbc.sql("SELECT count(*) FROM catalog.configuration_release WHERE store_id = :s")
+                .param("s", storeA).query(Long.class).single()).isEqualTo(1);
+
+        // 13. Revoking the terminal ends its POS session and its token stops working
+        assertThat(office.post("/api/v1/backoffice/terminals/" + terminal + "/revoke", null, 200)
+                .get("status").asString()).isEqualTo("REVOKED");
+        Awaitility.await().atMost(Duration.ofSeconds(10))
+                .until(() -> pos.send("GET", "/api/v1/auth/session", null, Csrf.OMIT, Map.of()).statusCode() == 401);
+        journey.add("session after revoke -> 401");
+        pos.get("/api/v1/pos/catalog?storeId=" + storeA, 401);
+        pos.post("/api/v1/auth/pos-login", Map.of("employeeCode", waiterCode, "pin", PIN), 401, Csrf.SEND,
+                Map.of("X-Terminal-Token", deviceToken), "pos-login with the revoked terminal's token");
+        assertThat(auditsBy(adminId, "TERMINAL_REVOKED", terminal)).isEqualTo(1);
+
+        // The BackOffice session is untouched, and the store list answers (what the backup drill compares)
+        JsonNode stores = office.get("/api/v1/backoffice/stores", 200);
+        assertThat(stores.get("content").valueStream().map(s -> s.get("id").asString()))
+                .containsExactlyInAnyOrder(storeA.toString(), storeB.toString());
+    }
+
+    private static Map<String, Object> store(String suffix) {
+        return Map.of("code", "LOJA-" + suffix, "name", "Loja " + suffix, "timezone", "Africa/Maputo");
+    }
+
+    private long audits(String action) {
+        return jdbc.sql("SELECT count(*) FROM audit.audit_event WHERE action = :a").param("a", action)
+                .query(Long.class).single();
+    }
+
+    private long audits(String action, String entityId) {
+        return jdbc.sql("SELECT count(*) FROM audit.audit_event WHERE action = :a AND entity_id = :e")
+                .param("a", action).param("e", entityId).query(Long.class).single();
+    }
+
+    private long auditsBy(UUID actor, String action, UUID entityId) {
+        return jdbc.sql("SELECT count(*) FROM audit.audit_event WHERE actor_id = :u AND action = :a AND entity_id = :e")
+                .param("u", actor).param("a", action).param("e", entityId.toString()).query(Long.class).single();
+    }
+
+    private long auditedEntity(UUID actor, UUID entityId) {
+        return jdbc.sql("SELECT count(*) FROM audit.audit_event WHERE actor_id = :u AND entity_id = :e")
+                .param("u", actor).param("e", entityId.toString()).query(Long.class).single();
+    }
+
+    private static UUID id(JsonNode body) {
+        return UUID.fromString(body.get("id").asString());
+    }
+
+    private void record(String step, HttpResponse<?> response) {
+        journey.add(response.request().method() + " " + response.request().uri().getRawPath()
+                + (step == null ? "" : " [" + step + "]") + " -> " + response.statusCode());
+    }
+
+    private enum Csrf { SEND, OMIT }
+
+    /** One HTTP client with its own cookie jar, like one browser tab of the SPA. */
+    private final class Browser {
+
+        private final String name;
+        private final Map<String, String> cookies = new LinkedHashMap<>();
+        private final Map<String, String> lastSetCookie = new LinkedHashMap<>();
+
+        Browser(String name) {
+            this.name = name;
+        }
+
+        String cookie(String cookieName) {
+            return cookies.get(cookieName);
+        }
+
+        String setCookieHeader(String cookieName) {
+            return lastSetCookie.get(cookieName);
+        }
+
+        JsonNode get(String path, int expected) throws Exception {
+            return expect(send("GET", path, null, Csrf.OMIT, Map.of()), expected, null);
+        }
+
+        JsonNode post(String path, Object body, int expected) throws Exception {
+            return post(path, body, expected, Csrf.SEND, Map.of(), null);
+        }
+
+        JsonNode post(String path, Object body, int expected, String step) throws Exception {
+            return post(path, body, expected, Csrf.SEND, Map.of(), step);
+        }
+
+        JsonNode post(String path, Object body, int expected, Csrf csrf) throws Exception {
+            return post(path, body, expected, csrf, Map.of(), csrf == Csrf.OMIT ? "without CSRF token" : null);
+        }
+
+        JsonNode post(String path, Object body, int expected, Csrf csrf, Map<String, String> headers, String step)
+                throws Exception {
+            return expect(send("POST", path, body, csrf, headers), expected, step);
+        }
+
+        /** The body of a 200 response, {@code null} for a 401 (not there yet: keep polling); anything else fails. */
+        JsonNode tryPost(String path, Object body) throws Exception {
+            HttpResponse<String> response = send("POST", path, body, Csrf.SEND, Map.of());
+            if (response.statusCode() == 401) {
+                return null;
+            }
+            assertThat(response.statusCode()).as("POST %s (%s) answered %s", path, name, response.body())
+                    .isEqualTo(200);
+            record("login", response);
+            return JSON.readTree(response.body());
+        }
+
+        HttpResponse<String> send(String method, String path, Object body, Csrf csrf, Map<String, String> headers)
+                throws Exception {
+            HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+                    .timeout(Duration.ofSeconds(30))
+                    .method(method, body == null ? HttpRequest.BodyPublishers.noBody()
+                            : HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(body)));
+            if (body != null) {
+                request.header("Content-Type", "application/json");
+            }
+            if (!cookies.isEmpty()) {
+                request.header("Cookie", String.join("; ",
+                        cookies.entrySet().stream().map(c -> c.getKey() + "=" + c.getValue()).toList()));
+            }
+            if (csrf == Csrf.SEND && cookies.containsKey("XSRF-TOKEN")) {
+                request.header("X-XSRF-TOKEN", cookies.get("XSRF-TOKEN"));
+            }
+            headers.forEach(request::header);
+            HttpResponse<String> response = http.send(request.build(), HttpResponse.BodyHandlers.ofString());
+            for (String header : response.headers().allValues("Set-Cookie")) {
+                String pair = header.contains(";") ? header.substring(0, header.indexOf(';')) : header;
+                String cookieName = pair.substring(0, pair.indexOf('='));
+                String value = pair.substring(pair.indexOf('=') + 1);
+                lastSetCookie.put(cookieName, header);
+                if (value.isEmpty() || header.toLowerCase().contains("max-age=0")) {
+                    cookies.remove(cookieName);
+                } else {
+                    cookies.put(cookieName, value);
+                }
+            }
+            return response;
+        }
+
+        private JsonNode expect(HttpResponse<String> response, int expected, String step) {
+            record(step == null ? null : name + ": " + step, response);
+            assertThat(response.statusCode())
+                    .as("%s %s (%s) answered %s", response.request().method(), response.request().uri(), name,
+                            response.body())
+                    .isEqualTo(expected);
+            return response.body().isBlank() ? JSON.nullNode() : JSON.readTree(response.body());
+        }
+    }
+}
