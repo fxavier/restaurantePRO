@@ -1,8 +1,14 @@
 package com.xavier.backend.catalog.model.dto;
 
+import com.xavier.backend.catalog.exception.InvalidCatalogEntryException;
 import com.xavier.backend.shared.Money;
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Comparator;
+import java.util.Currency;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -43,6 +49,20 @@ public record CatalogSnapshot(int schemaVersion, UUID storeId, UUID releaseId, l
      */
     public record TaxCategory(UUID id, String code, String name, String ratePercent, Instant rateEffectiveFrom,
                               List<Rate> rates) {
+
+        /**
+         * The rate in effect at {@code instant} (D58): the entry with the greatest {@code effectiveFrom} ≤
+         * {@code instant}. {@code ratePercent} of this record is informational and never read here.
+         *
+         * @return a decimal percent ({@code 16} = 16%), or empty when no entry has started by then
+         */
+        public Optional<BigDecimal> rateAt(Instant instant) {
+            Objects.requireNonNull(instant, "instant");
+            return rates.stream()
+                    .filter(rate -> !rate.effectiveFrom().isAfter(instant))
+                    .max(Comparator.comparing(Rate::effectiveFrom))
+                    .map(rate -> new BigDecimal(rate.ratePercent()));
+        }
     }
 
     /** One entry of a rate schedule: {@code ratePercent} applies from {@code effectiveFrom} on. */
@@ -57,6 +77,23 @@ public record CatalogSnapshot(int schemaVersion, UUID storeId, UUID releaseId, l
     public record Item(UUID id, String code, String name, UUID familyId, UUID unitId, UUID taxCategoryId,
                        String productionDestination, boolean soldByWeight, Price price,
                        List<Variant> variants, List<Barcode> barcodes) {
+
+        /**
+         * The selling price of this item, or of one of its variants (D58): the variant's own price, falling back
+         * to the item price when the variant has none.
+         *
+         * @param variantId {@code null} for the item itself
+         * @throws InvalidCatalogEntryException (422) when {@code variantId} is not a variant of this item
+         */
+        public Money priceOf(UUID variantId) {
+            if (variantId == null) {
+                return price.toMoney();
+            }
+            Variant variant = variants.stream().filter(candidate -> candidate.id().equals(variantId)).findFirst()
+                    .orElseThrow(() -> new InvalidCatalogEntryException(
+                            "Variant " + variantId + " is not a variant of item " + id));
+            return variant.price() == null ? price.toMoney() : variant.price().toMoney();
+        }
     }
 
     /** {@code price} is {@code null} when the variant has no own price: it sells at the item price. */
@@ -71,6 +108,10 @@ public record CatalogSnapshot(int schemaVersion, UUID storeId, UUID releaseId, l
 
         public static Price of(Money money) {
             return new Price(money.amount().toPlainString(), money.currency().getCurrencyCode());
+        }
+
+        public Money toMoney() {
+            return Money.of(amount, Currency.getInstance(currency));
         }
     }
 }
