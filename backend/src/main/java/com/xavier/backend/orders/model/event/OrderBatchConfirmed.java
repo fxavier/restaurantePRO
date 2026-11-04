@@ -10,8 +10,7 @@ import org.springframework.modulith.NamedInterface;
  * prints only its new lines (A4). Its publication commits with the round and is the persisted production work;
  * production's listener is idempotent per {@code batchId} and then calls {@code OrdersProductionApi.markBatchDispatched}.
  *
- * @param tableCode the table's code for DINE_IN orders, {@code null} otherwise (and, in S13, also for DINE_IN: dining
- *                  exposes no table code yet)
+ * @param tableCode the code of the order's table for DINE_IN orders, {@code null} for COUNTER and TAKEAWAY
  */
 @NamedInterface("event")
 public record OrderBatchConfirmed(UUID orderId, UUID batchId, int batchNo, UUID storeId, UUID terminalId,

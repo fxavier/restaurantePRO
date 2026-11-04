@@ -19,6 +19,7 @@ import java.util.Currency;
 import java.util.Objects;
 import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.annotations.OptimisticLock;
 import org.hibernate.annotations.UuidGenerator;
 import org.hibernate.type.SqlTypes;
 
@@ -51,7 +52,9 @@ public class Order {
 
     private UUID tableId;
 
+    /** Set once from dining when the table is occupied; a display value, so it does not move the version. */
     @Column(length = 20)
+    @OptimisticLock(excluded = true)
     private String tableCode;
 
     private Integer guests;
@@ -91,14 +94,24 @@ public class Order {
         // JPA
     }
 
-    /** Opened by opening its table; dining's occupation is created in the same transaction. */
-    public static Order dineIn(UUID storeId, UUID terminalId, long orderNumber, UUID tableId, String tableCode,
-                               int guests, LocalDate businessDay, Currency currency, UUID employeeId, Instant now) {
+    /**
+     * Opened by opening its table; dining's occupation is created in the same transaction and then gives the table's
+     * code ({@link #seatedAt}).
+     */
+    public static Order dineIn(UUID storeId, UUID terminalId, long orderNumber, UUID tableId, int guests,
+                               LocalDate businessDay, Currency currency, UUID employeeId, Instant now) {
         Order order = open(OrderMode.DINE_IN, storeId, terminalId, orderNumber, guests, businessDay, currency,
                 employeeId, now);
         order.tableId = Objects.requireNonNull(tableId, "tableId");
-        order.tableCode = tableCode;
         return order;
+    }
+
+    /** The code of the table this DINE_IN order occupies, as dining reports it (tickets and screens show it). */
+    public void seatedAt(UUID tableId, String tableCode) {
+        if (!Objects.equals(this.tableId, tableId)) {
+            throw new IllegalArgumentException("Order " + id + " does not sit at table " + tableId);
+        }
+        this.tableCode = Objects.requireNonNull(tableCode, "tableCode");
     }
 
     /**

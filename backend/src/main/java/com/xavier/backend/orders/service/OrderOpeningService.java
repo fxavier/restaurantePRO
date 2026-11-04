@@ -4,6 +4,7 @@ import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.PosContext;
 import com.xavier.backend.dining.DiningApi;
+import com.xavier.backend.dining.model.dto.OccupationView;
 import com.xavier.backend.organization.BusinessDays;
 import com.xavier.backend.organization.OrganizationApi;
 import com.xavier.backend.organization.model.dto.StoreSummary;
@@ -57,12 +58,14 @@ public class OrderOpeningService {
         PosContext pos = accessPolicy.requirePos(Permission.ORDER_EDIT);
         StoreSummary store = store(pos);
         Instant now = clock.instant();
-        Order order = Order.dineIn(store.id(), pos.terminalId(), orders.nextOrderNumber(), tableId, null,
+        Order order = Order.dineIn(store.id(), pos.terminalId(), orders.nextOrderNumber(), tableId,
                 request.guests(), BusinessDays.of(now, store.timezone(), store.businessDayCutoff()), store.currency(),
                 pos.employeeId(), now);
         UniqueConstraints.saveAndFlush(orders, order, () -> OrderConflictException.tableOccupied(tableId),
                 OPEN_TABLE_UK);
-        dining.openOccupation(tableId, order.getId(), request.guests(), pos.employeeId());
+        OccupationView occupation = dining.openOccupation(tableId, order.getId(), request.guests(), pos.employeeId());
+        order.seatedAt(tableId, occupation.tableCode());
+        orders.saveAndFlush(order);
         opened(order);
         return views.of(order);
     }

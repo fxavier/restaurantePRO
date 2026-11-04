@@ -142,6 +142,7 @@ class BatchConfirmationHttpTest {
         assertThat(two.storeId()).isEqualTo(shop.store());
         assertThat(two.terminalId()).isEqualTo(terminal);
         assertThat(two.employeeId()).isEqualTo(employee);
+        assertThat(two.tableCode()).isEqualTo("M1");
         assertThat(two.lines()).extracting(Line::lineId).containsExactly(second);
         assertThat(two.lines().getFirst().quantity()).isEqualByComparingTo(new BigDecimal("0.5"));
         assertThat(two.lines().getFirst().destination()).isEqualTo("BAR");

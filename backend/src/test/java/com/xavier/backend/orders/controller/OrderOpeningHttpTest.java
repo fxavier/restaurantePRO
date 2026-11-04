@@ -59,6 +59,7 @@ class OrderOpeningHttpTest {
                 .andExpect(jsonPath("$.lifecycle").value("OPEN"))
                 .andExpect(jsonPath("$.billingLock").value("NONE"))
                 .andExpect(jsonPath("$.tableId").value(shop.table().toString()))
+                .andExpect(jsonPath("$.tableCode").value("M1"))
                 .andExpect(jsonPath("$.guests").value(2))
                 .andExpect(jsonPath("$.terminalId").value(terminal.toString()))
                 .andExpect(jsonPath("$.openedByEmployeeId").value(employee.toString()))

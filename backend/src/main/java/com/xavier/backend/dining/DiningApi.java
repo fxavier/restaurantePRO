@@ -73,7 +73,7 @@ public class DiningApi {
         TableOccupation occupation = save(TableOccupation.open(table.getStoreId(), tableId, orderId, guests,
                 employeeId, clock.instant()));
         changed("TABLE_OCCUPATION_OPENED", occupation, Map.of("guests", guests));
-        return occupation.toView();
+        return occupation.toView(table.getCode());
     }
 
     /**
@@ -105,14 +105,14 @@ public class DiningApi {
     @Transactional(propagation = Propagation.MANDATORY)
     public OccupationView moveOccupation(UUID orderId, UUID toTableId) {
         TableOccupation from = openOccupationOf(orderId);
-        lockedOpenableTable(toTableId, from.getStoreId());
+        RestaurantTable target = lockedOpenableTable(toTableId, from.getStoreId());
         TableOccupation to = from.moveTo(toTableId, clock.instant());
         occupations.saveAndFlush(from); // close first: the open-order index allows one open occupation per order
         save(to);
         changed("TABLE_OCCUPATION_CLOSED", from, Map.of("reason", CloseReason.MOVED.name()));
         changed("TABLE_OCCUPATION_MOVED", to, Map.of("fromTableId", from.getTableId().toString(),
                 "fromOccupationId", from.getId().toString()));
-        return to.toView();
+        return to.toView(target.getCode());
     }
 
     /** Marks that the order's subtotal (a non-fiscal bill) was printed, a table map indicator (spec §8.4). */

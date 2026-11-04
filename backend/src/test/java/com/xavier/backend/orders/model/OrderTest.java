@@ -22,7 +22,7 @@ class OrderTest {
     static final UUID EMPLOYEE = UUID.randomUUID();
 
     static Order dineIn() {
-        return Order.dineIn(UUID.randomUUID(), UUID.randomUUID(), 1, UUID.randomUUID(), null, 2,
+        return Order.dineIn(UUID.randomUUID(), UUID.randomUUID(), 1, UUID.randomUUID(), 2,
                 LocalDate.of(2026, 11, 4), Currency.getInstance("MZN"), EMPLOYEE, NOW);
     }
 
