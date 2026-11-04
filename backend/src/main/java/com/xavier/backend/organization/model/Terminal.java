@@ -87,8 +87,7 @@ public class Terminal {
      * ({@code now} before the expiry instant) and is consumed, so it never works twice.
      */
     public void enroll(String presentedCodeHash, String deviceTokenHash, Instant now) {
-        if (status != TerminalStatus.REGISTERED || enrollmentCodeHash == null
-                || !enrollmentCodeHash.equals(presentedCodeHash) || !now.isBefore(enrollmentCodeExpiresAt)) {
+        if (!canEnrollWith(presentedCodeHash, now)) {
             throw new InvalidEnrollmentCodeException();
         }
         this.status = TerminalStatus.ACTIVE;
@@ -96,6 +95,12 @@ public class Terminal {
         this.enrollmentCodeExpiresAt = null;
         this.deviceTokenHash = deviceTokenHash;
         this.updatedAt = now;
+    }
+
+    /** Not enrolled yet, holding exactly this code, and the code has not expired at {@code now}. */
+    public boolean canEnrollWith(String presentedCodeHash, Instant now) {
+        return status == TerminalStatus.REGISTERED && enrollmentCodeHash != null
+                && enrollmentCodeHash.equals(presentedCodeHash) && now.isBefore(enrollmentCodeExpiresAt);
     }
 
     public void revoke(Instant now) {

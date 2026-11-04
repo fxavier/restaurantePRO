@@ -21,6 +21,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -31,6 +33,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class TerminalService {
 
     static final Duration ENROLLMENT_CODE_VALIDITY = Duration.ofHours(24);
+
+    private static final Logger log = LoggerFactory.getLogger(TerminalService.class);
 
     private final TerminalRepository terminals;
     private final StoreRepository stores;
@@ -83,15 +87,24 @@ public class TerminalService {
 
     /**
      * The device exchanges its one-time code for a device token. No session is needed: the code is the
-     * credential. Unknown, expired and used codes all get the same answer.
+     * credential. Unknown, expired and used codes all get the same answer, and each refusal is logged (never
+     * the code) so repeated guessing is visible.
+     *
+     * @param remoteAddress where the attempt came from, for the log only
      */
     @Transactional
-    public TerminalEnrollmentResponse enroll(String code) {
+    public TerminalEnrollmentResponse enroll(String code, String remoteAddress) {
         String codeHash = TerminalSecrets.hashEnrollmentCode(code);
+        Instant now = clock.instant();
         Terminal terminal = terminals.findByEnrollmentCodeHash(codeHash)
-                .orElseThrow(InvalidEnrollmentCodeException::new);
+                .filter(candidate -> candidate.canEnrollWith(codeHash, now))
+                .orElse(null);
+        if (terminal == null) {
+            log.warn("Terminal enrollment refused (unknown, expired or used code) from {}", remoteAddress);
+            throw new InvalidEnrollmentCodeException();
+        }
         String token = TerminalSecrets.newDeviceToken();
-        terminal.enroll(codeHash, TerminalSecrets.hashDeviceToken(token), clock.instant());
+        terminal.enroll(codeHash, TerminalSecrets.hashDeviceToken(token), now);
         terminals.saveAndFlush(terminal); // two devices racing with one code: @Version lets only one win
         audit("TERMINAL_ENROLLED", terminal, null);
         return new TerminalEnrollmentResponse(terminal.getId(), terminal.getStoreId(), token);

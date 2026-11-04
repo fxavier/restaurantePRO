@@ -3,9 +3,10 @@ package com.xavier.backend.organization.service;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * {@code restaurantpro.bootstrap.company.*}: the company created at first startup (D30). Bound from the
- * {@code RESTAURANTPRO_BOOTSTRAP_COMPANY_*} environment variables via {@code application.yaml}.
- * Values are checked when the company is created, not here.
+ * {@code restaurantpro.bootstrap.company.*}: the company created at first startup (D30). Spring Boot's relaxed
+ * binding maps the {@code RESTAURANTPRO_BOOTSTRAP_COMPANY_{NAME,TAX_ID,COUNTRY,CURRENCY}} environment variables
+ * onto these properties directly; {@code application.yaml} has no entry for them
+ * ({@code CompanyBootstrapPropertiesBindingTest}). Values are checked when the company is created, not here.
  */
 @ConfigurationProperties("restaurantpro.bootstrap.company")
 public record CompanyBootstrapProperties(String name, String taxId, String country, String currency) {

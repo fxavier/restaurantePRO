@@ -158,8 +158,17 @@ class TerminalHttpTest {
     }
 
     @Test
-    void anUnknownEnrollmentCodeIsRejected() throws Exception {
-        mvc.perform(enroll("NOT-A-REAL-CODE")).andExpect(status().isUnprocessableContent());
+    void anUnknownEnrollmentCodeIsRejectedAndTheAttemptIsLoggedWithoutTheCode(CapturedOutput output)
+            throws Exception {
+        mvc.perform(enroll("NOT-A-REAL-CODE").with(request -> {
+            request.setRemoteAddr("192.0.2.7");
+            return request;
+        })).andExpect(status().isUnprocessableContent());
+
+        assertThat(output.getAll())
+                .contains("Terminal enrollment refused")
+                .contains("192.0.2.7")
+                .doesNotContain("NOT-A-REAL-CODE");
     }
 
     @Test

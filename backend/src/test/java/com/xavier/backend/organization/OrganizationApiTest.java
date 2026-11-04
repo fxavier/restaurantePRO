@@ -61,7 +61,7 @@ class OrganizationApiTest {
     void findsOnlyActiveTerminalsByTheirDeviceToken() {
         StoreSummary store = newStore("Africa/Maputo");
         TerminalSummary terminal = terminals.create(new TerminalCreateRequest(store.id(), "POS1", "Bar"));
-        String token = terminals.enroll(terminals.issueEnrollmentCode(terminal.id()).code()).deviceToken();
+        String token = terminals.enroll(terminals.issueEnrollmentCode(terminal.id()).code(), "192.0.2.1").deviceToken();
 
         assertThat(organization.findTerminalByDeviceToken(token)).hasValueSatisfying(found -> {
             assertThat(found.id()).isEqualTo(terminal.id());

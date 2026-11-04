@@ -46,7 +46,10 @@ public class OrganizationApi {
         return stores.existsById(storeId);
     }
 
-    /** @throws StoreNotFoundException if there is no such store */
+    /**
+     * @throws StoreNotFoundException if there is no such store. It is internal to this module: callers catch
+     *         {@link com.xavier.backend.shared.exception.NotFoundException}, which it extends (404).
+     */
     public ZoneId zoneOf(UUID storeId) {
         return stores.findById(storeId).map(Store::getTimezone).orElseThrow(() -> new StoreNotFoundException(storeId));
     }
@@ -60,7 +63,11 @@ public class OrganizationApi {
                 TerminalStatus.ACTIVE).map(Terminal::toSummary);
     }
 
-    /** @throws CompanyNotBootstrappedException if the company was never bootstrapped */
+    /**
+     * @throws CompanyNotBootstrappedException if the company was never bootstrapped. It is internal to this
+     *         module: callers catch {@link com.xavier.backend.shared.exception.NotFoundException}, which it
+     *         extends (404).
+     */
     public CompanyProfileView companyProfile() {
         return company().toView();
     }
