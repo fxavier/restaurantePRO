@@ -27,7 +27,7 @@ class TableOccupationTest {
         TableOccupation occupation = open();
 
         assertThat(occupation.isOpen()).isTrue();
-        assertThat(occupation.toView())
+        assertThat(occupation.toView("M1"))
                 .extracting("tableId", "orderId", "guests", "openedAt", "openedByEmployeeId", "subtotalPrintedAt")
                 .containsExactly(TABLE, ORDER, 3, NOW, EMPLOYEE, null);
     }
@@ -66,7 +66,7 @@ class TableOccupationTest {
 
         occupation.markSubtotalPrinted(LATER);
 
-        assertThat(occupation.toView().subtotalPrintedAt()).isEqualTo(LATER);
+        assertThat(occupation.toView("M1").subtotalPrintedAt()).isEqualTo(LATER);
     }
 
     @Test
@@ -89,7 +89,7 @@ class TableOccupationTest {
         assertThat(occupation.getCloseReason()).isEqualTo(CloseReason.MOVED);
         assertThat(occupation.getClosedAt()).isEqualTo(LATER);
         assertThat(moved.isOpen()).isTrue();
-        assertThat(moved.toView())
+        assertThat(moved.toView("M2"))
                 .extracting("tableId", "orderId", "guests", "openedAt", "openedByEmployeeId", "subtotalPrintedAt")
                 .containsExactly(OTHER_TABLE, ORDER, 3, NOW, EMPLOYEE, NOW);
     }

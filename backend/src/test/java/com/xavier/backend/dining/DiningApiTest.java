@@ -62,6 +62,7 @@ class DiningApiTest {
         assertThat(occupation.storeId()).isEqualTo(store);
         assertThat(occupation.guests()).isEqualTo(3);
         assertThat(occupation.openedByEmployeeId()).isEqualTo(employee);
+        assertThat(occupation.tableCode()).isEqualTo("M1");
         assertThat(tableState().openOrderId()).isEqualTo(order);
         assertThat(fixtures.audits("TABLE_OCCUPATION_OPENED", occupation.id().toString(), store)).isEqualTo(1);
     }
@@ -162,6 +163,7 @@ class DiningApiTest {
         OccupationView after = inPosTransaction(() -> dining.moveOccupation(order, target));
 
         assertThat(after.tableId()).isEqualTo(target);
+        assertThat(after.tableCode()).isEqualTo("M2");
         assertThat(after.id()).isNotEqualTo(before.id());
         assertThat(after.openedAt()).isEqualTo(before.openedAt());
         assertThat(after.guests()).isEqualTo(before.guests());
