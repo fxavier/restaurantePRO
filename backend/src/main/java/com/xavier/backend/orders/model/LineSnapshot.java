@@ -11,4 +11,16 @@ import java.util.UUID;
 public record LineSnapshot(String itemCode, String description, String variantName, Money unitPrice,
                            UUID taxCategoryId, String taxCode, BigDecimal taxRatePercent, UUID releaseId,
                            long catalogVersion, String destination) {
+
+    /** A fiscal document line holds at most this many characters ({@code fiscal_document_line.description}). */
+    public static final int MAX_BILLED_DESCRIPTION = 200;
+
+    /**
+     * What a bill and its document print: the name, with the variant in parentheses when there is one, cut with an
+     * ellipsis at {@value #MAX_BILLED_DESCRIPTION} characters so that a long name never blocks the invoice.
+     */
+    public String billedDescription() {
+        String full = variantName == null ? description : description + " (" + variantName + ")";
+        return full.length() <= MAX_BILLED_DESCRIPTION ? full : full.substring(0, MAX_BILLED_DESCRIPTION - 1) + "…";
+    }
 }

@@ -109,9 +109,7 @@ public class OrderViews {
             LineSnapshot snapshot = line.snapshot().orElseThrow();
             BigDecimal net = line.getQuantity().subtract(deducted.getOrDefault(line.getId(), BigDecimal.ZERO));
             LineAmounts amounts = LineAmounts.of(snapshot.unitPrice(), net, snapshot.taxRatePercent());
-            String description = snapshot.variantName() == null ? snapshot.description()
-                    : snapshot.description() + " (" + snapshot.variantName() + ")";
-            return new BillingLine(line.getId(), description, net, snapshot.unitPrice(), amounts.gross(),
+            return new BillingLine(line.getId(), snapshot.billedDescription(), net, snapshot.unitPrice(), amounts.gross(),
                     amounts.net(), amounts.tax(), snapshot.taxCode(), snapshot.taxRatePercent());
         }).filter(line -> line.netQty().signum() > 0).toList();
     }
