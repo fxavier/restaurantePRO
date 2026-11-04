@@ -32,7 +32,7 @@ Module layout (D12): `model/`, `model/dto/`, `model/event/`, `repository/`, `ser
 - **Time**: inject `java.time.Clock` (UTC). Tests pin it with a `@TestConfiguration` that declares a `@Primary Clock`.
 - **Pagination**: accept a `Pageable` and return `PageResponse.from(page)`. Size is capped at 200 (`PageResponseTest`).
 - **Idempotency** (D24): controllers of repeatable commands return
-  `idempotencyService.execute("<module>.<operation>:" + actorId, key, request.getMethod() + " " + request.getRequestURI(), body, () -> ResponseEntity...)`, with `key` from `@RequestHeader("Idempotency-Key")`. Call it from the controller, outside any transaction. The request identity is the SHA-256 of `target` plus the canonical JSON body.
+  `idempotencyService.execute("<module>.<operation>:" + actorId, key, request.getMethod() + " " + request.getRequestURI(), body, () -> ResponseEntity...)`, with `key` from `@RequestHeader("Idempotency-Key")`. Call it from the controller, outside any transaction: called inside one it throws `IllegalStateException` before claiming the key. The request identity is the SHA-256 of `target` plus the canonical JSON body.
   - Same key and same target+body → the stored response is replayed.
   - Same key with a different target or body → 422.
   - A duplicate while another request holds the key → 409.

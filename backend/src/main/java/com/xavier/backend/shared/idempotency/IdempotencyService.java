@@ -14,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 import tools.jackson.databind.JsonNode;
@@ -23,7 +24,8 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * The one Idempotency-Key mechanism (D24, spec §9). Controllers of repeatable commands call
- * {@link #execute}; nobody writes their own. Call it from the controller, outside any transaction.
+ * {@link #execute}; nobody writes their own. Call it from the controller, outside any transaction: called
+ * inside one it throws {@link IllegalStateException} before doing anything.
  *
  * <pre>{@code
  * @PostMapping("/releases/{id}/publish")
@@ -85,6 +87,7 @@ public class IdempotencyService {
         Objects.requireNonNull(scope, "scope");
         Objects.requireNonNull(target, "target");
         Objects.requireNonNull(action, "action");
+        requireNoActiveTransaction();
         requireValidKey(key);
         String hash = hash(target, requestBody);
 
@@ -130,6 +133,18 @@ public class IdempotencyService {
             return HexFormat.of().formatHex(digest);
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 is mandatory in every JVM", e);
+        }
+    }
+
+    /**
+     * Inside a caller's transaction the claim would not be visible to a concurrent duplicate and the action
+     * would commit (or roll back) with the caller instead of with its stored response. That breaks D24, so
+     * it is a programming error, not something to tolerate.
+     */
+    private static void requireNoActiveTransaction() {
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            throw new IllegalStateException(
+                    "IdempotencyService.execute must be called outside any transaction (from the controller)");
         }
     }
 
