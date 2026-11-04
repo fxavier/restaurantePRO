@@ -27,10 +27,7 @@ import org.springframework.test.context.TestPropertySource;
         "restaurantpro.bootstrap.company.name=Test Company",
         "restaurantpro.bootstrap.company.tax-id=TEST-TAX-ID",
         "restaurantpro.bootstrap.company.country=MZ",
-        "restaurantpro.bootstrap.company.currency=MZN",
-        // One PostgreSQL serves every cached context of the test JVM (max_connections 100, 10 per default
-        // pool); a small pool keeps this context from exhausting it. Enough for the two-request race tests.
-        "spring.datasource.hikari.maximum-pool-size=4"
+        "restaurantpro.bootstrap.company.currency=MZN"
 })
 public @interface DiningModuleTest {
 }

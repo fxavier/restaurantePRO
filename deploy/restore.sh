@@ -17,7 +17,7 @@
 #   --container  postgres container (default: the compose service "postgres" of deploy/compose.yaml)
 #   --db         target database (default: restaurantpro)
 #   --identity   age identity file, needed for .age archives (default: $BACKUP_AGE_IDENTITY)
-# Exits non-zero on any failure; on failure the target is left as it was.
+# Exits non-zero on any failure; on failure before the swap the target is left as it was.
 set -euo pipefail
 umask 077
 
@@ -39,7 +39,7 @@ while (($#)); do
     --container) container="${2:?--container needs a value}"; shift 2 ;;
     --db) db="${2:?--db needs a value}"; shift 2 ;;
     --identity) identity="${2:?--identity needs a value}"; shift 2 ;;
-    -h | --help) sed -n '2,14p' "$0" >&2; exit 0 ;;
+    -h | --help) awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0" >&2; exit 0 ;;
     -*) die "unknown option: $1" ;;
     *) [[ -z "$archive" ]] || die "only one archive allowed"; archive="$1"; shift ;;
   esac
@@ -63,6 +63,13 @@ if [[ "$(psql_in postgres -c "SELECT count(*) FROM pg_database WHERE datname = '
   Pick one and rename it, e.g.: docker exec $container psql -U $DB_USER -d postgres -c 'ALTER DATABASE \"<name>\" RENAME TO \"$db\"'
   and, for ${db}_old_<pid>, also ... -c 'ALTER DATABASE \"$db\" ALLOW_CONNECTIONS true'
   then drop the other one."
+fi
+if [[ "$(psql_in postgres -c "SELECT datallowconn FROM pg_database WHERE datname = '$db'")" == f ]]; then
+  staged="$(psql_in postgres -c "SELECT string_agg(datname, ' ') FROM pg_database WHERE datname LIKE '${db}\_restore\_%'")"
+  die "database $db refuses connections: an earlier --force was killed during the swap, before renaming it.
+  Its data is intact; reopen it with: docker exec $container psql -U $DB_USER -d postgres -c 'ALTER DATABASE \"$db\" ALLOW_CONNECTIONS true'
+  ${staged:+then drop the unfinished staging copies ($staged), each with ... -c 'DROP DATABASE \"<name>\"'
+  }then run the restore again."
 fi
 
 work="$(mktemp -d "${TMPDIR:-/tmp}/rp-restore.XXXXXX")"
