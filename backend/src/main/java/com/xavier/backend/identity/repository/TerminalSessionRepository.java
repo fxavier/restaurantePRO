@@ -8,4 +8,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface TerminalSessionRepository extends JpaRepository<TerminalSession, String> {
 
     List<TerminalSession> findByTerminalId(UUID terminalId);
+
+    List<TerminalSession> findByStoreId(UUID storeId);
 }
