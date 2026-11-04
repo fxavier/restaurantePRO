@@ -88,6 +88,8 @@ class MovementHttpTest {
                 .andExpect(status().isBadRequest());
         mvc.perform(movement(operator, "CASH_IN", "0", "x").with(operator.with(Permission.CASH_OPERATE)))
                 .andExpect(status().isBadRequest());
+        mvc.perform(movement(operator, "CASH_IN", "10000000000000000", "x")
+                .with(operator.with(Permission.CASH_OPERATE))).andExpect(status().isBadRequest());
         mvc.perform(movement(operator, "CASH_IN", "5.00", " ").with(operator.with(Permission.CASH_OPERATE)))
                 .andExpect(status().isBadRequest());
     }

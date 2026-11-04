@@ -37,6 +37,7 @@ import org.hibernate.type.SqlTypes;
 public class CashSession {
 
     static final String ENTITY = "CashSession";
+    static final int MAX_INTEGER_DIGITS = 15;
 
     @Id
     @UuidGenerator(style = UuidGenerator.Style.VERSION_7)
@@ -87,6 +88,7 @@ public class CashSession {
         if (openingFloat.amount().signum() < 0) {
             throw new CashRuleViolationException(CashRule.INVALID_AMOUNT, "The opening float cannot be negative.");
         }
+        requireFitsColumns(openingFloat);
         CashSession session = new CashSession();
         session.storeId = Objects.requireNonNull(storeId, "storeId");
         session.registerId = Objects.requireNonNull(registerId, "registerId");
@@ -132,16 +134,27 @@ public class CashSession {
         return List.copyOf(recorded);
     }
 
-    /** The amount is in this session's currency (single currency per installation, spec §8.4). */
-    public void requireCurrency(Money amount) {
+    /**
+     * The amount is in this session's currency (single currency per installation, spec §8.4) and fits the cash
+     * amount columns ({@code NUMERIC(19, 4)}).
+     */
+    public void requireStorable(Money amount) {
         if (!amount.currency().equals(currency())) {
             throw new CashRuleViolationException(CashRule.CURRENCY_MISMATCH,
                     amount.currency() + " is not the store currency " + currency + ".");
         }
+        requireFitsColumns(amount);
+    }
+
+    static void requireFitsColumns(Money amount) {
+        if (amount.amount().precision() - amount.amount().scale() > MAX_INTEGER_DIGITS) {
+            throw new CashRuleViolationException(CashRule.INVALID_AMOUNT,
+                    "An amount has at most " + MAX_INTEGER_DIGITS + " integer digits.");
+        }
     }
 
     private void requireCountable(Money amount) {
-        requireCurrency(amount);
+        requireStorable(amount);
         if (amount.amount().signum() < 0) {
             throw new CashRuleViolationException(CashRule.INVALID_AMOUNT, "A count cannot be negative.");
         }

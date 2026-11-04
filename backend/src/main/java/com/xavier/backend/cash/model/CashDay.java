@@ -68,19 +68,6 @@ public class CashDay {
         // JPA
     }
 
-    /**
-     * An OPEN day, as {@code CashDayRepository.createIfAbsent} inserts it (the row and its UUIDv7 id come from that
-     * insert, which is safe against a concurrent first session; this factory is the same rule in memory).
-     */
-    public static CashDay open(UUID storeId, LocalDate businessDate, Instant now) {
-        CashDay day = new CashDay();
-        day.storeId = Objects.requireNonNull(storeId, "storeId");
-        day.businessDate = Objects.requireNonNull(businessDate, "businessDate");
-        day.status = CashDayStatus.OPEN;
-        day.openedAt = now;
-        return day;
-    }
-
     /** Sessions open, and money moves, only on an OPEN day. */
     public void requireOpen() {
         if (status != CashDayStatus.OPEN) {

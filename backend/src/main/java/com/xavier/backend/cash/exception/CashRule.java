@@ -28,6 +28,8 @@ public enum CashRule {
     JUSTIFICATION_REQUIRED,
     /** A justification or count names a method the closing has no line for. */
     UNKNOWN_METHOD,
+    /** A payment method code is blank or longer than 30 characters. */
+    INVALID_METHOD,
     /** The same payment method is counted twice. */
     DUPLICATE_METHOD,
     /** An amount is negative, zero where it must be positive, or has more decimals than the currency allows. */

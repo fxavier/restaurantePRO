@@ -187,6 +187,7 @@ class SessionHttpTest {
         mvc.perform(open(operator, register, "1.005"))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("INVALID_AMOUNT"));
+        mvc.perform(open(operator, register, "10000000000000000")).andExpect(status().isBadRequest());
     }
 
     @Test

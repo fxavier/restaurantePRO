@@ -11,6 +11,8 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.BeanUtils;
+import org.springframework.test.util.ReflectionTestUtils;
 
 /** spec §8.3 CashDay: OPEN → OPERATIONALLY_CLOSED → FINANCIALLY_CLOSED; reopen is an event back to OPEN (P19). */
 class CashDayTest {
@@ -84,8 +86,15 @@ class CashDayTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    /** A day as Hibernate loads it from the row {@code CashDayRepository.createIfAbsent} inserted. */
     static CashDay open() {
-        return CashDay.open(UUID.randomUUID(), LocalDate.of(2026, 11, 4), NOW);
+        CashDay day = BeanUtils.instantiateClass(CashDay.class);
+        ReflectionTestUtils.setField(day, "id", UUID.randomUUID());
+        ReflectionTestUtils.setField(day, "storeId", UUID.randomUUID());
+        ReflectionTestUtils.setField(day, "businessDate", LocalDate.of(2026, 11, 4));
+        ReflectionTestUtils.setField(day, "status", CashDayStatus.OPEN);
+        ReflectionTestUtils.setField(day, "openedAt", NOW);
+        return day;
     }
 
     static CashDay operationallyClosed() {

@@ -89,7 +89,7 @@ public class CashMovement {
     private CashMovement(CashSession session, MovementType type, String methodCode, Money amount, String reason,
                          UUID paymentId, UUID actorEmployeeId, Instant now) {
         session.requireOpen();
-        session.requireCurrency(amount);
+        session.requireStorable(amount);
         if (amount.amount().signum() <= 0) {
             throw new CashRuleViolationException(CashRule.INVALID_AMOUNT, "A movement amount must be positive.");
         }

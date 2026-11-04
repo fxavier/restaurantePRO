@@ -12,12 +12,9 @@ public record ReceiptCommand(UUID sessionId, String methodCode, Money amount, UU
 
     public ReceiptCommand {
         Objects.requireNonNull(sessionId, "sessionId");
-        Objects.requireNonNull(methodCode, "methodCode");
+        MethodCount.requireMethodCode(methodCode);
         Objects.requireNonNull(amount, "amount");
         Objects.requireNonNull(paymentId, "paymentId");
         Objects.requireNonNull(actorEmployeeId, "actorEmployeeId");
-        if (methodCode.isBlank()) {
-            throw new IllegalArgumentException("methodCode is blank");
-        }
     }
 }
