@@ -19,6 +19,9 @@ import org.springframework.security.web.authentication.session.CompositeSessionA
 import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfAuthenticationStrategy;
+import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.session.FindByIndexNameSessionRepository;
 import org.springframework.stereotype.Component;
 
@@ -27,7 +30,8 @@ import org.springframework.stereotype.Component;
  * Security's own login filters do; our JSON login endpoints are plain controllers, so this is done explicitly:
  *
  * <ol>
- *   <li>the session id changes (session fixation protection) or a new session starts;</li>
+ *   <li>the session id changes (session fixation protection) or a new session starts, and the CSRF token is
+ *       replaced; the login response already carries the new {@code XSRF-TOKEN} cookie;</li>
  *   <li>the principal name index is set to {@code Actor.userId()} so sessions can be listed and revoked per user
  *       ({@link FindByIndexNameSessionRepository}); without it Spring Session would index {@code Actor.toString()};</li>
  *   <li>the {@code Authentication}'s granted authorities are exactly {@code Actor.authorities()} (the actuator URL
@@ -43,8 +47,13 @@ class LoginSessions {
     /** Session attribute: set while the account must change its password (see {@code MustChangePasswordFilter}). */
     static final String MUST_CHANGE_PASSWORD = "identity.mustChangePassword";
 
-    private final SessionAuthenticationStrategy fixationProtection =
-            new CompositeSessionAuthenticationStrategy(List.of(new ChangeSessionIdAuthenticationStrategy()));
+    /**
+     * The same cookie repository {@code csrf.spa()} configures in {@code SecurityConfig}; it keeps no state, so this
+     * instance reads and writes the very same {@code XSRF-TOKEN} cookie.
+     */
+    private final SessionAuthenticationStrategy loginStrategy = new CompositeSessionAuthenticationStrategy(List.of(
+            new ChangeSessionIdAuthenticationStrategy(),
+            new CsrfAuthenticationStrategy(CookieCsrfTokenRepository.withHttpOnlyFalse())));
     private final SecurityContextRepository contexts = new HttpSessionSecurityContextRepository();
     private final SecurityContextHolderStrategy holder = SecurityContextHolder.getContextHolderStrategy();
     private final TerminalSessionService terminalSessions;
@@ -58,7 +67,10 @@ class LoginSessions {
         Actor actor = view.toActor();
         Authentication authentication = UsernamePasswordAuthenticationToken.authenticated(actor, null,
                 actor.authorities().stream().map(SimpleGrantedAuthority::new).toList());
-        fixationProtection.onAuthentication(authentication, request, response);
+        loginStrategy.onAuthentication(authentication, request, response);
+        if (request.getAttribute(CsrfToken.class.getName()) instanceof CsrfToken csrf) {
+            csrf.getToken(); // generates and saves the new token now, so this response sets the cookie
+        }
         HttpSession session = request.getSession(true);
         session.setAttribute(FindByIndexNameSessionRepository.PRINCIPAL_NAME_INDEX_NAME, actor.userId().toString());
         if (view.mustChangePassword()) {

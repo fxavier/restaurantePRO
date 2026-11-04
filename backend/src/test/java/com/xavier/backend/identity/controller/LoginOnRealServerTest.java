@@ -73,7 +73,9 @@ class LoginOnRealServerTest {
         String sessionCookie = setCookie(login, "SESSION").orElseThrow();
         assertThat(sessionCookie).contains("; Secure").contains("; HttpOnly").contains("; SameSite=Lax");
         String session = sessionCookie.substring("SESSION=".length(), sessionCookie.indexOf(';'));
-        String freshCsrf = cookieValue(login, "XSRF-TOKEN").filter(value -> !value.isEmpty()).orElse(csrf);
+        // the CSRF token is rotated at login, as Spring Security's own login filters do
+        String freshCsrf = cookieValue(login, "XSRF-TOKEN").orElse("");
+        assertThat(freshCsrf).isNotEmpty().isNotEqualTo(csrf);
 
         HttpResponse<String> current = send(HttpRequest.newBuilder(api("/api/v1/auth/session"))
                 .header("Cookie", "SESSION=" + session).GET());
