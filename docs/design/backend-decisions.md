@@ -88,7 +88,7 @@ inventory     → shared, audit, access, organization, catalog::event, orders::e
 reporting     → events only from any module; nobody depends on reporting
 ```
 
-Every module depends on `access` for one reason: it holds `AccessPolicy.require(Permission, storeId)`, the single server-side authorization check, plus `Permission` and `Actor`. `identity` (accounts, employees, roles, login) builds the `Actor` at login and depends on `organization` for stores and terminals; nothing depends on `identity` except through events. *Amended 2026-11-04 (user decision): the original table put `AccessPolicy` in `identity`, which created an organization ↔ identity cycle.* Spec §6's direction rules (`orders ↛ settlement`, `cash ↛ orders`) are enforced by this table.
+Every module depends on `access` for one reason: it holds `AccessPolicy.require(Permission, storeId)`, the single server-side authorization check, plus `Permission` and `Actor`. `identity` (accounts, employees, roles, login) builds the `Actor` at login and depends on `organization` for stores and terminals; identity depends on no business module other than `organization`, so later modules may call its public API (e.g. `ApproverVerifier` from orders) without a cycle. *Amended 2026-11-04 (user decision): the original table put `AccessPolicy` in `identity`, which created an organization ↔ identity cycle.* Spec §6's direction rules (`orders ↛ settlement`, `cash ↛ orders`) are enforced by this table.
 
 **D14 — `shared` is technical only:** `Money`, `Currency` handling, id helpers, `ProblemDetail` mapping and base exceptions, the idempotency mechanism, the clock bean, pagination DTO. No business rules.
 
