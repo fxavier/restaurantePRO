@@ -5,7 +5,8 @@ import java.util.UUID;
 
 /**
  * An order business rule refuses the request (422): the order is frozen for its invoice ({@code ORDER_FROZEN}, D49),
- * its table is locked ({@code TABLE_LOCKED}), the item or variant is not in the published catalog
+ * its table is locked ({@code TABLE_LOCKED}), inactive ({@code TABLE_INACTIVE}) or of another store
+ * ({@code STORE_MISMATCH}; the same codes as dining's), the item or variant is not in the published catalog
  * ({@code ITEM_NOT_IN_CATALOG}), its tax category has no rate in effect at confirmation ({@code NO_TAX_RATE_IN_EFFECT},
  * D58), or a DINE_IN order was asked for without a table ({@code DINE_IN_REQUIRES_TABLE}).
  */
@@ -21,6 +22,14 @@ public class OrderRuleException extends BusinessRuleException {
 
     public static OrderRuleException tableLocked(UUID tableId) {
         return new OrderRuleException("TABLE_LOCKED", "Table " + tableId + " is locked.");
+    }
+
+    public static OrderRuleException storeMismatch(UUID tableId) {
+        return new OrderRuleException("STORE_MISMATCH", "Table " + tableId + " is not in this store.");
+    }
+
+    public static OrderRuleException tableInactive(UUID tableId) {
+        return new OrderRuleException("TABLE_INACTIVE", "Table " + tableId + " or its area is inactive.");
     }
 
     public static OrderRuleException itemNotInCatalog(UUID itemId, UUID variantId) {

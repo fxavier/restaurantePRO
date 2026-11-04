@@ -95,6 +95,16 @@ class OrderOpeningHttpTest {
     }
 
     @Test
+    void anOccupiedTableOfAnotherStoreIsAStoreMismatchNotAnOccupiedTable() throws Exception {
+        Shop other = fixtures.shop();
+        fixtures.openTable(other, other.table(), employee, UUID.randomUUID(), UUID.randomUUID().toString())
+                .andExpect(status().isCreated());
+
+        fixtures.openTable(shop, other.table(), employee, terminal, UUID.randomUUID().toString())
+                .andExpect(status().isUnprocessableContent()).andExpect(jsonPath("$.code").value("STORE_MISMATCH"));
+    }
+
+    @Test
     void aRetryWithTheSameKeyReplaysTheOpeningWithoutASecondOrder() throws Exception {
         String key = UUID.randomUUID().toString();
         String first = fixtures.openTable(shop, shop.table(), employee, terminal, key)
