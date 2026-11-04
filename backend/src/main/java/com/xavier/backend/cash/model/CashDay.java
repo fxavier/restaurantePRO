@@ -129,7 +129,7 @@ public class CashDay {
     }
 
     public DayView toView() {
-        return new DayView(id, storeId, businessDate, status.name(), version == null ? 0 : version);
+        return new DayView(id, storeId, businessDate, status.name(), versionOrZero());
     }
 
     private void requireStatus(CashDayStatus required, String command) {
@@ -154,7 +154,12 @@ public class CashDay {
         return status;
     }
 
-    public long getVersion() {
+    /** Spring Data reads this to tell a new entity (null) from a stored one: never map null to 0 here. */
+    public Long getVersion() {
+        return version;
+    }
+
+    private long versionOrZero() {
         return version == null ? 0 : version;
     }
 }

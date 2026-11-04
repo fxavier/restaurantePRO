@@ -4,6 +4,7 @@ import com.xavier.backend.access.ActorKind;
 import com.xavier.backend.cash.exception.CashRule;
 import com.xavier.backend.cash.exception.CashRuleViolationException;
 import com.xavier.backend.cash.exception.IllegalCashStateException;
+import com.xavier.backend.cash.model.dto.ClosingView;
 import com.xavier.backend.shared.Money;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -167,6 +168,11 @@ public class CashClosing {
                 BigDecimal::add);
     }
 
+    public ClosingView toView() {
+        return new ClosingView(id, storeId, registerId, cashDayId, attemptNo, supersedesId, status.name(),
+                versionOrZero(), rejectionReason, lines.stream().map(CashClosingLine::toView).toList());
+    }
+
     private void decide(CashClosingStatus decision, UUID actorId, ActorKind actorKind, Instant now, String command) {
         requireStatus(CashClosingStatus.SUBMITTED, command);
         status = decision;
@@ -216,7 +222,12 @@ public class CashClosing {
         return status;
     }
 
-    public long getVersion() {
+    /** Spring Data reads this to tell a new entity (null) from a stored one: never map null to 0 here. */
+    public Long getVersion() {
+        return version;
+    }
+
+    private long versionOrZero() {
         return version == null ? 0 : version;
     }
 

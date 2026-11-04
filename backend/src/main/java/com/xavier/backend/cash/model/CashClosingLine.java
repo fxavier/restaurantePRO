@@ -1,5 +1,6 @@
 package com.xavier.backend.cash.model;
 
+import com.xavier.backend.cash.model.dto.ClosingLineView;
 import com.xavier.backend.shared.Money;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -69,6 +70,10 @@ public class CashClosingLine {
 
     boolean needsJustification() {
         return differenceAmount.signum() != 0 && justification == null;
+    }
+
+    ClosingLineView toView() {
+        return new ClosingLineView(methodCode, getExpected(), getCounted(), getDifference(), justification);
     }
 
     public String getMethodCode() {

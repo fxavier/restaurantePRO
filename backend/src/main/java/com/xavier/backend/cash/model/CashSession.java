@@ -148,7 +148,8 @@ public class CashSession {
     }
 
     public SessionView toView() {
-        return new SessionView(id, storeId, registerId, cashDayId, operatorEmployeeId, status.name(), getVersion());
+        return new SessionView(id, storeId, registerId, cashDayId, operatorEmployeeId, status.name(),
+                versionOrZero());
     }
 
     public OpenSessionView toOpenView() {
@@ -195,7 +196,12 @@ public class CashSession {
         return closedAt;
     }
 
-    public long getVersion() {
+    /** Spring Data reads this to tell a new entity (null) from a stored one: never map null to 0 here. */
+    public Long getVersion() {
+        return version;
+    }
+
+    private long versionOrZero() {
         return version == null ? 0 : version;
     }
 }
