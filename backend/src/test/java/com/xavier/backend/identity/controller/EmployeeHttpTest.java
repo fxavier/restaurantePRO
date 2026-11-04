@@ -240,6 +240,14 @@ class EmployeeHttpTest {
         assertThat(output.getAll()).doesNotContain("Unhandled exception");
     }
 
+    @Test
+    void aSortTokenPaddedWithWhitespaceIsABadRequest() throws Exception {
+        for (String sort : List.of("code ", "code,desc ")) {
+            mvc.perform(get(EMPLOYEES).param("storeId", storeA.toString()).param("sort", sort).with(managerOf(storeA)))
+                    .andExpect(status().isBadRequest());
+        }
+    }
+
     private static RequestPostProcessor managerOf(UUID... stores) {
         return as(java.util.Arrays.stream(stores).flatMap(store -> MANAGER_PERMISSIONS.stream()
                 .map(p -> p.authority(store))).collect(Collectors.toSet()));

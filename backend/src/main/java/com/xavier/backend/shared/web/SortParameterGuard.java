@@ -3,6 +3,7 @@ package com.xavier.backend.shared.web;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Arrays;
+import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
 import org.springframework.core.MethodParameter;
@@ -27,7 +28,10 @@ class SortParameterGuard implements HandlerInterceptor, WebMvcConfigurer {
 
     private static final String SORT_PARAMETER = "sort";
     private static final Pattern PROPERTY_PATH = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*");
-    /** Tokens Spring Data reads as options of the preceding properties, not as properties. */
+    /**
+     * Tokens Spring Data reads as options of the preceding properties, not as properties. Compared untrimmed, as
+     * Spring Data does: a padded token is a property to it, and one its query check rejects.
+     */
     private static final Set<String> OPTIONS = Set.of("asc", "desc", "ignorecase");
 
     @Override
@@ -43,8 +47,7 @@ class SortParameterGuard implements HandlerInterceptor, WebMvcConfigurer {
         }
         boolean valid = Arrays.stream(sorts)
                 .flatMap(sort -> Arrays.stream(sort.split(",")))
-                .map(String::strip)
-                .filter(token -> !token.isEmpty() && !OPTIONS.contains(token.toLowerCase()))
+                .filter(token -> !token.isEmpty() && !OPTIONS.contains(token.toLowerCase(Locale.ROOT)))
                 .allMatch(token -> PROPERTY_PATH.matcher(token).matches());
         if (!valid) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,

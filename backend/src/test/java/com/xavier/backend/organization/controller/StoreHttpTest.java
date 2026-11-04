@@ -128,6 +128,14 @@ class StoreHttpTest {
     }
 
     @Test
+    void aSortTokenPaddedWithWhitespaceIsABadRequest() throws Exception {
+        for (String sort : List.of("code ", "code,desc ")) {
+            mvc.perform(get(STORES).param("sort", sort).with(admin(Permission.STORE_MANAGE)))
+                    .andExpect(status().isBadRequest());
+        }
+    }
+
+    @Test
     void sortingByKnownPropertiesWithDirectionsWorks() throws Exception {
         mvc.perform(get(STORES).param("sort", "name,desc").param("sort", "code").with(admin(Permission.STORE_MANAGE)))
                 .andExpect(status().isOk());
