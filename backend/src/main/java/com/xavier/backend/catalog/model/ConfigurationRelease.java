@@ -72,15 +72,25 @@ public class ConfigurationRelease {
         return release;
     }
 
+    /** Fails with 409 unless this release may be validated (DRAFT, or VALIDATED again after more edits). */
+    public void requireValidatable() {
+        requireStatus("validate", Set.of(ReleaseStatus.DRAFT, ReleaseStatus.VALIDATED));
+    }
+
+    /** Fails with 409 unless this release is VALIDATED. */
+    public void requirePublishable() {
+        requireStatus("publish", Set.of(ReleaseStatus.VALIDATED));
+    }
+
     /** The working copy passed validation. Allowed again on a VALIDATED release after more edits. */
     public void markValidated(Instant now) {
-        requireStatus("validate", Set.of(ReleaseStatus.DRAFT, ReleaseStatus.VALIDATED));
+        requireValidatable();
         status = ReleaseStatus.VALIDATED;
         validatedAt = now;
     }
 
     public void publish(long catalogVersion, String snapshot, UUID publishedBy, Instant now) {
-        requireStatus("publish", Set.of(ReleaseStatus.VALIDATED));
+        requirePublishable();
         this.catalogVersion = catalogVersion;
         this.snapshot = snapshot;
         this.publishedBy = publishedBy;
