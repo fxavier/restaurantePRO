@@ -1,13 +1,13 @@
 == BackendApplication
 plantuml::components.puml[,,format=svg]
 
+== Access
+plantuml::module-access.puml[,,format=svg]
+include::module-access.adoc[]
+
 == Audit
 plantuml::module-audit.puml[,,format=svg]
 include::module-audit.adoc[]
-
-== Identity
-plantuml::module-identity.puml[,,format=svg]
-include::module-identity.adoc[]
 
 == Shared kernel
 plantuml::module-shared.puml[,,format=svg]

@@ -1,4 +1,4 @@
-package com.xavier.backend.identity;
+package com.xavier.backend.access;
 
 import java.lang.annotation.Documented;
 import java.lang.annotation.ElementType;
