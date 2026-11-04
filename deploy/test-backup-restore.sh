@@ -3,9 +3,17 @@
 #
 # Starts two throwaway PostgreSQL containers, loads deploy/test/sample.sql into the first,
 # runs backup.sh against it, restores the archive into the second with restore.sh, and
-# compares a per-table row count + checksum and the sequence positions. Also checks that
-# retention keeps N archives, that restore.sh refuses a non-empty target without --force,
-# and that a corrupted archive is rejected. Exits non-zero on any mismatch.
+# compares per-table row counts + checksums, sequence positions and the normalised schema
+# (pg_dump --schema-only). Spring Session rows must come back empty (not backed up).
+# Also checks:
+#   - retention keeps the newest N timestamped archives and ignores hand-named files
+#   - a corrupted archive is rejected by the checksum check, target untouched
+#   - a non-empty target is refused without --force, target untouched
+#   - --force replaces the target while a client holds a session on it, and removes objects
+#     created after the backup (rollback after an upgrade)
+#   - a --force restore that fails mid-way leaves the target unchanged and no staging or old
+#     database behind
+# Exits non-zero on any mismatch.
 #
 # Usage: deploy/test-backup-restore.sh        (needs only Docker; leaves nothing behind)
 set -euo pipefail
@@ -19,9 +27,11 @@ SRC="$RUN_ID-src"
 DST="$RUN_ID-dst"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/rp-drill.XXXXXX")"
 STARTED=()
+HOLDER=""
 
 cleanup() {
   local status=$?
+  if [[ -n "$HOLDER" ]]; then kill "$HOLDER" 2>/dev/null || true; fi
   if ((${#STARTED[@]})); then
     docker rm -f -v "${STARTED[@]}" >/dev/null 2>&1 || true
   fi
@@ -146,6 +156,33 @@ if "$DEPLOY_DIR/restore.sh" --container "$DST" "$archive" 2>"$WORK/refused.err";
 grep -q 'is not empty' "$WORK/refused.err" || fail "not refused by the non-empty guard: $(cat "$WORK/refused.err")"
 [[ "$(fingerprint "$DST")" == "$changed" ]] || fail "refused restore changed the target"
 
-step "--force recreates the target: later objects are gone (rollback after an upgrade)"
+leftover_dbs() { psql_in "$1" -At -c "SELECT string_agg(datname, ' ') FROM pg_database WHERE datname LIKE '${DB}\_%'"; }
+
+step "--force replaces the target while a client is connected; later objects are gone"
+# An open session, like a running backend that was not stopped.
+docker exec "$DST" psql -X -q -U "$DB_USER" -d "$DB" -c "SELECT pg_sleep(300)" >/dev/null 2>&1 &
+HOLDER=$!
+for _ in $(seq 1 20); do
+  [[ "$(psql_in "$DST" -At -c "SELECT count(*) FROM pg_stat_activity WHERE query LIKE 'SELECT pg_sleep(300)%'")" == 1 ]] && break
+  sleep 0.5
+done
+[[ "$(psql_in "$DST" -At -c "SELECT count(*) FROM pg_stat_activity WHERE query LIKE 'SELECT pg_sleep(300)%'")" == 1 ]] \
+  || fail "could not open the holding session"
 "$DEPLOY_DIR/restore.sh" --container "$DST" --force "$archive"
+wait "$HOLDER" 2>/dev/null || true # its session was terminated by the swap
+HOLDER=""
 same_as_source "$DST" "--force restore"
+[[ -z "$(leftover_dbs "$DST")" ]] || fail "--force left databases behind: $(leftover_dbs "$DST")"
+
+step "a --force restore that fails mid-way leaves the target unchanged"
+# A grant to a role that exists only in the source cluster: pg_restore fails at the ACL step,
+# after all tables and data are loaded, with a checksum-valid archive.
+psql_in "$SRC" -c "CREATE ROLE drill_reader; GRANT SELECT ON organization.store TO drill_reader"
+mkdir "$WORK/bad"
+bad_archive="$("$DEPLOY_DIR/backup.sh" --container "$SRC" --dir "$WORK/bad" --keep 1 2>/dev/null)"
+if "$DEPLOY_DIR/restore.sh" --container "$DST" --force "$bad_archive" 2>"$WORK/bad.err"; then
+  fail "restore.sh --force succeeded with a dump that cannot be restored"
+fi
+grep -q 'pg_restore failed' "$WORK/bad.err" || fail "unexpected failure: $(cat "$WORK/bad.err")"
+same_as_source "$DST" "after failed --force"
+[[ -z "$(leftover_dbs "$DST")" ]] || fail "failed --force left databases behind: $(leftover_dbs "$DST")"
