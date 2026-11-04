@@ -20,7 +20,9 @@ public class TestcontainersConfiguration {
     /** Same image as {@code backend/compose.yaml} (D4: tests = production). */
     public static final DockerImageName POSTGRES_IMAGE = DockerImageName.parse("postgres:18.6-alpine");
 
-    private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer(POSTGRES_IMAGE);
+    // The container has no TLS; skipping the SSL probe avoids a flaky "error setting up the SSL connection".
+    private static final PostgreSQLContainer POSTGRES =
+            new PostgreSQLContainer(POSTGRES_IMAGE).withUrlParam("sslmode", "disable");
 
     static {
         POSTGRES.start();
