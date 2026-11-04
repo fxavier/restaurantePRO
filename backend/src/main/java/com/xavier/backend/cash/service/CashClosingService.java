@@ -27,6 +27,8 @@ import com.xavier.backend.cash.repository.CashSessionRepository;
 import com.xavier.backend.organization.OrganizationApi;
 import com.xavier.backend.shared.persistence.OptimisticLocking;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
+import com.xavier.backend.shared.web.PageResponse;
+import org.springframework.data.domain.Pageable;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
@@ -35,6 +37,7 @@ import java.util.Currency;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -172,6 +175,26 @@ public class CashClosingService {
         closings.saveAndFlush(closing);
         record("CASH_CLOSING_REJECTED", closing, request.reason().strip());
         return closing.toView();
+    }
+
+    /**
+     * The store's closings, e.g. the SUBMITTED ones waiting for approval. {@code CASH_VIEW} or
+     * {@code CASH_CLOSING_APPROVE} in the store, checked before any read (D42).
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<ClosingView> list(UUID storeId, UUID cashDayId, CashClosingStatus status,
+                                          Pageable pageable) {
+        requireViewOrApprove(storeId);
+        return PageResponse.from(closings.search(storeId, cashDayId, status, pageable).map(CashClosing::toView));
+    }
+
+    private void requireViewOrApprove(UUID storeId) {
+        Set<String> authorities = accessPolicy.current().authorities();
+        if (authorities.contains(Permission.CASH_CLOSING_APPROVE.authority())
+                || authorities.contains(Permission.CASH_CLOSING_APPROVE.authority(storeId))) {
+            return;
+        }
+        accessPolicy.require(Permission.CASH_VIEW, storeId); // 403, logged, without either
     }
 
     private void requireAllSessionsClosed(CashRegister register, CashDay day) {

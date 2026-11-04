@@ -13,6 +13,7 @@ import com.xavier.backend.access.Permission;
 import com.xavier.backend.cash.CashFixtures;
 import com.xavier.backend.cash.CashModuleTest;
 import java.util.UUID;
+import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -66,6 +67,29 @@ class RegisterHttpTest {
         mvc.perform(idem(put(REGISTERS + "/" + register)).with(account(store, Permission.CASH_REGISTER_MANAGE))
                         .contentType(MediaType.APPLICATION_JSON).content(update("RENAMED", true, 0)))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void aCashierListsTheActiveRegistersOfTheSessionStore() throws Exception {
+        UUID first = fixtures.newRegister(store);
+        UUID second = fixtures.newRegister(store);
+        UUID retired = fixtures.newRegister(store);
+        mvc.perform(idem(put(REGISTERS + "/" + retired)).with(account(store, Permission.CASH_REGISTER_MANAGE))
+                .contentType(MediaType.APPLICATION_JSON).content(update("ZZ", false, 0))).andExpect(status().isOk());
+        fixtures.newRegister(fixtures.newStore());
+
+        String body = mvc.perform(get("/api/v1/pos/cash/registers")
+                        .with(CashFixtures.pos(store).with(Permission.CASH_OPERATE)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(2))
+                .andReturn().getResponse().getContentAsString();
+        assertThat(CashFixtures.json(body).get("content").valueStream().map(r -> r.get("id").asString()))
+                .containsExactlyInAnyOrder(first.toString(), second.toString());
+
+        mvc.perform(get("/api/v1/pos/cash/registers").with(account(store, Permission.CASH_OPERATE)))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/pos/cash/registers").with(CashFixtures.pos(store).with(Permission.CASH_VIEW)))
+                .andExpect(status().isForbidden());
     }
 
     @Test

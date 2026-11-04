@@ -13,6 +13,8 @@ public interface CashRegisterRepository extends JpaRepository<CashRegister, UUID
 
     Page<CashRegister> findByStoreId(UUID storeId, Pageable pageable);
 
+    Page<CashRegister> findByStoreIdAndActiveTrue(UUID storeId, Pageable pageable);
+
     @Query("select x.storeId from CashRegister x where x.id = :id")
     Optional<UUID> findStoreIdById(@Param("id") UUID id);
 }

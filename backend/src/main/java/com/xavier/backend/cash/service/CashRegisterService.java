@@ -2,6 +2,7 @@ package com.xavier.backend.cash.service;
 
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
+import com.xavier.backend.access.PosContext;
 import com.xavier.backend.cash.exception.CashNotFoundException;
 import com.xavier.backend.cash.exception.CashRule;
 import com.xavier.backend.cash.exception.CashRuleViolationException;
@@ -80,6 +81,14 @@ public class CashRegisterService {
     public PageResponse<RegisterSummary> list(UUID storeId, Pageable pageable) {
         accessPolicy.require(Permission.CASH_REGISTER_MANAGE, storeId);
         return PageResponse.from(registers.findByStoreId(storeId, pageable).map(CashRegister::toSummary));
+    }
+
+    /** The POS store's active registers, so a cashier can pick one to open a session on. */
+    @Transactional(readOnly = true)
+    public PageResponse<RegisterSummary> listForPos(Pageable pageable) {
+        PosContext pos = accessPolicy.requirePos(Permission.CASH_OPERATE);
+        return PageResponse.from(registers.findByStoreIdAndActiveTrue(pos.storeId(), pageable)
+                .map(CashRegister::toSummary));
     }
 
     private CashRegister save(CashRegister register) {

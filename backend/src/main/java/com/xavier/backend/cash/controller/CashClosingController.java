@@ -1,18 +1,24 @@
 package com.xavier.backend.cash.controller;
 
 import com.xavier.backend.access.AccessPolicy;
+import com.xavier.backend.cash.model.CashClosingStatus;
 import com.xavier.backend.cash.model.dto.ClosingView;
 import com.xavier.backend.cash.model.dto.CreateClosingRequest;
 import com.xavier.backend.cash.model.dto.JustifyClosingRequest;
 import com.xavier.backend.cash.model.dto.RejectClosingRequest;
 import com.xavier.backend.cash.service.CashClosingService;
 import com.xavier.backend.shared.idempotency.IdempotencyService;
+import com.xavier.backend.shared.web.PageResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.net.URI;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -34,6 +40,13 @@ class CashClosingController {
     CashClosingController(CashClosingService closings, IdempotencyService idempotency, AccessPolicy accessPolicy) {
         this.closings = closings;
         this.idempotent = new Idempotent(idempotency, accessPolicy);
+    }
+
+    @GetMapping(BACKOFFICE)
+    PageResponse<ClosingView> list(@RequestParam UUID storeId, @RequestParam(required = false) UUID cashDayId,
+                                   @RequestParam(required = false) CashClosingStatus status,
+                                   @PageableDefault(sort = "createdAt") Pageable pageable) {
+        return closings.list(storeId, cashDayId, status, pageable);
     }
 
     @PostMapping(POS)

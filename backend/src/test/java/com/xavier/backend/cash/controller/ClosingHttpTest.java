@@ -8,6 +8,7 @@ import static com.xavier.backend.cash.CashFixtures.idem;
 import static com.xavier.backend.cash.CashFixtures.openSessionBody;
 import static com.xavier.backend.cash.CashFixtures.pos;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -119,6 +120,30 @@ class ClosingHttpTest {
         assertThat(CashFixtures.json(replay)).isEqualTo(CashFixtures.json(first));
         assertThat(fixtures.count("SELECT count(*) FROM cash.cash_closing WHERE register_id = ?", register))
                 .isEqualTo(1);
+    }
+
+    @Test
+    void approversListTheStoresClosingsByDayAndStatus() throws Exception {
+        UUID submitted = submittedClosing();
+
+        mvc.perform(get(BO_CLOSINGS).param("storeId", store.toString()).param("status", "SUBMITTED")
+                        .with(account(store, Permission.CASH_CLOSING_APPROVE)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].id").value(submitted.toString()))
+                .andExpect(jsonPath("$.content[0].lines.length()").value(2));
+        mvc.perform(get(BO_CLOSINGS).param("storeId", store.toString()).param("cashDayId", day.toString())
+                        .param("status", "APPROVED").with(account(store, Permission.CASH_VIEW)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(0));
+        mvc.perform(get(BO_CLOSINGS).param("storeId", store.toString()).with(account(store, Permission.CASH_VIEW)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1));
+
+        mvc.perform(get(BO_CLOSINGS).param("storeId", store.toString()).with(account(store, Permission.CASH_OPERATE)))
+                .andExpect(status().isForbidden());
+        mvc.perform(get(BO_CLOSINGS).param("storeId", store.toString())
+                .with(account(fixtures.newStore(), Permission.CASH_CLOSING_APPROVE))).andExpect(status().isForbidden());
     }
 
     @Test
