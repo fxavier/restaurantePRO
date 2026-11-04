@@ -154,7 +154,9 @@ class IdempotencyServiceTest {
         assertThat(runs).hasValue(1);
         assertThat(response.getBody()).isEqualTo("recovered");
         assertThat(replay.getBody()).hasToString("\"recovered\"");
-        assertThat(output.getOut()).contains("Idempotency key taken over");
+        // not a WARN and no crash claim: the same path runs when a concurrent duplicate locks first (harmless)
+        assertThat(output.getOut().lines().filter(line -> line.contains("found an unfinished claim")))
+                .singleElement().asString().contains("\"INFO\"").doesNotContain("crash");
     }
 
     @Test

@@ -111,7 +111,10 @@ public class IdempotencyService {
                 return replay(scope, key, locked); // another request finished between our read and our lock
             }
             if (!createdNow) {
-                log.warn("Idempotency key taken over from an unfinished earlier attempt: scope={} key={}", scope, key);
+                // Either an earlier attempt died, or a concurrent duplicate claimed the key and has not locked
+                // it yet (it will then get 409 or the replay). Both are normal, so no WARN and no crash claim.
+                log.info("Idempotency key found an unfinished claim; this request runs it: scope={} key={}",
+                        scope, key);
             }
             ResponseEntity<?> response = action.get();
             store.complete(scope, key, response.getStatusCode().value(),
