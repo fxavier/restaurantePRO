@@ -2,6 +2,7 @@ package com.xavier.backend.identity.controller;
 
 import com.xavier.backend.access.Actor;
 import com.xavier.backend.identity.model.dto.SessionView;
+import com.xavier.backend.identity.service.TerminalSessionService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
@@ -32,7 +33,8 @@ import org.springframework.stereotype.Component;
  *   <li>the {@code Authentication}'s granted authorities are exactly {@code Actor.authorities()} (the actuator URL
  *       rule reads them, {@code AccessPolicy} reads the actor);</li>
  *   <li>the security context is saved in the session explicitly ({@link HttpSessionSecurityContextRepository}),
- *       which the security filter chain loads on every later request.</li>
+ *       which the security filter chain loads on every later request;</li>
+ *   <li>a POS session is recorded against its terminal, so revoking the terminal ends it.</li>
  * </ol>
  */
 @Component
@@ -45,6 +47,11 @@ class LoginSessions {
             new CompositeSessionAuthenticationStrategy(List.of(new ChangeSessionIdAuthenticationStrategy()));
     private final SecurityContextRepository contexts = new HttpSessionSecurityContextRepository();
     private final SecurityContextHolderStrategy holder = SecurityContextHolder.getContextHolderStrategy();
+    private final TerminalSessionService terminalSessions;
+
+    LoginSessions(TerminalSessionService terminalSessions) {
+        this.terminalSessions = terminalSessions;
+    }
 
     /** @return the id of the session that now holds the actor */
     String start(SessionView view, HttpServletRequest request, HttpServletResponse response) {
@@ -63,10 +70,17 @@ class LoginSessions {
         context.setAuthentication(authentication);
         holder.setContext(context);
         contexts.saveContext(context, request, response);
+        if (actor.terminalId() != null) {
+            terminalSessions.register(session.getId(), actor.terminalId(), actor.employeeId());
+        }
         return session.getId();
     }
 
     void end(HttpServletRequest request, HttpServletResponse response) {
+        HttpSession session = request.getSession(false);
+        if (session != null) {
+            terminalSessions.forget(session.getId());
+        }
         new SecurityContextLogoutHandler().logout(request, response, holder.getContext().getAuthentication());
     }
 }
