@@ -317,8 +317,19 @@ public class FiscalDocument {
         if (!line.net().plus(line.tax()).equals(line.gross())) {
             throw new InvalidSaleDraftException(where + "net + tax must equal gross");
         }
+        BigDecimal rate = rate(line.taxRatePercent());
+        Money expectedNet = netOf(line.gross(), rate);
+        if (!line.net().equals(expectedNet)) {
+            throw new InvalidSaleDraftException(where + "net must be gross / (1 + rate/100) = "
+                    + expectedNet.amount() + " at rate " + rate.stripTrailingZeros().toPlainString() + " %");
+        }
         return new FiscalDocumentLine(lineNo, line.sourceLineId(), description, quantity, line.unitPrice(),
-                rate(line.taxRatePercent()), line.gross(), line.net(), line.tax());
+                rate, line.gross(), line.net(), line.tax());
+    }
+
+    /** D59, tax-inclusive prices: {@code net = gross / (1 + rate/100)}, HALF_UP to minor units; tax = gross − net. */
+    static Money netOf(Money gross, BigDecimal ratePercent) {
+        return gross.divide(BigDecimal.ONE.add(ratePercent.movePointLeft(2)));
     }
 
     private static BigDecimal rate(BigDecimal percent) {

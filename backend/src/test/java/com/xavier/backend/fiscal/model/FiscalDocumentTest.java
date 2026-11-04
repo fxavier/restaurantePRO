@@ -86,6 +86,27 @@ class FiscalDocumentTest {
     }
 
     @Test
+    void aLineWhoseTaxDoesNotFollowItsRateIsRejected() {
+        // 116.00 at 16 % is net 100.00 + tax 16.00 (D59); 110.00 + 6.00 also sums to the gross but is wrong
+        DraftLine wrong = new DraftLine(UUID.randomUUID(), "Cerveja", new BigDecimal("2"), mzn("58.00"),
+                new BigDecimal("16"), mzn("116.00"), mzn("110.00"), mzn("6.00"));
+
+        assertThatThrownBy(() -> draft(List.of(wrong), mzn("116.00"), mzn("110.00"), mzn("6.00"), null))
+                .isInstanceOf(InvalidSaleDraftException.class)
+                .hasMessageContaining("rate");
+    }
+
+    @Test
+    void theNetIsRoundedHalfUpToMinorUnits() {
+        // 10.00 / 1.16 = 8.6206... -> net 8.62, tax 1.38
+        DraftLine line = new DraftLine(UUID.randomUUID(), "Água", BigDecimal.ONE, mzn("10.00"),
+                new BigDecimal("16"), mzn("10.00"), mzn("8.62"), mzn("1.38"));
+
+        assertThat(draft(List.of(line), mzn("10.00"), mzn("8.62"), mzn("1.38"), null).toView().totalTax())
+                .isEqualTo(mzn("1.38"));
+    }
+
+    @Test
     void totalsThatAreNotTheSumOfTheLinesAreRejected() {
         assertThatThrownBy(() -> draft(List.of(BEER), mzn("117.00"), mzn("101.00"), mzn("16.00"), null))
                 .isInstanceOf(InvalidSaleDraftException.class);

@@ -35,6 +35,11 @@ public class FiscalApi {
      * tx-A (D50 §7.6), in the caller's transaction: the SALE draft of the order, with snapshots of company, store
      * and buyer. Idempotent per {@code (ORDER, orderId)}: returns the existing document, DRAFT or ISSUED.
      *
+     * <p>Lines follow D59 for tax-inclusive prices, exactly as orders computes them: {@code gross =
+     * unitPrice.times(quantity)}, {@code net = gross.divide(1 + rate/100)} (HALF_UP to minor units),
+     * {@code tax = gross − net}; the totals are the sums of the lines. See {@link
+     * com.xavier.backend.fiscal.model.dto.DraftLine}.
+     *
      * @throws com.xavier.backend.shared.exception.BusinessRuleException (422) for inconsistent lines or totals
      * @throws com.xavier.backend.shared.exception.ConflictException (409) when a concurrent draft won the race
      * @throws org.springframework.transaction.IllegalTransactionStateException without a transaction
