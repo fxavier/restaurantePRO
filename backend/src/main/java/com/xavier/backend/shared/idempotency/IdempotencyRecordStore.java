@@ -4,6 +4,7 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.UUID;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -14,14 +15,25 @@ class IdempotencyRecordStore {
 
     /**
      * What is stored for a key; {@code responseStatus}/{@code responseBody} are null while in progress, and
-     * {@code responseLocation} is null when the response had no {@code Location} header.
+     * {@code responseLocation} is null when the response had no {@code Location} header. {@code leaseOwner} and
+     * {@code leaseUntil} are set only for records claimed by {@code executeSteps} (D63).
      */
     record StoredRecord(String requestHash, boolean completed, Integer responseStatus, String responseBody,
-                        String responseLocation) {
+                        String responseLocation, UUID leaseOwner, Instant leaseUntil) {
+
+        boolean leased() {
+            return leaseUntil != null;
+        }
+
+        /** A lease is live while {@code leaseUntil > now}; at or after {@code leaseUntil} it may be taken over. */
+        boolean leaseLiveAt(Instant now) {
+            return leaseUntil != null && leaseUntil.isAfter(now);
+        }
     }
 
     private static final String SELECT = """
-            SELECT request_hash, status, response_status, response_body::text AS response_body, response_location
+            SELECT request_hash, status, response_status, response_body::text AS response_body, response_location,
+                   lease_owner, lease_until
             FROM shared.idempotency_record WHERE scope = :scope AND key = :key
             """;
 
@@ -42,6 +54,68 @@ class IdempotencyRecordStore {
                         """)
                 .param("scope", scope).param("key", key).param("hash", requestHash).param("now", Timestamp.from(now))
                 .update() == 1;
+    }
+
+    /**
+     * D63 claim: like {@link #claim}, with the caller as lease owner until {@code leaseUntil}.
+     *
+     * @return true if this call created the record (and therefore owns its lease)
+     */
+    boolean claimWithLease(String scope, String key, String requestHash, UUID owner, Instant now,
+                           Instant leaseUntil) {
+        return jdbc.sql("""
+                        INSERT INTO shared.idempotency_record
+                            (scope, key, request_hash, status, created_at, lease_owner, lease_until)
+                        VALUES (:scope, :key, :hash, 'IN_PROGRESS', :now, :owner, :until)
+                        ON CONFLICT (scope, key) DO NOTHING
+                        """)
+                .param("scope", scope).param("key", key).param("hash", requestHash).param("now", Timestamp.from(now))
+                .param("owner", owner).param("until", Timestamp.from(leaseUntil))
+                .update() == 1;
+    }
+
+    /**
+     * D63 takeover by compare-and-set: succeeds only for an unfinished claim whose lease has expired
+     * ({@code lease_until <= now}), so of two concurrent takers exactly one wins.
+     *
+     * @return true if the caller now owns the lease
+     */
+    boolean takeOverExpired(String scope, String key, UUID owner, Instant now, Instant leaseUntil) {
+        return jdbc.sql("""
+                        UPDATE shared.idempotency_record SET lease_owner = :owner, lease_until = :until
+                        WHERE scope = :scope AND key = :key AND status = 'IN_PROGRESS' AND lease_until <= :now
+                        """)
+                .param("owner", owner).param("until", Timestamp.from(leaseUntil)).param("now", Timestamp.from(now))
+                .param("scope", scope).param("key", key)
+                .update() == 1;
+    }
+
+    /**
+     * D63 completion: stores the response only if the caller still owns the lease of the unfinished claim.
+     *
+     * @return false when the lease was lost (taken over, and possibly completed, by another request)
+     */
+    boolean completeOwned(String scope, String key, UUID owner, int responseStatus, String responseBody,
+                          String responseLocation, Instant now) {
+        return jdbc.sql("""
+                        UPDATE shared.idempotency_record
+                        SET status = 'COMPLETED', response_status = :status,
+                            response_body = CAST(:body AS jsonb), response_location = :location, completed_at = :now
+                        WHERE scope = :scope AND key = :key AND status = 'IN_PROGRESS' AND lease_owner = :owner
+                        """)
+                .param("status", responseStatus).param("body", responseBody).param("location", responseLocation)
+                .param("now", Timestamp.from(now)).param("scope", scope).param("key", key).param("owner", owner)
+                .update() == 1;
+    }
+
+    /** D63 failure: expires the caller's lease at once, so a retry with the same key runs the steps again. */
+    void releaseOwned(String scope, String key, UUID owner, Instant now) {
+        jdbc.sql("""
+                        UPDATE shared.idempotency_record SET lease_until = :now
+                        WHERE scope = :scope AND key = :key AND status = 'IN_PROGRESS' AND lease_owner = :owner
+                        """)
+                .param("now", Timestamp.from(now)).param("scope", scope).param("key", key).param("owner", owner)
+                .update();
     }
 
     Optional<StoredRecord> find(String scope, String key) {
@@ -94,17 +168,19 @@ class IdempotencyRecordStore {
 
     /**
      * D47.4: completed records that completed before {@code cutoff}, and claims still {@code IN_PROGRESS} that were
-     * created before it (abandoned: the owner crashed or its action was refused, and nobody retries that late).
+     * created before it (abandoned: the owner crashed or its action was refused, and nobody retries that late). An
+     * unfinished claim whose step lease is still live at {@code now} is kept: its owner is running (D63).
      *
      * @return the number of deleted records
      */
-    int deleteExpiredBefore(Instant cutoff) {
+    int deleteExpiredBefore(Instant cutoff, Instant now) {
         return jdbc.sql("""
                         DELETE FROM shared.idempotency_record
                         WHERE (status = 'COMPLETED' AND completed_at < :cutoff)
-                           OR (status = 'IN_PROGRESS' AND created_at < :cutoff)
+                           OR (status = 'IN_PROGRESS' AND created_at < :cutoff
+                               AND (lease_until IS NULL OR lease_until <= :now))
                         """)
-                .param("cutoff", Timestamp.from(cutoff))
+                .param("cutoff", Timestamp.from(cutoff)).param("now", Timestamp.from(now))
                 .update();
     }
 
@@ -114,6 +190,8 @@ class IdempotencyRecordStore {
                 "COMPLETED".equals(rs.getString("status")),
                 (Integer) rs.getObject("response_status"),
                 rs.getString("response_body"),
-                rs.getString("response_location"));
+                rs.getString("response_location"),
+                rs.getObject("lease_owner", UUID.class),
+                rs.getTimestamp("lease_until") == null ? null : rs.getTimestamp("lease_until").toInstant());
     }
 }
