@@ -37,7 +37,7 @@ class PosTableController {
     }
 
     @GetMapping(PATH)
-    TableMap tables(@RequestParam UUID storeId) {
+    TableMap tables(@RequestParam(required = false) UUID storeId) {
         return tableMap.tableMap(storeId);
     }
 

@@ -51,10 +51,21 @@ public class DiningFixtures {
 
     /** Seats a new order at {@code table}, as orders does in a POS request; returns the order id. */
     public UUID seat(UUID store, UUID table) {
+        return seat(store, table, UUID.randomUUID(), 2);
+    }
+
+    public UUID seat(UUID store, UUID table, UUID employee, int guests) {
         UUID order = UUID.randomUUID();
-        DiningActors.runAsPos(store, UUID.randomUUID(),
-                () -> tx.execute(status -> dining.openOccupation(table, order, 2, UUID.randomUUID())));
+        DiningActors.runAsPos(store, employee,
+                () -> tx.execute(status -> dining.openOccupation(table, order, guests, employee)));
         return order;
+    }
+
+    public void markSubtotalPrinted(UUID store, UUID order) {
+        DiningActors.runAsPos(store, UUID.randomUUID(), () -> tx.execute(status -> {
+            dining.markSubtotalPrinted(order);
+            return null;
+        }));
     }
 
     public UUID newStore() throws Exception {
