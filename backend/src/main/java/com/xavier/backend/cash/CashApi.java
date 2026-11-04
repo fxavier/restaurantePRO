@@ -56,6 +56,9 @@ public class CashApi {
     /**
      * OPEN → CLOSED, recording the blind count per method (immutable). A method not counted counts as zero in the
      * closing. Settlement checks first that no payment attempt of the session is in doubt (spec §8.4).
+     *
+     * <p>Audited as the current actor (D41), so it needs an authenticated session, and {@code actorEmployeeId} must
+     * be that actor, an EMPLOYEE ({@link IllegalArgumentException} otherwise).
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public void closeSession(UUID sessionId, long expectedVersion, List<MethodCount> counts, UUID actorEmployeeId) {
@@ -77,6 +80,9 @@ public class CashApi {
     /**
      * OPEN → OPERATIONALLY_CLOSED. Cash refuses it while a session of the day is OPEN (422 {@code OPEN_SESSIONS});
      * settlement checks orders, payment attempts and fiscal drafts (D50 §7.8).
+     *
+     * <p>Audited as the current actor (D41), so it needs an authenticated session, and {@code actorId}/{@code kind}
+     * must be that actor's principal id and kind ({@link IllegalArgumentException} otherwise).
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public void closeDayOperationally(UUID dayId, long expectedVersion, UUID actorId, ActorKind kind) {

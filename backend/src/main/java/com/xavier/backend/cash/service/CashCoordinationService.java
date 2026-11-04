@@ -1,5 +1,7 @@
 package com.xavier.backend.cash.service;
 
+import com.xavier.backend.access.AccessPolicy;
+import com.xavier.backend.access.Actor;
 import com.xavier.backend.access.ActorKind;
 import com.xavier.backend.cash.DayView;
 import com.xavier.backend.cash.MethodCount;
@@ -49,13 +51,15 @@ public class CashCoordinationService {
     private final CashMovementRepository movements;
     private final CashDayRepository days;
     private final RowLocks locks;
+    private final AccessPolicy accessPolicy;
     private final CashAudit audit;
     private final Clock clock;
 
     CashCoordinationService(CashSessionRepository sessions, CashSessionCountRepository counts,
                             CashMovementRepository movements, CashDayRepository days, RowLocks locks,
-                            CashAudit audit, Clock clock) {
+                            AccessPolicy accessPolicy, CashAudit audit, Clock clock) {
         this.sessions = sessions;
+        this.accessPolicy = accessPolicy;
         this.locks = locks;
         this.counts = counts;
         this.movements = movements;
@@ -97,6 +101,7 @@ public class CashCoordinationService {
     @Transactional(propagation = Propagation.MANDATORY)
     public void closeSession(UUID sessionId, long expectedVersion, List<MethodCount> blindCount,
                              UUID actorEmployeeId) {
+        requireCurrentActor(actorEmployeeId, ActorKind.EMPLOYEE);
         CashSession session = sessionForUpdate(sessionId);
         OptimisticLocking.requireVersion(CashSession.class, sessionId, session.getVersion(), expectedVersion);
         List<CashSessionCount> recorded = session.close(blindCount, actorEmployeeId, clock.instant());
@@ -125,6 +130,7 @@ public class CashCoordinationService {
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public void closeDayOperationally(UUID dayId, long expectedVersion, UUID actorId, ActorKind kind) {
+        requireCurrentActor(actorId, kind);
         CashDay day = locks.dayForUpdate(dayId);
         OptimisticLocking.requireVersion(CashDay.class, dayId, day.getVersion(), expectedVersion);
         if (day.getStatus() == CashDayStatus.OPEN
@@ -142,6 +148,15 @@ public class CashCoordinationService {
     @Transactional(readOnly = true)
     public List<UUID> openSessionIds(UUID dayId) {
         return sessions.findIdsByCashDayIdAndStatus(dayId, CashSessionStatus.OPEN);
+    }
+
+    /** The fact's actor column and its audit row (written as the current actor, D41) must name the same person. */
+    private void requireCurrentActor(UUID actorId, ActorKind kind) {
+        Actor current = accessPolicy.current();
+        if (!current.userId().equals(actorId) || current.kind() != kind) {
+            throw new IllegalArgumentException("The actor " + kind + " " + actorId + " is not the current actor "
+                    + current.kind() + " " + current.userId());
+        }
     }
 
     private CashSession sessionForUpdate(UUID sessionId) {

@@ -138,6 +138,21 @@ class CashApiTest {
     }
 
     @Test
+    void theClosingActorMustBeTheCurrentActorWhomTheAuditNames() {
+        long version = inTx(() -> cash.lockSession(session)).version();
+
+        assertThatThrownBy(() -> inTx(() -> {
+            cash.closeSession(session, version, List.of(), UUID.randomUUID());
+            return null;
+        })).isInstanceOf(IllegalArgumentException.class);
+        DayView day = cash.findDay(inTx(() -> cash.lockSession(session)).cashDayId()).orElseThrow();
+        assertThatThrownBy(() -> inTx(() -> {
+            cash.closeDayOperationally(day.id(), day.version(), operator.employeeId(), ActorKind.ACCOUNT);
+            return null;
+        })).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void aStaleSessionVersionOrASecondCloseIsAConflict() {
         long version = inTx(() -> cash.lockSession(session)).version();
 
