@@ -79,6 +79,10 @@ public class RoomArea {
         return code;
     }
 
+    public String getName() {
+        return name;
+    }
+
     public boolean isActive() {
         return active;
     }
