@@ -61,6 +61,9 @@ services:
       RESTAURANTPRO_BOOTSTRAP_COMPANY_CURRENCY: ${RESTAURANTPRO_BOOTSTRAP_COMPANY_CURRENCY:?set in .env}
       RESTAURANTPRO_BOOTSTRAP_ADMIN_USERNAME: ${RESTAURANTPRO_BOOTSTRAP_ADMIN_USERNAME:?set in .env}
       RESTAURANTPRO_BOOTSTRAP_ADMIN_INITIAL_PASSWORD_FILE: /run/secrets/admin_initial_password
+      # B4/D54: false by default, so a real install refuses to start with the non-certified fiscal adapter
+      # until the operator opts in through .env (pilot only).
+      RESTAURANTPRO_FISCAL_ALLOW_NON_CERTIFIED: ${RESTAURANTPRO_FISCAL_ALLOW_NON_CERTIFIED:-false}
     secrets:
       - db_password
       - admin_initial_password

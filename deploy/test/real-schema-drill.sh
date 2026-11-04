@@ -7,6 +7,7 @@
 #      so Flyway applies the real migrations and the bootstrap creates the company and the admin;
 #   2. through the HTTP API: admin login (+CSRF), password change, two stores, a terminal enrolled and used
 #      for a POS PIN login, an employee, an area and a table, a full catalog and a published release, so
+#      a fiscal series (plus one SQL-seeded issued document until S16 exposes issuing),
 #      every module's tables hold rows; keeps GET /backoffice/stores and the store's release list;
 #   3. stops the backend, fingerprints every table (rows + md5) and the schema, runs backup.sh;
 #   4. restores into a second fresh container with restore.sh and compares: identical data and schema,
@@ -119,6 +120,7 @@ start_app() { # $1 container, $2 log name
   RESTAURANTPRO_BOOTSTRAP_COMPANY_CURRENCY="MZN" \
   RESTAURANTPRO_BOOTSTRAP_ADMIN_USERNAME="drilladmin" \
   RESTAURANTPRO_BOOTSTRAP_ADMIN_INITIAL_PASSWORD_FILE="$WORK/admin_initial_password" \
+  RESTAURANTPRO_FISCAL_ALLOW_NON_CERTIFIED=true \
     java -jar "$jar" >"$WORK/$2.log" 2>&1 &
   APP_PID=$!
   local i
@@ -208,6 +210,33 @@ expect 201 POST "$C/price-lists/$list/prices" "{\"itemId\":\"$item\",\"amount\":
 release="$(expect 201 POST $C/releases "{\"storeId\":\"$store\"}" | json_field id)"
 expect 200 POST "$C/releases/$release/validate" >/dev/null
 expect 200 POST "$C/releases/$release/publish" '{"note":"drill"}' "Idempotency-Key: drill-$RUN_ID" >/dev/null
+series="$(expect 201 POST /api/v1/backoffice/fiscal/series "{\"storeId\":\"$store\",\"code\":\"A\",\"firstNumber\":1}" | json_field id)"
+# No HTTP endpoint issues a document before settlement (S16, POST /pos/orders/{id}/documents): seed one ISSUED
+# sale document with a line, its tax row and a reprint the way the app writes them (DRAFT, then ISSUED, then
+# series +1), so the fiscal tables and their immutability triggers go through backup and restore.
+psql_in "$SRC" -v store="$store" -v series="$series" <<'SQL'
+BEGIN;
+INSERT INTO fiscal.fiscal_document (id, store_id, document_type, status, source_type, source_id, currency,
+    total_gross, total_net, total_tax, company_name, company_tax_id, company_country, store_code, store_name,
+    store_timezone, buyer_name, version, created_at, updated_at)
+VALUES ('01900000-0000-7000-8000-00000000d001', :'store', 'SALE', 'DRAFT', 'ORDER', gen_random_uuid(), 'MZN',
+    116.00, 100.00, 16.00, 'Drill Company', 'DRILL-1', 'MZ', 'CHIMOIO', 'Chimoio', 'Africa/Maputo', 'Cliente Lda',
+    0, now(), now());
+INSERT INTO fiscal.fiscal_document_line (id, document_id, line_no, description, quantity, unit_price, tax_rate,
+    gross, net, tax)
+VALUES (gen_random_uuid(), '01900000-0000-7000-8000-00000000d001', 1, 'Coca-Cola 33cl', 2, 58.00, 16, 116.00,
+    100.00, 16.00);
+INSERT INTO fiscal.fiscal_document_tax (id, document_id, tax_rate, net, tax)
+VALUES (gen_random_uuid(), '01900000-0000-7000-8000-00000000d001', 16, 100.00, 16.00);
+UPDATE fiscal.fiscal_series SET next_number = next_number + 1 WHERE id = :'series';
+UPDATE fiscal.fiscal_document SET status = 'ISSUED', series_id = :'series', series_code = 'A', number = 1,
+    issued_at = now(), issued_by_employee_id = gen_random_uuid(), adapter_code = 'internal', non_fiscal = true,
+    adapter_data = md5('drill'), version = 1 WHERE id = '01900000-0000-7000-8000-00000000d001';
+INSERT INTO fiscal.fiscal_document_print (id, document_id, copy_no, requested_at, requested_by_employee_id,
+    terminal_id)
+VALUES (gen_random_uuid(), '01900000-0000-7000-8000-00000000d001', 1, now(), gen_random_uuid(), gen_random_uuid());
+COMMIT;
+SQL
 releases_before="$(expect 200 GET "$C/releases?storeId=$store" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["content"], sort_keys=True))')"
 POS="$JAR"; JAR="$WORK/cookies-pos"
 expect 401 GET /api/v1/auth/session >/dev/null
