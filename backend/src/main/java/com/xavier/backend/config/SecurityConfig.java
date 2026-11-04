@@ -1,6 +1,6 @@
 package com.xavier.backend.config;
 
-import com.xavier.backend.identity.Permission;
+import com.xavier.backend.access.Permission;
 import org.springframework.boot.health.actuate.endpoint.HealthEndpoint;
 import org.springframework.boot.security.autoconfigure.actuate.web.servlet.EndpointRequest;
 import org.springframework.context.annotation.Bean;
