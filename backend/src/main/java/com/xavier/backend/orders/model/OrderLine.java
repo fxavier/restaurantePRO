@@ -100,7 +100,7 @@ public class OrderLine {
     private UUID originTransferId;
 
     @Version
-    private Long version;
+    private long version;
 
     protected OrderLine() {
         // JPA
@@ -213,6 +213,6 @@ public class OrderLine {
     }
 
     public long getVersion() {
-        return version == null ? 0 : version;
+        return version;
     }
 }

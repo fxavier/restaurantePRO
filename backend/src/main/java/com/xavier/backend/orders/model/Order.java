@@ -5,6 +5,7 @@ import com.xavier.backend.orders.OrderLifecycle;
 import com.xavier.backend.orders.OrderMode;
 import com.xavier.backend.orders.exception.OrderConflictException;
 import com.xavier.backend.orders.exception.OrderRuleException;
+import com.xavier.backend.orders.model.dto.OrderSummary;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -84,7 +85,7 @@ public class Order {
     private int nextBatchNo;
 
     @Version
-    private Long version;
+    private long version;
 
     protected Order() {
         // JPA
@@ -196,6 +197,11 @@ public class Order {
         }
     }
 
+    public OrderSummary toSummary() {
+        return new OrderSummary(id, orderNumber, mode, tableId, tableCode, guests, lifecycle, billingLock, businessDay,
+                openedAt, openedByEmployeeId, getVersion());
+    }
+
     public Currency currency() {
         return Currency.getInstance(currency);
     }
@@ -257,6 +263,6 @@ public class Order {
     }
 
     public long getVersion() {
-        return version == null ? 0 : version;
+        return version;
     }
 }

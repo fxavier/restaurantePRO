@@ -71,6 +71,15 @@ public class OrdersFixtures {
         return dining.createTable(shop.store(), shop.area(), code);
     }
 
+    /** A manager locks {@code table} from the POS (dining). */
+    public void lockTable(Shop shop, UUID table) throws Exception {
+        mvc.perform(post(POS + "/tables/" + table + "/lock")
+                        .with(OrdersActors.pos(shop.store(), UUID.randomUUID(), UUID.randomUUID(), Permission.TABLE_LOCK))
+                        .with(csrf()).header("Idempotency-Key", UUID.randomUUID().toString())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"reason\": \"broken chair\"}"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk());
+    }
+
     public ResultActions openTable(Shop shop, UUID table, UUID employee, UUID terminal, String key)
             throws Exception {
         return mvc.perform(post(POS + "/tables/" + table + "/open")
