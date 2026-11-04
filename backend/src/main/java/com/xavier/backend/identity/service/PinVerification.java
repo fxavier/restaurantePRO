@@ -27,7 +27,7 @@ class PinVerification {
     private final PasswordEncoder encoder;
     private final AuditLog auditLog;
     private final Clock clock;
-    /** Checked against when the code is unknown, so the answer takes as long as for a wrong PIN. */
+    /** Checked against when no real check runs (unknown, locked, inactive), so every answer takes as long. */
     private final String unknownEmployeeHash;
 
     PinVerification(EmployeeRepository employees, PasswordEncoder encoder, AuditLog auditLog, Clock clock) {
@@ -50,6 +50,7 @@ class PinVerification {
             return PinCheck.refused(null, "unknown employee code");
         }
         if (!employee.canLogIn()) {
+            encoder.matches(pin, unknownEmployeeHash); // same time as a PIN check: the lock is not observable
             return PinCheck.refused(employee.getId(), employee.isLocked() ? "employee locked" : "employee inactive");
         }
         if (!encoder.matches(pin, employee.getPinHash())) {

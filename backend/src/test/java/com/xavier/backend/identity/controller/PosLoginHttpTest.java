@@ -234,6 +234,13 @@ class PosLoginHttpTest {
         mvc.perform(post("/api/v1/auth/logout").cookie(session).with(csrf())).andExpect(status().isNoContent());
 
         mvc.perform(get("/api/v1/auth/session").cookie(session)).andExpect(status().isUnauthorized());
+        assertThat(jdbc.sql("""
+                        SELECT action FROM audit.audit_event WHERE entity_id = :id AND actor_id = :employee
+                          AND terminal_id = :terminal AND store_id = :store
+                          AND action IN ('EMPLOYEE_LOGGED_IN', 'EMPLOYEE_LOGGED_OUT')""")
+                .param("id", employee.id().toString()).param("employee", employee.id())
+                .param("terminal", terminalA.id()).param("store", storeA).query(String.class).list())
+                .containsExactlyInAnyOrder("EMPLOYEE_LOGGED_IN", "EMPLOYEE_LOGGED_OUT");
     }
 
     private Employee lockedEmployee() throws Exception {

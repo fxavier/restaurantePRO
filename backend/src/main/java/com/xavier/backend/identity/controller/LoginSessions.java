@@ -2,6 +2,7 @@ package com.xavier.backend.identity.controller;
 
 import com.xavier.backend.access.Actor;
 import com.xavier.backend.identity.model.dto.SessionView;
+import com.xavier.backend.identity.service.LoginAudit;
 import com.xavier.backend.identity.service.TerminalSessionService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -57,9 +58,11 @@ class LoginSessions {
     private final SecurityContextRepository contexts = new HttpSessionSecurityContextRepository();
     private final SecurityContextHolderStrategy holder = SecurityContextHolder.getContextHolderStrategy();
     private final TerminalSessionService terminalSessions;
+    private final LoginAudit audit;
 
-    LoginSessions(TerminalSessionService terminalSessions) {
+    LoginSessions(TerminalSessionService terminalSessions, LoginAudit audit) {
         this.terminalSessions = terminalSessions;
+        this.audit = audit;
     }
 
     /** @return the id of the session that now holds the actor */
@@ -93,6 +96,10 @@ class LoginSessions {
         if (session != null) {
             terminalSessions.forget(session.getId());
         }
-        new SecurityContextLogoutHandler().logout(request, response, holder.getContext().getAuthentication());
+        Authentication authentication = holder.getContext().getAuthentication();
+        if (authentication != null && authentication.getPrincipal() instanceof Actor actor) {
+            audit.loggedOut(actor);
+        }
+        new SecurityContextLogoutHandler().logout(request, response, authentication);
     }
 }

@@ -233,6 +233,11 @@ class BackOfficeLoginHttpTest {
         mvc.perform(post("/api/v1/auth/logout").cookie(session).with(csrf())).andExpect(status().isNoContent());
 
         mvc.perform(get("/api/v1/auth/session").cookie(session)).andExpect(status().isUnauthorized());
+        assertThat(jdbc.sql("""
+                        SELECT action FROM audit.audit_event WHERE entity_id = :id AND actor_id = :actor
+                          AND action IN ('USER_LOGGED_IN', 'USER_LOGGED_OUT')""")
+                .param("id", user.id().toString()).param("actor", user.id()).query(String.class).list())
+                .containsExactlyInAnyOrder("USER_LOGGED_IN", "USER_LOGGED_OUT");
     }
 
     @Test

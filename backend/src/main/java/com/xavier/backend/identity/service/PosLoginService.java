@@ -25,13 +25,15 @@ public class PosLoginService {
     private final PinVerification pins;
     private final EmployeeStoreAssignmentRepository assignments;
     private final AuthorityResolver authorities;
+    private final LoginAudit audit;
 
     PosLoginService(OrganizationApi organization, PinVerification pins,
-                    EmployeeStoreAssignmentRepository assignments, AuthorityResolver authorities) {
+                    EmployeeStoreAssignmentRepository assignments, AuthorityResolver authorities, LoginAudit audit) {
         this.organization = organization;
         this.pins = pins;
         this.assignments = assignments;
         this.authorities = authorities;
+        this.audit = audit;
     }
 
     /** Not transactional: the PIN check commits on its own so failures count even though this then throws. */
@@ -50,6 +52,7 @@ public class PosLoginService {
         }
         Actor actor = new Actor(check.employeeId(), check.employeeId(), terminal.id(), terminal.storeId(),
                 authorities.ofEmployeeInStore(check.employeeId(), terminal.storeId()));
+        audit.loggedIn(actor);
         return SessionView.of(actor, check.name(), false);
     }
 

@@ -29,20 +29,22 @@ public class LoginService {
     private final AuthorityResolver authorities;
     private final PasswordEncoder encoder;
     private final AccessPolicy accessPolicy;
+    private final LoginAudit audit;
     /** Checked against when the username is unknown, so the answer takes as long as for a wrong password. */
     private final String unknownAccountHash;
 
     LoginService(UserAccountRepository accounts, EmployeeRepository employees, AuthorityResolver authorities,
-                 PasswordEncoder encoder, AccessPolicy accessPolicy) {
+                 PasswordEncoder encoder, AccessPolicy accessPolicy, LoginAudit audit) {
         this.accounts = accounts;
         this.employees = employees;
         this.authorities = authorities;
         this.encoder = encoder;
         this.accessPolicy = accessPolicy;
+        this.audit = audit;
         this.unknownAccountHash = encoder.encode("no such account");
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public SessionView passwordLogin(String username, String password) {
         UserAccount account = accounts.findByUsername(UserAccount.normalize(username)).orElse(null);
         if (account == null) {
@@ -55,7 +57,9 @@ public class LoginService {
         if (!account.isActive()) {
             throw refused(username, "account inactive");
         }
-        return sessionOf(account);
+        SessionView session = sessionOf(account);
+        audit.loggedIn(session.toActor());
+        return session;
     }
 
     /**
