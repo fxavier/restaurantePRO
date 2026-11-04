@@ -36,6 +36,12 @@ server:
         http-only: true
         same-site: lax
 
+logging:
+  structured:
+    # D33: one JSON object per line (Elastic Common Schema); MDC keys such as correlationId are included.
+    format:
+      console: ecs
+
 management:
   server:
     port: ${RESTAURANTPRO_MANAGEMENT_PORT:8081}
