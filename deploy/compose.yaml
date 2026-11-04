@@ -1,0 +1,117 @@
+# restaurantPRO — one stack per company installation (spec §2, §11; D32).
+#   cp .env.example .env   # fill in
+#   create secrets/db_password and secrets/admin_initial_password (README.md, "First install")
+#   docker compose up -d --build
+# PostgreSQL and the backend sit on an internal network with no published ports; only Caddy
+# (HTTPS, tls internal) is reachable from the LAN.
+name: restaurantpro
+
+x-logging: &logging # spec §11: log rotation
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  postgres:
+    image: postgres:18.6-alpine # D4: same pin as backend/compose.yaml and the Testcontainers tests
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: restaurantpro
+      POSTGRES_USER: restaurantpro
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    volumes:
+      - db-data:/var/lib/postgresql
+    networks:
+      - internal
+    healthcheck:
+      # TCP, not the socket: during first-time init the image runs a socket-only server.
+      test: ["CMD-SHELL", "pg_isready -q -h 127.0.0.1 -U restaurantpro -d restaurantpro"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    logging: *logging
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: ../deploy/Dockerfile
+      additional_contexts:
+        deploy: .
+    image: restaurantpro-backend:${RESTAURANTPRO_VERSION:-local}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      RESTAURANTPRO_DB_URL: jdbc:postgresql://postgres:5432/restaurantpro
+      RESTAURANTPRO_DB_USERNAME: restaurantpro
+      RESTAURANTPRO_DB_PASSWORD_FILE: /run/secrets/db_password # read by backend-entrypoint.sh
+      RESTAURANTPRO_MANAGEMENT_PORT: "8081"
+      # Caddy terminates TLS; trust its X-Forwarded-* headers (it is on a private Docker network).
+      SERVER_FORWARD_HEADERS_STRATEGY: native
+      JAVA_TOOL_OPTIONS: ${RESTAURANTPRO_JAVA_OPTS:--XX:MaxRAMPercentage=75}
+      # D30: consumed once, at the first start against an empty database.
+      RESTAURANTPRO_BOOTSTRAP_COMPANY_NAME: ${RESTAURANTPRO_BOOTSTRAP_COMPANY_NAME:?set in .env}
+      RESTAURANTPRO_BOOTSTRAP_COMPANY_TAX_ID: ${RESTAURANTPRO_BOOTSTRAP_COMPANY_TAX_ID:?set in .env}
+      RESTAURANTPRO_BOOTSTRAP_COMPANY_COUNTRY: ${RESTAURANTPRO_BOOTSTRAP_COMPANY_COUNTRY:?set in .env}
+      RESTAURANTPRO_BOOTSTRAP_COMPANY_CURRENCY: ${RESTAURANTPRO_BOOTSTRAP_COMPANY_CURRENCY:?set in .env}
+      RESTAURANTPRO_BOOTSTRAP_ADMIN_USERNAME: ${RESTAURANTPRO_BOOTSTRAP_ADMIN_USERNAME:?set in .env}
+      RESTAURANTPRO_BOOTSTRAP_ADMIN_INITIAL_PASSWORD_FILE: /run/secrets/admin_initial_password
+    secrets:
+      - db_password
+      - admin_initial_password
+    networks:
+      - internal
+    healthcheck:
+      # Actuator health on the management port (D33); the only actuator endpoint open without login.
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8081/actuator/health | grep -q '\"status\":\"UP\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+    logging: *logging
+
+  caddy:
+    image: caddy:2.11.7-alpine
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_started
+    environment:
+      RESTAURANTPRO_HOSTNAME: ${RESTAURANTPRO_HOSTNAME:?set in .env}
+    ports:
+      - "${RESTAURANTPRO_HTTPS_PORT:-443}:443"
+      - "${RESTAURANTPRO_HTTP_PORT:-80}:80" # redirects to HTTPS
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data # holds the local CA: keep it, or clients must trust a new root
+      - caddy-config:/config
+    networks:
+      - edge
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: *logging
+
+secrets:
+  db_password:
+    file: ./secrets/db_password
+  admin_initial_password:
+    file: ./secrets/admin_initial_password
+
+networks:
+  internal:
+    internal: true # no route to the host network or the Internet
+  edge: {}
+
+volumes:
+  db-data:
+  caddy-data:
+  caddy-config:

@@ -1,0 +1,14 @@
+# HTTPS on the LAN (spec §10, D25/D32). Caddy issues the certificate from its own local CA
+# ("tls internal"): no Internet or ACME needed. Clients must trust Caddy's root certificate once
+# (deploy/README.md, "Trust the certificate").
+{
+	# Do not try to install the root CA into the container's trust store.
+	skip_install_trust
+}
+
+{$RESTAURANTPRO_HOSTNAME} {
+	tls internal
+	encode zstd gzip
+	# Only the application port. Actuator stays on the management port, unreachable from the LAN (D33).
+	reverse_proxy backend:8080
+}
