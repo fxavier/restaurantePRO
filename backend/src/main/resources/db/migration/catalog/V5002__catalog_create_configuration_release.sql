@@ -1,5 +1,6 @@
 -- Catalog releases (D31, spec §8.3): DRAFT -> VALIDATED -> PUBLISHED -> RETIRED. Publishing freezes the whole
--- per-store catalog as jsonb. A published snapshot is a confirmed fact: never edited, never deleted.
+-- per-store catalog as jsonb. A published snapshot is a confirmed fact: never edited, never deleted; its
+-- audit facts (author, creation, validation, retirement instants) are frozen with it.
 CREATE TABLE catalog.configuration_release
 (
     id              UUID                     NOT NULL,
@@ -52,6 +53,10 @@ BEGIN
             OR NEW.effective_at IS DISTINCT FROM OLD.effective_at
             OR NEW.published_by IS DISTINCT FROM OLD.published_by
             OR NEW.store_id IS DISTINCT FROM OLD.store_id
+            OR NEW.created_by IS DISTINCT FROM OLD.created_by
+            OR NEW.created_at IS DISTINCT FROM OLD.created_at
+            OR NEW.validated_at IS DISTINCT FROM OLD.validated_at
+            OR (OLD.status = 'RETIRED' AND NEW.retired_at IS DISTINCT FROM OLD.retired_at)
             OR (OLD.status = 'RETIRED' AND NEW.status <> 'RETIRED')
             OR (OLD.status = 'PUBLISHED' AND NEW.status NOT IN ('PUBLISHED', 'RETIRED'))) THEN
         RAISE EXCEPTION 'a published catalog release is immutable (release %)', OLD.id

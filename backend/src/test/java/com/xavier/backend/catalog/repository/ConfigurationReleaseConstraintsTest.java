@@ -61,6 +61,24 @@ class ConfigurationReleaseConstraintsTest {
                 .hasMessageContaining("configuration_release_frozen_ck");
     }
 
+    @Test
+    void theAuditFactsOfAPublishedOrRetiredReleaseCannotBeRewritten() {
+        UUID release = UUID.randomUUID();
+        insertPublished(UUID.randomUUID(), release, 1);
+
+        for (String change : new String[] {"created_by = gen_random_uuid()", "created_at = now() - interval '1 day'",
+                "validated_at = now() - interval '1 day'"}) {
+            assertThatThrownBy(() -> jdbc.sql("UPDATE catalog.configuration_release SET " + change + " WHERE id = :id")
+                    .param("id", release).update())
+                    .as(change).isInstanceOf(DataAccessException.class).hasMessageContaining("immutable");
+        }
+        jdbc.sql("UPDATE catalog.configuration_release SET status = 'RETIRED', retired_at = now() WHERE id = :id")
+                .param("id", release).update();
+        assertThatThrownBy(() -> jdbc.sql("UPDATE catalog.configuration_release"
+                + " SET retired_at = now() + interval '1 day' WHERE id = :id").param("id", release).update())
+                .isInstanceOf(DataAccessException.class).hasMessageContaining("immutable");
+    }
+
     private void insertPublished(UUID store, UUID id, long version) {
         jdbc.sql("""
                         INSERT INTO catalog.configuration_release (id, store_id, status, catalog_version, snapshot,
