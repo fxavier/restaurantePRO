@@ -29,7 +29,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
@@ -226,6 +229,15 @@ class EmployeeHttpTest {
                 .andExpect(jsonPath("$.totalElements").value(1))
                 .andExpect(jsonPath("$.content[0].id").value(inA.id().toString()));
         mvc.perform(get(EMPLOYEES).with(managerOf(storeA))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    void sortingAStoresEmployeesByAnUnknownPropertyIsABadRequestNotAnError(CapturedOutput output) throws Exception {
+        mvc.perform(get(EMPLOYEES).param("storeId", storeA.toString()).param("sort", "nope").with(managerOf(storeA)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("Unknown sort property."));
+        assertThat(output.getAll()).doesNotContain("Unhandled exception");
     }
 
     private static RequestPostProcessor managerOf(UUID... stores) {

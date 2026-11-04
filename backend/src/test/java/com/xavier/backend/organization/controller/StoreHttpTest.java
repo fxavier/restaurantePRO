@@ -3,6 +3,8 @@ package com.xavier.backend.organization.controller;
 import static com.xavier.backend.organization.Actors.admin;
 import static com.xavier.backend.organization.Actors.inStore;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -113,6 +115,29 @@ class StoreHttpTest {
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.detail").value("Unknown sort property: nope"));
         assertThat(output.getAll()).doesNotContain("Unhandled exception");
+    }
+
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    void aSortThatIsNotAPropertyNameIsABadRequestNotAnError(CapturedOutput output) throws Exception {
+        mvc.perform(get(STORES).param("sort", "<script>xxxx").with(admin(Permission.STORE_MANAGE)))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.detail", not(containsString("<script>"))));
+        assertThat(output.getAll()).doesNotContain("Unhandled exception");
+    }
+
+    @Test
+    void sortingByKnownPropertiesWithDirectionsWorks() throws Exception {
+        mvc.perform(get(STORES).param("sort", "name,desc").param("sort", "code").with(admin(Permission.STORE_MANAGE)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void theUnknownSortPropertyIsEchoedTruncated() throws Exception {
+        mvc.perform(get(STORES).param("sort", "a".repeat(500)).with(admin(Permission.STORE_MANAGE)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("Unknown sort property: " + "a".repeat(64) + "..."));
     }
 
     @Test

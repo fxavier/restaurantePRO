@@ -22,6 +22,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.InvalidDataAccessApiUsageException;
 import org.springframework.http.MediaType;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.test.context.support.WithMockUser;
@@ -91,6 +92,13 @@ class GlobalExceptionHandlerTest {
                 .andExpect(jsonPath("$.detail", not(containsString("jdbc"))));
     }
 
+    @Test
+    void aDataAccessMisuseThatIsNotAnUnknownSortPathStaysA500() throws Exception {
+        mvc.perform(get("/api/v1/backoffice/test-probe/data-access-misuse"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.detail").value("Unexpected error."));
+    }
+
     record ProbeRequest(@NotBlank String code, @Positive int seats) {
     }
 
@@ -120,6 +128,11 @@ class GlobalExceptionHandlerTest {
 
         @PostMapping("/validated")
         void validated(@Valid @RequestBody ProbeRequest request) {
+        }
+
+        @GetMapping("/data-access-misuse")
+        void dataAccessMisuse() {
+            throw new InvalidDataAccessApiUsageException("a programming error");
         }
 
         @GetMapping("/boom")

@@ -4,8 +4,10 @@ import com.xavier.backend.shared.exception.BusinessRuleException;
 import com.xavier.backend.shared.exception.ConflictException;
 import com.xavier.backend.shared.exception.NotFoundException;
 import java.util.List;
+import org.hibernate.query.sqm.UnknownPathException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.InvalidDataAccessApiUsageException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.core.PropertyReferenceException;
 import org.springframework.http.HttpHeaders;
@@ -33,6 +35,7 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+    private static final int MAX_ECHOED_PROPERTY = 64;
 
     /** One invalid field of a request; {@code errors} property of a 400 ProblemDetail. */
     public record FieldViolation(String field, String message) {
@@ -59,10 +62,29 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_CONTENT, e.getMessage());
     }
 
-    /** A client {@code ?sort=} naming a property the entity does not have is the client's mistake, not ours. */
+    /**
+     * A client {@code ?sort=} naming a property the entity does not have is the client's mistake, not ours.
+     * Spring Data checks the name for findAll and derived queries; the shape is checked by {@link SortParameterGuard}.
+     */
     @ExceptionHandler(PropertyReferenceException.class)
     ProblemDetail unknownSortProperty(PropertyReferenceException e) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Unknown sort property: " + e.getPropertyName());
+        String property = e.getPropertyName();
+        String echoed = property.length() <= MAX_ECHOED_PROPERTY ? property
+                : property.substring(0, MAX_ECHOED_PROPERTY) + "...";
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Unknown sort property: " + echoed);
+    }
+
+    /**
+     * For an {@code @Query} list Spring Data appends the client's sort unchecked and Hibernate rejects the path at
+     * query time. Every query is validated at startup and none is built at runtime, so an unknown path here can only
+     * come from the client's sort. Hibernate's message names the entity class, so it is not echoed.
+     */
+    @ExceptionHandler(InvalidDataAccessApiUsageException.class)
+    ProblemDetail invalidDataAccessApiUsage(InvalidDataAccessApiUsageException e) {
+        if (e.contains(UnknownPathException.class)) {
+            return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Unknown sort property.");
+        }
+        return unexpected(e);
     }
 
     @ExceptionHandler(AccessDeniedException.class)
