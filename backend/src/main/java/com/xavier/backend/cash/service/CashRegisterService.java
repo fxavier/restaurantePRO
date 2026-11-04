@@ -1,0 +1,82 @@
+package com.xavier.backend.cash.service;
+
+import com.xavier.backend.access.AccessPolicy;
+import com.xavier.backend.access.Permission;
+import com.xavier.backend.cash.exception.CashNotFoundException;
+import com.xavier.backend.cash.exception.RegisterCodeTakenException;
+import com.xavier.backend.cash.model.CashRegister;
+import com.xavier.backend.cash.model.dto.RegisterCreateRequest;
+import com.xavier.backend.cash.model.dto.RegisterSummary;
+import com.xavier.backend.cash.model.dto.RegisterUpdateRequest;
+import com.xavier.backend.cash.repository.CashRegisterRepository;
+import com.xavier.backend.organization.OrganizationApi;
+import com.xavier.backend.shared.persistence.OptimisticLocking;
+import com.xavier.backend.shared.persistence.UniqueConstraints;
+import com.xavier.backend.shared.web.PageResponse;
+import java.time.Clock;
+import java.util.Map;
+import java.util.UUID;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/** Register configuration (BackOffice): {@code CASH_REGISTER_MANAGE} in the register's store. */
+@Service
+public class CashRegisterService {
+
+    static final String ENTITY = "CashRegister";
+
+    private final CashRegisterRepository registers;
+    private final OrganizationApi organization;
+    private final AccessPolicy accessPolicy;
+    private final CashAudit audit;
+    private final Clock clock;
+
+    CashRegisterService(CashRegisterRepository registers, OrganizationApi organization, AccessPolicy accessPolicy,
+                        CashAudit audit, Clock clock) {
+        this.registers = registers;
+        this.organization = organization;
+        this.accessPolicy = accessPolicy;
+        this.audit = audit;
+        this.clock = clock;
+    }
+
+    @Transactional
+    public RegisterSummary create(RegisterCreateRequest request) {
+        accessPolicy.require(Permission.CASH_REGISTER_MANAGE, request.storeId());
+        if (!organization.storeExists(request.storeId())) {
+            throw new CashNotFoundException("Store", request.storeId());
+        }
+        CashRegister register = save(
+                CashRegister.create(request.storeId(), request.code(), request.name(), clock.instant()));
+        record("CASH_REGISTER_CREATED", register);
+        return register.toSummary();
+    }
+
+    @Transactional
+    public RegisterSummary update(UUID id, RegisterUpdateRequest request) {
+        CashRegister register = registers.findById(id).orElseThrow(() -> new CashNotFoundException(ENTITY, id));
+        accessPolicy.require(Permission.CASH_REGISTER_MANAGE, register.getStoreId());
+        OptimisticLocking.requireVersion(CashRegister.class, id, register.getVersion(), request.version());
+        register.update(request.code(), request.name(), request.active(), clock.instant());
+        save(register); // flush now: a concurrent writer fails here (409), and the response has the new version
+        record("CASH_REGISTER_UPDATED", register);
+        return register.toSummary();
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<RegisterSummary> list(UUID storeId, Pageable pageable) {
+        accessPolicy.require(Permission.CASH_REGISTER_MANAGE, storeId);
+        return PageResponse.from(registers.findByStoreId(storeId, pageable).map(CashRegister::toSummary));
+    }
+
+    private CashRegister save(CashRegister register) {
+        return UniqueConstraints.saveAndFlush(registers, register,
+                () -> new RegisterCodeTakenException(register.getCode()), "cash_register_store_code_uk");
+    }
+
+    private void record(String action, CashRegister register) {
+        audit.record(action, ENTITY, register.getId(), register.getStoreId(),
+                Map.of("code", register.getCode(), "active", register.isActive()));
+    }
+}
