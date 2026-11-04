@@ -2,6 +2,7 @@ package com.xavier.backend.catalog.controller;
 
 import static com.xavier.backend.catalog.Actors.admin;
 import static com.xavier.backend.catalog.Actors.inStore;
+import static com.xavier.backend.catalog.Actors.pos;
 import static com.xavier.backend.catalog.CatalogFixtures.CATALOG;
 import static com.xavier.backend.catalog.CatalogFixtures.id;
 import static com.xavier.backend.catalog.CatalogFixtures.json;
@@ -16,6 +17,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.catalog.CatalogFixtures;
 import com.xavier.backend.catalog.CatalogModuleTest;
+import com.xavier.backend.catalog.Publications;
+import com.xavier.backend.catalog.Publications.SellableStore;
 import com.xavier.backend.catalog.Race;
 import com.xavier.backend.catalog.model.event.CatalogPublished;
 import java.util.List;
@@ -32,7 +35,7 @@ import tools.jackson.databind.JsonNode;
 @CatalogModuleTest
 class ReleaseHttpTest {
 
-    static final String RELEASES = CATALOG + "/releases";
+    static final String RELEASES = Publications.RELEASES;
     static final String POS_CATALOG = "/api/v1/pos/catalog";
 
     @Autowired
@@ -40,10 +43,6 @@ class ReleaseHttpTest {
 
     @Autowired
     JdbcClient jdbc;
-
-    /** A store with a price list and one active, priced item with a 16% tax rate in effect. */
-    record SellableStore(UUID store, UUID priceList, JsonNode item, JsonNode price) {
-    }
 
     @Test
     void aStoreCatalogManagerCreatesADraftReleaseForTheStore() throws Exception {
@@ -189,8 +188,7 @@ class ReleaseHttpTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.version").value(2));
 
-        mvc.perform(get(POS_CATALOG).param("storeId", sellable.store().toString())
-                        .with(inStore(sellable.store(), Permission.CATALOG_VIEW)))
+        mvc.perform(get(POS_CATALOG).with(pos(sellable.store(), Permission.CATALOG_VIEW)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.releaseId").value(v2.toString()))
                 .andExpect(jsonPath("$.version").value(2))
@@ -306,31 +304,6 @@ class ReleaseHttpTest {
     }
 
     @Test
-    void thePosReadsNothingBeforeTheFirstPublicationAndOnlyItsOwnStore() throws Exception {
-        SellableStore sellable = sellableStore();
-        UUID other = fixtures().store();
-
-        mvc.perform(get(POS_CATALOG).param("storeId", sellable.store().toString())
-                        .with(inStore(sellable.store(), Permission.CATALOG_VIEW)))
-                .andExpect(status().isNotFound());
-        UUID release = validatedRelease(sellable.store());
-        publish(sellable.store(), release, UUID.randomUUID().toString(), "{}").andExpect(status().isOk());
-
-        mvc.perform(get(POS_CATALOG).param("storeId", sellable.store().toString())
-                        .with(inStore(other, Permission.CATALOG_VIEW)))
-                .andExpect(status().isForbidden());
-        mvc.perform(get(POS_CATALOG).param("storeId", sellable.store().toString())
-                        .with(inStore(sellable.store(), Permission.DINING_VIEW)))
-                .andExpect(status().isForbidden());
-        mvc.perform(get(POS_CATALOG).param("storeId", sellable.store().toString())
-                        .with(inStore(sellable.store(), Permission.CATALOG_VIEW)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.storeId").value(sellable.store().toString()))
-                .andExpect(jsonPath("$.version").value(1))
-                .andExpect(jsonPath("$.effectiveAt").isNotEmpty());
-    }
-
-    @Test
     void theSnapshotHoldsWhatTheTillNeedsWithMoneyAsStrings() throws Exception {
         SellableStore sellable = sellableStore();
         JsonNode variant = fixtures().variant(id(sellable.item()));
@@ -426,18 +399,7 @@ class ReleaseHttpTest {
     }
 
     private SellableStore sellableStore() throws Exception {
-        UUID store = fixtures().store();
-        UUID priceList = fixtures().priceList(store);
-        JsonNode item = fixtures().item();
-        JsonNode price = fixtures().price(store, priceList, id(item), null, "12.50");
-        // the shared database holds active items of other tests; give each of them a price in this store
-        jdbc.sql("""
-                        INSERT INTO catalog.item_price (id, price_list_id, item_id, variant_id, amount, currency, version,
-                                                        created_at, updated_at)
-                        SELECT gen_random_uuid(), :list, i.id, NULL, 1.00, 'MZN', 0, now(), now()
-                        FROM catalog.item i WHERE i.id <> :item
-                        ON CONFLICT DO NOTHING""").param("list", priceList).param("item", id(item)).update();
-        return new SellableStore(store, priceList, item, price);
+        return publications().sellableStore();
     }
 
     private UUID untaxedCategory() throws Exception {
@@ -446,22 +408,15 @@ class ReleaseHttpTest {
     }
 
     private JsonNode createDraft(UUID store) throws Exception {
-        return fixtures().created(post(RELEASES).with(inStore(store, Permission.CATALOG_MANAGE)),
-                "{\"storeId\": \"%s\"}".formatted(store));
+        return publications().createDraft(store);
     }
 
     private UUID validatedRelease(UUID store) throws Exception {
-        UUID release = id(createDraft(store));
-        mvc.perform(post(RELEASES + "/" + release + "/validate").with(inStore(store, Permission.CATALOG_MANAGE))
-                        .with(csrf()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("VALIDATED"));
-        return release;
+        return publications().validatedRelease(store);
     }
 
     private ResultActions publish(UUID store, UUID release, String key, String body) throws Exception {
-        return mvc.perform(post(RELEASES + "/" + release + "/publish").with(inStore(store, Permission.CATALOG_PUBLISH))
-                .with(csrf()).header("Idempotency-Key", key).contentType(MediaType.APPLICATION_JSON).content(body));
+        return publications().publish(store, release, key, body);
     }
 
     private void changePrice(SellableStore sellable, String amount) throws Exception {
@@ -488,7 +443,7 @@ class ReleaseHttpTest {
     }
 
     private String posCatalog(UUID store) throws Exception {
-        return mvc.perform(get(POS_CATALOG).param("storeId", store.toString()).with(inStore(store, Permission.CATALOG_VIEW)))
+        return mvc.perform(get(POS_CATALOG).with(pos(store, Permission.CATALOG_VIEW)))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
     }
 
@@ -500,6 +455,10 @@ class ReleaseHttpTest {
     private long publications(UUID release) {
         return jdbc.sql("SELECT count(*) FROM audit.audit_event WHERE action = 'CATALOG_RELEASE_PUBLISHED' AND entity_id = :id")
                 .param("id", release.toString()).query(Long.class).single();
+    }
+
+    private Publications publications() {
+        return new Publications(mvc, jdbc);
     }
 
     private CatalogFixtures fixtures() {
