@@ -21,6 +21,8 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.RequestBuilder;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
@@ -37,10 +39,22 @@ public class DiningFixtures {
 
     private final MockMvc mvc;
     private final JdbcClient jdbc;
+    private final DiningApi dining;
+    private final TransactionTemplate tx;
 
-    DiningFixtures(MockMvc mvc, JdbcClient jdbc) {
+    DiningFixtures(MockMvc mvc, JdbcClient jdbc, DiningApi dining, PlatformTransactionManager transactionManager) {
         this.mvc = mvc;
         this.jdbc = jdbc;
+        this.dining = dining;
+        this.tx = new TransactionTemplate(transactionManager);
+    }
+
+    /** Seats a new order at {@code table}, as orders does in a POS request; returns the order id. */
+    public UUID seat(UUID store, UUID table) {
+        UUID order = UUID.randomUUID();
+        DiningActors.runAsPos(store, UUID.randomUUID(),
+                () -> tx.execute(status -> dining.openOccupation(table, order, 2, UUID.randomUUID())));
+        return order;
     }
 
     public UUID newStore() throws Exception {

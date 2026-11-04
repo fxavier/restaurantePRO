@@ -4,11 +4,13 @@ import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.dining.exception.DiningCodeTakenException;
 import com.xavier.backend.dining.exception.DiningNotFoundException;
+import com.xavier.backend.dining.exception.StillOccupiedException;
 import com.xavier.backend.dining.model.RoomArea;
 import com.xavier.backend.dining.model.dto.RoomAreaCreateRequest;
 import com.xavier.backend.dining.model.dto.RoomAreaSummary;
 import com.xavier.backend.dining.model.dto.RoomAreaUpdateRequest;
 import com.xavier.backend.dining.repository.RoomAreaRepository;
+import com.xavier.backend.dining.repository.TableOccupationRepository;
 import com.xavier.backend.organization.OrganizationApi;
 import com.xavier.backend.shared.persistence.OptimisticLocking;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
@@ -30,14 +32,16 @@ public class RoomAreaService {
     static final String ENTITY = "RoomArea";
 
     private final RoomAreaRepository areas;
+    private final TableOccupationRepository occupations;
     private final OrganizationApi organization;
     private final AccessPolicy accessPolicy;
     private final DiningAudit audit;
     private final Clock clock;
 
-    RoomAreaService(RoomAreaRepository areas, OrganizationApi organization, AccessPolicy accessPolicy,
-                    DiningAudit audit, Clock clock) {
+    RoomAreaService(RoomAreaRepository areas, TableOccupationRepository occupations, OrganizationApi organization,
+                    AccessPolicy accessPolicy, DiningAudit audit, Clock clock) {
         this.areas = areas;
+        this.occupations = occupations;
         this.organization = organization;
         this.accessPolicy = accessPolicy;
         this.audit = audit;
@@ -59,8 +63,12 @@ public class RoomAreaService {
 
     @Transactional
     public RoomAreaSummary update(UUID id, RoomAreaUpdateRequest request) {
-        RoomArea area = area(id);
-        accessPolicy.require(Permission.DINING_MANAGE, area.getStoreId());
+        accessPolicy.require(Permission.DINING_MANAGE,
+                areas.findStoreIdById(id).orElseThrow(() -> new DiningNotFoundException(ENTITY, id)));
+        RoomArea area = areas.findForUpdateById(id).orElseThrow(() -> new DiningNotFoundException(ENTITY, id));
+        if (!request.active() && occupations.existsOpenInArea(id)) {
+            throw new StillOccupiedException(ENTITY, id);
+        }
         OptimisticLocking.requireVersion(RoomArea.class, id, area.getVersion(), request.version());
         if (areas.existsByStoreIdAndCodeAndIdNot(area.getStoreId(), request.code().strip(), id)) {
             throw new DiningCodeTakenException(ENTITY, request.code());

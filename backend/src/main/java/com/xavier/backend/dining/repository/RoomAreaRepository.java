@@ -25,4 +25,13 @@ public interface RoomAreaRepository extends JpaRepository<RoomArea, UUID> {
     @Lock(LockModeType.PESSIMISTIC_READ)
     @Query("select a from RoomArea a where a.id = :id")
     Optional<RoomArea> findForShareById(UUID id);
+
+    /** {@code SELECT ... FOR UPDATE}: a deactivation waits for running openings in the area, then sees them. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select a from RoomArea a where a.id = :id")
+    Optional<RoomArea> findForUpdateById(UUID id);
+
+    /** Only the store of an area, to authorize before loading it (D42). */
+    @Query("select a.storeId from RoomArea a where a.id = :id")
+    Optional<UUID> findStoreIdById(UUID id);
 }
