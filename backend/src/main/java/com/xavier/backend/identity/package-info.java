@@ -1,12 +1,13 @@
 /**
- * Users, employees, RBAC, sessions (spec §6). S0 ships only the public authorization contract in this
- * package: {@link com.xavier.backend.identity.Permission}, {@link com.xavier.backend.identity.Actor},
- * {@link com.xavier.backend.identity.AccessPolicy}. S2 fills in the rest without changing it.
- *
- * <p>D13 allows identity → shared, audit, organization. Modulith rejects a dependency on a module that
- * does not exist yet, so S2 adds {@code "organization"} here once S1 has created that module.
+ * User accounts, employees, roles, store assignments, BackOffice and POS login, sessions and approver checks
+ * (spec §3, §5 "Organização e acessos", §10; D25-D28). Builds the {@link com.xavier.backend.access.Actor}
+ * principal that {@link com.xavier.backend.access.AccessPolicy} reads. Public API: this root package
+ * ({@link com.xavier.backend.identity.ApproverVerifier}). Everything else is internal. Uses organization only
+ * through {@code OrganizationApi} and its {@code dto} and {@code event} named interfaces (listed explicitly:
+ * {@code "organization"} alone allows only its root package).
  */
-@ApplicationModule(displayName = "Identity", allowedDependencies = {"shared", "audit"})
+@ApplicationModule(displayName = "Identity", allowedDependencies = {
+        "shared", "audit", "access", "organization", "organization :: dto", "organization :: event"})
 package com.xavier.backend.identity;
 
 import org.springframework.modulith.ApplicationModule;

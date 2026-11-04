@@ -1,0 +1,10 @@
+[%autowidth.stretch, cols="h,a"]
+|===
+|Base package
+|`com.xavier.backend.catalog`
+|Bean references
+|* `c.x.b.s.idempotency.IdempotencyService` (in Shared kernel)
+* `c.x.b.a.AccessPolicy` (in Access)
+* `c.x.b.a.AuditLog` (in Audit)
+* `c.x.b.o.OrganizationApi` (in Organization)
+|===

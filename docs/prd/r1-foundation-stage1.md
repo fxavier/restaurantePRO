@@ -22,10 +22,10 @@ The contracts below are what S1–S5 build against. Names are binding; internals
 
 **`audit`:** `AuditLog.record(AuditEntry)` public API, writes in caller's transaction (D20). `AuditEntry(actorId, approverId, action, entityType, entityId, storeId, terminalId, reason, Map<String,Object> details)`. Table `audit.audit_event` with trigger rejecting UPDATE/DELETE. Migrations `db/migration/audit/V1101__…`.
 
-**`identity` skeleton (public API only, S2 fills it):**
+**`access` module (authorization primitives; moved out of `identity` by S0b, see D13 amendment):**
 - `Permission` enum with at least: `COMPANY_MANAGE, STORE_MANAGE, TERMINAL_MANAGE, USER_MANAGE, ROLE_MANAGE, EMPLOYEE_MANAGE, DINING_MANAGE, DINING_VIEW, CATALOG_MANAGE, CATALOG_PUBLISH, CATALOG_VIEW, AUDIT_VIEW`. Later runs append.
 - `Actor` record (`userId`, `employeeId` nullable, `terminalId` nullable, `storeId` nullable, `Set<String> authorities`).
-- `AccessPolicy` with `Actor current()`, `void require(Permission p)` (installation-wide), `void require(Permission p, UUID storeId)`; throws `AccessDeniedException` → 403. S0 implementation reads the Spring Security context: authority strings `PERM_<NAME>` (global) and `PERM_<NAME>@<storeId>` (store-scoped). S2 keeps this contract and populates the authorities at login.
+- `AccessPolicy` with `Actor current()`, `void require(Permission p)` (installation-wide), `void require(Permission p, UUID storeId)`; throws `AccessDeniedException` → 403. S0 implementation reads the Spring Security context: authority strings `PERM_<NAME>` (global) and `PERM_<NAME>@<storeId>` (store-scoped). S2 (identity) keeps this contract and puts an `Actor` with the authorities into the session at login. Package `com.xavier.backend.access`.
 - Test support: `@WithActor(permissions = {...}, storeId = "...")` (a `WithSecurityContextFactory`) so S1/S3/S4 tests act as any role without S2.
 
 **Security config:** Spring Security filter chain: `/api/v1/auth/**` login endpoints permitted, everything else authenticated; Spring Session JDBC (its schema via Flyway in shared block); cookie Secure/HttpOnly/SameSite=Lax; CSRF with `CookieCsrfTokenRepository` (SPA). 401 as ProblemDetail. Actuator on management port, admin-only except `health`.
@@ -39,6 +39,10 @@ The contracts below are what S1–S5 build against. Names are binding; internals
 **Acceptance:** Money unit tests (allocation sums to total, HALF_UP, currency mix rejected); idempotency integration test (replay, 422, concurrent duplicate); audit trigger test (UPDATE/DELETE fail); `@WithActor` + `AccessPolicy` test (403 without permission, 403 wrong store); unauthenticated request → 401 ProblemDetail; POST without CSRF → 403; modularity verify passes.
 
 ---
+
+## S0b — Extract `access` module (alone, before S1)
+
+Move `Permission`, `Actor`, `AccessPolicy` from `com.xavier.backend.identity` to `com.xavier.backend.access` (new OPEN-or-named-interface module, → shared only), with `@WithActor` + its factory and `AccessPolicyTest` in test `com.xavier.backend.access`. Update `config` (SecurityConfig) and any package-info `allowedDependencies`; delete the empty `identity` package (S2 recreates it). Update docs/architecture/backend-conventions.md. Behaviour unchanged: full suite green, ModularityTests green.
 
 ## S1 — Organization (∥ S5)
 
@@ -61,7 +65,7 @@ Write scope `deploy/` only. `deploy/compose.yaml` (backend image built from `bac
 
 ## S2 — Identity (∥ S3, S4)
 
-Migrations `db/migration/identity/V3xxx`. Implements the S0 `AccessPolicy` contract.
+Migrations `db/migration/identity/V3xxx`. identity → shared, audit, access, organization. Builds the `Actor` principal consumed by `access.AccessPolicy`. **POS login grants only the terminal's store authorities** (D27 amendment); BackOffice login grants all assigned stores (+ global grants for the admin role, including `SYSTEM_MONITOR`).
 
 - Admin bootstrap from `restaurantpro.bootstrap.admin.username` + `initial-password-file`; `mustChangePassword=true`.
 - `POST /api/v1/auth/login` (username+password, BCrypt) ; `POST /api/v1/auth/pos-login` (employee code + PIN + `X-Terminal-Token` header; terminal must be enrolled & active, employee assigned to the terminal's store); `POST /auth/logout`; `GET /auth/session` (actor, store, terminal, permissions); `POST /auth/password` (change).

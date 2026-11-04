@@ -1,0 +1,4 @@
+# Build context is ../backend; only sources are needed.
+target/
+.idea/
+*.iml

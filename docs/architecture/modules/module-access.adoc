@@ -1,0 +1,7 @@
+[%autowidth.stretch, cols="h,a"]
+|===
+|Base package
+|`com.xavier.backend.access`
+|Spring components
+|* `c.x.b.a.AccessPolicy`
+|===

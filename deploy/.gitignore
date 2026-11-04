@@ -1,0 +1,4 @@
+# Never commit installation-specific values or backups (spec §10).
+.env
+secrets/
+backups/

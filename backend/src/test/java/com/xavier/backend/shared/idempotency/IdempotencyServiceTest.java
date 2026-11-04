@@ -27,6 +27,8 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 @SpringBootTest
@@ -42,6 +44,9 @@ class IdempotencyServiceTest {
 
     @Autowired
     JdbcClient jdbc;
+
+    @Autowired
+    PlatformTransactionManager transactionManager;
 
     private final String scope = "catalog.release.publish:" + UUID.randomUUID();
     private final String key = UUID.randomUUID().toString();
@@ -149,7 +154,9 @@ class IdempotencyServiceTest {
         assertThat(runs).hasValue(1);
         assertThat(response.getBody()).isEqualTo("recovered");
         assertThat(replay.getBody()).hasToString("\"recovered\"");
-        assertThat(output.getOut()).contains("Idempotency key taken over");
+        // not a WARN and no crash claim: the same path runs when a concurrent duplicate locks first (harmless)
+        assertThat(output.getOut().lines().filter(line -> line.contains("found an unfinished claim")))
+                .singleElement().asString().contains("\"INFO\"").doesNotContain("crash");
     }
 
     @Test
@@ -201,6 +208,24 @@ class IdempotencyServiceTest {
         }
         assertThat(idempotency.execute(scope, "k".repeat(IdempotencyService.MAX_KEY_LENGTH), target, Map.of(),
                 () -> ResponseEntity.ok("longest key accepted")).getBody()).isEqualTo("longest key accepted");
+    }
+
+    @Test
+    void callingItInsideATransactionFailsFastWithoutRunningTheAction() {
+        // inside a caller's transaction the claim and the action could not commit on their own (D24)
+        AtomicInteger runs = new AtomicInteger();
+
+        assertThatThrownBy(() -> new TransactionTemplate(transactionManager).executeWithoutResult(tx ->
+                idempotency.execute(scope, key, target, Map.of(), () -> {
+                    runs.incrementAndGet();
+                    return ResponseEntity.ok("must not run");
+                })))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("outside");
+
+        assertThat(runs).hasValue(0);
+        assertThat(jdbc.sql("SELECT count(*) FROM shared.idempotency_record WHERE scope = :s")
+                .param("s", scope).query(Long.class).single()).isZero();
     }
 
     record UnserializableResponse(String value) {
