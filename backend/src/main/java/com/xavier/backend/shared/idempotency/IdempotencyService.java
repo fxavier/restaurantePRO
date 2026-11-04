@@ -221,9 +221,9 @@ public class IdempotencyService {
             log.info("Idempotency step lease was lost and nothing is stored yet; returning this request's response: "
                     + "scope={} key={}", scope, key);
             return response;
-        } catch (RuntimeException | Error failure) {
+        } catch (Throwable failure) { // also a checked exception thrown sneakily by a step: always release
             releaseLease(scope, key, owner, failure);
-            throw failure;
+            throw failure; // precise rethrow: unchanged, and only what the try block can throw
         }
     }
 

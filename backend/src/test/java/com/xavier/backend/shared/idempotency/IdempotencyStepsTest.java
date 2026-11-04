@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.xavier.backend.TestcontainersConfiguration;
+import java.io.IOException;
 import java.net.URI;
 import java.sql.Timestamp;
 import java.time.Duration;
@@ -20,6 +21,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -116,7 +118,7 @@ class IdempotencyStepsTest {
     @Test
     void anAbandonedClaimWithAnExpiredLeaseIsTakenOverByExactlyOneOfConcurrentRetries() throws Exception {
         // the first owner claimed the key and crashed: its lease has expired, nothing was stored
-        insertAbandonedClaim(Instant.now().minusSeconds(1));
+        insertAbandonedClaim(Instant.now().minusSeconds(5));
         int retries = 6;
         CountDownLatch start = new CountDownLatch(1);
         AtomicInteger effects = new AtomicInteger();
@@ -176,6 +178,84 @@ class IdempotencyStepsTest {
         }
         assertThat(idempotency.executeSteps(scope, key, target, body, Closed.class,
                 () -> ResponseEntity.ok(new Closed("must not run", 0))).getBody()).isEqualTo(new Closed("CLOSED", 4));
+    }
+
+    @Test
+    void anOwnerThatLostItsLeaseAndThenFailsDoesNotReleaseTheTakersLease() throws Exception {
+        Blocked loser = new Blocked();
+        Blocked taker = new Blocked();
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            Future<ResponseEntity<Closed>> a = executor.submit(() -> loser.run(() -> {
+                throw new IllegalStateException("fiscal authority unreachable");
+            }));
+            await(loser.running);
+            expireLease();
+            Future<ResponseEntity<Closed>> b = executor.submit(() ->
+                    taker.run(() -> ResponseEntity.ok(new Closed("taker", 5))));
+            await(taker.running);
+
+            loser.release.countDown(); // A fails while B owns the lease: A's release must not touch B's lease
+            assertThatThrownBy(() -> a.get(10, TimeUnit.SECONDS)).hasRootCauseMessage("fiscal authority unreachable");
+            assertThatThrownBy(() -> idempotency.executeSteps(scope, key, target, body, Closed.class,
+                    () -> ResponseEntity.ok(new Closed("must not run", 0))))
+                    .isInstanceOf(IdempotentRequestInProgressException.class);
+
+            taker.release.countDown();
+            assertThat(b.get(10, TimeUnit.SECONDS).getBody()).isEqualTo(new Closed("taker", 5));
+        }
+        assertThat(storedStatus()).isEqualTo("COMPLETED");
+    }
+
+    @Test
+    void anOwnerWhoseLeaseExpiredWithNoTakerStillCompletes() throws Exception {
+        Blocked owner = new Blocked();
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            Future<ResponseEntity<Closed>> a = executor.submit(() ->
+                    owner.run(() -> ResponseEntity.ok(new Closed("slow but alone", 4))));
+            await(owner.running);
+            expireLease(); // nobody takes it over
+
+            owner.release.countDown();
+            assertThat(a.get(10, TimeUnit.SECONDS).getBody()).isEqualTo(new Closed("slow but alone", 4));
+        }
+        assertThat(storedStatus()).isEqualTo("COMPLETED");
+        assertThat(idempotency.executeSteps(scope, key, target, body, Closed.class,
+                () -> ResponseEntity.ok(new Closed("must not run", 0))).getBody())
+                .isEqualTo(new Closed("slow but alone", 4));
+    }
+
+    @Test
+    void anOwnerThatLostItsLeaseAndCompletesFirstStoresNothingTheTakersResponseIsStored() throws Exception {
+        Blocked loser = new Blocked();
+        Blocked taker = new Blocked();
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            Future<ResponseEntity<Closed>> a = executor.submit(() ->
+                    loser.run(() -> ResponseEntity.ok(new Closed("loser", 99))));
+            await(loser.running);
+            expireLease();
+            Future<ResponseEntity<Closed>> b = executor.submit(() ->
+                    taker.run(() -> ResponseEntity.ok(new Closed("taker", 5))));
+            await(taker.running);
+
+            loser.release.countDown(); // A completes before B: nothing is stored yet, so A returns its own response
+            assertThat(a.get(10, TimeUnit.SECONDS).getBody()).isEqualTo(new Closed("loser", 99));
+            assertThat(storedStatus()).isEqualTo("IN_PROGRESS");
+
+            taker.release.countDown();
+            assertThat(b.get(10, TimeUnit.SECONDS).getBody()).isEqualTo(new Closed("taker", 5));
+        }
+        assertThat(idempotency.executeSteps(scope, key, target, body, Closed.class,
+                () -> ResponseEntity.ok(new Closed("must not run", 0))).getBody()).isEqualTo(new Closed("taker", 5));
+    }
+
+    @Test
+    void aSneakyThrownCheckedExceptionAlsoReleasesTheLease() {
+        assertThatThrownBy(() -> idempotency.executeSteps(scope, key, target, body, Closed.class,
+                () -> sneakyThrow(new IOException("socket closed"))))
+                .isInstanceOf(IOException.class).hasMessage("socket closed");
+
+        assertThat(idempotency.executeSteps(scope, key, target, body, Closed.class,
+                () -> ResponseEntity.ok(new Closed("CLOSED", 4))).getBody()).isEqualTo(new Closed("CLOSED", 4));
     }
 
     @Test
@@ -270,9 +350,10 @@ class IdempotencyStepsTest {
     void aScopeUsesOneModeOnlyAnUnfinishedExecuteClaimIsRefused() {
         jdbc.sql("""
                         INSERT INTO shared.idempotency_record (scope, key, request_hash, status, created_at)
-                        VALUES (:s, :k, :h, 'IN_PROGRESS', now())
+                        VALUES (:s, :k, :h, 'IN_PROGRESS', :created)
                         """)
-                .param("s", scope).param("k", key).param("h", hashOf(body)).update();
+                .param("s", scope).param("k", key).param("h", hashOf(body))
+                .param("created", Timestamp.from(Instant.now())).update();
 
         assertThatThrownBy(() -> idempotency.executeSteps(scope, key, target, body, Closed.class,
                 () -> ResponseEntity.ok(new Closed("must not run", 0))))
@@ -296,9 +377,10 @@ class IdempotencyStepsTest {
         jdbc.sql("""
                         INSERT INTO shared.idempotency_record
                             (scope, key, request_hash, status, created_at, lease_owner, lease_until)
-                        VALUES (:s, :k, :h, 'IN_PROGRESS', now(), :owner, :until)
+                        VALUES (:s, :k, :h, 'IN_PROGRESS', :created, :owner, :until)
                         """)
                 .param("s", scope).param("k", key).param("h", hashOf(body)).param("owner", UUID.randomUUID())
+                .param("created", Timestamp.from(Instant.now()))
                 .param("until", Timestamp.from(leaseUntil)).update();
     }
 
@@ -324,9 +406,30 @@ class IdempotencyStepsTest {
 
     private void expireLease() {
         jdbc.sql("""
-                        UPDATE shared.idempotency_record SET lease_until = now() - INTERVAL '1 second'
+                        UPDATE shared.idempotency_record SET lease_until = :past
                         WHERE scope = :s AND key = :k""")
+                // the app Clock decides expiry: expire with a Java instant, not the database clock (no VM skew)
+                .param("past", Timestamp.from(Instant.now().minusSeconds(5)))
                 .param("s", scope).param("k", key).update();
+    }
+
+    /** executeSteps for this test's key, whose steps signal {@code running}, then wait for {@code release}. */
+    private final class Blocked {
+        final CountDownLatch running = new CountDownLatch(1);
+        final CountDownLatch release = new CountDownLatch(1);
+
+        ResponseEntity<Closed> run(Supplier<ResponseEntity<Closed>> outcome) {
+            return idempotency.executeSteps(scope, key, target, body, Closed.class, () -> {
+                running.countDown();
+                await(release);
+                return outcome.get();
+            });
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T, E extends Throwable> T sneakyThrow(Throwable checked) throws E {
+        throw (E) checked;
     }
 
     private String storedStatus() {
