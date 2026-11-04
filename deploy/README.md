@@ -1,6 +1,6 @@
 # restaurantPRO — operator runbook
 
-One stack per company (spec §2): Caddy (HTTPS on the LAN), the backend, and PostgreSQL. Only Caddy publishes ports (80, 443). PostgreSQL and the backend sit on an internal Docker network with no route to the LAN or the Internet. Run every command from `deploy/`.
+One stack per company (spec §2): Caddy (HTTPS on the LAN), the backend, and PostgreSQL. Only Caddy publishes ports (80, 443). PostgreSQL and the backend sit on an internal Docker network with no route to the LAN or the Internet. Run every command from `deploy/` of the installation. The Compose project name is fixed (`restaurantpro`), and `backup.sh` / `restore.sh` find the database through it, so run them only from the installation directory and keep one installation per host.
 
 | Image | Pin |
 | --- | --- |
@@ -79,7 +79,7 @@ These are nightly logical backups. The spec's target of RPO 15 minutes needs WAL
 
 ## Restore
 
-`./restore.sh [--force] [--identity KEY_FILE] ARCHIVE` decrypts `.age` archives (with the private key file), checks the checksums and the dump, then restores in a single transaction: either everything is restored or nothing changes. It refuses a database that already holds tables unless you pass `--force`. With `--force` it restores into a new database and then drops the target (closing its connections) and puts the new one in its place. Nothing created after the backup survives, which is what a rollback needs. If the restore fails, the target stays as it was.
+`./restore.sh [--force] [--identity KEY_FILE] ARCHIVE` decrypts `.age` archives (with the private key file), checks the checksums and the dump, then restores in a single transaction: either everything is restored or nothing changes. It refuses a database that already holds tables unless you pass `--force`. With `--force` it restores into a staging database, then closes the target's connections, renames the target aside, renames the staging database into its place, and drops the old one. Nothing created after the backup survives, which is what a rollback needs. If the restore fails or is interrupted before the swap, the target stays as it was. If it is killed during the swap, no data is lost: the next run of `restore.sh` names the leftover databases (`restaurantpro_old_<pid>`, `restaurantpro_restore_<pid>`) and tells you how to rename one back.
 
 Restore the live installation:
 
@@ -89,28 +89,28 @@ docker compose stop backend caddy
 docker compose start backend caddy
 ```
 
-On a new server, copy the archive into `deploy/backups/`, then restore the configuration from it, then the database. Run from `deploy/`:
+On a new server, copy the archive into `deploy/backups/`, then restore the configuration from it, then the database. Run from `deploy/`. Never write a decrypted copy of an archive under `backups/`: that directory is copied off-site.
 
 ```bash
-A=backups/restaurantpro-<timestamp>.tar
-# Encrypted archive (.tar.age) only: decrypt it first, with the private key kept off the server.
-#   age -d -i key.txt -o "$A" "$A.age"
-tar -xf "$A" config
+A=backups/restaurantpro-<timestamp>.tar.age    # encrypted archive; key.txt is the private key, kept off the server
+mkdir -p backups
+age -d -i key.txt "$A" | tar -xf - config      # unencrypted archive (.tar): tar -xf "$A" config
 cp config/.env config/compose.yaml config/Caddyfile .
 mkdir -m 700 secrets && cp config/secrets/* secrets/   # only encrypted archives hold secrets/; otherwise recreate them
 chmod 644 secrets/*                                   # postgres and the backend read them as non-root users
 rm -rf config
-mkdir -p backups
 docker compose up -d postgres
-./restore.sh "$A"                                     # or ./restore.sh --identity key.txt "$A.age"
+./restore.sh --identity key.txt "$A"           # unencrypted archive: ./restore.sh "$A"
 docker compose up -d
 ```
+
+`restore.sh` decrypts into a private temporary directory and deletes it when it finishes.
 
 The database password in `secrets/db_password` must be the one the new PostgreSQL volume was created with. On a new volume, PostgreSQL takes whatever the file holds at its first start.
 
 ### Restore drill
 
-`./test-backup-restore.sh` is the automated drill (acceptance criterion 10). It needs only Docker. It starts two throwaway PostgreSQL containers, loads `test/sample.sql`, runs `backup.sh`, restores into the second container with `restore.sh`, and compares per-table row counts and checksums and the sequence positions. It also compares the normalised schema (`pg_dump --schema-only`), and checks retention, that Spring Session rows are left out, the refusal without `--force`, that `--force` removes objects created after the backup, and that a corrupted archive is rejected. It removes everything it created and exits non-zero on any mismatch.
+`./test-backup-restore.sh` is the automated drill (acceptance criterion 10). It needs only Docker. It starts two throwaway PostgreSQL containers, loads `test/sample.sql`, runs `backup.sh`, restores into the second container with `restore.sh`, and compares per-table row counts and checksums and the sequence positions. It also compares the normalised schema (`pg_dump --schema-only`), and checks retention, that Spring Session rows are left out, the refusal without `--force`, that `--force` works while a client is still connected and removes objects created after the backup, that a `--force` restore failing mid-way leaves the target unchanged with no leftover databases, and that a corrupted archive is rejected. It removes everything it created and exits non-zero on any mismatch.
 
 Spec §11 asks for restore tests. Run the drill after every upgrade. Also restore a real archive into a scratch server from time to time.
 
