@@ -30,4 +30,3 @@ CREATE TABLE organization.terminal
         CHECK (status = 'REGISTERED' OR enrollment_code_hash IS NULL),
     CONSTRAINT terminal_active_has_token_ck CHECK (status <> 'ACTIVE' OR device_token_hash IS NOT NULL)
 );
-CREATE INDEX terminal_store_ix ON organization.terminal (store_id, code);
