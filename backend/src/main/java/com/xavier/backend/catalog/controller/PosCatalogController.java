@@ -17,7 +17,7 @@ class PosCatalogController {
     }
 
     @GetMapping("/api/v1/pos/catalog")
-    PosCatalogResponse current(@RequestParam UUID storeId) {
+    PosCatalogResponse current(@RequestParam(required = false) UUID storeId) {
         return publishedCatalog.current(storeId);
     }
 }
