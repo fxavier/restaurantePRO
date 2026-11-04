@@ -1,6 +1,6 @@
 # restaurantPRO backend — decisions for approval
 
-Status: **PROPOSED** (2026-11-04). Nothing is built until this is approved.
+Status: **ACCEPTED** by Xavier Francisco, 2026-11-04. Approval also covers G2 (PRD) and G3 (slices) for R1. Blockers B1–B3 resolved (own git repo, Docker running, local Markdown PRD/issues). P1: country stays **configurable** (no market hard-coded). This document is the ADR record for D1–D33; supersede a decision with a new ADR in `docs/adr/`.
 Source of truth: [product_description.md](../product_description.md). Where the spec already decides something, this document does not reopen it. Each decision has an id, so you can answer "D7: use X instead".
 
 ---
