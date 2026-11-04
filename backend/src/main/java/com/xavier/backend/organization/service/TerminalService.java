@@ -6,8 +6,8 @@ import com.xavier.backend.audit.AuditEntry;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.organization.exception.InvalidEnrollmentCodeException;
 import com.xavier.backend.organization.exception.StoreNotFoundException;
-import com.xavier.backend.organization.exception.TerminalNotFoundException;
 import com.xavier.backend.organization.exception.TerminalCodeTakenException;
+import com.xavier.backend.organization.exception.TerminalNotFoundException;
 import com.xavier.backend.organization.model.Terminal;
 import com.xavier.backend.organization.model.dto.EnrollmentCodeResponse;
 import com.xavier.backend.organization.model.dto.TerminalCreateRequest;
@@ -16,6 +16,7 @@ import com.xavier.backend.organization.model.dto.TerminalSummary;
 import com.xavier.backend.organization.model.event.TerminalRevoked;
 import com.xavier.backend.organization.repository.StoreRepository;
 import com.xavier.backend.organization.repository.TerminalRepository;
+import com.xavier.backend.shared.persistence.UniqueConstraints;
 import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
 import java.time.Duration;
@@ -25,7 +26,6 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -131,14 +131,8 @@ public class TerminalService {
     }
 
     private Terminal saveNewTerminal(Terminal terminal) {
-        try {
-            return terminals.saveAndFlush(terminal);
-        } catch (DataIntegrityViolationException e) {
-            if (UniqueConstraint.isViolated(e, "terminal_store_code_uk")) {
-                throw new TerminalCodeTakenException(terminal.getCode());
-            }
-            throw e;
-        }
+        return UniqueConstraints.saveAndFlush(terminals, terminal,
+                () -> new TerminalCodeTakenException(terminal.getCode()), "terminal_store_code_uk");
     }
 
     private Terminal terminal(UUID id) {

@@ -23,6 +23,8 @@ import com.xavier.backend.identity.repository.EmployeeRepository;
 import com.xavier.backend.identity.repository.EmployeeStoreAssignmentRepository;
 import com.xavier.backend.identity.repository.RoleRepository;
 import com.xavier.backend.organization.OrganizationApi;
+import com.xavier.backend.shared.persistence.OptimisticLocking;
+import com.xavier.backend.shared.persistence.UniqueConstraints;
 import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
 import java.util.List;
@@ -177,7 +179,7 @@ public class EmployeeService {
             assignment = assignments.saveAndFlush(
                     new EmployeeStoreAssignment(employee.getId(), storeId, role.getId(), clock.instant()));
         } catch (DataIntegrityViolationException e) {
-            if (UniqueConstraint.isViolated(e, "employee_store_assignment_uk")) {
+            if (UniqueConstraints.isViolated(e, "employee_store_assignment_uk")) {
                 throw new DuplicateAssignmentException();
             }
             throw e;
@@ -221,14 +223,8 @@ public class EmployeeService {
     }
 
     private Employee save(Employee employee) {
-        try {
-            return employees.saveAndFlush(employee);
-        } catch (DataIntegrityViolationException e) {
-            if (UniqueConstraint.isViolated(e, "employee_code_uk")) {
-                throw new EmployeeCodeTakenException(employee.getCode());
-            }
-            throw e;
-        }
+        return UniqueConstraints.saveAndFlush(employees, employee,
+                () -> new EmployeeCodeTakenException(employee.getCode()), "employee_code_uk");
     }
 
     private void audit(String action, Employee employee, UUID storeId, Map<String, Object> details) {

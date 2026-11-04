@@ -7,6 +7,7 @@ import com.xavier.backend.identity.model.Role;
 import com.xavier.backend.identity.model.UserAccount;
 import com.xavier.backend.identity.repository.UserAccountRepository;
 import com.xavier.backend.organization.model.event.CompanyBootstrapped;
+import com.xavier.backend.shared.persistence.UniqueConstraints;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.time.Clock;
@@ -91,7 +92,7 @@ public class AdminBootstrapService {
             admin = accounts.saveAndFlush(UserAccount.open(username, encoder.encode(password.get()), null,
                     Set.of(Role.ADMINISTRATOR_ID), clock.instant()));
         } catch (DataIntegrityViolationException e) {
-            if (UniqueConstraint.isViolated(e, "user_account_username_uk")) {
+            if (UniqueConstraints.isViolated(e, "user_account_username_uk")) {
                 return false; // created concurrently by another delivery
             }
             throw e;

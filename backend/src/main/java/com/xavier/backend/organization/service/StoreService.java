@@ -14,12 +14,13 @@ import com.xavier.backend.organization.model.dto.StoreSummary;
 import com.xavier.backend.organization.model.dto.StoreUpdateRequest;
 import com.xavier.backend.organization.repository.CompanyProfileRepository;
 import com.xavier.backend.organization.repository.StoreRepository;
+import com.xavier.backend.shared.persistence.OptimisticLocking;
+import com.xavier.backend.shared.persistence.UniqueConstraints;
+import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
 import java.util.Currency;
 import java.util.Map;
 import java.util.UUID;
-import com.xavier.backend.shared.web.PageResponse;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -88,14 +89,8 @@ public class StoreService {
     }
 
     private Store saveWithUniqueCode(Store store) {
-        try {
-            return stores.saveAndFlush(store);
-        } catch (DataIntegrityViolationException e) {
-            if (UniqueConstraint.isViolated(e, "store_code_uk")) {
-                throw new StoreCodeTakenException(store.getCode());
-            }
-            throw e;
-        }
+        return UniqueConstraints.saveAndFlush(stores, store,
+                () -> new StoreCodeTakenException(store.getCode()), "store_code_uk");
     }
 
     private Store store(UUID id) {

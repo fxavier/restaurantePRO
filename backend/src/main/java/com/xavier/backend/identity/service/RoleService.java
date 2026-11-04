@@ -11,11 +11,12 @@ import com.xavier.backend.identity.model.dto.RoleCreateRequest;
 import com.xavier.backend.identity.model.dto.RoleSummary;
 import com.xavier.backend.identity.model.dto.RoleUpdateRequest;
 import com.xavier.backend.identity.repository.RoleRepository;
+import com.xavier.backend.shared.persistence.OptimisticLocking;
+import com.xavier.backend.shared.persistence.UniqueConstraints;
 import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
 import java.util.Map;
 import java.util.UUID;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -89,14 +90,8 @@ public class RoleService {
     }
 
     private Role save(Role role) {
-        try {
-            return roles.saveAndFlush(role);
-        } catch (DataIntegrityViolationException e) {
-            if (UniqueConstraint.isViolated(e, "role_name_uk")) {
-                throw new RoleNameTakenException(role.getName());
-            }
-            throw e;
-        }
+        return UniqueConstraints.saveAndFlush(roles, role,
+                () -> new RoleNameTakenException(role.getName()), "role_name_uk");
     }
 
     private void audit(String action, Role role) {

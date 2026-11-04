@@ -18,6 +18,8 @@ import com.xavier.backend.identity.model.dto.UserUpdateRequest;
 import com.xavier.backend.identity.repository.EmployeeRepository;
 import com.xavier.backend.identity.repository.RoleRepository;
 import com.xavier.backend.identity.repository.UserAccountRepository;
+import com.xavier.backend.shared.persistence.OptimisticLocking;
+import com.xavier.backend.shared.persistence.UniqueConstraints;
 import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
 import java.util.HashMap;
@@ -142,10 +144,10 @@ public class UserAccountService {
         try {
             return accounts.saveAndFlush(account);
         } catch (DataIntegrityViolationException e) {
-            if (UniqueConstraint.isViolated(e, "user_account_username_uk")) {
+            if (UniqueConstraints.isViolated(e, "user_account_username_uk")) {
                 throw new UsernameTakenException(account.getUsername());
             }
-            if (UniqueConstraint.isViolated(e, "user_account_employee_uk")) {
+            if (UniqueConstraints.isViolated(e, "user_account_employee_uk")) {
                 throw new EmployeeAccountTakenException(account.getEmployeeId());
             }
             throw e;

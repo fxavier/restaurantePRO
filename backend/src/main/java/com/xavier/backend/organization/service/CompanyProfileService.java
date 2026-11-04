@@ -10,6 +10,7 @@ import com.xavier.backend.organization.model.dto.CompanyProfileUpdateRequest;
 import com.xavier.backend.organization.model.dto.CompanyProfileView;
 import com.xavier.backend.organization.repository.CompanyProfileRepository;
 import com.xavier.backend.organization.repository.StoreRepository;
+import com.xavier.backend.shared.persistence.OptimisticLocking;
 import java.time.Clock;
 import java.util.Map;
 import org.springframework.stereotype.Service;

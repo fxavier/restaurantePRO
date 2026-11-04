@@ -10,11 +10,12 @@ import com.xavier.backend.dining.model.dto.RoomAreaSummary;
 import com.xavier.backend.dining.model.dto.RoomAreaUpdateRequest;
 import com.xavier.backend.dining.repository.RoomAreaRepository;
 import com.xavier.backend.organization.OrganizationApi;
+import com.xavier.backend.shared.persistence.OptimisticLocking;
+import com.xavier.backend.shared.persistence.UniqueConstraints;
 import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
 import java.util.Map;
 import java.util.UUID;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -84,14 +85,8 @@ public class RoomAreaService {
     }
 
     private RoomArea saveWithUniqueCode(RoomArea area) {
-        try {
-            return areas.saveAndFlush(area);
-        } catch (DataIntegrityViolationException e) {
-            if (UniqueConstraint.isViolated(e, "room_area_store_code_uk")) {
-                throw new DiningCodeTakenException(ENTITY, area.getCode());
-            }
-            throw e;
-        }
+        return UniqueConstraints.saveAndFlush(areas, area,
+                () -> new DiningCodeTakenException(ENTITY, area.getCode()), "room_area_store_code_uk");
     }
 
     private RoomArea area(UUID id) {

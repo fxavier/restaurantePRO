@@ -13,6 +13,8 @@ import com.xavier.backend.catalog.model.dto.TaxRateCreateRequest;
 import com.xavier.backend.catalog.model.dto.TaxRateSummary;
 import com.xavier.backend.catalog.repository.TaxCategoryRepository;
 import com.xavier.backend.catalog.repository.TaxRateRepository;
+import com.xavier.backend.shared.persistence.OptimisticLocking;
+import com.xavier.backend.shared.persistence.UniqueConstraints;
 import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
 import java.util.Map;
@@ -64,7 +66,7 @@ public class TaxService {
     public TaxRateSummary addRate(UUID categoryId, TaxRateCreateRequest request) {
         accessPolicy.require(Permission.CATALOG_MANAGE);
         TaxCategory category = category(categoryId);
-        TaxRate rate = UniqueConstraint.saveAndFlush(rates,
+        TaxRate rate = UniqueConstraints.saveAndFlush(rates,
                 TaxRate.of(categoryId, request.ratePercent(), request.effectiveFrom(), clock.instant()),
                 () -> new CatalogCodeTakenException("A rate of tax category " + category.getCode() + " starting at "
                         + request.effectiveFrom()), "tax_rate_category_effective_uk");
@@ -90,7 +92,7 @@ public class TaxService {
     }
 
     private TaxCategory save(TaxCategory category) {
-        return UniqueConstraint.saveAndFlush(categories, category,
+        return UniqueConstraints.saveAndFlush(categories, category,
                 () -> new CatalogCodeTakenException("Tax category code '" + category.getCode() + "'"),
                 "tax_category_code_uk");
     }

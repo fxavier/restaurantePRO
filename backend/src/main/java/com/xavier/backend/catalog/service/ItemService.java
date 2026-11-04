@@ -19,6 +19,8 @@ import com.xavier.backend.catalog.repository.ItemRepository;
 import com.xavier.backend.catalog.repository.ItemVariantRepository;
 import com.xavier.backend.catalog.repository.TaxCategoryRepository;
 import com.xavier.backend.catalog.repository.UnitRepository;
+import com.xavier.backend.shared.persistence.OptimisticLocking;
+import com.xavier.backend.shared.persistence.UniqueConstraints;
 import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
 import java.util.List;
@@ -137,12 +139,12 @@ public class ItemService {
     }
 
     private Item save(Item item) {
-        return UniqueConstraint.saveAndFlush(items, item,
+        return UniqueConstraints.saveAndFlush(items, item,
                 () -> new CatalogCodeTakenException("Item code '" + item.getCode() + "'"), "item_code_uk");
     }
 
     private ItemVariant save(ItemVariant variant) {
-        return UniqueConstraint.saveAndFlush(variants, variant,
+        return UniqueConstraints.saveAndFlush(variants, variant,
                 () -> new CatalogCodeTakenException("Variant code '" + variant.getCode() + "' in this item"),
                 "item_variant_item_code_uk");
     }

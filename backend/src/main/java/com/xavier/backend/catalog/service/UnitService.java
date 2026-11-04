@@ -9,6 +9,8 @@ import com.xavier.backend.catalog.model.dto.UnitCreateRequest;
 import com.xavier.backend.catalog.model.dto.UnitSummary;
 import com.xavier.backend.catalog.model.dto.UnitUpdateRequest;
 import com.xavier.backend.catalog.repository.UnitRepository;
+import com.xavier.backend.shared.persistence.OptimisticLocking;
+import com.xavier.backend.shared.persistence.UniqueConstraints;
 import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
 import java.util.Map;
@@ -65,7 +67,7 @@ public class UnitService {
     }
 
     private Unit save(Unit unit) {
-        return UniqueConstraint.saveAndFlush(units, unit,
+        return UniqueConstraints.saveAndFlush(units, unit,
                 () -> new CatalogCodeTakenException("Unit code '" + unit.getCode() + "'"), "unit_code_uk");
     }
 
