@@ -2,6 +2,7 @@ package com.xavier.backend.dining.model;
 
 import com.xavier.backend.dining.exception.AreaNotInStoreException;
 import com.xavier.backend.dining.exception.InvalidDiningSetupException;
+import com.xavier.backend.dining.exception.TableUnavailableException;
 import com.xavier.backend.dining.model.dto.RestaurantTableSummary;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -39,6 +40,13 @@ public class RestaurantTable {
     @Column(nullable = false)
     private boolean active;
 
+    private Instant lockedAt;
+
+    private UUID lockedByEmployeeId;
+
+    @Column(length = 200)
+    private String lockReason;
+
     @Version
     private Long version;
 
@@ -74,8 +82,58 @@ public class RestaurantTable {
         this.updatedAt = now;
     }
 
+    /**
+     * Locks the table (spec §4: a locked table takes no new occupation, lines, rounds or incoming transfers; payments
+     * and close stay allowed). Locking a locked table keeps the first lock.
+     *
+     * @return whether the table changed
+     */
+    public boolean lock(UUID employeeId, String reason, Instant now) {
+        String lockReasonText = DiningValues.requireText(reason, "reason");
+        if (isLocked()) {
+            return false;
+        }
+        this.lockedAt = now;
+        this.lockedByEmployeeId = employeeId;
+        this.lockReason = lockReasonText;
+        this.updatedAt = now;
+        return true;
+    }
+
+    /** @return whether the table changed (unlocking an unlocked table changes nothing) */
+    public boolean unlock(Instant now) {
+        if (!isLocked()) {
+            return false;
+        }
+        this.lockedAt = null;
+        this.lockedByEmployeeId = null;
+        this.lockReason = null;
+        this.updatedAt = now;
+        return true;
+    }
+
+    /**
+     * The table may take an occupation in the session's store: same store, table and {@code area} (its own) active,
+     * not locked. Whether it is already occupied is decided by the open occupation, not the table.
+     */
+    public void requireOpenable(UUID sessionStoreId, RoomArea area) {
+        if (!storeId.equals(sessionStoreId)) {
+            throw TableUnavailableException.storeMismatch(id);
+        }
+        if (!active || !area.isActive()) {
+            throw TableUnavailableException.inactive(id);
+        }
+        if (isLocked()) {
+            throw TableUnavailableException.locked(id);
+        }
+    }
+
+    public boolean isLocked() {
+        return lockedAt != null;
+    }
+
     public RestaurantTableSummary toSummary() {
-        return new RestaurantTableSummary(id, storeId, areaId, code, seats, active, version);
+        return new RestaurantTableSummary(id, storeId, areaId, code, seats, active, isLocked(), version);
     }
 
     public UUID getId() {
@@ -100,6 +158,18 @@ public class RestaurantTable {
 
     public boolean isActive() {
         return active;
+    }
+
+    public Instant getLockedAt() {
+        return lockedAt;
+    }
+
+    public UUID getLockedByEmployeeId() {
+        return lockedByEmployeeId;
+    }
+
+    public String getLockReason() {
+        return lockReason;
     }
 
     public Long getVersion() {
