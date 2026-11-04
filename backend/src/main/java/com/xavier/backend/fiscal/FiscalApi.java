@@ -60,7 +60,7 @@ public class FiscalApi {
 
     @Transactional(readOnly = true)
     public Optional<DocumentView> saleDocumentFor(UUID orderId) {
-        return documents.findBySourceTypeAndSourceIdAndDocumentType(SourceType.ORDER, orderId, DocumentType.SALE)
+        return documents.findBySource(SourceType.ORDER, orderId, DocumentType.SALE)
                 .map(FiscalDocument::toView);
     }
 

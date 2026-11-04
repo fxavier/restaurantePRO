@@ -36,7 +36,7 @@ public class SaleDraftService {
 
     @Transactional(propagation = Propagation.MANDATORY)
     public DocumentView createSaleDraft(SaleDraftCommand command) {
-        return documents.findBySourceTypeAndSourceIdAndDocumentType(SourceType.ORDER, command.orderId(),
+        return documents.findBySource(SourceType.ORDER, command.orderId(),
                         DocumentType.SALE)
                 .map(FiscalDocument::toView)
                 .orElseGet(() -> draft(command));

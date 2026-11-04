@@ -17,8 +17,18 @@ import org.springframework.data.repository.query.Param;
 
 public interface FiscalDocumentRepository extends JpaRepository<FiscalDocument, UUID> {
 
-    Optional<FiscalDocument> findBySourceTypeAndSourceIdAndDocumentType(SourceType sourceType, UUID sourceId,
-                                                                       DocumentType documentType);
+    /**
+     * The document of a source. The status predicate repeats the one of the partial unique index
+     * {@code fiscal_document_source_uk} as literals, so PostgreSQL can use that index (a bound parameter could not
+     * prove it in a generic plan).
+     */
+    @Query("""
+            select d from FiscalDocument d
+            where d.sourceType = :sourceType and d.sourceId = :sourceId and d.documentType = :documentType
+              and d.status in (com.xavier.backend.fiscal.model.DocumentStatus.DRAFT,
+                               com.xavier.backend.fiscal.model.DocumentStatus.ISSUED)""")
+    Optional<FiscalDocument> findBySource(@Param("sourceType") SourceType sourceType, @Param("sourceId") UUID sourceId,
+                                          @Param("documentType") DocumentType documentType);
 
     Optional<FiscalDocument> findBySeriesIdAndNumber(UUID seriesId, Long number);
 
