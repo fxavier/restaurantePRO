@@ -29,3 +29,7 @@ include::module-catalog.adoc[]
 plantuml::module-dining.puml[,,format=svg]
 include::module-dining.adoc[]
 
+== Identity
+plantuml::module-identity.puml[,,format=svg]
+include::module-identity.adoc[]
+
