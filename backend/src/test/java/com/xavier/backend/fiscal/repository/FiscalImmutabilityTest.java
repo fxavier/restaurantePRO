@@ -7,11 +7,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.xavier.backend.fiscal.FiscalApi;
 import com.xavier.backend.fiscal.FiscalFixtures;
 import com.xavier.backend.fiscal.FiscalModuleTest;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Confirmed facts are never edited (spec §8, A15): the database itself refuses to change an ISSUED document, its
@@ -28,6 +30,9 @@ class FiscalImmutabilityTest {
 
     @Autowired
     JdbcClient jdbc;
+
+    @Autowired
+    TransactionTemplate tx;
 
     @Test
     void anIssuedDocumentCannotBeUpdatedOrDeleted() throws Exception {
@@ -78,6 +83,32 @@ class FiscalImmutabilityTest {
         assertRefused("UPDATE fiscal.fiscal_series SET code = 'Z' WHERE id = :id", series);
         assertRefused("DELETE FROM fiscal.fiscal_series WHERE id = :id", series);
         assertThat(fixtures.nextNumber(series)).isEqualTo(10);
+    }
+
+    @Test
+    void aReprintRecordIsAppendOnly() throws Exception {
+        UUID document = issued();
+        jdbc.sql("""
+                INSERT INTO fiscal.fiscal_document_print
+                    (id, document_id, copy_no, requested_at, requested_by_employee_id, terminal_id)
+                VALUES (gen_random_uuid(), :id, 1, now(), gen_random_uuid(), gen_random_uuid())""")
+                .param("id", document).update();
+
+        assertRefused("UPDATE fiscal.fiscal_document_print SET copy_no = 7 WHERE document_id = :id", document);
+        assertRefused("DELETE FROM fiscal.fiscal_document_print WHERE document_id = :id", document);
+    }
+
+    /** TRUNCATE skips row triggers. Each attempt runs in a rolled-back transaction, so the shared data is safe. */
+    @Test
+    void theDocumentTablesCannotBeTruncated() {
+        for (String table : List.of("fiscal_document", "fiscal_document_line", "fiscal_document_tax",
+                "fiscal_document_print")) {
+            assertThatThrownBy(() -> tx.executeWithoutResult(status -> {
+                status.setRollbackOnly();
+                jdbc.sql("TRUNCATE fiscal." + table + " CASCADE").update();
+            })).as(table).isInstanceOf(DataAccessException.class)
+                    .hasMessageContaining("TRUNCATE");
+        }
     }
 
     private UUID issued() throws Exception {
