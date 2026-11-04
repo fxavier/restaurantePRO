@@ -173,12 +173,17 @@ public class Order {
         return true;
     }
 
-    /** → INVOICE (D49): every later change is refused. @return {@code false} when already frozen */
+    /**
+     * → INVOICE (D49): every later change is refused. Already frozen is a no-op even once CLOSED: a D63 retry of the
+     * document step may arrive after another request closed the order.
+     *
+     * @return {@code false} when already frozen
+     */
     public boolean freezeForInvoice() {
-        requireOpen();
         if (billingLock == BillingLock.INVOICE) {
             return false;
         }
+        requireOpen();
         billingLock = BillingLock.INVOICE;
         return true;
     }

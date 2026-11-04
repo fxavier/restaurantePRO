@@ -90,7 +90,19 @@ class OrderTest {
         assertCode(order::confirmBatch, "ORDER_NOT_OPEN");
         assertCode(order::requireChangeable, "ORDER_NOT_OPEN");
         assertCode(order::lockForPayment, "ORDER_NOT_OPEN");
-        assertCode(order::freezeForInvoice, "ORDER_NOT_OPEN");
+        Order unfrozen = counter();
+        unfrozen.close(EMPLOYEE, NOW);
+        assertCode(unfrozen::freezeForInvoice, "ORDER_NOT_OPEN");
+    }
+
+    @Test
+    void freezingAClosedOrderThatIsAlreadyFrozenIsANoOp() {
+        Order order = counter();
+        order.freezeForInvoice();
+        order.close(EMPLOYEE, NOW);
+
+        assertThat(order.freezeForInvoice()).isFalse();
+        assertThat(order.getBillingLock()).isEqualTo(BillingLock.INVOICE);
     }
 
     static void assertCode(Runnable call, String code) {
