@@ -29,13 +29,14 @@ Module layout (D12): `model/`, `model/dto/`, `model/event/`, `repository/`, `ser
 
 - **Money**: `com.xavier.backend.shared.Money(BigDecimal amount, Currency currency)`. Construction never rounds and rejects excess decimals. `times(BigDecimal)` is the only rounding point (HALF_UP). `allocate(int)` and `allocate(List<BigDecimal>)` use largest remainder, so the parts always sum to the total. Mixing currencies throws `IllegalArgumentException`. Tested by `MoneyTest`.
 - **Errors** (`shared.exception`): extend `NotFoundException` (404), `ConflictException` (409) or `BusinessRuleException` (422), one subclass per business meaning. A stale `@Version` (`OptimisticLockingFailureException`) gives 409. Bean Validation gives 400 with `errors: [{field, message}]`. `AccessDeniedException` gives 403 and `AuthenticationException` gives 401. Anything else gives 500 with no internal detail. Every error body is an RFC 9457 `ProblemDetail`. Tested by `GlobalExceptionHandlerTest` and `SecurityConfigTest`.
+  - A 422 that lists several problems throws a Spring `ErrorResponseException` whose `ProblemDetail` carries an `errors` property; the handler keeps its properties, which a `BusinessRuleException` would lose (e.g. `catalog.ReleaseValidationFailedException`).
 - **Time**: inject `java.time.Clock` (UTC). Tests pin it with a `@TestConfiguration` that declares a `@Primary Clock`.
 - **Pagination**: accept a `Pageable` and return `PageResponse.from(page)`. Size is capped at 200 (`PageResponseTest`).
 - **Idempotency** (D24): controllers of repeatable commands return
-  `idempotencyService.execute("<module>.<operation>:" + actorId, key, request.getMethod() + " " + request.getRequestURI(), body, () -> ResponseEntity...)`, with `key` from `@RequestHeader("Idempotency-Key")`. Call it from the controller, outside any transaction. The request identity is the SHA-256 of `target` plus the canonical JSON body.
+  `idempotencyService.execute("<module>.<operation>:" + actorId, key, request.getMethod() + " " + request.getRequestURI(), body, () -> ResponseEntity...)`, with `key` from `@RequestHeader("Idempotency-Key")`. Call it from the controller, outside any transaction: called inside one it throws `IllegalStateException` before claiming the key. The request identity is the SHA-256 of `target` plus the canonical JSON body.
   - Same key and same target+body → the stored response is replayed.
   - Same key with a different target or body → 422.
-  - A duplicate while another request holds the key → 409.
+  - A duplicate while another request holds the key → 409. Only SQLSTATE 55P03 (lock_not_available) means that; a deadlock (40P01) or serialization failure (40001) propagates.
   - A missing, blank or over-255-character key → 400.
   - Crash-safe: the action runs only while holding the record's row lock (`FOR UPDATE NOWAIT`), and its effects and the stored response commit together. After a crash or a failed action, the next request with that key takes the claim over and runs it once.
   - Never write your own (`IdempotencyServiceTest`).
