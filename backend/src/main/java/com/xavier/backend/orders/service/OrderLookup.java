@@ -3,6 +3,8 @@ package com.xavier.backend.orders.service;
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.PosContext;
 import com.xavier.backend.dining.DiningApi;
+import com.xavier.backend.dining.model.dto.TableState;
+import com.xavier.backend.orders.exception.OrderConflictException;
 import com.xavier.backend.orders.exception.OrderRuleException;
 import com.xavier.backend.orders.exception.OrderNotFoundException;
 import com.xavier.backend.orders.model.Order;
@@ -66,6 +68,28 @@ public class OrderLookup {
         Map<UUID, Order> claimed = new HashMap<>();
         expectedVersions.keySet().forEach(orderId -> claimed.put(orderId, load(orderId)));
         return claimed;
+    }
+
+    /**
+     * The table an order is about to sit at (an opening or a move): another store's table is refused (422
+     * {@code STORE_MISMATCH}) before anything about its state is told, then an inactive, locked or occupied one, so a
+     * refusal never depends on the order's write. Dining re-checks all of it on the locked rows; the open-table index
+     * decides a race between two orders in this store.
+     */
+    public void requireSeatable(UUID tableId, PosContext pos) {
+        TableState table = dining.tableState(tableId);
+        if (!table.storeId().equals(pos.storeId())) {
+            throw OrderRuleException.storeMismatch(tableId);
+        }
+        if (!table.active() || !table.areaActive()) {
+            throw OrderRuleException.tableInactive(tableId);
+        }
+        if (table.locked()) {
+            throw OrderRuleException.tableLocked(tableId);
+        }
+        if (table.openOrderId() != null) {
+            throw OrderConflictException.tableOccupied(tableId);
+        }
     }
 
     /** A locked table refuses new lines and rounds (r2-decisions §4 dining); payments and close stay allowed. */

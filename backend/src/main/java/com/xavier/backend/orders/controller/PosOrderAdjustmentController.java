@@ -1,6 +1,8 @@
 package com.xavier.backend.orders.controller;
 
 import com.xavier.backend.access.AccessPolicy;
+import com.xavier.backend.orders.model.dto.OrderView;
+import com.xavier.backend.orders.model.dto.TableMoveRequest;
 import com.xavier.backend.orders.model.dto.TransferRequest;
 import com.xavier.backend.orders.model.dto.TransferView;
 import com.xavier.backend.orders.model.dto.VoidLineRequest;
@@ -8,6 +10,7 @@ import com.xavier.backend.orders.model.dto.VoidView;
 import com.xavier.backend.orders.service.Approval;
 import com.xavier.backend.orders.service.LineVoidService;
 import com.xavier.backend.orders.service.OrderTransferService;
+import com.xavier.backend.orders.service.TableMoveService;
 import com.xavier.backend.shared.idempotency.IdempotencyService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -31,12 +34,14 @@ class PosOrderAdjustmentController {
 
     private final LineVoidService voids;
     private final OrderTransferService transfers;
+    private final TableMoveService tableMoves;
     private final Idempotent idempotent;
 
-    PosOrderAdjustmentController(LineVoidService voids, OrderTransferService transfers,
+    PosOrderAdjustmentController(LineVoidService voids, OrderTransferService transfers, TableMoveService tableMoves,
                                  IdempotencyService idempotency, AccessPolicy accessPolicy) {
         this.voids = voids;
         this.transfers = transfers;
+        this.tableMoves = tableMoves;
         this.idempotent = new Idempotent(idempotency, accessPolicy);
     }
 
@@ -61,5 +66,12 @@ class PosOrderAdjustmentController {
             return ResponseEntity.created(URI.create(ORDERS + "/" + id + "/transfers/" + transfer.id()))
                     .body(transfer);
         });
+    }
+
+    @PostMapping(ORDERS + "/{id}/table-move")
+    ResponseEntity<OrderView> moveTable(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
+                                        @Valid @RequestBody TableMoveRequest body, HttpServletRequest request) {
+        return idempotent.execute("orders.table.move", key, request, body, OrderView.class,
+                () -> ResponseEntity.ok(tableMoves.move(id, body)));
     }
 }

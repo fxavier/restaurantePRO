@@ -177,6 +177,15 @@ public class OrdersFixtures {
                 .header("Idempotency-Key", key).contentType(MediaType.APPLICATION_JSON).content(body));
     }
 
+    /** {@code POST /orders/{order}/table-move} to {@code table}. */
+    public ResultActions moveTable(Shop shop, UUID order, long orderVersion, UUID table, UUID employee,
+                                   UUID terminal, String key) throws Exception {
+        return mvc.perform(post(POS + "/orders/" + order + "/table-move")
+                .with(OrdersActors.pos(shop.store(), employee, terminal, Permission.ORDER_TRANSFER)).with(csrf())
+                .header("Idempotency-Key", key).contentType(MediaType.APPLICATION_JSON).content("""
+                        {"orderVersion": %d, "tableId": "%s"}""".formatted(orderVersion, table)));
+    }
+
     /** Runs {@code action} in a transaction as a POS session of the shop (what settlement's request has). */
     public void inPos(Shop shop, Runnable action) {
         OrdersActors.runAsPos(shop.store(), UUID.randomUUID(), UUID.randomUUID(),
