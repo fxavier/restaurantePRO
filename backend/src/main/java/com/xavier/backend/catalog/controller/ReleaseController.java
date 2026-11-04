@@ -6,11 +6,14 @@ import com.xavier.backend.catalog.model.dto.ReleaseCreateRequest;
 import com.xavier.backend.catalog.model.dto.ReleaseSummary;
 import com.xavier.backend.catalog.service.ReleaseService;
 import com.xavier.backend.shared.idempotency.IdempotencyService;
+import com.xavier.backend.shared.web.PageResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.net.URI;
-import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -38,8 +41,9 @@ class ReleaseController {
     }
 
     @GetMapping
-    List<ReleaseSummary> listForStore(@RequestParam UUID storeId) {
-        return releases.listForStore(storeId);
+    PageResponse<ReleaseSummary> listForStore(@RequestParam UUID storeId,
+            @PageableDefault(sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+        return releases.listForStore(storeId, pageable);
     }
 
     @GetMapping("/{id}")

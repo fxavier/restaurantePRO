@@ -15,6 +15,7 @@ import com.xavier.backend.catalog.model.dto.ReleaseValidationError;
 import com.xavier.backend.catalog.model.event.CatalogPublished;
 import com.xavier.backend.catalog.repository.ConfigurationReleaseRepository;
 import com.xavier.backend.organization.OrganizationApi;
+import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.HashMap;
@@ -23,6 +24,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
@@ -123,9 +125,9 @@ public class ReleaseService {
     }
 
     @Transactional(readOnly = true)
-    public List<ReleaseSummary> listForStore(UUID storeId) {
+    public PageResponse<ReleaseSummary> listForStore(UUID storeId, Pageable pageable) {
         accessPolicy.require(Permission.CATALOG_MANAGE, storeId);
-        return releases.findAllByStoreIdOrderByCreatedAtDesc(storeId).stream().map(ConfigurationRelease::toSummary).toList();
+        return PageResponse.from(releases.findAllByStoreId(storeId, pageable).map(ConfigurationRelease::toSummary));
     }
 
     private static void requireNoErrors(List<ReleaseValidationError> errors) {

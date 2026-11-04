@@ -60,9 +60,13 @@ class ReleaseHttpTest {
         mvc.perform(get(RELEASES + "/" + id(draft)).with(inStore(store, Permission.CATALOG_MANAGE)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("DRAFT"));
-        mvc.perform(get(RELEASES).param("storeId", store.toString()).with(inStore(store, Permission.CATALOG_MANAGE)))
+        mvc.perform(get(RELEASES).param("storeId", store.toString()).param("size", "10")
+                        .with(inStore(store, Permission.CATALOG_MANAGE)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1));
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].id").value(id(draft).toString()))
+                .andExpect(jsonPath("$.size").value(10))
+                .andExpect(jsonPath("$.totalElements").value(1));
     }
 
     @Test
