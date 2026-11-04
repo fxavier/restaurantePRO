@@ -3,6 +3,9 @@ package com.xavier.backend.orders.controller;
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.orders.OrderLifecycle;
 import com.xavier.backend.orders.model.dto.AddLineRequest;
+import com.xavier.backend.orders.model.dto.BatchView;
+import com.xavier.backend.orders.model.dto.ConfirmBatchRequest;
+import com.xavier.backend.orders.service.BatchConfirmationService;
 import com.xavier.backend.orders.model.dto.DeleteLineRequest;
 import com.xavier.backend.orders.model.dto.LineView;
 import com.xavier.backend.orders.model.dto.OrderSummary;
@@ -42,13 +45,15 @@ class PosOrderController {
     private final OrderOpeningService opening;
     private final OrderQueryService queries;
     private final DraftLineService drafts;
+    private final BatchConfirmationService rounds;
     private final Idempotent idempotent;
 
     PosOrderController(OrderOpeningService opening, OrderQueryService queries, DraftLineService drafts,
-                       IdempotencyService idempotency, AccessPolicy accessPolicy) {
+                       BatchConfirmationService rounds, IdempotencyService idempotency, AccessPolicy accessPolicy) {
         this.opening = opening;
         this.queries = queries;
         this.drafts = drafts;
+        this.rounds = rounds;
         this.idempotent = new Idempotent(idempotency, accessPolicy);
     }
 
@@ -97,6 +102,15 @@ class PosOrderController {
                                    @Valid @RequestBody OpenOrderRequest body, HttpServletRequest request) {
         return idempotent.execute("orders.order.open", key, request, body, OrderView.class,
                 () -> created(opening.openWalkIn(body)));
+    }
+
+    @PostMapping(ORDERS + "/{id}/batches")
+    ResponseEntity<BatchView> confirm(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
+                                      @Valid @RequestBody ConfirmBatchRequest body, HttpServletRequest request) {
+        return idempotent.execute("orders.batch.confirm", key, request, body, BatchView.class, () -> {
+            BatchView batch = rounds.confirm(id, body);
+            return ResponseEntity.created(URI.create(ORDERS + "/" + id + "/batches/" + batch.id())).body(batch);
+        });
     }
 
     private static ResponseEntity<OrderView> created(OrderView order) {

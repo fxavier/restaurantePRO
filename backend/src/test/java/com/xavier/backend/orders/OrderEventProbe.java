@@ -1,0 +1,56 @@
+package com.xavier.backend.orders;
+
+import com.xavier.backend.orders.model.event.OrderBatchConfirmed;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import org.springframework.boot.test.context.TestComponent;
+import org.springframework.context.event.EventListener;
+import org.springframework.modulith.events.ApplicationModuleListener;
+
+/**
+ * Stands in for production (S15): an {@code @ApplicationModuleListener}, so the Modulith registry persists a
+ * publication of every {@link OrderBatchConfirmed}, and it records what it received. It can also fail the publishing
+ * transaction for one order (a synchronous listener throwing inside it), to prove the round and its publication
+ * commit or roll back together.
+ */
+@TestComponent
+public class OrderEventProbe {
+
+    private final List<OrderBatchConfirmed> received = new CopyOnWriteArrayList<>();
+    private final Set<UUID> failing = ConcurrentHashMap.newKeySet();
+
+    @ApplicationModuleListener
+    void on(OrderBatchConfirmed event) {
+        received.add(event);
+    }
+
+    @EventListener
+    void failInsideTheTransaction(OrderBatchConfirmed event) {
+        if (failing.contains(event.orderId())) {
+            throw new IllegalStateException("injected failure after publishing " + event.batchId());
+        }
+    }
+
+    public void failRoundsOf(UUID orderId) {
+        failing.add(orderId);
+    }
+
+    /** What arrived for the order, waiting up to 10 s for {@code expected} events (delivery is after commit). */
+    public List<OrderBatchConfirmed> receivedFor(UUID orderId, int expected) throws InterruptedException {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+        List<OrderBatchConfirmed> mine = mine(orderId);
+        while (mine.size() < expected && System.nanoTime() < deadline) {
+            Thread.sleep(50);
+            mine = mine(orderId);
+        }
+        return mine;
+    }
+
+    private List<OrderBatchConfirmed> mine(UUID orderId) {
+        return received.stream().filter(event -> event.orderId().equals(orderId))
+                .sorted(java.util.Comparator.comparingInt(OrderBatchConfirmed::batchNo)).toList();
+    }
+}

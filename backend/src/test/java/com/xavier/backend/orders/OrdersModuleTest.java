@@ -23,7 +23,7 @@ import org.springframework.test.context.TestPropertySource;
 @Documented
 @ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization", "dining", "catalog"})
 @AutoConfigureMockMvc
-@Import({TestcontainersConfiguration.class, DiningFixtures.class, OrdersFixtures.class})
+@Import({TestcontainersConfiguration.class, DiningFixtures.class, OrdersFixtures.class, OrderEventProbe.class})
 @TestPropertySource(properties = {
         "restaurantpro.bootstrap.company.name=Test Company",
         "restaurantpro.bootstrap.company.tax-id=TEST-TAX-ID",

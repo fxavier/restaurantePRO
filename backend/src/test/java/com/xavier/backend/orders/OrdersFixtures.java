@@ -67,6 +67,16 @@ public class OrdersFixtures {
         return catalogApi.currentSnapshot(store).version();
     }
 
+    /** Gives the shop's item a new price in the working copy (published by {@link #republish}). */
+    public void reprice(Shop shop, String amount) throws Exception {
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .put(CatalogFixtures.CATALOG + "/price-lists/" + shop.priceList() + "/prices/" + shop.price())
+                        .with(com.xavier.backend.catalog.Actors.inStore(shop.store(), Permission.CATALOG_MANAGE))
+                        .with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\": %s, \"version\": 0}".formatted(amount)))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk());
+    }
+
     public UUID newTable(Shop shop, String code) throws Exception {
         return dining.createTable(shop.store(), shop.area(), code);
     }
