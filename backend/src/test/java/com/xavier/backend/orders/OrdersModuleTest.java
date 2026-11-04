@@ -1,6 +1,7 @@
 package com.xavier.backend.orders;
 
 import com.xavier.backend.TestcontainersConfiguration;
+import com.xavier.backend.dining.DiningChangeStream;
 import com.xavier.backend.dining.DiningFixtures;
 import java.lang.annotation.Documented;
 import java.lang.annotation.ElementType;
@@ -23,7 +24,8 @@ import org.springframework.test.context.TestPropertySource;
 @Documented
 @ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization", "dining", "catalog"})
 @AutoConfigureMockMvc
-@Import({TestcontainersConfiguration.class, DiningFixtures.class, OrdersFixtures.class, OrderEventProbe.class})
+@Import({TestcontainersConfiguration.class, DiningFixtures.class, OrdersFixtures.class, OrderEventProbe.class,
+        DiningChangeStream.Probe.class})
 @TestPropertySource(properties = {
         "restaurantpro.bootstrap.company.name=Test Company",
         "restaurantpro.bootstrap.company.tax-id=TEST-TAX-ID",
