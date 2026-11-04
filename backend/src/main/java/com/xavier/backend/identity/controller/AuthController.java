@@ -56,11 +56,12 @@ class AuthController {
         return session.withSessionHandle(SessionHandles.of(sessions.start(session, request, response)));
     }
 
-    /** The session is restarted (new id) with the account's real authorities. */
+    /** The account's other sessions end; this one is restarted (new id) with the account's real authorities. */
     @PostMapping("/password")
     SessionView changePassword(@Valid @RequestBody PasswordChangeRequest body, HttpServletRequest request,
                                HttpServletResponse response) {
-        SessionView session = passwords.change(body.currentPassword(), body.newPassword());
+        SessionView session = passwords.change(body.currentPassword(), body.newPassword(),
+                request.getSession(false) == null ? null : request.getSession(false).getId());
         return session.withSessionHandle(SessionHandles.of(sessions.start(session, request, response)));
     }
 

@@ -38,16 +38,19 @@ public class UserAccountService {
     private final PasswordEncoder encoder;
     private final AccessPolicy accessPolicy;
     private final AuditLog auditLog;
+    private final SessionTermination sessions;
     private final Clock clock;
 
     UserAccountService(UserAccountRepository accounts, RoleRepository roles, EmployeeRepository employees,
-                       PasswordEncoder encoder, AccessPolicy accessPolicy, AuditLog auditLog, Clock clock) {
+                       PasswordEncoder encoder, AccessPolicy accessPolicy, AuditLog auditLog,
+                       SessionTermination sessions, Clock clock) {
         this.accounts = accounts;
         this.roles = roles;
         this.employees = employees;
         this.encoder = encoder;
         this.accessPolicy = accessPolicy;
         this.auditLog = auditLog;
+        this.sessions = sessions;
         this.clock = clock;
     }
 
@@ -75,6 +78,9 @@ public class UserAccountService {
         account.update(request.employeeId(), request.roleIds(), request.active(), clock.instant());
         save(account);
         audit("USER_UPDATED", account);
+        if (!account.isActive()) {
+            sessions.endAll(account.getId());
+        }
         return account.toSummary();
     }
 

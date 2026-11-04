@@ -207,6 +207,26 @@ class PosLoginHttpTest {
     }
 
     @Test
+    void deactivatingTheEmployeeEndsTheirPosSessions() throws Exception {
+        Employee employee = fixtures.employee(PIN, storeA, IdentityFixtures.WAITER);
+        Cookie session = fixtures.posLogin(terminalA, employee, PIN);
+
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .put("/api/v1/backoffice/employees/" + employee.id()).with(admin()).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(IdentityFixtures.json("name", "Ana", "active", false, "version",
+                                currentVersion(employee))))
+                .andExpect(status().isOk());
+
+        mvc.perform(get("/api/v1/auth/session").cookie(session)).andExpect(status().isUnauthorized());
+    }
+
+    private long currentVersion(Employee employee) {
+        return jdbc.sql("SELECT version FROM identity.employee WHERE id = :id").param("id", employee.id())
+                .query(Long.class).single();
+    }
+
+    @Test
     void logoutOnTheTerminalEndsThePosSession() throws Exception {
         Employee employee = fixtures.employee(PIN, storeA, IdentityFixtures.WAITER);
         Cookie session = fixtures.posLogin(terminalA, employee, PIN);

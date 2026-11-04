@@ -181,6 +181,51 @@ class BackOfficeLoginHttpTest {
     }
 
     @Test
+    void deactivatingAnAccountEndsItsOpenSessions() throws Exception {
+        User user = fixtures.newUser(INITIAL, Set.of());
+        Cookie session = fixtures.login(user.username(), INITIAL);
+
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .put("/api/v1/backoffice/users/" + user.id()).with(IdentityFixtures.admin()).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json("roleIds", Set.of(), "active", false, "version", 0)))
+                .andExpect(status().isOk());
+
+        mvc.perform(get("/api/v1/auth/session").cookie(session)).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void anInactiveAccountCannotChangeItsPassword() throws Exception {
+        User user = fixtures.newUser(INITIAL, Set.of());
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .put("/api/v1/backoffice/users/" + user.id()).with(IdentityFixtures.admin()).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json("roleIds", Set.of(), "active", false, "version", 0)))
+                .andExpect(status().isOk());
+
+        mvc.perform(post("/api/v1/auth/password").with(IdentityFixtures.asAccount(user.id())).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json("currentPassword", INITIAL, "newPassword", "a much better passphrase")))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void changingThePasswordEndsTheAccountsOtherSessions() throws Exception {
+        User user = fixtures.newUser(INITIAL, Set.of());
+        Cookie here = fixtures.login(user.username(), INITIAL);
+        Cookie elsewhere = fixtures.login(user.username(), INITIAL);
+
+        Cookie changed = mvc.perform(post("/api/v1/auth/password").cookie(here).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json("currentPassword", INITIAL, "newPassword", "a much better passphrase")))
+                .andExpect(status().isOk()).andReturn().getResponse().getCookie("SESSION");
+
+        mvc.perform(get("/api/v1/auth/session").cookie(elsewhere)).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/auth/session").cookie(changed != null ? changed : here))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void loggingOutEndsTheSession() throws Exception {
         User user = fixtures.newUser(INITIAL, Set.of());
         Cookie session = fixtures.login(user.username(), INITIAL);

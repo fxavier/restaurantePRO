@@ -49,6 +49,12 @@ public final class IdentityFixtures {
         return as(Arrays.stream(Permission.values()).map(Permission::authority).collect(Collectors.toSet()));
     }
 
+    /** An authenticated session of account {@code userId} without permissions (as after a real login). */
+    public static RequestPostProcessor asAccount(UUID userId) {
+        Actor actor = new Actor(userId, null, null, null, Set.of());
+        return authentication(UsernamePasswordAuthenticationToken.authenticated(actor, null, java.util.List.of()));
+    }
+
     public static RequestPostProcessor as(Set<String> authorities) {
         Actor actor = new Actor(UUID.fromString("00000000-0000-7000-8000-000000000001"), null, null, null,
                 authorities);

@@ -50,11 +50,12 @@ public class EmployeeService {
     private final PasswordEncoder encoder;
     private final AccessPolicy accessPolicy;
     private final AuditLog auditLog;
+    private final SessionTermination sessions;
     private final Clock clock;
 
     EmployeeService(EmployeeRepository employees, EmployeeStoreAssignmentRepository assignments,
                     RoleRepository roles, OrganizationApi organization, PasswordEncoder encoder,
-                    AccessPolicy accessPolicy, AuditLog auditLog, Clock clock) {
+                    AccessPolicy accessPolicy, AuditLog auditLog, SessionTermination sessions, Clock clock) {
         this.employees = employees;
         this.assignments = assignments;
         this.roles = roles;
@@ -62,6 +63,7 @@ public class EmployeeService {
         this.encoder = encoder;
         this.accessPolicy = accessPolicy;
         this.auditLog = auditLog;
+        this.sessions = sessions;
         this.clock = clock;
     }
 
@@ -85,6 +87,9 @@ public class EmployeeService {
         employee.update(request.name(), request.active(), clock.instant());
         employees.saveAndFlush(employee);
         audit("EMPLOYEE_UPDATED", employee, null, Map.of("name", employee.getName(), "active", request.active()));
+        if (!request.active()) {
+            sessions.endAll(employee.getId()); // POS sessions are indexed by the employee id
+        }
         return employee.toSummary();
     }
 
