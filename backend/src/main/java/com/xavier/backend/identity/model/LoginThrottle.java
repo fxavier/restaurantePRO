@@ -7,16 +7,16 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 
 /**
- * The password attempts of one username from one client address (r2-decisions §12). Written only by the atomic
- * upsert in {@code LoginThrottleRepository.countAttempt}, so concurrent attempts are all counted; this mapping
- * exists for that repository and for deletes.
+ * A login throttle count (r2-decisions §12): the attempts of one username from one client address, or the failures
+ * from one client address across usernames. {@code key} is a SHA-256 hex. Written only by the atomic statements in
+ * {@code LoginThrottleRepository}, so concurrent attempts are all counted; this mapping exists for that repository.
  */
 @Entity
 @Table(schema = "identity", name = "login_throttle")
 public class LoginThrottle {
 
     @Id
-    @Column(length = 120)
+    @Column(length = 64)
     private String key;
 
     @Column(nullable = false)
@@ -26,6 +26,9 @@ public class LoginThrottle {
     private Instant windowStart;
 
     private Instant blockedUntil;
+
+    @Column(nullable = false)
+    private boolean blockNoticed;
 
     protected LoginThrottle() {
         // JPA

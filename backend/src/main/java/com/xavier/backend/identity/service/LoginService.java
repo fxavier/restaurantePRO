@@ -57,20 +57,27 @@ public class LoginService {
         String normalized = UserAccount.normalize(username);
         UserAccount account = accounts.findByUsername(normalized).orElse(null);
         throttling.countAttempt(normalized, clientAddress, account == null ? null : account.getId());
-        if (account == null) {
-            encoder.matches(password, unknownAccountHash);
-            throw refused(username, "unknown username");
-        }
-        if (!encoder.matches(password, account.getPasswordHash())) {
-            throw refused(username, "wrong password");
-        }
-        if (!account.isActive()) {
-            throw refused(username, "account inactive");
+        String refusal = refusalOf(account, password);
+        if (refusal != null) {
+            throttling.failed(clientAddress);
+            throw refused(username, refusal);
         }
         throttling.succeeded(normalized, clientAddress);
         SessionView session = sessionOf(account);
         audit.loggedIn(session.toActor());
         return session;
+    }
+
+    /** @return why the login is refused, or {@code null}; always one BCrypt check, so every answer takes as long */
+    private String refusalOf(UserAccount account, String password) {
+        if (account == null) {
+            encoder.matches(password, unknownAccountHash);
+            return "unknown username";
+        }
+        if (!encoder.matches(password, account.getPasswordHash())) {
+            return "wrong password";
+        }
+        return account.isActive() ? null : "account inactive";
     }
 
     /**

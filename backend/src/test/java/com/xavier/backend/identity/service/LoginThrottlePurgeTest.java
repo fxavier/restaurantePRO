@@ -2,7 +2,6 @@ package com.xavier.backend.identity.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.xavier.backend.identity.IdentityFixtures;
 import com.xavier.backend.identity.IdentityTest;
 import java.sql.Timestamp;
 import java.time.Duration;
@@ -35,7 +34,8 @@ class LoginThrottlePurgeTest {
     }
 
     private String insert(Instant windowStart, Instant blockedUntil) {
-        String key = IdentityFixtures.unique("u") + "|10.0.0.1";
+        String key = java.util.HexFormat.of().formatHex(java.util.UUID.randomUUID().toString().repeat(2)
+                .substring(0, 32).getBytes(java.nio.charset.StandardCharsets.US_ASCII)); // 64 hex chars, like a SHA-256
         jdbc.sql("""
                         INSERT INTO identity.login_throttle (key, failures, window_start, blocked_until)
                         VALUES (:key, :failures, :start, :blocked)""")

@@ -27,17 +27,18 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
- * r2-decisions §12: BackOffice password guessing is throttled per username and client address: ten failures inside
- * fifteen minutes block that pair for fifteen minutes (429). Another address is not blocked, so nobody can lock an
- * administrator out from elsewhere.
+ * r2-decisions §12: BackOffice password guessing is throttled per username and client address (ten attempts inside a
+ * fifteen-minute window block that pair for fifteen minutes) and per address across usernames (thirty failures).
+ * Both answer 429. Another address is not blocked, so nobody can lock an administrator out from elsewhere.
  */
 @IdentityTest
 class LoginThrottlingHttpTest {
 
     static final String PASSWORD = "initial password 1";
     static final String WRONG = "not the password";
-    static final String ATTACKER = "10.0.0.66";
-    static final String OFFICE = "10.0.0.10";
+    /** Fresh per test: the per-address counter would otherwise add up across tests. */
+    String attacker;
+    String office;
 
     @Autowired
     MockMvc mvc;
@@ -50,57 +51,86 @@ class LoginThrottlingHttpTest {
     @BeforeEach
     void user() throws Exception {
         user = new IdentityFixtures(mvc).newUser(PASSWORD, Set.of());
+        attacker = randomAddress();
+        office = randomAddress();
     }
 
     @Test
     void theEleventhBadPasswordInsideFifteenMinutesIsRefusedWith429() throws Exception {
         for (int i = 0; i < 10; i++) {
-            mvc.perform(login(WRONG, ATTACKER)).andExpect(status().isUnauthorized());
+            mvc.perform(login(WRONG, attacker)).andExpect(status().isUnauthorized());
         }
 
-        mvc.perform(login(WRONG, ATTACKER))
+        mvc.perform(login(WRONG, attacker))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(header().exists("Retry-After"))
                 .andExpect(jsonPath("$.code").value("LOGIN_THROTTLED"));
-        mvc.perform(login(PASSWORD, ATTACKER)).andExpect(status().isTooManyRequests());
-        assertThat(jdbc.sql("""
-                        SELECT count(*) FROM audit.audit_event WHERE action = 'LOGIN_THROTTLED' AND entity_id = :id""")
-                .param("id", user.id().toString()).query(Long.class).single()).isEqualTo(1);
+        mvc.perform(login(PASSWORD, attacker)).andExpect(status().isTooManyRequests());
+        assertThat(throttledAudits(user.id().toString())).isEqualTo(1);
+    }
+
+    @Test
+    void aTenthAttemptThatSucceedsIsNotAuditedAsABlock() throws Exception {
+        for (int i = 0; i < 9; i++) {
+            mvc.perform(login(WRONG, attacker)).andExpect(status().isUnauthorized());
+        }
+
+        mvc.perform(login(PASSWORD, attacker)).andExpect(status().isOk());
+
+        assertThat(throttledAudits(user.id().toString())).isZero();
+    }
+
+    @Test
+    void sprayingPasswordsAcrossUsernamesFromOneAddressIsBlockedAfterThirtyFailures() throws Exception {
+        IdentityFixtures fixtures = new IdentityFixtures(mvc);
+        List<User> users = List.of(user, fixtures.newUser(PASSWORD, Set.of()), fixtures.newUser(PASSWORD, Set.of()),
+                fixtures.newUser(PASSWORD, Set.of()));
+        for (int i = 0; i < 30; i++) {
+            mvc.perform(login(users.get(i % 4), WRONG, attacker)).andExpect(status().isUnauthorized());
+        }
+
+        mvc.perform(login(users.get(0), PASSWORD, attacker))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().exists("Retry-After"))
+                .andExpect(jsonPath("$.code").value("LOGIN_THROTTLED"));
+        mvc.perform(login(users.get(1), PASSWORD, attacker)).andExpect(status().isTooManyRequests());
+        mvc.perform(login(users.get(0), PASSWORD, office)).andExpect(status().isOk());
+        assertThat(throttledAudits(attacker)).isEqualTo(1);
     }
 
     @Test
     void aSuccessfulLoginStartsTheCountAgain() throws Exception {
         for (int i = 0; i < 9; i++) {
-            mvc.perform(login(WRONG, OFFICE)).andExpect(status().isUnauthorized());
+            mvc.perform(login(WRONG, office)).andExpect(status().isUnauthorized());
         }
-        mvc.perform(login(PASSWORD, OFFICE)).andExpect(status().isOk());
+        mvc.perform(login(PASSWORD, office)).andExpect(status().isOk());
 
         for (int i = 0; i < 10; i++) {
-            mvc.perform(login(WRONG, OFFICE)).andExpect(status().isUnauthorized());
+            mvc.perform(login(WRONG, office)).andExpect(status().isUnauthorized());
         }
-        mvc.perform(login(WRONG, OFFICE)).andExpect(status().isTooManyRequests());
+        mvc.perform(login(WRONG, office)).andExpect(status().isTooManyRequests());
     }
 
     @Test
     void aBlockedAddressDoesNotLockTheAccountOutElsewhere() throws Exception {
         for (int i = 0; i < 10; i++) {
-            mvc.perform(login(WRONG, ATTACKER));
+            mvc.perform(login(WRONG, attacker));
         }
 
-        mvc.perform(login(PASSWORD, OFFICE)).andExpect(status().isOk());
-        mvc.perform(login(PASSWORD, ATTACKER)).andExpect(status().isTooManyRequests());
+        mvc.perform(login(PASSWORD, office)).andExpect(status().isOk());
+        mvc.perform(login(PASSWORD, attacker)).andExpect(status().isTooManyRequests());
     }
 
     @Test
     void theBlockEndsFifteenMinutesAfterTheTenthFailure() throws Exception {
         for (int i = 0; i < 10; i++) {
-            mvc.perform(login(WRONG, ATTACKER));
+            mvc.perform(login(WRONG, attacker));
         }
-        mvc.perform(login(PASSWORD, ATTACKER)).andExpect(status().isTooManyRequests());
+        mvc.perform(login(PASSWORD, attacker)).andExpect(status().isTooManyRequests());
 
-        sixteenMinutesPass();
+        sixteenMinutesPass(attacker);
 
-        mvc.perform(login(PASSWORD, ATTACKER)).andExpect(status().isOk());
+        mvc.perform(login(PASSWORD, attacker)).andExpect(status().isOk());
     }
 
     @Test
@@ -108,7 +138,7 @@ class LoginThrottlingHttpTest {
         CountDownLatch start = new CountDownLatch(1);
         Callable<Integer> attempt = () -> {
             start.await();
-            return mvc.perform(login(WRONG, ATTACKER)).andReturn().getResponse().getStatus();
+            return mvc.perform(login(WRONG, attacker)).andReturn().getResponse().getStatus();
         };
 
         List<Integer> statuses = new ArrayList<>();
@@ -124,21 +154,41 @@ class LoginThrottlingHttpTest {
         assertThat(statuses).filteredOn(s -> s == 429).hasSize(5);
     }
 
+    private long throttledAudits(String entityId) {
+        return jdbc.sql("""
+                        SELECT count(*) FROM audit.audit_event WHERE action = 'LOGIN_THROTTLED' AND entity_id = :id""")
+                .param("id", entityId).query(Long.class).single();
+    }
+
+    private static String randomAddress() {
+        java.util.concurrent.ThreadLocalRandom random = java.util.concurrent.ThreadLocalRandom.current();
+        return "10.%d.%d.%d".formatted(random.nextInt(256), random.nextInt(256), random.nextInt(1, 255));
+    }
+
     private MockHttpServletRequestBuilder login(String password, String address) throws Exception {
-        return loginRequest(user.username(), password).with(request -> {
+        return login(user, password, address);
+    }
+
+    private static MockHttpServletRequestBuilder login(User who, String password, String address) throws Exception {
+        return loginRequest(who.username(), password).with(request -> {
             request.setRemoteAddr(address);
             return request;
         });
     }
 
-    /** Moves this user's throttle back in time; the database is the only place that remembers it. */
-    private void sixteenMinutesPass() {
+    /**
+     * Moves this user's pair count from {@code address} back in time; the database is the only place that remembers
+     * it. Keys are stored as SHA-256 hex of {@code "pair:<username>|<address>"}.
+     */
+    private void sixteenMinutesPass(String address) throws Exception {
+        String key = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                .digest(("pair:" + user.username() + "|" + address).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
         int moved = jdbc.sql("""
                         UPDATE identity.login_throttle
                            SET window_start = window_start - INTERVAL '16 minutes',
                                blocked_until = blocked_until - INTERVAL '16 minutes'
-                         WHERE key LIKE :user""")
-                .param("user", user.username() + "|%").update();
-        assertThat(moved).isPositive();
+                         WHERE key = :key""")
+                .param("key", key).update();
+        assertThat(moved).isEqualTo(1);
     }
 }
