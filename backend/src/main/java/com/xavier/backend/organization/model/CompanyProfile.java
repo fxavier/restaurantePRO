@@ -62,7 +62,8 @@ public class CompanyProfile {
     /** Replaces the profile. The currency is locked once a store exists (single currency, spec §8.4). */
     public void update(String name, String taxId, String country, String currency, boolean storesExist,
                        Instant now) {
-        if (storesExist && !this.currency.equals(currency)) {
+        // an unusable code is reported as such, even when the currency is locked
+        if (storesExist && !this.currency.equals(requireCurrency(currency).getCurrencyCode())) {
             throw new CurrencyLockedException();
         }
         apply(name, taxId, country, currency, now);

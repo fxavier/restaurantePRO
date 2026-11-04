@@ -47,6 +47,15 @@ class CompanyProfileTest {
     }
 
     @Test
+    void anUnusableCurrencyIsReportedAsSuchEvenWhenTheCurrencyIsLocked() {
+        CompanyProfile company = CompanyProfile.create("Restaurante Sol", "400123456", "MZ", "MZN", NOW);
+
+        assertThatThrownBy(() -> company.update("Restaurante Sol", "400123456", "MZ", "XXX", true, NOW))
+                .isInstanceOf(InvalidCompanyProfileException.class)
+                .hasMessageContaining("minor units");
+    }
+
+    @Test
     void theCurrencyCanChangeWhileThereAreNoStores() {
         CompanyProfile company = CompanyProfile.create("Restaurante Sol", "400123456", "MZ", "MZN", NOW);
 

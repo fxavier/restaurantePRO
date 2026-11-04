@@ -95,7 +95,8 @@ class CompanyProfileHttpTest {
 
         mvc.perform(put(URL).with(csrf()).contentType(MediaType.APPLICATION_JSON)
                         .content(body("Sol", "1", "XXX", current.get("version").asLong())))
-                .andExpect(status().isUnprocessableContent());
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("minor units")));
     }
 
     @Test
