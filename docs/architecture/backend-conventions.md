@@ -66,7 +66,7 @@ Module layout (D12): `model/`, `model/dto/`, `model/event/`, `repository/`, `ser
 ## Tests
 
 - Real PostgreSQL only: `@Import(TestcontainersConfiguration.class)`. One `postgres:18.6-alpine` container serves the whole JVM. Tests share the database, so use fresh UUIDs and keys per test and never assume empty tables.
-- Module tests: `@ApplicationModuleTest(extraIncludes = "shared")` + `@Import(TestcontainersConfiguration.class)`. `shared` holds the `Clock` and JSON beans, and a module test does not include it by default.
+- Module tests: `@ApplicationModuleTest(extraIncludes = {"shared", "access", "audit"})` + `@Import(TestcontainersConfiguration.class)`. A module test boots only its own module: `shared` holds the `Clock` and JSON beans, `access` holds `AccessPolicy`, `audit` holds `AuditLog`. Add the modules your code calls.
 - Act as a user with `@WithActor(permissions = {...}, storeId = "...")` (`com.xavier.backend.access.WithActor`, test sources).
 - Throw-away controllers for HTTP tests are static nested `@RestController`s pulled in with `@Import(Test.Probe.class)`. Spring's test scan skips nested classes of test classes.
 - Architecture fixtures live in `com.xavier.archfixture.*`, outside the scanned base package.
