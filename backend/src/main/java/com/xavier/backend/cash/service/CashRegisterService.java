@@ -3,12 +3,16 @@ package com.xavier.backend.cash.service;
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.cash.exception.CashNotFoundException;
+import com.xavier.backend.cash.exception.CashRule;
+import com.xavier.backend.cash.exception.CashRuleViolationException;
 import com.xavier.backend.cash.exception.RegisterCodeTakenException;
 import com.xavier.backend.cash.model.CashRegister;
+import com.xavier.backend.cash.model.CashSessionStatus;
 import com.xavier.backend.cash.model.dto.RegisterCreateRequest;
 import com.xavier.backend.cash.model.dto.RegisterSummary;
 import com.xavier.backend.cash.model.dto.RegisterUpdateRequest;
 import com.xavier.backend.cash.repository.CashRegisterRepository;
+import com.xavier.backend.cash.repository.CashSessionRepository;
 import com.xavier.backend.organization.OrganizationApi;
 import com.xavier.backend.shared.persistence.OptimisticLocking;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
@@ -27,14 +31,16 @@ public class CashRegisterService {
     static final String ENTITY = "CashRegister";
 
     private final CashRegisterRepository registers;
+    private final CashSessionRepository sessions;
     private final OrganizationApi organization;
     private final AccessPolicy accessPolicy;
     private final CashAudit audit;
     private final Clock clock;
 
-    CashRegisterService(CashRegisterRepository registers, OrganizationApi organization, AccessPolicy accessPolicy,
-                        CashAudit audit, Clock clock) {
+    CashRegisterService(CashRegisterRepository registers, CashSessionRepository sessions,
+                        OrganizationApi organization, AccessPolicy accessPolicy, CashAudit audit, Clock clock) {
         this.registers = registers;
+        this.sessions = sessions;
         this.organization = organization;
         this.accessPolicy = accessPolicy;
         this.audit = audit;
@@ -59,6 +65,11 @@ public class CashRegisterService {
                 registers.findStoreIdById(id).orElseThrow(() -> new CashNotFoundException(ENTITY, id)));
         CashRegister register = registers.findById(id).orElseThrow(() -> new CashNotFoundException(ENTITY, id));
         OptimisticLocking.requireVersion(CashRegister.class, id, register.getVersion(), request.version());
+        if (register.isActive() && !request.active()
+                && sessions.existsByRegisterIdAndStatus(id, CashSessionStatus.OPEN)) {
+            throw new CashRuleViolationException(CashRule.REGISTER_IN_USE,
+                    "The cash register " + register.getCode() + " has an open session.");
+        }
         register.update(request.code(), request.name(), request.active(), clock.instant());
         save(register); // flush now: a concurrent writer fails here (409), and the response has the new version
         record("CASH_REGISTER_UPDATED", register);

@@ -55,6 +55,20 @@ class RegisterHttpTest {
     }
 
     @Test
+    void aRegisterWithAnOpenSessionCannotBeDeactivated() throws Exception {
+        UUID register = fixtures.newRegister(store);
+        fixtures.openSession(CashFixtures.pos(store), register, "1.00");
+
+        mvc.perform(idem(put(REGISTERS + "/" + register)).with(account(store, Permission.CASH_REGISTER_MANAGE))
+                        .contentType(MediaType.APPLICATION_JSON).content(update("OFF", false, 0)))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("REGISTER_IN_USE"));
+        mvc.perform(idem(put(REGISTERS + "/" + register)).with(account(store, Permission.CASH_REGISTER_MANAGE))
+                        .contentType(MediaType.APPLICATION_JSON).content(update("RENAMED", true, 0)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void aStaleVersionIsAConflict() throws Exception {
         UUID register = fixtures.newRegister(store);
         mvc.perform(idem(put(REGISTERS + "/" + register)).with(account(store, Permission.CASH_REGISTER_MANAGE))
