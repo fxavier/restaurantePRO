@@ -6,6 +6,7 @@ import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.modulith.test.ApplicationModuleTest;
 import org.springframework.test.context.TestPropertySource;
@@ -19,6 +20,7 @@ import org.springframework.test.context.TestPropertySource;
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
 @ApplicationModuleTest(extraIncludes = {"shared", "access", "audit"})
+@AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
 @TestPropertySource(properties = {
         "restaurantpro.bootstrap.company.name=Test Company",
