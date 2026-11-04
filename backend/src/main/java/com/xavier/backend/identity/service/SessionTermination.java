@@ -45,8 +45,13 @@ class SessionTermination {
 
     /** The employee's POS sessions and the sessions of the account linked to the employee (store authorities). */
     void endEmployeeSessions(UUID employeeId) {
-        end(SessionPrincipals.employee(employeeId), null);
+        endPosSessions(employeeId);
         accounts.findByEmployeeId(employeeId).ifPresent(account -> endAccountSessions(account.getId()));
+    }
+
+    /** Only the employee's POS (PIN) sessions; a linked account's password sessions stay. */
+    void endPosSessions(UUID employeeId) {
+        end(SessionPrincipals.employee(employeeId), null);
     }
 
     private void end(String principalName, String keepSessionId) {

@@ -120,8 +120,21 @@ class PinChangeHttpTest {
                 .isInstanceOf(ApprovalDeniedException.class);
     }
 
+    @Test
+    void aPinResetEndsTheEmployeesOpenPosSessions() throws Exception {
+        Employee employee = fixtures.employee(PIN, store, IdentityFixtures.WAITER);
+        Cookie open = fixtures.posLogin(terminal, employee, PIN);
+
+        reset(employee);
+
+        mvc.perform(get("/api/v1/auth/session").cookie(open)).andExpect(status().isUnauthorized());
+    }
+
     private Employee resetEmployee(UUID role) throws Exception {
-        Employee employee = fixtures.employee(PIN, store, role);
+        return reset(fixtures.employee(PIN, store, role));
+    }
+
+    private Employee reset(Employee employee) throws Exception {
         mvc.perform(post("/api/v1/backoffice/employees/" + employee.id() + "/reset-pin").with(admin()).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content("{\"pin\": \"%s\"}".formatted(RESET_PIN)))
                 .andExpect(status().isOk());

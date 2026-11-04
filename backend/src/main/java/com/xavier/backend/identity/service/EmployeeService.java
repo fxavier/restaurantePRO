@@ -122,13 +122,17 @@ public class EmployeeService {
         return employee.toSummary();
     }
 
-    /** A new PIN; the failed attempts were against the old one, so it also unlocks. */
+    /**
+     * A new PIN; the failed attempts were against the old one, so it also unlocks. The old PIN may be compromised,
+     * so the POS sessions it opened end.
+     */
     @Transactional
     public EmployeeSummary resetPin(UUID id, String pin) {
         Employee employee = controllable(id);
         employee.resetPin(encoder.encode(pin), clock.instant());
         employees.saveAndFlush(employee);
         audit("EMPLOYEE_PIN_RESET", employee, null, Map.of());
+        sessions.endPosSessions(employee.getId());
         return employee.toSummary();
     }
 
