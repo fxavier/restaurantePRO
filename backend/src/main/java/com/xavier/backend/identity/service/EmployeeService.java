@@ -52,11 +52,13 @@ public class EmployeeService {
     private final AccessPolicy accessPolicy;
     private final AuditLog auditLog;
     private final SessionTermination sessions;
+    private final EmployeeControl control;
     private final Clock clock;
 
     EmployeeService(EmployeeRepository employees, EmployeeStoreAssignmentRepository assignments,
                     RoleRepository roles, OrganizationApi organization, PasswordEncoder encoder,
-                    AccessPolicy accessPolicy, AuditLog auditLog, SessionTermination sessions, Clock clock) {
+                    AccessPolicy accessPolicy, AuditLog auditLog, SessionTermination sessions,
+                    EmployeeControl control, Clock clock) {
         this.employees = employees;
         this.assignments = assignments;
         this.roles = roles;
@@ -65,6 +67,7 @@ public class EmployeeService {
         this.accessPolicy = accessPolicy;
         this.auditLog = auditLog;
         this.sessions = sessions;
+        this.control = control;
         this.clock = clock;
     }
 
@@ -119,13 +122,17 @@ public class EmployeeService {
         return employee.toSummary();
     }
 
-    /** A new PIN; the failed attempts were against the old one, so it also unlocks. */
+    /**
+     * A new PIN; the failed attempts were against the old one, so it also unlocks. The old PIN may be compromised,
+     * so the POS sessions it opened end.
+     */
     @Transactional
     public EmployeeSummary resetPin(UUID id, String pin) {
         Employee employee = controllable(id);
         employee.resetPin(encoder.encode(pin), clock.instant());
         employees.saveAndFlush(employee);
         audit("EMPLOYEE_PIN_RESET", employee, null, Map.of());
+        sessions.endPosSessions(employee.getId());
         return employee.toSummary();
     }
 
@@ -187,23 +194,10 @@ public class EmployeeService {
         return assignment;
     }
 
-    /**
-     * The employee, if the actor may change what they can do (PIN, lock, active, new stores): {@code EMPLOYEE_MANAGE}
-     * and every permission of the employee's role, in every store the employee works in. Otherwise a manager of one
-     * store could add a manager of another store to theirs, reset that PIN and log in as them over there.
-     * An employee without assignments needs an installation-wide grant.
-     */
+    /** The employee, if the actor may change what they can do (PIN, lock, active, new stores): {@link EmployeeControl}. */
     private Employee controllable(UUID id) {
         Employee employee = employees.findById(id).orElseThrow(() -> new EmployeeNotFoundException(id));
-        List<EmployeeStoreAssignment> held = assignments.findByEmployeeId(id);
-        if (held.isEmpty()) {
-            accessPolicy.require(Permission.EMPLOYEE_MANAGE);
-        }
-        for (EmployeeStoreAssignment assignment : held) {
-            accessPolicy.require(Permission.EMPLOYEE_MANAGE, assignment.getStoreId());
-            roles.findById(assignment.getRoleId()).orElseThrow(() -> new RoleNotFoundException(assignment.getRoleId()))
-                    .getPermissions().forEach(permission -> accessPolicy.require(permission, assignment.getStoreId()));
-        }
+        control.require(id);
         return employee;
     }
 

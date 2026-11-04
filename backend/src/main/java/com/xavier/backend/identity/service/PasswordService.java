@@ -77,7 +77,7 @@ public class PasswordService {
         accounts.saveAndFlush(account);
         auditLog.recordAsCurrentActor("USER_PASSWORD_CHANGED", "UserAccount", account.getId().toString(), null,
                 null, null, Map.of("username", account.getUsername()));
-        sessions.endAllExcept(account.getId(), currentSessionId);
+        sessions.endAccountSessionsExcept(account.getId(), currentSessionId);
         return logins.sessionOf(account);
     }
 }

@@ -43,6 +43,10 @@ public class Employee {
     @Column(nullable = false)
     private boolean active;
 
+    /** Set by a manager's PIN reset: the manager knows this PIN, so it is good only for choosing a new one. */
+    @Column(nullable = false)
+    private boolean mustChangePin;
+
     @Version
     private Long version;
 
@@ -96,10 +100,21 @@ public class Employee {
         updatedAt = now;
     }
 
-    /** The failed attempts were against the old PIN, so a new PIN also unlocks. */
+    /**
+     * A manager sets a PIN they then know, so the employee must choose their own at the next POS login. The failed
+     * attempts were against the old PIN, so a new PIN also unlocks.
+     */
     public void resetPin(String newPinHash, Instant now) {
         pinHash = newPinHash;
+        mustChangePin = true;
         unlock(now);
+    }
+
+    /** The employee replaces the PIN a manager set with one only they know. */
+    public void choosePin(String newPinHash, Instant now) {
+        pinHash = newPinHash;
+        mustChangePin = false;
+        updatedAt = now;
     }
 
     public void update(String newName, boolean newActive, Instant now) {
@@ -138,6 +153,10 @@ public class Employee {
 
     public boolean isLocked() {
         return locked;
+    }
+
+    public boolean isMustChangePin() {
+        return mustChangePin;
     }
 
     public long getVersion() {
