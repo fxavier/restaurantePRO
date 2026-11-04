@@ -7,6 +7,8 @@ import com.xavier.backend.orders.exception.OrderRuleException;
 import com.xavier.backend.orders.exception.OrderNotFoundException;
 import com.xavier.backend.orders.model.Order;
 import com.xavier.backend.orders.repository.OrderRepository;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Component;
@@ -48,10 +50,22 @@ public class OrderLookup {
      * @throws ObjectOptimisticLockingFailureException 409 when the order is at another version
      */
     public Order claim(UUID orderId, long expectedVersion) {
-        if (orders.incrementVersion(orderId, expectedVersion) == 0) {
-            throw new ObjectOptimisticLockingFailureException(Order.class, orderId);
-        }
-        return load(orderId);
+        return claim(Map.of(orderId, expectedVersion)).get(orderId);
+    }
+
+    /**
+     * {@link #claim(UUID, long)} for several orders, always in ascending id order: two transactions claiming the same
+     * orders queue on the first one instead of each holding one and waiting for the other (no deadlock).
+     */
+    public Map<UUID, Order> claim(Map<UUID, Long> expectedVersions) {
+        expectedVersions.keySet().stream().sorted().forEach(orderId -> {
+            if (orders.incrementVersion(orderId, expectedVersions.get(orderId)) == 0) {
+                throw new ObjectOptimisticLockingFailureException(Order.class, orderId);
+            }
+        });
+        Map<UUID, Order> claimed = new HashMap<>();
+        expectedVersions.keySet().forEach(orderId -> claimed.put(orderId, load(orderId)));
+        return claimed;
     }
 
     /** A locked table refuses new lines and rounds (r2-decisions §4 dining); payments and close stay allowed. */

@@ -1,10 +1,13 @@
 package com.xavier.backend.orders.controller;
 
 import com.xavier.backend.access.AccessPolicy;
+import com.xavier.backend.orders.model.dto.TransferRequest;
+import com.xavier.backend.orders.model.dto.TransferView;
 import com.xavier.backend.orders.model.dto.VoidLineRequest;
 import com.xavier.backend.orders.model.dto.VoidView;
 import com.xavier.backend.orders.service.Approval;
 import com.xavier.backend.orders.service.LineVoidService;
+import com.xavier.backend.orders.service.OrderTransferService;
 import com.xavier.backend.shared.idempotency.IdempotencyService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -27,10 +30,13 @@ class PosOrderAdjustmentController {
     static final String ORDERS = PosOrderController.ORDERS;
 
     private final LineVoidService voids;
+    private final OrderTransferService transfers;
     private final Idempotent idempotent;
 
-    PosOrderAdjustmentController(LineVoidService voids, IdempotencyService idempotency, AccessPolicy accessPolicy) {
+    PosOrderAdjustmentController(LineVoidService voids, OrderTransferService transfers,
+                                 IdempotencyService idempotency, AccessPolicy accessPolicy) {
         this.voids = voids;
+        this.transfers = transfers;
         this.idempotent = new Idempotent(idempotency, accessPolicy);
     }
 
@@ -44,6 +50,16 @@ class PosOrderAdjustmentController {
         return idempotent.execute("orders.line.void", key, request, body, VoidView.class, () -> {
             VoidView voided = voids.voidLine(id, body, approval);
             return ResponseEntity.created(URI.create(ORDERS + "/" + id + "/voids/" + voided.id())).body(voided);
+        });
+    }
+
+    @PostMapping(ORDERS + "/{id}/transfers")
+    ResponseEntity<TransferView> transfer(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
+                                          @Valid @RequestBody TransferRequest body, HttpServletRequest request) {
+        return idempotent.execute("orders.lines.transfer", key, request, body, TransferView.class, () -> {
+            TransferView transfer = transfers.transfer(id, body);
+            return ResponseEntity.created(URI.create(ORDERS + "/" + id + "/transfers/" + transfer.id()))
+                    .body(transfer);
         });
     }
 }

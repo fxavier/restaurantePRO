@@ -45,8 +45,11 @@ public class OrdersFixtures {
     private final JdbcClient jdbc;
     private final DiningFixtures dining;
     private final CatalogApi catalogApi;
+    private final org.springframework.transaction.PlatformTransactionManager transactionManager;
 
-    OrdersFixtures(MockMvc mvc, JdbcClient jdbc, DiningFixtures dining, CatalogApi catalogApi) {
+    OrdersFixtures(MockMvc mvc, JdbcClient jdbc, DiningFixtures dining, CatalogApi catalogApi,
+                   org.springframework.transaction.PlatformTransactionManager transactionManager) {
+        this.transactionManager = transactionManager;
         this.mvc = mvc;
         this.jdbc = jdbc;
         this.dining = dining;
@@ -150,6 +153,53 @@ public class OrdersFixtures {
                                 Permission.ORDER_VIEW)))
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
                 .andReturn().getResponse().getContentAsString());
+    }
+
+    /** Opens {@code table} as a new order; its id. */
+    public UUID openedAt(Shop shop, UUID table, UUID employee, UUID terminal) throws Exception {
+        return id(json(openTable(shop, table, employee, terminal, UUID.randomUUID().toString())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isCreated())
+                .andReturn().getResponse().getContentAsString()));
+    }
+
+    /** {@code POST /orders/{source}/transfers} moving {@code lines} (line id → quantity) to {@code target}. */
+    public ResultActions transfer(Shop shop, UUID source, long sourceVersion, UUID target, long targetVersion,
+                                  java.util.Map<UUID, String> lines, boolean cancelSourceWhenEmpty, UUID employee,
+                                  UUID terminal, String key) throws Exception {
+        String body = """
+                {"orderVersion": %d, "targetOrderId": "%s", "targetOrderVersion": %d, "lines": [%s],
+                 "cancelSourceWhenEmpty": %s}""".formatted(sourceVersion, target, targetVersion,
+                String.join(",", lines.entrySet().stream().map(line -> """
+                        {"lineId": "%s", "quantity": %s}""".formatted(line.getKey(), line.getValue())).toList()),
+                cancelSourceWhenEmpty);
+        return mvc.perform(post(POS + "/orders/" + source + "/transfers")
+                .with(OrdersActors.pos(shop.store(), employee, terminal, Permission.ORDER_TRANSFER)).with(csrf())
+                .header("Idempotency-Key", key).contentType(MediaType.APPLICATION_JSON).content(body));
+    }
+
+    /** Runs {@code action} in a transaction as a POS session of the shop (what settlement's request has). */
+    public void inPos(Shop shop, Runnable action) {
+        OrdersActors.runAsPos(shop.store(), UUID.randomUUID(), UUID.randomUUID(),
+                () -> new org.springframework.transaction.support.TransactionTemplate(transactionManager)
+                        .execute(status -> {
+                            action.run();
+                            return null;
+                        }));
+    }
+
+    /** Σ net quantity of the confirmed lines of the orders (quantity − voids − transferred out). */
+    public java.math.BigDecimal netQuantity(UUID... orders) {
+        java.math.BigDecimal total = java.math.BigDecimal.ZERO;
+        for (UUID order : orders) {
+            total = total.add(jdbc.sql("""
+                    SELECT COALESCE(sum(l.quantity
+                        - COALESCE((SELECT sum(v.quantity) FROM orders.order_line_void v WHERE v.line_id = l.id), 0)
+                        - COALESCE((SELECT sum(t.quantity) FROM orders.order_transfer_line t
+                                    WHERE t.source_line_id = l.id), 0)), 0)
+                    FROM orders.order_line l WHERE l.order_id = ? AND l.status = 'CONFIRMED'""")
+                    .param(order).query(java.math.BigDecimal.class).single());
+        }
+        return total;
     }
 
     public long count(String sql, Object... params) {

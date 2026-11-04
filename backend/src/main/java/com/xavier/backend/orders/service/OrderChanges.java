@@ -43,6 +43,11 @@ public class OrderChanges {
         changeNotifier.notifyAfterCommit(storeId, ChangeTopic.ORDER, orderId);
     }
 
+    /** Notifies {@code ORDER} for an order whose change another record audited (the target of a transfer). */
+    public void notify(Order order) {
+        changeNotifier.notifyAfterCommit(order.getStoreId(), ChangeTopic.ORDER, order.getId());
+    }
+
     /** A POS change authorized by an approver (D28, D40), with its reason; always made in a session. */
     public void recordApproved(String action, String entityType, UUID entityId, Order order, UUID approverId,
                                String reason, Map<String, Object> details) {
