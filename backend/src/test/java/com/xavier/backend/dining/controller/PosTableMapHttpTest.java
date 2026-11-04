@@ -12,17 +12,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.xavier.backend.access.Permission;
+import com.xavier.backend.dining.DiningFixtures;
 import com.xavier.backend.dining.DiningModuleTest;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 @DiningModuleTest
-@Import(DiningFixtures.class)
 class PosTableMapHttpTest {
 
     @Autowired

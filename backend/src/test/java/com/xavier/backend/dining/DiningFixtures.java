@@ -1,4 +1,4 @@
-package com.xavier.backend.dining.controller;
+package com.xavier.backend.dining;
 
 import static com.xavier.backend.dining.DiningActors.admin;
 import static com.xavier.backend.dining.DiningActors.inStore;
@@ -26,12 +26,12 @@ import tools.jackson.databind.json.JsonMapper;
  * dining HTTP tests, and reads the audit trail.
  */
 @TestComponent
-class DiningFixtures {
+public class DiningFixtures {
 
-    static final String AREAS = "/api/v1/backoffice/areas";
-    static final String TABLES = "/api/v1/backoffice/tables";
-    static final String POS_TABLES = "/api/v1/pos/tables";
-    static final JsonMapper JSON = JsonMapper.builder().build();
+    public static final String AREAS = "/api/v1/backoffice/areas";
+    public static final String TABLES = "/api/v1/backoffice/tables";
+    public static final String POS_TABLES = "/api/v1/pos/tables";
+    public static final JsonMapper JSON = JsonMapper.builder().build();
 
     private final MockMvc mvc;
     private final JdbcClient jdbc;
@@ -41,7 +41,7 @@ class DiningFixtures {
         this.jdbc = jdbc;
     }
 
-    UUID newStore() throws Exception {
+    public UUID newStore() throws Exception {
         String code = "D" + UUID.randomUUID().toString().substring(0, 8);
         String json = mvc.perform(post("/api/v1/backoffice/stores").with(admin(Permission.STORE_MANAGE)).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -51,19 +51,19 @@ class DiningFixtures {
         return id(json);
     }
 
-    UUID createArea(UUID store, String code) throws Exception {
+    public UUID createArea(UUID store, String code) throws Exception {
         return id(mvc.perform(post(AREAS).with(inStore(store, Permission.DINING_MANAGE)).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content(newArea(store, code)))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
     }
 
-    UUID createTable(UUID store, UUID area, String code) throws Exception {
+    public UUID createTable(UUID store, UUID area, String code) throws Exception {
         return id(mvc.perform(post(TABLES).with(inStore(store, Permission.DINING_MANAGE)).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content(newTable(store, area, code, 4)))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
     }
 
-    long audits(String action, String entityId, UUID store) {
+    public long audits(String action, String entityId, UUID store) {
         return jdbc.sql("""
                         SELECT count(*) FROM audit.audit_event
                         WHERE action = :action AND entity_id = :entity AND store_id = :store""")
@@ -71,18 +71,18 @@ class DiningFixtures {
                 .query(Long.class).single();
     }
 
-    static String newArea(UUID store, String code) {
+    public static String newArea(UUID store, String code) {
         return """
                 {"storeId": "%s", "code": "%s", "name": "Sala"}""".formatted(store, code);
     }
 
-    static String newTable(UUID store, UUID area, String code, int seats) {
+    public static String newTable(UUID store, UUID area, String code, int seats) {
         return """
                 {"storeId": "%s", "areaId": "%s", "code": "%s", "seats": %d}""".formatted(store, area, code, seats);
     }
 
     /** Fires {@code request} twice at the same instant (latch) and returns both HTTP statuses. */
-    static List<Integer> race(Callable<Integer> request) throws Exception {
+    public static List<Integer> race(Callable<Integer> request) throws Exception {
         CountDownLatch start = new CountDownLatch(1);
         Callable<Integer> gated = () -> {
             start.await();
