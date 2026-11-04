@@ -14,6 +14,7 @@ import com.xavier.backend.dining.repository.RestaurantTableRepository;
 import com.xavier.backend.dining.repository.RoomAreaRepository;
 import com.xavier.backend.dining.repository.TableOccupationRepository;
 import com.xavier.backend.dining.service.DiningChanges;
+import com.xavier.backend.dining.service.DiningRows;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
 import java.time.Clock;
 import java.util.HashMap;
@@ -29,6 +30,9 @@ import org.springframework.transaction.annotation.Transactional;
  * the caller's transaction ({@code MANDATORY}), so an order and its occupation commit or roll back together. It
  * does not authorize: the calling POS use case already did (D27). The session store (D39) is the store a table
  * must belong to. Every change is audited as the current actor (D41) and notifies {@code TABLES} after commit.
+ *
+ * <p>Writes need an authenticated session actor in the security context: the session's store is the store a new
+ * occupation must be in, and the audit records that actor. A call from a listener or job (no session) fails.
  */
 @Service
 public class DiningApi {
@@ -40,15 +44,17 @@ public class DiningApi {
     private final RoomAreaRepository areas;
     private final AccessPolicy accessPolicy;
     private final DiningChanges changes;
+    private final DiningRows rows;
     private final Clock clock;
 
     DiningApi(TableOccupationRepository occupations, RestaurantTableRepository tables, RoomAreaRepository areas,
-              AccessPolicy accessPolicy, DiningChanges changes, Clock clock) {
+              AccessPolicy accessPolicy, DiningChanges changes, DiningRows rows, Clock clock) {
         this.occupations = occupations;
         this.tables = tables;
         this.areas = areas;
         this.accessPolicy = accessPolicy;
         this.changes = changes;
+        this.rows = rows;
         this.clock = clock;
     }
 
@@ -128,13 +134,13 @@ public class DiningApi {
     }
 
     /**
-     * Locks the table row, then shares the area row (always in that order), so a concurrent opening, lock or
-     * deactivation of the same table or area waits for this transaction and then sees its outcome.
+     * Locks and re-reads the table row, then the area row (always in that order), so a concurrent opening, lock or
+     * deactivation of the same table or area waits for this transaction and then sees its outcome, also when the
+     * caller read the table earlier in its transaction.
      */
     private RestaurantTable lockedOpenableTable(UUID tableId, UUID storeId) {
-        RestaurantTable table = tables.findForUpdateById(tableId)
-                .orElseThrow(() -> new DiningNotFoundException("RestaurantTable", tableId));
-        table.requireOpenable(storeId, areas.findForShareById(table.getAreaId()).orElseThrow());
+        RestaurantTable table = rows.lockTable(tableId);
+        table.requireOpenable(storeId, rows.shareArea(table.getAreaId()));
         if (occupations.findByTableIdAndClosedAtIsNull(tableId).isPresent()) {
             throw TableOccupiedException.table(tableId);
         }

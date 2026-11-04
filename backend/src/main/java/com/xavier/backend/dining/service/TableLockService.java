@@ -28,14 +28,16 @@ public class TableLockService {
     private final TableOccupationRepository occupations;
     private final AccessPolicy accessPolicy;
     private final DiningChanges changes;
+    private final DiningRows rows;
     private final Clock clock;
 
     TableLockService(RestaurantTableRepository tables, TableOccupationRepository occupations,
-                     AccessPolicy accessPolicy, DiningChanges changes, Clock clock) {
+                     AccessPolicy accessPolicy, DiningChanges changes, DiningRows rows, Clock clock) {
         this.tables = tables;
         this.occupations = occupations;
         this.accessPolicy = accessPolicy;
         this.changes = changes;
+        this.rows = rows;
         this.clock = clock;
     }
 
@@ -65,7 +67,7 @@ public class TableLockService {
         if (!storeId.equals(pos.storeId())) {
             throw new AccessDeniedException("Table " + tableId + " is not in the session's store");
         }
-        return tables.findForUpdateById(tableId).orElseThrow(() -> new DiningNotFoundException(ENTITY, tableId));
+        return rows.lockTable(tableId);
     }
 
     private void changed(String action, RestaurantTable table, Map<String, Object> details) {

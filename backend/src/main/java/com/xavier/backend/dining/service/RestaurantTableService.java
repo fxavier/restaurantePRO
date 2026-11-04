@@ -37,17 +37,19 @@ public class RestaurantTableService {
     private final RestaurantTableRepository tables;
     private final RoomAreaRepository areas;
     private final TableOccupationRepository occupations;
+    private final DiningRows rows;
     private final OrganizationApi organization;
     private final AccessPolicy accessPolicy;
     private final DiningChanges audit;
     private final Clock clock;
 
     RestaurantTableService(RestaurantTableRepository tables, RoomAreaRepository areas,
-                           TableOccupationRepository occupations, OrganizationApi organization,
+                           TableOccupationRepository occupations, DiningRows rows, OrganizationApi organization,
                            AccessPolicy accessPolicy, DiningChanges audit, Clock clock) {
         this.tables = tables;
         this.areas = areas;
         this.occupations = occupations;
+        this.rows = rows;
         this.organization = organization;
         this.accessPolicy = accessPolicy;
         this.audit = audit;
@@ -72,7 +74,7 @@ public class RestaurantTableService {
     public RestaurantTableSummary update(UUID id, RestaurantTableUpdateRequest request) {
         accessPolicy.require(Permission.DINING_MANAGE,
                 tables.findStoreIdById(id).orElseThrow(() -> new DiningNotFoundException(ENTITY, id)));
-        RestaurantTable table = tables.findForUpdateById(id).orElseThrow(() -> new DiningNotFoundException(ENTITY, id));
+        RestaurantTable table = rows.lockTable(id);
         if (!request.active() && occupations.existsByTableIdAndClosedAtIsNull(id)) {
             throw new StillOccupiedException(ENTITY, id);
         }

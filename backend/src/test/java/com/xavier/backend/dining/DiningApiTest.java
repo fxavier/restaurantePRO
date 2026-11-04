@@ -12,7 +12,9 @@ import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.ErrorResponseException;
 
@@ -31,6 +33,9 @@ class DiningApiTest {
 
     @Autowired
     PlatformTransactionManager transactionManager;
+
+    @Autowired
+    JdbcClient jdbc;
 
     final UUID employee = UUID.randomUUID();
     UUID store;
@@ -206,6 +211,58 @@ class DiningApiTest {
         assertThat(fixtures.audits("TABLE_SUBTOTAL_PRINTED", occupation.id().toString(), store)).isEqualTo(1);
         assertRefused(() -> inPosTransaction(() -> run(() -> dining.markSubtotalPrinted(UUID.randomUUID()))),
                 409, "NO_OPEN_OCCUPATION");
+    }
+
+    @Test
+    void anOpeningSeesADeactivationCommittedAfterTheTableWasReadInTheSameTransaction() {
+        assertRefused(() -> inPosTransaction(() -> {
+            dining.tableState(table); // the table and area are now managed in this transaction
+            committedElsewhere("UPDATE dining.restaurant_table SET active = false WHERE id = :id", table);
+            return dining.openOccupation(table, UUID.randomUUID(), 2, employee);
+        }), 422, "TABLE_INACTIVE");
+    }
+
+    @Test
+    void anOpeningSeesAnAreaDeactivationCommittedAfterTheTableWasRead() {
+        assertRefused(() -> inPosTransaction(() -> {
+            dining.tableState(table);
+            committedElsewhere("UPDATE dining.room_area SET active = false WHERE id = :id", area);
+            return dining.openOccupation(table, UUID.randomUUID(), 2, employee);
+        }), 422, "TABLE_INACTIVE");
+    }
+
+    @Test
+    void anOpeningSeesALockCommittedAfterTheTableWasRead() {
+        assertRefused(() -> inPosTransaction(() -> {
+            dining.tableState(table);
+            committedElsewhere(LOCK_SQL, table);
+            return dining.openOccupation(table, UUID.randomUUID(), 2, employee);
+        }), 422, "TABLE_LOCKED");
+    }
+
+    @Test
+    void aMoveSeesALockOfItsTargetCommittedAfterTheTargetWasRead() throws Exception {
+        UUID order = UUID.randomUUID();
+        open(table, order);
+        UUID target = fixtures.createTable(store, area, "M2");
+
+        assertRefused(() -> inPosTransaction(() -> {
+            dining.tableState(target);
+            committedElsewhere(LOCK_SQL, target);
+            return dining.moveOccupation(order, target);
+        }), 422, "TABLE_LOCKED");
+    }
+
+    static final String LOCK_SQL = """
+            UPDATE dining.restaurant_table
+            SET locked_at = now(), locked_by_employee_id = gen_random_uuid(), lock_reason = 'x', version = version + 1
+            WHERE id = :id""";
+
+    /** Another session's committed write, while this thread's transaction is suspended. */
+    void committedElsewhere(String sql, UUID id) {
+        TransactionTemplate requiresNew = new TransactionTemplate(transactionManager);
+        requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        requiresNew.executeWithoutResult(status -> assertThat(jdbc.sql(sql).param("id", id).update()).isEqualTo(1));
     }
 
     @Test

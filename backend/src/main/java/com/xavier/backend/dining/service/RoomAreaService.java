@@ -33,15 +33,17 @@ public class RoomAreaService {
 
     private final RoomAreaRepository areas;
     private final TableOccupationRepository occupations;
+    private final DiningRows rows;
     private final OrganizationApi organization;
     private final AccessPolicy accessPolicy;
     private final DiningChanges audit;
     private final Clock clock;
 
-    RoomAreaService(RoomAreaRepository areas, TableOccupationRepository occupations, OrganizationApi organization,
-                    AccessPolicy accessPolicy, DiningChanges audit, Clock clock) {
+    RoomAreaService(RoomAreaRepository areas, TableOccupationRepository occupations, DiningRows rows,
+                    OrganizationApi organization, AccessPolicy accessPolicy, DiningChanges audit, Clock clock) {
         this.areas = areas;
         this.occupations = occupations;
+        this.rows = rows;
         this.organization = organization;
         this.accessPolicy = accessPolicy;
         this.audit = audit;
@@ -65,7 +67,7 @@ public class RoomAreaService {
     public RoomAreaSummary update(UUID id, RoomAreaUpdateRequest request) {
         accessPolicy.require(Permission.DINING_MANAGE,
                 areas.findStoreIdById(id).orElseThrow(() -> new DiningNotFoundException(ENTITY, id)));
-        RoomArea area = areas.findForUpdateById(id).orElseThrow(() -> new DiningNotFoundException(ENTITY, id));
+        RoomArea area = rows.lockArea(id);
         if (!request.active() && occupations.existsOpenInArea(id)) {
             throw new StillOccupiedException(ENTITY, id);
         }
