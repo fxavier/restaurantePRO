@@ -80,7 +80,7 @@ public class EmployeeService {
 
     @Transactional
     public EmployeeSummary update(UUID id, EmployeeUpdateRequest request) {
-        Employee employee = manageable(id);
+        Employee employee = controllable(id);
         OptimisticLocking.requireVersion(Employee.class, id, employee.getVersion(), request.version());
         employee.update(request.name(), request.active(), clock.instant());
         employees.saveAndFlush(employee);
@@ -106,7 +106,7 @@ public class EmployeeService {
 
     @Transactional
     public EmployeeSummary unlock(UUID id) {
-        Employee employee = manageable(id);
+        Employee employee = controllable(id);
         employee.unlock(clock.instant());
         employees.saveAndFlush(employee);
         audit("EMPLOYEE_UNLOCKED", employee, null, Map.of());
@@ -116,7 +116,7 @@ public class EmployeeService {
     /** A new PIN; the failed attempts were against the old one, so it also unlocks. */
     @Transactional
     public EmployeeSummary resetPin(UUID id, String pin) {
-        Employee employee = manageable(id);
+        Employee employee = controllable(id);
         employee.resetPin(encoder.encode(pin), clock.instant());
         employees.saveAndFlush(employee);
         audit("EMPLOYEE_PIN_RESET", employee, null, Map.of());
@@ -126,8 +126,7 @@ public class EmployeeService {
     @Transactional
     public AssignmentSummary addAssignment(UUID employeeId, AssignmentRequest request) {
         Role role = requireCanAssign(request.storeId(), request.roleId());
-        Employee employee = employees.findById(employeeId)
-                .orElseThrow(() -> new EmployeeNotFoundException(employeeId));
+        Employee employee = controllable(employeeId);
         if (assignments.existsByEmployeeIdAndStoreIdAndRoleId(employeeId, request.storeId(), role.getId())) {
             throw new DuplicateAssignmentException();
         }
@@ -182,7 +181,27 @@ public class EmployeeService {
         return assignment;
     }
 
-    /** The employee, if the actor may manage them: in one of their stores, or installation-wide. */
+    /**
+     * The employee, if the actor may change what they can do (PIN, lock, active, new stores): {@code EMPLOYEE_MANAGE}
+     * and every permission of the employee's role, in every store the employee works in. Otherwise a manager of one
+     * store could add a manager of another store to theirs, reset that PIN and log in as them over there.
+     * An employee without assignments needs an installation-wide grant.
+     */
+    private Employee controllable(UUID id) {
+        Employee employee = employees.findById(id).orElseThrow(() -> new EmployeeNotFoundException(id));
+        List<EmployeeStoreAssignment> held = assignments.findByEmployeeId(id);
+        if (held.isEmpty()) {
+            accessPolicy.require(Permission.EMPLOYEE_MANAGE);
+        }
+        for (EmployeeStoreAssignment assignment : held) {
+            accessPolicy.require(Permission.EMPLOYEE_MANAGE, assignment.getStoreId());
+            roles.findById(assignment.getRoleId()).orElseThrow(() -> new RoleNotFoundException(assignment.getRoleId()))
+                    .getPermissions().forEach(permission -> accessPolicy.require(permission, assignment.getStoreId()));
+        }
+        return employee;
+    }
+
+    /** The employee, if the actor may read them: manages one of their stores, or installation-wide. */
     private Employee manageable(UUID id) {
         Employee employee = employees.findById(id).orElseThrow(() -> new EmployeeNotFoundException(id));
         Actor actor = accessPolicy.current();

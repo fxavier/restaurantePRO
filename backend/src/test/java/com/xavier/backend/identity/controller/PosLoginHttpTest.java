@@ -146,7 +146,8 @@ class PosLoginHttpTest {
         Employee employee = lockedEmployee();
 
         mvc.perform(post("/api/v1/backoffice/employees/" + employee.id() + "/unlock")
-                        .with(IdentityFixtures.as(java.util.Set.of(Permission.EMPLOYEE_MANAGE.authority(storeA))))
+                        .with(IdentityFixtures.as(java.util.Set.of(Permission.EMPLOYEE_MANAGE.authority(storeA),
+                                Permission.DINING_VIEW.authority(storeA), Permission.CATALOG_VIEW.authority(storeA))))
                         .with(csrf()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.locked").value(false));

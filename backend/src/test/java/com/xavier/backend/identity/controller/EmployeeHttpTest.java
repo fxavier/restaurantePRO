@@ -146,12 +146,47 @@ class EmployeeHttpTest {
     }
 
     @Test
+    void aManagerCannotTakeOverAnEmployeeOfAnotherStore() throws Exception {
+        // E is a manager in store B only; M manages store A
+        Employee employee = fixtures.employee("4821", storeB, IdentityFixtures.MANAGER);
+
+        mvc.perform(post(EMPLOYEES + "/" + employee.id() + "/assignments").with(managerOf(storeA)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json("storeId", storeA, "roleId", IdentityFixtures.WAITER)))
+                .andExpect(status().isForbidden());
+
+        // even once E also works in A, M cannot change what E can do in B
+        mvc.perform(post(EMPLOYEES + "/" + employee.id() + "/assignments").with(admin()).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json("storeId", storeA, "roleId", IdentityFixtures.WAITER)))
+                .andExpect(status().isCreated());
+        mvc.perform(post(EMPLOYEES + "/" + employee.id() + "/reset-pin").with(managerOf(storeA)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"pin\": \"1111\"}"))
+                .andExpect(status().isForbidden());
+        mvc.perform(post(EMPLOYEES + "/" + employee.id() + "/unlock").with(managerOf(storeA)).with(csrf()))
+                .andExpect(status().isForbidden());
+        mvc.perform(put(EMPLOYEES + "/" + employee.id()).with(managerOf(storeA)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json("name", "Taken", "active", false, "version", 0)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void aManagerOfEveryStoreOfTheEmployeeResetsTheirPin() throws Exception {
+        Employee employee = fixtures.employee("4821", storeA, IdentityFixtures.WAITER);
+
+        mvc.perform(post(EMPLOYEES + "/" + employee.id() + "/reset-pin").with(managerOf(storeA)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"pin\": \"1111\"}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void assignmentsAddAndRemoveStoresAndRolesAndAreAudited() throws Exception {
         Employee employee = fixtures.employee("4821", storeA, IdentityFixtures.WAITER);
         String assignment = json("storeId", storeB, "roleId", IdentityFixtures.WAITER);
 
         UUID added = IdentityFixtures.id(mvc.perform(post(EMPLOYEES + "/" + employee.id() + "/assignments")
-                        .with(managerOf(storeB)).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .with(managerOf(storeA, storeB)).with(csrf()).contentType(MediaType.APPLICATION_JSON)
                         .content(assignment))
                 .andExpect(status().isCreated()).andReturn().getResponse());
         mvc.perform(post(EMPLOYEES + "/" + employee.id() + "/assignments").with(admin()).with(csrf())
@@ -193,8 +228,9 @@ class EmployeeHttpTest {
         mvc.perform(get(EMPLOYEES).with(managerOf(storeA))).andExpect(status().isForbidden());
     }
 
-    private static RequestPostProcessor managerOf(UUID store) {
-        return as(MANAGER_PERMISSIONS.stream().map(p -> p.authority(store)).collect(Collectors.toSet()));
+    private static RequestPostProcessor managerOf(UUID... stores) {
+        return as(java.util.Arrays.stream(stores).flatMap(store -> MANAGER_PERMISSIONS.stream()
+                .map(p -> p.authority(store))).collect(Collectors.toSet()));
     }
 
     private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder hire(
