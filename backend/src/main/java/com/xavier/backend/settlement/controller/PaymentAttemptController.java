@@ -2,6 +2,8 @@ package com.xavier.backend.settlement.controller;
 
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.settlement.model.dto.AttemptView;
+import com.xavier.backend.settlement.model.dto.CancelAttemptRequest;
+import com.xavier.backend.settlement.model.dto.ConfirmAttemptRequest;
 import com.xavier.backend.settlement.model.dto.CreateAttemptRequest;
 import com.xavier.backend.settlement.service.PaymentAttemptService;
 import com.xavier.backend.shared.idempotency.IdempotencyService;
@@ -44,6 +46,21 @@ class PaymentAttemptController {
             return "CREATED".equals(created.status()) ? ResponseEntity.accepted().location(location).body(created)
                     : ResponseEntity.created(location).body(created);
         });
+    }
+
+    /** EXTERNAL_TERMINAL PENDING → SUCCEEDED (D50 §7.5). */
+    @PostMapping("/{id}/confirm")
+    ResponseEntity<AttemptView> confirm(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
+                                        @Valid @RequestBody ConfirmAttemptRequest body, HttpServletRequest request) {
+        return idempotent.execute("settlement.attempt.confirm", key, request, body, AttemptView.class,
+                () -> ResponseEntity.ok(attempts.confirm(id, body)));
+    }
+
+    @PostMapping("/{id}/cancel")
+    ResponseEntity<AttemptView> cancel(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
+                                       @Valid @RequestBody CancelAttemptRequest body, HttpServletRequest request) {
+        return idempotent.execute("settlement.attempt.cancel", key, request, body, AttemptView.class,
+                () -> ResponseEntity.ok(attempts.cancel(id, body)));
     }
 
     @GetMapping("/{id}")

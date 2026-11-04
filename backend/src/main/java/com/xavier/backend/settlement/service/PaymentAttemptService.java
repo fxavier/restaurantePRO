@@ -15,6 +15,9 @@ import com.xavier.backend.settlement.model.AttemptStatus;
 import com.xavier.backend.settlement.model.PaymentAttempt;
 import com.xavier.backend.settlement.model.PaymentMethod;
 import com.xavier.backend.settlement.model.dto.AttemptView;
+import com.xavier.backend.settlement.model.dto.CancelAttemptRequest;
+import com.xavier.backend.settlement.model.dto.ConfirmAttemptRequest;
+import com.xavier.backend.settlement.repository.AttemptRef;
 import com.xavier.backend.settlement.model.dto.CreateAttemptRequest;
 import com.xavier.backend.settlement.repository.PaymentAttemptRepository;
 import com.xavier.backend.settlement.repository.PaymentMethodRepository;
@@ -49,12 +52,13 @@ public class PaymentAttemptService {
     private final OrdersApi orders;
     private final CashApi cash;
     private final SettlementAudit audit;
+    private final PaymentLocks paymentLocks;
     private final Clock clock;
 
     PaymentAttemptService(AccessPolicy accessPolicy, SettlementLocks locks, Bills bills,
                           PaymentMethodRepository methods, PaymentAttemptRepository attempts,
                           PaymentRecorder recorder, OrdersApi orders, CashApi cash, SettlementAudit audit,
-                          Clock clock) {
+                          PaymentLocks paymentLocks, Clock clock) {
         this.accessPolicy = accessPolicy;
         this.locks = locks;
         this.bills = bills;
@@ -64,6 +68,7 @@ public class PaymentAttemptService {
         this.orders = orders;
         this.cash = cash;
         this.audit = audit;
+        this.paymentLocks = paymentLocks;
         this.clock = clock;
     }
 
@@ -112,10 +117,52 @@ public class PaymentAttemptService {
     @Transactional(readOnly = true)
     public AttemptView get(UUID attemptId) {
         PosContext pos = accessPolicy.requirePos(Permission.PAYMENT_COLLECT);
-        UUID storeId = attempts.findStoreIdById(attemptId)
-                .orElseThrow(() -> new SettlementNotFoundException(SettlementAudit.ATTEMPT, attemptId));
-        accessPolicy.requireSessionStore(pos, storeId, SettlementAudit.ATTEMPT, attemptId);
+        authorized(pos, attemptId);
         return attempts.findById(attemptId).orElseThrow().toView();
+    }
+
+    /**
+     * EXTERNAL_TERMINAL PENDING → SUCCEEDED (D50 §7.5): the Payment, its allocation and the receipt in this
+     * transaction, under the order's lock. A second confirmation finds it SUCCEEDED: 409, nothing paid twice.
+     */
+    @Transactional
+    public AttemptView confirm(UUID attemptId, ConfirmAttemptRequest request) {
+        PosContext pos = accessPolicy.requirePos(Permission.PAYMENT_COLLECT);
+        PaymentAttempt attempt = lockedAttempt(pos, attemptId);
+        attempt.confirm(request.authorizationCode(), clock.instant());
+        attempts.saveAndFlush(attempt);
+        recorder.record(attempt);
+        return attempt.toView();
+    }
+
+    /**
+     * CREATED or PENDING (an integrated one only before its provider is called) → CANCELLED. When nothing of the
+     * order is open or paid any more, its payment lock is released (D49).
+     */
+    @Transactional
+    public AttemptView cancel(UUID attemptId, CancelAttemptRequest request) {
+        PosContext pos = accessPolicy.requirePos(Permission.PAYMENT_COLLECT);
+        PaymentAttempt attempt = lockedAttempt(pos, attemptId);
+        attempt.cancel(request.reason(), pos.employeeId(), clock.instant());
+        attempts.saveAndFlush(attempt);
+        audit.attempt("PAYMENT_ATTEMPT_CANCELLED", attempt.getId(), attempt.getStoreId(), attempt.getOrderId(),
+                attempt.getTerminalId(), null, request.reason(), details(attempt));
+        paymentLocks.releaseIfIdle(attempt.getOrderId());
+        return attempt.toView();
+    }
+
+    /** D42 then D51: the attempt's store (404, 403), the order's settlement lock, then the attempt as committed. */
+    PaymentAttempt lockedAttempt(PosContext pos, UUID attemptId) {
+        AttemptRef ref = authorized(pos, attemptId);
+        locks.lockOrder(ref.orderId());
+        return attempts.findById(attemptId).orElseThrow();
+    }
+
+    private AttemptRef authorized(PosContext pos, UUID attemptId) {
+        AttemptRef ref = attempts.findRefById(attemptId)
+                .orElseThrow(() -> new SettlementNotFoundException(SettlementAudit.ATTEMPT, attemptId));
+        accessPolicy.requireSessionStore(pos, ref.storeId(), SettlementAudit.ATTEMPT, attemptId);
+        return ref;
     }
 
     private PaymentMethod activeMethod(String code) {

@@ -26,9 +26,11 @@ public interface PaymentAttemptRepository extends JpaRepository<PaymentAttempt, 
 
     long countByStatus(AttemptStatus status);
 
-    /** The store of an attempt, read alone before authorizing a command on it (D42). */
-    @Query("select a.storeId from PaymentAttempt a where a.id = :id")
-    Optional<UUID> findStoreIdById(@Param("id") UUID id);
+    /** The store and order of an attempt, read alone before authorizing a command on it (D42). */
+    @Query("""
+            select new com.xavier.backend.settlement.repository.AttemptRef(a.storeId, a.orderId)
+            from PaymentAttempt a where a.id = :id""")
+    Optional<AttemptRef> findRefById(@Param("id") UUID id);
 
     /** D48 sweeper: attempts of {@code kind} in {@code status} not touched since {@code before}, oldest first. */
     @Query("""
