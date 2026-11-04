@@ -1,0 +1,12 @@
+[%autowidth.stretch, cols="h,a"]
+|===
+|Base package
+|`com.xavier.backend.organization`
+|Spring components
+|_Services_
+
+* `c.x.b.o.OrganizationApi`
+|Bean references
+|* `c.x.b.a.AuditLog` (in Audit)
+* `c.x.b.a.AccessPolicy` (in Access)
+|===
