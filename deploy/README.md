@@ -93,7 +93,6 @@ On a new server, copy the archive into `deploy/backups/`, then restore the confi
 
 ```bash
 A=backups/restaurantpro-<timestamp>.tar.age    # encrypted archive; key.txt is the private key, kept off the server
-mkdir -p backups
 age -d -i key.txt "$A" | tar -xf - config      # unencrypted archive (.tar): tar -xf "$A" config
 cp config/.env config/compose.yaml config/Caddyfile .
 mkdir -m 700 secrets && cp config/secrets/* secrets/   # only encrypted archives hold secrets/; otherwise recreate them
