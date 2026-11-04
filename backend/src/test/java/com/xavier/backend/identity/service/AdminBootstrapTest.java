@@ -134,6 +134,30 @@ class AdminBootstrapTest {
                 .hasMessageContaining("restaurantpro.bootstrap.admin");
     }
 
+    @Test
+    void theListenerKeepsThePublicationOutstandingWhenThePasswordFileIsUnreadable() {
+        AdminBootstrapProperties unreadable = new AdminBootstrapProperties(IdentityFixtures.unique("admin"),
+                folder.resolve("missing"));
+
+        assertThatThrownBy(() -> bootstrap.onCompanyBootstrapped(unreadable))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void theListenerKeepsThePublicationOutstandingWhenThePasswordIsWeak() throws Exception {
+        AdminBootstrapProperties weak = settings(IdentityFixtures.unique("admin"), "short");
+
+        assertThatThrownBy(() -> bootstrap.onCompanyBootstrapped(weak)).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void theListenerCompletesOnceTheAdminExists() throws Exception {
+        AdminBootstrapProperties configured = settings(IdentityFixtures.unique("admin"), PASSWORD);
+
+        bootstrap.onCompanyBootstrapped(configured);
+        bootstrap.onCompanyBootstrapped(configured); // re-delivered: nothing to do, no failure
+    }
+
     private AdminBootstrapProperties settings(String username, String password) throws IOException {
         Path file = Files.writeString(folder.resolve(username), password);
         return new AdminBootstrapProperties(username, file);

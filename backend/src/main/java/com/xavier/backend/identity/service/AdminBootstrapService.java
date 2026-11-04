@@ -55,13 +55,17 @@ public class AdminBootstrapService {
     }
 
     /**
-     * {@code CompanyBootstrapped} is published once per installation. When the admin cannot be created yet
-     * (settings missing, unreadable or weak password), this fails after the WARN, so the publication stays
-     * outstanding and the next start with fixed settings creates the admin (republish on restart, D19).
+     * {@code CompanyBootstrapped} is published once per installation. Whenever the admin account does not exist
+     * afterwards (settings missing, password file unreadable, password too weak), this fails after the WARN, so
+     * the publication stays outstanding and the next start with fixed settings creates the admin (republish on
+     * restart, D19).
      */
+    @Transactional
     void onCompanyBootstrapped(AdminBootstrapProperties configured) {
-        if (!createAdmin(configured) && !configured.isComplete()) {
-            throw new IllegalStateException("No administrator yet: restaurantpro.bootstrap.admin.* is not set");
+        createAdmin(configured);
+        if (!configured.isComplete() || !accounts.existsByUsername(UserAccount.normalize(configured.username()))) {
+            throw new IllegalStateException("No administrator yet: fix restaurantpro.bootstrap.admin.* "
+                    + "(see the WARN above) and restart");
         }
     }
 
