@@ -99,6 +99,22 @@ class CompanyProfileHttpTest {
     }
 
     @Test
+    @WithActor(permissions = {Permission.COMPANY_MANAGE, Permission.STORE_MANAGE})
+    void theCurrencyCannotChangeOnceAStoreExists() throws Exception {
+        mvc.perform(post("/api/v1/backoffice/stores").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"code": "C%s", "name": "Store", "timezone": "Africa/Maputo"}"""
+                                .formatted(UUID.randomUUID().toString().substring(0, 8))))
+                .andExpect(status().isCreated());
+        JsonNode current = currentProfile();
+
+        mvc.perform(put(URL).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content(body("Sol", "1", "EUR", current.get("version").asLong())))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("currency")));
+    }
+
+    @Test
     @WithActor(permissions = Permission.COMPANY_MANAGE)
     void aMissingFieldIsAValidationError() throws Exception {
         mvc.perform(put(URL).with(csrf()).contentType(MediaType.APPLICATION_JSON)

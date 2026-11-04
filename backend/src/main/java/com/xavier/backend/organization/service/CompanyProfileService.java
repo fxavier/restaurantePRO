@@ -9,6 +9,7 @@ import com.xavier.backend.organization.model.CompanyProfile;
 import com.xavier.backend.organization.model.dto.CompanyProfileUpdateRequest;
 import com.xavier.backend.organization.model.dto.CompanyProfileView;
 import com.xavier.backend.organization.repository.CompanyProfileRepository;
+import com.xavier.backend.organization.repository.StoreRepository;
 import java.time.Clock;
 import java.util.Map;
 import org.springframework.stereotype.Service;
@@ -19,13 +20,15 @@ import org.springframework.transaction.annotation.Transactional;
 public class CompanyProfileService {
 
     private final CompanyProfileRepository companies;
+    private final StoreRepository stores;
     private final AccessPolicy accessPolicy;
     private final AuditLog auditLog;
     private final Clock clock;
 
-    CompanyProfileService(CompanyProfileRepository companies, AccessPolicy accessPolicy, AuditLog auditLog,
-                          Clock clock) {
+    CompanyProfileService(CompanyProfileRepository companies, StoreRepository stores, AccessPolicy accessPolicy,
+                          AuditLog auditLog, Clock clock) {
         this.companies = companies;
+        this.stores = stores;
         this.accessPolicy = accessPolicy;
         this.auditLog = auditLog;
         this.clock = clock;
@@ -42,7 +45,7 @@ public class CompanyProfileService {
         accessPolicy.require(Permission.COMPANY_MANAGE);
         CompanyProfile company = company();
         OptimisticLocking.requireVersion(CompanyProfile.class, Boolean.TRUE, company.getVersion(), request.version());
-        company.update(request.name(), request.taxId(), request.country(), request.currency(), false,
+        company.update(request.name(), request.taxId(), request.country(), request.currency(), stores.count() > 0,
                 clock.instant());
         companies.saveAndFlush(company); // flush now: the response carries the new version
         auditLog.record(new AuditEntry(accessPolicy.current().userId(), null, "COMPANY_PROFILE_UPDATED",
