@@ -8,7 +8,7 @@ Owner: `software-architect`. Sources: [product_description.md](../product_descri
 - `shared` is `Type.OPEN`. It holds only technical types (D14) and depends on nothing.
 - `config` holds the security filter chains and the correlation-id filter. Nothing depends on it.
 - Public API is the module's **root package** plus any `@NamedInterface` (`model/dto`, `model/event`, a `<Module>Api` facade). Entities, repositories, services and controllers stay in subpackages and are internal (D12).
-- Module docs are written on every test run to [modules/](modules/) (`ModularityTests.writesModuleDocumentation`). Commit them when they change.
+- Module docs are written on every test run to [modules/](modules/) (`ModularityTests.generatesModuleDocumentation`, a generator that also asserts each file exists). Commit them when they change.
 
 Module layout (D12): `model/`, `model/dto/`, `model/event/`, `repository/`, `service/`, `controller/`, `exception/`. Create a package only when it has content.
 
@@ -39,8 +39,8 @@ Module layout (D12): `model/`, `model/dto/`, `model/event/`, `repository/`, `ser
   - Crash-safe: the action runs only while holding the record's row lock (`FOR UPDATE NOWAIT`), and its effects and the stored response commit together. After a crash or a failed action, the next request with that key takes the claim over and runs it once.
   - Never write your own (`IdempotencyServiceTest`).
   - Known limits: a replay returns the status and JSON body only, no headers such as `Location`; a `String` body comes back as a JSON string. There is no retention yet. The action runs inside a DB transaction, so R2 external calls (payment, fiscal) need another pattern (spec §7).
-- **Audit** (D20): call `AuditLog.record(new AuditEntry(...))` inside the use case's `@Transactional` method. It requires an existing transaction (`MANDATORY`). Details carry no PIN, password, token or card data, and keys that look like secrets are rejected. The database refuses UPDATE, DELETE and TRUNCATE on `audit.audit_event` (`AuditLogTest`).
-- **Authorization** (D27): the first line of every use case is `accessPolicy.require(Permission.X, storeId)` (or `require(Permission.X)` for installation-wide operations). Controllers never authorize. Authorities are `PERM_X` (all stores) and `PERM_X@<storeId>` (`AccessPolicyTest`, `SecurityConfigTest`).
+- **Audit** (D20): call `AuditLog.record(new AuditEntry(...))` inside the use case's `@Transactional` method. It requires an existing transaction (`MANDATORY`). Details carry no PIN, password, token or card data, and keys that look like secrets are rejected. The secret-key guard checks top-level keys only. The database refuses UPDATE, DELETE and TRUNCATE on `audit.audit_event` (`AuditLogTest`).
+- **Authorization** (D27): the first line of every use case is `accessPolicy.require(Permission.X, storeId)` (or `require(Permission.X)` for installation-wide operations). Controllers never authorize. Authorities are `PERM_X` (all stores) and `PERM_X@<storeId>`. `Actor.authorities()` is the only source for these decisions; S2 must build the `Authentication`'s granted authorities from the same set (actuator URL rules read those). Denials are logged at WARN (`AccessPolicyTest`, `SecurityConfigTest`).
 
 ## Persistence
 
