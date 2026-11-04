@@ -133,7 +133,11 @@ class WorkingCopy {
             Map<UUID, List<ItemVariant>> variantsByItem = variants.findAllByItemIdIn(itemIds).stream()
                     .sorted(Comparator.comparing(ItemVariant::getCode))
                     .collect(Collectors.groupingBy(ItemVariant::getItemId));
+            Set<UUID> loadedVariants = variantsByItem.values().stream().flatMap(List::stream)
+                    .map(ItemVariant::getId).collect(Collectors.toSet());
+            // separate READ COMMITTED reads: a barcode may point at a variant created after the variants were read
             Map<UUID, List<Barcode>> barcodesByItem = barcodes.findAllByItemIdIn(itemIds).stream()
+                    .filter(barcode -> barcode.getVariantId() == null || loadedVariants.contains(barcode.getVariantId()))
                     .sorted(Comparator.comparing(Barcode::getCode))
                     .collect(Collectors.groupingBy(Barcode::getItemId));
             return new CatalogSnapshot(CatalogSnapshot.SCHEMA_VERSION, storeId, releaseId, version, at,
