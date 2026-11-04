@@ -1,17 +1,17 @@
 package com.xavier.backend.dining.exception;
 
+import com.xavier.backend.shared.exception.BusinessRuleException;
 import java.util.UUID;
-import org.springframework.http.HttpStatus;
 
 /**
  * The table cannot take an occupation (r2-decisions §4 dining): it is in another store than the session
  * ({@code STORE_MISMATCH}), it or its area is inactive ({@code TABLE_INACTIVE}), or it is locked
  * ({@code TABLE_LOCKED}). 422.
  */
-public class TableUnavailableException extends DiningProblemException {
+public class TableUnavailableException extends BusinessRuleException {
 
     private TableUnavailableException(String code, String detail) {
-        super(HttpStatus.UNPROCESSABLE_CONTENT, code, detail);
+        super(code, detail);
     }
 
     public static TableUnavailableException storeMismatch(UUID tableId) {

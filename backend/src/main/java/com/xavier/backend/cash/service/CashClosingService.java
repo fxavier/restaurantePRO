@@ -37,7 +37,6 @@ import java.util.Currency;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -184,17 +183,8 @@ public class CashClosingService {
     @Transactional(readOnly = true)
     public PageResponse<ClosingView> list(UUID storeId, UUID cashDayId, CashClosingStatus status,
                                           Pageable pageable) {
-        requireViewOrApprove(storeId);
+        accessPolicy.requireAny(storeId, Permission.CASH_VIEW, Permission.CASH_CLOSING_APPROVE);
         return PageResponse.from(closings.search(storeId, cashDayId, status, pageable).map(CashClosing::toView));
-    }
-
-    private void requireViewOrApprove(UUID storeId) {
-        Set<String> authorities = accessPolicy.current().authorities();
-        if (authorities.contains(Permission.CASH_CLOSING_APPROVE.authority())
-                || authorities.contains(Permission.CASH_CLOSING_APPROVE.authority(storeId))) {
-            return;
-        }
-        accessPolicy.require(Permission.CASH_VIEW, storeId); // 403, logged, without either
     }
 
     private void requireAllSessionsClosed(CashRegister register, CashDay day) {

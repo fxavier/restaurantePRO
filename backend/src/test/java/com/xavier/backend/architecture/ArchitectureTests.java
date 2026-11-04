@@ -51,4 +51,9 @@ class ArchitectureTests {
     void eventsAreRecords() {
         ArchitectureRules.EVENTS_ARE_RECORDS.check(PRODUCTION);
     }
+
+    @Test
+    void codedErrorsUseTheSharedExceptions() {
+        ArchitectureRules.CODED_ERRORS_USE_THE_SHARED_EXCEPTIONS.check(PRODUCTION);
+    }
 }

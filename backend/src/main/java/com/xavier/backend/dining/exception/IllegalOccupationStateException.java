@@ -1,16 +1,16 @@
 package com.xavier.backend.dining.exception;
 
+import com.xavier.backend.shared.exception.ConflictException;
 import java.util.UUID;
-import org.springframework.http.HttpStatus;
 
 /**
  * The occupation is not open (§8.3 OPEN → CLOSED): it is already closed ({@code OCCUPATION_CLOSED}), or the order
  * has no open occupation ({@code NO_OPEN_OCCUPATION}). 409.
  */
-public class IllegalOccupationStateException extends DiningProblemException {
+public class IllegalOccupationStateException extends ConflictException {
 
     private IllegalOccupationStateException(String code, String detail) {
-        super(HttpStatus.CONFLICT, code, detail);
+        super(code, detail);
     }
 
     public static IllegalOccupationStateException closed(UUID occupationId) {

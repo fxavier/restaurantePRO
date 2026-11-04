@@ -92,11 +92,17 @@ class IdempotencyRecordStore {
                 .update();
     }
 
-    /** D47.4. @return the number of deleted records */
-    int deleteCompletedBefore(Instant cutoff) {
+    /**
+     * D47.4: completed records that completed before {@code cutoff}, and claims still {@code IN_PROGRESS} that were
+     * created before it (abandoned: the owner crashed or its action was refused, and nobody retries that late).
+     *
+     * @return the number of deleted records
+     */
+    int deleteExpiredBefore(Instant cutoff) {
         return jdbc.sql("""
                         DELETE FROM shared.idempotency_record
-                        WHERE status = 'COMPLETED' AND completed_at < :cutoff
+                        WHERE (status = 'COMPLETED' AND completed_at < :cutoff)
+                           OR (status = 'IN_PROGRESS' AND created_at < :cutoff)
                         """)
                 .param("cutoff", Timestamp.from(cutoff))
                 .update();

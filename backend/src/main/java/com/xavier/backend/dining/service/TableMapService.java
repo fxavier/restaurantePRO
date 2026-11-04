@@ -2,7 +2,6 @@ package com.xavier.backend.dining.service;
 
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
-import com.xavier.backend.access.PosContext;
 import com.xavier.backend.dining.model.RestaurantTable;
 import com.xavier.backend.dining.model.RoomArea;
 import com.xavier.backend.dining.model.TableOccupation;
@@ -17,9 +16,6 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,8 +25,6 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class TableMapService {
-
-    private static final Logger log = LoggerFactory.getLogger(TableMapService.class);
 
     private final RoomAreaRepository areas;
     private final RestaurantTableRepository tables;
@@ -50,14 +44,7 @@ public class TableMapService {
      */
     @Transactional(readOnly = true)
     public TableMap tableMap(UUID requestedStoreId) {
-        PosContext pos = accessPolicy.requirePos(Permission.DINING_VIEW);
-        UUID storeId = pos.storeId();
-        if (requestedStoreId != null && !requestedStoreId.equals(storeId)) {
-            log.warn("Access denied: not the session's store: kind=EMPLOYEE employee={} terminal={} permission={} "
-                    + "sessionStore={} store={}", pos.employeeId(), pos.terminalId(), Permission.DINING_VIEW,
-                    storeId, requestedStoreId);
-            throw new AccessDeniedException("The table map is the session's store only");
-        }
+        UUID storeId = accessPolicy.requirePos(Permission.DINING_VIEW, requestedStoreId).storeId();
         Map<UUID, TableOccupation> openByTable = occupations.findByStoreIdAndClosedAtIsNull(storeId).stream()
                 .collect(Collectors.toMap(TableOccupation::getTableId, Function.identity()));
         Map<UUID, List<TableMap.Table>> tablesByArea = tables.findByStoreIdAndActiveTrueOrderByCode(storeId).stream()
