@@ -35,7 +35,7 @@ Module layout (D12): `model/`, `model/dto/`, `model/event/`, `repository/`, `ser
   `idempotencyService.execute("<module>.<operation>:" + actorId, key, request.getMethod() + " " + request.getRequestURI(), body, () -> ResponseEntity...)`, with `key` from `@RequestHeader("Idempotency-Key")`. Call it from the controller, outside any transaction: called inside one it throws `IllegalStateException` before claiming the key. The request identity is the SHA-256 of `target` plus the canonical JSON body.
   - Same key and same target+body → the stored response is replayed.
   - Same key with a different target or body → 422.
-  - A duplicate while another request holds the key → 409.
+  - A duplicate while another request holds the key → 409. Only SQLSTATE 55P03 (lock_not_available) means that; a deadlock (40P01) or serialization failure (40001) propagates.
   - A missing, blank or over-255-character key → 400.
   - Crash-safe: the action runs only while holding the record's row lock (`FOR UPDATE NOWAIT`), and its effects and the stored response commit together. After a crash or a failed action, the next request with that key takes the claim over and runs it once.
   - Never write your own (`IdempotencyServiceTest`).

@@ -5,7 +5,6 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Optional;
 import org.springframework.dao.DataAccessException;
-import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
@@ -62,12 +61,18 @@ class IdempotencyRecordStore {
         }
     }
 
-    /** PostgreSQL SQLSTATE 55P03 (lock_not_available); Spring leaves it uncategorized for JDBC. */
-    private static boolean isLockNotAvailable(DataAccessException e) {
-        if (e instanceof PessimisticLockingFailureException) {
-            return true;
+    /**
+     * PostgreSQL SQLSTATE 55P03 (lock_not_available) only. Spring puts deadlock (40P01) and serialization
+     * failure (40001) in the same {@code PessimisticLockingFailureException} family; those are not "another
+     * request holds the key" and must propagate instead of becoming a false 409.
+     */
+    static boolean isLockNotAvailable(DataAccessException e) {
+        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+            if (cause instanceof SQLException sql && LOCK_NOT_AVAILABLE.equals(sql.getSQLState())) {
+                return true;
+            }
         }
-        return e.getMostSpecificCause() instanceof SQLException sql && LOCK_NOT_AVAILABLE.equals(sql.getSQLState());
+        return false;
     }
 
     void complete(String scope, String key, int responseStatus, String responseBody, Instant now) {
