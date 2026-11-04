@@ -42,6 +42,7 @@ public class OrderCancellation {
         if (order.getTableId() != null) {
             dining.closeOccupation(order.getId(), CloseReason.ORDER_CANCELLED);
         }
-        changes.record("ORDER_CANCELLED", order, Map.of("reason", reason));
+        changes.recordWithReason("ORDER_CANCELLED", OrderChanges.ENTITY, order.getId(), order, null, reason,
+                Map.of("orderNumber", order.getOrderNumber()));
     }
 }

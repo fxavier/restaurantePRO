@@ -97,7 +97,7 @@ public class OrderTransferService {
         });
         audit(transfer, source, target, moved);
         if (request.cancelSourceWhenEmpty() && cancellation.billsNothing(source)) {
-            cancellation.cancel(source, pos.employeeId(), "MERGED_INTO " + targetId);
+            cancellation.cancel(source, pos.employeeId(), "Merged into order " + target.getOrderNumber());
         }
         return new TransferView(transfer.getId(), sourceId, targetId, transfer.getTransferredAt(), moved,
                 views.of(source), views.of(target));

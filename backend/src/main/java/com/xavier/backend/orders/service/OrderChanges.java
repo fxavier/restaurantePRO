@@ -48,8 +48,11 @@ public class OrderChanges {
         changeNotifier.notifyAfterCommit(order.getStoreId(), ChangeTopic.ORDER, order.getId());
     }
 
-    /** A POS change authorized by an approver (D28, D40), with its reason; always made in a session. */
-    public void recordApproved(String action, String entityType, UUID entityId, Order order, UUID approverId,
+    /**
+     * A POS change with its reason and, when one authorized it, its approver (D28, D40; {@code null} otherwise);
+     * always made in a session.
+     */
+    public void recordWithReason(String action, String entityType, UUID entityId, Order order, UUID approverId,
                                String reason, Map<String, Object> details) {
         auditLog.recordAsCurrentActor(action, entityType, entityId.toString(), order.getStoreId(), approverId, reason,
                 details);

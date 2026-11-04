@@ -102,7 +102,7 @@ public class LineVoidService {
                 order.getOrderNumber(), order.getTableCode(), new Line(line.getId(), snapshot.itemCode(),
                 snapshot.description(), snapshot.variantName(), line.getQuantity(), line.getNotes(),
                 snapshot.destination()), voided.getQuantity(), voided.getReason(), voided.getVoidedAt()));
-        changes.recordApproved("ORDER_LINE_VOIDED", ENTITY, voided.getId(), order, approval.approverEmployeeId(),
+        changes.recordWithReason("ORDER_LINE_VOIDED", ENTITY, voided.getId(), order, approval.approverEmployeeId(),
                 voided.getReason(), Map.of("orderId", orderId.toString(), "lineId", line.getId().toString(),
                         "quantity", voided.getQuantity().toPlainString(), "wasted", voided.isWasted()));
         return new VoidView(voided.getId(), orderId, line.getId(), voided.getQuantity(), voided.getReason(),

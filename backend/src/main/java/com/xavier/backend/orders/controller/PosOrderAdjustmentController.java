@@ -1,7 +1,9 @@
 package com.xavier.backend.orders.controller;
 
 import com.xavier.backend.access.AccessPolicy;
+import com.xavier.backend.orders.model.dto.CancelOrderRequest;
 import com.xavier.backend.orders.model.dto.OrderView;
+import com.xavier.backend.orders.model.dto.SubtotalView;
 import com.xavier.backend.orders.model.dto.TableMoveRequest;
 import com.xavier.backend.orders.model.dto.TransferRequest;
 import com.xavier.backend.orders.model.dto.TransferView;
@@ -9,7 +11,9 @@ import com.xavier.backend.orders.model.dto.VoidLineRequest;
 import com.xavier.backend.orders.model.dto.VoidView;
 import com.xavier.backend.orders.service.Approval;
 import com.xavier.backend.orders.service.LineVoidService;
+import com.xavier.backend.orders.service.OrderCancelService;
 import com.xavier.backend.orders.service.OrderTransferService;
+import com.xavier.backend.orders.service.SubtotalService;
 import com.xavier.backend.orders.service.TableMoveService;
 import com.xavier.backend.shared.idempotency.IdempotencyService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -35,13 +39,18 @@ class PosOrderAdjustmentController {
     private final LineVoidService voids;
     private final OrderTransferService transfers;
     private final TableMoveService tableMoves;
+    private final OrderCancelService cancels;
+    private final SubtotalService subtotals;
     private final Idempotent idempotent;
 
     PosOrderAdjustmentController(LineVoidService voids, OrderTransferService transfers, TableMoveService tableMoves,
+                                 OrderCancelService cancels, SubtotalService subtotals,
                                  IdempotencyService idempotency, AccessPolicy accessPolicy) {
         this.voids = voids;
         this.transfers = transfers;
         this.tableMoves = tableMoves;
+        this.cancels = cancels;
+        this.subtotals = subtotals;
         this.idempotent = new Idempotent(idempotency, accessPolicy);
     }
 
@@ -73,5 +82,20 @@ class PosOrderAdjustmentController {
                                         @Valid @RequestBody TableMoveRequest body, HttpServletRequest request) {
         return idempotent.execute("orders.table.move", key, request, body, OrderView.class,
                 () -> ResponseEntity.ok(tableMoves.move(id, body)));
+    }
+
+    @PostMapping(ORDERS + "/{id}/cancel")
+    ResponseEntity<OrderView> cancel(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
+                                     @Valid @RequestBody CancelOrderRequest body, HttpServletRequest request) {
+        return idempotent.execute("orders.order.cancel", key, request, body, OrderView.class,
+                () -> ResponseEntity.ok(cancels.cancel(id, body)));
+    }
+
+    /** 202: production prints it after commit (the published event); the order itself does not change. */
+    @PostMapping(ORDERS + "/{id}/subtotal/print")
+    ResponseEntity<SubtotalView> printSubtotal(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
+                                               HttpServletRequest request) {
+        return idempotent.execute("orders.subtotal.print", key, request, null, SubtotalView.class,
+                () -> ResponseEntity.accepted().body(subtotals.print(id)));
     }
 }
