@@ -22,14 +22,19 @@ System_Boundary("BackendApplication_boundary", "BackendApplication", $tags="") {
     Component(BackendApplication.BackendApplication.Sharedkernel, "Shared kernel", $techn="Module", $descr="", $tags="", $link="")
     Component(BackendApplication.BackendApplication.Configuration, "Configuration", $techn="Module", $descr="", $tags="", $link="")
     Component(BackendApplication.BackendApplication.Organization, "Organization", $techn="Module", $descr="", $tags="", $link="")
+    Component(BackendApplication.BackendApplication.Dining, "Dining", $techn="Module", $descr="", $tags="", $link="")
   }
 
 }
 
+Rel(BackendApplication.BackendApplication.Dining, BackendApplication.BackendApplication.Audit, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Dining, BackendApplication.BackendApplication.Access, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Dining, BackendApplication.BackendApplication.Organization, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Organization, BackendApplication.BackendApplication.Sharedkernel, "depends on", $techn="", $tags="", $link="")
 Rel(BackendApplication.BackendApplication.Organization, BackendApplication.BackendApplication.Audit, "uses", $techn="", $tags="", $link="")
 Rel(BackendApplication.BackendApplication.Organization, BackendApplication.BackendApplication.Access, "uses", $techn="", $tags="", $link="")
 Rel(BackendApplication.BackendApplication.Configuration, BackendApplication.BackendApplication.Access, "depends on", $techn="", $tags="", $link="")
-Rel(BackendApplication.BackendApplication.Organization, BackendApplication.BackendApplication.Sharedkernel, "depends on", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Dining, BackendApplication.BackendApplication.Sharedkernel, "depends on", $techn="", $tags="", $link="")
 
 SHOW_LEGEND(true)
 hide stereotypes
