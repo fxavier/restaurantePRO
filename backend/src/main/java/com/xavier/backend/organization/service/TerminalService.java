@@ -2,12 +2,11 @@ package com.xavier.backend.organization.service;
 
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
-import com.xavier.backend.audit.AuditEntry;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.organization.exception.InvalidEnrollmentCodeException;
 import com.xavier.backend.organization.exception.StoreNotFoundException;
-import com.xavier.backend.organization.exception.TerminalNotFoundException;
 import com.xavier.backend.organization.exception.TerminalCodeTakenException;
+import com.xavier.backend.organization.exception.TerminalNotFoundException;
 import com.xavier.backend.organization.model.Terminal;
 import com.xavier.backend.organization.model.dto.EnrollmentCodeResponse;
 import com.xavier.backend.organization.model.dto.TerminalCreateRequest;
@@ -16,6 +15,7 @@ import com.xavier.backend.organization.model.dto.TerminalSummary;
 import com.xavier.backend.organization.model.event.TerminalRevoked;
 import com.xavier.backend.organization.repository.StoreRepository;
 import com.xavier.backend.organization.repository.TerminalRepository;
+import com.xavier.backend.shared.persistence.UniqueConstraints;
 import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
 import java.time.Duration;
@@ -25,7 +25,6 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -66,7 +65,7 @@ public class TerminalService {
         }
         Terminal terminal = saveNewTerminal(
                 Terminal.register(request.storeId(), request.code(), request.name(), clock.instant()));
-        audit("TERMINAL_CREATED", terminal, accessPolicy.current().userId());
+        audit("TERMINAL_CREATED", terminal);
         return terminal.toSummary();
     }
 
@@ -85,7 +84,7 @@ public class TerminalService {
         Instant expiresAt = clock.instant().plus(ENROLLMENT_CODE_VALIDITY);
         terminal.issueEnrollmentCode(TerminalSecrets.hashEnrollmentCode(code), expiresAt, clock.instant());
         terminals.saveAndFlush(terminal);
-        audit("TERMINAL_ENROLLMENT_CODE_ISSUED", terminal, accessPolicy.current().userId());
+        audit("TERMINAL_ENROLLMENT_CODE_ISSUED", terminal);
         return new EnrollmentCodeResponse(terminal.getId(), code, expiresAt);
     }
 
@@ -110,7 +109,9 @@ public class TerminalService {
         String token = TerminalSecrets.newDeviceToken();
         terminal.enroll(codeHash, TerminalSecrets.hashDeviceToken(token), now);
         terminals.saveAndFlush(terminal); // two devices racing with one code: @Version lets only one win
-        audit("TERMINAL_ENROLLED", terminal, null);
+        // nobody is logged in on a device that enrolls: a system row on that terminal
+        auditLog.recordAsSystem("TERMINAL_ENROLLED", "Terminal", terminal.getId().toString(), terminal.getStoreId(),
+                terminal.getId(), null, Map.of("code", terminal.getCode()));
         return new TerminalEnrollmentResponse(terminal.getId(), terminal.getStoreId(), token);
     }
 
@@ -125,28 +126,22 @@ public class TerminalService {
         Instant now = clock.instant();
         terminal.revoke(now);
         terminals.saveAndFlush(terminal);
-        audit("TERMINAL_REVOKED", terminal, accessPolicy.current().userId());
+        audit("TERMINAL_REVOKED", terminal);
         events.publishEvent(new TerminalRevoked(terminal.getId(), terminal.getStoreId(), now));
         return terminal.toSummary();
     }
 
     private Terminal saveNewTerminal(Terminal terminal) {
-        try {
-            return terminals.saveAndFlush(terminal);
-        } catch (DataIntegrityViolationException e) {
-            if (UniqueConstraint.isViolated(e, "terminal_store_code_uk")) {
-                throw new TerminalCodeTakenException(terminal.getCode());
-            }
-            throw e;
-        }
+        return UniqueConstraints.saveAndFlush(terminals, terminal,
+                () -> new TerminalCodeTakenException(terminal.getCode()), "terminal_store_code_uk");
     }
 
     private Terminal terminal(UUID id) {
         return terminals.findById(id).orElseThrow(() -> new TerminalNotFoundException(id));
     }
 
-    private void audit(String action, Terminal terminal, UUID actorId) {
-        auditLog.record(new AuditEntry(actorId, null, action, "Terminal", terminal.getId().toString(),
-                terminal.getStoreId(), terminal.getId(), null, Map.of("code", terminal.getCode())));
+    private void audit(String action, Terminal terminal) {
+        auditLog.recordAsCurrentActor(action, "Terminal", terminal.getId().toString(), terminal.getStoreId(), null,
+                null, Map.of("code", terminal.getCode()));
     }
 }

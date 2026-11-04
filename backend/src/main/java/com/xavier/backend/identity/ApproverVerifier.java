@@ -13,7 +13,7 @@ import org.springframework.stereotype.Service;
  * <p>Usage, inside the caller's use case, after its own {@code accessPolicy.require(...)}:
  * <pre>{@code
  * UUID approverId = approvers.verify(request.approverCode(), request.approverPin(), Permission.ORDER_VOID, storeId);
- * auditLog.record(new AuditEntry(actor.userId(), approverId, "ORDER_LINE_VOIDED", ...));
+ * auditLog.recordAsCurrentActor("ORDER_LINE_VOIDED", "Order", orderId, storeId, approverId, reason, details);
  * }</pre>
  *
  * <p>A wrong PIN counts toward the approver's lockout (5 → locked, audited) even when the caller's transaction

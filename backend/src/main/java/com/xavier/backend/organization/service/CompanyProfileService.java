@@ -2,7 +2,6 @@ package com.xavier.backend.organization.service;
 
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
-import com.xavier.backend.audit.AuditEntry;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.organization.exception.CompanyNotBootstrappedException;
 import com.xavier.backend.organization.model.CompanyProfile;
@@ -10,6 +9,7 @@ import com.xavier.backend.organization.model.dto.CompanyProfileUpdateRequest;
 import com.xavier.backend.organization.model.dto.CompanyProfileView;
 import com.xavier.backend.organization.repository.CompanyProfileRepository;
 import com.xavier.backend.organization.repository.StoreRepository;
+import com.xavier.backend.shared.persistence.OptimisticLocking;
 import java.time.Clock;
 import java.util.Map;
 import org.springframework.stereotype.Service;
@@ -48,9 +48,9 @@ public class CompanyProfileService {
         company.update(request.name(), request.taxId(), request.country(), request.currency(), stores.count() > 0,
                 clock.instant());
         companies.saveAndFlush(company); // flush now: the response carries the new version
-        auditLog.record(new AuditEntry(accessPolicy.current().userId(), null, "COMPANY_PROFILE_UPDATED",
-                "CompanyProfile", CompanyBootstrapService.AUDIT_ENTITY_ID, null, null, null,
-                Map.of("country", company.getCountry(), "currency", company.getCurrency().getCurrencyCode())));
+        auditLog.recordAsCurrentActor("COMPANY_PROFILE_UPDATED", "CompanyProfile",
+                CompanyBootstrapService.AUDIT_ENTITY_ID, null, null, null,
+                Map.of("country", company.getCountry(), "currency", company.getCurrency().getCurrencyCode()));
         return company.toView();
     }
 

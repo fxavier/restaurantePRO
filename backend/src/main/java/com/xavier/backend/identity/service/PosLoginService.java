@@ -50,7 +50,7 @@ public class PosLoginService {
         if (assignments.findByEmployeeIdAndStoreId(check.employeeId(), terminal.storeId()).isEmpty()) {
             throw refused(employeeCode, terminal, "employee not assigned to the terminal's store");
         }
-        Actor actor = new Actor(check.employeeId(), check.employeeId(), terminal.id(), terminal.storeId(),
+        Actor actor = Actor.employee(check.employeeId(), terminal.id(), terminal.storeId(),
                 authorities.ofEmployeeInStore(check.employeeId(), terminal.storeId()));
         audit.loggedIn(actor);
         return SessionView.of(actor, check.name(), false);

@@ -10,6 +10,8 @@ import com.xavier.backend.catalog.model.dto.FamilyCreateRequest;
 import com.xavier.backend.catalog.model.dto.FamilySummary;
 import com.xavier.backend.catalog.model.dto.FamilyUpdateRequest;
 import com.xavier.backend.catalog.repository.FamilyRepository;
+import com.xavier.backend.shared.persistence.OptimisticLocking;
+import com.xavier.backend.shared.persistence.UniqueConstraints;
 import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
 import java.util.Map;
@@ -86,7 +88,7 @@ public class FamilyService {
     }
 
     private Family save(Family family) {
-        return UniqueConstraint.saveAndFlush(families, family,
+        return UniqueConstraints.saveAndFlush(families, family,
                 () -> new CatalogCodeTakenException("Family code '" + family.getCode() + "'"), "family_code_uk");
     }
 

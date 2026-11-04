@@ -26,6 +26,9 @@ public class AuditEvent {
 
     private UUID actorId;
 
+    @Column(length = 10)
+    private String actorKind;
+
     private UUID approverId;
 
     @Column(nullable = false, length = 100)
@@ -52,10 +55,12 @@ public class AuditEvent {
         // JPA
     }
 
-    public AuditEvent(Instant occurredAt, UUID actorId, UUID approverId, String action, String entityType,
-                      String entityId, UUID storeId, UUID terminalId, String reason, String detailsJson) {
+    public AuditEvent(Instant occurredAt, UUID actorId, String actorKind, UUID approverId, String action,
+                      String entityType, String entityId, UUID storeId, UUID terminalId, String reason,
+                      String detailsJson) {
         this.occurredAt = occurredAt;
         this.actorId = actorId;
+        this.actorKind = actorKind;
         this.approverId = approverId;
         this.action = action;
         this.entityType = entityType;

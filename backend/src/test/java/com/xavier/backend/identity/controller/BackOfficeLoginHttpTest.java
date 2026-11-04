@@ -176,8 +176,7 @@ class BackOfficeLoginHttpTest {
         Cookie session = fixtures.login(user.username(), IdentityFixtures.STRONG_PASSWORD);
 
         mvc.perform(get("/api/v1/auth/session").cookie(session))
-                .andExpect(jsonPath("$.permissions", containsInAnyOrder(
-                        Permission.DINING_VIEW.authority(storeA), Permission.CATALOG_VIEW.authority(storeA))));
+                .andExpect(jsonPath("$.permissions", containsInAnyOrder(IdentityFixtures.waiterAuthorities(storeA))));
     }
 
     @Test

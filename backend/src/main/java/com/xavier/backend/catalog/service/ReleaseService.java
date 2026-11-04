@@ -15,6 +15,7 @@ import com.xavier.backend.catalog.model.dto.ReleaseValidationError;
 import com.xavier.backend.catalog.model.event.CatalogPublished;
 import com.xavier.backend.catalog.repository.ConfigurationReleaseRepository;
 import com.xavier.backend.organization.OrganizationApi;
+import com.xavier.backend.shared.persistence.UniqueConstraints;
 import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
 import java.time.Instant;
@@ -108,7 +109,7 @@ public class ReleaseService {
         long version = releases.maxCatalogVersion(storeId) + 1;
         UUID author = accessPolicy.current().userId();
         release.publish(version, json.writeValueAsString(view.snapshot(releaseId, version)), author, now);
-        UniqueConstraint.saveAndFlush(releases, release,
+        UniqueConstraints.saveAndFlush(releases, release,
                 () -> new IllegalReleaseStateException("Another release of store " + storeId + " was published at the same time"),
                 "configuration_release_one_published_per_store_ux", "configuration_release_store_version_uk");
 

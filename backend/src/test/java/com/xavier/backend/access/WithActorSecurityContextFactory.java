@@ -20,8 +20,12 @@ final class WithActorSecurityContextFactory implements WithSecurityContextFactor
         Set<String> authorities = Arrays.stream(annotation.permissions())
                 .map(p -> storeId == null ? p.authority() : p.authority(storeId))
                 .collect(Collectors.toUnmodifiableSet());
-        Actor actor = new Actor(UUID.fromString(annotation.userId()), uuidOrNull(annotation.employeeId()),
-                uuidOrNull(annotation.terminalId()), storeId, authorities);
+        UUID employeeId = uuidOrNull(annotation.employeeId());
+        // an employee id makes it a POS session, whose principal id is the employee (D38)
+        Actor actor = employeeId == null
+                ? new Actor(ActorKind.ACCOUNT, UUID.fromString(annotation.userId()), null,
+                        uuidOrNull(annotation.terminalId()), storeId, authorities)
+                : Actor.employee(employeeId, uuidOrNull(annotation.terminalId()), storeId, authorities);
 
         List<SimpleGrantedAuthority> granted = authorities.stream().map(SimpleGrantedAuthority::new).toList();
         SecurityContext context = SecurityContextHolder.createEmptyContext();

@@ -2,6 +2,7 @@ package com.xavier.backend.identity.service;
 
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Actor;
+import com.xavier.backend.access.ActorKind;
 import com.xavier.backend.identity.exception.InvalidCredentialsException;
 import com.xavier.backend.identity.model.Employee;
 import com.xavier.backend.identity.model.UserAccount;
@@ -68,14 +69,14 @@ public class LoginService {
      */
     SessionView sessionOf(UserAccount account) {
         Set<String> granted = account.isMustChangePassword() ? Set.of() : authorities.ofAccount(account);
-        return SessionView.of(new Actor(account.getId(), null, null, null, granted), account.getUsername(),
+        return SessionView.of(Actor.account(account.getId(), granted), account.getUsername(),
                 account.isMustChangePassword());
     }
 
     @Transactional(readOnly = true)
     public SessionView currentSession() {
         Actor actor = accessPolicy.current();
-        if (actor.employeeId() != null) {
+        if (actor.kind() == ActorKind.EMPLOYEE) {
             return SessionView.of(actor, employees.findById(actor.employeeId()).map(Employee::getName).orElse(null),
                     false);
         }

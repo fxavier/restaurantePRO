@@ -33,6 +33,14 @@ public final class IdentityFixtures {
     public static final UUID WAITER = UUID.fromString("01900000-0000-7000-8000-000000000303");
     public static final UUID MANAGER = UUID.fromString("01900000-0000-7000-8000-000000000302");
     public static final UUID ADMINISTRATOR = UUID.fromString("01900000-0000-7000-8000-000000000301");
+    /** What the seeded waiter role holds: R1 views plus the D62 defaults (V3005). */
+    public static final Set<Permission> WAITER_PERMISSIONS = Set.of(Permission.DINING_VIEW, Permission.CATALOG_VIEW,
+            Permission.ORDER_VIEW, Permission.ORDER_EDIT, Permission.ORDER_VOID, Permission.ORDER_TRANSFER);
+
+    /** The waiter's authorities in {@code store}, as a POS session holds them. */
+    public static String[] waiterAuthorities(UUID store) {
+        return WAITER_PERMISSIONS.stream().map(p -> p.authority(store)).toArray(String[]::new);
+    }
 
     private final MockMvc mvc;
 
@@ -51,13 +59,12 @@ public final class IdentityFixtures {
 
     /** An authenticated session of account {@code userId} without permissions (as after a real login). */
     public static RequestPostProcessor asAccount(UUID userId) {
-        Actor actor = new Actor(userId, null, null, null, Set.of());
+        Actor actor = Actor.account(userId, Set.of());
         return authentication(UsernamePasswordAuthenticationToken.authenticated(actor, null, java.util.List.of()));
     }
 
     public static RequestPostProcessor as(Set<String> authorities) {
-        Actor actor = new Actor(UUID.fromString("00000000-0000-7000-8000-000000000001"), null, null, null,
-                authorities);
+        Actor actor = Actor.account(UUID.fromString("00000000-0000-7000-8000-000000000001"), authorities);
         return authentication(UsernamePasswordAuthenticationToken.authenticated(actor, null,
                 authorities.stream().map(SimpleGrantedAuthority::new).toList()));
     }

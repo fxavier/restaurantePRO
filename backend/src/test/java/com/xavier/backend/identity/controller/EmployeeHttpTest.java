@@ -42,9 +42,16 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 class EmployeeHttpTest {
 
     static final String EMPLOYEES = "/api/v1/backoffice/employees";
+    /** The seeded Gerente role: R1 plus the D62 defaults (V3005). Granting a role needs all of its permissions. */
     static final Set<Permission> MANAGER_PERMISSIONS = Set.of(Permission.TERMINAL_MANAGE, Permission.EMPLOYEE_MANAGE,
             Permission.DINING_MANAGE, Permission.DINING_VIEW, Permission.CATALOG_MANAGE, Permission.CATALOG_PUBLISH,
-            Permission.CATALOG_VIEW, Permission.AUDIT_VIEW);
+            Permission.CATALOG_VIEW, Permission.AUDIT_VIEW, Permission.ORDER_VIEW, Permission.ORDER_EDIT,
+            Permission.ORDER_VOID, Permission.ORDER_VOID_APPROVE, Permission.ORDER_TRANSFER, Permission.ORDER_CANCEL,
+            Permission.TABLE_LOCK, Permission.PRODUCTION_VIEW, Permission.PRODUCTION_OPERATE,
+            Permission.PRODUCTION_MANAGE, Permission.PRODUCTION_SUPPRESS, Permission.PAYMENT_COLLECT,
+            Permission.PAYMENT_RESOLVE, Permission.CASH_OPERATE, Permission.CASH_EXPENSE, Permission.CASH_VIEW,
+            Permission.CASH_DAY_CLOSE, Permission.CASH_CLOSING_APPROVE, Permission.CASH_REGISTER_MANAGE,
+            Permission.FISCAL_DOCUMENT_VIEW, Permission.FISCAL_DOCUMENT_REPRINT);
 
     @Autowired
     MockMvc mvc;

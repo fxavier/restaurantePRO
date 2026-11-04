@@ -32,6 +32,23 @@ class MoneyTest {
     }
 
     @Test
+    void dividingRoundsHalfUpToTheCurrencyMinorUnit() {
+        // D59: net = gross / (1 + rate/100), the only rounding point next to times
+        assertThat(Money.of("100.00", MZN).divide(new BigDecimal("1.16"))).isEqualTo(Money.of("86.21", MZN));
+        assertThat(Money.of("10.00", MZN).divide(new BigDecimal("3"))).isEqualTo(Money.of("3.33", MZN));
+        assertThat(Money.of("0.05", MZN).divide(new BigDecimal("2"))).isEqualTo(Money.of("0.03", MZN));
+        assertThat(Money.of("-0.05", MZN).divide(new BigDecimal("2"))).isEqualTo(Money.of("-0.03", MZN));
+        assertThat(Money.of("5", Currency.getInstance("JPY")).divide(new BigDecimal("2")))
+                .isEqualTo(Money.of("3", Currency.getInstance("JPY")));
+    }
+
+    @Test
+    void rejectsDividingByZero() {
+        assertThatIllegalArgumentException().isThrownBy(() -> Money.of("1.00", MZN).divide(BigDecimal.ZERO));
+        assertThatIllegalArgumentException().isThrownBy(() -> Money.of("1.00", MZN).divide(new BigDecimal("0.000")));
+    }
+
+    @Test
     void rejectsAmountsWithMorePrecisionThanTheCurrencyAllows() {
         assertThatIllegalArgumentException().isThrownBy(() -> Money.of("0.125", MZN));
     }

@@ -13,7 +13,7 @@ import org.springframework.modulith.docs.Documenter;
 /**
  * Module boundaries (spec §6, D12, D13): every module declares {@code allowedDependencies} in its
  * {@code package-info.java}; only a module's root package and {@code @NamedInterface}s are public;
- * no cycles. Also writes the module documentation to {@code docs/architecture/modules/}.
+ * no cycles. Also generates the module documentation (to {@code target/} unless {@code -Dmodulith.docs=true}, D44).
  */
 class ModularityTests {
 
@@ -35,10 +35,14 @@ class ModularityTests {
         assertThat(violations.getMessages()).anySatisfy(message -> assertThat(message).contains("settlement"));
     }
 
-    /** Generator, not a rule: refreshes docs/architecture/modules/ and checks every module was documented. */
+    /**
+     * Generator, not a rule, and checks every module was documented. D44: it writes to {@code target/modulith-docs}
+     * unless run with {@code -Dmodulith.docs=true}, which refreshes the committed {@code docs/architecture/modules/}
+     * (only the integration slice does that; the Documenter's output order is not deterministic).
+     */
     @Test
     void generatesModuleDocumentation() {
-        Path folder = Path.of("../docs/architecture/modules");
+        Path folder = documentationFolder();
         new Documenter(MODULES, Documenter.Options.defaults().withOutputFolder(folder.toString()))
                 .writeDocumentation()
                 .writeAggregatingDocument();
@@ -47,5 +51,10 @@ class ModularityTests {
         assertThat(folder.resolve("all-docs.adoc")).isNotEmptyFile();
         MODULES.forEach(module -> assertThat(folder.resolve("module-" + module.getIdentifier() + ".adoc"))
                 .isNotEmptyFile());
+    }
+
+    static Path documentationFolder() {
+        return Boolean.getBoolean("modulith.docs") ? Path.of("../docs/architecture/modules")
+                : Path.of("target/modulith-docs");
     }
 }

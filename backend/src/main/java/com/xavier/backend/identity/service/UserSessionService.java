@@ -2,7 +2,6 @@ package com.xavier.backend.identity.service;
 
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
-import com.xavier.backend.audit.AuditEntry;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.identity.exception.SessionNotFoundException;
 import com.xavier.backend.identity.exception.UserNotFoundException;
@@ -53,8 +52,8 @@ public class UserSessionService {
                 .findFirst()
                 .orElseThrow(SessionNotFoundException::new);
         sessions.deleteById(session.getId());
-        auditLog.record(new AuditEntry(accessPolicy.current().userId(), null, "USER_SESSION_REVOKED", "UserAccount",
-                userId.toString(), null, null, null, Map.of("sessionHandle", handle)));
+        auditLog.recordAsCurrentActor("USER_SESSION_REVOKED", "UserAccount", userId.toString(), null, null, null,
+                Map.of("sessionHandle", handle));
     }
 
     private List<? extends Session> sessionsOf(UUID userId) {

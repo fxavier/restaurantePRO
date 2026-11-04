@@ -1,12 +1,12 @@
 package com.xavier.backend.identity.service;
 
-import com.xavier.backend.audit.AuditEntry;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.identity.exception.WeakPasswordException;
 import com.xavier.backend.identity.model.Role;
 import com.xavier.backend.identity.model.UserAccount;
 import com.xavier.backend.identity.repository.UserAccountRepository;
 import com.xavier.backend.organization.model.event.CompanyBootstrapped;
+import com.xavier.backend.shared.persistence.UniqueConstraints;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.time.Clock;
@@ -91,13 +91,13 @@ public class AdminBootstrapService {
             admin = accounts.saveAndFlush(UserAccount.open(username, encoder.encode(password.get()), null,
                     Set.of(Role.ADMINISTRATOR_ID), clock.instant()));
         } catch (DataIntegrityViolationException e) {
-            if (UniqueConstraint.isViolated(e, "user_account_username_uk")) {
+            if (UniqueConstraints.isViolated(e, "user_account_username_uk")) {
                 return false; // created concurrently by another delivery
             }
             throw e;
         }
-        auditLog.record(new AuditEntry(null, null, "USER_CREATED", "UserAccount", admin.getId().toString(), null,
-                null, "Administrator bootstrap", Map.of("username", username, "roleIds", admin.getRoleIds())));
+        auditLog.recordAsSystem("USER_CREATED", "UserAccount", admin.getId().toString(), null, null,
+                "Administrator bootstrap", Map.of("username", username, "roleIds", admin.getRoleIds()));
         log.info("Administrator '{}' created; the initial password must be changed at first login", username);
         return true;
     }
