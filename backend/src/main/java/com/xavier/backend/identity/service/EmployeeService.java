@@ -3,7 +3,6 @@ package com.xavier.backend.identity.service;
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Actor;
 import com.xavier.backend.access.Permission;
-import com.xavier.backend.audit.AuditEntry;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.identity.exception.AssignmentNotFoundException;
 import com.xavier.backend.identity.exception.DuplicateAssignmentException;
@@ -23,6 +22,8 @@ import com.xavier.backend.identity.repository.EmployeeRepository;
 import com.xavier.backend.identity.repository.EmployeeStoreAssignmentRepository;
 import com.xavier.backend.identity.repository.RoleRepository;
 import com.xavier.backend.organization.OrganizationApi;
+import com.xavier.backend.shared.persistence.OptimisticLocking;
+import com.xavier.backend.shared.persistence.UniqueConstraints;
 import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
 import java.util.List;
@@ -152,9 +153,8 @@ public class EmployeeService {
         accessPolicy.require(Permission.EMPLOYEE_MANAGE, assignment.getStoreId());
         assignments.delete(assignment);
         sessions.endEmployeeSessions(employeeId);
-        auditLog.record(new AuditEntry(accessPolicy.current().userId(), null, "EMPLOYEE_UNASSIGNED", "Employee",
-                employeeId.toString(), assignment.getStoreId(), null, null,
-                Map.of("roleId", assignment.getRoleId().toString())));
+        auditLog.recordAsCurrentActor("EMPLOYEE_UNASSIGNED", "Employee", employeeId.toString(),
+                assignment.getStoreId(), null, null, Map.of("roleId", assignment.getRoleId().toString()));
     }
 
     /**
@@ -177,7 +177,7 @@ public class EmployeeService {
             assignment = assignments.saveAndFlush(
                     new EmployeeStoreAssignment(employee.getId(), storeId, role.getId(), clock.instant()));
         } catch (DataIntegrityViolationException e) {
-            if (UniqueConstraint.isViolated(e, "employee_store_assignment_uk")) {
+            if (UniqueConstraints.isViolated(e, "employee_store_assignment_uk")) {
                 throw new DuplicateAssignmentException();
             }
             throw e;
@@ -221,18 +221,11 @@ public class EmployeeService {
     }
 
     private Employee save(Employee employee) {
-        try {
-            return employees.saveAndFlush(employee);
-        } catch (DataIntegrityViolationException e) {
-            if (UniqueConstraint.isViolated(e, "employee_code_uk")) {
-                throw new EmployeeCodeTakenException(employee.getCode());
-            }
-            throw e;
-        }
+        return UniqueConstraints.saveAndFlush(employees, employee,
+                () -> new EmployeeCodeTakenException(employee.getCode()), "employee_code_uk");
     }
 
     private void audit(String action, Employee employee, UUID storeId, Map<String, Object> details) {
-        auditLog.record(new AuditEntry(accessPolicy.current().userId(), null, action, "Employee",
-                employee.getId().toString(), storeId, null, null, details));
+        auditLog.recordAsCurrentActor(action, "Employee", employee.getId().toString(), storeId, null, null, details);
     }
 }

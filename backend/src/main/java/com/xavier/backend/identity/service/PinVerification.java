@@ -1,6 +1,5 @@
 package com.xavier.backend.identity.service;
 
-import com.xavier.backend.audit.AuditEntry;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.identity.model.Employee;
 import com.xavier.backend.identity.repository.EmployeeRepository;
@@ -64,9 +63,8 @@ class PinVerification {
         if (!employee.recordFailedPin(clock.instant())) {
             return PinCheck.refused(employee.getId(), "wrong PIN");
         }
-        auditLog.record(new AuditEntry(null, null, "EMPLOYEE_LOCKED", "Employee", employee.getId().toString(),
-                storeId, terminalId, "Too many wrong PINs",
-                Map.of("failedAttempts", employee.getFailedPinAttempts())));
+        auditLog.recordAsSystem("EMPLOYEE_LOCKED", "Employee", employee.getId().toString(), storeId, terminalId,
+                "Too many wrong PINs", Map.of("failedAttempts", employee.getFailedPinAttempts()));
         return PinCheck.refused(employee.getId(), "wrong PIN, employee now locked");
     }
 }

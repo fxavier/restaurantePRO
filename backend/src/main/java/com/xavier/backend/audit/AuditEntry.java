@@ -12,7 +12,11 @@ import java.util.regex.Pattern;
  * What happened, for the append-only audit trail (spec §10: actor, approver, action, entity, store,
  * terminal, instant, reason). The instant is taken from the application {@code Clock} when recorded.
  *
+ * <p>Internal: modules call {@link AuditLog#recordAsCurrentActor}, {@link AuditLog#recordAsSystem} or
+ * {@link AuditLog#recordAs}, never fill this by hand (D41).
+ *
  * @param actorId    who did it; {@code null} only for the system itself (bootstrap, scheduled jobs)
+ * @param actorKind  {@code ACCOUNT}, {@code EMPLOYEE} or {@code SYSTEM}
  * @param approverId supervisor whose credentials authorized it (D28), or {@code null}
  * @param action     past-tense verb in UPPER_SNAKE, e.g. {@code STORE_UPDATED}
  * @param entityType aggregate name from CONTEXT.md, e.g. {@code Store}
@@ -22,7 +26,7 @@ import java.util.regex.Pattern;
  *                   The guard rejects secret-looking <em>top-level</em> keys only; nested maps/values are
  *                   not inspected, so callers must not put secrets anywhere in details (follow-up).
  */
-public record AuditEntry(UUID actorId, UUID approverId, String action, String entityType, String entityId,
+record AuditEntry(UUID actorId, String actorKind, UUID approverId, String action, String entityType, String entityId,
                          UUID storeId, UUID terminalId, String reason, Map<String, Object> details) {
 
     private static final Set<String> SECRET_WORDS =

@@ -13,11 +13,12 @@ import com.xavier.backend.dining.model.dto.RestaurantTableUpdateRequest;
 import com.xavier.backend.dining.repository.RestaurantTableRepository;
 import com.xavier.backend.dining.repository.RoomAreaRepository;
 import com.xavier.backend.organization.OrganizationApi;
+import com.xavier.backend.shared.persistence.OptimisticLocking;
+import com.xavier.backend.shared.persistence.UniqueConstraints;
 import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
 import java.util.Map;
 import java.util.UUID;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -96,14 +97,8 @@ public class RestaurantTableService {
     }
 
     private RestaurantTable saveWithUniqueCode(RestaurantTable table) {
-        try {
-            return tables.saveAndFlush(table);
-        } catch (DataIntegrityViolationException e) {
-            if (UniqueConstraint.isViolated(e, "restaurant_table_store_code_uk")) {
-                throw new DiningCodeTakenException(ENTITY, table.getCode());
-            }
-            throw e;
-        }
+        return UniqueConstraints.saveAndFlush(tables, table,
+                () -> new DiningCodeTakenException(ENTITY, table.getCode()), "restaurant_table_store_code_uk");
     }
 
     private RestaurantTable table(UUID id) {

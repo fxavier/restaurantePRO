@@ -3,6 +3,7 @@ package com.xavier.backend.dining;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 
 import com.xavier.backend.access.Actor;
+import com.xavier.backend.access.ActorKind;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.WithActor;
 import java.util.Arrays;
@@ -30,7 +31,7 @@ public final class DiningActors {
     }
 
     private static RequestPostProcessor as(UUID storeId, Set<String> authorities) {
-        Actor actor = new Actor(USER_ID, null, null, storeId, authorities);
+        Actor actor = new Actor(ActorKind.ACCOUNT, USER_ID, null, null, storeId, authorities);
         return authentication(UsernamePasswordAuthenticationToken.authenticated(actor, null,
                 authorities.stream().map(SimpleGrantedAuthority::new).toList()));
     }

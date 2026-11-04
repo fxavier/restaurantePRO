@@ -1,8 +1,5 @@
 package com.xavier.backend.dining.service;
 
-import com.xavier.backend.access.AccessPolicy;
-import com.xavier.backend.access.Actor;
-import com.xavier.backend.audit.AuditEntry;
 import com.xavier.backend.audit.AuditLog;
 import java.util.Map;
 import java.util.UUID;
@@ -13,16 +10,12 @@ import org.springframework.stereotype.Component;
 class DiningAudit {
 
     private final AuditLog auditLog;
-    private final AccessPolicy accessPolicy;
 
-    DiningAudit(AuditLog auditLog, AccessPolicy accessPolicy) {
+    DiningAudit(AuditLog auditLog) {
         this.auditLog = auditLog;
-        this.accessPolicy = accessPolicy;
     }
 
     void record(String action, String entityType, UUID entityId, UUID storeId, Map<String, Object> details) {
-        Actor actor = accessPolicy.current();
-        auditLog.record(new AuditEntry(actor.userId(), null, action, entityType, entityId.toString(), storeId,
-                actor.terminalId(), null, details));
+        auditLog.recordAsCurrentActor(action, entityType, entityId.toString(), storeId, null, null, details);
     }
 }

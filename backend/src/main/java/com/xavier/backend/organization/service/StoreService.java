@@ -2,7 +2,6 @@ package com.xavier.backend.organization.service;
 
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
-import com.xavier.backend.audit.AuditEntry;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.organization.exception.CompanyNotBootstrappedException;
 import com.xavier.backend.organization.exception.StoreCodeTakenException;
@@ -11,15 +10,19 @@ import com.xavier.backend.organization.model.CompanyProfile;
 import com.xavier.backend.organization.model.Store;
 import com.xavier.backend.organization.model.dto.StoreCreateRequest;
 import com.xavier.backend.organization.model.dto.StoreSummary;
+import com.xavier.backend.organization.model.event.StoreDeactivated;
 import com.xavier.backend.organization.model.dto.StoreUpdateRequest;
 import com.xavier.backend.organization.repository.CompanyProfileRepository;
 import com.xavier.backend.organization.repository.StoreRepository;
+import com.xavier.backend.shared.persistence.OptimisticLocking;
+import com.xavier.backend.shared.persistence.UniqueConstraints;
+import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.Currency;
 import java.util.Map;
 import java.util.UUID;
-import com.xavier.backend.shared.web.PageResponse;
-import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,14 +39,16 @@ public class StoreService {
     private final AccessPolicy accessPolicy;
     private final AuditLog auditLog;
     private final Clock clock;
+    private final ApplicationEventPublisher events;
 
     StoreService(StoreRepository stores, CompanyProfileRepository companies, AccessPolicy accessPolicy,
-                 AuditLog auditLog, Clock clock) {
+                 AuditLog auditLog, Clock clock, ApplicationEventPublisher events) {
         this.stores = stores;
         this.companies = companies;
         this.accessPolicy = accessPolicy;
         this.auditLog = auditLog;
         this.clock = clock;
+        this.events = events;
     }
 
     @Transactional
@@ -67,10 +72,15 @@ public class StoreService {
         if (stores.existsByCodeAndIdNot(request.code().strip(), id)) {
             throw new StoreCodeTakenException(request.code());
         }
+        boolean wasActive = store.isActive();
+        Instant now = clock.instant();
         store.update(request.code(), request.name(), request.timezone(), request.businessDayCutoff(),
-                request.active(), clock.instant());
+                request.active(), now);
         saveWithUniqueCode(store); // flush now: a concurrent writer fails here (409), and the response has the new version
         audit("STORE_UPDATED", store);
+        if (wasActive && !store.isActive()) {
+            events.publishEvent(new StoreDeactivated(store.getId(), now)); // D45
+        }
         return store.toSummary(companyCurrency());
     }
 
@@ -88,14 +98,8 @@ public class StoreService {
     }
 
     private Store saveWithUniqueCode(Store store) {
-        try {
-            return stores.saveAndFlush(store);
-        } catch (DataIntegrityViolationException e) {
-            if (UniqueConstraint.isViolated(e, "store_code_uk")) {
-                throw new StoreCodeTakenException(store.getCode());
-            }
-            throw e;
-        }
+        return UniqueConstraints.saveAndFlush(stores, store,
+                () -> new StoreCodeTakenException(store.getCode()), "store_code_uk");
     }
 
     private Store store(UUID id) {
@@ -103,8 +107,8 @@ public class StoreService {
     }
 
     private void audit(String action, Store store) {
-        auditLog.record(new AuditEntry(accessPolicy.current().userId(), null, action, "Store",
-                store.getId().toString(), store.getId(), null, null, Map.of("code", store.getCode())));
+        auditLog.recordAsCurrentActor(action, "Store", store.getId().toString(), store.getId(), null, null,
+                Map.of("code", store.getCode()));
     }
 
     private Currency companyCurrency() {

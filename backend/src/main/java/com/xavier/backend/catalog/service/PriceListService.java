@@ -20,6 +20,8 @@ import com.xavier.backend.catalog.repository.PriceListRepository;
 import com.xavier.backend.organization.OrganizationApi;
 import com.xavier.backend.organization.model.dto.StoreSummary;
 import com.xavier.backend.shared.Money;
+import com.xavier.backend.shared.persistence.OptimisticLocking;
+import com.xavier.backend.shared.persistence.UniqueConstraints;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.util.HashMap;
@@ -60,7 +62,7 @@ public class PriceListService {
         accessPolicy.require(Permission.CATALOG_MANAGE, request.storeId());
         StoreSummary store = organization.findStore(request.storeId())
                 .orElseThrow(() -> new InvalidCatalogEntryException("Store " + request.storeId() + " does not exist"));
-        PriceList list = UniqueConstraint.saveAndFlush(priceLists,
+        PriceList list = UniqueConstraints.saveAndFlush(priceLists,
                 PriceList.create(store.id(), request.name(), store.currency(), clock.instant()),
                 () -> new CatalogCodeTakenException("A price list for store " + store.code()), "price_list_store_uk");
         audit.record("PRICE_LIST_CREATED", "PriceList", list.getId(), list.getStoreId(), Map.of());
@@ -96,7 +98,7 @@ public class PriceListService {
         PriceList list = priceList(priceListId);
         accessPolicy.require(Permission.CATALOG_MANAGE, list.getStoreId());
         requireTarget(request.itemId(), request.variantId());
-        ItemPrice price = UniqueConstraint.saveAndFlush(prices,
+        ItemPrice price = UniqueConstraints.saveAndFlush(prices,
                 ItemPrice.create(list.getId(), request.itemId(), request.variantId(),
                         money(request.amount(), list), clock.instant()),
                 () -> new CatalogCodeTakenException("A price for this item in this list"),

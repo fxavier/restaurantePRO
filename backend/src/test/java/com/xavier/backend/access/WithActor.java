@@ -14,7 +14,12 @@ import org.springframework.security.test.context.support.WithSecurityContext;
  * <pre>{@code
  * @WithActor(permissions = Permission.DINING_MANAGE, storeId = "0190a1b2-...")   // only in that store
  * @WithActor(permissions = {Permission.STORE_MANAGE, Permission.CATALOG_MANAGE}) // installation-wide
+ * @WithActor(permissions = Permission.ORDER_EDIT, storeId = "...", employeeId = "...", terminalId = "...") // POS
  * }</pre>
+ *
+ * Without {@code employeeId} the actor is an {@link ActorKind#ACCOUNT} (BackOffice) with {@code userId}; with it,
+ * an {@link ActorKind#EMPLOYEE} whose principal id is the employee id ({@code userId} is ignored, D38). Only an
+ * {@code EMPLOYEE} with a terminal and a store passes {@code AccessPolicy.requirePos}.
  *
  * Works on a test class or method of any Spring test ({@code @SpringBootTest}, {@code @WebMvcTest},
  * {@code @ApplicationModuleTest}); with MockMvc the actor is the request's authenticated user.
@@ -34,9 +39,10 @@ public @interface WithActor {
     /** If set, every permission is granted only in this store and {@link Actor#storeId()} is this store. */
     String storeId() default "";
 
+    /** The account id of a BackOffice actor (ignored when {@link #employeeId()} is set). */
     String userId() default DEFAULT_USER_ID;
 
-    /** Set for a POS actor. */
+    /** Set for a POS actor: makes it an {@link ActorKind#EMPLOYEE} with this principal id. */
     String employeeId() default "";
 
     /** Set for a POS actor. */

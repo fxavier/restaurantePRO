@@ -271,8 +271,9 @@ class TerminalHttpTest {
     long audits(String action, String terminalId) {
         return jdbc.sql("""
                         SELECT count(*) FROM audit.audit_event
-                        WHERE action = :action AND terminal_id = :terminal AND store_id = :store""")
-                .param("action", action).param("terminal", UUID.fromString(terminalId)).param("store", store)
+                        WHERE action = :action AND entity_type = 'Terminal' AND entity_id = :terminal
+                          AND store_id = :store""")
+                .param("action", action).param("terminal", terminalId).param("store", store)
                 .query(Long.class).single();
     }
 
