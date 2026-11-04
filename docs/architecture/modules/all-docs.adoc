@@ -17,3 +17,7 @@ include::module-shared.adoc[]
 plantuml::module-config.puml[,,format=svg]
 include::module-config.adoc[]
 
+== Organization
+plantuml::module-organization.puml[,,format=svg]
+include::module-organization.adoc[]
+
