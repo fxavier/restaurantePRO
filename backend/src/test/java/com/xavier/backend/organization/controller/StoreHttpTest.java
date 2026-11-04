@@ -187,6 +187,50 @@ class StoreHttpTest {
                 .andExpect(status().isForbidden());
     }
 
+    @Test
+    void concurrentCreatesWithTheSameCodeGiveOneStoreAndOneConflict() throws Exception {
+        for (int round = 0; round < 10; round++) { // several rounds, so both requests pass the pre-check at least once
+            String code = newCode();
+            List<Integer> statuses = race(() -> mvc.perform(post(STORES).with(admin(Permission.STORE_MANAGE))
+                            .with(csrf()).contentType(MediaType.APPLICATION_JSON).content(create(code, "Africa/Maputo")))
+                    .andReturn().getResponse().getStatus());
+
+            assertThat(statuses).as("round %d", round).containsExactlyInAnyOrder(201, 409);
+        }
+    }
+
+    @Test
+    void concurrentUpdatesToTheSameNewCodeGiveOneSuccessAndOneConflict() throws Exception {
+        for (int round = 0; round < 10; round++) {
+            UUID first = createStore();
+            UUID second = createStore();
+            String code = newCode();
+            List<UUID> targets = List.of(first, second);
+            java.util.concurrent.atomic.AtomicInteger next = new java.util.concurrent.atomic.AtomicInteger();
+            List<Integer> statuses = race(() -> mvc.perform(put(STORES + "/" + targets.get(next.getAndIncrement()))
+                            .with(admin(Permission.STORE_MANAGE)).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                            .content(update(code, "Africa/Maputo", 0)))
+                    .andReturn().getResponse().getStatus());
+
+            assertThat(statuses).as("round %d", round).containsExactlyInAnyOrder(200, 409);
+        }
+    }
+
+    /** Runs {@code request} twice at the same moment and returns both HTTP statuses. */
+    static List<Integer> race(Callable<Integer> request) throws Exception {
+        CountDownLatch start = new CountDownLatch(1);
+        Callable<Integer> gated = () -> {
+            start.await();
+            return request.call();
+        };
+        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+            Future<Integer> first = pool.submit(gated);
+            Future<Integer> second = pool.submit(gated);
+            start.countDown();
+            return List.of(first.get(30, TimeUnit.SECONDS), second.get(30, TimeUnit.SECONDS));
+        }
+    }
+
     static String create(String code, String timezone) {
         return """
                 {"code": "%s", "name": "Store", "timezone": "%s"}""".formatted(code, timezone);

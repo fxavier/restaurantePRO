@@ -21,6 +21,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -55,7 +56,7 @@ public class TerminalService {
         if (terminals.existsByStoreIdAndCode(request.storeId(), request.code().strip())) {
             throw new TerminalCodeTakenException(request.code());
         }
-        Terminal terminal = terminals.saveAndFlush(
+        Terminal terminal = saveNewTerminal(
                 Terminal.register(request.storeId(), request.code(), request.name(), clock.instant()));
         audit("TERMINAL_CREATED", terminal, accessPolicy.current().userId());
         return terminal.toSummary();
@@ -105,6 +106,17 @@ public class TerminalService {
         terminals.saveAndFlush(terminal);
         audit("TERMINAL_REVOKED", terminal, accessPolicy.current().userId());
         return terminal.toSummary();
+    }
+
+    private Terminal saveNewTerminal(Terminal terminal) {
+        try {
+            return terminals.saveAndFlush(terminal);
+        } catch (DataIntegrityViolationException e) {
+            if (UniqueConstraint.isViolated(e, "terminal_store_code_uk")) {
+                throw new TerminalCodeTakenException(terminal.getCode());
+            }
+            throw e;
+        }
     }
 
     private Terminal terminal(UUID id) {

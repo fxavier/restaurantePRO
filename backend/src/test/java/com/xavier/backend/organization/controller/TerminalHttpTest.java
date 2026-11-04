@@ -207,6 +207,19 @@ class TerminalHttpTest {
     }
 
     @Test
+    void concurrentRegistrationsWithTheSameCodeGiveOneTerminalAndOneConflict() throws Exception {
+        for (int round = 0; round < 10; round++) {
+            String code = "R" + round;
+            List<Integer> statuses = StoreHttpTest.race(() -> mvc.perform(post(TERMINALS)
+                            .with(inStore(store, Permission.TERMINAL_MANAGE)).with(csrf())
+                            .contentType(MediaType.APPLICATION_JSON).content(register(store, code)))
+                    .andReturn().getResponse().getStatus());
+
+            assertThat(statuses).as("round %d", round).containsExactlyInAnyOrder(201, 409);
+        }
+    }
+
+    @Test
     void aTerminalNeedsAnExistingStore() throws Exception {
         mvc.perform(post(TERMINALS).with(admin(Permission.TERMINAL_MANAGE)).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content(register(UUID.randomUUID(), "POS1")))

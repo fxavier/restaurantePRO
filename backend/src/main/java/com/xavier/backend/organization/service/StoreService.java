@@ -19,6 +19,7 @@ import java.util.Currency;
 import java.util.Map;
 import java.util.UUID;
 import com.xavier.backend.shared.web.PageResponse;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -52,7 +53,7 @@ public class StoreService {
         if (stores.existsByCode(request.code().strip())) {
             throw new StoreCodeTakenException(request.code());
         }
-        Store store = stores.saveAndFlush(Store.create(request.code(), request.name(), request.timezone(),
+        Store store = saveWithUniqueCode(Store.create(request.code(), request.name(), request.timezone(),
                 request.businessDayCutoff(), clock.instant()));
         audit("STORE_CREATED", store);
         return store.toSummary(currency);
@@ -68,7 +69,7 @@ public class StoreService {
         }
         store.update(request.code(), request.name(), request.timezone(), request.businessDayCutoff(),
                 request.active(), clock.instant());
-        stores.saveAndFlush(store); // flush now: a concurrent writer fails here (409), and the response has the new version
+        saveWithUniqueCode(store); // flush now: a concurrent writer fails here (409), and the response has the new version
         audit("STORE_UPDATED", store);
         return store.toSummary(companyCurrency());
     }
@@ -84,6 +85,17 @@ public class StoreService {
         accessPolicy.require(Permission.STORE_MANAGE);
         Currency currency = companyCurrency();
         return PageResponse.from(stores.findAll(pageable).map(store -> store.toSummary(currency)));
+    }
+
+    private Store saveWithUniqueCode(Store store) {
+        try {
+            return stores.saveAndFlush(store);
+        } catch (DataIntegrityViolationException e) {
+            if (UniqueConstraint.isViolated(e, "store_code_uk")) {
+                throw new StoreCodeTakenException(store.getCode());
+            }
+            throw e;
+        }
     }
 
     private Store store(UUID id) {
