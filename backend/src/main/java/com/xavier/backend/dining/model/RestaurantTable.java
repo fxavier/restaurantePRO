@@ -133,7 +133,7 @@ public class RestaurantTable {
     }
 
     public RestaurantTableSummary toSummary() {
-        return new RestaurantTableSummary(id, storeId, areaId, code, seats, active, version);
+        return new RestaurantTableSummary(id, storeId, areaId, code, seats, active, isLocked(), version);
     }
 
     public UUID getId() {

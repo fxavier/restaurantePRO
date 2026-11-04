@@ -5,6 +5,7 @@ import static com.xavier.backend.dining.DiningActors.pos;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -55,6 +56,18 @@ class PosTableLockHttpTest {
                 .andExpect(jsonPath("$.status").value("FREE"));
 
         assertThat(fixtures.audits("TABLE_LOCKED", table.toString(), store)).isEqualTo(1);
+    }
+
+    @Test
+    void theBackOfficeSeesTheLockThatChangedTheTablesVersion() throws Exception {
+        mvc.perform(get(DiningFixtures.TABLES + "/" + table).with(inStore(store, Permission.DINING_MANAGE)))
+                .andExpect(jsonPath("$.locked").value(false)).andExpect(jsonPath("$.version").value(0));
+
+        mvc.perform(lock(table, key()).with(pos(store, manager, Permission.TABLE_LOCK))).andExpect(status().isOk());
+
+        mvc.perform(get(DiningFixtures.TABLES + "/" + table).with(inStore(store, Permission.DINING_MANAGE)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.locked").value(true)).andExpect(jsonPath("$.version").value(1));
     }
 
     @Test
