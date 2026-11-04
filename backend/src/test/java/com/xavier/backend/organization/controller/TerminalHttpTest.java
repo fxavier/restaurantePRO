@@ -19,6 +19,14 @@ import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HexFormat;
+import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import org.springframework.mock.web.MockHttpServletResponse;
 import java.util.UUID;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.boot.test.system.CapturedOutput;
@@ -107,6 +115,34 @@ class TerminalHttpTest {
 
         assertThat(output.getAll()).doesNotContain(code).doesNotContain(token);
         assertThat(audits("TERMINAL_ENROLLMENT_CODE_ISSUED", terminal.toString())).isEqualTo(1);
+        assertThat(audits("TERMINAL_ENROLLED", terminal.toString())).isEqualTo(1);
+    }
+
+    @Test
+    void twoDevicesRacingWithOneCodeEnrollOnlyOnce() throws Exception {
+        UUID terminal = registerTerminal();
+        String code = issueCode(terminal).get("code").asString();
+        CountDownLatch start = new CountDownLatch(1);
+        Callable<MockHttpServletResponse> attempt = () -> {
+            start.await();
+            return mvc.perform(enroll(code)).andReturn().getResponse();
+        };
+
+        List<MockHttpServletResponse> responses;
+        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+            Future<MockHttpServletResponse> first = pool.submit(attempt);
+            Future<MockHttpServletResponse> second = pool.submit(attempt);
+            start.countDown();
+            responses = List.of(first.get(30, TimeUnit.SECONDS), second.get(30, TimeUnit.SECONDS));
+        }
+
+        assertThat(responses).extracting(MockHttpServletResponse::getStatus).containsOnlyOnce(200);
+        MockHttpServletResponse loser = responses.stream().filter(r -> r.getStatus() != 200).findFirst().orElseThrow();
+        assertThat(loser.getStatus()).isIn(409, 422);
+        assertThat(loser.getContentType()).isEqualTo(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+        assertThat(column("device_token_hash", terminal)).isNotNull();
+        assertThat(jdbc.sql("SELECT count(*) FROM organization.terminal WHERE id = :id AND device_token_hash IS NOT NULL")
+                .param("id", terminal).query(Long.class).single()).isEqualTo(1);
         assertThat(audits("TERMINAL_ENROLLED", terminal.toString())).isEqualTo(1);
     }
 
