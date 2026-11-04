@@ -2,12 +2,10 @@ package com.xavier.backend.cash.repository;
 
 import com.xavier.backend.cash.model.CashSession;
 import com.xavier.backend.cash.model.CashSessionStatus;
-import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -30,13 +28,6 @@ public interface CashSessionRepository extends JpaRepository<CashSession, UUID> 
     @Query("select distinct s.registerId from CashSession s where s.cashDayId = :dayId")
     List<UUID> findRegisterIdsByCashDayId(@Param("dayId") UUID dayId);
 
-    /** {@code FOR UPDATE}: the session close serializes with receipts and movements into it (D51). */
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select s from CashSession s where s.id = :id")
-    Optional<CashSession> findByIdForUpdate(@Param("id") UUID id);
-
-    /** {@code FOR SHARE}: a movement waits for, and then sees, a concurrent close of its session. */
-    @Lock(LockModeType.PESSIMISTIC_READ)
-    @Query("select s from CashSession s where s.id = :id")
-    Optional<CashSession> findByIdForShare(@Param("id") UUID id);
+    @Query("select x.storeId from CashSession x where x.id = :id")
+    Optional<UUID> findStoreIdById(@Param("id") UUID id);
 }

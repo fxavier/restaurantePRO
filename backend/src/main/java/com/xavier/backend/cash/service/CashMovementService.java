@@ -13,6 +13,7 @@ import com.xavier.backend.cash.repository.CashMovementRepository;
 import com.xavier.backend.cash.repository.CashSessionRepository;
 import java.time.Clock;
 import java.util.Map;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.access.AccessDeniedException;
@@ -30,12 +31,14 @@ public class CashMovementService {
     private final CashSessionRepository sessions;
     private final CashMovementRepository movements;
     private final AccessPolicy accessPolicy;
+    private final RowLocks locks;
     private final CashAudit audit;
     private final Clock clock;
 
     CashMovementService(CashSessionRepository sessions, CashMovementRepository movements, AccessPolicy accessPolicy,
-                        CashAudit audit, Clock clock) {
+                        RowLocks locks, CashAudit audit, Clock clock) {
         this.sessions = sessions;
+        this.locks = locks;
         this.movements = movements;
         this.accessPolicy = accessPolicy;
         this.audit = audit;
@@ -53,9 +56,10 @@ public class CashMovementService {
         if (type == MovementType.EXPENSE) {
             accessPolicy.requirePos(Permission.CASH_EXPENSE);
         }
-        CashSession session = sessions.findByIdForShare(request.sessionId())
+        UUID sessionStore = sessions.findStoreIdById(request.sessionId())
                 .orElseThrow(() -> new CashNotFoundException(CashSessionService.ENTITY, request.sessionId()));
-        StoreScope.requireSameStore(pos.storeId(), session.getStoreId(), CashSessionService.ENTITY, session.getId());
+        StoreScope.requireSameStore(pos.storeId(), sessionStore, CashSessionService.ENTITY, request.sessionId());
+        CashSession session = locks.sessionForShare(request.sessionId());
         if (!session.getOperatorEmployeeId().equals(pos.employeeId())) {
             log.warn("Access denied: employee {} wrote to cash session {} of employee {}", pos.employeeId(),
                     session.getId(), session.getOperatorEmployeeId());

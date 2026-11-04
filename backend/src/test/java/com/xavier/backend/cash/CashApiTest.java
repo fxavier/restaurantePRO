@@ -125,6 +125,19 @@ class CashApiTest {
     }
 
     @Test
+    void aSessionClosedByAnotherTransactionRefusesTheReceiptEvenWhenThisOneReadItBefore() {
+        TransactionTemplate other = new TransactionTemplate(tx.getTransactionManager());
+        other.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
+
+        assertThatThrownBy(() -> inTx(() -> {
+            assertThat(cash.openSessionOf(store, operator.employeeId())).isPresent(); // now managed in this tx
+            other.executeWithoutResult(status -> close(session));
+            return cash.recordReceipt(receipt("CASH", "5.00", UUID.randomUUID()));
+        })).isInstanceOfSatisfying(CashRuleViolationException.class,
+                e -> assertThat(e.rule()).isEqualTo(CashRule.SESSION_NOT_OPEN));
+    }
+
+    @Test
     void aStaleSessionVersionOrASecondCloseIsAConflict() {
         long version = inTx(() -> cash.lockSession(session)).version();
 

@@ -50,13 +50,15 @@ public class CashDayService {
     private final OrganizationApi organization;
     private final ApproverVerifier approvers;
     private final AccessPolicy accessPolicy;
+    private final RowLocks locks;
     private final CashAudit audit;
     private final Clock clock;
 
     CashDayService(CashDayRepository days, CashDayReopeningRepository reopenings, CashSessionRepository sessions,
                    CashClosingRepository closings, OrganizationApi organization, ApproverVerifier approvers,
-                   AccessPolicy accessPolicy, CashAudit audit, Clock clock) {
+                   AccessPolicy accessPolicy, RowLocks locks, CashAudit audit, Clock clock) {
         this.days = days;
+        this.locks = locks;
         this.reopenings = reopenings;
         this.sessions = sessions;
         this.closings = closings;
@@ -85,7 +87,7 @@ public class CashDayService {
     @Transactional
     public DayView closeFinancially(UUID id) {
         accessPolicy.require(Permission.CASH_CLOSING_APPROVE, storeOf(id));
-        CashDay day = days.findByIdForUpdate(id).orElseThrow(() -> new CashNotFoundException(ENTITY, id));
+        CashDay day = locks.dayForUpdate(id);
         if (day.getStatus() == CashDayStatus.OPERATIONALLY_CLOSED) {
             requireEveryRegisterApproved(day);
         }
@@ -120,7 +122,7 @@ public class CashDayService {
             throw new IllegalArgumentException("The approval is for day " + approval.dayId() + ", not " + id);
         }
         accessPolicy.require(Permission.CASH_DAY_CLOSE, storeOf(id));
-        CashDay day = days.findByIdForUpdate(id).orElseThrow(() -> new CashNotFoundException(ENTITY, id));
+        CashDay day = locks.dayForUpdate(id);
         Actor actor = accessPolicy.current();
         CashDayReopening reopening = day.reopen(actor.userId(), actor.kind(), approval.approverEmployeeId(),
                 request.reason(), clock.instant());

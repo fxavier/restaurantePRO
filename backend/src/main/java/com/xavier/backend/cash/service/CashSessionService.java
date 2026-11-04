@@ -26,6 +26,7 @@ import com.xavier.backend.organization.OrganizationApi;
 import com.xavier.backend.organization.model.dto.StoreSummary;
 import com.xavier.backend.shared.Money;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
+import jakarta.persistence.LockModeType;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -48,13 +49,16 @@ public class CashSessionService {
     private final CashClosingRepository closings;
     private final OrganizationApi organization;
     private final AccessPolicy accessPolicy;
+    private final RowLocks locks;
     private final CashAudit audit;
     private final Clock clock;
 
     CashSessionService(CashSessionRepository sessions, CashRegisterRepository registers, CashDayRepository days,
                        CashMovementRepository movements, CashClosingRepository closings,
-                       OrganizationApi organization, AccessPolicy accessPolicy, CashAudit audit, Clock clock) {
+                       OrganizationApi organization, AccessPolicy accessPolicy, RowLocks locks, CashAudit audit,
+                       Clock clock) {
         this.sessions = sessions;
+        this.locks = locks;
         this.registers = registers;
         this.days = days;
         this.movements = movements;
@@ -73,10 +77,10 @@ public class CashSessionService {
     @Transactional
     public SessionDetails open(OpenSessionRequest request) {
         PosContext pos = accessPolicy.requirePos(Permission.CASH_OPERATE);
-        CashRegister register = registers.findById(request.registerId())
-                .orElseThrow(() -> new CashNotFoundException(CashRegisterService.ENTITY, request.registerId()));
-        StoreScope.requireSameStore(pos.storeId(), register.getStoreId(), CashRegisterService.ENTITY,
-                register.getId());
+        StoreScope.requireSameStore(pos.storeId(), registers.findStoreIdById(request.registerId())
+                        .orElseThrow(() -> new CashNotFoundException(CashRegisterService.ENTITY, request.registerId())),
+                CashRegisterService.ENTITY, request.registerId());
+        CashRegister register = registers.findById(request.registerId()).orElseThrow();
         if (!register.isActive()) {
             throw new CashRuleViolationException(CashRule.REGISTER_INACTIVE,
                     "The cash register " + register.getCode() + " is inactive.");
@@ -124,8 +128,9 @@ public class CashSessionService {
     @Transactional(readOnly = true)
     public SessionDetails get(UUID id) {
         PosContext pos = accessPolicy.requirePos(Permission.CASH_VIEW);
+        StoreScope.requireSameStore(pos.storeId(),
+                sessions.findStoreIdById(id).orElseThrow(() -> new CashNotFoundException(ENTITY, id)), ENTITY, id);
         CashSession session = sessions.findById(id).orElseThrow(() -> new CashNotFoundException(ENTITY, id));
-        StoreScope.requireSameStore(pos.storeId(), session.getStoreId(), ENTITY, id);
         return details(session);
     }
 
@@ -133,7 +138,8 @@ public class CashSessionService {
     private CashDay currentDayForShare(StoreSummary store, Instant now) {
         LocalDate businessDate = BusinessDays.of(now, store.timezone(), store.businessDayCutoff());
         days.createIfAbsent(store.id(), businessDate, now);
-        return days.findForShare(store.id(), businessDate).orElseThrow();
+        return locks.lock(days.findByStoreIdAndBusinessDate(store.id(), businessDate).orElseThrow(),
+                LockModeType.PESSIMISTIC_READ);
     }
 
     private SessionDetails details(CashSession session) {

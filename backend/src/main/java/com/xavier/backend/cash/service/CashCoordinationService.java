@@ -23,6 +23,7 @@ import com.xavier.backend.cash.repository.CashSessionCountRepository;
 import com.xavier.backend.cash.repository.CashSessionRepository;
 import com.xavier.backend.shared.persistence.OptimisticLocking;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
+import jakarta.persistence.LockModeType;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -47,12 +48,15 @@ public class CashCoordinationService {
     private final CashSessionCountRepository counts;
     private final CashMovementRepository movements;
     private final CashDayRepository days;
+    private final RowLocks locks;
     private final CashAudit audit;
     private final Clock clock;
 
     CashCoordinationService(CashSessionRepository sessions, CashSessionCountRepository counts,
-                            CashMovementRepository movements, CashDayRepository days, CashAudit audit, Clock clock) {
+                            CashMovementRepository movements, CashDayRepository days, RowLocks locks,
+                            CashAudit audit, Clock clock) {
         this.sessions = sessions;
+        this.locks = locks;
         this.counts = counts;
         this.movements = movements;
         this.days = days;
@@ -77,8 +81,7 @@ public class CashCoordinationService {
         if (recorded.isPresent()) {
             return recorded.get().toView();
         }
-        CashSession session = sessions.findByIdForShare(command.sessionId())
-                .orElseThrow(() -> new CashNotFoundException(CashSessionService.ENTITY, command.sessionId()));
+        CashSession session = locks.sessionForShare(command.sessionId());
         CashMovement receipt = CashMovement.receipt(session, command.methodCode(), command.amount(),
                 command.paymentId(), command.actorEmployeeId(), clock.instant());
         return UniqueConstraints.saveAndFlush(movements, receipt,
@@ -106,9 +109,9 @@ public class CashCoordinationService {
 
     @Transactional(propagation = Propagation.MANDATORY)
     public DayView lockDay(UUID storeId, LocalDate businessDate) {
-        return days.findForUpdate(storeId, businessDate)
-                .orElseThrow(() -> new CashNotFoundException(CashDayService.ENTITY, storeId + "/" + businessDate))
-                .toView();
+        CashDay day = days.findByStoreIdAndBusinessDate(storeId, businessDate)
+                .orElseThrow(() -> new CashNotFoundException(CashDayService.ENTITY, storeId + "/" + businessDate));
+        return locks.lock(day, LockModeType.PESSIMISTIC_WRITE).toView();
     }
 
     @Transactional(readOnly = true)
@@ -122,8 +125,7 @@ public class CashCoordinationService {
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public void closeDayOperationally(UUID dayId, long expectedVersion, UUID actorId, ActorKind kind) {
-        CashDay day = days.findByIdForUpdate(dayId)
-                .orElseThrow(() -> new CashNotFoundException(CashDayService.ENTITY, dayId));
+        CashDay day = locks.dayForUpdate(dayId);
         OptimisticLocking.requireVersion(CashDay.class, dayId, day.getVersion(), expectedVersion);
         if (day.getStatus() == CashDayStatus.OPEN
                 && sessions.existsByCashDayIdAndStatus(dayId, CashSessionStatus.OPEN)) {
@@ -143,7 +145,6 @@ public class CashCoordinationService {
     }
 
     private CashSession sessionForUpdate(UUID sessionId) {
-        return sessions.findByIdForUpdate(sessionId)
-                .orElseThrow(() -> new CashNotFoundException(CashSessionService.ENTITY, sessionId));
+        return locks.sessionForUpdate(sessionId);
     }
 }

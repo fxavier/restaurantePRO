@@ -55,8 +55,9 @@ public class CashRegisterService {
 
     @Transactional
     public RegisterSummary update(UUID id, RegisterUpdateRequest request) {
+        accessPolicy.require(Permission.CASH_REGISTER_MANAGE,
+                registers.findStoreIdById(id).orElseThrow(() -> new CashNotFoundException(ENTITY, id)));
         CashRegister register = registers.findById(id).orElseThrow(() -> new CashNotFoundException(ENTITY, id));
-        accessPolicy.require(Permission.CASH_REGISTER_MANAGE, register.getStoreId());
         OptimisticLocking.requireVersion(CashRegister.class, id, register.getVersion(), request.version());
         register.update(request.code(), request.name(), request.active(), clock.instant());
         save(register); // flush now: a concurrent writer fails here (409), and the response has the new version
