@@ -11,6 +11,7 @@ import java.util.UUID;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -18,7 +19,8 @@ import tools.jackson.databind.json.JsonMapper;
 public final class CatalogFixtures {
 
     public static final String CATALOG = "/api/v1/backoffice/catalog";
-    private static final JsonMapper JSON = JsonMapper.builder().build();
+    private static final JsonMapper JSON =
+            JsonMapper.builder().enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS).build();
 
     private final MockMvc mvc;
 
