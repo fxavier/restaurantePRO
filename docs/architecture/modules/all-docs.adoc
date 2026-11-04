@@ -21,6 +21,10 @@ include::module-config.adoc[]
 plantuml::module-organization.puml[,,format=svg]
 include::module-organization.adoc[]
 
+== Catalog
+plantuml::module-catalog.puml[,,format=svg]
+include::module-catalog.adoc[]
+
 == Dining
 plantuml::module-dining.puml[,,format=svg]
 include::module-dining.adoc[]

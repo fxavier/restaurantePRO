@@ -1,0 +1,39 @@
+@startuml
+title <size:24>Catalog</size>
+
+set separator none
+top to bottom direction
+
+<style>
+  root {
+    BackgroundColor: #ffffff
+    FontColor: #444444
+  }
+</style>
+
+!include <C4/C4>
+!include <C4/C4_Context>
+!include <C4/C4_Component>
+
+System_Boundary("BackendApplication_boundary", "BackendApplication", $tags="") {
+  Container_Boundary("BackendApplication.BackendApplication_boundary", "BackendApplication", $tags="") {
+    Component(BackendApplication.BackendApplication.Access, "Access", $techn="Module", $descr="", $tags="", $link="")
+    Component(BackendApplication.BackendApplication.Audit, "Audit", $techn="Module", $descr="", $tags="", $link="")
+    Component(BackendApplication.BackendApplication.Sharedkernel, "Shared kernel", $techn="Module", $descr="", $tags="", $link="")
+    Component(BackendApplication.BackendApplication.Organization, "Organization", $techn="Module", $descr="", $tags="", $link="")
+    Component(BackendApplication.BackendApplication.Catalog, "Catalog", $techn="Module", $descr="", $tags="", $link="")
+  }
+
+}
+
+Rel(BackendApplication.BackendApplication.Organization, BackendApplication.BackendApplication.Sharedkernel, "depends on", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Organization, BackendApplication.BackendApplication.Audit, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Organization, BackendApplication.BackendApplication.Access, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Catalog, BackendApplication.BackendApplication.Sharedkernel, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Catalog, BackendApplication.BackendApplication.Access, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Catalog, BackendApplication.BackendApplication.Audit, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Catalog, BackendApplication.BackendApplication.Organization, "uses", $techn="", $tags="", $link="")
+
+SHOW_LEGEND(true)
+hide stereotypes
+@enduml
