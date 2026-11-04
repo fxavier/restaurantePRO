@@ -29,9 +29,10 @@ import org.springframework.web.context.request.RequestContextHolder;
  *
  * <p>POS use cases call {@link #requirePos} instead (D39): it also proves the caller is an employee on an enrolled
  * terminal of an active store, and returns that context, so POS commands never take store or terminal from the
- * request; {@link #requirePos(Permission, UUID)} also refuses another store named by the request or owning the
- * addressed resource. Store scope order (D42): when the store is an input, call {@code require} before any read; for a
- * resource addressed by id, read only its {@code storeId} (absent → 404), then {@code require} (→ 403).
+ * request; {@link #requirePos(Permission, UUID)} also refuses another requested store, and
+ * {@link #requireSessionStore} a resource of another store. Store scope order (D42): when the store is an input,
+ * call {@code require} before any read; for a resource addressed by id, read only its {@code storeId}
+ * (absent → 404), then {@code require} (→ 403).
  */
 @Component
 public class AccessPolicy {

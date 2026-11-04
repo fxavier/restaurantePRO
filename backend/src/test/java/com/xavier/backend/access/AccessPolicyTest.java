@@ -150,7 +150,8 @@ class AccessPolicyTest {
 
     @Test
     void requireAnyAcceptsAnyOnePermissionInstallationWideOrInTheStore() {
-        Actor storeScoped = Actor.account(UUID.randomUUID(), Set.of(Permission.CASH_CLOSING_APPROVE.authority(uuid(STORE_A))));
+        Actor storeScoped = Actor.account(UUID.randomUUID(),
+                Set.of(Permission.CASH_CLOSING_APPROVE.authority(uuid(STORE_A))));
         runAs(storeScoped, () -> assertThatCode(() -> accessPolicy.requireAny(uuid(STORE_A),
                 Permission.CASH_VIEW, Permission.CASH_CLOSING_APPROVE)).doesNotThrowAnyException());
         Actor global = Actor.account(UUID.randomUUID(), Set.of(Permission.CASH_VIEW.authority()));
