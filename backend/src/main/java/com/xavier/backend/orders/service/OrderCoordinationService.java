@@ -81,14 +81,16 @@ public class OrderCoordinationService {
                 businessDayInclusive);
     }
 
-    /** CONFIRMED → DISPATCHED; a repeated notice changes nothing (production's listener may be redelivered). */
+    /**
+     * CONFIRMED → DISPATCHED by a conditional update: a repeated or concurrent notice (production's listener may be
+     * redelivered) changes nothing and is not audited again.
+     */
     public void markBatchDispatched(UUID batchId) {
         OrderBatch batch = batches.findById(batchId)
                 .orElseThrow(() -> new OrderNotFoundException("OrderBatch", batchId));
-        if (!batch.markDispatched(clock.instant())) {
+        if (batches.markDispatched(batchId, clock.instant()) == 0) {
             return;
         }
-        batches.saveAndFlush(batch);
         changes.record("ORDER_BATCH_DISPATCHED", "OrderBatch", batchId, batch.getStoreId(), batch.getOrderId(),
                 Map.of("orderId", batch.getOrderId().toString(), "batchNo", batch.getBatchNo()));
     }

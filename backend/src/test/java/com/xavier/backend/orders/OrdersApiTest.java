@@ -204,6 +204,26 @@ class OrdersApiTest {
                 .isInstanceOf(NotFoundException.class);
     }
 
+    @org.junit.jupiter.api.RepeatedTest(3)
+    void twoConcurrentDispatchNoticesMakeExactlyOneTransition() throws Exception {
+        confirmed("1", 0);
+        UUID batch = jdbc.sql("SELECT id FROM orders.order_batch WHERE order_id = ?").param(order)
+                .query(UUID.class).single();
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+
+        OrdersFixtures.race(
+                () -> tx.execute(status -> dispatch(batch)),
+                () -> tx.execute(status -> dispatch(batch)));
+
+        assertThat(fixtures.audits("ORDER_BATCH_DISPATCHED", batch)).isOne();
+        assertThat(dispatchedAt(batch)).isNotNull();
+    }
+
+    boolean dispatch(UUID batch) {
+        productionApi.markBatchDispatched(batch);
+        return true;
+    }
+
     UUID confirmed(String quantity, long orderVersion) throws Exception {
         UUID line = id(fixtures.draft(shop, order, quantity, employee, terminal));
         JsonNode batch = json(fixtures.confirm(shop, order, orderVersion, shop.catalogVersion(), List.of(line),

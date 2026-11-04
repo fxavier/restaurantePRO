@@ -13,7 +13,8 @@ import org.hibernate.annotations.UuidGenerator;
 
 /**
  * A round of an order (spec §8.3 OrderBatch CONFIRMED → DISPATCHED). Its lines belong to it for good: a round is
- * never re-sent (§4). DISPATCHED means production has received it (D35); a repeated notice changes nothing.
+ * never re-sent (§4). DISPATCHED means production has received it (D35); the transition is a conditional update
+ * ({@code OrderBatchRepository.markDispatched}), so a repeated notice changes nothing.
  */
 @Entity
 @Table(schema = "orders", name = "order_batch")
@@ -70,16 +71,6 @@ public class OrderBatch {
         batch.confirmedAt = Objects.requireNonNull(now, "now");
         batch.status = BatchStatus.CONFIRMED;
         return batch;
-    }
-
-    /** CONFIRMED → DISPATCHED. @return {@code false} when it already was: nothing changed */
-    public boolean markDispatched(Instant now) {
-        if (status == BatchStatus.DISPATCHED) {
-            return false;
-        }
-        status = BatchStatus.DISPATCHED;
-        dispatchedAt = Objects.requireNonNull(now, "now");
-        return true;
     }
 
     public UUID getId() {

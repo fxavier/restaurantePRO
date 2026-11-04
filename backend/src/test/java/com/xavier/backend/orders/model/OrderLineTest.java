@@ -11,7 +11,7 @@ import java.util.Currency;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
-/** OrderLine DRAFT → CONFIRMED and OrderBatch CONFIRMED → DISPATCHED (r2-decisions §4 orders). */
+/** OrderLine DRAFT → CONFIRMED (r2-decisions §4 orders). */
 class OrderLineTest {
 
     static final Instant NOW = Instant.parse("2026-11-04T12:00:00Z");
@@ -66,17 +66,6 @@ class OrderLineTest {
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> draft().edit(null, new BigDecimal("0.0005"), null))
                 .isInstanceOf(IllegalArgumentException.class);
-    }
-
-    @Test
-    void aRoundIsDispatchedOnceAndADuplicateDispatchChangesNothing() {
-        OrderBatch batch = OrderBatch.confirmed(UUID.randomUUID(), UUID.randomUUID(), 1, UUID.randomUUID(),
-                EMPLOYEE, UUID.randomUUID(), 3, NOW);
-
-        assertThat(batch.markDispatched(NOW)).isTrue();
-        assertThat(batch.markDispatched(NOW.plusSeconds(5))).isFalse();
-        assertThat(batch.getStatus()).isEqualTo(BatchStatus.DISPATCHED);
-        assertThat(batch.getDispatchedAt()).isEqualTo(NOW);
     }
 
     static void assertNotDraft(Runnable call) {
