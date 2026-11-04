@@ -7,13 +7,15 @@ import java.time.Clock;
 import java.util.HexFormat;
 import java.util.Objects;
 import java.util.function.Supplier;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
-import org.springframework.http.HttpStatus;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.MapperFeature;
 import tools.jackson.databind.SerializationFeature;
@@ -21,32 +23,43 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * The one Idempotency-Key mechanism (D24, spec §9). Controllers of repeatable commands call
- * {@link #execute}; nobody writes their own.
+ * {@link #execute}; nobody writes their own. Call it from the controller, outside any transaction.
  *
  * <pre>{@code
  * @PostMapping("/releases/{id}/publish")
  * ResponseEntity<?> publish(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
- *                           @Valid @RequestBody PublishRequest body) {
+ *                           @Valid @RequestBody PublishRequest body, HttpServletRequest request) {
  *     UUID actor = accessPolicy.current().userId();
- *     return idempotency.execute("catalog.release.publish:" + actor, key, body,
+ *     return idempotency.execute("catalog.release.publish:" + actor, key,
+ *             request.getMethod() + " " + request.getRequestURI(), body,
  *             () -> ResponseEntity.ok(releaseService.publish(id, body)));
  * }
  * }</pre>
  *
  * <ul>
- *   <li>Scope = operation name + actor, so two users never share a key space.</li>
- *   <li>Same scope+key+body: the stored status and body are replayed; the action does not run again.</li>
- *   <li>Same scope+key, different body: {@link IdempotencyKeyReusedException} (422).</li>
- *   <li>Same scope+key while the first is still running: {@link IdempotentRequestInProgressException} (409).
- *       The primary key on (scope, key) decides the winner of a race.</li>
- *   <li>The action and the stored response commit in one transaction, so a stored response always
- *       means the effect happened. If the action throws, the key is released and may be retried.</li>
+ *   <li>{@code scope} = operation name + actor, so two users never share a key space.</li>
+ *   <li>{@code target} = what the request acts on, normally {@code "<METHOD> <resolved path>"}. The request
+ *       identity is the SHA-256 of target + canonical JSON body ("hash do pedido").</li>
+ *   <li>Same scope+key, same identity: the stored status and body are replayed; the action does not run.</li>
+ *   <li>Same scope+key, different target or body: {@link IdempotencyKeyReusedException} (422).</li>
+ *   <li>Same scope+key while another request is running it: {@link IdempotentRequestInProgressException} (409).</li>
+ *   <li>Crash-safe: running the action requires holding the record's row lock inside the action's
+ *       transaction, and the stored response commits in that same transaction. If the owner dies or
+ *       its action throws, the transaction rolls back (effects and lock together) and the next request
+ *       with that key takes the claim over and runs it once.</li>
  * </ul>
+ *
+ * <p>Known limits (follow-ups): a replay returns the stored status and JSON body only, no headers
+ * (e.g. {@code Location}); a {@code String} body is replayed as a JSON string node. Records are kept
+ * forever (no retention yet). The action runs inside a database transaction, so it must not call
+ * external systems (R2 payment/fiscal calls need a different pattern, spec §7).
  */
 @Service
 public class IdempotencyService {
 
     static final int MAX_KEY_LENGTH = 255;
+
+    private static final Logger log = LoggerFactory.getLogger(IdempotencyService.class);
 
     private final IdempotencyRecordStore store;
     private final JsonMapper canonicalJson;
@@ -67,47 +80,54 @@ public class IdempotencyService {
         this.inActionTransaction = new TransactionTemplate(transactionManager);
     }
 
-    public ResponseEntity<?> execute(String scope, String key, Object requestBody, Supplier<ResponseEntity<?>> action) {
+    public ResponseEntity<?> execute(String scope, String key, String target, Object requestBody,
+                                     Supplier<ResponseEntity<?>> action) {
         Objects.requireNonNull(scope, "scope");
+        Objects.requireNonNull(target, "target");
         Objects.requireNonNull(action, "action");
         requireValidKey(key);
-        String hash = hash(requestBody);
+        String hash = hash(target, requestBody);
 
-        Boolean claimed = inOwnTransaction.execute(tx -> store.claim(scope, key, hash, clock.instant()));
-        if (!Boolean.TRUE.equals(claimed)) {
-            return replay(scope, key, hash);
-        }
-        try {
-            return inActionTransaction.execute(tx -> {
-                ResponseEntity<?> response = action.get();
-                store.complete(scope, key, response.getStatusCode().value(),
-                        canonicalJson.writeValueAsString(response.getBody()), clock.instant());
-                return response;
-            });
-        } catch (RuntimeException | Error e) {
-            inOwnTransaction.executeWithoutResult(tx -> store.release(scope, key));
-            throw e;
-        }
-    }
-
-    private ResponseEntity<?> replay(String scope, String key, String hash) {
-        IdempotencyRecordStore.StoredRecord stored = store.find(scope, key)
-                // released between our claim attempt and this read: the first request failed
-                .orElseThrow(IdempotentRequestInProgressException::new);
-        if (!stored.requestHash().equals(hash)) {
+        boolean createdNow = Boolean.TRUE.equals(
+                inOwnTransaction.execute(tx -> store.claim(scope, key, hash, clock.instant())));
+        IdempotencyRecordStore.StoredRecord existing = store.find(scope, key)
+                .orElseThrow(() -> new IllegalStateException("idempotency record vanished: " + scope));
+        if (!existing.requestHash().equals(hash)) {
+            log.warn("Idempotency key reused for a different request: scope={} key={}", scope, key);
             throw new IdempotencyKeyReusedException();
         }
-        if (!stored.completed()) {
-            throw new IdempotentRequestInProgressException();
+        if (existing.completed()) {
+            return replay(scope, key, existing);
         }
+        return inActionTransaction.execute(tx -> {
+            IdempotencyRecordStore.StoredRecord locked = store.lockWithoutWaiting(scope, key).orElseThrow(() -> {
+                log.info("Idempotent request still in progress: scope={} key={}", scope, key);
+                return new IdempotentRequestInProgressException();
+            });
+            if (locked.completed()) {
+                return replay(scope, key, locked); // another request finished between our read and our lock
+            }
+            if (!createdNow) {
+                log.warn("Idempotency key taken over from an unfinished earlier attempt: scope={} key={}", scope, key);
+            }
+            ResponseEntity<?> response = action.get();
+            store.complete(scope, key, response.getStatusCode().value(),
+                    canonicalJson.writeValueAsString(response.getBody()), clock.instant());
+            return response;
+        });
+    }
+
+    private ResponseEntity<?> replay(String scope, String key, IdempotencyRecordStore.StoredRecord stored) {
+        log.info("Idempotent request replayed: scope={} key={}", scope, key);
         JsonNode body = canonicalJson.readTree(stored.responseBody());
         return ResponseEntity.status(stored.responseStatus()).body(body.isNull() ? null : body);
     }
 
-    private String hash(Object requestBody) {
-        byte[] canonical = canonicalJson.writeValueAsString(requestBody).getBytes(StandardCharsets.UTF_8);
+    private String hash(String target, Object requestBody) {
+        String identity = target + "\n" + canonicalJson.writeValueAsString(requestBody);
         try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(canonical));
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(identity.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 is mandatory in every JVM", e);
         }
