@@ -8,6 +8,7 @@ import com.xavier.backend.orders.exception.OrderNotFoundException;
 import com.xavier.backend.orders.model.Order;
 import com.xavier.backend.orders.repository.OrderRepository;
 import java.util.UUID;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Component;
 
 /**
@@ -28,9 +29,28 @@ public class OrderLookup {
     }
 
     public Order inSessionStore(PosContext pos, UUID orderId) {
+        requireSessionStore(pos, orderId);
+        return load(orderId);
+    }
+
+    /** D42 (b) without loading the order: 404 when it does not exist, 403 when it is another store's. */
+    public void requireSessionStore(PosContext pos, UUID orderId) {
         UUID storeId = orders.findStoreIdById(orderId)
                 .orElseThrow(() -> new OrderNotFoundException(OrderChanges.ENTITY, orderId));
         accessPolicy.requireSessionStore(pos, storeId, OrderChanges.ENTITY, orderId);
+    }
+
+    /**
+     * The order at the version the client showed, with that version moved on first ({@link
+     * OrderRepository#incrementVersion}): from here to commit this transaction is the order's only writer, so the
+     * net quantities it reads stay true. Callers that claim two orders claim them in ascending id order.
+     *
+     * @throws ObjectOptimisticLockingFailureException 409 when the order is at another version
+     */
+    public Order claim(UUID orderId, long expectedVersion) {
+        if (orders.incrementVersion(orderId, expectedVersion) == 0) {
+            throw new ObjectOptimisticLockingFailureException(Order.class, orderId);
+        }
         return load(orderId);
     }
 

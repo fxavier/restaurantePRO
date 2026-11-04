@@ -8,6 +8,7 @@ import com.xavier.backend.catalog.CatalogApi;
 import com.xavier.backend.catalog.CatalogFixtures;
 import com.xavier.backend.catalog.Publications;
 import com.xavier.backend.dining.DiningFixtures;
+import com.xavier.backend.identity.IdentityFixtures;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -33,6 +34,7 @@ public class OrdersFixtures {
 
     public static final String POS = "/api/v1/pos";
     public static final JsonMapper JSON = JsonMapper.builder().build();
+    public static final String PIN = "4826";
 
     /** {@code item} sells at 12.50 with 16% VAT in catalog {@code catalogVersion}. */
     public record Shop(UUID store, UUID item, UUID area, UUID table, UUID priceList, UUID price,
@@ -124,6 +126,30 @@ public class OrdersFixtures {
                 .header("Idempotency-Key", key).contentType(MediaType.APPLICATION_JSON).content("""
                         {"orderVersion": %d, "catalogVersion": %d, "lineIds": [%s]}""".formatted(orderVersion,
                         catalogVersion, String.join(",", lines.stream().map(id -> "\"" + id + "\"").toList()))));
+    }
+
+    /** Drafts {@code quantity} of the shop's item and confirms it as a round at {@code orderVersion}; the line id. */
+    public UUID confirmedLine(Shop shop, UUID order, String quantity, long orderVersion, UUID employee,
+                              UUID terminal) throws Exception {
+        UUID line = id(draft(shop, order, quantity, employee, terminal));
+        confirm(shop, order, orderVersion, shop.catalogVersion(), List.of(line), employee, terminal,
+                UUID.randomUUID().toString())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isCreated());
+        return line;
+    }
+
+    /** A real employee of the shop's store with {@code role} and PIN {@link #PIN}, to approve (D40). */
+    public IdentityFixtures.Employee employee(Shop shop, UUID role) throws Exception {
+        return new IdentityFixtures(mvc).employee(PIN, shop.store(), role);
+    }
+
+    public JsonNode order(Shop shop, UUID order) throws Exception {
+        return json(mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .get(POS + "/orders/" + order)
+                        .with(OrdersActors.pos(shop.store(), UUID.randomUUID(), UUID.randomUUID(),
+                                Permission.ORDER_VIEW)))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+                .andReturn().getResponse().getContentAsString());
     }
 
     public long count(String sql, Object... params) {

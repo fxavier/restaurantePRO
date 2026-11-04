@@ -1,6 +1,8 @@
 package com.xavier.backend.orders;
 
 import com.xavier.backend.orders.model.event.OrderBatchConfirmed;
+import com.xavier.backend.orders.model.event.OrderLinesVoided;
+import com.xavier.backend.orders.model.event.SubtotalRequested;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -20,11 +22,44 @@ import org.springframework.modulith.events.ApplicationModuleListener;
 public class OrderEventProbe {
 
     private final List<OrderBatchConfirmed> received = new CopyOnWriteArrayList<>();
+    private final List<OrderLinesVoided> voids = new CopyOnWriteArrayList<>();
+    private final List<SubtotalRequested> subtotals = new CopyOnWriteArrayList<>();
     private final Set<UUID> failing = ConcurrentHashMap.newKeySet();
 
     @ApplicationModuleListener
     void on(OrderBatchConfirmed event) {
         received.add(event);
+    }
+
+    @ApplicationModuleListener
+    void on(OrderLinesVoided event) {
+        voids.add(event);
+    }
+
+    @ApplicationModuleListener
+    void on(SubtotalRequested event) {
+        subtotals.add(event);
+    }
+
+    /** The voids of the order that arrived, waiting up to 10 s for {@code expected}. */
+    public List<OrderLinesVoided> voidsOf(UUID orderId, int expected) throws InterruptedException {
+        return await(() -> voids.stream().filter(event -> event.orderId().equals(orderId)).toList(), expected);
+    }
+
+    /** The subtotal requests of the order that arrived, waiting up to 10 s for {@code expected}. */
+    public List<SubtotalRequested> subtotalsOf(UUID orderId, int expected) throws InterruptedException {
+        return await(() -> subtotals.stream().filter(event -> event.orderId().equals(orderId)).toList(), expected);
+    }
+
+    private static <T> List<T> await(java.util.function.Supplier<List<T>> read, int expected)
+            throws InterruptedException {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+        List<T> found = read.get();
+        while (found.size() < expected && System.nanoTime() < deadline) {
+            Thread.sleep(50);
+            found = read.get();
+        }
+        return found;
     }
 
     @EventListener

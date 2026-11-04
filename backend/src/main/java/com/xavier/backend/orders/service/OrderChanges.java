@@ -43,6 +43,14 @@ public class OrderChanges {
         changeNotifier.notifyAfterCommit(storeId, ChangeTopic.ORDER, orderId);
     }
 
+    /** A POS change authorized by an approver (D28, D40), with its reason; always made in a session. */
+    public void recordApproved(String action, String entityType, UUID entityId, Order order, UUID approverId,
+                               String reason, Map<String, Object> details) {
+        auditLog.recordAsCurrentActor(action, entityType, entityId.toString(), order.getStoreId(), approverId, reason,
+                details);
+        changeNotifier.notifyAfterCommit(order.getStoreId(), ChangeTopic.ORDER, order.getId());
+    }
+
     private static boolean inSession() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         return authentication != null && authentication.isAuthenticated()
