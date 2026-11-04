@@ -9,10 +9,10 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 /**
- * D47.4: completed Idempotency-Key records older than {@code restaurantpro.idempotency.retention} (default
- * {@code P90D}) are deleted once a day. POS keys are per-action UUIDs, so nobody retries after that. Records still
- * {@code IN_PROGRESS} are left alone: they are the claim of a request that may still be running or be retried.
- * Safe under overlap (one statement, D46).
+ * D47.4: Idempotency-Key records older than {@code restaurantpro.idempotency.retention} (default {@code P90D}) are
+ * deleted once a day: completed ones by their completion time, and claims still {@code IN_PROGRESS} by their creation
+ * time (abandoned after a crash, or by an action that was refused, e.g. a 422, which stores nothing). POS keys are
+ * per-action UUIDs, so nobody retries after that. Safe under overlap (one statement, D46).
  */
 @Service
 class IdempotencyRetention {
@@ -36,8 +36,8 @@ class IdempotencyRetention {
     /** @return how many records were deleted */
     @Scheduled(cron = "${restaurantpro.idempotency.retention-cron:0 30 3 * * *}")
     int purgeExpired() {
-        int deleted = store.deleteCompletedBefore(clock.instant().minus(retention));
-        log.info("Idempotency retention deleted {} completed records older than {}", deleted, retention);
+        int deleted = store.deleteExpiredBefore(clock.instant().minus(retention));
+        log.info("Idempotency retention deleted {} records (completed or abandoned) older than {}", deleted, retention);
         return deleted;
     }
 }
