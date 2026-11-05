@@ -18,7 +18,7 @@ import org.springframework.stereotype.Service;
 
 /**
  * {@code print_jobs{status}} (gauges read from one grouped count of the queue per scrape) and {@code production_unrouted_total}
- * (work with a destination or terminal that has no printer, D56).
+ * (work with a destination or terminal that has no printer, kept UNROUTED: D89).
  */
 @Service
 public class ProductionMetrics {
@@ -58,9 +58,9 @@ public class ProductionMetrics {
     private record Counts(Map<PrintJobStatus, Long> byStatus, Instant countedAt) {
     }
 
-    /** Logged at WARN and counted: the work is not printed (D56). */
+    /** Logged at WARN and counted: the work is kept UNROUTED, not printed until it is routed (D89 (1)). */
     void unrouted(UUID storeId, Object source, UUID sourceId, String where) {
-        log.warn("Not printed: no printer for {} in store {} ({} {})", where, storeId, source, sourceId);
+        log.warn("Unrouted: no printer for {} in store {} ({} {})", where, storeId, source, sourceId);
         unrouted.increment();
     }
 }
