@@ -353,9 +353,19 @@ class R2AcceptanceTest {
 
             // ---- A14: a tab that reconnects gets no replay of what it missed, and re-reads through the GET ----
             List<String> heardBefore = ids(streamA);
-            streamA.close();
-            UUID missed = id(office.post("/api/v1/backoffice/tables", Map.of("storeId", storeA, "areaId", area,
-                    "code", "M9", "seats", 4), 201));
+            UUID missed;
+            try (ChangeStream witness = ChangeStream.subscribe(cashier)) {
+                witness.makeLive(attempt -> id(office.post("/api/v1/backoffice/tables",
+                        Map.of("storeId", storeA, "areaId", area, "code", "W" + attempt, "seats", 2), 201)),
+                        "store A witness");
+                streamA.close();
+                missed = id(office.post("/api/v1/backoffice/tables", Map.of("storeId", storeA, "areaId", area,
+                        "code", "M9", "seats", 4), 201));
+                // notices go out after commit through one in-order sender: once the witness has M9's, it can no
+                // longer reach a later subscriber, so "replays nothing" doesn't depend on timing
+                Awaitility.await().atMost(Duration.ofSeconds(10))
+                        .untilAsserted(() -> assertThat(ids(witness)).contains(missed.toString()));
+            }
             try (ChangeStream again = ChangeStream.subscribe(cashier)) {
                 List<UUID> controlAgain = again.makeLive(attempt -> id(office.post("/api/v1/backoffice/tables",
                         Map.of("storeId", storeA, "areaId", area, "code", "R" + attempt, "seats", 2), 201)),
