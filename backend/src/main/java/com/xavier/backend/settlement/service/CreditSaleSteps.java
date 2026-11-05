@@ -177,7 +177,10 @@ public class CreditSaleSteps {
         if (charge.getStatus() == CreditChargeStatus.POSTED) {
             return charge;
         }
-        if (charge.getStatus() == CreditChargeStatus.RESERVED && !documentIssued(charge)) {
+        if (charge.getStatus() == CreditChargeStatus.RELEASED) { // cancelled between the steps: nothing is owed
+            throw SettlementConflictException.illegalChargeState(charge.getId(), charge.getStatus(), "be posted");
+        }
+        if (!documentIssued(charge)) {
             throw new SettlementRuleException(SettlementRule.FISCAL_PENDING, "The sale document of credit charge "
                     + charge.getId() + " is not issued yet.", Map.of("documentId", charge.getDocumentId()));
         }
