@@ -1,5 +1,6 @@
 package com.xavier.backend.customers.model;
 
+import com.xavier.backend.customers.ReservationView;
 import com.xavier.backend.customers.exception.CustomersConflictException;
 import com.xavier.backend.shared.Money;
 import jakarta.persistence.Column;
@@ -89,6 +90,10 @@ public class CreditReservation {
         }
         status = ReservationStatus.RELEASED;
         closedAt = now;
+    }
+
+    public ReservationView toView() {
+        return new ReservationView(id, customerId, chargeId, amount(), status.name());
     }
 
     public Money amount() {

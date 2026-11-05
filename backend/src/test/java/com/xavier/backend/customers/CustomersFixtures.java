@@ -60,6 +60,21 @@ public class CustomersFixtures {
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
     }
 
+    /** A new customer with a credit account of {@code limit} (created at a new store's POS, limit set at the BackOffice). */
+    public UUID creditCustomer(String limit) throws Exception {
+        UUID customer = newCustomer(pos(newStore()), "Credit " + token(), null, null);
+        setLimit(customer, limit);
+        return customer;
+    }
+
+    public void setLimit(UUID customer, String limit) throws Exception {
+        mvc.perform(idem(post(BO + "/" + customer + "/credit-limit-changes"))
+                        .with(account(null, Permission.CREDIT_LIMIT_MANAGE)).contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"newLimit": %s, "reason": "test"}""".formatted(limit)))
+                .andExpect(status().isOk());
+    }
+
     public static String customerBody(String name, String phone, String taxId) {
         return """
                 {"name": %s, "phone": %s, "taxId": %s}""".formatted(quoted(name), quoted(phone), quoted(taxId));

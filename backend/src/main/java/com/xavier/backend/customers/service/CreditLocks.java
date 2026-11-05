@@ -31,4 +31,10 @@ class CreditLocks {
             return account;
         });
     }
+
+    /** Re-reads a row of the account once its lock is held (a reservation loaded to find its customer). */
+    <T> T reread(T entity) {
+        entityManager.refresh(entity);
+        return entity;
+    }
 }
