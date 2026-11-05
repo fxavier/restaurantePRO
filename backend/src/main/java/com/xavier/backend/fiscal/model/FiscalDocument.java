@@ -55,6 +55,9 @@ public class FiscalDocument {
     static final int MAX_ERROR_LENGTH = 1000;
     private static final int RATE_SCALE = 4;
     private static final int QUANTITY_SCALE = 3;
+    /** The D68-amendment bound of an allocated line, in minor units (settlement's guard keeps every share inside). */
+    private static final int ALLOCATED_GROSS_UNITS = 1;
+    private static final int ALLOCATED_NET_UNITS = 2;
 
     @Id
     @UuidGenerator(style = UuidGenerator.Style.VERSION_7)
@@ -93,6 +96,10 @@ public class FiscalDocument {
 
     @Column(nullable = false)
     private boolean onAccount;
+
+    /** D68 amendment: the lines carry settlement's allocated shares, checked within a bound (see {@link #copy}). */
+    @Column(nullable = false, updatable = false)
+    private boolean amountsAllocated;
 
     private UUID seriesId;
 
@@ -212,6 +219,7 @@ public class FiscalDocument {
         document.storeTimezone = store.timezone().getId();
         document.snapshotBuyer(command.buyer());
         document.chargeTo(command.customerId(), command.onAccount());
+        document.amountsAllocated = command.amountsAllocated();
         document.createdAt = now;
         document.updatedAt = now;
 
@@ -220,7 +228,7 @@ public class FiscalDocument {
         Money tax = zero(currency);
         Map<BigDecimal, Money[]> perRate = new TreeMap<>();
         for (DraftLine line : lines) {
-            FiscalDocumentLine copied = copy(document.lines.size() + 1, line, currency);
+            FiscalDocumentLine copied = copy(document.lines.size() + 1, line, currency, command.amountsAllocated());
             document.lines.add(copied);
             BigDecimal rate = rate(line.taxRatePercent());
             gross = gross.plus(line.gross());
@@ -275,7 +283,8 @@ public class FiscalDocument {
     private boolean sameContent(DraftCommand command) {
         Currency c = Currency.getInstance(currency);
         List<DraftLine> given = command.lines() == null ? List.of() : command.lines();
-        if (given.size() != lines.size() || !Money.of(totalGross, c).equals(command.totalGross())
+        if (command.amountsAllocated() != amountsAllocated || given.size() != lines.size()
+                || !Money.of(totalGross, c).equals(command.totalGross())
                 || !Money.of(totalNet, c).equals(command.totalNet())
                 || !Money.of(totalTax, c).equals(command.totalTax())) {
             return false;
@@ -409,7 +418,13 @@ public class FiscalDocument {
         }
     }
 
-    private static FiscalDocumentLine copy(int lineNo, DraftLine line, Currency currency) {
+    /**
+     * D59 for an unallocated line: gross = round(unitPrice × quantity) and net = round(gross / (1 + rate/100))
+     * exactly. An allocated line (D68 amendment) carries a share whose rounding was distributed by settlement, so its
+     * gross may be 1 minor unit and its net 2 minor units away from those values; net + tax = gross stays exact and
+     * no amount is negative.
+     */
+    private static FiscalDocumentLine copy(int lineNo, DraftLine line, Currency currency, boolean allocated) {
         String where = "line " + lineNo + ": ";
         String description = optionalText(line.description(), where + "description", 200);
         if (description == null) {
@@ -424,20 +439,46 @@ public class FiscalDocument {
                 throw new InvalidSaleDraftException(where + "every amount must be in " + currency);
             }
         }
-        if (!line.unitPrice().times(quantity).equals(line.gross())) {
-            throw new InvalidSaleDraftException(where + "gross must be unit price × quantity");
-        }
         if (!line.net().plus(line.tax()).equals(line.gross())) {
             throw new InvalidSaleDraftException(where + "net + tax must equal gross");
         }
         BigDecimal rate = rate(line.taxRatePercent());
+        Money expectedGross = line.unitPrice().times(quantity);
         Money expectedNet = netOf(line.gross(), rate);
+        if (allocated) {
+            requireAllocated(where, line, expectedGross, expectedNet, currency);
+            return new FiscalDocumentLine(lineNo, line.sourceLineId(), description, quantity, line.unitPrice(),
+                    rate, line.gross(), line.net(), line.tax());
+        }
+        if (!expectedGross.equals(line.gross())) {
+            throw new InvalidSaleDraftException(where + "gross must be unit price × quantity");
+        }
         if (!line.net().equals(expectedNet)) {
             throw new InvalidSaleDraftException(where + "net must be gross / (1 + rate/100) = "
                     + expectedNet.amount() + " at rate " + rate.stripTrailingZeros().toPlainString() + " %");
         }
         return new FiscalDocumentLine(lineNo, line.sourceLineId(), description, quantity, line.unitPrice(),
                 rate, line.gross(), line.net(), line.tax());
+    }
+
+    private static void requireAllocated(String where, DraftLine line, Money expectedGross, Money expectedNet,
+                                         Currency currency) {
+        if (line.gross().amount().signum() < 0 || line.net().amount().signum() < 0
+                || line.tax().amount().signum() < 0) {
+            throw new InvalidSaleDraftException(where + "an allocated amount cannot be negative");
+        }
+        if (minorUnits(line.gross().minus(expectedGross), currency) > ALLOCATED_GROSS_UNITS) {
+            throw new InvalidSaleDraftException(where + "an allocated gross must be within " + ALLOCATED_GROSS_UNITS
+                    + " minor unit of unit price × quantity = " + expectedGross.amount());
+        }
+        if (minorUnits(line.net().minus(expectedNet), currency) > ALLOCATED_NET_UNITS) {
+            throw new InvalidSaleDraftException(where + "an allocated net must be within " + ALLOCATED_NET_UNITS
+                    + " minor units of gross / (1 + rate/100) = " + expectedNet.amount());
+        }
+    }
+
+    private static int minorUnits(Money difference, Currency currency) {
+        return difference.amount().abs().movePointRight(currency.getDefaultFractionDigits()).intValueExact();
     }
 
     /** D59, tax-inclusive prices: {@code net = gross / (1 + rate/100)}, HALF_UP to minor units; tax = gross − net. */
