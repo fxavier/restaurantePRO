@@ -46,12 +46,19 @@ public final class ReconciliationRequests {
     public static ResultActions importCsv(MockMvc mvc, UUID store, String method, String csv, String key,
                                           Permission... permissions) throws Exception {
         LocalDate today = LocalDate.now(STORE_ZONE);
+        return importCsv(mvc, store, method, csv, key, today.minusDays(1), today.plusDays(1), permissions);
+    }
+
+    public static ResultActions importCsv(MockMvc mvc, UUID store, String method, String csv, String key,
+                                          LocalDate from, LocalDate to, Permission... permissions) throws Exception {
+        Permission[] granted = permissions.length > 0 ? permissions
+                : new Permission[] {Permission.RECONCILIATION_MANAGE, Permission.RECONCILIATION_VIEW};
         return mvc.perform(multipart(BASE + "/batches")
                 .file(new MockMultipartFile("file", "statement.csv", "text/csv",
                         (HEADER + csv).getBytes(StandardCharsets.UTF_8)))
                 .param("storeId", store.toString()).param("methodCode", method)
-                .param("periodFrom", today.minusDays(1).toString()).param("periodTo", today.plusDays(1).toString())
-                .header("Idempotency-Key", key).with(csrf()).with(CashFixtures.account(store, permissions)));
+                .param("periodFrom", from.toString()).param("periodTo", to.toString())
+                .header("Idempotency-Key", key).with(csrf()).with(CashFixtures.account(store, granted)));
     }
 
     public static ResultActions entries(MockMvc mvc, UUID store, UUID batch, String query) throws Exception {

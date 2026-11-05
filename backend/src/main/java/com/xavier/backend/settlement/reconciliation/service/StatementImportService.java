@@ -13,6 +13,7 @@ import com.xavier.backend.settlement.reconciliation.StatementSource;
 import com.xavier.backend.settlement.reconciliation.exception.ReconciliationConflictException;
 import com.xavier.backend.settlement.reconciliation.exception.ReconciliationNotFoundException;
 import com.xavier.backend.settlement.reconciliation.exception.ReconciliationRuleException;
+import com.xavier.backend.settlement.reconciliation.exception.ReconciliationUnavailableException;
 import com.xavier.backend.settlement.reconciliation.model.BatchSource;
 import com.xavier.backend.settlement.reconciliation.model.EntryKind;
 import com.xavier.backend.settlement.reconciliation.model.Match;
@@ -33,6 +34,8 @@ import com.xavier.backend.settlement.reconciliation.repository.ReconciliationBat
 import com.xavier.backend.settlement.reconciliation.repository.ReconciliationEntryRepository;
 import com.xavier.backend.settlement.reconciliation.repository.ReconciliationResolutionRepository;
 import com.xavier.backend.settlement.repository.PaymentMethodRepository;
+import com.xavier.backend.settlement.service.BoundedProviderCalls;
+import com.xavier.backend.settlement.service.ProviderUnavailableException;
 import com.xavier.backend.shared.ExternalCalls;
 import com.xavier.backend.shared.Money;
 import java.nio.charset.StandardCharsets;
@@ -50,7 +53,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
@@ -63,7 +65,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * CSV, or fetched from the provider when its adapter is a {@link StatementSource}. In one transaction it checks every
  * line, matches them ({@link StatementMatcher}) against the store's payments of the method, net of their refunds,
  * and records the batch, one entry per line and per payment the statement lacks, and AUTO_MATCHED for each MATCHED
- * entry. Imports of one method are serialized, so a statement always sees what an earlier one matched.
+ * entry. Imports of one method are serialized, so a statement always sees what an earlier one matched. Every line
+ * is checked before the transaction and the lock.
  *
  * <p>It reads payments, refunds and attempts and writes none of them, nor any cash movement (D78).
  */
@@ -78,6 +81,7 @@ public class StatementImportService {
     private final ReconciliationEntryRepository entries;
     private final ReconciliationResolutionRepository resolutions;
     private final ObjectProvider<PaymentProvider> providers;
+    private final BoundedProviderCalls boundedCalls;
     private final AuditLog audit;
     private final TransactionTemplate inTransaction;
     private final TransactionTemplate readOnly;
@@ -86,7 +90,8 @@ public class StatementImportService {
     StatementImportService(AccessPolicy accessPolicy, OrganizationApi organization, PaymentMethodRepository methods,
                            PaymentReads payments, ReconciliationBatchRepository batches,
                            ReconciliationEntryRepository entries, ReconciliationResolutionRepository resolutions,
-                           ObjectProvider<PaymentProvider> providers, AuditLog audit,
+                           ObjectProvider<PaymentProvider> providers, BoundedProviderCalls boundedCalls,
+                           AuditLog audit,
                            PlatformTransactionManager transactionManager, Clock clock) {
         this.accessPolicy = accessPolicy;
         this.organization = organization;
@@ -96,6 +101,7 @@ public class StatementImportService {
         this.entries = entries;
         this.resolutions = resolutions;
         this.providers = providers;
+        this.boundedCalls = boundedCalls;
         this.audit = audit;
         this.inTransaction = new TransactionTemplate(transactionManager);
         this.readOnly = new TransactionTemplate(transactionManager);
@@ -107,69 +113,111 @@ public class StatementImportService {
     public record Imported(BatchView batch, boolean created) {
     }
 
+    /** A statement whose every line passed, ready to import: its target, source, digest and rows. */
+    public record Statement(Target target, BatchSource source, String digest, List<StatementRow> rows) {
+    }
+
     /**
-     * @throws ReconciliationRuleException 422 {@code STATEMENT_INVALID} with every error of the file or request
-     * @throws ReconciliationConflictException 409 {@code STATEMENT_ALREADY_IMPORTED} for a file this method already has
+     * Phase 1 of a CSV import, with no transaction and no lock: authorizes, reads the store and the method, and checks
+     * every line (pure parsing: a bad file never holds the import lock).
+     *
+     * @throws ReconciliationRuleException 422 {@code STATEMENT_INVALID} with the file's or request's errors
      */
-    @Transactional
-    public BatchView importCsv(ImportRequest request, byte[] file) {
+    public Statement readCsv(ImportRequest request, byte[] file) {
+        ExternalCalls.requireNoTransaction();
         accessPolicy.require(Permission.RECONCILIATION_MANAGE, request.storeId());
-        Target target = target(request.storeId(), request.methodCode(), request.periodFrom(), request.periodTo());
         if (!Objects.equals(request.fileSha256(), sha256(file))) {
             throw new IllegalArgumentException("The request's digest is not the file's");
         }
-        return record(target, BatchSource.CSV, request.fileSha256(),
-                t -> StatementRows.fromCsv(file, t.currency(), t.start(), t.end())).batch();
+        Target target = readOnly.execute(tx -> target(request.storeId(), request.methodCode(), request.periodFrom(),
+                request.periodTo()));
+        return checked(target, BatchSource.CSV, file,
+                StatementRows.fromCsv(file, target.currency(), target.start(), target.end()));
+    }
+
+    /**
+     * Phase 2: imports a statement {@link #readCsv} checked.
+     *
+     * @throws ReconciliationConflictException 409 {@code STATEMENT_ALREADY_IMPORTED} for a statement the store's method
+     *         already has, for the same period
+     */
+    @Transactional
+    public BatchView importCsv(Statement statement) {
+        accessPolicy.require(Permission.RECONCILIATION_MANAGE, statement.target().storeId());
+        return record(statement).batch();
     }
 
     /**
      * The D63 steps of a fetch; call with no transaction (from {@code executeSteps}). (s1) a read-only transaction
-     * authorizes and finds the method's {@link StatementSource}; (s2) the provider's statement, with no transaction;
-     * (s3) a transaction imports it as {@link #importCsv} does. A fetched statement is identified by its store,
-     * period and canonical lines, and a second fetch of the same one returns the recorded batch (each step is
-     * idempotent by the batches stored).
+     * authorizes and finds the method's {@link StatementSource}; (s2) the provider's statement, with no transaction,
+     * bounded by the provider timeout, then the lines' checks; (s3) a transaction imports it as a CSV is. A second
+     * fetch of the same statement returns the recorded batch (each step is idempotent by the batches stored).
      *
      * @throws ReconciliationRuleException 422 {@code NO_STATEMENT_SOURCE} for a method whose provider cannot fetch
+     * @throws ReconciliationUnavailableException 503 {@code STATEMENT_SOURCE_TIMEOUT} when the provider is too slow
      */
     public Imported fetch(FetchRequest request) {
-        StatementSource source = readOnly.execute(tx -> {
-            accessPolicy.require(Permission.RECONCILIATION_MANAGE, request.storeId());
-            return sourceOf(target(request.storeId(), request.methodCode(), request.from(), request.to()).method());
-        });
-        ExternalCalls.requireNoTransaction();
-        List<StatementLine> lines = List.copyOf(source.statement(request.methodCode(), request.from(), request.to()));
-        byte[] identity = ("store:" + request.storeId() + "\nperiod:" + request.from() + "/" + request.to() + "\n")
-                .getBytes(StandardCharsets.UTF_8);
-        String digest = sha256(identity, StatementRows.canonicalCsv(lines));
-        return inTransaction.execute(tx -> {
+        record Source(Target target, String providerCode, StatementSource source) {
+        }
+        Source found = readOnly.execute(tx -> {
             accessPolicy.require(Permission.RECONCILIATION_MANAGE, request.storeId());
             Target target = target(request.storeId(), request.methodCode(), request.from(), request.to());
-            return record(target, BatchSource.PROVIDER, digest,
-                    t -> StatementRows.fromLines(lines, t.currency(), t.start(), t.end()));
+            PaymentMethod method = methods.findByCode(target.methodCode()).orElseThrow();
+            return new Source(target, method.getProviderCode(), sourceOf(method));
+        });
+        List<StatementLine> lines;
+        try {
+            lines = List.copyOf(boundedCalls.call(found.providerCode(), "statement",
+                    () -> found.source().statement(request.methodCode(), request.from(), request.to())));
+        } catch (ProviderUnavailableException e) {
+            throw ReconciliationUnavailableException.sourceTimeout(request.methodCode());
+        }
+        Target target = found.target();
+        Statement statement = checked(target, BatchSource.PROVIDER, StatementRows.canonicalCsv(lines),
+                StatementRows.fromLines(lines, target.currency(), target.start(), target.end()));
+        return inTransaction.execute(tx -> {
+            accessPolicy.require(Permission.RECONCILIATION_MANAGE, request.storeId());
+            return record(statement);
         });
     }
 
-    private Imported record(Target target, BatchSource source, String digest,
-                            Function<Target, StatementRows.Result> read) {
-        PaymentMethod method = target.method();
-        batches.lockImportsOf(method.getCode());
-        var existing = batches.findByMethodCodeAndFileSha256(method.getCode(), digest);
+    private static Statement checked(Target target, BatchSource source, byte[] content, StatementRows.Result read) {
+        if (!read.errors().isEmpty()) {
+            throw ReconciliationRuleException.statementInvalid(read.errors());
+        }
+        return new Statement(target, source, digest(target, content), read.rows());
+    }
+
+    /**
+     * What identifies a statement ({@code reconciliation_batch.file_sha256}): its store, period and method with its
+     * content, so the same bytes for another store or period (an empty statement, say) are another statement.
+     */
+    static String digest(Target target, byte[] content) {
+        byte[] identity = ("store:" + target.storeId() + "\nperiod:" + target.from() + ".." + target.to()
+                + "\nmethod:" + target.methodCode() + "\n").getBytes(StandardCharsets.UTF_8);
+        return sha256(identity, content);
+    }
+
+    private Imported record(Statement statement) {
+        Target target = statement.target();
+        batches.lockImportsOf(target.methodCode());
+        var existing = batches.findByMethodCodeAndFileSha256(target.methodCode(), statement.digest());
         if (existing.isPresent()) {
-            if (source == BatchSource.CSV) {
-                throw ReconciliationConflictException.alreadyImported(existing.get().getId());
-            }
             ReconciliationBatch batch = existing.get();
+            if (!batch.getStoreId().equals(target.storeId())) {
+                throw ReconciliationConflictException.alreadyImportedElsewhere();
+            }
+            if (statement.source() == BatchSource.CSV) {
+                throw ReconciliationConflictException.alreadyImported(batch.getId());
+            }
             return new Imported(ReconciliationViews.batch(batch, entries.countsOf(List.of(batch.getId()))), false);
         }
-        StatementRows.Result statement = read.apply(target);
-        if (!statement.errors().isEmpty()) {
-            throw ReconciliationRuleException.statementInvalid(statement.errors());
-        }
-        List<Match> matches = StatementMatcher.match(method.getKind(), statement.rows(),
-                candidates(target, statement.rows()), target.start(), target.end());
+        List<StatementRow> rows = statement.rows();
+        List<Match> matches = StatementMatcher.match(target.methodKind(), rows, candidates(target, rows),
+                target.start(), target.end());
         Instant now = clock.instant();
-        ReconciliationBatch batch = batches.save(ReconciliationBatch.of(target.storeId(), method.getCode(),
-                target.from(), target.to(), target.currency(), digest, source, statement.rows().size(),
+        ReconciliationBatch batch = batches.save(ReconciliationBatch.of(target.storeId(), target.methodCode(),
+                target.from(), target.to(), target.currency(), statement.digest(), statement.source(), rows.size(),
                 accessPolicy.current().userId(), now));
         List<ReconciliationEntry> recorded = entries.saveAll(matches.stream()
                 .map(match -> ReconciliationEntry.of(batch, match, now)).toList());
@@ -177,8 +225,8 @@ public class StatementImportService {
                 .map(entry -> ReconciliationResolution.autoMatched(entry, now)).toList());
         List<KindCount> counts = ReconciliationViews.counted(batch, recorded);
         audit.recordAsCurrentActor("RECONCILIATION_BATCH_IMPORTED", "ReconciliationBatch", batch.getId().toString(),
-                target.storeId(), null, null, Map.of("methodCode", method.getCode(), "source", source.name(),
-                        "lineCount", statement.rows().size(), "entries", counts.stream().collect(
+                target.storeId(), null, null, Map.of("methodCode", target.methodCode(), "source",
+                        statement.source().name(), "lineCount", rows.size(), "entries", counts.stream().collect(
                                 Collectors.toMap(c -> c.kind().name(), KindCount::count))));
         return new Imported(ReconciliationViews.batch(batch, counts), true);
     }
@@ -188,13 +236,13 @@ public class StatementImportService {
      * for an integrated method, those its lines name by reference whenever they were confirmed.
      */
     private List<PaymentCandidate> candidates(Target target, List<StatementRow> rows) {
-        String code = target.method().getCode();
+        String code = target.methodCode();
         Map<UUID, CandidateRow> found = new LinkedHashMap<>();
         payments.confirmedBetween(target.storeId(), code, target.start().minus(StatementMatcher.WINDOW),
                 target.end().plus(StatementMatcher.WINDOW)).forEach(row -> found.put(row.paymentId(), row));
         Set<String> references = rows.stream().map(StatementRow::reference).filter(Objects::nonNull)
                 .collect(Collectors.toSet());
-        if (target.method().getKind() == PaymentMethodKind.INTEGRATED && !references.isEmpty()) {
+        if (target.methodKind() == PaymentMethodKind.INTEGRATED && !references.isEmpty()) {
             payments.withReferences(target.storeId(), code, references)
                     .forEach(row -> found.put(row.paymentId(), row));
         }
@@ -221,8 +269,8 @@ public class StatementImportService {
                 .orElseThrow(() -> ReconciliationRuleException.statementInvalid("methodCode",
                         "No card, terminal or provider payment method has the code " + methodCode));
         ZoneId zone = store.timezone();
-        return new Target(storeId, method, store.currency(), from, to, from.atStartOfDay(zone).toInstant(),
-                to.plusDays(1).atStartOfDay(zone).toInstant());
+        return new Target(storeId, method.getCode(), method.getKind(), store.currency(), from, to,
+                from.atStartOfDay(zone).toInstant(), to.plusDays(1).atStartOfDay(zone).toInstant());
     }
 
     private StatementSource sourceOf(PaymentMethod method) {
@@ -233,8 +281,8 @@ public class StatementImportService {
     }
 
     /** The statement's store, method and business days, and those days as instants {@code [start, end)}. */
-    private record Target(UUID storeId, PaymentMethod method, Currency currency, LocalDate from, LocalDate to,
-                          Instant start, Instant end) {
+    public record Target(UUID storeId, String methodCode, PaymentMethodKind methodKind, Currency currency,
+                         LocalDate from, LocalDate to, Instant start, Instant end) {
     }
 
     public static String sha256(byte[]... parts) {

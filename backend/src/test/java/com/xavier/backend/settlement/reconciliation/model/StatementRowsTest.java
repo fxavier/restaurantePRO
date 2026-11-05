@@ -1,12 +1,14 @@
 package com.xavier.backend.settlement.reconciliation.model;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 import com.xavier.backend.settlement.reconciliation.StatementLine;
 import com.xavier.backend.settlement.reconciliation.model.dto.StatementError;
 import com.xavier.backend.shared.Money;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Currency;
 import java.util.List;
@@ -31,7 +33,7 @@ class StatementRowsTest {
         StatementRows.Result result = csv("2026-11-05T10:15:00+02:00,25.00,0.50,REF-1,A123,L-9\n");
 
         assertThat(result.errors()).isEmpty();
-        assertThat(result.rows()).containsExactly(new StatementRow(1, Instant.parse("2026-11-05T08:15:00Z"),
+        assertThat(result.rows()).containsExactly(new StatementRow(2, Instant.parse("2026-11-05T08:15:00Z"),
                 Money.of("25.00", MZN), Money.of("0.50", MZN), "REF-1", "A123", "L-9"));
     }
 
@@ -39,16 +41,19 @@ class StatementRowsTest {
     void emptyOptionalColumnsAreAbsentAndAnEmptyFeeIsZero() {
         StatementRows.Result result = csv("2026-11-05T08:15:00Z,25.00,,, ,\n");
 
-        assertThat(result.rows().getFirst()).isEqualTo(new StatementRow(1, Instant.parse("2026-11-05T08:15:00Z"),
+        assertThat(result.rows().getFirst()).isEqualTo(new StatementRow(2, Instant.parse("2026-11-05T08:15:00Z"),
                 Money.of("25.00", MZN), Money.of("0", MZN), null, null, null));
     }
 
     @Test
-    void aQuotedFieldMayHoldACommaAndBlankLinesAreSkipped() {
+    void aQuotedFieldMayHoldACommaAndBlankLinesAreSkippedButCounted() {
         StatementRows.Result result = csv("\n2026-11-05T08:15:00Z,25.00,0,\"REF,1\",,\n\n");
 
         assertThat(result.errors()).isEmpty();
-        assertThat(result.rows()).singleElement().extracting(StatementRow::reference).isEqualTo("REF,1");
+        assertThat(result.rows()).singleElement().satisfies(row -> {
+            assertThat(row.reference()).isEqualTo("REF,1");
+            assertThat(row.lineNo()).isEqualTo(3); // the physical line: header, blank, this
+        });
     }
 
     @Test
@@ -60,12 +65,12 @@ class StatementRowsTest {
     }
 
     @Test
-    void anotherHeaderIsRefusedAsLineZero() {
+    void anotherHeaderIsRefusedOnItsLine() {
         StatementRows.Result result = StatementRows.fromCsv("date,amount\n".getBytes(StandardCharsets.UTF_8), MZN,
                 FROM, TO);
 
         assertThat(result.errors()).singleElement().satisfies(error -> {
-            assertThat(error.line()).isZero();
+            assertThat(error.line()).isEqualTo(1);
             assertThat(error.field()).isEqualTo("header");
         });
     }
@@ -80,12 +85,16 @@ class StatementRowsTest {
             "2026-11-05T08:15:00Z,-5.00,0,,,         | amount",
             "2026-11-05T08:15:00Z,25.001,0,,,        | amount",
             "2026-11-05T08:15:00Z,25.00,-1,,,        | fee",
+            "2026-11-05T08:15:00Z,1E+2,0,,,          | amount",
+            "2026-11-05T08:15:00Z,25.00,1e1,,,       | fee",
+            "2026-11-05T08:15:00Z,1234567890123456,0,,, | amount",
+            "2026-11-05T08:15:00Z,+25.00,0,,,        | amount",
             "2026-11-05T08:15:00Z,25.00,0,,          | line"})
     void anInvalidValueIsReportedWithItsLineAndField(String line, String field) {
-        StatementRows.Result result = csv("2026-11-05T08:15:00Z,10.00,0,,,\n" + line + "\n");
+        StatementRows.Result result = csv("2026-11-05T08:15:00Z,10.00,0,,,\n\n" + line + "\n");
 
         assertThat(result.errors()).singleElement().satisfies(error -> {
-            assertThat(error.line()).isEqualTo(2);
+            assertThat(error.line()).isEqualTo(4); // header, a line, a blank line, this one
             assertThat(error.field()).isEqualTo(field);
         });
     }
@@ -95,8 +104,45 @@ class StatementRowsTest {
         StatementRows.Result result = csv("x,1,0,,,\n2026-11-05T08:15:00Z,y,0,,,\n");
 
         assertThat(result.errors()).extracting(StatementError::line, StatementError::field)
-                .containsExactly(org.assertj.core.groups.Tuple.tuple(1, "occurred_at"),
-                        org.assertj.core.groups.Tuple.tuple(2, "amount"));
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(2, "occurred_at"),
+                        org.assertj.core.groups.Tuple.tuple(3, "amount"));
+    }
+
+    @Test
+    void anExponentAmountIsRefusedAtOnce() {
+        String lines = "2026-11-05T08:15:00Z,1E+100000000,0,,,\n".repeat(20);
+
+        StatementRows.Result result = assertTimeoutPreemptively(Duration.ofSeconds(1), () -> csv(lines));
+
+        assertThat(result.rows()).isEmpty();
+        assertThat(result.errors()).hasSize(20).allMatch(error -> error.field().equals("amount"));
+    }
+
+    @Test
+    void aProviderExponentIsRefusedAtOnce() {
+        List<StatementLine> lines = List.of(new StatementLine(Instant.parse("2026-11-05T08:15:00Z"),
+                new BigDecimal("1E+100000000"), new BigDecimal("1E-100000000"), null, null, null));
+
+        StatementRows.Result result = assertTimeoutPreemptively(Duration.ofSeconds(1),
+                () -> StatementRows.fromLines(lines, MZN, FROM, TO));
+
+        assertThat(result.errors()).extracting(StatementError::field).containsExactly("amount", "fee");
+    }
+
+    @Test
+    void onlyTheFirstHundredErrorsAreReported() {
+        StatementRows.Result result = csv("x,1,0,,,\n".repeat(150));
+
+        assertThat(result.errors()).hasSize(StatementRows.MAX_ERRORS);
+        assertThat(result.errors().getLast().line()).isEqualTo(101);
+    }
+
+    @Test
+    void aStatementHasAtMostFiftyThousandLines() {
+        StatementRows.Result result = csv("2026-11-05T08:15:00Z,1.00,0,,,\n".repeat(StatementRows.MAX_LINES + 1));
+
+        assertThat(result.rows()).isEmpty();
+        assertThat(result.errors()).singleElement().extracting(StatementError::field).isEqualTo("file");
     }
 
     @Test
@@ -120,6 +166,7 @@ class StatementRowsTest {
         assertThat(new String(StatementRows.canonicalCsv(lines), StandardCharsets.UTF_8))
                 .isEqualTo(HEADER + "2026-11-05T08:15:00Z,25.0,,\"R,1\",,L1\n");
         assertThat(StatementRows.fromCsv(StatementRows.canonicalCsv(lines), MZN, FROM, TO).rows())
+                .usingRecursiveFieldByFieldElementComparatorIgnoringFields("lineNo")
                 .isEqualTo(StatementRows.fromLines(lines, MZN, FROM, TO).rows());
     }
 }

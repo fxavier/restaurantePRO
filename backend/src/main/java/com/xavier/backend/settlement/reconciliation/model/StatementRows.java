@@ -11,13 +11,15 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Currency;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * The one canonical statement format (D78, P37), and the checks every statement line passes, from a CSV file or from a
  * provider's {@code StatementSource}. The CSV is UTF-8 with the header {@value #HEADER}; blank lines are skipped and
- * data lines are numbered from 1; {@code occurred_at} is ISO-8601 with an offset; a field may be double-quoted (a
+ * a line is numbered by its physical line in the file (the header is line 1); a provider's lines from 1; {@code occurred_at} is ISO-8601 with an offset; a field may be double-quoted (a
  * quote inside it doubled). A line is refused when it is not of the period {@code [from, to)}, its amount is not
- * positive in the currency's minor units, or its fee is negative.
+ * a positive plain decimal in the currency's minor units, or its fee is negative. At most {@link #MAX_LINES} lines;
+ * at most {@link #MAX_ERRORS} errors are reported.
  */
 public final class StatementRows {
 
@@ -25,6 +27,16 @@ public final class StatementRows {
     private static final int COLUMNS = 6;
     private static final int MAX_REFERENCE = 100;
     private static final int MAX_AUTHORIZATION = 50;
+    /** A statement has at most this many lines, and at most this many errors are reported. */
+    public static final int MAX_LINES = 50_000;
+    public static final int MAX_ERRORS = 100;
+    /**
+     * Amounts are plain decimals only: an exponent ({@code 1E+100000000}) would make the scale check allocate
+     * and spin for seconds per line.
+     */
+    private static final Pattern PLAIN_DECIMAL = Pattern.compile("^\\d{1,15}(\\.\\d{1,4})?$");
+    private static final int MAX_INTEGER_DIGITS = 15;
+    private static final int MAX_FRACTION_DIGITS = 4;
 
     private StatementRows() {
     }
@@ -35,30 +47,45 @@ public final class StatementRows {
 
     public static Result fromCsv(byte[] file, Currency currency, Instant from, Instant to) {
         String text = new String(file, StandardCharsets.UTF_8);
-        if (text.startsWith("﻿")) {
+        if (text.startsWith("\uFEFF")) {
             text = text.substring(1);
         }
-        List<String> lines = text.lines().filter(line -> !line.isBlank()).toList();
-        if (lines.isEmpty() || !HEADER.equalsIgnoreCase(lines.getFirst().strip())) {
-            return new Result(List.of(), List.of(new StatementError(0, "header", "The first line must be " + HEADER)));
+        List<String> lines = text.lines().toList();
+        int header = 0;
+        while (header < lines.size() && lines.get(header).isBlank()) {
+            header++;
+        }
+        if (header == lines.size() || !HEADER.equalsIgnoreCase(lines.get(header).strip())) {
+            return new Result(List.of(), List.of(new StatementError(Math.min(header, lines.size() - 1) + 1, "header",
+                    "The first line must be " + HEADER)));
+        }
+        if (lines.subList(header + 1, lines.size()).stream().filter(line -> !line.isBlank()).count() > MAX_LINES) {
+            return tooLong();
         }
         Checker checker = new Checker(currency, from, to);
-        for (int i = 1; i < lines.size(); i++) {
+        for (int i = header + 1; i < lines.size() && !checker.full(); i++) {
+            if (lines.get(i).isBlank()) {
+                continue;
+            }
+            int lineNo = i + 1; // the physical line of the file, the header counting as one
             List<String> fields = split(lines.get(i));
             if (fields == null || fields.size() != COLUMNS) {
-                checker.errors.add(new StatementError(i, "line", "A line has " + COLUMNS + " comma-separated "
+                checker.error(new StatementError(lineNo, "line", "A line has " + COLUMNS + " comma-separated "
                         + "columns"));
                 continue;
             }
-            checker.check(i, fields.get(0), fields.get(1), fields.get(2), fields.get(3), fields.get(4),
+            checker.check(lineNo, fields.get(0), fields.get(1), fields.get(2), fields.get(3), fields.get(4),
                     fields.get(5));
         }
         return checker.result();
     }
 
     public static Result fromLines(List<StatementLine> lines, Currency currency, Instant from, Instant to) {
+        if (lines.size() > MAX_LINES) {
+            return tooLong();
+        }
         Checker checker = new Checker(currency, from, to);
-        for (int i = 0; i < lines.size(); i++) {
+        for (int i = 0; i < lines.size() && !checker.full(); i++) {
             StatementLine line = lines.get(i);
             checker.check(i + 1, line.occurredAt() == null ? null : line.occurredAt().toString(),
                     plain(line.amount()), plain(line.fee()), line.reference(), line.authorizationCode(),
@@ -77,6 +104,11 @@ public final class StatementRows {
                     .append('\n');
         }
         return csv.toString().getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static Result tooLong() {
+        return new Result(List.of(), List.of(new StatementError(0, "file", "A statement has at most " + MAX_LINES
+                + " lines: split it by period")));
     }
 
     private static final class Checker {
@@ -116,30 +148,29 @@ public final class StatementRows {
                 at = null;
             }
             if (at == null) {
-                errors.add(new StatementError(lineNo, "occurred_at", "An ISO-8601 instant with an offset, e.g. "
+                error(new StatementError(lineNo, "occurred_at", "An ISO-8601 instant with an offset, e.g. "
                         + "2026-11-05T10:15:00+02:00"));
             } else if (at.isBefore(from) || !at.isBefore(to)) {
-                errors.add(new StatementError(lineNo, "occurred_at", "The line is not of the statement's period"));
+                error(new StatementError(lineNo, "occurred_at", "The line is not of the statement's period"));
             }
             return at;
         }
 
         private Money money(int lineNo, String field, String value, boolean zeroAllowed) {
-            BigDecimal number;
-            try {
-                number = new BigDecimal(value.strip());
-            } catch (NumberFormatException | NullPointerException e) {
-                errors.add(new StatementError(lineNo, field, "A decimal number, e.g. 25.00"));
+            if (value == null || !PLAIN_DECIMAL.matcher(value.strip()).matches()) {
+                error(new StatementError(lineNo, field, "A plain decimal number with at most "
+                        + MAX_INTEGER_DIGITS + " digits and " + MAX_FRACTION_DIGITS + " decimals, e.g. 25.00"));
                 return null;
             }
+            BigDecimal number = new BigDecimal(value.strip());
             if (number.signum() < 0 || (number.signum() == 0 && !zeroAllowed)) {
-                errors.add(new StatementError(lineNo, field, zeroAllowed ? "Zero or more" : "More than zero"));
+                error(new StatementError(lineNo, field, zeroAllowed ? "Zero or more" : "More than zero"));
                 return null;
             }
             try {
                 return Money.of(number, currency);
             } catch (IllegalArgumentException e) {
-                errors.add(new StatementError(lineNo, field, "At most " + currency.getDefaultFractionDigits()
+                error(new StatementError(lineNo, field, "At most " + currency.getDefaultFractionDigits()
                         + " decimals in " + currency.getCurrencyCode()));
                 return null;
             }
@@ -151,10 +182,20 @@ public final class StatementRows {
             }
             String text = value.strip();
             if (text.length() > max) {
-                errors.add(new StatementError(lineNo, field, "At most " + max + " characters"));
+                error(new StatementError(lineNo, field, "At most " + max + " characters"));
                 return null;
             }
             return text;
+        }
+
+        void error(StatementError error) {
+            if (!full()) {
+                errors.add(error);
+            }
+        }
+
+        boolean full() {
+            return errors.size() >= MAX_ERRORS;
         }
 
         Result result() {
@@ -188,8 +229,13 @@ public final class StatementRows {
         return fields;
     }
 
+    /** A provider's number as plain text; one too large or too precise keeps its short form, which is refused. */
     private static String plain(BigDecimal value) {
-        return value == null ? "" : value.toPlainString();
+        if (value == null) {
+            return "";
+        }
+        boolean bounded = value.scale() <= MAX_FRACTION_DIGITS && value.precision() - value.scale() <= MAX_INTEGER_DIGITS;
+        return bounded ? value.toPlainString() : value.toString();
     }
 
     private static String quoted(String value) {

@@ -16,6 +16,7 @@ import com.xavier.backend.settlement.SettlementFixtures;
 import com.xavier.backend.settlement.SettlementFixtures.Sale;
 import com.xavier.backend.settlement.SettlementModuleTest;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -92,6 +93,24 @@ class StatementFetchTest {
                 .andExpect(jsonPath("$.id").value(batch));
         assertThat(fixtures.count("SELECT count(*) FROM settlement.reconciliation_batch WHERE store_id = ?",
                 sale.store())).isEqualTo(1);
+    }
+
+    @Test
+    void aProviderTooSlowToAnswerIsARetryable503AndImportsNothing() throws Exception {
+        provider.willReturn(List.of(line(confirmedAt(jdbc, payment), "25.00", "FAKE-" + attempt)));
+        provider.answerAfter(Duration.ofSeconds(4)); // the test provider timeout is PT2S
+        try {
+            fetch(method, UUID.randomUUID().toString(), Permission.RECONCILIATION_MANAGE)
+                    .andExpect(status().isServiceUnavailable())
+                    .andExpect(jsonPath("$.code").value("STATEMENT_SOURCE_TIMEOUT"));
+        } finally {
+            provider.answerAfter(Duration.ZERO);
+        }
+        assertThat(fixtures.count("SELECT count(*) FROM settlement.reconciliation_batch WHERE store_id = ?",
+                sale.store())).isZero();
+
+        fetch(method, UUID.randomUUID().toString(), Permission.RECONCILIATION_MANAGE)
+                .andExpect(status().isCreated()); // retried once the provider answers
     }
 
     @Test

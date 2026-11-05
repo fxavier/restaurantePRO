@@ -83,7 +83,7 @@ class StatementImportTest {
                 .get("content").get(0);
         assertThat(entry.get("kind").asString()).isEqualTo("MATCHED");
         assertThat(entry.get("paymentId").asString()).isEqualTo(payment.toString());
-        assertThat(entry.get("lineNo").asInt()).isEqualTo(1);
+        assertThat(entry.get("lineNo").asInt()).isEqualTo(2); // the file's line: the header is line 1
         assertThat(new BigDecimal(entry.get("fee").get("amount").asString())).isEqualByComparingTo("0.75");
         assertThat(new BigDecimal(entry.get("difference").get("amount").asString())).isEqualByComparingTo("0");
         assertThat(entry.get("resolution").get("action").asString()).isEqualTo("AUTO_MATCHED");
@@ -224,12 +224,47 @@ class StatementImportTest {
                         null), UUID.randomUUID().toString())
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("STATEMENT_INVALID"))
-                .andExpect(jsonPath("$.errors[0].line").value(1))
+                .andExpect(jsonPath("$.errors[0].line").value(2))
                 .andExpect(jsonPath("$.errors[0].field").value("occurred_at"))
-                .andExpect(jsonPath("$.errors[1].line").value(2))
+                .andExpect(jsonPath("$.errors[1].line").value(3))
                 .andExpect(jsonPath("$.errors[1].field").value("amount"));
         assertThat(fixtures.count("SELECT count(*) FROM settlement.reconciliation_batch WHERE store_id = ?",
                 sale.store())).isZero();
+    }
+
+    @Test
+    void anExponentAmountIsRefusedAtOnce() throws Exception {
+        long started = System.nanoTime();
+
+        importCsv(mvc, sale.store(), card, line(Instant.now(), "1E+100000000", "0", null, null, null)
+                        .repeat(5), UUID.randomUUID().toString())
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("STATEMENT_INVALID"))
+                .andExpect(jsonPath("$.errors[0].field").value("amount"));
+
+        assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofSeconds(1));
+    }
+
+    @Test
+    void theSameBytesForAnotherPeriodOrStoreAreAnotherStatement() throws Exception {
+        java.time.LocalDate today = java.time.LocalDate.now(ReconciliationRequests.STORE_ZONE);
+        importCsv(mvc, sale.store(), card, "", UUID.randomUUID().toString(), today, today)
+                .andExpect(status().isCreated());
+        importCsv(mvc, sale.store(), card, "", UUID.randomUUID().toString(), today.minusDays(1), today.minusDays(1))
+                .andExpect(status().isCreated());
+        Sale other = fixtures.sale("2");
+
+        importCsv(mvc, other.store(), card, "", UUID.randomUUID().toString(), today, today)
+                .andExpect(status().isCreated());
+        importCsv(mvc, other.store(), card, "", UUID.randomUUID().toString(), today, today)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.batchId").value(json(mvc.perform(
+                        org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                                .get(ReconciliationRequests.BASE + "/batches")
+                                .param("storeId", other.store().toString())
+                                .with(com.xavier.backend.cash.CashFixtures.account(other.store(),
+                                        Permission.RECONCILIATION_VIEW)))).get("content").get(0).get("id")
+                        .asString()));
     }
 
     @Test

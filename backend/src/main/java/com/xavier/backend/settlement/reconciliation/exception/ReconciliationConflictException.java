@@ -16,6 +16,12 @@ public class ReconciliationConflictException extends ConflictException {
                 "This statement was already imported as batch " + batchId + ".", Map.of("batchId", batchId));
     }
 
+    /** The same digest in another store (it includes the store, so only by a hash collision): no id is revealed. */
+    public static ReconciliationConflictException alreadyImportedElsewhere() {
+        return new ReconciliationConflictException(ReconciliationRule.STATEMENT_ALREADY_IMPORTED,
+                "This statement was already imported.", Map.of());
+    }
+
     public static ReconciliationConflictException entryResolved(UUID entryId) {
         return new ReconciliationConflictException(ReconciliationRule.ENTRY_RESOLVED, "Reconciliation entry "
                 + entryId + " is already resolved.", Map.of());

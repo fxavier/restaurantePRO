@@ -23,10 +23,16 @@ public class FakeStatementProvider implements PaymentProvider, StatementSource {
     static final String BEAN = "reconciliationFakeStatementProvider";
 
     private volatile List<StatementLine> lines = List.of();
+    private volatile java.time.Duration delay = java.time.Duration.ZERO;
     private final List<Boolean> calledInTransaction = new CopyOnWriteArrayList<>();
 
     public void willReturn(List<StatementLine> statement) {
         lines = List.copyOf(statement);
+    }
+
+    /** Each following statement call answers only after {@code wait} (ZERO: at once). */
+    public void answerAfter(java.time.Duration wait) {
+        delay = wait;
     }
 
     /** One entry per statement call: whether a transaction was active on the calling thread. */
@@ -55,6 +61,13 @@ public class FakeStatementProvider implements PaymentProvider, StatementSource {
     public List<StatementLine> statement(String methodCode, LocalDate from, LocalDate to) {
         calledInTransaction.add(TransactionSynchronizationManager.isActualTransactionActive());
         ExternalCalls.requireNoTransaction();
+        if (!delay.isZero()) {
+            try {
+                Thread.sleep(delay);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
         return lines;
     }
 

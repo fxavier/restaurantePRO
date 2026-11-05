@@ -61,7 +61,10 @@ class ReconciliationController {
         this.idempotent = idempotent;
     }
 
-    /** The canonical CSV (D78); the Idempotency-Key covers the form fields and the file's SHA-256. */
+    /**
+     * The canonical CSV (D78); the Idempotency-Key covers the form fields and the file's SHA-256. The file is checked
+     * first, with no transaction and no lock; only a valid statement is imported.
+     */
     @PostMapping(path = "/batches", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     ResponseEntity<BatchView> importCsv(@RequestHeader("Idempotency-Key") String key,
                                         @RequestPart("file") MultipartFile file, @RequestParam UUID storeId,
@@ -72,8 +75,9 @@ class ReconciliationController {
         byte[] content = file.getBytes();
         ImportRequest body = new ImportRequest(storeId, methodCode, periodFrom, periodTo,
                 StatementImportService.sha256(content));
+        StatementImportService.Statement statement = imports.readCsv(body, content);
         return idempotent.execute("settlement.reconciliation.import", key, request, body, BatchView.class, () -> {
-            BatchView batch = imports.importCsv(body, content);
+            BatchView batch = imports.importCsv(statement);
             return ResponseEntity.created(URI.create(PATH + "/batches/" + batch.id())).body(batch);
         });
     }

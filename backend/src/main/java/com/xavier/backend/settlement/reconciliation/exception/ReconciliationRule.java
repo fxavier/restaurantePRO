@@ -12,5 +12,7 @@ public enum ReconciliationRule {
     /** 409: this method already has a batch with the same content; {@code batchId} is it. */
     STATEMENT_ALREADY_IMPORTED,
     /** 409: the entry already has its resolution. */
-    ENTRY_RESOLVED
+    ENTRY_RESOLVED,
+    /** 503: the provider did not send its statement in time; nothing was imported, retry later. */
+    STATEMENT_SOURCE_TIMEOUT
 }

@@ -195,6 +195,9 @@ class CodedErrorContractTest {
             Map.entry("no-statement-source", () -> ReconciliationRuleException.noStatementSource("CARD")),
             Map.entry("statement-already-imported", () -> ReconciliationConflictException.alreadyImported(ID)),
             Map.entry("entry-resolved", () -> ReconciliationConflictException.entryResolved(ID)),
+            Map.entry("statement-imported-elsewhere", ReconciliationConflictException::alreadyImportedElsewhere),
+            Map.entry("statement-source-timeout", () -> com.xavier.backend.settlement.reconciliation.exception
+                    .ReconciliationUnavailableException.sourceTimeout("WALLET")),
             Map.entry("range-reversed", () -> ReportRangeException.reversed(LocalDate.of(2026, 11, 5),
                     LocalDate.of(2026, 11, 4))),
             Map.entry("range-too-large", () -> ReportRangeException.tooLarge(366)),
@@ -423,6 +426,10 @@ class CodedErrorContractTest {
         expect("statement-already-imported", 409, "STATEMENT_ALREADY_IMPORTED", "This statement was already "
                 + "imported as batch " + ID + ".", ",\"batchId\":\"" + ID + "\"");
         expect("entry-resolved", 409, "ENTRY_RESOLVED", "Reconciliation entry " + ID + " is already resolved.", "");
+        expect("statement-imported-elsewhere", 409, "STATEMENT_ALREADY_IMPORTED",
+                "This statement was already imported.", "");
+        expect("statement-source-timeout", 503, "STATEMENT_SOURCE_TIMEOUT", "The provider of WALLET did not send its "
+                + "statement in time; nothing was imported. Try again later.", "");
     }
 
     @Test
@@ -464,6 +471,7 @@ class CodedErrorContractTest {
             case 409 -> "Conflict";
             case 422 -> "Unprocessable Content";
             case 429 -> "Too Many Requests";
+            case 503 -> "Service Unavailable";
             default -> throw new IllegalArgumentException("status " + status);
         };
         String body = "{\"title\":\"" + title + "\",\"status\":" + status

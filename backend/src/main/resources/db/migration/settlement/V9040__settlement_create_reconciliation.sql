@@ -5,6 +5,9 @@
 -- refuses UPDATE, DELETE and TRUNCATE. Reconciliation never writes a payment, a refund or a cash movement: it records
 -- differences, and corrections go through their own commands (§8.4).
 -- store_id, payment_id and the actors refer to other modules (or to settlement rows) by id only (D6).
+-- file_sha256 is the statement's identity: SHA-256 of "store:<id>\nperiod:<from>..<to>\nmethod:<code>\n" followed by
+-- the file's bytes (CSV) or the provider lines' canonical CSV (PROVIDER), so the same bytes for another store or
+-- period are another statement.
 CREATE TABLE settlement.reconciliation_batch
 (
     id                     UUID                     NOT NULL,

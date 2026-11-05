@@ -68,6 +68,39 @@ class ProviderCalls {
         return timeout;
     }
 
+    /**
+     * Any other provider call (e.g. a statement fetch), on the same pool and bounded by the same timeout. Unlike a
+     * charge or a status query it has no "unknown" outcome to record: a call that is not answered in time, or cannot
+     * be queued, is {@link ProviderUnavailableException}; an exception of the call itself propagates.
+     */
+    <T> T within(String providerCode, String operation, Callable<T> call) {
+        ExternalCalls.requireNoTransaction();
+        Future<T> answer;
+        try {
+            answer = pool.submit(call);
+        } catch (RejectedExecutionException e) {
+            log.warn("Payment provider {} {}: too many calls in flight", providerCode, operation);
+            throw new ProviderUnavailableException(providerCode, operation, "too many calls in flight");
+        }
+        try {
+            return answer.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            answer.cancel(true);
+            log.warn("Payment provider {} {}: no answer within {}", providerCode, operation, timeout);
+            throw new ProviderUnavailableException(providerCode, operation, "no answer within " + timeout);
+        } catch (ExecutionException e) {
+            if (e.getCause() instanceof RuntimeException runtime) {
+                throw runtime;
+            }
+            throw new IllegalStateException("Payment provider " + providerCode + " " + operation + " failed",
+                    e.getCause());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            answer.cancel(true);
+            throw new ProviderUnavailableException(providerCode, operation, "interrupted");
+        }
+    }
+
     private ProviderOutcome call(PaymentProvider provider, String operation, Callable<ProviderOutcome> call) {
         ExternalCalls.requireNoTransaction();
         Future<ProviderOutcome> answer;
