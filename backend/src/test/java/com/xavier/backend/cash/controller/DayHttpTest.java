@@ -135,7 +135,12 @@ class DayHttpTest {
                 SELECT count(*) FROM audit.audit_event
                 WHERE action = 'CASH_DAY_REOPENED' AND entity_id = ? AND approver_id = ?""",
                 day.toString(), manager.id())).isEqualTo(1);
-        fixtures.openSession(pos(store), fixtures.newRegister(store), "1.00");
+        // P25: the reopened day takes corrections only (NewDayPolicyTest)
+        mvc.perform(idem(post(CashFixtures.SESSIONS)).with(pos(store).with(Permission.CASH_OPERATE))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(CashFixtures.openSessionBody(fixtures.newRegister(store), "1.00")))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("DAY_CLOSING_ONLY"));
     }
 
     @Test

@@ -173,12 +173,17 @@ public class CashFixtures {
     }
 
     public UUID newStore(LocalTime cutoff) throws Exception {
+        return newStore(cutoff, STORE_ZONE);
+    }
+
+    /** A store in {@code zone}, e.g. one with daylight saving time. */
+    public UUID newStore(LocalTime cutoff, ZoneId zone) throws Exception {
         String code = "C" + UUID.randomUUID().toString().substring(0, 8);
         return id(mvc.perform(post("/api/v1/backoffice/stores").with(account(null, Permission.STORE_MANAGE))
                         .with(csrf()).contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"code": "%s", "name": "Store", "timezone": "Africa/Maputo", "businessDayCutoff": "%s"}"""
-                                .formatted(code, cutoff)))
+                                {"code": "%s", "name": "Store", "timezone": "%s", "businessDayCutoff": "%s"}"""
+                                .formatted(code, zone.getId(), cutoff)))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
     }
 

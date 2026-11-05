@@ -27,6 +27,12 @@ public interface CashDayRepository extends JpaRepository<CashDay, UUID> {
     /** With {@code OPEN}: served by the partial index {@code cash_day_store_open_ix} (V8006). */
     Optional<CashDay> findFirstByStoreIdAndStatusOrderByBusinessDateAsc(UUID storeId, CashDayStatus status);
 
+    /** P28: a session never opens in a day earlier than one already opened. */
+    Optional<CashDay> findFirstByStoreIdAndBusinessDateAfter(UUID storeId, LocalDate businessDate);
+
+    /** With {@code OPEN}: an earlier day still to close (P28 warning); served by {@code cash_day_store_open_ix}. */
+    boolean existsByStoreIdAndStatusAndBusinessDateBefore(UUID storeId, CashDayStatus status, LocalDate businessDate);
+
     @Query("select d.storeId from CashDay d where d.id = :id")
     Optional<UUID> findStoreIdById(@Param("id") UUID id);
 }

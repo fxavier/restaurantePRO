@@ -6,7 +6,12 @@ package com.xavier.backend.cash.exception;
 public enum CashRule {
     /** The store's cash day for now is not OPEN (closed operationally or financially). */
     DAY_NOT_OPEN,
-    /** The day is FINANCIALLY_CLOSED: nothing more is counted or closed in it. */
+    /**
+     * The day takes corrections only (P25, P28): an earlier day once a later one exists, or a reopened day, opens no
+     * new session.
+     */
+    DAY_CLOSING_ONLY,
+    /** The day is FINANCIALLY_CLOSED: nothing more is counted, adjusted or closed in it. */
     DAY_FINANCIALLY_CLOSED,
     /** A movement or receipt into a session that is not OPEN. */
     SESSION_NOT_OPEN,
@@ -38,5 +43,7 @@ public enum CashRule {
     /** An amount is negative, zero where it must be positive, or has more decimals than the currency allows. */
     INVALID_AMOUNT,
     /** An amount is not in the store's currency (single currency, spec §8.4). */
-    CURRENCY_MISMATCH
+    CURRENCY_MISMATCH,
+    /** The approver of an expense is its operator (P24, D40). */
+    SELF_APPROVAL
 }
