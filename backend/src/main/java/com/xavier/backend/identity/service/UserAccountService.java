@@ -144,8 +144,9 @@ public class UserAccountService {
         }
     }
 
+    /** A support account is never the installation's administrator: it cannot manage users or roles (D83). */
     private static boolean isActiveAdministrator(UserAccount account) {
-        return account.isActive() && account.getRoleIds().contains(Role.ADMINISTRATOR_ID);
+        return account.isActive() && !account.isSupport() && account.getRoleIds().contains(Role.ADMINISTRATOR_ID);
     }
 
     /**
@@ -154,7 +155,7 @@ public class UserAccountService {
      */
     private void requireAnotherActiveAdministrator(UserAccount account) {
         roles.lockRow(Role.ADMINISTRATOR_ID);
-        if (accounts.countActiveHoldersExcept(Role.ADMINISTRATOR_ID, account.getId()) == 0) {
+        if (accounts.countActiveNonSupportHoldersExcept(Role.ADMINISTRATOR_ID, account.getId()) == 0) {
             throw new LastAdministratorException();
         }
     }
