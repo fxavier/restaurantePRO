@@ -183,6 +183,11 @@ public class CashCoordinationService {
     }
 
     @Transactional(readOnly = true)
+    public List<UUID> sessionIdsOfDays(UUID storeId, LocalDate from, LocalDate to) {
+        return sessions.findIdsOfStoreBetween(storeId, from, to);
+    }
+
+    @Transactional(readOnly = true)
     public SessionDay sessionDay(UUID sessionId) {
         CashSession session = sessions.findById(sessionId)
                 .orElseThrow(() -> new CashNotFoundException(CashSessionService.ENTITY, sessionId));

@@ -57,6 +57,18 @@ class SettlementFactsTest {
     }
 
     @Test
+    void anR2PaymentWithoutABusinessDateTakesItsSessionsCashDay() throws Exception {
+        Sale sale = fixtures.sale("2");
+        LocalDate day = LocalDate.parse(fixtures.currentDay(sale.cashier()).get("businessDate").asString());
+        UUID payment = fixtures.r2Payment(sale, "25.00"); // written as R2 did: no business_date, no terminal_id
+
+        assertThat(facts.paymentFact(payment).orElseThrow().businessDate()).isEqualTo(day);
+        assertThat(facts.paymentIds(sale.store(), day, day, PageRequest.of(0, 10)).getContent()).contains(payment);
+        assertThat(facts.paymentIds(sale.store(), day.plusDays(1), day.plusDays(2), PageRequest.of(0, 10))
+                .getContent()).doesNotContain(payment);
+    }
+
+    @Test
     void refundsAndCreditChargesAreNoFactsYet() {
         assertThat(facts.refundFact(UUID.randomUUID())).isEmpty();
         assertThat(facts.creditChargeFact(UUID.randomUUID())).isEmpty();

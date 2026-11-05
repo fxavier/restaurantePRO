@@ -398,6 +398,36 @@ public class SettlementFixtures {
         return count("SELECT number FROM fiscal.fiscal_document WHERE source_id = ? AND status = 'ISSUED'", order);
     }
 
+    /**
+     * A CASH payment of the sale's order in the cashier's session written the way an R2 build wrote it (attempt,
+     * payment and allocation; no target, terminal or business date columns). @return the payment id
+     */
+    public UUID r2Payment(Sale sale, String amount) {
+        UUID attempt = UUID.randomUUID();
+        UUID payment = UUID.randomUUID();
+        java.math.BigDecimal value = new java.math.BigDecimal(amount);
+        new TransactionTemplate(transactionManager).executeWithoutResult(tx -> {
+            jdbc.sql("""
+                    INSERT INTO settlement.payment_attempt (id, order_id, store_id, terminal_id, session_id,
+                        method_code, method_kind, amount, tendered, change_given, currency, status,
+                        created_by_employee_id, created_at, updated_at, version)
+                    VALUES (?, ?, ?, ?, ?, 'CASH', 'CASH', ?, ?, 0, 'MZN', 'SUCCEEDED', ?, now(), now(), 0)""")
+                    .params(attempt, sale.order(), sale.store(), sale.cashier().terminalId(), sale.session(), value,
+                            value, sale.cashier().employeeId()).update();
+            jdbc.sql("""
+                    INSERT INTO settlement.payment (id, attempt_id, order_id, store_id, session_id, method_code,
+                        amount, currency, status, collected_by_employee_id, confirmed_at)
+                    VALUES (?, ?, ?, ?, ?, 'CASH', ?, 'MZN', 'CONFIRMED', ?, now())""")
+                    .params(payment, attempt, sale.order(), sale.store(), sale.session(), value,
+                            sale.cashier().employeeId()).update();
+            jdbc.sql("""
+                    INSERT INTO settlement.payment_allocation (id, payment_id, target_type, target_id, amount,
+                        currency, created_at) VALUES (?, ?, 'ORDER', ?, ?, 'MZN', now())""")
+                    .params(UUID.randomUUID(), payment, sale.order(), value).update();
+        });
+        return payment;
+    }
+
     public long nextNumber(UUID series) {
         return count("SELECT next_number FROM fiscal.fiscal_series WHERE id = ?", series);
     }

@@ -6,8 +6,8 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 /**
- * A confirmed payment as reporting reads it (D84, D85): {@code businessDate} is its cash session's day ({@code null}
- * for a payment recorded before R3), {@code at} its confirmation, {@code targetType} {@code ORDER}, {@code PARTITION}
+ * A confirmed payment as reporting reads it (D84, D85): {@code businessDate} is its cash session's day (resolved at read
+ * time for a payment recorded before R3), {@code at} its confirmation, {@code targetType} {@code ORDER}, {@code PARTITION}
  * or {@code CREDIT_ACCOUNT} (with {@code customerId}, S29), and {@code terminalId} the attempt's terminal.
  */
 public record PaymentFact(UUID paymentId, UUID storeId, LocalDate businessDate, Instant at, String methodCode,
