@@ -13,7 +13,8 @@ import java.util.UUID;
 import org.hibernate.annotations.UuidGenerator;
 
 /**
- * A reopen of a cash day (P19): who asked, which approver authorized it, why, and the operational close it undid.
+ * A reopen of a cash day (P19, D79 (3)): who asked, which approver authorized it, why, the state it reopened from,
+ * and the operational close (and, from FINANCIALLY_CLOSED, the financial close) it undid.
  * A fact: never updated or deleted (trigger in V8002).
  */
 @Entity
@@ -56,12 +57,28 @@ public class CashDayReopening {
     @Column(nullable = false, updatable = false, length = 10)
     private ActorKind previousClosedByKind;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, updatable = false, length = 25)
+    private CashDayStatus fromStatus;
+
+    @Column(updatable = false)
+    private Instant previousFinanciallyClosedAt;
+
+    @Column(updatable = false)
+    private UUID previousFinanciallyClosedById;
+
+    @Enumerated(EnumType.STRING)
+    @Column(updatable = false, length = 10)
+    private ActorKind previousFinanciallyClosedByKind;
+
     protected CashDayReopening() {
         // JPA
     }
 
-    CashDayReopening(CashDay day, UUID actorId, ActorKind actorKind, UUID approverEmployeeId, String reason,
-                     Instant now, Instant previousClosedAt, UUID previousClosedById, ActorKind previousClosedByKind) {
+    CashDayReopening(CashDay day, CashDayStatus fromStatus, UUID actorId, ActorKind actorKind,
+                     UUID approverEmployeeId, String reason, Instant now, Instant previousClosedAt,
+                     UUID previousClosedById, ActorKind previousClosedByKind, Instant previousFinanciallyClosedAt,
+                     UUID previousFinanciallyClosedById, ActorKind previousFinanciallyClosedByKind) {
         if (reason == null || reason.isBlank()) {
             throw new IllegalArgumentException("A reopen needs a reason");
         }
@@ -75,6 +92,10 @@ public class CashDayReopening {
         this.previousClosedAt = previousClosedAt;
         this.previousClosedById = previousClosedById;
         this.previousClosedByKind = previousClosedByKind;
+        this.fromStatus = Objects.requireNonNull(fromStatus, "fromStatus");
+        this.previousFinanciallyClosedAt = previousFinanciallyClosedAt;
+        this.previousFinanciallyClosedById = previousFinanciallyClosedById;
+        this.previousFinanciallyClosedByKind = previousFinanciallyClosedByKind;
     }
 
     public UUID getId() {
@@ -91,5 +112,9 @@ public class CashDayReopening {
 
     public Instant getPreviousClosedAt() {
         return previousClosedAt;
+    }
+
+    public CashDayStatus getFromStatus() {
+        return fromStatus;
     }
 }

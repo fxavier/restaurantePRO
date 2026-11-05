@@ -3,6 +3,7 @@ package com.xavier.backend.cash.repository;
 import com.xavier.backend.cash.model.CashClosing;
 import com.xavier.backend.cash.model.CashClosingStatus;
 import jakarta.persistence.LockModeType;
+import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -19,9 +20,25 @@ public interface CashClosingRepository extends JpaRepository<CashClosing, UUID> 
     boolean existsByRegisterIdAndCashDayIdAndStatusIn(UUID registerId, UUID cashDayId,
                                                       Collection<CashClosingStatus> statuses);
 
-    Optional<CashClosing> findFirstByRegisterIdAndCashDayIdOrderByAttemptNoDesc(UUID registerId, UUID cashDayId);
+    boolean existsByRegisterIdAndCashDayIdAndDayRoundAndStatusIn(UUID registerId, UUID cashDayId, int dayRound,
+                                                                 Collection<CashClosingStatus> statuses);
+
+    Optional<CashClosing> findFirstByRegisterIdAndCashDayIdAndDayRoundOrderByAttemptNoDesc(UUID registerId,
+                                                                                         UUID cashDayId,
+                                                                                         int dayRound);
 
     List<CashClosing> findByCashDayIdAndStatus(UUID cashDayId, CashClosingStatus status);
+
+    List<CashClosing> findByRegisterIdAndCashDayIdAndStatusIn(UUID registerId, UUID cashDayId,
+                                                              Collection<CashClosingStatus> statuses);
+
+    /** The closings, with their lines, of the store's days in a business-date range (reconciliation). */
+    @Query("""
+            select distinct c from CashClosing c left join fetch c.lines
+            where c.storeId = :storeId and c.cashDayId in (
+                select d.id from CashDay d where d.storeId = :storeId and d.businessDate between :from and :to)""")
+    List<CashClosing> findWithLinesByStoreAndBusinessDates(@Param("storeId") UUID storeId,
+                                                           @Param("from") LocalDate from, @Param("to") LocalDate to);
 
     /** A store's closings, optionally of one cash day and/or in one status. */
     @Query("""
@@ -33,6 +50,9 @@ public interface CashClosingRepository extends JpaRepository<CashClosing, UUID> 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select c from CashClosing c where c.id = :id")
     Optional<CashClosing> findByIdForUpdate(@Param("id") UUID id);
+
+    @Query("select c.cashDayId from CashClosing c where c.id = :id")
+    Optional<UUID> findCashDayIdById(@Param("id") UUID id);
 
     @Query("select c.storeId from CashClosing c where c.id = :id")
     Optional<UUID> findStoreIdById(@Param("id") UUID id);

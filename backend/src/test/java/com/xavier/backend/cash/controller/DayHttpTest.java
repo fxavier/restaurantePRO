@@ -135,7 +135,12 @@ class DayHttpTest {
                 SELECT count(*) FROM audit.audit_event
                 WHERE action = 'CASH_DAY_REOPENED' AND entity_id = ? AND approver_id = ?""",
                 day.toString(), manager.id())).isEqualTo(1);
-        fixtures.openSession(pos(store), fixtures.newRegister(store), "1.00");
+        // P25: the reopened day takes corrections only (NewDayPolicyTest)
+        mvc.perform(idem(post(CashFixtures.SESSIONS)).with(pos(store).with(Permission.CASH_OPERATE))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(CashFixtures.openSessionBody(fixtures.newRegister(store), "1.00")))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("DAY_CLOSING_ONLY"));
     }
 
     @Test
@@ -152,8 +157,9 @@ class DayHttpTest {
                 .isZero();
     }
 
+    /** A FINANCIALLY_CLOSED day reopens too, but with CASH_DAY_REOPEN (D79 (3), FinancialReopenTest). */
     @Test
-    void onlyAnOperationallyClosedDayReopens() throws Exception {
+    void anOpenDayDoesNotReopenAndAFinanciallyClosedOneNeedsMoreThanCashDayClose() throws Exception {
         Employee manager = approver(IdentityFixtures.MANAGER);
 
         mvc.perform(reopen(manager.code(), PIN)).andExpect(status().isConflict());
@@ -164,7 +170,7 @@ class DayHttpTest {
                 .with(account(store, Permission.CASH_CLOSING_APPROVE))).andExpect(status().isOk());
         mvc.perform(financialClose()).andExpect(status().isOk());
 
-        mvc.perform(reopen(manager.code(), PIN)).andExpect(status().isConflict());
+        mvc.perform(reopen(manager.code(), PIN)).andExpect(status().isForbidden());
     }
 
     @Test

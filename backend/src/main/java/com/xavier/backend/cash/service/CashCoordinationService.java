@@ -8,11 +8,14 @@ import com.xavier.backend.cash.MethodCount;
 import com.xavier.backend.cash.MovementView;
 import com.xavier.backend.cash.OpenSessionView;
 import com.xavier.backend.cash.ReceiptCommand;
+import com.xavier.backend.cash.RefundCommand;
+import com.xavier.backend.cash.SessionDay;
 import com.xavier.backend.cash.SessionView;
 import com.xavier.backend.cash.exception.CashNotFoundException;
 import com.xavier.backend.cash.exception.CashRule;
 import com.xavier.backend.cash.exception.CashRuleViolationException;
 import com.xavier.backend.cash.exception.ReceiptAlreadyRecordedException;
+import com.xavier.backend.cash.exception.RefundMismatchException;
 import com.xavier.backend.cash.model.CashDay;
 import com.xavier.backend.cash.model.CashDayStatus;
 import com.xavier.backend.cash.model.CashMovement;
@@ -91,6 +94,31 @@ public class CashCoordinationService {
                 () -> new ReceiptAlreadyRecordedException(command.paymentId()), "cash_movement_source_uk").toView();
     }
 
+    /**
+     * As {@link #recordReceipt}, for a confirmed Refund: one {@code REFUND} OUT movement per refund (A23). A repeat
+     * must carry the same session, method and amount (409 {@code REFUND_MISMATCH} otherwise).
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public MovementView recordRefund(RefundCommand command) {
+        Optional<CashMovement> recorded = movements.findBySourceTypeAndSourceId(CashMovement.REFUND_SOURCE,
+                command.refundId());
+        if (recorded.isPresent()) {
+            MovementView view = recorded.get().toView();
+            if (!view.sessionId().equals(command.sessionId()) || !view.methodCode().equals(command.methodCode())
+                    || !view.amount().currency().equals(command.amount().currency())
+                    || view.amount().amount().compareTo(command.amount().amount()) != 0) {
+                throw new RefundMismatchException(command.refundId());
+            }
+            return view;
+        }
+        CashSession session = locks.sessionForShare(command.sessionId());
+        CashMovement refund = CashMovement.refund(session, command.methodCode(), command.amount(),
+                command.refundId(), command.actorEmployeeId(), clock.instant());
+        return UniqueConstraints.saveAndFlush(movements, refund,
+                () -> new ReceiptAlreadyRecordedException("refund", command.refundId()),
+                "cash_movement_source_uk").toView();
+    }
+
     @Transactional(propagation = Propagation.MANDATORY)
     public SessionView lockSession(UUID sessionId) {
         return sessionForUpdate(sessionId).toView();
@@ -107,8 +135,29 @@ public class CashCoordinationService {
         counts.saveAll(recorded);
         sessions.saveAndFlush(session);
         audit.record("CASH_SESSION_CLOSED", CashSessionService.ENTITY, sessionId, session.getStoreId(),
-                Map.of("counts", blindCount.stream().map(c -> Map.of("methodCode", c.methodCode(),
-                        "amount", c.amount().amount().toPlainString())).toList()));
+                Map.of("counts", auditCounts(blindCount)));
+    }
+
+    /** OPEN → CLOSED by a manager (P22); settlement has checked the closer's permission and the attempts. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void closeSessionForced(UUID sessionId, long expectedVersion, List<MethodCount> blindCount,
+                                   UUID closerEmployeeId, String reason) {
+        requireCurrentActor(closerEmployeeId, ActorKind.EMPLOYEE);
+        CashSession session = sessionForUpdate(sessionId);
+        OptimisticLocking.requireVersion(CashSession.class, sessionId, session.getVersion(), expectedVersion);
+        List<CashSessionCount> recorded = session.closeForced(blindCount, closerEmployeeId, reason,
+                clock.instant());
+        counts.saveAll(recorded);
+        sessions.saveAndFlush(session);
+        audit.record("CASH_SESSION_FORCE_CLOSED", CashSessionService.ENTITY, sessionId, session.getStoreId(), null,
+                session.getCloseReason(), Map.of("operatorEmployeeId", session.getOperatorEmployeeId().toString(),
+                        "counts", auditCounts(blindCount)));
+    }
+
+    /** Codes are values, never keys: the audit guard reads every key as a field name (D82). */
+    private static List<Map<String, String>> auditCounts(List<MethodCount> blindCount) {
+        return blindCount.stream().map(c -> Map.of("methodCode", c.methodCode(),
+                "amount", c.amount().amount().toPlainString())).toList();
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
@@ -126,6 +175,19 @@ public class CashCoordinationService {
     @Transactional(readOnly = true)
     public Optional<DayView> findDay(UUID dayId) {
         return days.findById(dayId).map(CashDay::toView);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<DayView> findDay(UUID storeId, LocalDate businessDate) {
+        return days.findByStoreIdAndBusinessDate(storeId, businessDate).map(CashDay::toView);
+    }
+
+    @Transactional(readOnly = true)
+    public SessionDay sessionDay(UUID sessionId) {
+        CashSession session = sessions.findById(sessionId)
+                .orElseThrow(() -> new CashNotFoundException(CashSessionService.ENTITY, sessionId));
+        CashDay day = days.findById(session.getCashDayId()).orElseThrow();
+        return new SessionDay(day.getId(), day.getBusinessDate(), day.getStatus().name());
     }
 
     /**

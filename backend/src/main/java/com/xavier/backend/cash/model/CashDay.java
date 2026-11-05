@@ -21,7 +21,7 @@ import java.util.UUID;
  * The cash side of a store's business day (CONTEXT.md BusinessDay; spec §8.3): OPEN → OPERATIONALLY_CLOSED →
  * FINANCIALLY_CLOSED. One per store and business date ({@code cash_day_store_date_uk}); the service creates it when
  * the first session of that date opens, with {@code INSERT … ON CONFLICT DO NOTHING}, so two first sessions of the
- * day never collide. A reopen (P19) is a {@link CashDayReopening} fact that keeps the close it undid.
+ * day never collide. A reopen (P19, D79 (3)) is a {@link CashDayReopening} fact that keeps the close it undid.
  */
 @Entity
 @Table(schema = "cash", name = "cash_day")
@@ -102,16 +102,25 @@ public class CashDay {
         financiallyClosedByKind = Objects.requireNonNull(actorKind, "actorKind");
     }
 
-    /** OPERATIONALLY_CLOSED → OPEN (P19). The returned fact keeps the close being undone. */
+    /**
+     * OPERATIONALLY_CLOSED → OPEN (P19) or FINANCIALLY_CLOSED → OPEN (D79 (3)). The returned fact keeps the close,
+     * or closes, being undone. A reopened day takes corrections only (P25).
+     */
     public CashDayReopening reopen(UUID actorId, ActorKind actorKind, UUID approverEmployeeId, String reason,
                                    Instant now) {
-        requireStatus(CashDayStatus.OPERATIONALLY_CLOSED, "reopen");
-        CashDayReopening reopening = new CashDayReopening(this, actorId, actorKind, approverEmployeeId, reason, now,
-                operationallyClosedAt, operationallyClosedById, operationallyClosedByKind);
+        if (status == CashDayStatus.OPEN) {
+            throw new IllegalCashStateException(ENTITY, id, status, "reopen");
+        }
+        CashDayReopening reopening = new CashDayReopening(this, status, actorId, actorKind, approverEmployeeId,
+                reason, now, operationallyClosedAt, operationallyClosedById, operationallyClosedByKind,
+                financiallyClosedAt, financiallyClosedById, financiallyClosedByKind);
         status = CashDayStatus.OPEN;
         operationallyClosedAt = null;
         operationallyClosedById = null;
         operationallyClosedByKind = null;
+        financiallyClosedAt = null;
+        financiallyClosedById = null;
+        financiallyClosedByKind = null;
         return reopening;
     }
 
