@@ -23,8 +23,8 @@ import java.util.regex.Pattern;
  * @param entityId   id of that aggregate (a UUID as text for every R1 aggregate)
  * @param reason     free text the user gave, or {@code null}
  * @param details    small before/after facts only when needed; never PINs, passwords, tokens or card data.
- *                   The guard rejects secret-looking <em>top-level</em> keys only; nested maps/values are
- *                   not inspected, so callers must not put secrets anywhere in details (follow-up).
+ *                   The guard rejects secret-looking keys at any depth: it walks nested maps, and the maps
+ *                   inside lists (D82). It checks keys, not values, so a secret must never be a value either.
  */
 record AuditEntry(UUID actorId, String actorKind, UUID approverId, String action, String entityType, String entityId,
                          UUID storeId, UUID terminalId, String reason, Map<String, Object> details) {
@@ -38,7 +38,22 @@ record AuditEntry(UUID actorId, String actorKind, UUID approverId, String action
         requireText(entityType, "entityType");
         requireText(entityId, "entityId");
         details = details == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(details));
-        details.keySet().forEach(AuditEntry::rejectSecret);
+        rejectSecrets(details);
+    }
+
+    private static void rejectSecrets(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            map.forEach((key, nested) -> {
+                rejectSecret(String.valueOf(key));
+                rejectSecrets(nested);
+            });
+        } else if (value instanceof Iterable<?> items) {
+            items.forEach(AuditEntry::rejectSecrets);
+        } else if (value instanceof Object[] items) {
+            for (Object item : items) {
+                rejectSecrets(item);
+            }
+        }
     }
 
     private static void requireText(String value, String name) {

@@ -11,6 +11,7 @@ import com.xavier.backend.access.WithActor;
 import java.util.Set;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.IllegalTransactionStateException;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -113,6 +114,27 @@ class AuditLogTest {
                     tx -> auditLog.record(entry("EMPLOYEE_UPDATED", Map.of(secretKey, "x")))));
         }
         assertThat(countRows()).isZero();
+    }
+
+    @Test
+    void aSecretKeyNestedInAMapOrAListIsRejected() {
+        Map<String, Object> nestedInAMap = Map.of("employee", Map.of("code", "E1", "pin", "1234"));
+        Map<String, Object> nestedInAList = Map.of("approvals", List.of(Map.of("approver", "E2"),
+                Map.of("approver", "E3", "approverPin", "9999")));
+        for (Map<String, Object> details : List.of(nestedInAMap, nestedInAList)) {
+            assertThatIllegalArgumentException().isThrownBy(() -> transaction.executeWithoutResult(
+                    tx -> auditLog.record(entry("EMPLOYEE_UPDATED", details))))
+                    .withMessageMatching("(?i).*pin.*");
+        }
+        assertThat(countRows()).isZero();
+    }
+
+    @Test
+    void nestedDetailsWithoutSecretsAreStored() {
+        transaction.executeWithoutResult(tx -> auditLog.record(entry("ORDER_TRANSFERRED",
+                Map.of("lines", List.of(Map.of("lineId", "l-1", "qty", 2)), "to", Map.of("tableCode", "M2")))));
+
+        assertThat(countRows()).isOne();
     }
 
     @Test
