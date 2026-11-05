@@ -28,6 +28,8 @@ public interface CashClosingRepository extends JpaRepository<CashClosing, UUID> 
 
     List<CashClosing> findByCashDayIdAndStatus(UUID cashDayId, CashClosingStatus status);
 
+    List<CashClosing> findByCashDayIdIn(Collection<UUID> cashDayIds);
+
     /** A store's closings, optionally of one cash day and/or in one status. */
     @Query("""
             select c from CashClosing c where c.storeId = :storeId

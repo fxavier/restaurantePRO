@@ -4,6 +4,7 @@ import com.xavier.backend.cash.model.CashDay;
 import com.xavier.backend.cash.model.CashDayStatus;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -26,6 +27,9 @@ public interface CashDayRepository extends JpaRepository<CashDay, UUID> {
 
     /** With {@code OPEN}: served by the partial index {@code cash_day_store_open_ix} (V8006). */
     Optional<CashDay> findFirstByStoreIdAndStatusOrderByBusinessDateAsc(UUID storeId, CashDayStatus status);
+
+    List<CashDay> findByStoreIdAndBusinessDateBetweenOrderByBusinessDateAsc(UUID storeId, LocalDate from,
+                                                                            LocalDate to);
 
     /** P28: a session never opens in a day earlier than one already opened. */
     Optional<CashDay> findFirstByStoreIdAndBusinessDateAfter(UUID storeId, LocalDate businessDate);
