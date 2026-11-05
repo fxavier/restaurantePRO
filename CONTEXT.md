@@ -70,7 +70,7 @@ Canonical terms from spec §8.1. Code uses the English name; the Portuguese term
 | Change notice | Aviso de alteração | shared | An SSE `{topic, id}` sent after commit. Carries no data: the client re-reads through the authorized GET. |
 | Coded error | Erro com código | shared | A 409 or 422 `ProblemDetail` with a stable `code` (and named extra properties) that clients switch on. Never renamed. |
 | Step lease | Concessão de passo | shared | The time-limited claim on an Idempotency-Key used by a multi-step command (`executeSteps`). Live → 409; expired → may be taken over. |
-| Login throttle | Limitação de login | identity | BackOffice failures per username + address and per address: 15 min block, 429 with `Retry-After`. |
+| Login throttle | Limitação de login | identity | BackOffice attempts per username + address (10, reset on success) and failures per address (30): 15 min block, 429 with `Retry-After`. |
 | mustChangePin | PIN a alterar | identity | Set by a manager's PIN reset: the next POS login must choose a new PIN before it gets any authority. |
 | AuditEvent | Evento de auditoria | audit | Append-only record: actor, approver, action, entity, store, terminal, instant, reason. |
 | Money | Valor monetário | shared | BigDecimal + Currency, HALF_UP at line level, largest-remainder allocation. |

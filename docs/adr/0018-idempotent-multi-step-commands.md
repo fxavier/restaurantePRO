@@ -1,6 +1,6 @@
 # 0018. Idempotent multi-step commands (`executeSteps`)
 
-Status: Accepted for build, 2026-11-04 (Amendment D63 to D47; written PROPOSED for user review and binding for S16). Source: [r2-decisions.md](../design/r2-decisions.md) Amendment D63. Base: [ADR 0015](0015-idempotency-r2-rules.md).
+Status: Proposed — binding for the build, awaiting user review, 2026-11-04 (Amendment D63 to D47; r2-decisions.md marks it PROPOSED). Source: [r2-decisions.md](../design/r2-decisions.md) Amendment D63. Base: [ADR 0015](0015-idempotency-r2-rules.md).
 
 ## Context
 

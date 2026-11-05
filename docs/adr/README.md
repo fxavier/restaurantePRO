@@ -21,7 +21,7 @@ Each ADR records a decision as built, with its context and consequences. The ful
 | [0015](0015-idempotency-r2-rules.md) | Idempotency in R2: typed, headers kept, only 2xx stored, retention | D47 ★ | Accepted 2026-11-04 |
 | [0016](0016-external-calls-persist-call-record.md) | External calls: persist, then call, then record | D48 ★, D53 | Accepted 2026-11-04 |
 | [0017](0017-fiscal-adapter-port.md) | Fiscal adapter port, with a non-certified guard | D54 ★ | Accepted 2026-11-04 |
-| [0018](0018-idempotent-multi-step-commands.md) | Idempotent multi-step commands (`executeSteps`) | D63 (amends D47) | Accepted for build 2026-11-04 |
+| [0018](0018-idempotent-multi-step-commands.md) | Idempotent multi-step commands (`executeSteps`) | D63 (amends D47) | Proposed — binding for the build, awaiting user review |
 
 ## Where the code deviates from a decision text
 
@@ -29,8 +29,9 @@ Recorded in the ADRs above, plus one decision without an ADR:
 
 - D24: the concurrent-duplicate 409 comes from `FOR UPDATE NOWAIT` (55P03), not the unique constraint (ADR 0006).
 - D35: `orders` also uses `dining :: dto`, `settlement` also uses `fiscal :: dto` (ADR 0011).
+- D35/D28: expenses use `CASH_EXPENSE` with no second approver — open product question (ADR 0011, 0014).
 - D38: `serialVersionUID` does not invalidate record sessions; `SessionConfig` does (ADR 0012).
 - D48/§4: resolve by provider query also settles a PENDING attempt as SUCCEEDED (ADR 0016).
 - D50 §7.2: the print backoff waits 2, 4, 8 and 16 s, and the job is FAILED after the fifth refused attempt; there is no 32 s wait (`PrintJob.MAX_ATTEMPTS`).
 - D63: takeover is `lease_until <= now` (the text was aligned); `orderVersion` is not checked once the order is frozen (ADR 0018).
-- S10 login throttle: a fixed 15-minute window and per-pair/per-address counters, not a sliding per-username window (ADR 0008).
+- S10 login throttle: a fixed 15-minute window; the per-pair counter counts attempts (reset on success), the per-address counter counts failures; not a sliding per-username window (ADR 0008).

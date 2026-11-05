@@ -12,6 +12,6 @@ Each module declares `@ApplicationModule(allowedDependencies = {...})` in its `p
 
 ## Consequences
 
-- `ModularityTests.modulesRespectTheirDeclaredBoundaries` runs `ApplicationModules.verify()`; `anIllegalModuleDependencyIsDetected` proves an injected `orders → settlement` or `cash → orders` fails it.
+- `ModularityTests.modulesRespectTheirDeclaredBoundaries` runs `ApplicationModules.verify()`; `anIllegalModuleDependencyIsDetected` proves an injected `orders → settlement` fails it. There is no fixture for `cash → orders`; `verify()` would catch it the same way, because `cash` does not declare `orders`.
 - Modulith rejects an unknown module name, so a module names only modules that already exist (D1).
 - `config` exists as a module of its own (security, sessions, scheduling, the SSE controller). It depends on `shared` and `access`, and nothing depends on it.

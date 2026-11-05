@@ -4,7 +4,7 @@ Status: Accepted, 2026-11-04 (D40 ★, from G6 #5; pattern D28). Source: [r2-dec
 
 ## Context
 
-Voids, expenses, day reopen and payment reclassification need a second employee's code and PIN (D28). Verifying inside the use-case transaction takes a second pooled connection and holds the order or settlement lock for the BCrypt time. A PIN inside the request body would be hashed into the stored idempotency record, and a SHA-256 over 4–8 digits can be brute-forced.
+Voids, cash day reopen and payment reclassification need a second employee's code and PIN (D28). As built, an expense needs only `CASH_EXPENSE`, with no approver (D35's text listed expenses too). Verifying inside the use-case transaction takes a second pooled connection and holds the order or settlement lock for the BCrypt time. A PIN inside the request body would be hashed into the stored idempotency record, and a SHA-256 over 4–8 digits can be brute-forced.
 
 ## Decision
 

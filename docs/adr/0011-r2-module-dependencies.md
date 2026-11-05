@@ -4,7 +4,7 @@ Status: Accepted, 2026-11-04 (D35 ★, with D36 and D37). Source: [r2-decisions.
 
 ## Context
 
-R2 adds `orders`, `production`, `cash`, `settlement` and `fiscal`. Voids, expenses, day reopen and reclassification need an approver; production must tell orders a batch was received; document printouts go through the one print queue.
+R2 adds `orders`, `production`, `cash`, `settlement` and `fiscal`. Voids, day reopen and payment reclassification need an approver (D35's text also named expenses; see Consequences); production must tell orders a batch was received; document printouts go through the one print queue.
 
 ## Decision
 
@@ -17,5 +17,6 @@ R2 adds `orders`, `production`, `cash`, `settlement` and `fiscal`. Voids, expens
 ## Consequences
 
 - As built (`package-info.java`), `orders` also uses `dining :: dto` and `settlement` also uses `fiscal :: dto`, beyond the D35 text (`dining(root)`, `fiscal(root)`): the facades return those view records. Not a new direction, only the named interface.
+- **Deviation:** D35 justified `cash → identity` with expenses and day reopen. As built, an expense needs only `CASH_EXPENSE`, with no second approver (`CashMovementService`); the only `ApproverVerifier` callers are `LineVoidService`, `CashDayService` (reopen) and `AttemptResolutionService` (reclassification). Whether an expense needs an approver is an open product question.
 - `cash` groups expected amounts by `method_code`, a plain string, so it never needs `settlement` (D52).
-- Proof: `ModularityTests` (verify plus the injected illegal dependency, A15).
+- Proof: `ModularityTests` (verify, plus an injected `orders → settlement` fixture; A15).
