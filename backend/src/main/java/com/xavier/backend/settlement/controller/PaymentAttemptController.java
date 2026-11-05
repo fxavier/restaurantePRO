@@ -5,6 +5,9 @@ import com.xavier.backend.settlement.model.dto.AttemptView;
 import com.xavier.backend.settlement.model.dto.CancelAttemptRequest;
 import com.xavier.backend.settlement.model.dto.ConfirmAttemptRequest;
 import com.xavier.backend.settlement.model.dto.CreateAttemptRequest;
+import com.xavier.backend.settlement.model.dto.ResolveAttemptRequest;
+import com.xavier.backend.settlement.service.Approval;
+import com.xavier.backend.settlement.service.AttemptResolutionService;
 import com.xavier.backend.settlement.service.PaymentAttemptService;
 import com.xavier.backend.shared.idempotency.IdempotencyService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -28,11 +31,13 @@ class PaymentAttemptController {
     static final String PATH = "/api/v1/pos/payment-attempts";
 
     private final PaymentAttemptService attempts;
+    private final AttemptResolutionService resolution;
     private final Idempotent idempotent;
 
-    PaymentAttemptController(PaymentAttemptService attempts, IdempotencyService idempotency,
-                             AccessPolicy accessPolicy) {
+    PaymentAttemptController(PaymentAttemptService attempts, AttemptResolutionService resolution,
+                             IdempotencyService idempotency, AccessPolicy accessPolicy) {
         this.attempts = attempts;
+        this.resolution = resolution;
         this.idempotent = new Idempotent(idempotency, accessPolicy);
     }
 
@@ -61,6 +66,26 @@ class PaymentAttemptController {
                                        @Valid @RequestBody CancelAttemptRequest body, HttpServletRequest request) {
         return idempotent.execute("settlement.attempt.cancel", key, request, body, AttemptView.class,
                 () -> ResponseEntity.ok(attempts.cancel(id, body)));
+    }
+
+    /**
+     * Without {@code outcome}: the provider is asked (D63 {@code executeSteps}, scope
+     * {@code settlement.attempt.resolve}). With it: an approved reclassification (D40: the approver is verified first,
+     * outside any transaction, and its headers never enter the request hash; {@code execute}, scope
+     * {@code settlement.attempt.reclassify}). The two modes never share a scope (D63).
+     */
+    @PostMapping("/{id}/resolve")
+    ResponseEntity<AttemptView> resolve(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
+                                        @RequestHeader(value = "X-Approver-Code", required = false) String approverCode,
+                                        @RequestHeader(value = "X-Approver-Pin", required = false) String approverPin,
+                                        @Valid @RequestBody ResolveAttemptRequest body, HttpServletRequest request) {
+        if (body.outcome() == null) {
+            return idempotent.steps("settlement.attempt.resolve", key, request, body, AttemptView.class,
+                    () -> ResponseEntity.ok(resolution.resolveByProvider(id)));
+        }
+        Approval approval = resolution.authorizeReclassification(id, approverCode, approverPin);
+        return idempotent.execute("settlement.attempt.reclassify", key, request, body, AttemptView.class,
+                () -> ResponseEntity.ok(resolution.reclassify(id, body, approval)));
     }
 
     @GetMapping("/{id}")

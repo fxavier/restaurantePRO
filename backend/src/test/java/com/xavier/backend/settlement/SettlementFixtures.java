@@ -107,6 +107,37 @@ public class SettlementFixtures {
         return mvc.perform(get(ATTEMPTS + "/" + attempt).with(who.with(CASHIER)));
     }
 
+    /** Polls the attempt (the source of truth, §7.4) until it is no longer CREATED or PENDING; returns its view. */
+    public JsonNode settled(Pos who, UUID attempt) throws Exception {
+        long deadline = System.nanoTime() + java.time.Duration.ofSeconds(15).toNanos();
+        while (true) {
+            JsonNode view = json(attempt(who, attempt).andExpect(status().isOk()));
+            String state = view.get("status").asString();
+            if ((!"CREATED".equals(state) && !"PENDING".equals(state)) || System.nanoTime() > deadline) {
+                return view;
+            }
+            Thread.sleep(50);
+        }
+    }
+
+    /** Resolve by provider query (no outcome, D63 executeSteps). */
+    public ResultActions resolve(Pos who, UUID attempt, String key) throws Exception {
+        return mvc.perform(idem(post(ATTEMPTS + "/" + attempt + "/resolve"), key).with(who.with(CASHIER))
+                .contentType(MediaType.APPLICATION_JSON).content("{}"));
+    }
+
+    /** Manual reclassification (D50 §7.4) with an approver in the headers (D40). */
+    public ResultActions reclassify(Pos who, UUID attempt, String outcome, String reason, String approverCode)
+            throws Exception {
+        var request = idem(post(ATTEMPTS + "/" + attempt + "/resolve")).with(who.with(CASHIER))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"outcome\": \"%s\", \"reason\": \"%s\"}".formatted(outcome, reason));
+        if (approverCode != null) {
+            request = request.header("X-Approver-Code", approverCode).header("X-Approver-Pin", "1234");
+        }
+        return mvc.perform(request);
+    }
+
     public ResultActions settlement(Pos who, UUID order) throws Exception {
         return mvc.perform(get(ORDERS + "/" + order + "/settlement").with(who.with(CASHIER)));
     }
@@ -167,6 +198,10 @@ public class SettlementFixtures {
 
     public static JsonNode json(ResultActions result) throws Exception {
         return CashFixtures.json(result.andReturn().getResponse().getContentAsString());
+    }
+
+    public static JsonNode json(String body) {
+        return CashFixtures.json(body);
     }
 
     public static UUID id(ResultActions result) throws Exception {

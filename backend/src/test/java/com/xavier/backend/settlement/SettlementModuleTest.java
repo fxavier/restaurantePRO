@@ -8,6 +8,7 @@ import com.xavier.backend.fiscal.adapter.internal.InternalFiscalAdapter;
 import com.xavier.backend.identity.ApproverVerifier;
 import com.xavier.backend.orders.OrdersFixtures;
 import com.xavier.backend.settlement.service.OrderSettlementSteps;
+import com.xavier.backend.settlement.service.PaymentSubmitter;
 import java.lang.annotation.Documented;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -48,7 +49,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
         // the tests drive the sweeper by hand (AttemptSweeper.sweep), with the test clock
         "restaurantpro.settlement.sweep-interval=PT1H"
 })
-@MockitoSpyBean(types = {InternalFiscalAdapter.class, OrderSettlementSteps.class})
+@MockitoSpyBean(types = {InternalFiscalAdapter.class, OrderSettlementSteps.class, PaymentSubmitter.class})
 @MockitoBean(types = ApproverVerifier.class)
 public @interface SettlementModuleTest {
 }

@@ -14,6 +14,7 @@ import com.xavier.backend.settlement.exception.SettlementRuleException;
 import com.xavier.backend.settlement.model.AttemptStatus;
 import com.xavier.backend.settlement.model.PaymentAttempt;
 import com.xavier.backend.settlement.model.PaymentMethod;
+import com.xavier.backend.settlement.model.PaymentMethodKind;
 import com.xavier.backend.settlement.model.dto.AttemptView;
 import com.xavier.backend.settlement.model.dto.CancelAttemptRequest;
 import com.xavier.backend.settlement.model.dto.ConfirmAttemptRequest;
@@ -31,6 +32,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -53,12 +56,15 @@ public class PaymentAttemptService {
     private final CashApi cash;
     private final SettlementAudit audit;
     private final PaymentLocks paymentLocks;
+    private final PaymentProviders providers;
+    private final PaymentSubmitter submitter;
     private final Clock clock;
 
     PaymentAttemptService(AccessPolicy accessPolicy, SettlementLocks locks, Bills bills,
                           PaymentMethodRepository methods, PaymentAttemptRepository attempts,
                           PaymentRecorder recorder, OrdersApi orders, CashApi cash, SettlementAudit audit,
-                          PaymentLocks paymentLocks, Clock clock) {
+                          PaymentLocks paymentLocks, PaymentProviders providers, PaymentSubmitter submitter,
+                          Clock clock) {
         this.accessPolicy = accessPolicy;
         this.locks = locks;
         this.bills = bills;
@@ -69,6 +75,8 @@ public class PaymentAttemptService {
         this.cash = cash;
         this.audit = audit;
         this.paymentLocks = paymentLocks;
+        this.providers = providers;
+        this.submitter = submitter;
         this.clock = clock;
     }
 
@@ -89,6 +97,11 @@ public class PaymentAttemptService {
         accessPolicy.requireSessionStore(pos, bill.storeId(), ORDER, request.orderId());
         bill.requireOpen();
         PaymentMethod method = activeMethod(request.methodCode());
+        if (method.getKind() == PaymentMethodKind.INTEGRATED && !providers.exists(method.getProviderCode())) {
+            throw new SettlementRuleException(SettlementRule.PROVIDER_NOT_AVAILABLE,
+                    "The provider " + method.getProviderCode() + " of method " + method.getCode()
+                            + " is not installed.");
+        }
         requireNoOpenAttempt(request.orderId());
         Currency currency = bill.due().currency();
         Money amount = money(request.amount(), currency);
@@ -111,7 +124,20 @@ public class PaymentAttemptService {
         if (attempt.getStatus() == AttemptStatus.SUCCEEDED) {
             recorder.record(attempt);
         }
+        if (attempt.getStatus() == AttemptStatus.CREATED) {
+            submitAfterCommit(attempt.getId());
+        }
         return attempt.toView();
+    }
+
+    /** D48: the provider is called only once the CREATED attempt is committed, by the submitter, never here. */
+    private void submitAfterCommit(UUID attemptId) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                submitter.submit(attemptId);
+            }
+        });
     }
 
     @Transactional(readOnly = true)
