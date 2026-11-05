@@ -1,8 +1,12 @@
 package com.xavier.backend.cash.controller;
 
+import static com.xavier.backend.cash.CashFixtures.BO_DAYS;
 import static com.xavier.backend.cash.CashFixtures.POS_DAYS;
+import static com.xavier.backend.cash.CashFixtures.account;
+import static com.xavier.backend.cash.CashFixtures.idem;
 import static com.xavier.backend.cash.CashFixtures.pos;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -14,6 +18,8 @@ import com.xavier.backend.cash.CashFixtures.Pos;
 import com.xavier.backend.cash.CashModuleTest;
 import com.xavier.backend.cash.CashTestClock;
 import com.xavier.backend.cash.MethodCount;
+import com.xavier.backend.identity.IdentityFixtures;
+import com.xavier.backend.identity.IdentityFixtures.Employee;
 import com.xavier.backend.shared.Money;
 import java.time.Instant;
 import java.time.LocalTime;
@@ -24,6 +30,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
@@ -41,6 +48,7 @@ class CurrentDayAcrossCutoffTest {
     static final Instant BEFORE_CUTOFF = Instant.parse("2026-11-05T02:59:00Z"); // 04:59 local: business day 4 Nov
     static final Instant AFTER_CUTOFF = Instant.parse("2026-11-05T03:01:00Z");  // 05:01 local: business day 5 Nov
     static final Currency MZN = Currency.getInstance("MZN");
+    static final String PIN = "4826";
 
     @Autowired
     MockMvc mvc;
@@ -113,20 +121,55 @@ class CurrentDayAcrossCutoffTest {
         current().andExpect(status().isNotFound());
     }
 
+    /** P19: a reopened earlier day is again the one to close; once it is closed again, today's day is current. */
+    @Test
+    void aReopenedEarlierDayIsCurrentUntilItClosesAgain() throws Exception {
+        UUID nightDay = closeNightDay();
+        clock.set(AFTER_CUTOFF);
+        fixtures.openSession(pos(store), fixtures.newRegister(store), "10.00");
+        current().andExpect(jsonPath("$.businessDate").value("2026-11-05"));
+
+        Employee manager = new IdentityFixtures(mvc).employee(PIN, store, IdentityFixtures.MANAGER);
+        mvc.perform(idem(post(BO_DAYS + "/" + nightDay + "/reopen")).with(account(store, Permission.CASH_DAY_CLOSE))
+                        .header("X-Approver-Code", manager.code()).header("X-Approver-Pin", PIN)
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"reason": "forgotten receipt"}"""))
+                .andExpect(status().isOk());
+        current().andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(nightDay.toString()))
+                .andExpect(jsonPath("$.status").value("OPEN"));
+
+        asNight(() -> cash.closeDayOperationally(nightDay, cash.findDay(nightDay).orElseThrow().version(),
+                night.employeeId(), ActorKind.EMPLOYEE));
+        current().andExpect(status().isOk())
+                .andExpect(jsonPath("$.businessDate").value("2026-11-05"))
+                .andExpect(jsonPath("$.status").value("OPEN"));
+    }
+
     private ResultActions current() throws Exception {
         return mvc.perform(get(POS_DAYS + "/current").with(pos(store).with(Permission.CASH_VIEW)));
     }
 
-    private void closeNightDay() {
-        SecurityContextHolder.getContext().setAuthentication(
-                CashFixtures.authenticationOf(night.actor(Permission.CASH_OPERATE)));
-        tx.executeWithoutResult(status -> {
-            UUID day = cash.lockSession(nightSession).cashDayId();
+    /** Closes the night session and its day operationally; returns the day's id. */
+    private UUID closeNightDay() {
+        UUID[] day = new UUID[1];
+        asNight(() -> {
+            day[0] = cash.lockSession(nightSession).cashDayId();
             cash.closeSession(nightSession, cash.lockSession(nightSession).version(),
                     List.of(new MethodCount("CASH", Money.of("10.00", MZN))), night.employeeId());
-            cash.closeDayOperationally(day, cash.findDay(day).orElseThrow().version(), night.employeeId(),
+            cash.closeDayOperationally(day[0], cash.findDay(day[0]).orElseThrow().version(), night.employeeId(),
                     ActorKind.EMPLOYEE);
         });
-        SecurityContextHolder.clearContext();
+        return day[0];
+    }
+
+    private void asNight(Runnable action) {
+        SecurityContextHolder.getContext().setAuthentication(
+                CashFixtures.authenticationOf(night.actor(Permission.CASH_OPERATE)));
+        try {
+            tx.executeWithoutResult(status -> action.run());
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
     }
 }
