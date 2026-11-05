@@ -5,10 +5,14 @@
 # application really creates:
 #   1. starts a throwaway PostgreSQL (same pin as production) and runs the backend jar against it,
 #      so Flyway applies the real migrations and the bootstrap creates the company and the admin;
-#   2. through the HTTP API: admin login (+CSRF), password change, two stores, a terminal enrolled and used
-#      for a POS PIN login, an employee, an area and a table, a full catalog and a published release, so
-#      a fiscal series (plus one SQL-seeded issued document until S16 exposes issuing),
-#      every module's tables hold rows; keeps GET /backoffice/stores and the store's release list;
+#   2. through the HTTP API only: admin login (+CSRF), password change, two stores, a terminal enrolled and used
+#      for a POS PIN login, an employee, areas and tables, a full catalog and a published release; then the R2
+#      service of a table (a printer, a route, the terminal's printer, a register, a fiscal series, a card
+#      method; a cash session, two orders, rounds, a transfer that cancels the emptied order, a void with an
+#      approver, a subtotal, cash with change, a confirmed card payment, the document and a reprint, the order
+#      closed, the session counted, the closing approved, the day closed, reopened with an approver, closed
+#      again and closed financially), so every module's tables hold rows; keeps GET /backoffice/stores, the
+#      store's release list and its fiscal document list;
 #   3. stops the backend, fingerprints every table (rows + md5) and the schema, runs backup.sh;
 #   4. restores into a second fresh container with restore.sh and compares: identical data and schema,
 #      except that the Spring Session tables come back empty;
@@ -18,7 +22,8 @@
 # Usage: deploy/test/real-schema-drill.sh [BACKEND_JAR]
 #   BACKEND_JAR defaults to backend/target/backend-*.jar; build it first with
 #   (cd backend && ./mvnw -q package -DskipTests). Needs Docker, Java 25, curl, openssl, python3.
-# Takes about 1-2 minutes (two backend starts).
+# Takes about 1-2 minutes (two backend starts). The printer points at a port nothing listens on, so the print
+# jobs stay queued for retry, as they are in any backup taken while a printer is down.
 # Leaves nothing behind (containers, volumes, processes, temp files). Exits non-zero on any mismatch.
 # Every credential is throwaway, generated per run, and never printed.
 set -euo pipefail
@@ -102,7 +107,14 @@ schema_of() {
     | grep -vE '^(--|\\(un)?restrict )' | sed '/^$/d'
 }
 
-without_casts() { sed -E 's/::(character varying|text)(\[\])?//g; s/[()]//g'; }
+# Normalizes only the re-deparse: drops the varchar/text casts, then the parentheses those casts wrapped, around
+# one literal `('A')` and around the array `((ARRAY[...]))`. Grouping parentheses, and so AND/OR precedence,
+# stay as they are (e.g. fiscal_document_issued_ck mixes OR with a grouped AND).
+without_casts() {
+  sed -E "s/::(character varying|text)(\[\])?//g; s/\(('[^']*')\)/\1/g; s/\(\((ARRAY\[[^]]*\])\)\)/(\1)/g"
+}
+# A schema line whose expression PostgreSQL may re-deparse with equivalent casts: a CHECK, or a partial index.
+redeparsable() { [[ "$1" == *"CHECK ("* || ("$1" == "CREATE "*"INDEX "* && "$1" == *" WHERE "*) ]]; }
 
 start_app() { # $1 container, $2 log name
   local pg_port
@@ -136,12 +148,17 @@ start_app() { # $1 container, $2 log name
 # A browser-like client: cookie jar + the SPA CSRF pattern (XSRF-TOKEN cookie echoed in X-XSRF-TOKEN).
 # curl sends Secure cookies to http://localhost (a secure context), as a browser behind Caddy's TLS would.
 JAR=""
-api() { # $1 method, $2 path, [$3 json body], [$4 extra "Name: value" header]; prints "<status>\n<body>"
-  local token args=(-sS -o "$WORK/body" -w '%{http_code}' -b "$JAR" -c "$JAR" -X "$1" "http://localhost:$APP_PORT$2")
+# Every write carries a fresh Idempotency-Key (as the SPA does, spec §9) unless an extra header brings one.
+api() { # $1 method, $2 path, [$3 json body ('' = none)], [$4... extra "Name: value" headers]; prints "<status>\n<body>"
+  local token header keyed="" args=(-sS -o "$WORK/body" -w '%{http_code}' -b "$JAR" -c "$JAR" -X "$1" "http://localhost:$APP_PORT$2")
   token="$(awk '$6 == "XSRF-TOKEN" {print $7}' "$JAR" 2>/dev/null | tail -1)"
   if [[ "$1" != GET && -n "$token" ]]; then args+=(-H "X-XSRF-TOKEN: $token"); fi
-  if (($# > 2)); then args+=(-H 'Content-Type: application/json' --data "$3"); fi
-  if (($# > 3)); then args+=(-H "$4"); fi
+  if (($# > 2)) && [[ -n "$3" ]]; then args+=(-H 'Content-Type: application/json' --data "$3"); fi
+  for header in "${@:4}"; do
+    args+=(-H "$header")
+    [[ "$header" == Idempotency-Key:* ]] && keyed=1
+  done
+  if [[ "$1" != GET && -z "$keyed" ]]; then args+=(-H "Idempotency-Key: $(openssl rand -hex 16)"); fi
   curl "${args[@]}"
   echo
   cat "$WORK/body"
@@ -157,6 +174,10 @@ expect() { # $1 expected status, rest = api args
 }
 
 json_field() { python3 -c 'import json,sys; print(json.load(sys.stdin)[sys.argv[1]])' "$1"; }
+# A nested field by dotted path, e.g. json_path cashDayId or json_path lines.0.id.
+json_path() { python3 -c $'import json,sys\nd=json.load(sys.stdin)\nfor k in sys.argv[1].split("."):\n    d=d[int(k)] if k.isdigit() else d[k]\nprint(d)' "$1"; }
+# The order's current version, as the POS reads it before a versioned command.
+order_version() { expect 200 GET "/api/v1/pos/orders/$1" | json_field version; }
 # The store list without volatile paging details, ordered by code, as one canonical JSON line.
 stores_view() { python3 -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps(sorted(d["content"], key=lambda s: s["code"]), sort_keys=True)), print(d["totalElements"])'; }
 
@@ -195,7 +216,8 @@ store="$(expect 201 POST /api/v1/backoffice/stores '{"code":"CHIMOIO","name":"Ch
 terminal="$(expect 201 POST /api/v1/backoffice/terminals "{\"storeId\":\"$store\",\"code\":\"POS1\",\"name\":\"Bar\"}" | json_field id)"
 code="$(expect 200 POST "/api/v1/backoffice/terminals/$terminal/enrollment-code" | json_field code)"
 area="$(expect 201 POST /api/v1/backoffice/areas "{\"storeId\":\"$store\",\"code\":\"SALA\",\"name\":\"Sala\"}" | json_field id)"
-expect 201 POST /api/v1/backoffice/tables "{\"storeId\":\"$store\",\"areaId\":\"$area\",\"code\":\"M1\",\"seats\":4}" >/dev/null
+table1="$(expect 201 POST /api/v1/backoffice/tables "{\"storeId\":\"$store\",\"areaId\":\"$area\",\"code\":\"M1\",\"seats\":4}" | json_field id)"
+table2="$(expect 201 POST /api/v1/backoffice/tables "{\"storeId\":\"$store\",\"areaId\":\"$area\",\"code\":\"M2\",\"seats\":2}" | json_field id)"
 expect 201 POST /api/v1/backoffice/employees "{\"code\":\"W1\",\"name\":\"Ana\",\"pin\":\"4831\",\"storeId\":\"$store\",\"roleId\":\"01900000-0000-7000-8000-000000000303\"}" >/dev/null
 C=/api/v1/backoffice/catalog
 family="$(expect 201 POST $C/families '{"code":"BEB","name":"Bebidas"}' | json_field id)"
@@ -210,39 +232,75 @@ expect 201 POST "$C/price-lists/$list/prices" "{\"itemId\":\"$item\",\"amount\":
 release="$(expect 201 POST $C/releases "{\"storeId\":\"$store\"}" | json_field id)"
 expect 200 POST "$C/releases/$release/validate" >/dev/null
 expect 200 POST "$C/releases/$release/publish" '{"note":"drill"}' "Idempotency-Key: drill-$RUN_ID" >/dev/null
-series="$(expect 201 POST /api/v1/backoffice/fiscal/series "{\"storeId\":\"$store\",\"code\":\"A\",\"firstNumber\":1}" | json_field id)"
-# No HTTP endpoint issues a document before settlement (S16, POST /pos/orders/{id}/documents): seed one ISSUED
-# sale document with a line, its tax row and a reprint the way the app writes them (DRAFT, then ISSUED, then
-# series +1), so the fiscal tables and their immutability triggers go through backup and restore.
-psql_in "$SRC" -v store="$store" -v series="$series" <<'SQL'
-BEGIN;
-INSERT INTO fiscal.fiscal_document (id, store_id, document_type, status, source_type, source_id, currency,
-    total_gross, total_net, total_tax, company_name, company_tax_id, company_country, store_code, store_name,
-    store_timezone, buyer_name, version, created_at, updated_at)
-VALUES ('01900000-0000-7000-8000-00000000d001', :'store', 'SALE', 'DRAFT', 'ORDER', gen_random_uuid(), 'MZN',
-    116.00, 100.00, 16.00, 'Drill Company', 'DRILL-1', 'MZ', 'CHIMOIO', 'Chimoio', 'Africa/Maputo', 'Cliente Lda',
-    0, now(), now());
-INSERT INTO fiscal.fiscal_document_line (id, document_id, line_no, description, quantity, unit_price, tax_rate,
-    gross, net, tax)
-VALUES (gen_random_uuid(), '01900000-0000-7000-8000-00000000d001', 1, 'Coca-Cola 33cl', 2, 58.00, 16, 116.00,
-    100.00, 16.00);
-INSERT INTO fiscal.fiscal_document_tax (id, document_id, tax_rate, net, tax)
-VALUES (gen_random_uuid(), '01900000-0000-7000-8000-00000000d001', 16, 100.00, 16.00);
-UPDATE fiscal.fiscal_series SET next_number = next_number + 1 WHERE id = :'series';
-UPDATE fiscal.fiscal_document SET status = 'ISSUED', series_id = :'series', series_code = 'A', number = 1,
-    issued_at = now(), issued_by_employee_id = gen_random_uuid(), adapter_code = 'internal', non_fiscal = true,
-    adapter_data = md5('drill'), version = 1 WHERE id = '01900000-0000-7000-8000-00000000d001';
-INSERT INTO fiscal.fiscal_document_print (id, document_id, copy_no, requested_at, requested_by_employee_id,
-    terminal_id)
-VALUES (gen_random_uuid(), '01900000-0000-7000-8000-00000000d001', 1, now(), gen_random_uuid(), gen_random_uuid());
-COMMIT;
-SQL
+expect 201 POST /api/v1/backoffice/fiscal/series "{\"storeId\":\"$store\",\"code\":\"A\",\"firstNumber\":1}" >/dev/null
+# R2 BackOffice setup: a printer nothing listens on, the BAR route, the second terminal's printer, a register,
+# a card method, a manager who operates the POS and a second manager who approves.
+printer_port="$(free_port)"
+printer="$(expect 201 POST /api/v1/backoffice/printers "{\"storeId\":\"$store\",\"code\":\"BAR\",\"name\":\"Bar\",\"host\":\"127.0.0.1\",\"port\":$printer_port,\"codePage\":\"CP860\"}" | json_field id)"
+expect 200 PUT /api/v1/backoffice/production-routes "{\"storeId\":\"$store\",\"routes\":[{\"destinationCode\":\"BAR\",\"printerId\":\"$printer\"}]}" >/dev/null
+terminal2="$(expect 201 POST /api/v1/backoffice/terminals "{\"storeId\":\"$store\",\"code\":\"POS2\",\"name\":\"Sala\"}" | json_field id)"
+code2="$(expect 200 POST "/api/v1/backoffice/terminals/$terminal2/enrollment-code" | json_field code)"
+expect 200 PUT /api/v1/backoffice/terminal-printers "{\"storeId\":\"$store\",\"assignments\":[{\"terminalId\":\"$terminal2\",\"printerId\":\"$printer\"}]}" >/dev/null
+register="$(expect 201 POST /api/v1/backoffice/cash/registers "{\"storeId\":\"$store\",\"code\":\"CX1\",\"name\":\"Caixa 1\"}" | json_field id)"
+expect 201 POST /api/v1/backoffice/payment-methods '{"code":"CARD","name":"Cartao","kind":"EXTERNAL_TERMINAL","providerCode":null}' >/dev/null
+MANAGER_ROLE=01900000-0000-7000-8000-000000000302
+expect 201 POST /api/v1/backoffice/employees "{\"code\":\"G1\",\"name\":\"Gil\",\"pin\":\"5172\",\"storeId\":\"$store\",\"roleId\":\"$MANAGER_ROLE\"}" >/dev/null
+expect 201 POST /api/v1/backoffice/employees "{\"code\":\"G2\",\"name\":\"Rita\",\"pin\":\"6283\",\"storeId\":\"$store\",\"roleId\":\"$MANAGER_ROLE\"}" >/dev/null
+APPROVER=("X-Approver-Code: G2" "X-Approver-Pin: 6283")
 releases_before="$(expect 200 GET "$C/releases?storeId=$store" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["content"], sort_keys=True))')"
 POS="$JAR"; JAR="$WORK/cookies-pos"
 expect 401 GET /api/v1/auth/session >/dev/null
 token="$(expect 200 POST /api/v1/auth/terminals/enroll "{\"code\":\"$code\"}" | json_field deviceToken)"
 expect 200 POST /api/v1/auth/pos-login '{"employeeCode":"W1","pin":"4831"}' "X-Terminal-Token: $token" >/dev/null
 expect 200 GET "/api/v1/pos/catalog?storeId=$store" >/dev/null
+
+step "API (R2): a table served, paid, documented and closed; the session counted; the day closed twice"
+JAR="$WORK/cookies-pos2"
+expect 401 GET /api/v1/auth/session >/dev/null
+token2="$(expect 200 POST /api/v1/auth/terminals/enroll "{\"code\":\"$code2\"}" | json_field deviceToken)"
+expect 200 POST /api/v1/auth/pos-login '{"employeeCode":"G1","pin":"5172"}' "X-Terminal-Token: $token2" >/dev/null
+session_json="$(expect 201 POST /api/v1/pos/cash/sessions "{\"registerId\":\"$register\",\"openingFloat\":0}")"
+session_id="$(json_field id <<<"$session_json")"
+cash_day="$(json_path cashDayId <<<"$session_json")"
+catalog_version="$(expect 200 GET "/api/v1/pos/catalog?storeId=$store" | json_field version)"
+order_a="$(expect 201 POST "/api/v1/pos/tables/$table1/open" '{"guests":2}' | json_field id)"
+line_a="$(expect 201 POST "/api/v1/pos/orders/$order_a/lines" "{\"itemId\":\"$item\",\"quantity\":2}" | json_field id)"
+expect 201 POST "/api/v1/pos/orders/$order_a/batches" "{\"orderVersion\":$(order_version "$order_a"),\"catalogVersion\":$catalog_version,\"lineIds\":[\"$line_a\"]}" >/dev/null
+order_b="$(expect 201 POST "/api/v1/pos/tables/$table2/open" '{"guests":1}' | json_field id)"
+line_b="$(expect 201 POST "/api/v1/pos/orders/$order_b/lines" "{\"itemId\":\"$item\",\"quantity\":1}" | json_field id)"
+expect 201 POST "/api/v1/pos/orders/$order_b/batches" "{\"orderVersion\":$(order_version "$order_b"),\"catalogVersion\":$catalog_version,\"lineIds\":[\"$line_b\"]}" >/dev/null
+expect 201 POST "/api/v1/pos/orders/$order_b/transfers" "{\"orderVersion\":$(order_version "$order_b"),\"targetOrderId\":\"$order_a\",\"targetOrderVersion\":$(order_version "$order_a"),\"lines\":[{\"lineId\":\"$line_b\",\"quantity\":1}],\"cancelSourceWhenEmpty\":true}" >/dev/null
+expect 201 POST "/api/v1/pos/orders/$order_a/voids" "{\"orderVersion\":$(order_version "$order_a"),\"lineId\":\"$line_a\",\"quantity\":1,\"reason\":\"drill\",\"wasted\":true}" "${APPROVER[@]}" >/dev/null
+expect 202 POST "/api/v1/pos/orders/$order_a/subtotal/print" >/dev/null
+expect 201 POST /api/v1/pos/payment-attempts "{\"orderId\":\"$order_a\",\"methodCode\":\"CASH\",\"amount\":50.00,\"tendered\":100.00}" >/dev/null
+card="$(expect 201 POST /api/v1/pos/payment-attempts "{\"orderId\":\"$order_a\",\"methodCode\":\"CARD\",\"amount\":40.00}" | json_field id)"
+expect 200 POST "/api/v1/pos/payment-attempts/$card/confirm" '{"authorizationCode":"DRILL-1"}' >/dev/null
+document_json="$(expect 201 POST "/api/v1/pos/orders/$order_a/documents" '{}')"
+document="$(json_field id <<<"$document_json")"
+[[ "$(json_field number <<<"$document_json")" == 1 && "$(json_field status <<<"$document_json")" == ISSUED ]] \
+  || fail "the first document of series A is not ISSUED number 1: $document_json"
+expect 201 POST "/api/v1/pos/documents/$document/reprints" >/dev/null
+close_version="$(expect 200 GET "/api/v1/pos/orders/$order_a/settlement" | json_field orderVersion)"
+expect 200 POST "/api/v1/pos/orders/$order_a/close" "{\"orderVersion\":$close_version}" >/dev/null
+session_version="$(expect 200 GET "/api/v1/pos/cash/sessions/$session_id" | json_field version)"
+expect 200 POST "/api/v1/pos/cash/sessions/$session_id/close" "{\"version\":$session_version,\"counts\":[{\"methodCode\":\"CASH\",\"amount\":50.00},{\"methodCode\":\"CARD\",\"amount\":40.00}]}" >/dev/null
+closing="$(expect 201 POST /api/v1/pos/cash/closings "{\"registerId\":\"$register\",\"cashDayId\":\"$cash_day\"}" | json_field id)"
+expect 200 POST "/api/v1/pos/cash/closings/$closing/submit" >/dev/null
+POS2="$JAR"; JAR="$POS"
+expect 200 POST "/api/v1/backoffice/cash/closings/$closing/approve" >/dev/null
+JAR="$POS2"
+expect 200 POST "/api/v1/pos/cash/days/$cash_day/operational-close" "{\"version\":$(expect 200 GET /api/v1/pos/cash/days/current | json_field version)}" >/dev/null
+JAR="$POS"
+expect 200 POST "/api/v1/backoffice/cash/days/$cash_day/reopen" '{"reason":"drill: a late correction"}' "${APPROVER[@]}" >/dev/null
+JAR="$POS2"
+expect 200 POST "/api/v1/pos/cash/days/$cash_day/operational-close" "{\"version\":$(expect 200 GET /api/v1/pos/cash/days/current | json_field version)}" >/dev/null
+JAR="$POS"
+expect 200 POST "/api/v1/backoffice/cash/days/$cash_day/financial-close" >/dev/null
+documents_before="$(expect 200 GET "/api/v1/backoffice/fiscal/documents?storeId=$store" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["content"], sort_keys=True))')"
+# One failed BackOffice login under an unknown username: its throttle row (§12 of the decisions) stays.
+JAR="$WORK/cookies-intruder"
+expect 401 GET /api/v1/auth/session >/dev/null
+expect 401 POST /api/v1/auth/login '{"username":"intruder","password":"wrong-password"}' >/dev/null
 JAR="$POS"
 stores_before="$(expect 200 GET /api/v1/backoffice/stores | stores_view)"
 sessions="$(psql_in "$SRC" -At -c "SELECT count(*) FROM shared.spring_session")"
@@ -273,9 +331,11 @@ fi
 restored_schema="$(schema_of "$DST")"
 # PostgreSQL deparses a CHECK such as `status IN ('A','B')` on a varchar column as
 # `(status)::text = ANY ((ARRAY['A'::character varying, ...])::text[])`; re-parsing that text from the
-# dump stores the equivalent `ANY (ARRAY[('A'::character varying)::text, ...])`. So compare line by line:
-# a line may differ only when both versions are CHECK constraints that become equal once those casts and
-# parentheses are dropped. Anything else (a missing, extra or other changed line) fails.
+# dump stores the equivalent `ANY (ARRAY[('A'::character varying)::text, ...])`. The predicate of a partial
+# index (e.g. cash.cash_closing_live_uk, `WHERE status IN (...)`) is deparsed the same way. So compare line by
+# line: a line may differ only when both versions are CHECK constraints, or both are the same partial index,
+# that become equal once those casts and the parentheses they wrapped are dropped (without_casts). Anything
+# else (a missing, extra or other changed line) fails.
 if [[ "$(wc -l <<<"$restored_schema")" != "$(wc -l <<<"$source_schema")" ]]; then
   diff <(echo "$source_schema") <(echo "$restored_schema") >&2 || true
   fail "restored schema differs from the source (line count)"
@@ -283,15 +343,15 @@ fi
 redeparsed=0
 while IFS= read -r src_line <&3 && IFS= read -r dst_line <&4; do
   [[ "$src_line" == "$dst_line" ]] && continue
-  if [[ "$src_line" != *"CHECK ("* || "$dst_line" != *"CHECK ("* \
-        || "$(without_casts <<<"$src_line")" != "$(without_casts <<<"$dst_line")" ]]; then
+  if ! redeparsable "$src_line" || ! redeparsable "$dst_line" \
+        || [[ "$(without_casts <<<"$src_line")" != "$(without_casts <<<"$dst_line")" ]]; then
     printf 'source:   %s\nrestored: %s\n' "$src_line" "$dst_line" >&2
     fail "restored schema differs from the source"
   fi
   redeparsed=$((redeparsed + 1))
 done 3<<<"$source_schema" 4<<<"$restored_schema"
 if ((redeparsed)); then
-  echo "    schema identical except $redeparsed CHECK constraint line(s) re-deparsed with equivalent casts" >&2
+  echo "    schema identical except $redeparsed CHECK/partial-index line(s) re-deparsed with equivalent casts" >&2
 else
   echo "    schema identical" >&2
 fi
@@ -308,6 +368,9 @@ stores_after="$(expect 200 GET /api/v1/backoffice/stores | stores_view)"
 releases_after="$(expect 200 GET "$C/releases?storeId=$store" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["content"], sort_keys=True))')"
 [[ "$releases_after" == "$releases_before" ]] || fail "the published release differs after the restore"
 echo "    GET /backoffice/catalog/releases identical (published release, version and author)" >&2
+documents_after="$(expect 200 GET "/api/v1/backoffice/fiscal/documents?storeId=$store" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["content"], sort_keys=True))')"
+[[ "$documents_after" == "$documents_before" ]] || fail "the fiscal document list differs after the restore"
+echo "    GET /backoffice/fiscal/documents identical (the issued document, its number and totals)" >&2
 if [[ "$stores_after" != "$stores_before" ]]; then
   diff <(echo "$stores_before") <(echo "$stores_after") >&2 || true
   fail "GET /backoffice/stores differs after the restore"
