@@ -7,10 +7,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.fiscal.model.dto.Buyer;
+import com.xavier.backend.fiscal.model.dto.DraftCommand;
 import com.xavier.backend.fiscal.model.dto.DraftLine;
+import com.xavier.backend.fiscal.model.dto.SourceType;
 import com.xavier.backend.fiscal.model.dto.SaleDraftCommand;
 import com.xavier.backend.shared.Money;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.Currency;
 import java.util.List;
 import java.util.function.Supplier;
@@ -102,6 +105,14 @@ public class FiscalFixtures {
         DraftLine beer = new DraftLine(UUID.randomUUID(), "Cerveja 2M", new BigDecimal("2"), mzn("58.00"),
                 new BigDecimal("16"), mzn("116.00"), mzn("100.00"), mzn("16.00"));
         return new SaleDraftCommand(store, order, buyer, List.of(beer), mzn("116.00"), mzn("100.00"), mzn("16.00"));
+    }
+
+    /** The same line as {@link #saleDraft}, for any source, on business day 2026-11-04. */
+    public static DraftCommand draft(UUID store, SourceType sourceType, UUID source, UUID order, Buyer buyer,
+                                     UUID customer, boolean onAccount) {
+        SaleDraftCommand sale = saleDraft(store, source, buyer);
+        return new DraftCommand(store, sourceType, source, order, LocalDate.of(2026, 11, 4), buyer, customer,
+                onAccount, sale.lines(), sale.totalGross(), sale.totalNet(), sale.totalTax());
     }
 
     public static Money mzn(String amount) {

@@ -4,8 +4,8 @@ import com.xavier.backend.fiscal.exception.SaleDraftConflictException;
 import com.xavier.backend.fiscal.exception.UnknownStoreException;
 import com.xavier.backend.fiscal.model.DocumentType;
 import com.xavier.backend.fiscal.model.FiscalDocument;
-import com.xavier.backend.fiscal.model.SourceType;
 import com.xavier.backend.fiscal.model.dto.DocumentView;
+import com.xavier.backend.fiscal.model.dto.DraftCommand;
 import com.xavier.backend.fiscal.model.dto.SaleDraftCommand;
 import com.xavier.backend.fiscal.repository.FiscalDocumentRepository;
 import com.xavier.backend.organization.OrganizationApi;
@@ -17,9 +17,10 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * tx-A of D50 §7.6: the SALE draft of an order, in the caller's (settlement's) transaction. Idempotent per
- * {@code (ORDER, orderId)}: an existing DRAFT or ISSUED document is returned as it is. Not authorized here: the
- * calling use case already did (D27, D36).
+ * tx-A of D50 §7.6: the SALE draft of an order or an ITEMS partition (D70), in the caller's (settlement's)
+ * transaction. Idempotent per {@code (sourceType, sourceId)}: an existing DRAFT takes the command's buyer, customer
+ * and on-account mark (its lines and totals stay as drafted), and an ISSUED document is returned unchanged. Not
+ * authorized here: the calling use case already did (D27, D36).
  */
 @Service
 public class SaleDraftService {
@@ -35,19 +36,32 @@ public class SaleDraftService {
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
-    public DocumentView createSaleDraft(SaleDraftCommand command) {
-        return documents.findBySource(SourceType.ORDER, command.orderId(),
-                        DocumentType.SALE)
-                .map(FiscalDocument::toView)
+    public DocumentView createDraft(DraftCommand command) {
+        return documents.findBySource(command.sourceType(), command.sourceId(), DocumentType.SALE)
+                .map(existing -> amend(existing, command))
                 .orElseGet(() -> draft(command));
     }
 
-    private DocumentView draft(SaleDraftCommand command) {
+    @Transactional(propagation = Propagation.MANDATORY)
+    public DocumentView createSaleDraft(SaleDraftCommand command) {
+        return createDraft(command.toDraftCommand());
+    }
+
+    private DocumentView amend(FiscalDocument document, DraftCommand command) {
+        if (document.isIssued()) {
+            return document.toView();
+        }
+        document.amendDraft(command.buyer(), command.customerId(), command.onAccount(), clock.instant());
+        documents.flush(); // the returned version is the new one
+        return document.toView();
+    }
+
+    private DocumentView draft(DraftCommand command) {
         StoreSummary store = organization.findStore(command.storeId())
                 .orElseThrow(() -> new UnknownStoreException(command.storeId()));
-        FiscalDocument document = FiscalDocument.saleDraft(command, organization.companyProfile(), store,
+        FiscalDocument document = FiscalDocument.draft(command, organization.companyProfile(), store,
                 clock.instant());
         return UniqueConstraints.saveAndFlush(documents, document,
-                () -> new SaleDraftConflictException(command.orderId()), "fiscal_document_source_uk").toView();
+                () -> new SaleDraftConflictException(command.sourceId()), "fiscal_document_source_uk").toView();
     }
 }

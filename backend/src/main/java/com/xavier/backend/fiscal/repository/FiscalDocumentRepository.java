@@ -3,7 +3,7 @@ package com.xavier.backend.fiscal.repository;
 import com.xavier.backend.fiscal.model.DocumentStatus;
 import com.xavier.backend.fiscal.model.DocumentType;
 import com.xavier.backend.fiscal.model.FiscalDocument;
-import com.xavier.backend.fiscal.model.SourceType;
+import com.xavier.backend.fiscal.model.dto.SourceType;
 import jakarta.persistence.LockModeType;
 import java.time.Instant;
 import java.util.Optional;

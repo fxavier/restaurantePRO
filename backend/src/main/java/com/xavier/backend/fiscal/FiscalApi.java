@@ -3,8 +3,9 @@ package com.xavier.backend.fiscal;
 import com.xavier.backend.fiscal.model.DocumentStatus;
 import com.xavier.backend.fiscal.model.DocumentType;
 import com.xavier.backend.fiscal.model.FiscalDocument;
-import com.xavier.backend.fiscal.model.SourceType;
+import com.xavier.backend.fiscal.model.dto.SourceType;
 import com.xavier.backend.fiscal.model.dto.DocumentView;
+import com.xavier.backend.fiscal.model.dto.DraftCommand;
 import com.xavier.backend.fiscal.model.dto.SaleDraftCommand;
 import com.xavier.backend.fiscal.repository.FiscalDocumentRepository;
 import com.xavier.backend.fiscal.service.DocumentIssueService;
@@ -32,8 +33,9 @@ public class FiscalApi {
     }
 
     /**
-     * tx-A (D50 §7.6), in the caller's transaction: the SALE draft of the order, with snapshots of company, store
-     * and buyer. Idempotent per {@code (ORDER, orderId)}: returns the existing document, DRAFT or ISSUED.
+     * R2's tx-A (D50 §7.6), in the caller's transaction: the SALE draft of the order, with snapshots of company,
+     * store and buyer. A delegate of {@link #createDraft} with source {@code ORDER}, no business day, no customer and
+     * not on account: idempotent per {@code (ORDER, orderId)}, an existing DRAFT takes the buyer given now.
      *
      * <p>Lines follow D59 for tax-inclusive prices, exactly as orders computes them: {@code gross =
      * unitPrice.times(quantity)}, {@code net = gross.divide(1 + rate/100)} (HALF_UP to minor units),
@@ -47,6 +49,24 @@ public class FiscalApi {
     @Transactional(propagation = Propagation.MANDATORY)
     public DocumentView createSaleDraft(SaleDraftCommand cmd) {
         return drafts.createSaleDraft(cmd);
+    }
+
+    /**
+     * tx-A (D50 §7.6), generalized (D66, D70): the SALE draft of an order ({@code ORDER}: the residual document at
+     * close) or of an ITEMS partition ({@code PARTITION}), in the caller's transaction, with snapshots of company,
+     * store and buyer. Idempotent per {@code (sourceType, sourceId)}: an existing DRAFT takes the command's buyer,
+     * customer and on-account mark (lines and totals stay as drafted); an ISSUED document is returned unchanged.
+     * Lines follow D59 as described on {@link #createSaleDraft}.
+     *
+     * @throws com.xavier.backend.shared.exception.BusinessRuleException (422) for inconsistent lines or totals, a
+     *         PARTITION without its order, an ORDER for another order, or on account without a customer
+     * @throws com.xavier.backend.shared.exception.ConflictException (409) when a concurrent draft won the race, or a
+     *         stale amendment of the draft
+     * @throws org.springframework.transaction.IllegalTransactionStateException without a transaction
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public DocumentView createDraft(DraftCommand cmd) {
+        return drafts.createDraft(cmd);
     }
 
     /**
