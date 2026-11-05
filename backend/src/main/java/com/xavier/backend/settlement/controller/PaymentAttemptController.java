@@ -45,6 +45,7 @@ class PaymentAttemptController {
     @PostMapping
     ResponseEntity<AttemptView> create(@RequestHeader("Idempotency-Key") String key,
                                        @Valid @RequestBody CreateAttemptRequest body, HttpServletRequest request) {
+        attempts.authorizeCreate(body);
         return idempotent.execute("settlement.attempt.create", key, request, body, AttemptView.class, () -> {
             AttemptView created = attempts.create(body);
             URI location = URI.create(PATH + "/" + created.id());

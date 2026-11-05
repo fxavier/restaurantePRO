@@ -181,7 +181,10 @@ public class PaymentAttempt {
         }
     }
 
-    /** D48 tx-a: CREATED → PENDING, right before the provider is called. */
+    /**
+     * CREATED → PENDING. The submitter applies this transition as the compare-and-set update
+     * {@code PaymentAttemptRepository.markSubmitted} (D48), so two concurrent submitters cannot both win.
+     */
     public void submit(Instant now) {
         move(Set.of(AttemptStatus.CREATED), AttemptStatus.PENDING, "be submitted", now);
     }

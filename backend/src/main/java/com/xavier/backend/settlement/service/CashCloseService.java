@@ -59,22 +59,17 @@ public class CashCloseService {
     }
 
     /**
-     * The operator's own session, locked {@code FOR UPDATE} (an attempt being created on it waits, then is refused),
+     * The operator's own open session (checked before the lock, D42), locked {@code FOR UPDATE} (an attempt being created on it waits, then is refused),
      * with no attempt CREATED, PENDING or UNKNOWN on it, closed with its blind count.
      *
      * @throws SettlementConflictException 409 {@code PAYMENT_IN_DOUBT}
-     * @throws AccessDeniedException 403 for a session of another store or another operator
+     * @throws AccessDeniedException 403 for anything but the caller's own open session in the POS session's store
      */
     @Transactional
     public SessionView closeSession(UUID sessionId, CloseSessionRequest request) {
         PosContext pos = accessPolicy.requirePos(Permission.CASH_OPERATE);
+        requireOwnOpenSession(pos, sessionId);
         SessionView session = cash.lockSession(sessionId);
-        accessPolicy.requireSessionStore(pos, session.storeId(), SESSION, sessionId);
-        if (!session.operatorEmployeeId().equals(pos.employeeId())) {
-            log.warn("Access denied: session {} belongs to employee {}, not {}", sessionId,
-                    session.operatorEmployeeId(), pos.employeeId());
-            throw new AccessDeniedException("Cash session " + sessionId + " is not yours");
-        }
         attempts.findFirstBySessionIdAndStatusIn(sessionId, AttemptStatus.OPEN).ifPresent(open -> {
             throw SettlementConflictException.inDoubt("cash session", sessionId, open.getId());
         });
@@ -114,6 +109,21 @@ public class CashCloseService {
         Actor actor = accessPolicy.current();
         cash.closeDayOperationally(dayId, request.version(), actor.userId(), actor.kind());
         return cash.findDay(dayId).orElseThrow();
+    }
+
+    /**
+     * D42 before the lock: the session must be the caller's own OPEN session in the POS session's store (the session
+     * is read without a lock through {@code openSessionOf}; cash has no read of a session by id without one). Any
+     * other session id, including an unknown one or one already closed, is 403.
+     */
+    private void requireOwnOpenSession(PosContext pos, UUID sessionId) {
+        boolean own = cash.openSessionOf(pos.storeId(), pos.employeeId())
+                .filter(open -> open.id().equals(sessionId)).isPresent();
+        if (!own) {
+            log.warn("Access denied: cash session {} is not the open session of employee {} in store {}", sessionId,
+                    pos.employeeId(), pos.storeId());
+            throw new AccessDeniedException("Cash session " + sessionId + " is not your open session");
+        }
     }
 
     private static SettlementRuleException refused(SettlementRule rule, String why) {

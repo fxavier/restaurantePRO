@@ -89,6 +89,18 @@ public class PaymentAttemptService {
      *         {@code INVALID_AMOUNT}, {@code AMOUNT_EXCEEDS_BALANCE}, {@code NO_OPEN_CASH_SESSION}, ...
      * @throws SettlementConflictException 409 {@code PAYMENT_IN_DOUBT} while another attempt of the order is open
      */
+    /**
+     * D42 for a create, before its transaction (like D40's phase 1): the order's store is read (404) and checked
+     * against the POS session (403) before anything is locked. The order's store never changes, so the create may
+     * rely on it; it checks again on what it reads under the lock.
+     */
+    @Transactional(readOnly = true)
+    public void authorizeCreate(CreateAttemptRequest request) {
+        PosContext pos = accessPolicy.requirePos(Permission.PAYMENT_COLLECT);
+        UUID storeId = orders.billingView(request.orderId()).storeId();
+        accessPolicy.requireSessionStore(pos, storeId, ORDER, request.orderId());
+    }
+
     @Transactional
     public AttemptView create(CreateAttemptRequest request) {
         PosContext pos = accessPolicy.requirePos(Permission.PAYMENT_COLLECT);

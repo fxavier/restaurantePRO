@@ -61,20 +61,23 @@ public class OrderSettlementSteps {
 
     /**
      * s1, one transaction: the order's lock → {@code freezeForInvoice} → the SALE draft from the frozen bill (fiscal
-     * returns the existing document, DRAFT or ISSUED). Until the order is frozen, a close ({@code expectedVersion}
-     * given) also checks the client's version and that the order is settled, so a close that cannot succeed never
-     * freezes the order or drafts its document. Once frozen nothing of the order can change, so a retry (whose
-     * client version predates the freeze) skips those checks.
+     * returns the existing document, DRAFT or ISSUED). A close ({@code expectedVersion} given) first checks that the
+     * order is settled (nothing in doubt, paid = due), frozen or not, so a close that cannot succeed never freezes the
+     * order, drafts or issues its document. Until the order is frozen it also checks the client's version; once
+     * frozen nothing of the order can change, so a retry (whose client version predates the freeze) skips it.
      */
     public DocumentView prepareDocument(PosContext pos, UUID orderId, Buyer buyer, Long expectedVersion) {
         return inTransaction.execute(tx -> {
             Bill bill = lockedBill(pos, orderId);
             OrderBillingView view = bill.view();
+            boolean closing = expectedVersion != null;
+            if (closing) {
+                requireSettled(bill); // frozen or not: a close that cannot succeed issues nothing
+            }
             if (view.billingLock() != BillingLock.INVOICE) {
                 bill.requireOpen();
-                if (expectedVersion != null) {
+                if (closing) {
                     OptimisticLocking.requireVersion(OrderBillingView.class, orderId, view.version(), expectedVersion);
-                    requireSettled(bill);
                 }
                 if (view.lines().isEmpty()) {
                     throw new SettlementRuleException(SettlementRule.NOTHING_TO_BILL,

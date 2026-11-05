@@ -11,7 +11,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
-import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -45,21 +44,15 @@ class AttemptTransitions {
     }
 
     /**
-     * tx-a: CREATED → PENDING by compare-and-set on the attempt's version, so of two submitters exactly one calls the
-     * provider. @return the charge to send, or empty when the attempt is not CREATED any more (or another won)
+     * tx-a: CREATED → PENDING by a conditional update ({@code WHERE status = 'CREATED'}), so of two submitters exactly
+     * one calls the provider. @return the charge to send, or empty when the attempt is not CREATED any more
      */
     @Transactional(propagation = Propagation.MANDATORY)
     Optional<Submission> submit(UUID attemptId) {
-        PaymentAttempt attempt = attempts.findById(attemptId).orElse(null);
-        if (attempt == null || attempt.getStatus() != AttemptStatus.CREATED) {
+        if (attempts.markSubmitted(attemptId, clock.instant()) == 0) {
             return Optional.empty();
         }
-        attempt.submit(clock.instant());
-        try {
-            attempts.saveAndFlush(attempt);
-        } catch (OptimisticLockingFailureException lostTheRace) {
-            return Optional.empty();
-        }
+        PaymentAttempt attempt = attempts.findById(attemptId).orElseThrow();
         audit.attempt("PAYMENT_ATTEMPT_SUBMITTED", attempt.getId(), attempt.getStoreId(), attempt.getOrderId(),
                 attempt.getTerminalId(), null, null, PaymentAttemptService.details(attempt));
         return Optional.of(new Submission(attempt.getProviderCode(), new ChargeRequest(attempt.getProviderReference(),
