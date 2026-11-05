@@ -4,7 +4,9 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -34,11 +36,15 @@ import org.springframework.web.context.request.RequestContextHolder;
  * {@link #requireSessionStore} a resource of another store. Store scope order (D42): when the store is an input,
  * call {@code require} before any read; for a resource addressed by id, read only its {@code storeId}
  * (absent → 404), then {@code require} (→ 403).
+ *
+ * <p>Company-wide data (customers, P38) uses {@link #requireInAnyStore}; a query that filters rows by store (audit,
+ * reports) asks {@link #scopeOf} where the actor holds the permission.
  */
 @Component
 public class AccessPolicy {
 
     private static final Logger log = LoggerFactory.getLogger(AccessPolicy.class);
+    private static final String ANY_STORE = "(any store)";
     private static final String ACTIVE_STORE_ATTRIBUTE = AccessPolicy.class.getName() + ".activeStore.";
 
     private final ObjectProvider<StoreActivity> storeActivity;
@@ -101,6 +107,34 @@ public class AccessPolicy {
         if (!granted) {
             throw denied(actor, permissions.length == 1 ? permissions[0] : List.of(permissions), storeId);
         }
+    }
+
+    /**
+     * Requires {@code permission} installation-wide or in at least one store: for company-wide data that is not owned
+     * by a store (customers, P38). A denial is logged like {@link #require}.
+     */
+    public void requireInAnyStore(Permission permission) {
+        scopeOf(permission);
+    }
+
+    /**
+     * Where the current actor holds {@code permission}, for a query that filters its rows by store (audit, reports).
+     *
+     * @throws AccessDeniedException (403, logged like {@link #require}) when it is held nowhere
+     */
+    public AccessScope scopeOf(Permission permission) {
+        Objects.requireNonNull(permission, "permission");
+        Actor actor = current();
+        String storePrefix = permission.authority() + "@";
+        boolean global = actor.authorities().contains(permission.authority());
+        Set<UUID> stores = actor.authorities().stream()
+                .filter(authority -> authority.startsWith(storePrefix))
+                .map(authority -> UUID.fromString(authority.substring(storePrefix.length())))
+                .collect(Collectors.toUnmodifiableSet());
+        if (!global && stores.isEmpty()) {
+            throw denied(actor, permission, ANY_STORE, " in any store");
+        }
+        return new AccessScope(global, stores);
     }
 
     /**
@@ -204,11 +238,14 @@ public class AccessPolicy {
     }
 
     private static AccessDeniedException denied(Actor actor, Object permission, UUID storeId) {
+        return denied(actor, permission, storeId == null ? "(installation-wide)" : storeId.toString(),
+                storeId == null ? "" : " in store " + storeId);
+    }
+
+    private static AccessDeniedException denied(Actor actor, Object permission, String where, String inWhere) {
         log.warn("Access denied: kind={} user={} employee={} terminal={} permission={} store={}",
-                actor.kind(), actor.userId(), actor.employeeId(), actor.terminalId(), permission,
-                storeId == null ? "(installation-wide)" : storeId);
-        return new AccessDeniedException("Missing permission " + permission
-                + (storeId == null ? "" : " in store " + storeId));
+                actor.kind(), actor.userId(), actor.employeeId(), actor.terminalId(), permission, where);
+        return new AccessDeniedException("Missing permission " + permission + inWhere);
     }
 
     private static Authentication authentication() {

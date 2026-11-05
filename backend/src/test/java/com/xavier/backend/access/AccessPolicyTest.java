@@ -173,6 +173,61 @@ class AccessPolicyTest {
     }
 
     @Test
+    void requireInAnyStorePassesForAnInstallationWideGrantOrAGrantInOneStore() {
+        Actor global = Actor.account(UUID.randomUUID(), Set.of(Permission.CUSTOMER_VIEW.authority()));
+        runAs(global, () -> assertThatCode(() -> accessPolicy.requireInAnyStore(Permission.CUSTOMER_VIEW))
+                .doesNotThrowAnyException());
+        Actor oneStore = Actor.account(UUID.randomUUID(),
+                Set.of(Permission.CUSTOMER_VIEW.authority(uuid(STORE_B))));
+        runAs(oneStore, () -> assertThatCode(() -> accessPolicy.requireInAnyStore(Permission.CUSTOMER_VIEW))
+                .doesNotThrowAnyException());
+    }
+
+    @Test
+    void requireInAnyStoreRefusesAndLogsWhenThePermissionIsHeldNowhere(CapturedOutput output) {
+        Actor other = Actor.account(UUID.randomUUID(), Set.of(Permission.CUSTOMER_MANAGE.authority(uuid(STORE_A)),
+                Permission.CASH_VIEW.authority()));
+        runAs(other, () -> assertThatThrownBy(() -> accessPolicy.requireInAnyStore(Permission.CUSTOMER_VIEW))
+                .isInstanceOf(AccessDeniedException.class));
+
+        assertThat(output.getOut()).containsOnlyOnce("Access denied").contains("CUSTOMER_VIEW")
+                .contains("(any store)");
+    }
+
+    @Test
+    void scopeOfAnInstallationWideGrantIsGlobal() {
+        Actor global = Actor.account(UUID.randomUUID(), Set.of(Permission.AUDIT_VIEW.authority(),
+                Permission.AUDIT_VIEW.authority(uuid(STORE_A))));
+
+        runAs(global, () -> assertThat(accessPolicy.scopeOf(Permission.AUDIT_VIEW))
+                .isEqualTo(new AccessScope(true, Set.of(uuid(STORE_A)))));
+    }
+
+    @Test
+    void scopeOfStoreGrantsIsThoseStoresOnly() {
+        Actor twoStores = Actor.account(UUID.randomUUID(), Set.of(Permission.AUDIT_VIEW.authority(uuid(STORE_A)),
+                Permission.AUDIT_VIEW.authority(uuid(STORE_B)), Permission.AUDIT_EXPORT.authority(uuid(INACTIVE_STORE)),
+                Permission.CASH_VIEW.authority()));
+
+        runAs(twoStores, () -> {
+            AccessScope scope = accessPolicy.scopeOf(Permission.AUDIT_VIEW);
+            assertThat(scope.global()).isFalse();
+            assertThat(scope.stores()).containsExactlyInAnyOrder(uuid(STORE_A), uuid(STORE_B));
+            assertThat(scope.includes(uuid(STORE_A))).isTrue();
+            assertThat(scope.includes(uuid(INACTIVE_STORE))).isFalse();
+        });
+    }
+
+    @Test
+    void scopeOfAPermissionHeldNowhereIsRefusedAndLogged(CapturedOutput output) {
+        Actor other = Actor.account(UUID.randomUUID(), Set.of(Permission.AUDIT_EXPORT.authority()));
+
+        runAs(other, () -> assertThatThrownBy(() -> accessPolicy.scopeOf(Permission.AUDIT_VIEW))
+                .isInstanceOf(AccessDeniedException.class));
+        assertThat(output.getOut()).containsOnlyOnce("Access denied").contains("AUDIT_VIEW");
+    }
+
+    @Test
     @WithActor(permissions = Permission.DINING_VIEW, storeId = STORE_A, employeeId = EMPLOYEE, terminalId = TERMINAL)
     void requirePosForAStoreAcceptsNoStoreOrTheSessionStore() {
         PosContext expected = new PosContext(uuid(EMPLOYEE), uuid(TERMINAL), uuid(STORE_A));
