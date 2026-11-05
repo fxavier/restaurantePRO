@@ -14,6 +14,8 @@ import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.DisposableBean;
+import org.springframework.boot.web.server.context.WebServerGracefulShutdownLifecycle;
+import org.springframework.context.SmartLifecycle;
 import org.springframework.http.MediaType;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -31,15 +33,23 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  * sender thread with a bounded queue (a full queue drops notices), so a slow client never delays a commit. A
  * comment heartbeat every 25 s, written by the same sender thread, keeps proxies from closing idle streams; an
  * emitter times out after 30 minutes and is then completed (the client reconnects).
+ *
+ * <p>On shutdown every stream is completed before the web server's graceful shutdown (D89 (3)): an open stream is an
+ * active request, and the server would otherwise wait for it until the shutdown phase times out. Clients reconnect
+ * to the next instance.
  */
 @Service
-public class ChangeNotifier implements DisposableBean {
+public class ChangeNotifier implements SmartLifecycle, DisposableBean {
+
+    /** Stops before {@link WebServerGracefulShutdownLifecycle} (a higher phase stops first). */
+    static final int PHASE = WebServerGracefulShutdownLifecycle.SMART_LIFECYCLE_PHASE + 1;
 
     static final Duration EMITTER_TIMEOUT = Duration.ofMinutes(30);
 
     private static final Logger log = LoggerFactory.getLogger(ChangeNotifier.class);
 
     private final Map<UUID, Set<SseEmitter>> subscribers = new ConcurrentHashMap<>();
+    private volatile boolean running;
     private final ThreadPoolExecutor sender = new ThreadPoolExecutor(1, 1, 0, TimeUnit.MILLISECONDS,
             new ArrayBlockingQueue<>(1_000), Thread.ofPlatform().name("change-notifier").daemon().factory(),
             (task, executor) -> log.warn("Change notice dropped: the sender queue is full"));
@@ -105,8 +115,34 @@ public class ChangeNotifier implements DisposableBean {
     }
 
     @Override
+    public void start() {
+        running = true;
+    }
+
+    /** Completes every open stream, so the graceful shutdown that follows finds no active stream request. */
+    @Override
+    public void stop() {
+        running = false;
+        completeAll();
+    }
+
+    @Override
+    public boolean isRunning() {
+        return running;
+    }
+
+    @Override
+    public int getPhase() {
+        return PHASE;
+    }
+
+    @Override
     public void destroy() {
         sender.shutdownNow();
+        completeAll();
+    }
+
+    private void completeAll() {
         subscribers.values().forEach(emitters -> emitters.forEach(SseEmitter::complete));
     }
 }
