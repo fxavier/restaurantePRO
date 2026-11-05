@@ -121,7 +121,7 @@ public class CashCoordinationService {
 
     @Transactional(readOnly = true)
     public UUID storeOfDay(UUID dayId) {
-        return days.findStoreIdById(dayId).orElseThrow(() -> new CashNotFoundException(CashDayService.ENTITY, dayId));
+        return CashDayService.storeOf(days, dayId);
     }
 
     @Transactional(readOnly = true)
