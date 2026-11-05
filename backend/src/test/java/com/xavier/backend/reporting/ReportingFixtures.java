@@ -1,16 +1,30 @@
 package com.xavier.backend.reporting;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.cash.CashFixtures;
+import com.xavier.backend.cash.CashFixtures.Pos;
+import com.xavier.backend.fiscal.FiscalFixtures;
+import com.xavier.backend.orders.OrdersFixtures;
+import com.xavier.backend.settlement.SettlementFixtures;
+import com.xavier.backend.settlement.SettlementFixtures.Sale;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.function.BooleanSupplier;
 import org.springframework.boot.test.context.TestComponent;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.JsonNode;
@@ -27,16 +41,49 @@ public class ReportingFixtures {
 
     private final MockMvc mvc;
     private final JdbcClient jdbc;
-    private final com.xavier.backend.settlement.SettlementFixtures sales;
+    private final SettlementFixtures sales;
+    private final OrdersFixtures orders;
+    private final CashFixtures cash;
+    private final FiscalFixtures fiscal;
 
-    ReportingFixtures(MockMvc mvc, JdbcClient jdbc, com.xavier.backend.settlement.SettlementFixtures sales) {
+    ReportingFixtures(MockMvc mvc, JdbcClient jdbc, SettlementFixtures sales, OrdersFixtures orders,
+                      CashFixtures cash, FiscalFixtures fiscal) {
         this.mvc = mvc;
         this.jdbc = jdbc;
         this.sales = sales;
+        this.orders = orders;
+        this.cash = cash;
+        this.fiscal = fiscal;
+    }
+
+    /**
+     * {@link SettlementFixtures#sale(String)} in a store of {@code zone} whose business day starts at {@code cutoff}:
+     * the zone is set before the session and the order open, so both take their business day in it.
+     */
+    public Sale saleIn(ZoneId zone, LocalTime cutoff, String quantity) throws Exception {
+        OrdersFixtures.Shop shop = orders.shop();
+        JsonNode current = CashFixtures.json(mvc.perform(get("/api/v1/backoffice/stores/" + shop.store())
+                        .with(CashFixtures.account(null, Permission.STORE_MANAGE)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        mvc.perform(put("/api/v1/backoffice/stores/" + shop.store())
+                        .with(CashFixtures.account(null, Permission.STORE_MANAGE)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"code": "%s", "name": "%s", "timezone": "%s", "businessDayCutoff": "%s",
+                                 "active": true, "version": %d}""".formatted(current.get("code").asString(),
+                                current.get("name").asString(), zone.getId(), cutoff,
+                                current.get("version").asLong())))
+                .andExpect(status().isOk());
+        UUID register = cash.newRegister(shop.store());
+        Pos cashier = CashFixtures.pos(shop.store());
+        UUID session = cash.openSession(cashier, register, "0");
+        UUID series = fiscal.newSeries(shop.store(), "S" + UUID.randomUUID().toString().substring(0, 6), 1);
+        UUID order = OrdersFixtures.id(orders.openedOrder(shop, cashier.employeeId(), cashier.terminalId()));
+        sales.confirmRound(shop, cashier, order, quantity, 0);
+        return new Sale(shop, cashier, register, session, series, order);
     }
 
     /** The order's ISSUED documents, oldest first. */
-    public java.util.List<UUID> issuedDocuments(UUID order) {
+    public List<UUID> issuedDocuments(UUID order) {
         return jdbc.sql("""
                 SELECT id FROM fiscal.fiscal_document WHERE order_ref = ? AND status = 'ISSUED'
                 ORDER BY issued_at, id""").param(order).query(UUID.class).list();
@@ -101,7 +148,7 @@ public class ReportingFixtures {
         return spec.query().singleRow();
     }
 
-    public java.util.List<Map<String, Object>> rows(String sql, Object... params) {
+    public List<Map<String, Object>> rows(String sql, Object... params) {
         var spec = jdbc.sql(sql);
         for (int i = 0; i < params.length; i++) {
             spec = spec.param(i + 1, params[i]);
@@ -110,14 +157,14 @@ public class ReportingFixtures {
     }
 
     /** Pays {@code amount} of the sale's order on an external terminal of {@code method}, confirmed (A1B2). */
-    public void payByCard(com.xavier.backend.settlement.SettlementFixtures.Sale sale, String method, String amount)
+    public void payByCard(Sale sale, String method, String amount)
             throws Exception {
-        UUID attempt = com.xavier.backend.settlement.SettlementFixtures.id(sales().pay(sale.cashier(), sale.order(),
+        UUID attempt = SettlementFixtures.id(sales.pay(sale.cashier(), sale.order(),
                 method, amount, null, UUID.randomUUID().toString()).andExpect(status().isCreated()));
-        mvc.perform(CashFixtures.idem(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(
-                        com.xavier.backend.settlement.SettlementFixtures.ATTEMPTS + "/" + attempt + "/confirm"))
+        mvc.perform(CashFixtures.idem(post(
+                        SettlementFixtures.ATTEMPTS + "/" + attempt + "/confirm"))
                 .with(sale.cashier().with(Permission.PAYMENT_COLLECT))
-                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"authorizationCode\": \"A1B2\"}")).andExpect(status().isOk());
     }
 
@@ -128,31 +175,27 @@ public class ReportingFixtures {
     }
 
     /** The order's voids, oldest first. */
-    public java.util.List<UUID> voidsOf(UUID order) {
+    public List<UUID> voidsOf(UUID order) {
         return jdbc.sql("SELECT id FROM orders.order_line_void WHERE order_id = ? ORDER BY id").param(order)
                 .query(UUID.class).list();
     }
 
     /** The order's payments, oldest first. */
-    public java.util.List<UUID> payments(UUID order) {
+    public List<UUID> payments(UUID order) {
         return jdbc.sql("SELECT id FROM settlement.payment WHERE order_id = ? ORDER BY confirmed_at, id")
                 .param(order).query(UUID.class).list();
     }
 
     /** Σ of the store's PAYMENT_RECEIPT and REFUND movements (signed) per method, in cash. */
-    public Map<String, java.math.BigDecimal> movementsByMethod(UUID store) {
-        Map<String, java.math.BigDecimal> sums = new java.util.TreeMap<>();
+    public Map<String, BigDecimal> movementsByMethod(UUID store) {
+        Map<String, BigDecimal> sums = new TreeMap<>();
         jdbc.sql("""
                 SELECT method_code, sum(CASE WHEN direction = 'IN' THEN amount ELSE -amount END) AS signed
                 FROM cash.cash_movement WHERE store_id = ? AND type IN ('PAYMENT_RECEIPT', 'REFUND')
                 GROUP BY method_code""").param(store).query().listOfRows()
                 .forEach(row -> sums.put((String) row.get("method_code"),
-                        ((java.math.BigDecimal) row.get("signed")).setScale(2)));
+                        ((BigDecimal) row.get("signed")).setScale(2)));
         return sums;
-    }
-
-    private com.xavier.backend.settlement.SettlementFixtures sales() {
-        return sales;
     }
 
     /** {@code GET /reports/{report}?storeId&from&to&…} as a BackOffice account holding REPORT_VIEW in the store. */
