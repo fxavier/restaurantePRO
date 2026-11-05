@@ -103,6 +103,7 @@ class CodedErrorContractTest {
                     "Printer K1 is in IGNORE: change its mode to print again")),
             Map.entry("order-frozen", () -> OrderRuleException.frozen(ID)),
             Map.entry("order-self-approval", OrderRuleException::selfApproval),
+            Map.entry("order-document-issued", () -> OrderRuleException.documentIssued(ID)),
             Map.entry("printer-redirect-invalid", () -> Printer.invalidRedirect("A printer cannot redirect to itself")),
             // As above, these details are built inline (AttemptResolutionService, OrderSettlementSteps,
             // CashCloseService.refused, CashCoordinationService, RoutingService.requireUnique) and repeated here.
@@ -196,6 +197,13 @@ class CodedErrorContractTest {
         expect("order-frozen", 422, "ORDER_FROZEN", "Order " + ID + " is frozen for its invoice.", "");
         expect("order-self-approval", 422, "SELF_APPROVAL",
                 "The approver must be another employee than the operator.", "");
+    }
+
+    /** P27 (R3, S23): a subtotal once the order's document exists. */
+    @Test
+    void orderDocumentIssued() throws Exception {
+        expect("order-document-issued", 422, "DOCUMENT_ISSUED",
+                "Order " + ID + " has its document: reprint it as a copy instead of a subtotal.", "");
     }
 
     @Test
