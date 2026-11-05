@@ -9,7 +9,8 @@ import java.util.UUID;
  *
  * @param status             Modulith's own status ({@code PUBLISHED}, {@code PROCESSING}, {@code FAILED},
  *                           {@code RESUBMITTED})
- * @param completionAttempts how many times it was resubmitted (the first delivery is not counted)
+ * @param completionAttempts how many deliveries were attempted: Modulith counts the first delivery as 1, and each
+ *                           resubmission adds one
  */
 public record EventPublicationView(UUID id, String listenerId, String eventType, Instant publicationDate,
                                    Instant lastResubmissionDate, int completionAttempts, String status,

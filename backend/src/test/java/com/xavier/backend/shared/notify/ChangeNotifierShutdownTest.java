@@ -1,6 +1,7 @@
 package com.xavier.backend.shared.notify;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -55,6 +56,19 @@ class ChangeNotifierShutdownTest {
         assertThat(took).isLessThan(Duration.ofSeconds(2));
         closeQuietly(stream.body());
         client.close();
+    }
+
+    @Test
+    void aSubscriptionAfterStopGetsAnAlreadyCompletedStream() {
+        ChangeNotifier notifier = new ChangeNotifier();
+        notifier.start();
+        notifier.stop();
+
+        SseEmitter late = notifier.subscribe(UUID.randomUUID()); // a client reconnecting during the shutdown
+
+        assertThatThrownBy(() -> late.send(SseEmitter.event().comment("x")))
+                .isInstanceOf(IllegalStateException.class);
+        notifier.destroy();
     }
 
     private static void closeQuietly(InputStream body) {

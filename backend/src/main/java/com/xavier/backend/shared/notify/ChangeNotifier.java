@@ -75,10 +75,18 @@ public class ChangeNotifier implements SmartLifecycle, DisposableBean {
         });
     }
 
-    /** A new stream of the store's notices; the caller has authorized it (the store comes from the session). */
+    /**
+     * A new stream of the store's notices; the caller has authorized it (the store comes from the session). Once
+     * {@link #stop()} ran (shutdown), the stream is already completed, so a reconnecting client cannot hold the
+     * graceful shutdown again.
+     */
     public SseEmitter subscribe(UUID storeId) {
         Objects.requireNonNull(storeId, "storeId");
         SseEmitter emitter = new SseEmitter(EMITTER_TIMEOUT.toMillis());
+        if (!running) {
+            emitter.complete();
+            return emitter;
+        }
         Set<SseEmitter> store = subscribers.computeIfAbsent(storeId, key -> new CopyOnWriteArraySet<>());
         store.add(emitter);
         Runnable remove = () -> store.remove(emitter);
@@ -88,6 +96,9 @@ public class ChangeNotifier implements SmartLifecycle, DisposableBean {
             emitter.complete(); // ends the stream normally; otherwise the timeout becomes an error dispatch (503)
         });
         emitter.onError(error -> remove.run());
+        if (!running) {
+            emitter.complete(); // stop() ran between the check above and the registration
+        }
         return emitter;
     }
 
