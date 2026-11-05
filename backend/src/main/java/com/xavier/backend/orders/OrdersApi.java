@@ -1,5 +1,6 @@
 package com.xavier.backend.orders;
 
+import com.xavier.backend.orders.service.LineVoidService;
 import com.xavier.backend.orders.service.OrderCoordinationService;
 import java.time.LocalDate;
 import java.util.List;
@@ -22,9 +23,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class OrdersApi {
 
     private final OrderCoordinationService coordination;
+    private final LineVoidService voids;
 
-    OrdersApi(OrderCoordinationService coordination) {
+    OrdersApi(OrderCoordinationService coordination, LineVoidService voids) {
         this.coordination = coordination;
+        this.voids = voids;
     }
 
     /**
@@ -80,6 +83,22 @@ public class OrdersApi {
     @Transactional(propagation = Propagation.MANDATORY)
     public void close(UUID orderId, long expectedVersion, UUID actorEmployeeId) {
         coordination.close(orderId, expectedVersion, actorEmployeeId);
+    }
+
+    /**
+     * The coordinated void (D71, P32). <strong>Contract:</strong> the caller holds the order's
+     * {@code order_settlement} lock and has checked the headroom (the quantity is in no live partition and on no
+     * document, and the bill stays at or above what was paid or put on account), so this bypasses the PAYMENT lock;
+     * INVOICE still refuses (422 {@code ORDER_FROZEN}). It claims the order at {@code expectedVersion}, records the
+     * void fact, publishes {@code OrderLinesVoided} (production's VOID ticket) and audits it exactly like the R2 void,
+     * in a POS session (its terminal is the void's).
+     *
+     * @throws com.xavier.backend.orders.exception.OrderRuleException 422 {@code ORDER_FROZEN},
+     *                                                                {@code QUANTITY_EXCEEDS_NET}, {@code SELF_APPROVAL}
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public VoidView voidLine(SettledVoidCommand cmd, UUID approverEmployeeId) {
+        return voids.voidSettled(cmd, approverEmployeeId);
     }
 
     /** OPEN orders of the store whose business day is on or before {@code businessDayInclusive} (day close). */
