@@ -120,10 +120,14 @@ public class SettledVoidService {
         }
     }
 
-    /** D71: the ORDER residual after the void stays at or above what its target was paid or has in flight. */
+    /**
+     * D71: the ORDER residual after the void stays at or above what its target was paid, put on account (D74) or has
+     * in flight.
+     */
     private static void requireHeadroom(Bill bill, Money reduction) {
         Money residualAfter = bill.residualDue().minus(reduction);
-        Money owed = bill.openOn(null).stream().map(PaymentAttempt::amount).reduce(bill.orderPaid(), Money::plus);
+        Money owed = bill.openOn(null).stream().map(PaymentAttempt::amount)
+                .reduce(bill.orderPaid().plus(bill.creditOn(null)), Money::plus);
         if (residualAfter.amount().compareTo(owed.amount()) < 0) {
             throw SettlementRuleException.voidExceedsUnpaid(bill.view().orderId(), residualAfter, owed,
                     bill.residualDue().minus(owed));

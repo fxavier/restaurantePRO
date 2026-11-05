@@ -45,7 +45,7 @@ public class SettlementFixtures {
     public static final String METHODS = "/api/v1/backoffice/payment-methods";
     static final Permission[] CASHIER = {Permission.PAYMENT_COLLECT, Permission.ORDER_VIEW, Permission.ORDER_EDIT,
             Permission.CASH_OPERATE, Permission.CASH_VIEW, Permission.PAYMENT_RESOLVE, Permission.CASH_DAY_CLOSE,
-            Permission.BILL_SPLIT, Permission.ORDER_VOID};
+            Permission.BILL_SPLIT, Permission.ORDER_VOID, Permission.CREDIT_SALE};
     public static final String PARTITIONS = "/api/v1/pos/partitions";
 
     /** An order of {@code shop} at its table, sold by {@code cashier}, who has an OPEN {@code session}. */
@@ -296,6 +296,38 @@ public class SettlementFixtures {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(("{\"orderVersion\": %d, \"lineId\": \"%s\", \"quantity\": %s, \"reason\": \"dropped\", "
                         + "\"wasted\": true}").formatted(orderVersion, line, quantity)));
+    }
+
+    // ---- R3: credit sales and debt payments (D74, D75) ----
+
+    public static final String CHARGES = "/api/v1/pos/credit-charges";
+    public static final String CUSTOMERS = "/api/v1/pos/customers";
+
+    /** {@code POST /orders/{id}/credit-charges}: {@code partition} may be null (the order's residual). */
+    public ResultActions creditCharge(Pos who, UUID order, UUID customer, String amount, UUID partition, String key)
+            throws Exception {
+        String target = partition == null ? "" : ", \"partitionId\": \"" + partition + "\"";
+        return send(who, ORDERS + "/" + order + "/credit-charges", key,
+                "{\"customerId\": \"%s\", \"amount\": %s%s}".formatted(customer, amount, target));
+    }
+
+    public ResultActions creditCharge(Sale sale, UUID customer, String amount) throws Exception {
+        return creditCharge(sale.cashier(), sale.order(), customer, amount, null, UUID.randomUUID().toString());
+    }
+
+    public ResultActions cancelCharge(Pos who, UUID charge, String reason) throws Exception {
+        return send(who, CHARGES + "/" + charge + "/cancel", UUID.randomUUID().toString(),
+                "{\"reason\": \"%s\"}".formatted(reason));
+    }
+
+    /** {@code POST /customers/{id}/credit-payments}; {@code debits} names the debit entries (none: FIFO). */
+    public ResultActions payDebt(Pos who, UUID customer, String method, String amount, String tendered, String key,
+                                 UUID... debits) throws Exception {
+        String cash = tendered == null ? "" : ", \"tendered\": " + tendered;
+        String named = debits.length == 0 ? "" : ", \"debitEntryIds\": [" + String.join(", ",
+                java.util.Arrays.stream(debits).map(id -> "\"" + id + "\"").toList()) + "]";
+        return send(who, CUSTOMERS + "/" + customer + "/credit-payments", key,
+                "{\"methodCode\": \"%s\", \"amount\": %s%s%s}".formatted(method, amount, cash, named));
     }
 
     /** The order's line ids in line order, from its settlement view's coverage. */

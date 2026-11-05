@@ -28,4 +28,11 @@ class SettlementLocks {
         rows.createIfAbsent(orderId, clock.instant());
         rows.lock(orderId);
     }
+
+    /** {@link #lockOrder} for a background job (D46): false, without waiting, while a request holds the order. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    boolean tryLockOrder(UUID orderId) {
+        rows.createIfAbsent(orderId, clock.instant());
+        return rows.tryLock(orderId) != null;
+    }
 }

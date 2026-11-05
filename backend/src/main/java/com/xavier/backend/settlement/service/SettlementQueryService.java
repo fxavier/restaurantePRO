@@ -9,7 +9,11 @@ import com.xavier.backend.orders.OrdersApi;
 import com.xavier.backend.settlement.model.AttemptStatus;
 import com.xavier.backend.settlement.model.FinancialState;
 import com.xavier.backend.settlement.model.PaymentAttempt;
+import com.xavier.backend.settlement.model.CreditCharge;
+import com.xavier.backend.settlement.model.CreditChargeStatus;
 import com.xavier.backend.settlement.model.dto.AttemptView;
+import com.xavier.backend.settlement.model.dto.CreditChargeView;
+import com.xavier.backend.settlement.repository.CreditChargeRepository;
 import com.xavier.backend.settlement.model.dto.FiscalDraftView;
 import com.xavier.backend.settlement.model.dto.OpenOrderBalance;
 import com.xavier.backend.settlement.model.dto.OrderSettlementView;
@@ -37,9 +41,12 @@ public class SettlementQueryService {
     private final FiscalApi fiscal;
     private final PaymentRepository payments;
     private final PaymentAttemptRepository attempts;
+    private final CreditChargeRepository charges;
 
     SettlementQueryService(AccessPolicy accessPolicy, Bills bills, SettlementViews views, OrdersApi orders,
-                           FiscalApi fiscal, PaymentRepository payments, PaymentAttemptRepository attempts) {
+                           FiscalApi fiscal, PaymentRepository payments, PaymentAttemptRepository attempts,
+                           CreditChargeRepository charges) {
+        this.charges = charges;
         this.accessPolicy = accessPolicy;
         this.bills = bills;
         this.views = views;
@@ -80,7 +87,9 @@ public class SettlementQueryService {
                 .toList();
         List<AttemptView> inDoubt = attempts.findByStoreIdAndStatusInOrderByCreatedAt(storeId, AttemptStatus.OPEN)
                 .stream().map(PaymentAttempt::toView).toList();
-        return new PendingView(storeId, inDoubt, drafts, settledOpen);
+        List<CreditChargeView> reserved = charges.findByStoreIdAndStatusOrderByCreatedAt(storeId,
+                CreditChargeStatus.RESERVED).stream().map(CreditCharge::toView).toList();
+        return new PendingView(storeId, inDoubt, drafts, settledOpen, reserved);
     }
 
     private List<OpenOrderBalance> balances(UUID storeId) {
@@ -91,12 +100,17 @@ public class SettlementQueryService {
         if (open.isEmpty()) {
             return List.of();
         }
-        Map<UUID, BigDecimal> paid = payments.paidFor(open.stream().map(OrderBillingView::orderId).toList())
-                .stream().collect(Collectors.toMap(PaidTotal::orderId, PaidTotal::paid));
+        List<UUID> ids = open.stream().map(OrderBillingView::orderId).toList();
+        Map<UUID, BigDecimal> paid = payments.paidFor(ids).stream()
+                .collect(Collectors.toMap(PaidTotal::orderId, PaidTotal::paid));
+        Map<UUID, BigDecimal> credit = charges.creditFor(ids).stream()
+                .collect(Collectors.toMap(PaidTotal::orderId, PaidTotal::paid));
         return open.stream().map(order -> {
             Money paidSoFar = Money.of(paid.getOrDefault(order.orderId(), BigDecimal.ZERO), order.due().currency());
-            return new OpenOrderBalance(order.orderId(), order.due(), paidSoFar, order.due().minus(paidSoFar),
-                    FinancialState.of(order.due(), paidSoFar).name(), order.tableId(), order.tableCode());
+            Money onAccount = Money.of(credit.getOrDefault(order.orderId(), BigDecimal.ZERO), order.due().currency());
+            Money covered = paidSoFar.plus(onAccount);
+            return new OpenOrderBalance(order.orderId(), order.due(), paidSoFar, order.due().minus(covered),
+                    FinancialState.of(order.due(), covered).name(), order.tableId(), order.tableCode(), onAccount);
         }).toList();
     }
 }

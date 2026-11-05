@@ -62,6 +62,24 @@ final class ResidualDocuments {
                 sum(lines, DraftLine::tax, zero), source == SourceType.PARTITION || bill.everPartitioned());
     }
 
+    /**
+     * Fiscal keeps a draft on account once a credit sale marked it (D74; it is never undone): a later draft of the same
+     * document (its close, a retried partition document, after a cancelled charge too) repeats the mark.
+     */
+    static DraftCommand keepingOnAccount(DraftCommand draft, List<DocumentView> documents) {
+        return documents.stream()
+                .filter(d -> d.onAccount() && d.sourceType().equals(draft.sourceType().name())
+                        && d.sourceId().equals(draft.sourceId()))
+                .findFirst().map(d -> onAccount(draft, draft.buyer(), d.customerId())).orElse(draft);
+    }
+
+    /** The same draft as a credit sale's (D74): the customer's snapshot as buyer, on account for that customer. */
+    static DraftCommand onAccount(DraftCommand draft, Buyer buyer, UUID customerId) {
+        return new DraftCommand(draft.storeId(), draft.sourceType(), draft.sourceId(), draft.orderId(),
+                draft.businessDate(), buyer, customerId, true, draft.lines(), draft.totalGross(), draft.totalNet(),
+                draft.totalTax(), draft.amountsAllocated());
+    }
+
     private static DraftLine draftLine(BillingLine line, BigDecimal quantity, Money gross, Money tax) {
         return new DraftLine(line.lineId(), line.description(), quantity, line.unitPrice(), line.ratePercent(),
                 gross, gross.minus(tax), tax);
