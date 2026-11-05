@@ -121,10 +121,11 @@ public class SettlementRuleException extends BusinessRuleException {
     // ---- R3 (D81): payments in doubt ----
 
     public static SettlementRuleException reclassifyTooEarly(UUID attemptId, java.time.Duration minAge,
-                                                             int pollCount) {
+                                                             boolean answerRequired, int answeredCount) {
         return new SettlementRuleException(SettlementRule.RECLASSIFY_TOO_EARLY, "Payment attempt " + attemptId
-                + " may be reclassified as FAILED only once it is older than " + minAge
-                + " and the provider was asked about it since it became UNKNOWN.", Map.of("pollCount", pollCount));
+                + " may be reclassified as FAILED only once it is older than " + minAge + (answerRequired
+                ? " and the provider answered a status query about it since it became UNKNOWN." : "."),
+                Map.of("answeredCount", answeredCount));
     }
 
     // ---- R3 (D77): refunds ----

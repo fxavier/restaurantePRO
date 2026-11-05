@@ -20,8 +20,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * D81 (3), A25: a manual reclassification of an UNKNOWN attempt to FAILED needs the attempt to be older than
- * {@code reclassify-failed-min-age} (PT15M) and at least one provider status query since it became UNKNOWN;
- * otherwise 422 {@code RECLASSIFY_TOO_EARLY} and nothing changes. To SUCCEEDED there is no age guard.
+ * {@code reclassify-failed-min-age} (PT15M) and at least one status query the provider answered since it became
+ * UNKNOWN (a query that timed out is no answer); a method whose provider is gone needs only an age of PT24H.
+ * Otherwise 422 {@code RECLASSIFY_TOO_EARLY} and nothing changes. To SUCCEEDED there is no age guard.
  */
 @SettlementModuleTest
 class ReclassifyAgeGuardTest {
@@ -56,9 +57,52 @@ class ReclassifyAgeGuardTest {
                 .willReturn(UUID.randomUUID());
     }
 
+    @Autowired
+    org.springframework.jdbc.core.simple.JdbcClient jdbc;
+
     @AfterEach
     void restore() {
         clock.reset();
+        provider.failStatus(false);
+    }
+
+    @Test
+    void aQueryThatTimedOutIsNoAnswerSoFailedIsStillTooEarly() throws Exception {
+        provider.failStatus(true); // the provider took the money, but the status query never gets an answer
+        fixtures.resolve(sale.cashier(), attempt, UUID.randomUUID().toString())
+                .andExpect(jsonPath("$.status").value("UNKNOWN"));
+        clock.advance(Duration.ofMinutes(16));
+
+        fixtures.reclassify(sale.cashier(), attempt, "FAILED", "not on the statement", "GER01")
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("RECLASSIFY_TOO_EARLY"))
+                .andExpect(jsonPath("$.answeredCount").value(0));
+        assertThat(statusOf()).isEqualTo("UNKNOWN");
+    }
+
+    @Test
+    void anAnsweredNotFoundAndTheMinimumAgeAllowFailed() throws Exception {
+        provider.forget(attempt.toString());
+        fixtures.resolve(sale.cashier(), attempt, UUID.randomUUID().toString())
+                .andExpect(jsonPath("$.status").value("UNKNOWN")); // inside the acceptance window
+        clock.advance(Duration.ofMinutes(16));
+
+        fixtures.reclassify(sale.cashier(), attempt, "FAILED", "not on the statement", "GER01")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("FAILED"));
+    }
+
+    @Test
+    void withItsProviderGoneFailedNeedsADay() throws Exception {
+        jdbc.sql("UPDATE settlement.payment_attempt SET provider_code = 'GONE' WHERE id = ?").param(attempt)
+                .update(); // as after the adapter was removed from the installation
+        clock.advance(Duration.ofHours(23));
+        fixtures.reclassify(sale.cashier(), attempt, "FAILED", "provider removed", "GER01")
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("RECLASSIFY_TOO_EARLY"));
+
+        clock.advance(Duration.ofHours(1).plusMinutes(1));
+        fixtures.reclassify(sale.cashier(), attempt, "FAILED", "provider removed", "GER01")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("FAILED"));
     }
 
     @Test
@@ -78,7 +122,7 @@ class ReclassifyAgeGuardTest {
         fixtures.reclassify(sale.cashier(), attempt, "FAILED", "not on the statement", "GER01")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("RECLASSIFY_TOO_EARLY"))
-                .andExpect(jsonPath("$.pollCount").value(0));
+                .andExpect(jsonPath("$.answeredCount").value(0));
         assertThat(statusOf()).isEqualTo("UNKNOWN");
     }
 

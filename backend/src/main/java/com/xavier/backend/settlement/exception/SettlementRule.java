@@ -79,7 +79,8 @@ public enum SettlementRule {
     DEBIT_NOT_OPEN,
     /**
      * R3 (D81 (3)): an UNKNOWN attempt is reclassified as FAILED only once it is older than
-     * {@code restaurantpro.settlement.reclassify-failed-min-age} and the provider was asked about it since.
+     * {@code restaurantpro.settlement.reclassify-failed-min-age} and the provider answered a status query about it
+     * since (a method whose provider is gone: older than {@code reclassify-failed-without-provider-min-age}).
      */
     RECLASSIFY_TOO_EARLY,
     /** R3 (D77): more than what is left of the payment once its earlier refunds are taken out. */

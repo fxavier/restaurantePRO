@@ -115,7 +115,7 @@ class AttemptTransitions {
         }
         Instant now = clock.instant();
         ProviderOutcome outcome = answer.outcome();
-        attempt.recordStatusQuery(outcome.getClass().getSimpleName(), now);
+        attempt.recordStatusQuery(outcome, now);
         if (outcome instanceof ProviderOutcome.Succeeded succeeded) {
             attempt.resolveFromProvider(true, succeeded.providerRef(), null, employeeId, now);
         } else if (outcome instanceof ProviderOutcome.Failed failed && noChargeInFlight(attempt, now)) {

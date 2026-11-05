@@ -140,6 +140,13 @@ public class PaymentAttempt {
     @Column(nullable = false)
     private int pollCount;
 
+    /**
+     * D81 (3): the status queries since it became UNKNOWN that the provider answered (anything but {@code Unknown}: a
+     * timeout, a saturated pool or a missing provider proves nothing about the charge).
+     */
+    @Column(nullable = false)
+    private int answeredCount;
+
     /** D81 (2): when the in-doubt resolver asks the provider next (UNKNOWN only). */
     private Instant nextPollAt;
 
@@ -317,15 +324,16 @@ public class PaymentAttempt {
 
     /**
      * D50 §7.4: an authorized manual reclassification of an UNKNOWN attempt, with an approver and a reason. To
-     * FAILED only once the attempt is older than {@code failedMinAge} and the provider was asked about it since it
-     * became UNKNOWN (D81 (3)): a charge still in flight could otherwise succeed after the customer paid again.
-     * To SUCCEEDED there is no such guard.
+     * FAILED only once the attempt is older than {@code failedMinAge} and, when {@code answerRequired}, the provider
+     * answered a status query about it since it became UNKNOWN (D81 (3)): a charge still in flight could otherwise
+     * succeed after the customer paid again. A method whose provider is gone can never be answered: the caller passes
+     * {@code answerRequired = false} with a longer age. To SUCCEEDED there is no such guard.
      *
      * @throws SettlementRuleException {@code REASON_REQUIRED}, {@code INVALID_OUTCOME} or
      *         {@code RECLASSIFY_TOO_EARLY}
      */
     public void reclassify(AttemptStatus outcome, String reason, UUID employeeId, UUID approverId, Instant now,
-                           Duration failedMinAge) {
+                           Duration failedMinAge, boolean answerRequired) {
         if (reason == null || reason.isBlank()) {
             throw new SettlementRuleException(SettlementRule.REASON_REQUIRED,
                     "A reclassification needs a reason.");
@@ -337,8 +345,9 @@ public class PaymentAttempt {
         if (status != AttemptStatus.UNKNOWN) {
             throw SettlementConflictException.illegalState(id, status, "be reclassified");
         }
-        if (outcome == AttemptStatus.FAILED && (!createdAt.plus(failedMinAge).isBefore(now) || pollCount == 0)) {
-            throw SettlementRuleException.reclassifyTooEarly(id, failedMinAge, pollCount);
+        if (outcome == AttemptStatus.FAILED
+                && (!createdAt.plus(failedMinAge).isBefore(now) || (answerRequired && answeredCount == 0))) {
+            throw SettlementRuleException.reclassifyTooEarly(id, failedMinAge, answerRequired, answeredCount);
         }
         move(Set.of(AttemptStatus.UNKNOWN), outcome, "be reclassified", now);
         resolvedByEmployeeId = Objects.requireNonNull(employeeId, "employeeId");
@@ -347,14 +356,19 @@ public class PaymentAttempt {
     }
 
     /**
-     * D81 (2): the provider was asked about this attempt and answered {@code answer}. For an UNKNOWN attempt it counts
-     * as a poll and schedules the next one by the backoff; a query of an attempt in any other state is not a poll.
+     * D81 (2): the provider was asked about this attempt and {@code outcome} came back. For an UNKNOWN attempt it
+     * counts as a poll and schedules the next one by the backoff, and as an answer unless it is {@code Unknown}; a
+     * query of an attempt in any other state is not a poll.
      */
-    public void recordStatusQuery(String answer, Instant now) {
+    public void recordStatusQuery(com.xavier.backend.settlement.ProviderOutcome outcome, Instant now) {
+        String answer = outcome.getClass().getSimpleName();
         if (status != AttemptStatus.UNKNOWN) {
             return;
         }
         pollCount++;
+        if (!(outcome instanceof com.xavier.backend.settlement.ProviderOutcome.Unknown)) {
+            answeredCount++;
+        }
         lastPolledAt = now;
         lastPollAnswer = answer;
         nextPollAt = now.plus(POLL_BACKOFF.get(Math.min(pollCount, POLL_BACKOFF.size() - 1)));
@@ -463,6 +477,10 @@ public class PaymentAttempt {
 
     public UUID getCreatedByEmployeeId() {
         return createdByEmployeeId;
+    }
+
+    public int getAnsweredCount() {
+        return answeredCount;
     }
 
     public int getPollCount() {

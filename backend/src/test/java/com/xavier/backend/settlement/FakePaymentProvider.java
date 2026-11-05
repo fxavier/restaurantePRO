@@ -31,6 +31,7 @@ public class FakePaymentProvider implements PaymentProvider {
     private volatile CountDownLatch delayed = new CountDownLatch(1);
 
     private volatile Behaviour next = Behaviour.SUCCEED;
+    private volatile boolean statusFails;
     private final Map<String, ProviderOutcome> truth = new ConcurrentHashMap<>();
     private final Map<String, AtomicInteger> charges = new ConcurrentHashMap<>();
 
@@ -47,6 +48,11 @@ public class FakePaymentProvider implements PaymentProvider {
     /** The provider loses every trace of the reference: a status query answers {@code NotFound} (D81). */
     public void forget(String reference) {
         truth.remove(reference);
+    }
+
+    /** Every status query fails with an exception (settlement sees {@code Unknown}) until reset with false. */
+    public void failStatus(boolean fails) {
+        statusFails = fails;
     }
 
     /** Lets a DELAYED charge reach the provider. */
@@ -102,6 +108,9 @@ public class FakePaymentProvider implements PaymentProvider {
     @Override
     public ProviderOutcome status(String reference) {
         ExternalCalls.requireNoTransaction();
+        if (statusFails) {
+            throw new IllegalStateException("the fake provider is unreachable");
+        }
         return truth.getOrDefault(reference, new ProviderOutcome.NotFound());
     }
 
