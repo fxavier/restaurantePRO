@@ -1,7 +1,9 @@
 package com.xavier.backend.settlement.reconciliation.repository;
 
 import com.xavier.backend.settlement.model.Payment;
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
@@ -36,4 +38,24 @@ public interface PaymentReads extends Repository<Payment, UUID> {
                 and (a.providerReference in :refs or a.providerTransactionRef in :refs)""")
     List<CandidateRow> withReferences(@Param("storeId") UUID storeId, @Param("methodCode") String methodCode,
                                       @Param("refs") Collection<String> refs);
+
+    /** The orders of a store's payments of the cash day {@code businessDate} (D85). */
+    @Query("""
+            select distinct p.orderId from Payment p
+            where p.storeId = :storeId and p.businessDate = :businessDate and p.orderId is not null""")
+    List<UUID> ordersPaidOn(@Param("storeId") UUID storeId, @Param("businessDate") LocalDate businessDate);
+
+    /** The orders of a store's credit charges of the business day {@code businessDate} (D85). */
+    @Query("""
+            select distinct c.orderId from CreditCharge c
+            where c.storeId = :storeId and c.businessDate = :businessDate""")
+    List<UUID> ordersChargedOn(@Param("storeId") UUID storeId, @Param("businessDate") LocalDate businessDate);
+
+    /** Σ of every payment of the order, on any target; zero when there is none. */
+    @Query("select coalesce(sum(p.amount), 0) from Payment p where p.orderId = :orderId")
+    BigDecimal paidOf(@Param("orderId") UUID orderId);
+
+    /** Σ of the refunds of the order's payments (S30); zero when there is none. */
+    @Query("select coalesce(sum(r.amount), 0) from Refund r where r.orderId = :orderId")
+    BigDecimal refundedOf(@Param("orderId") UUID orderId);
 }

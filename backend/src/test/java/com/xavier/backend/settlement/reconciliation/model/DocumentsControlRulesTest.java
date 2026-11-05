@@ -1,0 +1,187 @@
+package com.xavier.backend.settlement.reconciliation.model;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.xavier.backend.settlement.reconciliation.model.OrderFacts.Charge;
+import com.xavier.backend.settlement.reconciliation.model.OrderFacts.Document;
+import com.xavier.backend.settlement.reconciliation.model.OrderFacts.Line;
+import com.xavier.backend.settlement.reconciliation.model.dto.DocumentException;
+import com.xavier.backend.shared.Money;
+import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Currency;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import org.junit.jupiter.api.Test;
+
+/**
+ * D80: the exceptions computed from an order's facts, each a bug alarm or a stuck pendency, and the D68 amendment's
+ * tax rounding, which is explained, never an exception.
+ */
+class DocumentsControlRulesTest {
+
+    static final Currency MZN = Currency.getInstance("MZN");
+    static final Instant NOW = Instant.parse("2026-11-05T12:00:00Z");
+    static final BigDecimal VAT = new BigDecimal("16");
+    static final UUID ORDER = UUID.fromString("0190a000-0000-7000-8000-0000000000a1");
+    static final UUID LINE = UUID.fromString("0190a000-0000-7000-8000-0000000000b1");
+    static final UUID DOC = UUID.fromString("0190a000-0000-7000-8000-0000000000d1");
+    static final UUID CHARGE = UUID.fromString("0190a000-0000-7000-8000-0000000000e1");
+
+    static Money m(String amount) {
+        return Money.of(amount, MZN);
+    }
+
+    /** A closed order of 2 x 12.50 (tax 3.45), invoiced by one ISSUED document and paid in full. */
+    static Builder settled() {
+        return new Builder();
+    }
+
+    static final class Builder {
+        String lifecycle = "CLOSED";
+        List<Line> lines = new ArrayList<>(List.of(new Line(LINE, new BigDecimal("2"), VAT, m("3.45"))));
+        List<Document> documents = new ArrayList<>(List.of(issued(DOC, "25.00", "3.45", false)));
+        Map<UUID, BigDecimal> covered = new java.util.HashMap<>(Map.of(LINE, new BigDecimal("2")));
+        Money paid = m("25.00");
+        List<Charge> charges = new ArrayList<>();
+
+        OrderFacts facts() {
+            return new OrderFacts(ORDER, lifecycle, MZN, lines, documents, covered, paid, charges);
+        }
+
+        List<String> kinds() {
+            return DocumentsControl.check(facts(), NOW).exceptions().stream().map(DocumentException::kind).toList();
+        }
+    }
+
+    static Document issued(UUID id, String gross, String tax, boolean onAccount) {
+        return new Document(id, "ISSUED", "ORDER", ORDER, onAccount, m(gross), Map.of(VAT, m(tax)), null);
+    }
+
+    @Test
+    void aSettledClosedOrderHasNoException() {
+        DocumentsControl.Findings findings = DocumentsControl.check(settled().facts(), NOW);
+
+        assertThat(findings.exceptions()).isEmpty();
+        assertThat(findings.roundingDifferences()).isEmpty();
+    }
+
+    @Test
+    void anIssuedDocumentNotPaidNorOnAccountAfterTheCloseIsUnpaid() {
+        Builder order = settled();
+        order.paid = m("20.00");
+
+        assertThat(order.kinds()).containsExactly("DOCUMENT_UNPAID");
+    }
+
+    @Test
+    void aPostedChargeCoversItsOnAccountDocument() {
+        Builder order = settled();
+        order.paid = m("0.00");
+        order.documents = List.of(issued(DOC, "25.00", "3.45", true));
+        order.charges = List.of(new Charge(CHARGE, "POSTED", DOC, m("25.00"), NOW.minus(Duration.ofDays(1)),
+                true));
+
+        assertThat(order.kinds()).isEmpty();
+    }
+
+    @Test
+    void anOnAccountDocumentWithoutAPostedChargeIsAnException() {
+        Builder order = settled();
+        order.documents = List.of(issued(DOC, "25.00", "3.45", true));
+
+        assertThat(order.kinds()).containsExactly("ON_ACCOUNT_WITHOUT_CHARGE");
+    }
+
+    @Test
+    void aPostedChargeWithoutItsLedgerDebitIsAnException() {
+        Builder order = settled();
+        order.paid = m("0.00");
+        order.documents = List.of(issued(DOC, "25.00", "3.45", true));
+        order.charges = List.of(new Charge(CHARGE, "POSTED", DOC, m("25.00"), NOW, false));
+
+        assertThat(order.kinds()).containsExactly("CHARGE_DEBIT_MISSING");
+    }
+
+    @Test
+    void aReservedChargeIsStaleAfterAnHour() {
+        Builder order = settled();
+        order.lifecycle = "OPEN";
+        order.charges = List.of(new Charge(CHARGE, "RESERVED", DOC, m("25.00"), NOW.minus(Duration.ofMinutes(61)),
+                false));
+        assertThat(order.kinds()).containsExactly("CHARGE_RESERVED_STALE");
+
+        order.charges = List.of(new Charge(CHARGE, "RESERVED", DOC, m("25.00"), NOW.minus(Duration.ofMinutes(59)),
+                false));
+        assertThat(order.kinds()).isEmpty();
+    }
+
+    @Test
+    void aDraftIsStaleWhenItsIssueFailedAnHourAgoOrItsOrderClosed() {
+        Builder order = settled();
+        order.lifecycle = "OPEN";
+        order.documents = List.of(new Document(DOC, "DRAFT", "ORDER", ORDER, false, m("25.00"), Map.of(),
+                NOW.minus(Duration.ofMinutes(61))));
+        assertThat(order.kinds()).containsExactly("DRAFT_STALE");
+
+        order.documents = List.of(new Document(DOC, "DRAFT", "ORDER", ORDER, false, m("25.00"), Map.of(),
+                NOW.minus(Duration.ofMinutes(30))));
+        assertThat(order.kinds()).isEmpty();
+
+        order.lifecycle = "CLOSED";
+        order.documents = new ArrayList<>(List.of(issued(UUID.randomUUID(), "25.00", "3.45", false),
+                new Document(DOC, "DRAFT", "PARTITION", UUID.randomUUID(), false, m("0.00"), Map.of(), null)));
+        assertThat(order.kinds()).containsExactly("DRAFT_STALE");
+    }
+
+    @Test
+    void aClosedOrderWhoseIssuedQuantityIsNotItsNetQuantityIsAnException() {
+        Builder order = settled();
+        order.covered = Map.of(LINE, new BigDecimal("1"));
+
+        assertThat(DocumentsControl.check(order.facts(), NOW).exceptions()).singleElement()
+                .satisfies(e -> {
+                    assertThat(e.kind()).isEqualTo("COVERAGE_MISMATCH");
+                    assertThat(e.lineId()).isEqualTo(LINE);
+                });
+    }
+
+    @Test
+    void aCoveredLineTheOrderNoLongerBillsIsACoverageMismatch() {
+        Builder order = settled();
+        UUID gone = UUID.randomUUID();
+        order.covered = Map.of(LINE, new BigDecimal("2"), gone, BigDecimal.ONE);
+
+        assertThat(DocumentsControl.check(order.facts(), NOW).exceptions()).extracting(DocumentException::lineId)
+                .containsExactly(gone);
+    }
+
+    @Test
+    void aCentOfTaxPerLineIsAnExplainedRoundingDifferenceNotAnException() {
+        Builder order = settled(); // D68 amendment: the order recomputes 1.72, its documents carry 1.73
+        order.lines = List.of(new Line(LINE, BigDecimal.ONE, VAT, m("1.72")));
+        order.covered = Map.of(LINE, BigDecimal.ONE);
+        order.documents = List.of(issued(DOC, "12.50", "1.73", false));
+        order.paid = m("12.50");
+
+        DocumentsControl.Findings findings = DocumentsControl.check(order.facts(), NOW);
+
+        assertThat(findings.exceptions()).isEmpty();
+        assertThat(findings.roundingDifferences()).singleElement().satisfies(r -> {
+            assertThat(r.orderId()).isEqualTo(ORDER);
+            assertThat(r.ratePercent()).isEqualByComparingTo("16");
+            assertThat(r.difference()).isEqualTo(m("-0.01"));
+        });
+    }
+
+    @Test
+    void moreThanACentOfTaxPerLineIsATaxMismatch() {
+        Builder order = settled();
+        order.documents = List.of(issued(DOC, "25.00", "3.47", false));
+
+        assertThat(order.kinds()).containsExactly("TAX_MISMATCH");
+    }
+}

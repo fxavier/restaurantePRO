@@ -3,12 +3,14 @@ package com.xavier.backend.settlement.reconciliation.controller;
 import com.xavier.backend.access.IdempotentRequests;
 import com.xavier.backend.settlement.reconciliation.model.EntryKind;
 import com.xavier.backend.settlement.reconciliation.model.dto.BatchView;
+import com.xavier.backend.settlement.reconciliation.model.dto.DocumentsControlView;
 import com.xavier.backend.settlement.reconciliation.model.dto.EntryView;
 import com.xavier.backend.settlement.reconciliation.model.dto.FetchRequest;
 import com.xavier.backend.settlement.reconciliation.model.dto.ImportRequest;
 import com.xavier.backend.settlement.reconciliation.model.dto.InDoubtAttemptView;
 import com.xavier.backend.settlement.reconciliation.model.dto.ResolutionRequest;
 import com.xavier.backend.settlement.reconciliation.model.dto.ResolutionView;
+import com.xavier.backend.settlement.reconciliation.service.DocumentsControlService;
 import com.xavier.backend.settlement.reconciliation.service.ReconciliationQueryService;
 import com.xavier.backend.settlement.reconciliation.service.ResolutionService;
 import com.xavier.backend.settlement.reconciliation.service.StatementImportService;
@@ -46,13 +48,16 @@ class ReconciliationController {
     private final StatementImportService imports;
     private final ReconciliationQueryService queries;
     private final ResolutionService resolutions;
+    private final DocumentsControlService documents;
     private final IdempotentRequests idempotent;
 
     ReconciliationController(StatementImportService imports, ReconciliationQueryService queries,
-                             ResolutionService resolutions, IdempotentRequests idempotent) {
+                             ResolutionService resolutions, DocumentsControlService documents,
+                             IdempotentRequests idempotent) {
         this.imports = imports;
         this.queries = queries;
         this.resolutions = resolutions;
+        this.documents = documents;
         this.idempotent = idempotent;
     }
 
@@ -105,5 +110,12 @@ class ReconciliationController {
     @GetMapping("/in-doubt")
     List<InDoubtAttemptView> inDoubt(@RequestParam UUID storeId) {
         return queries.inDoubt(storeId);
+    }
+
+    /** D80: documents against payments of the store's business day, computed now. */
+    @GetMapping("/documents")
+    DocumentsControlView documents(@RequestParam UUID storeId,
+                                   @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate businessDate) {
+        return documents.documents(storeId, businessDate);
     }
 }
