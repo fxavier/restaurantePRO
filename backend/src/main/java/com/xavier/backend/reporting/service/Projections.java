@@ -1,0 +1,136 @@
+package com.xavier.backend.reporting.service;
+
+import com.xavier.backend.dining.DiningApi;
+import com.xavier.backend.dining.model.dto.TableInfo;
+import com.xavier.backend.fiscal.FiscalApi;
+import com.xavier.backend.fiscal.model.dto.DocumentFacts;
+import com.xavier.backend.fiscal.model.dto.DocumentView;
+import com.xavier.backend.orders.BillingLine;
+import com.xavier.backend.orders.OrderBillingView;
+import com.xavier.backend.orders.OrdersApi;
+import com.xavier.backend.organization.OrganizationApi;
+import com.xavier.backend.reporting.repository.ProjectionStore;
+import com.xavier.backend.reporting.repository.ProjectionStore.SalesHeader;
+import com.xavier.backend.reporting.repository.ProjectionStore.SalesLine;
+import com.xavier.backend.reporting.repository.ProjectionStore.SalesTax;
+import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * Projects one immutable fact (D84): pulls it through the owner's read-only facade, resolves its dimensions once
+ * (D85: business date, and the store's wall clock at the fact's instant) and inserts its rows keyed by the source id.
+ * A fact already projected is left as it is. The live listeners and the rebuild both come through here.
+ */
+@Service
+public class Projections {
+
+    static final String DINE_IN = "DINE_IN";
+
+    private final FiscalApi fiscal;
+    private final OrdersApi orders;
+    private final DiningApi dining;
+    private final OrganizationApi organization;
+    private final ReleaseFamilies families;
+    private final ProjectionStore store;
+    private final Clock clock;
+
+    Projections(FiscalApi fiscal, OrdersApi orders, DiningApi dining, OrganizationApi organization,
+                ReleaseFamilies families, ProjectionStore store, Clock clock) {
+        this.fiscal = fiscal;
+        this.orders = orders;
+        this.dining = dining;
+        this.organization = organization;
+        this.families = families;
+        this.store = store;
+        this.clock = clock;
+    }
+
+    /**
+     * An ISSUED sale document as a sales record with its lines and its tax summary per rate. The amounts and the tax
+     * are the document's (never recomputed from the order); the line dimensions come from the order's billing view.
+     * A document that is not ISSUED is not a sale yet and is ignored.
+     */
+    @Transactional
+    public void projectDocument(UUID documentId) {
+        DocumentFacts doc = fiscal.documentFacts(documentId);
+        if (!"ISSUED".equals(doc.status())) {
+            return;
+        }
+        LocalDateTime local = LocalDateTime.ofInstant(doc.issuedAt(), zoneOf(doc.storeId()));
+        SalesHeader header = new SalesHeader(doc.documentId(), doc.storeId(), doc.businessDate(),
+                local.toLocalDate(), local.getHour(), doc.issuedAt(), doc.orderId(),
+                "PARTITION".equals(doc.sourceType()) ? doc.sourceId() : null, doc.terminalId(),
+                doc.issuedByEmployeeId(), doc.customerId(), doc.onAccount(), doc.seriesCode(), doc.number(),
+                Boolean.TRUE.equals(doc.nonFiscal()), doc.totalGross().currency().getCurrencyCode(),
+                doc.totalGross().amount(), doc.totalNet().amount(), doc.totalTax().amount());
+        Instant now = clock.instant();
+        if (!store.insertSalesHeader(header, now)) {
+            return;
+        }
+        Dimensions dimensions = dimensionsOf(doc.orderId());
+        for (DocumentView.Line line : doc.lines()) {
+            store.insertSalesLine(header, salesLine(doc.storeId(), line, dimensions), now);
+        }
+        for (DocumentView.TaxSummary tax : doc.taxes()) {
+            store.insertSalesTax(header, new SalesTax(taxCodes(doc.lines(), tax.rate(), dimensions), tax.rate(),
+                    tax.net().amount(), tax.tax().amount()), now);
+        }
+    }
+
+    private SalesLine salesLine(java.util.UUID storeId, DocumentView.Line line, Dimensions dimensions) {
+        BillingLine billed = dimensions.lines().get(line.sourceLineId());
+        UUID itemId = billed == null ? null : billed.itemId();
+        return new SalesLine(line.lineNo(), itemId, billed == null ? null : billed.itemCode(),
+                billed == null ? null : families.familyOf(storeId, billed.releaseId(), itemId), line.description(),
+                line.quantity(), line.gross().amount(), line.net().amount(), line.tax().amount(),
+                billed == null ? null : billed.taxCode(), line.taxRatePercent(),
+                billed == null ? null : billed.servedByEmployeeId(),
+                dimensions.table() == null ? null : dimensions.table().areaId(),
+                dimensions.table() == null ? null : dimensions.table().areaCode(), dimensions.mode());
+    }
+
+    /**
+     * The tax code(s) of the document's lines at {@code rate}: one code in practice; several (joined with "+") when
+     * two catalog codes share a rate, and empty when the order's lines no longer say.
+     */
+    private static String taxCodes(List<DocumentView.Line> lines, BigDecimal rate, Dimensions dimensions) {
+        return lines.stream().filter(line -> line.taxRatePercent().compareTo(rate) == 0)
+                .map(line -> dimensions.lines().get(line.sourceLineId())).filter(Objects::nonNull)
+                .map(BillingLine::taxCode).filter(Objects::nonNull).distinct().sorted()
+                .collect(Collectors.joining("+"));
+    }
+
+    /**
+     * The order's billing lines by id, its table's area (the table's current area: a documented approximation, D84)
+     * and its mode: DINE_IN when it sits at a table; unknown otherwise (the billing view does not tell COUNTER from
+     * TAKEAWAY).
+     */
+    private Dimensions dimensionsOf(UUID orderId) {
+        if (orderId == null) {
+            return new Dimensions(Map.of(), null, null);
+        }
+        OrderBillingView order = orders.billingView(orderId);
+        TableInfo table = order.tableId() == null ? null : dining.tableInfo(order.tableId()).orElse(null);
+        return new Dimensions(order.lines().stream()
+                .collect(Collectors.toMap(BillingLine::lineId, Function.identity())), table,
+                order.tableId() == null ? null : DINE_IN);
+    }
+
+    private ZoneId zoneOf(UUID storeId) {
+        return organization.zoneOf(storeId);
+    }
+
+    private record Dimensions(Map<UUID, BillingLine> lines, TableInfo table, String mode) {
+    }
+}
