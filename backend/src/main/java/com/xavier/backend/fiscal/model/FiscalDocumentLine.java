@@ -1,6 +1,7 @@
 package com.xavier.backend.fiscal.model;
 
 import com.xavier.backend.fiscal.model.dto.DocumentView;
+import com.xavier.backend.fiscal.model.dto.DraftLine;
 import com.xavier.backend.shared.Money;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -8,6 +9,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.util.Currency;
+import java.util.Objects;
 import java.util.UUID;
 import org.hibernate.annotations.Immutable;
 import org.hibernate.annotations.UuidGenerator;
@@ -64,6 +66,15 @@ public class FiscalDocumentLine {
         this.gross = gross.amount();
         this.net = net.amount();
         this.tax = tax.amount();
+    }
+
+    /** The same billed content as {@code line}: source line, quantity, unit price, rate and amounts (by value). */
+    boolean sameAs(DraftLine line, Currency currency) {
+        return Objects.equals(sourceLineId, line.sourceLineId())
+                && line.quantity() != null && quantity.compareTo(line.quantity()) == 0
+                && line.taxRatePercent() != null && taxRate.compareTo(line.taxRatePercent()) == 0
+                && Money.of(unitPrice, currency).equals(line.unitPrice()) && Money.of(gross, currency).equals(line.gross())
+                && Money.of(net, currency).equals(line.net()) && Money.of(tax, currency).equals(line.tax());
     }
 
     DocumentView.Line toView(Currency currency) {
