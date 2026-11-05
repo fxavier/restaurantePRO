@@ -20,10 +20,31 @@ services:
       POSTGRES_DB: restaurantpro
       POSTGRES_USER: restaurantpro
       POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    # D90, spec §11 (RPO 15 min): continuous WAL archiving into the pg-wal-archive volume. archive_timeout
+    # forces a segment switch at least every 5 minutes when anything was written, so at most 5 minutes of
+    # commits are not yet archived. The wrapper makes the archive directory writable by the postgres user
+    # (a new named volume is root-owned), then runs the image's own entrypoint.
+    entrypoint:
+      - sh
+      - -c
+      - mkdir -p /wal-archive && chown postgres:postgres /wal-archive && chmod 700 /wal-archive && exec docker-entrypoint.sh "$$@"
+      - --
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_command=sh /etc/restaurantpro/archive-wal.sh %p %f
+      - -c
+      - archive_timeout=300
     secrets:
       - db_password
     volumes:
       - db-data:/var/lib/postgresql
+      - pg-wal-archive:/wal-archive
+      - ./postgres/archive-wal.sh:/etc/restaurantpro/archive-wal.sh:ro
     networks:
       - internal
     healthcheck:
@@ -116,5 +137,6 @@ networks:
 
 volumes:
   db-data:
+  pg-wal-archive: # WAL segments since the oldest kept base backup (basebackup.sh prunes it); copy it off-box
   caddy-data:
   caddy-config:
