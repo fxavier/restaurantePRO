@@ -2,12 +2,18 @@ package com.xavier.backend.cash;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.xavier.backend.access.Actor;
 import com.xavier.backend.access.Permission;
+import java.time.Clock;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
@@ -48,16 +54,47 @@ public class CashFixtures {
     public static final UUID ACCOUNT_ID = UUID.fromString("00000000-0000-7000-8000-0000000000ca");
     public static final JsonMapper JSON = JsonMapper.builder().build();
 
+    /** The timezone of every test store: UTC+2 all year (no DST). */
+    public static final ZoneId STORE_ZONE = ZoneId.of("Africa/Maputo");
+
     private final MockMvc mvc;
     private final JdbcClient jdbc;
+    private final Clock clock;
 
-    CashFixtures(MockMvc mvc, JdbcClient jdbc) {
+    CashFixtures(MockMvc mvc, JdbcClient jdbc, Clock clock) {
         this.mvc = mvc;
         this.jdbc = jdbc;
+        this.clock = clock;
     }
 
+    /**
+     * A store whose business-day cutoff is about 12 hours away from the application clock, so a test never crosses
+     * it by accident (that made day-dependent tests fail when run just after 05:00 Maputo). Tests about the cutoff
+     * pass one explicitly to {@link #newStore(LocalTime)} or {@link #setCutoff}.
+     */
     public UUID newStore() throws Exception {
-        return newStore(LocalTime.of(5, 0));
+        return newStore(cutoffFarFromNow());
+    }
+
+    /** A cutoff about 12 hours away from the application clock's local time in {@link #STORE_ZONE}. */
+    public LocalTime cutoffFarFromNow() {
+        return LocalDateTime.ofInstant(clock.instant(), STORE_ZONE).plusHours(12).toLocalTime()
+                .truncatedTo(ChronoUnit.HOURS);
+    }
+
+    /** Changes the business-day cutoff of {@code store} (BackOffice store update with its current version). */
+    public void setCutoff(UUID store, LocalTime cutoff) throws Exception {
+        JsonNode current = JSON.readTree(mvc.perform(get("/api/v1/backoffice/stores/" + store)
+                        .with(account(null, Permission.STORE_MANAGE)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        mvc.perform(put("/api/v1/backoffice/stores/" + store).with(account(null, Permission.STORE_MANAGE))
+                        .with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"code": "%s", "name": "%s", "timezone": "%s", "businessDayCutoff": "%s",
+                                 "active": true, "version": %d}""".formatted(current.get("code").asString(),
+                                current.get("name").asString(), current.get("timezone").asString(), cutoff,
+                                current.get("version").asLong())))
+                .andExpect(status().isOk());
     }
 
     public UUID newStore(LocalTime cutoff) throws Exception {

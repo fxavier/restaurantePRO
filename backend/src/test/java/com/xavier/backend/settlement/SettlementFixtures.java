@@ -13,6 +13,7 @@ import com.xavier.backend.fiscal.FiscalFixtures;
 import com.xavier.backend.orders.OrdersFixtures;
 import com.xavier.backend.orders.OrdersFixtures.Shop;
 import java.util.List;
+import java.time.LocalTime;
 import java.util.UUID;
 import org.springframework.boot.test.context.TestComponent;
 import org.springframework.http.MediaType;
@@ -61,9 +62,19 @@ public class SettlementFixtures {
         this.fiscal = fiscal;
     }
 
-    /** A fresh shop and a sale of {@code quantity} items (12.50 each) in one confirmed round. */
+    /**
+     * A fresh shop and a sale of {@code quantity} items (12.50 each) in one confirmed round. The store's
+     * business-day cutoff is far from the clock (see {@link CashFixtures#newStore()}), so the order, the session and
+     * the cash day all belong to one business day whatever the time of the run.
+     */
     public Sale sale(String quantity) throws Exception {
+        return sale(quantity, cash.cutoffFarFromNow());
+    }
+
+    /** {@link #sale(String)} in a store whose business day starts at {@code cutoff} (for tests about the cutoff). */
+    public Sale sale(String quantity, LocalTime cutoff) throws Exception {
         Shop shop = orders.shop();
+        cash.setCutoff(shop.store(), cutoff);
         UUID register = cash.newRegister(shop.store());
         Pos cashier = CashFixtures.pos(shop.store());
         UUID session = cash.openSession(cashier, register, "0");
