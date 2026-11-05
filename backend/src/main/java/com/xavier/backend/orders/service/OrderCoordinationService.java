@@ -45,6 +45,11 @@ public class OrderCoordinationService {
         this.clock = clock;
     }
 
+    public UUID storeOf(UUID orderId) {
+        return orders.findStoreIdById(orderId)
+                .orElseThrow(() -> new OrderNotFoundException(OrderChanges.ENTITY, orderId));
+    }
+
     public OrderBillingView billingView(UUID orderId) {
         return views.billing(lookup.load(orderId));
     }

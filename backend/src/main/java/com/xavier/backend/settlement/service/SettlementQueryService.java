@@ -22,7 +22,6 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-import com.xavier.backend.settlement.service.Bills.Bill;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -53,9 +52,8 @@ public class SettlementQueryService {
     @Transactional(readOnly = true)
     public OrderSettlementView settlement(UUID orderId) {
         PosContext pos = accessPolicy.requirePos(Permission.ORDER_VIEW);
-        Bill bill = bills.of(orderId);
-        accessPolicy.requireSessionStore(pos, bill.storeId(), PaymentAttemptService.ORDER, orderId);
-        return views.of(bill);
+        accessPolicy.requireSessionStore(pos, orders.storeOf(orderId), PaymentAttemptService.ORDER, orderId);
+        return views.of(bills.of(orderId));
     }
 
     /** The POS session's store: every OPEN order with what is due, paid and left, oldest first. */

@@ -115,11 +115,11 @@ public class OrderSettlementSteps {
         });
     }
 
+    /** D42 (b) then D51: the order's store only (404, 403), then its settlement lock, then the bill as committed. */
     private Bill lockedBill(PosContext pos, UUID orderId) {
+        accessPolicy.requireSessionStore(pos, orders.storeOf(orderId), PaymentAttemptService.ORDER, orderId);
         locks.lockOrder(orderId);
-        Bill bill = bills.of(orderId);
-        accessPolicy.requireSessionStore(pos, bill.storeId(), PaymentAttemptService.ORDER, orderId);
-        return bill;
+        return bills.of(orderId);
     }
 
     private void requireSettled(Bill bill) {

@@ -1,13 +1,11 @@
 package com.xavier.backend.settlement.service;
 
-import com.xavier.backend.access.Actor;
+import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.shared.notify.ChangeNotifier;
 import com.xavier.backend.shared.notify.ChangeTopic;
 import java.util.Map;
 import java.util.UUID;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
 /**
@@ -20,17 +18,19 @@ class SettlementAudit {
 
     static final String ATTEMPT = "PaymentAttempt";
 
+    private final AccessPolicy accessPolicy;
     private final AuditLog auditLog;
     private final ChangeNotifier changeNotifier;
 
-    SettlementAudit(AuditLog auditLog, ChangeNotifier changeNotifier) {
+    SettlementAudit(AccessPolicy accessPolicy, AuditLog auditLog, ChangeNotifier changeNotifier) {
+        this.accessPolicy = accessPolicy;
         this.auditLog = auditLog;
         this.changeNotifier = changeNotifier;
     }
 
     void attempt(String action, UUID attemptId, UUID storeId, UUID orderId, UUID terminalId, UUID approverId,
                  String reason, Map<String, Object> details) {
-        if (inSession()) {
+        if (accessPolicy.currentIfPresent().isPresent()) {
             auditLog.recordAsCurrentActor(action, ATTEMPT, attemptId.toString(), storeId, approverId, reason,
                     details);
         } else {
@@ -42,11 +42,5 @@ class SettlementAudit {
 
     void record(String action, String entityType, UUID entityId, UUID storeId, Map<String, Object> details) {
         auditLog.recordAsCurrentActor(action, entityType, entityId.toString(), storeId, null, null, details);
-    }
-
-    private static boolean inSession() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        return authentication != null && authentication.isAuthenticated()
-                && authentication.getPrincipal() instanceof Actor;
     }
 }

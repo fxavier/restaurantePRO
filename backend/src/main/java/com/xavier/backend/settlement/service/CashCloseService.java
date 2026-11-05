@@ -81,7 +81,8 @@ public class CashCloseService {
     }
 
     /**
-     * OPEN → OPERATIONALLY_CLOSED under the day's lock (D50 §7.8).
+     * OPEN → OPERATIONALLY_CLOSED under the day's lock (D50 §7.8), after the day's store is checked against the POS
+     * session (D42: its store only, 404, then 403).
      *
      * @throws SettlementRuleException 422 {@code OPEN_SESSIONS}, {@code PAYMENT_IN_DOUBT}, {@code FISCAL_PENDING},
      *         {@code OPEN_ORDERS}
@@ -89,11 +90,10 @@ public class CashCloseService {
     @Transactional
     public DayView closeDayOperationally(UUID dayId, CloseDayRequest request) {
         PosContext pos = accessPolicy.requirePos(Permission.CASH_DAY_CLOSE);
-        DayView day = cash.findDay(dayId)
-                .orElseThrow(() -> new SettlementNotFoundException(DAY, dayId));
-        accessPolicy.requireSessionStore(pos, day.storeId(), DAY, dayId);
-        cash.lockDay(day.storeId(), day.businessDate());
-        UUID storeId = day.storeId();
+        UUID storeId = cash.storeOfDay(dayId);
+        accessPolicy.requireSessionStore(pos, storeId, DAY, dayId);
+        DayView day = cash.findDay(dayId).orElseThrow(() -> new SettlementNotFoundException(DAY, dayId));
+        cash.lockDay(storeId, day.businessDate());
         if (!cash.openSessionIds(dayId).isEmpty()) {
             throw refused(SettlementRule.OPEN_SESSIONS, "a cash session of the day is still open");
         }

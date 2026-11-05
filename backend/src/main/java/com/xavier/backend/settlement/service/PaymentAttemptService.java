@@ -38,8 +38,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Creating, reading, confirming and cancelling payment attempts (spec §7.3–§7.5, D48–D50, P12, P16). Each command
- * takes the order's settlement lock first (D51: order_settlement → cash_session), so two terminals paying one bill
- * are serialized and the second sees the first one's payment.
+ * authorizes on the order's or attempt's store alone (D42 (b)), then takes the order's settlement lock before
+ * anything else (D51: order_settlement → cash_session), so two terminals paying one bill are serialized and the
+ * second sees the first one's payment.
  */
 @Service
 public class PaymentAttemptService {
@@ -81,6 +82,17 @@ public class PaymentAttemptService {
     }
 
     /**
+     * D42 for a create, before its transaction (like D40's phase 1): the order's store is read (404) and checked
+     * against the POS session (403) before anything is locked. The order's store never changes, so the create may
+     * rely on it; it checks again, the same way, before its lock.
+     */
+    @Transactional(readOnly = true)
+    public void authorizeCreate(CreateAttemptRequest request) {
+        PosContext pos = accessPolicy.requirePos(Permission.PAYMENT_COLLECT);
+        accessPolicy.requireSessionStore(pos, orders.storeOf(request.orderId()), ORDER, request.orderId());
+    }
+
+    /**
      * CASH → SUCCEEDED with its Payment and receipt in this transaction; EXTERNAL_TERMINAL → PENDING; INTEGRATED →
      * CREATED. The attempt goes to the paying employee's OPEN session (P16). Every attempt locks the order for payment
      * (D49; a no-op once locked).
@@ -89,24 +101,12 @@ public class PaymentAttemptService {
      *         {@code INVALID_AMOUNT}, {@code AMOUNT_EXCEEDS_BALANCE}, {@code NO_OPEN_CASH_SESSION}, ...
      * @throws SettlementConflictException 409 {@code PAYMENT_IN_DOUBT} while another attempt of the order is open
      */
-    /**
-     * D42 for a create, before its transaction (like D40's phase 1): the order's store is read (404) and checked
-     * against the POS session (403) before anything is locked. The order's store never changes, so the create may
-     * rely on it; it checks again on what it reads under the lock.
-     */
-    @Transactional(readOnly = true)
-    public void authorizeCreate(CreateAttemptRequest request) {
-        PosContext pos = accessPolicy.requirePos(Permission.PAYMENT_COLLECT);
-        UUID storeId = orders.billingView(request.orderId()).storeId();
-        accessPolicy.requireSessionStore(pos, storeId, ORDER, request.orderId());
-    }
-
     @Transactional
     public AttemptView create(CreateAttemptRequest request) {
         PosContext pos = accessPolicy.requirePos(Permission.PAYMENT_COLLECT);
+        accessPolicy.requireSessionStore(pos, orders.storeOf(request.orderId()), ORDER, request.orderId());
         locks.lockOrder(request.orderId());
         Bill bill = bills.of(request.orderId());
-        accessPolicy.requireSessionStore(pos, bill.storeId(), ORDER, request.orderId());
         bill.requireOpen();
         PaymentMethod method = activeMethod(request.methodCode());
         if (method.getKind() == PaymentMethodKind.INTEGRATED && !providers.exists(method.getProviderCode())) {

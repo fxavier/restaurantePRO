@@ -5,6 +5,7 @@ import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.PosContext;
 import com.xavier.backend.fiscal.FiscalApi;
 import com.xavier.backend.fiscal.model.dto.DocumentView;
+import com.xavier.backend.orders.OrdersApi;
 import com.xavier.backend.settlement.model.dto.CloseOrderRequest;
 import com.xavier.backend.settlement.model.dto.IssueDocumentRequest;
 import com.xavier.backend.settlement.model.dto.OrderSettlementView;
@@ -28,11 +29,14 @@ public class OrderSettlementService {
     private final AccessPolicy accessPolicy;
     private final OrderSettlementSteps steps;
     private final FiscalApi fiscal;
+    private final OrdersApi orders;
 
-    OrderSettlementService(AccessPolicy accessPolicy, OrderSettlementSteps steps, FiscalApi fiscal) {
+    OrderSettlementService(AccessPolicy accessPolicy, OrderSettlementSteps steps, FiscalApi fiscal,
+                           OrdersApi orders) {
         this.accessPolicy = accessPolicy;
         this.steps = steps;
         this.fiscal = fiscal;
+        this.orders = orders;
     }
 
     /**
@@ -46,23 +50,23 @@ public class OrderSettlementService {
     }
 
     /**
+     * D42 (b) first: the order's store only (404, 403), before its sale document is looked up.
+     *
      * @throws com.xavier.backend.settlement.exception.SettlementRuleException 422 {@code NOT_SETTLED},
      *         {@code FISCAL_PENDING}, {@code ORDER_NOT_OPEN}, {@code NOTHING_TO_BILL}
      * @throws com.xavier.backend.settlement.exception.SettlementConflictException 409 {@code PAYMENT_IN_DOUBT}
      */
     public OrderSettlementView close(UUID orderId, CloseOrderRequest request) {
         PosContext pos = accessPolicy.requirePos(Permission.PAYMENT_COLLECT);
-        if (issuedDocument(pos, orderId).isEmpty()) {
+        accessPolicy.requireSessionStore(pos, orders.storeOf(orderId), PaymentAttemptService.ORDER, orderId);
+        if (issuedDocument(orderId).isEmpty()) {
             DocumentView draft = steps.prepareDocument(pos, orderId, null, request.orderVersion());
             steps.issue(pos, draft.id());
         }
         return steps.close(pos, orderId);
     }
 
-    private Optional<DocumentView> issuedDocument(PosContext pos, UUID orderId) {
-        Optional<DocumentView> document = fiscal.saleDocumentFor(orderId);
-        document.ifPresent(found -> accessPolicy.requireSessionStore(pos, found.storeId(),
-                PaymentAttemptService.ORDER, orderId));
-        return document.filter(found -> "ISSUED".equals(found.status()));
+    private Optional<DocumentView> issuedDocument(UUID orderId) {
+        return fiscal.saleDocumentFor(orderId).filter(found -> "ISSUED".equals(found.status()));
     }
 }
