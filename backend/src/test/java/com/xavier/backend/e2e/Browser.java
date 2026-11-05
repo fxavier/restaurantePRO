@@ -48,6 +48,11 @@ final class Browser {
         return Map.of("Idempotency-Key", UUID.randomUUID().toString());
     }
 
+    /** Another tab against the same server, recording into the same journey (its own cookie jar). */
+    Browser sibling(String siblingName) {
+        return new Browser(siblingName, port, journey);
+    }
+
     String name() {
         return name;
     }

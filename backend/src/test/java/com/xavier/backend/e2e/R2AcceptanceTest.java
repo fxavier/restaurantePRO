@@ -1,20 +1,21 @@
 package com.xavier.backend.e2e;
 
+import static com.xavier.backend.e2e.Installation.CASHIER_ROLE;
+import static com.xavier.backend.e2e.Installation.MANAGER_ROLE;
+import static com.xavier.backend.e2e.Installation.employee;
+import static com.xavier.backend.e2e.Installation.id;
+import static com.xavier.backend.e2e.Installation.posLogin;
+import static com.xavier.backend.e2e.Installation.publishCatalog;
+import static com.xavier.backend.e2e.Installation.terminal;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.xavier.backend.TestcontainersConfiguration;
 import com.xavier.backend.e2e.Browser.Csrf;
 import com.xavier.backend.production.TcpFakePrinter;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.net.http.HttpResponse;
 import java.nio.charset.Charset;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Duration;
-import java.time.LocalTime;
-import java.time.ZoneId;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -26,16 +27,12 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 import tools.jackson.databind.JsonNode;
 
 /**
@@ -59,53 +56,25 @@ import tools.jackson.databind.JsonNode;
  * so the company and the administrator come from the bootstrap settings and every count below is this journey's.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(R2AcceptanceTest.FreshDatabase.class)
+@Import(Installation.FreshDatabase.class)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class R2AcceptanceTest {
 
-    static final String ADMIN = "owner";
     static final String INITIAL_PASSWORD = "initial " + UUID.randomUUID();
     static final String NEW_PASSWORD = "changed " + UUID.randomUUID();
     static final String CASHIER_PIN = "5172";
     static final String MANAGER_PIN = "6283";
-    static final UUID MANAGER_ROLE = UUID.fromString("01900000-0000-7000-8000-000000000302");
-    static final UUID CASHIER_ROLE = UUID.fromString("01900000-0000-7000-8000-000000000304");
-    static final String ZONE = "Africa/Maputo";
     static final Charset CP860 = Charset.forName("IBM860");
     static final Duration PRINTED = Duration.ofSeconds(20);
-    static final String CATALOG = "/api/v1/backoffice/catalog";
     static final String POS = "/api/v1/pos";
 
     static final TcpFakePrinter KITCHEN = open();
     static final TcpFakePrinter BAR = open();
     static final TcpFakePrinter COUNTER = open();
 
-    @TestConfiguration(proxyBeanMethods = false)
-    static class FreshDatabase {
-
-        /** Stopped when this test's context closes (Spring Boot manages a container bean's lifecycle). */
-        @Bean
-        @ServiceConnection
-        PostgreSQLContainer freshPostgres() {
-            return new PostgreSQLContainer(TestcontainersConfiguration.POSTGRES_IMAGE_NAME)
-                    .withUrlParam("sslmode", "disable");
-        }
-    }
-
     @DynamicPropertySource
     static void bootstrapSettings(DynamicPropertyRegistry registry) throws IOException {
-        Path secret = Files.createTempFile("admin-initial-password", "");
-        secret.toFile().deleteOnExit();
-        Files.writeString(secret, INITIAL_PASSWORD + "\n");
-        registry.add("restaurantpro.bootstrap.company.name", () -> "Restaurante R2");
-        registry.add("restaurantpro.bootstrap.company.tax-id", () -> "400000002");
-        registry.add("restaurantpro.bootstrap.company.country", () -> "MZ");
-        registry.add("restaurantpro.bootstrap.company.currency", () -> "MZN");
-        registry.add("restaurantpro.bootstrap.admin.username", () -> ADMIN);
-        registry.add("restaurantpro.bootstrap.admin.initial-password-file", secret::toString);
-        // An open change stream is an active request until its next write fails, so a graceful shutdown would wait
-        // the full phase timeout (30 s) for it when the context closes.
-        registry.add("server.shutdown", () -> "immediate");
+        Installation.bootstrap(registry, "Restaurante R2", INITIAL_PASSWORD);
     }
 
     @AfterAll
@@ -135,13 +104,9 @@ class R2AcceptanceTest {
     private void run() throws Exception {
         // ---- 1. R1 setup: admin, two stores, terminals, employees, a table and a published catalog ----
         Browser office = new Browser("backoffice", port, journey);
-        office.get("/api/v1/auth/session", 401);
-        Awaitility.await().atMost(Duration.ofSeconds(20)).until(() -> office.tryPost("/api/v1/auth/login",
-                Map.of("username", ADMIN, "password", INITIAL_PASSWORD)), r -> r != null);
-        office.post("/api/v1/auth/password", Map.of("currentPassword", INITIAL_PASSWORD, "newPassword", NEW_PASSWORD),
-                200);
-        UUID storeA = id(office.post("/api/v1/backoffice/stores", store("A"), 201));
-        UUID storeB = id(office.post("/api/v1/backoffice/stores", store("B"), 201));
+        Installation.firstLogin(office, INITIAL_PASSWORD, NEW_PASSWORD);
+        UUID storeA = Installation.store(office, "A");
+        UUID storeB = Installation.store(office, "B");
         UUID terminal1 = terminal(office, storeA, "POS1");
         UUID terminal2 = terminal(office, storeA, "POS2");
         UUID terminalB = terminal(office, storeB, "POSB");
@@ -391,69 +356,6 @@ class R2AcceptanceTest {
         }
     }
 
-    private static Map<String, Object> store(String suffix) {
-        // A cutoff 12 h away keeps the business day from turning over while the journey runs.
-        LocalTime cutoff = LocalTime.now(ZoneId.of(ZONE)).plusHours(12).truncatedTo(ChronoUnit.HOURS);
-        return Map.of("code", "LOJA-" + suffix, "name", "Loja " + suffix, "timezone", ZONE,
-                "businessDayCutoff", cutoff.toString());
-    }
-
-    private UUID terminal(Browser office, UUID store, String code) throws Exception {
-        return id(office.post("/api/v1/backoffice/terminals", Map.of("storeId", store, "code", code, "name", code),
-                201));
-    }
-
-    private String employee(Browser office, UUID store, String code, String name, String pin, UUID role)
-            throws Exception {
-        office.post("/api/v1/backoffice/employees", Map.of("code", code, "name", name, "pin", pin, "storeId", store,
-                "roleId", role), 201);
-        return code;
-    }
-
-    /** A new POS tab on {@code terminal}: enrolled with a fresh code, then the employee's PIN login. */
-    private Browser posLogin(Browser office, UUID terminal, String code, String pin, String name) throws Exception {
-        String enrollment = office.post("/api/v1/backoffice/terminals/" + terminal + "/enrollment-code", null, 200)
-                .get("code").asString();
-        Browser pos = new Browser(name, port, journey);
-        pos.get("/api/v1/auth/session", 401);
-        String token = pos.post("/api/v1/auth/terminals/enroll", Map.of("code", enrollment), 200)
-                .get("deviceToken").asString();
-        pos.post("/api/v1/auth/pos-login", Map.of("employeeCode", code, "pin", pin), 200, Csrf.SEND,
-                Map.of("X-Terminal-Token", token), "pos-login");
-        return pos;
-    }
-
-    /** Prego (kitchen) 150.00, Sumo and Agua (bar) 60.00 and 40.00, all 16% VAT, published for {@code store}. */
-    private Map<String, UUID> publishCatalog(Browser office, UUID store) throws Exception {
-        UUID family = id(office.post(CATALOG + "/families", Map.of("code", "REST", "name", "Restaurante"), 201));
-        UUID unit = id(office.post(CATALOG + "/units", Map.of("code", "UN", "name", "Unidade"), 201));
-        UUID tax = id(office.post(CATALOG + "/tax-categories", Map.of("code", "IVA16", "name", "IVA"), 201));
-        office.post(CATALOG + "/tax-categories/" + tax + "/rates",
-                Map.of("ratePercent", new BigDecimal("16"), "effectiveFrom", "2000-01-01T00:00:00Z"), 201);
-        UUID priceList = id(office.post(CATALOG + "/price-lists", Map.of("storeId", store, "name", "Sala"), 201));
-        Map<String, UUID> items = new LinkedHashMap<>();
-        Object[][] menu = {{"PREGO", "Prego no pao", "COZINHA", "150.00"}, {"SUMO", "Sumo de manga", "BAR", "60.00"},
-                {"AGUA", "Agua 50cl", "BAR", "40.00"}};
-        for (Object[] dish : menu) {
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put("code", dish[0]);
-            item.put("name", dish[1]);
-            item.put("familyId", family);
-            item.put("unitId", unit);
-            item.put("taxCategoryId", tax);
-            item.put("productionDestination", dish[2]);
-            item.put("soldByWeight", false);
-            UUID itemId = id(office.post(CATALOG + "/items", item, 201));
-            office.post(CATALOG + "/price-lists/" + priceList + "/prices",
-                    Map.of("itemId", itemId, "amount", new BigDecimal((String) dish[3])), 201);
-            items.put((String) dish[0], itemId);
-        }
-        UUID release = id(office.post(CATALOG + "/releases", Map.of("storeId", store), 201));
-        office.post(CATALOG + "/releases/" + release + "/validate", null, 200);
-        office.command(CATALOG + "/releases/" + release + "/publish", Map.of("note", "R2"), 200, "publish");
-        return items;
-    }
-
     private UUID printer(Browser office, UUID store, String code, TcpFakePrinter device) throws Exception {
         return id(office.command("/api/v1/backoffice/printers", Map.of("storeId", store, "code", code,
                 "name", "Impressora " + code, "host", device.host(), "port", device.port(), "codePage", "CP860"),
@@ -509,9 +411,5 @@ class R2AcceptanceTest {
 
     private static BigDecimal money(JsonNode node) {
         return new BigDecimal(node.get("amount").asString());
-    }
-
-    private static UUID id(JsonNode body) {
-        return UUID.fromString(body.get("id").asString());
     }
 }
