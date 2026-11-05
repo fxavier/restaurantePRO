@@ -112,6 +112,7 @@ public class CreditLedgerService {
     public ReservationView reserve(UUID customerId, Money amount, UUID chargeId) {
         activeCustomer(customerId);
         CreditAccount account = lockedAccount(customerId);
+        requireCurrency(amount, account);
         Optional<CreditReservation> existing = reservations.findByChargeId(chargeId);
         if (existing.isPresent()) {
             return sameCharge(existing.get(), customerId, amount).toView();
@@ -171,6 +172,7 @@ public class CreditLedgerService {
         }
         requireCustomer(customerId);
         CreditAccount account = lockedAccount(customerId);
+        requireCurrency(amount, account);
         posted = entry(EntrySource.PAYMENT, paymentId, EntryKind.CREDIT);
         if (posted.isPresent()) {
             return posted.get().toView();
@@ -203,7 +205,7 @@ public class CreditLedgerService {
         }
         CreditLedgerEntry payment = entry(EntrySource.PAYMENT, paymentId, EntryKind.CREDIT)
                 .orElseThrow(() -> new CustomersNotFoundException(ENTRY, "of payment " + paymentId));
-        lockedAccount(payment.getCustomerId());
+        requireCurrency(amount, lockedAccount(payment.getCustomerId()));
         posted = entry(EntrySource.REFUND, refundId, EntryKind.DEBIT);
         if (posted.isPresent()) {
             return posted.get().toView();
@@ -249,6 +251,13 @@ public class CreditLedgerService {
 
     private CreditAccount lockedAccount(UUID customerId) {
         return locks.account(customerId).orElseThrow(() -> CustomerRuleException.accountMissing(customerId));
+    }
+
+    private static void requireCurrency(Money amount, CreditAccount account) {
+        if (!amount.currency().equals(account.currency())) {
+            throw new IllegalArgumentException("The credit account of customer " + account.getCustomerId() + " is in "
+                    + account.currency().getCurrencyCode() + ", not " + amount.currency().getCurrencyCode());
+        }
     }
 
     private static CreditReservation sameCharge(CreditReservation reservation, UUID customerId, Money amount) {

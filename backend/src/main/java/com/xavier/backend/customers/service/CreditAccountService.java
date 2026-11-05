@@ -43,6 +43,7 @@ public class CreditAccountService {
     private final CreditLimitChangeRepository limitChanges;
     private final CreditLocks locks;
     private final CreditBalances balances;
+    private final CreditLedgerService ledger;
     private final OrganizationApi organization;
     private final AccessPolicy accessPolicy;
     private final AuditLog auditLog;
@@ -50,12 +51,14 @@ public class CreditAccountService {
 
     CreditAccountService(CustomerRepository customers, CreditAccountRepository accounts,
                          CreditLimitChangeRepository limitChanges, CreditLocks locks, CreditBalances balances,
-                         OrganizationApi organization, AccessPolicy accessPolicy, AuditLog auditLog, Clock clock) {
+                         CreditLedgerService ledger, OrganizationApi organization, AccessPolicy accessPolicy,
+                         AuditLog auditLog, Clock clock) {
         this.customers = customers;
         this.accounts = accounts;
         this.limitChanges = limitChanges;
         this.locks = locks;
         this.balances = balances;
+        this.ledger = ledger;
         this.organization = organization;
         this.accessPolicy = accessPolicy;
         this.auditLog = auditLog;
@@ -112,9 +115,7 @@ public class CreditAccountService {
     @Transactional(readOnly = true)
     public CreditView credit(Channel channel, UUID customerId) {
         channel.authorize(accessPolicy, Permission.CUSTOMER_VIEW);
-        requireCustomer(customerId);
-        return balances.view(accounts.findById(customerId)
-                .orElseThrow(() -> CustomerRuleException.accountMissing(customerId)));
+        return ledger.credit(customerId);
     }
 
     private CreditAccount requireAccount(UUID customerId) {
@@ -140,8 +141,8 @@ public class CreditAccountService {
         try {
             return Money.of(amount, account.currency());
         } catch (IllegalArgumentException e) {
-            throw CustomerRuleException.invalidAmount("The amount " + amount.toPlainString() + " has more decimals than "
-                    + account.currency().getCurrencyCode() + " allows.");
+            throw CustomerRuleException.invalidAmount("The amount " + amount.toPlainString()
+                    + " has more decimals than " + account.currency().getCurrencyCode() + " allows.");
         }
     }
 }

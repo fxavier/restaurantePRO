@@ -80,12 +80,14 @@ public class CustomersApi {
 
     /**
      * A debt payment's CREDIT, settling the open debits FIFO when {@code debitEntryIds} is empty, else the named ones
-     * in that order. 422 {@code AMOUNT_EXCEEDS_DEBT} beyond the debt (or the named debits). Idempotent per payment.
+     * in that order (null means none). 422 {@code AMOUNT_EXCEEDS_DEBT} beyond the debt (or the named debits).
+     * Idempotent per payment.
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public LedgerEntryView postCredit(UUID paymentId, UUID customerId, Money amount, List<UUID> debitEntryIds,
                                       UUID storeId, LocalDate businessDate) {
-        return ledger.postCredit(paymentId, customerId, amount, List.copyOf(debitEntryIds), storeId, businessDate);
+        return ledger.postCredit(paymentId, customerId, amount,
+                debitEntryIds == null ? List.of() : List.copyOf(debitEntryIds), storeId, businessDate);
     }
 
     /**

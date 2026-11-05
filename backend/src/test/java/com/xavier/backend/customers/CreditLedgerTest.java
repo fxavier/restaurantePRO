@@ -12,6 +12,7 @@ import com.xavier.backend.shared.exception.NotFoundException;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.util.Currency;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -215,6 +216,27 @@ class CreditLedgerTest {
                 .hasFieldOrPropertyWithValue("code", "AMOUNT_EXCEEDS_CREDIT");
         pay("10.00", List.of());
         assertThat(settledOn(oldest)).isEqualByComparingTo("30.00");
+    }
+
+    @Test
+    void amountsInAnotherCurrencyThanTheAccountsAreRefused() {
+        sale("30.00");
+        Money euros = Money.of("10.00", Currency.getInstance("EUR"));
+
+        assertThatThrownBy(() -> inTx(() -> customers.reserve(customer, euros, UUID.randomUUID())))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> inTx(() -> customers.postCredit(UUID.randomUUID(), customer, euros, List.of(), store,
+                DAY))).isInstanceOf(IllegalArgumentException.class);
+        assertThat(credit().reserved()).isEqualTo(mzn("0.00"));
+    }
+
+    @Test
+    void noNamedDebitsMeansFifo() {
+        UUID oldest = sale("30.00");
+
+        inTx(() -> customers.postCredit(UUID.randomUUID(), customer, mzn("10.00"), null, store, DAY));
+
+        assertThat(settledOn(oldest)).isEqualByComparingTo("10.00");
     }
 
     @Test
