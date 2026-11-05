@@ -22,6 +22,7 @@ import com.xavier.backend.orders.exception.OrderConflictException;
 import com.xavier.backend.orders.exception.OrderRuleException;
 import com.xavier.backend.production.exception.ProductionRule;
 import com.xavier.backend.production.exception.ProductionRuleViolationException;
+import com.xavier.backend.production.model.Printer;
 import com.xavier.backend.settlement.exception.SettlementConflictException;
 import com.xavier.backend.settlement.exception.SettlementRule;
 import com.xavier.backend.settlement.exception.SettlementRuleException;
@@ -99,7 +100,30 @@ class CodedErrorContractTest {
             Map.entry("session-not-open", () -> new CashRuleViolationException(CashRule.SESSION_NOT_OPEN,
                     "The cash session " + ID + " is closed.")),
             Map.entry("printer-ignored", () -> new ProductionRuleViolationException(ProductionRule.PRINTER_IGNORED,
-                    "Printer K1 is in IGNORE: change its mode to print again")));
+                    "Printer K1 is in IGNORE: change its mode to print again")),
+            Map.entry("order-frozen", () -> OrderRuleException.frozen(ID)),
+            Map.entry("order-self-approval", OrderRuleException::selfApproval),
+            Map.entry("printer-redirect-invalid", () -> Printer.invalidRedirect("A printer cannot redirect to itself")),
+            // As above, these details are built inline (AttemptResolutionService, OrderSettlementSteps,
+            // CashCloseService.refused, CashCoordinationService, RoutingService.requireUnique) and repeated here.
+            Map.entry("settlement-self-approval", () -> new SettlementRuleException(SettlementRule.SELF_APPROVAL,
+                    "The approver of a reclassification cannot be the operator.")),
+            Map.entry("nothing-to-bill", () -> new SettlementRuleException(SettlementRule.NOTHING_TO_BILL,
+                    "Order " + ID + " has nothing to bill: cancel it instead.")),
+            Map.entry("sale-fiscal-pending", () -> new SettlementRuleException(SettlementRule.FISCAL_PENDING,
+                    "The sale document of order " + ID + " is not issued yet.")),
+            Map.entry("sale-fiscal-pending-document", () -> new SettlementRuleException(SettlementRule.FISCAL_PENDING,
+                    "The sale document of order " + ID + " is not issued yet.", Map.of("documentId", OTHER))),
+            Map.entry("day-open-orders", () -> new SettlementRuleException(SettlementRule.OPEN_ORDERS,
+                    "The cash day cannot close operationally: an order of the day is still open.")),
+            Map.entry("day-open-sessions", () -> new SettlementRuleException(SettlementRule.OPEN_SESSIONS,
+                    "The cash day cannot close operationally: a cash session of the day is still open.")),
+            Map.entry("day-fiscal-pending", () -> new SettlementRuleException(SettlementRule.FISCAL_PENDING,
+                    "The cash day cannot close operationally: a fiscal document is still pending.")),
+            Map.entry("cash-open-sessions", () -> new CashRuleViolationException(CashRule.OPEN_SESSIONS,
+                    "The cash day 2026-11-05 still has open sessions.")),
+            Map.entry("duplicate-route", () -> new ProductionRuleViolationException(ProductionRule.DUPLICATE_ROUTE,
+                    "The destination KITCHEN appears twice")));
 
     @Autowired
     MockMvc mvc;
@@ -165,6 +189,47 @@ class CodedErrorContractTest {
         expect("order-in-settlement", 422, "ORDER_IN_SETTLEMENT",
                 "Order " + ID + " has a payment under way: nothing may leave its bill.", "");
         expect("quantity-exceeds-net", 422, "QUANTITY_EXCEEDS_NET", "Line " + ID + " holds only 1.500.", "");
+    }
+
+    @Test
+    void orderFrozenAndSelfApproval() throws Exception {
+        expect("order-frozen", 422, "ORDER_FROZEN", "Order " + ID + " is frozen for its invoice.", "");
+        expect("order-self-approval", 422, "SELF_APPROVAL",
+                "The approver must be another employee than the operator.", "");
+    }
+
+    @Test
+    void settlementSelfApprovalAndNothingToBill() throws Exception {
+        expect("settlement-self-approval", 422, "SELF_APPROVAL",
+                "The approver of a reclassification cannot be the operator.", "");
+        expect("nothing-to-bill", 422, "NOTHING_TO_BILL", "Order " + ID + " has nothing to bill: cancel it instead.",
+                "");
+    }
+
+    /** OrderSettlementSteps.fiscalPending: {@code documentId} only when a SALE draft exists. */
+    @Test
+    void saleFiscalPendingHasAnOptionalDocumentId() throws Exception {
+        expect("sale-fiscal-pending", 422, "FISCAL_PENDING",
+                "The sale document of order " + ID + " is not issued yet.", "");
+        expect("sale-fiscal-pending-document", 422, "FISCAL_PENDING",
+                "The sale document of order " + ID + " is not issued yet.", ",\"documentId\":\"" + OTHER + "\"");
+    }
+
+    @Test
+    void operationalDayCloseRefusals() throws Exception {
+        expect("day-open-orders", 422, "OPEN_ORDERS",
+                "The cash day cannot close operationally: an order of the day is still open.", "");
+        expect("day-open-sessions", 422, "OPEN_SESSIONS",
+                "The cash day cannot close operationally: a cash session of the day is still open.", "");
+        expect("day-fiscal-pending", 422, "FISCAL_PENDING",
+                "The cash day cannot close operationally: a fiscal document is still pending.", "");
+        expect("cash-open-sessions", 422, "OPEN_SESSIONS", "The cash day 2026-11-05 still has open sessions.", "");
+    }
+
+    @Test
+    void productionRoutingRules() throws Exception {
+        expect("printer-redirect-invalid", 422, "PRINTER_REDIRECT_INVALID", "A printer cannot redirect to itself", "");
+        expect("duplicate-route", 422, "DUPLICATE_ROUTE", "The destination KITCHEN appears twice", "");
     }
 
     @Test

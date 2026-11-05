@@ -1,13 +1,12 @@
 package com.xavier.backend.settlement.controller;
 
-import com.xavier.backend.access.AccessPolicy;
+import com.xavier.backend.access.IdempotentRequests;
 import com.xavier.backend.fiscal.model.dto.DocumentView;
 import com.xavier.backend.settlement.model.dto.CloseOrderRequest;
 import com.xavier.backend.settlement.model.dto.IssueDocumentRequest;
 import com.xavier.backend.settlement.model.dto.OrderSettlementView;
 import com.xavier.backend.settlement.service.OrderSettlementService;
 import com.xavier.backend.settlement.service.SettlementQueryService;
-import com.xavier.backend.shared.idempotency.IdempotencyService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.net.URI;
@@ -32,13 +31,13 @@ class OrderSettlementController {
 
     private final SettlementQueryService queries;
     private final OrderSettlementService settlement;
-    private final Idempotent idempotent;
+    private final IdempotentRequests idempotent;
 
     OrderSettlementController(SettlementQueryService queries, OrderSettlementService settlement,
-                              IdempotencyService idempotency, AccessPolicy accessPolicy) {
+                              IdempotentRequests idempotent) {
         this.queries = queries;
         this.settlement = settlement;
-        this.idempotent = new Idempotent(idempotency, accessPolicy);
+        this.idempotent = idempotent;
     }
 
     @GetMapping(ORDERS + "/{id}/settlement")

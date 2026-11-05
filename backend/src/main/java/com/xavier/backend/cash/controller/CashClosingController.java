@@ -1,13 +1,12 @@
 package com.xavier.backend.cash.controller;
 
-import com.xavier.backend.access.AccessPolicy;
+import com.xavier.backend.access.IdempotentRequests;
 import com.xavier.backend.cash.model.CashClosingStatus;
 import com.xavier.backend.cash.model.dto.ClosingView;
 import com.xavier.backend.cash.model.dto.CreateClosingRequest;
 import com.xavier.backend.cash.model.dto.JustifyClosingRequest;
 import com.xavier.backend.cash.model.dto.RejectClosingRequest;
 import com.xavier.backend.cash.service.CashClosingService;
-import com.xavier.backend.shared.idempotency.IdempotencyService;
 import com.xavier.backend.shared.web.PageResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -35,11 +34,11 @@ class CashClosingController {
     private static final Map<String, Object> NO_BODY = Map.of();
 
     private final CashClosingService closings;
-    private final Idempotent idempotent;
+    private final IdempotentRequests idempotent;
 
-    CashClosingController(CashClosingService closings, IdempotencyService idempotency, AccessPolicy accessPolicy) {
+    CashClosingController(CashClosingService closings, IdempotentRequests idempotent) {
         this.closings = closings;
-        this.idempotent = new Idempotent(idempotency, accessPolicy);
+        this.idempotent = idempotent;
     }
 
     @GetMapping(BACKOFFICE)

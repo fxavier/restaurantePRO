@@ -1,6 +1,6 @@
 package com.xavier.backend.production.controller;
 
-import com.xavier.backend.access.AccessPolicy;
+import com.xavier.backend.access.IdempotentRequests;
 import com.xavier.backend.production.model.dto.PrintJobView;
 import com.xavier.backend.production.model.dto.PrinterCreateRequest;
 import com.xavier.backend.production.model.dto.PrinterModeRequest;
@@ -8,7 +8,6 @@ import com.xavier.backend.production.model.dto.PrinterUpdateRequest;
 import com.xavier.backend.production.model.dto.PrinterView;
 import com.xavier.backend.production.service.PrintJobService;
 import com.xavier.backend.production.service.PrinterService;
-import com.xavier.backend.shared.idempotency.IdempotencyService;
 import com.xavier.backend.shared.web.PageResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -37,13 +36,12 @@ class PrinterController {
 
     private final PrinterService printers;
     private final PrintJobService jobs;
-    private final Idempotent idempotent;
+    private final IdempotentRequests idempotent;
 
-    PrinterController(PrinterService printers, PrintJobService jobs, IdempotencyService idempotency,
-                      AccessPolicy accessPolicy) {
+    PrinterController(PrinterService printers, PrintJobService jobs, IdempotentRequests idempotent) {
         this.printers = printers;
         this.jobs = jobs;
-        this.idempotent = new Idempotent(idempotency, accessPolicy);
+        this.idempotent = idempotent;
     }
 
     @GetMapping

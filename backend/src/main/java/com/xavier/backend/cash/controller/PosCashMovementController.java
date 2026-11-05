@@ -1,10 +1,9 @@
 package com.xavier.backend.cash.controller;
 
-import com.xavier.backend.access.AccessPolicy;
+import com.xavier.backend.access.IdempotentRequests;
 import com.xavier.backend.cash.MovementView;
 import com.xavier.backend.cash.model.dto.ManualMovementRequest;
 import com.xavier.backend.cash.service.CashMovementService;
-import com.xavier.backend.shared.idempotency.IdempotencyService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -18,12 +17,11 @@ import org.springframework.web.bind.annotation.RestController;
 class PosCashMovementController {
 
     private final CashMovementService movements;
-    private final Idempotent idempotent;
+    private final IdempotentRequests idempotent;
 
-    PosCashMovementController(CashMovementService movements, IdempotencyService idempotency,
-                              AccessPolicy accessPolicy) {
+    PosCashMovementController(CashMovementService movements, IdempotentRequests idempotent) {
         this.movements = movements;
-        this.idempotent = new Idempotent(idempotency, accessPolicy);
+        this.idempotent = idempotent;
     }
 
     @PostMapping("/api/v1/pos/cash/movements")

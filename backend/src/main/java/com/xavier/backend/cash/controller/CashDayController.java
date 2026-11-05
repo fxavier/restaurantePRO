@@ -1,11 +1,10 @@
 package com.xavier.backend.cash.controller;
 
-import com.xavier.backend.access.AccessPolicy;
+import com.xavier.backend.access.IdempotentRequests;
 import com.xavier.backend.cash.DayView;
 import com.xavier.backend.cash.model.dto.ReopenDayRequest;
 import com.xavier.backend.cash.service.Approval;
 import com.xavier.backend.cash.service.CashDayService;
-import com.xavier.backend.shared.idempotency.IdempotencyService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.Map;
@@ -26,11 +25,11 @@ class CashDayController {
     private static final Map<String, Object> NO_BODY = Map.of();
 
     private final CashDayService days;
-    private final Idempotent idempotent;
+    private final IdempotentRequests idempotent;
 
-    CashDayController(CashDayService days, IdempotencyService idempotency, AccessPolicy accessPolicy) {
+    CashDayController(CashDayService days, IdempotentRequests idempotent) {
         this.days = days;
-        this.idempotent = new Idempotent(idempotency, accessPolicy);
+        this.idempotent = idempotent;
     }
 
     @GetMapping("/api/v1/pos/cash/days/current")

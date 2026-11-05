@@ -13,67 +13,74 @@ import java.util.UUID;
  * under way, so nothing may leave the bill ({@code ORDER_IN_SETTLEMENT}, D49), more is voided or transferred than the
  * line still holds ({@code QUANTITY_EXCEEDS_NET}), the approver is the operator ({@code SELF_APPROVAL}, D28), a cancel
  * of an order that still bills something ({@code ORDER_NOT_EMPTY}), a table move or transfer of an order onto itself
- * or without a table ({@code ORDER_HAS_NO_TABLE}, {@code SAME_ORDER}).
+ * or without a table ({@code ORDER_HAS_NO_TABLE}, {@code SAME_ORDER}). The codes are the {@link OrderRule} constants.
  */
 public class OrderRuleException extends BusinessRuleException {
 
-    private OrderRuleException(String code, String detail) {
-        super(code, detail);
+    private final OrderRule rule;
+
+    private OrderRuleException(OrderRule rule, String detail) {
+        super(rule.name(), detail);
+        this.rule = rule;
     }
 
     public static OrderRuleException frozen(UUID orderId) {
-        return new OrderRuleException("ORDER_FROZEN", "Order " + orderId + " is frozen for its invoice.");
+        return new OrderRuleException(OrderRule.ORDER_FROZEN, "Order " + orderId + " is frozen for its invoice.");
     }
 
     public static OrderRuleException tableLocked(UUID tableId) {
-        return new OrderRuleException("TABLE_LOCKED", "Table " + tableId + " is locked.");
+        return new OrderRuleException(OrderRule.TABLE_LOCKED, "Table " + tableId + " is locked.");
     }
 
     public static OrderRuleException storeMismatch(UUID tableId) {
-        return new OrderRuleException("STORE_MISMATCH", "Table " + tableId + " is not in this store.");
+        return new OrderRuleException(OrderRule.STORE_MISMATCH, "Table " + tableId + " is not in this store.");
     }
 
     public static OrderRuleException tableInactive(UUID tableId) {
-        return new OrderRuleException("TABLE_INACTIVE", "Table " + tableId + " or its area is inactive.");
+        return new OrderRuleException(OrderRule.TABLE_INACTIVE, "Table " + tableId + " or its area is inactive.");
     }
 
     public static OrderRuleException itemNotInCatalog(UUID itemId, UUID variantId) {
-        return new OrderRuleException("ITEM_NOT_IN_CATALOG", "Item " + itemId
+        return new OrderRuleException(OrderRule.ITEM_NOT_IN_CATALOG, "Item " + itemId
                 + (variantId == null ? "" : " variant " + variantId) + " is not in the published catalog.");
     }
 
     public static OrderRuleException noTaxRateInEffect(String itemCode) {
-        return new OrderRuleException("NO_TAX_RATE_IN_EFFECT",
+        return new OrderRuleException(OrderRule.NO_TAX_RATE_IN_EFFECT,
                 "Item " + itemCode + " has no tax rate in effect now.");
     }
 
     public static OrderRuleException dineInRequiresTable() {
-        return new OrderRuleException("DINE_IN_REQUIRES_TABLE", "A DINE_IN order is opened by opening its table.");
+        return new OrderRuleException(OrderRule.DINE_IN_REQUIRES_TABLE, "A DINE_IN order is opened by opening its table.");
     }
 
     public static OrderRuleException inSettlement(UUID orderId) {
-        return new OrderRuleException("ORDER_IN_SETTLEMENT",
+        return new OrderRuleException(OrderRule.ORDER_IN_SETTLEMENT,
                 "Order " + orderId + " has a payment under way: nothing may leave its bill.");
     }
 
     public static OrderRuleException quantityExceedsNet(UUID lineId, BigDecimal net) {
-        return new OrderRuleException("QUANTITY_EXCEEDS_NET",
+        return new OrderRuleException(OrderRule.QUANTITY_EXCEEDS_NET,
                 "Line " + lineId + " holds only " + net.toPlainString() + ".");
     }
 
     public static OrderRuleException selfApproval() {
-        return new OrderRuleException("SELF_APPROVAL", "The approver must be another employee than the operator.");
+        return new OrderRuleException(OrderRule.SELF_APPROVAL, "The approver must be another employee than the operator.");
     }
 
     public static OrderRuleException notEmpty(UUID orderId) {
-        return new OrderRuleException("ORDER_NOT_EMPTY", "Order " + orderId + " still bills something.");
+        return new OrderRuleException(OrderRule.ORDER_NOT_EMPTY, "Order " + orderId + " still bills something.");
     }
 
     public static OrderRuleException hasNoTable(UUID orderId) {
-        return new OrderRuleException("ORDER_HAS_NO_TABLE", "Order " + orderId + " does not sit at a table.");
+        return new OrderRuleException(OrderRule.ORDER_HAS_NO_TABLE, "Order " + orderId + " does not sit at a table.");
     }
 
     public static OrderRuleException sameOrder(UUID orderId) {
-        return new OrderRuleException("SAME_ORDER", "Order " + orderId + " cannot transfer to itself.");
+        return new OrderRuleException(OrderRule.SAME_ORDER, "Order " + orderId + " cannot transfer to itself.");
+    }
+
+    public OrderRule rule() {
+        return rule;
     }
 }

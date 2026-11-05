@@ -27,6 +27,15 @@ public class OrdersApi {
         this.coordination = coordination;
     }
 
+    /**
+     * Only the order's store, for D42 (b): read it, authorize against it, and only then lock or load the order. Its
+     * store never changes, so it may be read before the lock.
+     */
+    @Transactional(readOnly = true)
+    public UUID storeOf(UUID orderId) {
+        return coordination.storeOf(orderId);
+    }
+
     /** The billable lines (net quantity {@code > 0}) and due of the order, in line creation order. */
     @Transactional(readOnly = true)
     public OrderBillingView billingView(UUID orderId) {
