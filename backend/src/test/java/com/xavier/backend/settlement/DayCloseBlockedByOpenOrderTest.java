@@ -6,10 +6,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.xavier.backend.fiscal.adapter.internal.InternalFiscalAdapter;
 import com.xavier.backend.settlement.SettlementFixtures.Sale;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalTime;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -61,29 +65,30 @@ class DayCloseBlockedByOpenOrderTest {
 
     @Test
     void aPendingFiscalDraftKeepsTheDayOpen() throws Exception {
-        Sale sale = fixtures.sale("2");
-        fixtures.payCash(sale, "25.00", "25.00").andExpect(status().isCreated());
-        Mockito.doThrow(new IllegalStateException("adapter offline")).when(fiscalAdapter).issue(any());
-        fixtures.issue(sale.cashier(), sale.order(), UUID.randomUUID().toString())
-                .andExpect(jsonPath("$.code").value("FISCAL_PENDING"));
-        fixtures.closeSession(sale, "25.00");
-
-        fixtures.closeDay(sale.cashier()).andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.code").value("FISCAL_PENDING"));
+        aPendingFiscalDraftKeepsTheDayOpen(fixtures.sale("2"));
     }
 
-    /** The store cutoff is 05:00 Africa/Maputo (03:00Z): the sale is on 4 November, the close attempt on the 5th. */
-    @Test
-    void aDayWorkedPastTheCutoffIsStillTheOneTheCashierCloses() throws Exception {
-        clock.moveTo(Instant.parse("2026-11-05T02:59:00Z"));
-        Sale sale = fixtures.sale("2");
+    /**
+     * The same, run next to the store's cutoff (05:00 Africa/Maputo = 03:00Z), and the day close comes 2 minutes
+     * later: from one minute before, the run crosses the cutoff (the day being closed belongs to 4 November while
+     * "today" is the 5th); from one minute after, it stays in the 5th.
+     */
+    @ParameterizedTest(name = "{0} minute(s) from the cutoff")
+    @ValueSource(longs = {-1, 1})
+    void aPendingFiscalDraftKeepsTheDayOpenNextToTheCutoff(long minutesFromCutoff) throws Exception {
+        clock.moveTo(Instant.parse("2026-11-05T03:00:00Z").plus(Duration.ofMinutes(minutesFromCutoff)));
+
+        aPendingFiscalDraftKeepsTheDayOpen(fixtures.sale("2", LocalTime.of(5, 0)));
+    }
+
+    private void aPendingFiscalDraftKeepsTheDayOpen(Sale sale) throws Exception {
         fixtures.payCash(sale, "25.00", "25.00").andExpect(status().isCreated());
         Mockito.doThrow(new IllegalStateException("adapter offline")).when(fiscalAdapter).issue(any());
         fixtures.issue(sale.cashier(), sale.order(), UUID.randomUUID().toString())
                 .andExpect(jsonPath("$.code").value("FISCAL_PENDING"));
         fixtures.closeSession(sale, "25.00");
+        clock.advance(Duration.ofMinutes(2));
 
-        clock.moveTo(Instant.parse("2026-11-05T03:01:00Z"));
         fixtures.closeDay(sale.cashier()).andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("FISCAL_PENDING"));
     }
