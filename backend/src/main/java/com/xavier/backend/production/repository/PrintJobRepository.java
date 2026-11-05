@@ -22,12 +22,13 @@ public interface PrintJobRepository extends JpaRepository<PrintJob, UUID>, JpaSp
      * retry blocks its printer, so tickets come out in order, and a printer with a job PROCESSING (a send in flight
      * on any worker sharing this database) is skipped, so it has one send at a time. A HOLD, IGNORE (a suppression,
      * never a failure: spec §8.6) or inactive printer keeps its jobs pending. The outer status check re-reads a row
-     * that a concurrent claim committed while this one waited, so a job is never claimed twice.
+     * that a concurrent claim committed while this one waited, so a job is never claimed twice; matching on the
+     * printer too drops a job that a REDIRECT moved meanwhile, whose new printer may already be sending.
      */
     @Query(value = """
             SELECT j.* FROM production.print_job j
-            WHERE j.id IN (
-                SELECT DISTINCT ON (d.printer_id) d.id
+            WHERE (j.id, j.printer_id) IN (
+                SELECT DISTINCT ON (d.printer_id) d.id, d.printer_id
                 FROM production.print_job d JOIN production.printer p ON p.id = d.printer_id
                 WHERE d.status IN ('QUEUED', 'RETRY_WAIT') AND p.mode NOT IN ('HOLD', 'IGNORE') AND p.active
                   AND NOT EXISTS (SELECT 1 FROM production.print_job x
