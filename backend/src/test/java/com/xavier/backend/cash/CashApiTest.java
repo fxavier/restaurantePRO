@@ -212,6 +212,17 @@ class CashApiTest {
                 .isInstanceOf(NotFoundException.class);
     }
 
+    @Test
+    void reportingReadsTheCashDayOfASessionAndTheDayOfABusinessDate() {
+        SessionView view = inTx(() -> cash.lockSession(session));
+        DayView day = cash.findDay(view.cashDayId()).orElseThrow();
+
+        assertThat(cash.sessionDay(session)).isEqualTo(new SessionDay(day.id(), day.businessDate(), "OPEN"));
+        assertThat(cash.findDay(store, day.businessDate())).contains(day);
+        assertThat(cash.findDay(store, day.businessDate().minusYears(20))).isEmpty();
+        assertThatThrownBy(() -> cash.sessionDay(UUID.randomUUID())).isInstanceOf(NotFoundException.class);
+    }
+
     private void close(UUID id) {
         inTx(() -> {
             long version = cash.lockSession(id).version();

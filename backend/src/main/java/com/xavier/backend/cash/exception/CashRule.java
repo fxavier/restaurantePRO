@@ -10,7 +10,10 @@ public enum CashRule {
     DAY_FINANCIALLY_CLOSED,
     /** A movement or receipt into a session that is not OPEN. */
     SESSION_NOT_OPEN,
-    /** A session of the register is still OPEN, so the register cannot be closed for the day. */
+    /**
+     * A session is still OPEN: the register cannot be closed for the day, and the session takes a normal movement,
+     * not an adjustment.
+     */
     SESSION_STILL_OPEN,
     /** The register had no session on that day: there is nothing to close. */
     NO_SESSIONS,
