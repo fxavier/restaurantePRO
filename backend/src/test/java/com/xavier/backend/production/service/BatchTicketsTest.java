@@ -22,7 +22,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * A4, production half (D50 §7.1): a confirmed round becomes one ticket per destination with a QUEUED job, holding
  * only that round's lines, and the batch becomes DISPATCHED. A redelivered event creates nothing more. Work with no
- * route is not printed and is counted (D56).
+ * route is not printed and is counted (D56). The BAR printer is on HOLD: full-application contexts cached in the same
+ * JVM run the print worker against this database, and a held job stays QUEUED, so its state is the listener's alone.
  */
 @ProductionModuleTest
 class BatchTicketsTest {
@@ -50,7 +51,7 @@ class BatchTicketsTest {
 
     @Test
     void aRoundBecomesOneTicketPerDestinationWithAQueuedJobAndIsDispatched() throws Exception {
-        UUID printer = fixtures.barPrinter(shop.store(), "127.0.0.1", 9);
+        UUID printer = heldBarPrinter();
 
         Round round = fixtures.confirmedRound(shop, employee, terminal, "2");
 
@@ -70,7 +71,7 @@ class BatchTicketsTest {
 
     @Test
     void aSecondRoundPrintsOnlyItsNewLines() throws Exception {
-        fixtures.barPrinter(shop.store(), "127.0.0.1", 9);
+        heldBarPrinter();
         Round first = fixtures.confirmedRound(shop, employee, terminal, "2");
 
         Round second = fixtures.nextRound(shop, first.order(), first.orderNumber(), first.orderVersion(), employee,
@@ -84,7 +85,7 @@ class BatchTicketsTest {
 
     @Test
     void aRedeliveredRoundCreatesNoSecondTicketOrJob() throws Exception {
-        fixtures.barPrinter(shop.store(), "127.0.0.1", 9);
+        heldBarPrinter();
         Round round = fixtures.confirmedRound(shop, employee, terminal, "1");
         await(() -> "DISPATCHED".equals(fixtures.batchStatus(round.batch())), "batch dispatched");
 
@@ -111,7 +112,7 @@ class BatchTicketsTest {
 
     @Test
     void linesWithoutDestinationAreLeftOut() throws Exception {
-        fixtures.barPrinter(shop.store(), "127.0.0.1", 9);
+        heldBarPrinter();
         Round round = fixtures.confirmedRound(shop, employee, terminal, "1");
         await(() -> "DISPATCHED".equals(fixtures.batchStatus(round.batch())), "batch dispatched");
         UUID otherBatch = round.batch();
@@ -122,6 +123,13 @@ class BatchTicketsTest {
                 new Line(UUID.randomUUID(), "W", "Água", null, java.math.BigDecimal.ONE, null, null)))));
 
         assertThat(fixtures.tickets(otherBatch)).extracting(t -> t.get("destination")).containsExactly("BAR");
+    }
+
+    /** Routed and on HOLD: no worker of any context takes its jobs. */
+    private UUID heldBarPrinter() throws Exception {
+        UUID printer = fixtures.barPrinter(shop.store(), "127.0.0.1", 9);
+        fixtures.mode(shop.store(), printer, "HOLD");
+        return printer;
     }
 
     private OrderBatchConfirmed event(Round round, List<Line> lines) {
