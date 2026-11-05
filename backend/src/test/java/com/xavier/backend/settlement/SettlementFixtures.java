@@ -157,6 +157,46 @@ public class SettlementFixtures {
         return json(settlement(who, order).andExpect(status().isOk())).get("orderVersion").asLong();
     }
 
+    public JsonNode session(Pos who, UUID session) throws Exception {
+        return json(mvc.perform(get(CashFixtures.SESSIONS + "/" + session).with(who.with(CASHIER)))
+                .andExpect(status().isOk()));
+    }
+
+    public ResultActions closeSession(Pos who, UUID session, long version, String counts) throws Exception {
+        return mvc.perform(idem(post(CashFixtures.SESSIONS + "/" + session + "/close")).with(who.with(CASHIER))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"version\": %d, \"counts\": [%s]}".formatted(version, counts)));
+    }
+
+    /** Closes the cashier's session counting {@code cash} in the drawer. */
+    public void closeSession(Sale sale, String cash) throws Exception {
+        long version = session(sale.cashier(), sale.session()).get("version").asLong();
+        closeSession(sale.cashier(), sale.session(), version,
+                "{\"methodCode\": \"CASH\", \"amount\": %s}".formatted(cash)).andExpect(status().isOk());
+    }
+
+    public JsonNode currentDay(Pos who) throws Exception {
+        return json(mvc.perform(get(CashFixtures.POS_DAYS + "/current").with(who.with(CASHIER)))
+                .andExpect(status().isOk()));
+    }
+
+    public ResultActions closeDay(Pos who) throws Exception {
+        return closeDayAs(who, currentDay(who));
+    }
+
+    public ResultActions closeDayAs(Pos who, JsonNode day) throws Exception {
+        return mvc.perform(idem(post(CashFixtures.POS_DAYS + "/" + day.get("id").asString() + "/operational-close"))
+                .with(who.with(CASHIER)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"version\": %d}".formatted(day.get("version").asLong())));
+    }
+
+    /** Pays the whole sale in cash and closes the order. */
+    public void payAndClose(Sale sale) throws Exception {
+        payCash(sale, "25.00", "25.00").andExpect(status().isCreated());
+        close(sale.cashier(), sale.order(), orderVersion(sale.cashier(), sale.order()), UUID.randomUUID().toString())
+                .andExpect(status().isOk());
+    }
+
     /** Creates an active payment method (BackOffice); returns its JSON view. */
     public JsonNode method(String code, String kind, String providerCode) throws Exception {
         String provider = providerCode == null ? "null" : "\"" + providerCode + "\"";
