@@ -120,6 +120,11 @@ public class CashCoordinationService {
     }
 
     @Transactional(readOnly = true)
+    public UUID storeOfDay(UUID dayId) {
+        return days.findStoreIdById(dayId).orElseThrow(() -> new CashNotFoundException(CashDayService.ENTITY, dayId));
+    }
+
+    @Transactional(readOnly = true)
     public Optional<DayView> findDay(UUID dayId) {
         return days.findById(dayId).map(CashDay::toView);
     }

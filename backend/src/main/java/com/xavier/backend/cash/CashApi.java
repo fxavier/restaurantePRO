@@ -72,7 +72,16 @@ public class CashApi {
         return coordination.lockDay(storeId, businessDate);
     }
 
-    /** The cash day, without a lock: for D42 (read the day's store before authorizing a command on it). */
+    /**
+     * Only the cash day's store, for D42 (b): read it, authorize against it, and only then lock or load the day; 404
+     * if the day does not exist. A day's store never changes.
+     */
+    @Transactional(readOnly = true)
+    public UUID storeOfDay(UUID dayId) {
+        return coordination.storeOfDay(dayId);
+    }
+
+    /** The cash day, without a lock. */
     @Transactional(readOnly = true)
     public Optional<DayView> findDay(UUID dayId) {
         return coordination.findDay(dayId);
