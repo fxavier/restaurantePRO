@@ -217,6 +217,25 @@ class PrintQueueTest {
         fixtures.runWorkerUntil(() -> "SENT".equals(fixtures.jobStatus(job)), "sent after hold");
     }
 
+    /** Spec §8.6: ignoring is a suppression, not a failure; jobs already waiting stay pending and visible. */
+    @Test
+    void pendingJobsOfAnIgnoredPrinterAreNeitherSentNorFailed() throws Exception {
+        UUID bar = fixtures.barPrinter(shop.store(), printer.host(), printer.port());
+        printer.down();
+        Round round = fixtures.confirmedRound(shop, employee, terminal, "1");
+        UUID job = awaitJob(round);
+        fixtures.runWorkerUntil(() -> "RETRY_WAIT".equals(fixtures.jobStatus(job)), "job waiting to retry");
+
+        fixtures.mode(shop.store(), bar, "IGNORE");
+        for (int run = 0; run < 3; run++) {
+            fixtures.dueNow(job);
+            worker.poll();
+            Thread.sleep(200);
+        }
+
+        assertThat(fixtures.job(job)).containsEntry("status", "RETRY_WAIT").containsEntry("attempts", 1);
+    }
+
     /** D56: REDIRECT moves undelivered jobs to the target, and new work goes there (fixed when the job is made). */
     @Test
     void redirectMovesPendingJobsAndSendsNewWorkToTheTarget() throws Exception {
