@@ -179,6 +179,30 @@ class TerminalAndVoidTicketsTest {
         assertThat(fixtures.jobsOfSource(voidId)).hasSize(1);
     }
 
+    /** A terminal mapped to a printer of another store is unrouted: the event completes, nothing is printed. */
+    @Test
+    void aTerminalMappedToAnotherStoresPrinterIsUnroutedAndTheEventCompletes() throws Exception {
+        UUID otherStore = fixtures.shop().store();
+        UUID order = UUID.randomUUID();
+        double unroutedBefore = meters.get(ProductionMetrics.UNROUTED).counter().count();
+
+        publish(new SubtotalRequested(order, otherStore, terminal, 79, null, List.of(), Money.of("0.00", MZN)));
+
+        await(() -> completed(order), "publication completed");
+        assertThat(fixtures.tickets(order)).isEmpty();
+        assertThat(meters.get(ProductionMetrics.UNROUTED).counter().count()).isGreaterThan(unroutedBefore);
+    }
+
+    @Autowired
+    io.micrometer.core.instrument.MeterRegistry meters;
+
+    private boolean completed(UUID source) {
+        return jdbc.sql("""
+                        SELECT count(*) FROM event_publication WHERE serialized_event LIKE :id
+                          AND listener_id LIKE '%ProductionListeners%' AND completion_date IS NOT NULL""")
+                .param("id", "%" + source + "%").query(Long.class).single() > 0;
+    }
+
     @Test
     void aTerminalWithoutPrinterGetsNoTicket() throws Exception {
         UUID order = UUID.randomUUID();

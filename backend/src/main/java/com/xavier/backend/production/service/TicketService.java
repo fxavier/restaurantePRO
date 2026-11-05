@@ -166,7 +166,9 @@ public class TicketService {
     }
 
     private void onTerminal(UUID storeId, UUID terminalId, TicketDraft draft) {
-        Optional<Printer> printer = routing.printerForTerminal(terminalId);
+        // a terminal mapped in another store must not poison the event: the ticket's printer FK needs this store
+        Optional<Printer> printer = routing.printerForTerminal(terminalId)
+                .filter(candidate -> candidate.getStoreId().equals(storeId));
         if (printer.isEmpty()) {
             metrics.unrouted(storeId, draft.sourceType(), draft.sourceId(), "terminal " + terminalId);
             return;
