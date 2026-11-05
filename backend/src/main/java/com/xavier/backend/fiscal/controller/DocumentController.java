@@ -15,7 +15,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** BackOffice document reads ({@code FISCAL_DOCUMENT_VIEW} in the document's store). */
+/**
+ * BackOffice document reads ({@code FISCAL_DOCUMENT_VIEW} in the document's store). The list filters by time window,
+ * order ({@code orderId}: every document of it, whatever its source) and customer ({@code customerId}).
+ */
 @RestController
 @RequestMapping("/api/v1/backoffice/fiscal/documents")
 class DocumentController {
@@ -29,9 +32,11 @@ class DocumentController {
     @GetMapping
     PageResponse<DocumentSummary> list(@RequestParam UUID storeId, @RequestParam(required = false) Instant from,
                                        @RequestParam(required = false) Instant to,
+                                       @RequestParam(required = false) UUID orderId,
+                                       @RequestParam(required = false) UUID customerId,
                                        @PageableDefault(sort = "issuedAt", direction = Sort.Direction.DESC)
                                        Pageable pageable) {
-        return documents.list(storeId, from, to, pageable);
+        return documents.list(storeId, from, to, orderId, customerId, pageable);
     }
 
     @GetMapping("/{id}")

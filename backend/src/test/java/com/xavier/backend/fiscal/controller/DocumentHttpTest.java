@@ -4,6 +4,8 @@ import static com.xavier.backend.fiscal.FiscalActors.admin;
 import static com.xavier.backend.fiscal.FiscalActors.inStore;
 import static com.xavier.backend.fiscal.FiscalActors.pos;
 import static com.xavier.backend.fiscal.FiscalFixtures.asEmployee;
+import static com.xavier.backend.fiscal.FiscalFixtures.draft;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -13,10 +15,13 @@ import com.xavier.backend.fiscal.FiscalApi;
 import com.xavier.backend.fiscal.FiscalFixtures;
 import com.xavier.backend.fiscal.FiscalModuleTest;
 import com.xavier.backend.fiscal.model.dto.DocumentView;
+import com.xavier.backend.fiscal.model.dto.SourceType;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @FiscalModuleTest
 class DocumentHttpTest {
@@ -32,6 +37,9 @@ class DocumentHttpTest {
 
     @Autowired
     FiscalApi fiscal;
+
+    @Autowired
+    TransactionTemplate tx;
 
     @Test
     void aStoreViewerListsTheIssuedDocumentsOfItsStoreInATimeWindow() throws Exception {
@@ -55,6 +63,31 @@ class DocumentHttpTest {
                         .with(inStore(store, Permission.FISCAL_DOCUMENT_VIEW)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content.length()").value(0));
+    }
+
+    @Test
+    void theListFiltersByOrderAndByCustomer() throws Exception {
+        UUID store = fixtures.newStore();
+        fixtures.newSeries(store, "A", 1);
+        UUID order = UUID.randomUUID();
+        UUID customer = UUID.randomUUID();
+        UUID otherOrder = UUID.randomUUID();
+        String partitionOnAccount = issue(store, tx.execute(s -> fiscal.createDraft(draft(store,
+                SourceType.PARTITION, UUID.randomUUID(), order, null, customer, true))).id()).id().toString();
+        String residual = issue(store, tx.execute(s -> fiscal.createDraft(draft(store, SourceType.ORDER, order,
+                null, null, null, false))).id()).id().toString();
+        String otherOnAccount = issue(store, tx.execute(s -> fiscal.createDraft(draft(store, SourceType.ORDER,
+                otherOrder, otherOrder, null, customer, true))).id()).id().toString();
+
+        mvc.perform(list(store).param("orderId", order.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[*].id", containsInAnyOrder(partitionOnAccount, residual)));
+        mvc.perform(list(store).param("customerId", customer.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[*].id", containsInAnyOrder(partitionOnAccount, otherOnAccount)));
+        mvc.perform(list(store).param("orderId", order.toString()).param("customerId", customer.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[*].id", containsInAnyOrder(partitionOnAccount)));
     }
 
     @Test
@@ -122,6 +155,10 @@ class DocumentHttpTest {
         mvc.perform(get(POS_DOCUMENTS + "/" + draft)
                         .with(pos(store, UUID.randomUUID(), UUID.randomUUID(), Permission.ORDER_EDIT)))
                 .andExpect(status().isForbidden());
+    }
+
+    private static MockHttpServletRequestBuilder list(UUID store) {
+        return get(DOCUMENTS).param("storeId", store.toString()).with(inStore(store, Permission.FISCAL_DOCUMENT_VIEW));
     }
 
     private DocumentView issue(UUID store, UUID draft) {

@@ -61,8 +61,16 @@ public interface FiscalDocumentRepository extends JpaRepository<FiscalDocument, 
 
     Optional<FiscalDocument> findBySeriesIdAndNumber(UUID seriesId, Long number);
 
-    Page<FiscalDocument> findByStoreIdAndStatusAndIssuedAtGreaterThanEqualAndIssuedAtLessThan(
-            UUID storeId, DocumentStatus status, Instant from, Instant to, Pageable pageable);
+    /** ISSUED documents of a store in {@code [from, to)}; a {@code null} order or customer does not filter. */
+    @Query("""
+            select d from FiscalDocument d
+            where d.storeId = :storeId and d.status = com.xavier.backend.fiscal.model.DocumentStatus.ISSUED
+              and d.issuedAt >= :from and d.issuedAt < :to
+              and (:orderId is null or d.orderRef = :orderId)
+              and (:customerId is null or d.customerId = :customerId)""")
+    Page<FiscalDocument> findIssued(@Param("storeId") UUID storeId, @Param("from") Instant from,
+                                    @Param("to") Instant to, @Param("orderId") UUID orderId,
+                                    @Param("customerId") UUID customerId, Pageable pageable);
 
     /** Only the store, for the D42 check order: 404 if absent, then authorize, then load. */
     @Query("select d.storeId from FiscalDocument d where d.id = :id")
