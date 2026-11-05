@@ -81,5 +81,9 @@ public enum SettlementRule {
      * R3 (D81 (3)): an UNKNOWN attempt is reclassified as FAILED only once it is older than
      * {@code restaurantpro.settlement.reclassify-failed-min-age} and the provider was asked about it since.
      */
-    RECLASSIFY_TOO_EARLY
+    RECLASSIFY_TOO_EARLY,
+    /** R3 (D77): more than what is left of the payment once its earlier refunds are taken out. */
+    REFUND_EXCEEDS_REFUNDABLE,
+    /** R3 (D77): a refund to a method other than cash needs the terminal's or provider's refund reference. */
+    EXTERNAL_REFERENCE_REQUIRED
 }

@@ -176,7 +176,11 @@ class CodedErrorContractTest {
             Map.entry("partition-in-doubt", () -> SettlementConflictException.inDoubt("partition", ID, OTHER)),
             // R3 settlement (S30): payments in doubt, refunds
             Map.entry("reclassify-too-early", () -> SettlementRuleException.reclassifyTooEarly(ID,
-                    Duration.ofMinutes(15), 0)));
+                    Duration.ofMinutes(15), 0)),
+            Map.entry("refund-exceeds-refundable", () -> SettlementRuleException.refundExceedsRefundable(ID,
+                    Money.of("5.01", MZN), Money.of("5.00", MZN))),
+            Map.entry("external-reference-required", () -> SettlementRuleException.externalReferenceRequired("CARD")),
+            Map.entry("refund-self-approval", SettlementRuleException::refundSelfApproval));
 
     @Autowired
     MockMvc mvc;
@@ -382,6 +386,11 @@ class CodedErrorContractTest {
         expect("reclassify-too-early", 422, "RECLASSIFY_TOO_EARLY", "Payment attempt " + ID
                 + " may be reclassified as FAILED only once it is older than PT15M and the provider was asked about "
                 + "it since it became UNKNOWN.", ",\"pollCount\":0");
+        expect("refund-exceeds-refundable", 422, "REFUND_EXCEEDS_REFUNDABLE", "The refund 5.01 is more than the "
+                + "5.00 still refundable of payment " + ID + ".", ",\"refundable\":5.00");
+        expect("external-reference-required", 422, "EXTERNAL_REFERENCE_REQUIRED", "A refund to CARD is made on the "
+                + "terminal or the provider's portal first: give its reference.", "");
+        expect("refund-self-approval", 422, "SELF_APPROVAL", "The approver of a refund cannot be the refunder.", "");
     }
 
     @Test

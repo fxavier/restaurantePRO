@@ -127,6 +127,24 @@ public class SettlementRuleException extends BusinessRuleException {
                 + " and the provider was asked about it since it became UNKNOWN.", Map.of("pollCount", pollCount));
     }
 
+    // ---- R3 (D77): refunds ----
+
+    public static SettlementRuleException refundExceedsRefundable(UUID paymentId, Money amount, Money refundable) {
+        return new SettlementRuleException(SettlementRule.REFUND_EXCEEDS_REFUNDABLE, "The refund " + amount.amount()
+                + " is more than the " + refundable.amount() + " still refundable of payment " + paymentId + ".",
+                Map.of("refundable", refundable.amount()));
+    }
+
+    public static SettlementRuleException externalReferenceRequired(String methodCode) {
+        return new SettlementRuleException(SettlementRule.EXTERNAL_REFERENCE_REQUIRED, "A refund to " + methodCode
+                + " is made on the terminal or the provider's portal first: give its reference.");
+    }
+
+    public static SettlementRuleException refundSelfApproval() {
+        return new SettlementRuleException(SettlementRule.SELF_APPROVAL,
+                "The approver of a refund cannot be the refunder.");
+    }
+
     private static String plain(BigDecimal quantity) {
         return quantity.stripTrailingZeros().toPlainString();
     }

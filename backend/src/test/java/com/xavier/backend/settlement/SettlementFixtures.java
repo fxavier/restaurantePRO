@@ -45,7 +45,7 @@ public class SettlementFixtures {
     public static final String METHODS = "/api/v1/backoffice/payment-methods";
     static final Permission[] CASHIER = {Permission.PAYMENT_COLLECT, Permission.ORDER_VIEW, Permission.ORDER_EDIT,
             Permission.CASH_OPERATE, Permission.CASH_VIEW, Permission.PAYMENT_RESOLVE, Permission.CASH_DAY_CLOSE,
-            Permission.BILL_SPLIT, Permission.ORDER_VOID, Permission.CREDIT_SALE};
+            Permission.BILL_SPLIT, Permission.ORDER_VOID, Permission.CREDIT_SALE, Permission.PAYMENT_REFUND};
     public static final String PARTITIONS = "/api/v1/pos/partitions";
 
     /** An order of {@code shop} at its table, sold by {@code cashier}, who has an OPEN {@code session}. */
@@ -296,6 +296,27 @@ public class SettlementFixtures {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(("{\"orderVersion\": %d, \"lineId\": \"%s\", \"quantity\": %s, \"reason\": \"dropped\", "
                         + "\"wasted\": true}").formatted(orderVersion, line, quantity)));
+    }
+
+    // ---- R3: refunds (D77) ----
+
+    public static final String PAYMENTS = "/api/v1/pos/payments";
+
+    /**
+     * {@code POST /payments/{id}/refunds} with an approver in the headers (the verifier is a mock in the settlement
+     * context); {@code externalReference} may be null.
+     */
+    public ResultActions refund(Pos who, UUID payment, String amount, String externalReference, String key)
+            throws Exception {
+        String reference = externalReference == null ? "" : ", \"externalReference\": \"" + externalReference + "\"";
+        return mvc.perform(idem(post(PAYMENTS + "/" + payment + "/refunds"), key).with(who.with(CASHIER))
+                .header("X-Approver-Code", "MGR").header("X-Approver-Pin", "1234")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"amount\": %s, \"reason\": \"returned\"%s}".formatted(amount, reference)));
+    }
+
+    public ResultActions refund(Pos who, UUID payment, String amount) throws Exception {
+        return refund(who, payment, amount, null, UUID.randomUUID().toString());
     }
 
     // ---- R3: credit sales and debt payments (D74, D75) ----
