@@ -10,14 +10,18 @@
 #                  than the oldest kept one, both in <dir>/wal and in the pg-wal-archive volume.
 #   --wal-only     only the WAL sync: copies each archived file not yet in <dir>/wal there
 #                  (one <segment>[.age] file each). Run it every 5 minutes, then copy <dir> off the box.
-#                  Skips (exit 0) while another run holds the lock: that run syncs the WAL too.
-#   --new-cluster  after the database volume was recreated (a new cluster, whose WAL names start again
-#                  from the beginning): moves the old cluster's files aside, in the volume to
-#                  /wal-archive/old-<old system id>-<timestamp>/ and in <dir> to <dir>/old-<...>/, then
-#                  runs as default. Without it, any run refuses an archive or <dir> of another cluster.
+#   --new-cluster  start a new archive chain for the running cluster: the first run of a new installation,
+#                  and after the database volume was recreated (a new cluster, whose WAL names start again).
+#                  Moves aside whatever is not this cluster's healthy archive (another cluster's marker, files
+#                  without a marker, or an archive PostgreSQL is failing to write into): in the volume to
+#                  /wal-archive/old-<old system id|unmarked>-<timestamp>/, in <dir> to <dir>/old-<...>/; then
+#                  runs as default. Refuses only when both markers name the running cluster and archiving works.
 # The archive and <dir> each hold a SYSTEM_IDENTIFIER file naming the cluster they belong to (the
-# system_identifier of pg_control_system()); a run against a different cluster stops with an error
-# and touches nothing. A run also fails, after doing its work, while PostgreSQL's archiving is failing.
+# system_identifier of pg_control_system()). A default run refuses, touching nothing, an archive or <dir>
+# of another cluster, or one that holds files but no marker; it writes the marker only into an empty one.
+# A run also fails, after doing its work, while PostgreSQL's archiving is failing.
+# Lock: one run per <dir>. --wal-only skips (exit 0) while another run holds it, but fails once the lock
+# is older than an hour; a base backup waits up to an hour.
 #
 # Usage: deploy/basebackup.sh [--wal-only | --new-cluster] [--dir DIR] [--keep N] [--container NAME]
 #                             [--age-recipient RECIPIENT]
@@ -70,20 +74,36 @@ in_archive() { docker exec "$container" sh -c 'cd "$0" && exec "$@"' "$ARCHIVE_I
 [[ "$(sql 'SHOW archive_mode')" == on ]] || die "archive_mode is not on in $container: WAL archiving is not configured (compose.yaml)"
 
 mkdir -p "$dir"
-# One run at a time per <dir>: a lock directory holding the owner's pid (mkdir is atomic; no flock on macOS).
+# One run at a time per <dir>: a lock directory (mkdir is atomic; no flock on macOS) whose "owner" file
+# holds the owner's pid and that process's start time, so a reused pid is not mistaken for the owner.
 lock="$dir/.lock"
 locked=false
+proc_start() { ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//; s/ *$//'; } # empty when the pid is gone
+lock_owner() { cat "$1/owner" 2>/dev/null | paste -sd '|' -; }             # "pid|start time"
+lock_is_stale() { # $1 lock dir; a lock without an owner file is stale once it is a minute old
+  local owner pid
+  owner="$(lock_owner "$1")"
+  if [[ -z "$owner" ]]; then [[ -n "$(find "$1" -maxdepth 0 -mmin +1 2>/dev/null)" ]]; return; fi
+  pid="${owner%%|*}"
+  [[ "$(proc_start "$pid")" != "${owner#*|}" ]]
+}
 take_lock() {
-  if mkdir "$lock" 2>/dev/null; then echo $$ >"$lock/pid"; locked=true; return 0; fi
-  local owner
-  owner="$(cat "$lock/pid" 2>/dev/null || true)"
-  if [[ -n "$owner" ]] && ! kill -0 "$owner" 2>/dev/null; then
-    log "removing the stale lock of pid $owner"
-    rm -rf "$lock"
-    take_lock
-    return
+  if mkdir "$lock" 2>/dev/null; then
+    printf '%s\n%s\n' $$ "$(proc_start $$)" >"$lock/owner"
+    locked=true
+    return 0
   fi
-  return 1
+  lock_is_stale "$lock" || return 1
+  # Move it aside first: of two runs clearing the same stale lock, only one mv succeeds.
+  local aside="$lock.stale.$$"
+  mv "$lock" "$aside" 2>/dev/null || return 1
+  if ! lock_is_stale "$aside"; then # another run had already replaced it with a live lock: put it back
+    [[ ! -e "$lock" ]] && mv "$aside" "$lock" && return 1
+    die "moved a live lock aside to $aside and cannot put it back; check the running basebackup.sh"
+  fi
+  log "removed the stale lock of $(lock_owner "$aside" | tr '|' ' ')"
+  rm -rf "$aside"
+  take_lock
 }
 work=""
 remote="" # base backup directory inside the container, while it exists
@@ -94,11 +114,17 @@ cleanup() {
 }
 trap cleanup EXIT
 if [[ "$mode" == wal-only ]]; then
-  take_lock || { log "another run holds $lock (pid $(cat "$lock/pid" 2>/dev/null)); skipping, it syncs the WAL too"; exit 0; }
+  if ! take_lock; then
+    # Skipping is right while a base backup runs; a lock held longer than any run should take is not.
+    [[ -z "$(find "$lock" -maxdepth 0 -mmin +$((LOCK_WAIT / 60)) 2>/dev/null)" ]] \
+      || die "$lock is held for more than ${LOCK_WAIT}s by $(lock_owner "$lock" | tr '|' ' '): is that run stuck?"
+    log "another run holds $lock ($(lock_owner "$lock" | tr '|' ' ')); skipping, it syncs the WAL too"
+    exit 0
+  fi
 else
   waited=0
   until take_lock; do
-    ((waited < LOCK_WAIT)) || die "another run still holds $lock after ${LOCK_WAIT}s (pid $(cat "$lock/pid" 2>/dev/null))"
+    ((waited < LOCK_WAIT)) || die "another run still holds $lock after ${LOCK_WAIT}s ($(lock_owner "$lock" | tr '|' ' '))"
     sleep 5
     waited=$((waited + 5))
   done
@@ -109,41 +135,65 @@ sysid="$(sql 'SELECT system_identifier FROM pg_control_system()')"
 [[ "$sysid" =~ ^[0-9]+$ ]] || die "cannot read the system identifier of $container"
 archive_owner="$(in_archive cat "$MARKER" 2>/dev/null || true)"
 dir_owner="$(cat "$dir/$MARKER" 2>/dev/null || true)"
+archive_has_files() { [[ -n "$(in_archive ls -1 | grep -E "$WAL_NAME|\.tmp$" || true)" ]]; }
+dir_has_files() { [[ -n "$(find "$dir/base" "$dir/wal" -type f 2>/dev/null | head -1)" ]]; }
+archive_failing() {
+  sql "SELECT last_failed_wal FROM pg_stat_archiver WHERE last_failed_time > coalesce(last_archived_time, '-infinity'::timestamptz)"
+}
 
 if [[ "$mode" == new-cluster ]]; then
-  [[ "$archive_owner" != "$sysid" || "$dir_owner" != "$sysid" ]] \
-    || die "the archive and $dir already belong to the running cluster $sysid: nothing to move aside"
-  stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-  if [[ -n "$archive_owner" && "$archive_owner" != "$sysid" ]]; then
-    aside="old-$archive_owner-$stamp"
-    # shellcheck disable=SC2016 # expanded by the container shell
-    in_archive sh -c 'mkdir "$0" && for f in *; do [ -f "$f" ] && mv -- "$f" "$0/"; done; true' "$aside"
-    log "moved the WAL of cluster $archive_owner aside to $ARCHIVE_IN_CONTAINER/$aside (delete it once you no longer need it)"
+  # Moves aside whatever is not provably this cluster's healthy archive; refuses only when it is.
+  failing="$(archive_failing)"
+  if [[ "$archive_owner" == "$sysid" && "$dir_owner" == "$sysid" && -z "$failing" ]]; then
+    die "the archive and $dir already belong to the running cluster $sysid and archiving works: nothing to move aside"
   fi
-  if [[ -n "$dir_owner" && "$dir_owner" != "$sysid" ]]; then
-    aside="$dir/old-$dir_owner-$stamp"
+  move_archive=false
+  move_dir=false
+  if [[ -n "$failing" ]]; then move_archive=true; move_dir=true; fi
+  if [[ "$archive_owner" != "$sysid" ]] && { [[ -n "$archive_owner" ]] || archive_has_files; }; then move_archive=true; fi
+  if [[ "$dir_owner" != "$sysid" ]] && { [[ -n "$dir_owner" ]] || dir_has_files; }; then move_dir=true; fi
+  stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  if $move_archive; then
+    aside="old-${archive_owner:-unmarked}-$stamp"
+    # shellcheck disable=SC2016 # expanded by the container shell
+    in_archive sh -ec 'mkdir "$0"; for f in *; do if [ -f "$f" ]; then mv -- "$f" "$0/"; fi; done' "$aside" \
+      || die "could not move the old WAL aside to $ARCHIVE_IN_CONTAINER/$aside; nothing else was changed"
+    log "moved the old WAL (cluster ${archive_owner:-unmarked}) aside to $ARCHIVE_IN_CONTAINER/$aside (delete it once you no longer need it)"
+  fi
+  if $move_dir; then
+    aside="$dir/old-${dir_owner:-unmarked}-$stamp"
     mkdir "$aside"
     for f in base wal "$MARKER"; do if [[ -e "$dir/$f" ]]; then mv "$dir/$f" "$aside/"; fi; done
-    log "moved the backups of cluster $dir_owner aside to $aside (they still restore to times before the change)"
+    log "moved the old backups (cluster ${dir_owner:-unmarked}) aside to $aside (they still restore to times before the change)"
   fi
-  archive_owner=""
-  dir_owner=""
+  # Whatever is left now belongs to this cluster: only its own WAL can have arrived since the move.
+  adopt=true
   moved_aside=true
   mode=base
+else
+  adopt=false
 fi
 other_cluster() { # $1 owner, $2 what
   die "$2 belongs to database cluster $1, but $container runs cluster $sysid (was the database volume recreated?).
   Nothing was changed. If this is the new cluster to keep, run: ./basebackup.sh --new-cluster
   (deploy/README.md, \"New database cluster\")."
 }
-[[ -z "$archive_owner" || "$archive_owner" == "$sysid" ]] || other_cluster "$archive_owner" "the pg-wal-archive volume"
-[[ -z "$dir_owner" || "$dir_owner" == "$sysid" ]] || other_cluster "$dir_owner" "$dir"
-if [[ -z "$archive_owner" ]]; then
+unmarked() { # $1 what
+  die "unmarked archive: $1 holds files but no $MARKER, so it cannot be told apart from another cluster's.
+  Nothing was changed. Run: ./basebackup.sh --new-cluster (deploy/README.md, \"New database cluster\")."
+}
+if ! $adopt; then
+  [[ -z "$archive_owner" || "$archive_owner" == "$sysid" ]] || other_cluster "$archive_owner" "the pg-wal-archive volume"
+  [[ -z "$dir_owner" || "$dir_owner" == "$sysid" ]] || other_cluster "$dir_owner" "$dir"
+  if [[ -z "$archive_owner" ]] && archive_has_files; then unmarked "the pg-wal-archive volume"; fi
+  if [[ -z "$dir_owner" ]] && dir_has_files; then unmarked "$dir"; fi
+fi
+if [[ "$(in_archive cat "$MARKER" 2>/dev/null || true)" != "$sysid" ]]; then
   # shellcheck disable=SC2016 # expanded by the container shell
-  in_archive sh -c 'echo "$0" >SYSTEM_IDENTIFIER.tmp && sync SYSTEM_IDENTIFIER.tmp && mv SYSTEM_IDENTIFIER.tmp SYSTEM_IDENTIFIER && sync .' "$sysid"
+  in_archive sh -ec 'echo "$0" >SYSTEM_IDENTIFIER.tmp; sync SYSTEM_IDENTIFIER.tmp; mv SYSTEM_IDENTIFIER.tmp SYSTEM_IDENTIFIER; sync .' "$sysid"
   log "the pg-wal-archive volume now belongs to cluster $sysid"
 fi
-if [[ -z "$dir_owner" ]]; then
+if [[ "$(cat "$dir/$MARKER" 2>/dev/null || true)" != "$sysid" ]]; then
   echo "$sysid" >"$dir/$MARKER"
   log "$dir now belongs to cluster $sysid"
 fi
@@ -234,9 +284,6 @@ fi
 
 [[ -z "$base_archive" ]] || echo "$base_archive"
 
-archive_failing() {
-  sql "SELECT last_failed_wal FROM pg_stat_archiver WHERE last_failed_time > coalesce(last_archived_time, '-infinity'::timestamptz)"
-}
 failing="$(archive_failing)"
 if [[ -n "$failing" ]] && $moved_aside; then
   # PostgreSQL retries a failed segment about once a minute; the move above removed the name clash.
