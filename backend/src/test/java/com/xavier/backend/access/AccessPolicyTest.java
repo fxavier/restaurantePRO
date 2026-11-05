@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -229,6 +230,36 @@ class AccessPolicyTest {
                 .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
         assertThatThrownBy(() -> accessPolicy.require(Permission.CATALOG_VIEW, uuid(STORE_A)))
                 .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
+    }
+
+    @Test
+    @WithActor(permissions = Permission.DINING_VIEW)
+    void currentIfPresentIsTheAuthenticatedActor() {
+        assertThat(accessPolicy.currentIfPresent()).contains(accessPolicy.current());
+    }
+
+    @Test
+    void currentIfPresentIsEmptyWithoutAnAuthenticatedActor() {
+        assertThat(accessPolicy.currentIfPresent()).isEmpty();
+
+        SecurityContextHolder.getContext().setAuthentication(new AnonymousAuthenticationToken("key", "anonymous",
+                List.of(new SimpleGrantedAuthority("ROLE_ANONYMOUS"))));
+        try {
+            assertThat(accessPolicy.currentIfPresent()).isEmpty();
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
+    }
+
+    @Test
+    void currentIfPresentIsEmptyForAPrincipalThatIsNotAnActor() {
+        SecurityContextHolder.getContext().setAuthentication(
+                UsernamePasswordAuthenticationToken.authenticated("someone", null, List.of()));
+        try {
+            assertThat(accessPolicy.currentIfPresent()).isEmpty();
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
     }
 
     @Test

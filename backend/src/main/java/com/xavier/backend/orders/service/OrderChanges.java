@@ -1,14 +1,12 @@
 package com.xavier.backend.orders.service;
 
-import com.xavier.backend.access.Actor;
+import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.orders.model.Order;
 import com.xavier.backend.shared.notify.ChangeNotifier;
 import com.xavier.backend.shared.notify.ChangeTopic;
 import java.util.Map;
 import java.util.UUID;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
 /**
@@ -21,10 +19,12 @@ public class OrderChanges {
 
     static final String ENTITY = "Order";
 
+    private final AccessPolicy accessPolicy;
     private final AuditLog auditLog;
     private final ChangeNotifier changeNotifier;
 
-    OrderChanges(AuditLog auditLog, ChangeNotifier changeNotifier) {
+    OrderChanges(AccessPolicy accessPolicy, AuditLog auditLog, ChangeNotifier changeNotifier) {
+        this.accessPolicy = accessPolicy;
         this.auditLog = auditLog;
         this.changeNotifier = changeNotifier;
     }
@@ -35,7 +35,7 @@ public class OrderChanges {
 
     public void record(String action, String entityType, UUID entityId, UUID storeId, UUID orderId,
                        Map<String, Object> details) {
-        if (inSession()) {
+        if (accessPolicy.currentIfPresent().isPresent()) {
             auditLog.recordAsCurrentActor(action, entityType, entityId.toString(), storeId, null, null, details);
         } else {
             auditLog.recordAsSystem(action, entityType, entityId.toString(), storeId, null, null, details);
@@ -57,11 +57,5 @@ public class OrderChanges {
         auditLog.recordAsCurrentActor(action, entityType, entityId.toString(), order.getStoreId(), approverId, reason,
                 details);
         changeNotifier.notifyAfterCommit(order.getStoreId(), ChangeTopic.ORDER, order.getId());
-    }
-
-    private static boolean inSession() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        return authentication != null && authentication.isAuthenticated()
-                && authentication.getPrincipal() instanceof Actor;
     }
 }
