@@ -58,7 +58,7 @@ class RoleHttpTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[?(@.name == 'Empregado de sala')].permissions[*]",
                         containsInAnyOrder("DINING_VIEW", "CATALOG_VIEW", "ORDER_VIEW", "ORDER_EDIT", "ORDER_VOID",
-                                "ORDER_TRANSFER"))); // R1 + D62 defaults
+                                "ORDER_TRANSFER", "BILL_SPLIT"))); // R1 + D62 + D92 defaults
     }
 
     @Test
