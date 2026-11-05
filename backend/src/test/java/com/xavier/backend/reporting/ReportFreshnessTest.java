@@ -3,6 +3,8 @@ package com.xavier.backend.reporting;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doCallRealMethod;
+import static org.mockito.Mockito.doThrow;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.xavier.backend.cash.CashFixtures;
@@ -81,6 +83,62 @@ class ReportFreshnessTest {
         assertThat(closed.get("asOf").isNull()).isFalse();
         assertThat(reporting.report("receipts", sale.store(), day, day.plusDays(1), "groupBy", "method")
                 .get("final").asBoolean()).as("a date without a closed cash day").isFalse();
+    }
+
+    @Test
+    void aRunningRebuildMakesTheRangeNotFinal() throws Exception {
+        Sale sale = aFinalDay();
+        LocalDate day = reporting.businessDayOf(sale.order());
+        CountDownLatch held = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        doAnswer(call -> {
+            held.countDown();
+            release.await(30, TimeUnit.SECONDS);
+            return call.callRealMethod();
+        }).when(projections).clear(any(), any(), any());
+        try {
+            reporting.rebuild(sale.store(), day, day, UUID.randomUUID().toString()).andExpect(status().isAccepted());
+            assertThat(held.await(20, TimeUnit.SECONDS)).as("the rebuild started").isTrue();
+
+            assertThat(isFinal(sale, day)).as("while the rebuild runs").isFalse();
+        } finally {
+            release.countDown();
+        }
+        assertThat(reporting.awaitRebuildFinished(sale.store()).get("status").asString()).isEqualTo("COMPLETED");
+        assertThat(isFinal(sale, day)).as("after it completed").isTrue();
+    }
+
+    @Test
+    void aRebuildThatFailedPartwayKeepsTheRangeNotFinalUntilARebuildSucceeds() throws Exception {
+        Sale sale = aFinalDay();
+        LocalDate day = reporting.businessDayOf(sale.order());
+        doThrow(new IllegalStateException("payment facts unavailable")).when(projections).projectPayment(any());
+        reporting.rebuild(sale.store(), day, day, UUID.randomUUID().toString()).andExpect(status().isAccepted());
+        assertThat(reporting.awaitRebuildFinished(sale.store()).get("status").asString()).isEqualTo("FAILED");
+
+        assertThat(isFinal(sale, day)).as("after the failed rebuild").isFalse();
+
+        doCallRealMethod().when(projections).projectPayment(any());
+        reporting.rebuild(sale.store(), day, day, UUID.randomUUID().toString()).andExpect(status().isAccepted());
+        assertThat(reporting.awaitRebuildFinished(sale.store()).get("status").asString()).isEqualTo("COMPLETED");
+        assertThat(isFinal(sale, day)).as("after a successful rebuild").isTrue();
+    }
+
+    /** A sale paid, projected and closed, its day FINANCIALLY_CLOSED: the receipts report of the day is final. */
+    private Sale aFinalDay() throws Exception {
+        Sale sale = sales.sale("2");
+        LocalDate day = reporting.businessDayOf(sale.order());
+        sales.payCash(sale, "25.00", "25.00").andExpect(status().isCreated());
+        reporting.payments(sale.order()).forEach(reporting::awaitPaymentRecord);
+        closeTheDayFinancially(sale);
+        reporting.awaitSalesRecord(reporting.issuedDocument(sale.order()));
+        ReportingFixtures.await("no pending facts", () -> pendingFacts(sale, day) == 0);
+        assertThat(isFinal(sale, day)).as("the closed day").isTrue();
+        return sale;
+    }
+
+    private boolean isFinal(Sale sale, LocalDate day) throws Exception {
+        return reporting.report("receipts", sale.store(), day, day, "groupBy", "method").get("final").asBoolean();
     }
 
     private void closeTheDayFinancially(Sale sale) throws Exception {

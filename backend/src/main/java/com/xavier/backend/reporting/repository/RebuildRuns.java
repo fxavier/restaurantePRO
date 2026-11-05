@@ -53,6 +53,25 @@ public class RebuildRuns {
                 .params(error, Timestamp.from(at)).update();
     }
 
+    /**
+     * Whether the store's projections in {@code [from, to]} are as complete as the live ones: no rebuild overlapping
+     * the range is RUNNING, and every FAILED one (it deleted rows it never put back) was followed by a COMPLETED
+     * rebuild covering its part of the range.
+     */
+    public boolean rangeIntact(UUID storeId, LocalDate from, LocalDate to) {
+        return jdbc.sql("""
+                        SELECT NOT EXISTS (
+                            SELECT 1 FROM reporting.rebuild_run r
+                            WHERE r.store_id = :store AND r.from_date <= :to AND r.to_date >= :from
+                              AND (r.status = 'RUNNING' OR (r.status = 'FAILED' AND NOT EXISTS (
+                                  SELECT 1 FROM reporting.rebuild_run c
+                                  WHERE c.store_id = r.store_id AND c.status = 'COMPLETED'
+                                    AND c.started_at > r.started_at
+                                    AND c.from_date <= greatest(r.from_date, :from)
+                                    AND c.to_date >= least(r.to_date, :to)))))""")
+                .param("store", storeId).param("from", from).param("to", to).query(Boolean.class).single();
+    }
+
     public Optional<RebuildView> find(UUID id) {
         return jdbc.sql("SELECT * FROM reporting.rebuild_run WHERE id = ?").param(id).query(RebuildRuns::view)
                 .optional();
