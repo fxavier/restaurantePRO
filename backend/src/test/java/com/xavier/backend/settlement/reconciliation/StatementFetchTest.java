@@ -23,7 +23,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Import;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
@@ -34,7 +34,6 @@ import org.springframework.test.web.servlet.ResultActions;
  * and the lines are imported as a CSV would be (source PROVIDER). Fetching the same statement again returns its batch.
  */
 @SettlementModuleTest
-@Import(FakeStatementProvider.Config.class)
 class StatementFetchTest {
 
     @Autowired
@@ -47,6 +46,8 @@ class StatementFetchTest {
     JdbcClient jdbc;
 
     @Autowired
+    ConfigurableApplicationContext context;
+
     FakeStatementProvider provider;
 
     Sale sale;
@@ -56,9 +57,10 @@ class StatementFetchTest {
 
     @BeforeEach
     void anIntegratedPaymentAtAProviderThatFetchesStatements() throws Exception {
+        provider = FakeStatementProvider.registerIn(context);
         sale = fixtures.sale("2"); // 25.00
         method = SettlementFixtures.freshCode("WALLET");
-        fixtures.method(method, "INTEGRATED", FakeStatementProvider.CODE);
+        fixtures.method(method, "INTEGRATED", FakePaymentProvider.CODE);
         attempt = SettlementFixtures.id(fixtures.pay(sale.cashier(), sale.order(), method, "25.00", null,
                 UUID.randomUUID().toString()).andExpect(status().isAccepted()));
         assertThat(fixtures.settled(sale.cashier(), attempt).get("status").asString()).isEqualTo("SUCCEEDED");
@@ -68,7 +70,7 @@ class StatementFetchTest {
     @Test
     void theStatementIsFetchedWithNoTransactionAndImported() throws Exception {
         provider.calledInTransaction().clear();
-        provider.willReturn(List.of(line(confirmedAt(jdbc, payment), "25.00", "STMT-" + attempt)));
+        provider.willReturn(List.of(line(confirmedAt(jdbc, payment), "25.00", "FAKE-" + attempt)));
 
         fetch(method, UUID.randomUUID().toString(), Permission.RECONCILIATION_MANAGE)
                 .andExpect(status().isCreated())
@@ -81,7 +83,7 @@ class StatementFetchTest {
 
     @Test
     void fetchingTheSameStatementAgainReturnsItsBatch() throws Exception {
-        provider.willReturn(List.of(line(confirmedAt(jdbc, payment), "25.00", "STMT-" + attempt)));
+        provider.willReturn(List.of(line(confirmedAt(jdbc, payment), "25.00", "FAKE-" + attempt)));
         String batch = SettlementFixtures.json(fetch(method, UUID.randomUUID().toString(),
                 Permission.RECONCILIATION_MANAGE).andExpect(status().isCreated())).get("id").asString();
 
@@ -93,9 +95,9 @@ class StatementFetchTest {
     }
 
     @Test
-    void aProviderThatCannotFetchIsRefused() throws Exception {
-        String other = SettlementFixtures.freshCode("MPESA");
-        fixtures.method(other, "INTEGRATED", FakePaymentProvider.CODE);
+    void aMethodWithoutAStatementSourceIsRefused() throws Exception {
+        String other = SettlementFixtures.freshCode("CARD");
+        fixtures.method(other, "EXTERNAL_TERMINAL", null);
 
         fetch(other, UUID.randomUUID().toString(), Permission.RECONCILIATION_MANAGE)
                 .andExpect(status().isUnprocessableContent())

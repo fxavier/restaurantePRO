@@ -7,18 +7,20 @@ import com.xavier.backend.shared.ExternalCalls;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
- * An integrated provider (code {@code STMT}) that also fetches statements (D78): every charge succeeds with
- * provider reference {@code STMT-<attempt id>}, and {@link #statement} answers the lines a test gave it, remembering
- * whether a transaction was open when it was called.
+ * A provider adapter that also fetches statements (D78), under the test provider's code {@code FAKE}:
+ * {@link #statement} answers the lines a test gave it, remembering whether a transaction was open when it was called.
+ * {@link #registerIn} adds it to the cached settlement test context at runtime, after settlement indexed its charging
+ * providers, so the {@code FakePaymentProvider} still takes every charge and no new test context is created (each
+ * one counts against Spring's context cache, and an eviction closes a context the whole run shares).
  */
 public class FakeStatementProvider implements PaymentProvider, StatementSource {
 
-    public static final String CODE = "STMT";
+    public static final String CODE = com.xavier.backend.settlement.FakePaymentProvider.CODE;
+    static final String BEAN = "reconciliationFakeStatementProvider";
 
     private volatile List<StatementLine> lines = List.of();
     private final List<Boolean> calledInTransaction = new CopyOnWriteArrayList<>();
@@ -56,12 +58,14 @@ public class FakeStatementProvider implements PaymentProvider, StatementSource {
         return lines;
     }
 
-    @TestConfiguration(proxyBeanMethods = false)
-    public static class Config {
-
-        @Bean
-        FakeStatementProvider fakeStatementProvider() {
-            return new FakeStatementProvider();
+    /** The fake of {@code context}, registered on first use. */
+    public static FakeStatementProvider registerIn(ConfigurableApplicationContext context) {
+        var beans = context.getBeanFactory();
+        synchronized (FakeStatementProvider.class) {
+            if (!beans.containsSingleton(BEAN)) {
+                beans.registerSingleton(BEAN, new FakeStatementProvider());
+            }
         }
+        return (FakeStatementProvider) beans.getSingleton(BEAN);
     }
 }

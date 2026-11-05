@@ -52,6 +52,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
@@ -76,7 +77,7 @@ public class StatementImportService {
     private final ReconciliationBatchRepository batches;
     private final ReconciliationEntryRepository entries;
     private final ReconciliationResolutionRepository resolutions;
-    private final List<PaymentProvider> providers;
+    private final ObjectProvider<PaymentProvider> providers;
     private final AuditLog audit;
     private final TransactionTemplate inTransaction;
     private final TransactionTemplate readOnly;
@@ -85,7 +86,7 @@ public class StatementImportService {
     StatementImportService(AccessPolicy accessPolicy, OrganizationApi organization, PaymentMethodRepository methods,
                            PaymentReads payments, ReconciliationBatchRepository batches,
                            ReconciliationEntryRepository entries, ReconciliationResolutionRepository resolutions,
-                           List<PaymentProvider> providers, AuditLog audit,
+                           ObjectProvider<PaymentProvider> providers, AuditLog audit,
                            PlatformTransactionManager transactionManager, Clock clock) {
         this.accessPolicy = accessPolicy;
         this.organization = organization;
@@ -225,7 +226,7 @@ public class StatementImportService {
     }
 
     private StatementSource sourceOf(PaymentMethod method) {
-        return providers.stream()
+        return providers.orderedStream()
                 .filter(provider -> provider.code().equals(method.getProviderCode()))
                 .filter(StatementSource.class::isInstance).map(StatementSource.class::cast).findFirst()
                 .orElseThrow(() -> ReconciliationRuleException.noStatementSource(method.getCode()));
