@@ -27,5 +27,7 @@ public enum OrderRule {
     /** A table move of an order that does not sit at a table (COUNTER, TAKEAWAY). */
     ORDER_HAS_NO_TABLE,
     /** A transfer of an order onto itself. */
-    SAME_ORDER
+    SAME_ORDER,
+    /** A subtotal of an order whose document exists (P27): the POS reprints the document as a copy instead. */
+    DOCUMENT_ISSUED
 }

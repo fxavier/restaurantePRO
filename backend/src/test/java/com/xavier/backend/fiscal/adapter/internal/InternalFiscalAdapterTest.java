@@ -60,7 +60,7 @@ public class InternalFiscalAdapterTest {
 
     static IssueRequest request(long number, String total, String previous) {
         return new IssueRequest(UUID.fromString("0190a1b2-0000-7000-8000-000000000001"), "SALE", "A", number, AT,
-                Money.of(total, MZN), Money.of("16.00", MZN), previous);
+                Money.of(total, MZN), Money.of("16.00", MZN), previous, false);
     }
 
     public static IssuedDocument document() {
@@ -72,6 +72,6 @@ public class InternalFiscalAdapterTest {
                         Money.of("16.00", MZN))),
                 List.of(new DocumentView.TaxSummary(new BigDecimal("16.0000"), Money.of("100.00", MZN),
                         Money.of("16.00", MZN))),
-                gross, Money.of("100.00", MZN), Money.of("16.00", MZN), "hash", null);
+                gross, Money.of("100.00", MZN), Money.of("16.00", MZN), "hash", null, false);
     }
 }

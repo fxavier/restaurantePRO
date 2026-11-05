@@ -2,13 +2,17 @@ package com.xavier.backend.fiscal.model;
 
 import com.xavier.backend.fiscal.IssueResult;
 import com.xavier.backend.fiscal.IssuedDocument;
+import com.xavier.backend.fiscal.exception.DraftMismatchException;
 import com.xavier.backend.fiscal.exception.IllegalDocumentStateException;
 import com.xavier.backend.fiscal.exception.InvalidSaleDraftException;
 import com.xavier.backend.fiscal.model.dto.Buyer;
+import com.xavier.backend.fiscal.model.dto.DocumentFacts;
 import com.xavier.backend.fiscal.model.dto.DocumentSummary;
 import com.xavier.backend.fiscal.model.dto.DocumentView;
+import com.xavier.backend.fiscal.model.dto.DraftCommand;
 import com.xavier.backend.fiscal.model.dto.DraftLine;
-import com.xavier.backend.fiscal.model.dto.SaleDraftCommand;
+import com.xavier.backend.fiscal.model.dto.SourceType;
+import com.xavier.backend.organization.BusinessDays;
 import com.xavier.backend.organization.model.dto.CompanyProfileView;
 import com.xavier.backend.organization.model.dto.StoreSummary;
 import com.xavier.backend.shared.Money;
@@ -26,6 +30,7 @@ import jakarta.persistence.Version;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Currency;
@@ -34,6 +39,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.TreeMap;
 import java.util.UUID;
+import java.util.function.Supplier;
+import org.hibernate.annotations.Generated;
 import org.hibernate.annotations.UuidGenerator;
 
 /**
@@ -70,6 +77,22 @@ public class FiscalDocument {
 
     @Column(nullable = false, updatable = false)
     private UUID sourceId;
+
+    @Column(updatable = false)
+    private UUID orderId;
+
+    /** The database's {@code coalesce(order_id, source_id of an ORDER document)}: R2 rows have no order_id. */
+    @Generated
+    @Column(insertable = false, updatable = false)
+    private UUID orderRef;
+
+    @Column(updatable = false)
+    private LocalDate businessDate;
+
+    private UUID customerId;
+
+    @Column(nullable = false)
+    private boolean onAccount;
 
     private UUID seriesId;
 
@@ -108,13 +131,13 @@ public class FiscalDocument {
     @Column(nullable = false, updatable = false, length = 64)
     private String storeTimezone;
 
-    @Column(updatable = false, length = 200)
+    @Column(length = 200)
     private String buyerName;
 
-    @Column(updatable = false, length = 50)
+    @Column(length = 50)
     private String buyerTaxId;
 
-    @Column(updatable = false, length = 300)
+    @Column(length = 300)
     private String buyerAddress;
 
     @Column(length = 40)
@@ -161,11 +184,12 @@ public class FiscalDocument {
     }
 
     /**
-     * The SALE draft of one order. {@code company} and {@code store} are snapshotted now; the lines are checked
-     * (D59: gross = unit price × quantity = net + tax; totals = Σ lines) and their tax is summed per rate.
+     * The SALE draft of an order or of an ITEMS partition (D70). {@code company} and {@code store} are snapshotted
+     * now; the lines are checked (D59: gross = unit price × quantity = net + tax; totals = Σ lines) and their tax is
+     * summed per rate. An ORDER draft without an explicit order belongs to its source.
      */
-    public static FiscalDocument saleDraft(SaleDraftCommand command, CompanyProfileView company, StoreSummary store,
-                                           Instant now) {
+    public static FiscalDocument draft(DraftCommand command, CompanyProfileView company, StoreSummary store,
+                                       Instant now) {
         Currency currency = company.currency();
         List<DraftLine> lines = command.lines() == null ? List.of() : command.lines();
         if (lines.isEmpty()) {
@@ -175,8 +199,10 @@ public class FiscalDocument {
         document.storeId = Objects.requireNonNull(command.storeId(), "storeId");
         document.documentType = DocumentType.SALE;
         document.status = DocumentStatus.DRAFT;
-        document.sourceType = SourceType.ORDER;
-        document.sourceId = Objects.requireNonNull(command.orderId(), "orderId");
+        document.sourceType = Objects.requireNonNull(command.sourceType(), "sourceType");
+        document.sourceId = Objects.requireNonNull(command.sourceId(), "sourceId");
+        document.orderId = orderOf(command);
+        document.businessDate = command.businessDate();
         document.currency = currency.getCurrencyCode();
         document.companyName = company.name();
         document.companyTaxId = company.taxId();
@@ -185,6 +211,7 @@ public class FiscalDocument {
         document.storeName = store.name();
         document.storeTimezone = store.timezone().getId();
         document.snapshotBuyer(command.buyer());
+        document.chargeTo(command.customerId(), command.onAccount());
         document.createdAt = now;
         document.updatedAt = now;
 
@@ -211,6 +238,54 @@ public class FiscalDocument {
         document.totalTax = tax.amount();
         perRate.forEach((rate, sums) -> document.taxes.add(new FiscalDocumentTax(rate, sums[0], sums[1])));
         return document;
+    }
+
+    /**
+     * The same source drafted again (D70): the command must carry this draft's lines and totals (409
+     * {@code DRAFT_MISMATCH} otherwise). A {@code null} buyer or customer keeps the stored one and a given one replaces
+     * it. On account is sticky: it may be set (with its customer) but never undone, nor moved to another customer.
+     */
+    public void amendDraft(DraftCommand command, Instant now) {
+        requireDraft("amend");
+        if (!sameContent(command)) {
+            throw DraftMismatchException.lines(id);
+        }
+        if (onAccount && (!command.onAccount()
+                || (command.customerId() != null && !command.customerId().equals(customerId)))) {
+            throw DraftMismatchException.onAccount(id);
+        }
+        Buyer before = buyer();
+        UUID customerBefore = customerId;
+        boolean onAccountBefore = onAccount;
+        if (command.buyer() != null) {
+            buyerName = null;
+            buyerTaxId = null;
+            buyerAddress = null;
+            snapshotBuyer(command.buyer());
+        }
+        // on account needs the command's own customer (422 otherwise); a paid sale keeps its customer unless given
+        chargeTo(command.onAccount() || command.customerId() != null ? command.customerId() : customerId,
+                command.onAccount());
+        if (!Objects.equals(before, buyer()) || !Objects.equals(customerBefore, customerId)
+                || onAccountBefore != onAccount) {
+            updatedAt = now; // a retry with the same choice changes nothing, not even the version
+        }
+    }
+
+    private boolean sameContent(DraftCommand command) {
+        Currency c = Currency.getInstance(currency);
+        List<DraftLine> given = command.lines() == null ? List.of() : command.lines();
+        if (given.size() != lines.size() || !Money.of(totalGross, c).equals(command.totalGross())
+                || !Money.of(totalNet, c).equals(command.totalNet())
+                || !Money.of(totalTax, c).equals(command.totalTax())) {
+            return false;
+        }
+        for (int i = 0; i < given.size(); i++) {
+            if (!lines.get(i).sameAs(given.get(i), c)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -255,12 +330,31 @@ public class FiscalDocument {
                 seriesCode, number, issuedAt, issuedByEmployeeId, companyName, companyTaxId, companyCountry,
                 storeCode, storeName, buyer(), lines.stream().map(l -> l.toView(c)).toList(),
                 taxes.stream().map(t -> t.toView(c)).toList(), Money.of(totalGross, c), Money.of(totalNet, c),
-                Money.of(totalTax, c), adapterCode, nonFiscal, lastError, lastErrorAt, version);
+                Money.of(totalTax, c), adapterCode, nonFiscal, lastError, lastErrorAt, version, orderRef, businessDate,
+                customerId, onAccount);
     }
 
     public DocumentSummary toSummary() {
         return new DocumentSummary(id, storeId, documentType.name(), status.name(), sourceId, seriesCode, number,
                 issuedAt, getTotalGross(), buyerName);
+    }
+
+    /**
+     * The facts reporting projects (D84). An R2 document has no business date: it falls back to the business day
+     * of its issue in the store's CURRENT zone and cutoff (D85), the same rule as the backfill listing; the
+     * snapshotted {@code store_timezone} is only what was printed. {@code currentStore} is read only then.
+     */
+    public DocumentFacts toFacts(Supplier<StoreSummary> currentStore) {
+        LocalDate day = businessDate;
+        if (day == null) {
+            StoreSummary store = currentStore.get();
+            day = BusinessDays.of(issuedAt != null ? issuedAt : createdAt, store.timezone(),
+                    store.businessDayCutoff());
+        }
+        DocumentView view = toView();
+        return new DocumentFacts(id, storeId, documentType.name(), status.name(), sourceType.name(), sourceId,
+                orderRef, day, issuedAt, issuedTerminalId, issuedByEmployeeId, customerId, onAccount, seriesCode,
+                number, nonFiscal, view.totalGross(), view.totalNet(), view.totalTax(), view.lines(), view.taxes());
     }
 
     /** What an adapter renders; only for an ISSUED document. */
@@ -271,7 +365,7 @@ public class FiscalDocument {
         DocumentView view = toView();
         return new IssuedDocument(id, documentType.name(), seriesCode, number, issuedAt, ZoneId.of(storeTimezone),
                 companyName, companyTaxId, companyCountry, storeCode, storeName, buyer(), view.lines(), view.taxes(),
-                view.totalGross(), view.totalNet(), view.totalTax(), adapterData, qrPayload);
+                view.totalGross(), view.totalNet(), view.totalTax(), adapterData, qrPayload, onAccount);
     }
 
     private Buyer buyer() {
@@ -288,6 +382,25 @@ public class FiscalDocument {
         buyerName = optionalText(buyer.name(), "buyer.name", 200);
         buyerTaxId = optionalText(buyer.taxId(), "buyer.taxId", 50);
         buyerAddress = optionalText(buyer.address(), "buyer.address", 300);
+    }
+
+    private static UUID orderOf(DraftCommand command) {
+        UUID order = command.orderId();
+        if (command.sourceType() == SourceType.PARTITION && order == null) {
+            throw new InvalidSaleDraftException("A partition document needs its orderId");
+        }
+        if (command.sourceType() == SourceType.ORDER && order != null && !order.equals(command.sourceId())) {
+            throw new InvalidSaleDraftException("An order document's orderId must be its sourceId");
+        }
+        return command.sourceType() == SourceType.ORDER ? command.sourceId() : order;
+    }
+
+    private void chargeTo(UUID customer, boolean credit) {
+        if (credit && customer == null) {
+            throw new InvalidSaleDraftException("An on-account document needs its customer");
+        }
+        this.customerId = customer;
+        this.onAccount = credit;
     }
 
     private void requireDraft(String action) {
@@ -390,6 +503,10 @@ public class FiscalDocument {
 
     public Money getTotalGross() {
         return Money.of(totalGross, Currency.getInstance(currency));
+    }
+
+    public boolean isOnAccount() {
+        return onAccount;
     }
 
     public Money getTotalTax() {

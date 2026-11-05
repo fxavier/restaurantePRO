@@ -91,7 +91,8 @@ public class OrderViews {
         return orders.stream().map(order -> {
             List<BillingLine> billable = billingLines(confirmed.getOrDefault(order.getId(), List.of()), deducted);
             return new OrderBillingView(order.getId(), order.getStoreId(), order.getVersion(), order.getLifecycle(),
-                    order.getBillingLock(), order.getBusinessDay(), billable, due(order, billable));
+                    order.getBillingLock(), order.getBusinessDay(), billable, due(order, billable), order.getTableId(),
+                    order.getTableCode());
         }).toList();
     }
 
@@ -110,7 +111,8 @@ public class OrderViews {
             BigDecimal net = line.getQuantity().subtract(deducted.getOrDefault(line.getId(), BigDecimal.ZERO));
             LineAmounts amounts = LineAmounts.of(snapshot.unitPrice(), net, snapshot.taxRatePercent());
             return new BillingLine(line.getId(), snapshot.billedDescription(), net, snapshot.unitPrice(), amounts.gross(),
-                    amounts.net(), amounts.tax(), snapshot.taxCode(), snapshot.taxRatePercent());
+                    amounts.net(), amounts.tax(), snapshot.taxCode(), snapshot.taxRatePercent(), line.getItemId(),
+                    snapshot.itemCode(), snapshot.releaseId(), line.getConfirmedByEmployeeId(), line.getConfirmedAt());
         }).filter(line -> line.netQty().signum() > 0).toList();
     }
 

@@ -13,7 +13,8 @@ import java.util.UUID;
  * under way, so nothing may leave the bill ({@code ORDER_IN_SETTLEMENT}, D49), more is voided or transferred than the
  * line still holds ({@code QUANTITY_EXCEEDS_NET}), the approver is the operator ({@code SELF_APPROVAL}, D28), a cancel
  * of an order that still bills something ({@code ORDER_NOT_EMPTY}), a table move or transfer of an order onto itself
- * or without a table ({@code ORDER_HAS_NO_TABLE}, {@code SAME_ORDER}). The codes are the {@link OrderRule} constants.
+ * or without a table ({@code ORDER_HAS_NO_TABLE}, {@code SAME_ORDER}). R3: a subtotal of an order whose document
+ * exists ({@code DOCUMENT_ISSUED}, P27). The codes are the {@link OrderRule} constants.
  */
 public class OrderRuleException extends BusinessRuleException {
 
@@ -78,6 +79,11 @@ public class OrderRuleException extends BusinessRuleException {
 
     public static OrderRuleException sameOrder(UUID orderId) {
         return new OrderRuleException(OrderRule.SAME_ORDER, "Order " + orderId + " cannot transfer to itself.");
+    }
+
+    public static OrderRuleException documentIssued(UUID orderId) {
+        return new OrderRuleException(OrderRule.DOCUMENT_ISSUED,
+                "Order " + orderId + " has its document: reprint it as a copy instead of a subtotal.");
     }
 
     public OrderRule rule() {

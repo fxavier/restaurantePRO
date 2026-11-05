@@ -9,12 +9,15 @@ import com.xavier.backend.orders.model.event.OrderBatchConfirmed;
 import com.xavier.backend.orders.model.event.OrderLinesVoided;
 import com.xavier.backend.orders.model.event.SubtotalRequested;
 import com.xavier.backend.production.exception.ProductionConflictException;
+import com.xavier.backend.production.exception.ProductionRule;
+import com.xavier.backend.production.exception.ProductionRuleViolationException;
 import com.xavier.backend.production.model.JobKind;
 import com.xavier.backend.production.model.PrintJob;
 import com.xavier.backend.production.model.Printer;
 import com.xavier.backend.production.model.PrinterMode;
 import com.xavier.backend.production.model.ProductionTicket;
 import com.xavier.backend.production.model.TicketDraft;
+import com.xavier.backend.production.model.TicketRouting;
 import com.xavier.backend.production.model.TicketSource;
 import com.xavier.backend.production.repository.PrintJobRepository;
 import com.xavier.backend.production.repository.PrinterRepository;
@@ -42,10 +45,14 @@ import org.springframework.transaction.annotation.Transactional;
  * Turns production work into tickets and jobs, in the caller's transaction. Idempotent per ticket key
  * ({@code source_type, source_id, destination}): work that already has its ticket is skipped, so a redelivered event
  * changes nothing. The routed printer's mode decides: IGNORE → a suppressed ticket, no job, an audit row; REDIRECT →
- * the job goes to the target, fixed now (D56); NORMAL and HOLD → a QUEUED job (HOLD keeps it there).
+ * the job goes to the target, fixed now (D56); NORMAL and HOLD → a QUEUED job (HOLD keeps it there). Work with no
+ * printer (no route for its destination, or no printer for its terminal) is kept as an UNROUTED ticket with no job,
+ * routable later (D89 (1)); a line with no destination is still not printed (D56).
  */
 @Service
 public class TicketService {
+
+    private static final String SUBTOTAL = "SUBTOTAL";
 
     private final ProductionTicketRepository tickets;
     private final PrintJobRepository jobs;
@@ -108,17 +115,25 @@ public class TicketService {
     }
 
     /**
-     * On the terminal's printer. {@code SubtotalRequested} carries no request id, so the ticket key is the order and
-     * a digest of what it prints: a redelivery is a no-op, and so is a second request for an unchanged bill (that
-     * one is a reprint of the ticket).
+     * On the terminal's printer, one ticket per subtotal request (D89 (2)): the request id is the ticket's source, so
+     * a redelivery is a no-op and a deliberate second subtotal prints. A publication stored by R2 has no request id;
+     * its key is the order and a digest of what it prints, as in R2.
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public void printSubtotal(SubtotalRequested event) {
         List<String> lines = TicketLayouts.subtotal(event.orderNumber(), event.tableCode(), event.lines(),
                 event.due());
-        String destination = "SUBTOTAL-" + digest(event.terminalId() + "\n" + String.join("\n", lines));
-        onTerminal(event.storeId(), event.terminalId(), new TicketDraft(event.storeId(), TicketSource.SUBTOTAL,
-                event.orderId(), destination, JobKind.ORIGINAL, event.orderId(), event.terminalId(), lines, null));
+        TicketDraft draft = event.requestId() != null
+                ? subtotalDraft(event, event.requestId(), SUBTOTAL, lines)
+                : subtotalDraft(event, event.orderId(),
+                        SUBTOTAL + "-" + digest(event.terminalId() + "\n" + String.join("\n", lines)), lines);
+        onTerminal(event.storeId(), event.terminalId(), draft);
+    }
+
+    private static TicketDraft subtotalDraft(SubtotalRequested event, UUID sourceId, String destination,
+                                             List<String> lines) {
+        return new TicketDraft(event.storeId(), TicketSource.SUBTOTAL, sourceId, destination, JobKind.ORIGINAL,
+                event.orderId(), event.terminalId(), lines, null);
     }
 
     /** A document printout (fiscal lays it out and marks a copy), on the printer of the terminal it ran on. */
@@ -142,6 +157,38 @@ public class TicketService {
         return new Issued(ticket, queue(ticket, printer.getId(), now));
     }
 
+    /**
+     * D89 (1): resolves the UNROUTED ticket's route now (its destination, or its terminal's printer) and queues its
+     * first job, once: the compare-and-set lets one request win, and the job's dedupe key backs it.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public PrintJob route(ProductionTicket ticket) {
+        if (ticket.getRouting() == TicketRouting.ROUTED) {
+            throw ProductionConflictException.ticketAlreadyRouted(ticket.getId());
+        }
+        Printer routed = (ticket.getSourceType().routedByDestination()
+                ? routing.printerForDestination(ticket.getStoreId(), ticket.getDestination())
+                : printerForTerminal(ticket.getStoreId(), ticket.getTerminalId()))
+                .orElseThrow(() -> new ProductionRuleViolationException(ProductionRule.STILL_UNROUTED,
+                        "Production ticket " + ticket.getId() + " still has no printer to go to: add its route "
+                                + "or its terminal's printer first"));
+        Printer target = printing(routed);
+        if (tickets.route(ticket.getId(), routed.getId()) == 0) {
+            throw ProductionConflictException.ticketAlreadyRouted(ticket.getId());
+        }
+        return queue(ticket, target.getId(), clock.instant());
+    }
+
+    /** Where a new job for work routed to {@code routed} goes now; refused when that printer ignores work. */
+    Printer printing(Printer routed) {
+        Printer printer = effective(routed);
+        if (printer.getMode() == PrinterMode.IGNORE) {
+            throw new ProductionRuleViolationException(ProductionRule.PRINTER_IGNORED,
+                    "Printer " + printer.getCode() + " is in IGNORE: change its mode to print again");
+        }
+        return printer;
+    }
+
     /** A ticket and its first job ({@code null} when suppressed). */
     public record Issued(ProductionTicket ticket, PrintJob job) {
     }
@@ -157,30 +204,39 @@ public class TicketService {
     }
 
     private void routed(UUID storeId, String destination, TicketDraft draft) {
-        Optional<Printer> printer = routing.printerForDestination(storeId, destination);
-        if (printer.isEmpty()) {
-            metrics.unrouted(storeId, draft.sourceType(), draft.sourceId(), "destination " + destination);
+        if (exists(draft)) {
             return;
         }
-        issue(draft, printer.get());
+        routing.printerForDestination(storeId, destination).ifPresentOrElse(printer -> issue(draft, printer),
+                () -> keepUnrouted(draft, "destination " + destination));
     }
 
     private void onTerminal(UUID storeId, UUID terminalId, TicketDraft draft) {
-        // a terminal mapped in another store must not poison the event: the ticket's printer FK needs this store
-        Optional<Printer> printer = routing.printerForTerminal(terminalId)
-                .filter(candidate -> candidate.getStoreId().equals(storeId));
-        if (printer.isEmpty()) {
-            metrics.unrouted(storeId, draft.sourceType(), draft.sourceId(), "terminal " + terminalId);
+        if (exists(draft)) {
             return;
         }
-        issue(draft, printer.get());
+        printerForTerminal(storeId, terminalId).ifPresentOrElse(printer -> issue(draft, printer),
+                () -> keepUnrouted(draft, "terminal " + terminalId));
+    }
+
+    /** A terminal mapped in another store must not poison the event: the ticket's printer FK needs this store. */
+    Optional<Printer> printerForTerminal(UUID storeId, UUID terminalId) {
+        return routing.printerForTerminal(terminalId).filter(candidate -> candidate.getStoreId().equals(storeId));
+    }
+
+    private boolean exists(TicketDraft draft) {
+        return tickets.existsBySourceTypeAndSourceIdAndDestination(draft.sourceType(), draft.sourceId(),
+                draft.destination());
+    }
+
+    /** D89 (1): kept with no printer and no job, counted, and announced so the POS and BackOffice see it. */
+    private void keepUnrouted(TicketDraft draft, String where) {
+        ProductionTicket ticket = save(ProductionTicket.unrouted(draft, clock.instant()));
+        metrics.unrouted(draft.storeId(), draft.sourceType(), draft.sourceId(), where);
+        notifier.notifyAfterCommit(draft.storeId(), ChangeTopic.PRINT_JOBS, ticket.getId());
     }
 
     private void issue(TicketDraft draft, Printer routed) {
-        if (tickets.existsBySourceTypeAndSourceIdAndDestination(draft.sourceType(), draft.sourceId(),
-                draft.destination())) {
-            return;
-        }
         Instant now = clock.instant();
         Printer target = effective(routed);
         boolean suppressed = target.getMode() == PrinterMode.IGNORE;

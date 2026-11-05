@@ -4,7 +4,6 @@ import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.PosContext;
 import com.xavier.backend.fiscal.exception.DocumentNotFoundException;
-import com.xavier.backend.fiscal.model.DocumentStatus;
 import com.xavier.backend.fiscal.model.FiscalDocument;
 import com.xavier.backend.fiscal.model.dto.DocumentSummary;
 import com.xavier.backend.fiscal.model.dto.DocumentView;
@@ -34,12 +33,16 @@ public class DocumentQueryService {
         this.accessPolicy = accessPolicy;
     }
 
-    /** ISSUED documents of {@code storeId} with {@code from <= issuedAt < to}; either bound may be {@code null}. */
-    public PageResponse<DocumentSummary> list(UUID storeId, Instant from, Instant to, Pageable pageable) {
+    /**
+     * ISSUED documents of {@code storeId} with {@code from <= issuedAt < to}, optionally only those of an order
+     * (any source: partition, residual or R2 document) or of a customer. Every filter but the store may be
+     * {@code null}.
+     */
+    public PageResponse<DocumentSummary> list(UUID storeId, Instant from, Instant to, UUID orderId, UUID customerId,
+                                              Pageable pageable) {
         accessPolicy.require(Permission.FISCAL_DOCUMENT_VIEW, storeId);
-        return PageResponse.from(documents.findByStoreIdAndStatusAndIssuedAtGreaterThanEqualAndIssuedAtLessThan(
-                        storeId, DocumentStatus.ISSUED, from == null ? NO_LOWER_BOUND : from,
-                        to == null ? NO_UPPER_BOUND : to, pageable)
+        return PageResponse.from(documents.findIssued(storeId, from == null ? NO_LOWER_BOUND : from,
+                        to == null ? NO_UPPER_BOUND : to, orderId, customerId, pageable)
                 .map(FiscalDocument::toSummary));
     }
 

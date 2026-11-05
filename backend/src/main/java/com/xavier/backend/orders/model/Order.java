@@ -161,6 +161,20 @@ public class Order {
         }
     }
 
+    /**
+     * A subtotal (a non-fiscal bill) needs an OPEN order whose document does not exist yet (P27): the POS reprints
+     * the document as a copy instead.
+     *
+     * @throws OrderConflictException {@code ORDER_NOT_OPEN} (409)
+     * @throws OrderRuleException     {@code DOCUMENT_ISSUED} (422)
+     */
+    public void requireSubtotalPrintable() {
+        requireOpen();
+        if (billingLock == BillingLock.INVOICE) {
+            throw OrderRuleException.documentIssued(id);
+        }
+    }
+
     /** Takes the next round number; the order's version increments with it. */
     public int confirmBatch() {
         requireChangeable();
