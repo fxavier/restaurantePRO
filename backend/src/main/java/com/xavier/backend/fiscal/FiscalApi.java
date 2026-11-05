@@ -44,8 +44,8 @@ public class FiscalApi {
 
     /**
      * R2's tx-A (D50 §7.6), in the caller's transaction: the SALE draft of the order, with snapshots of company,
-     * store and buyer. A delegate of {@link #createDraft} with source {@code ORDER}, no business day, no customer and
-     * not on account: idempotent per {@code (ORDER, orderId)}, an existing DRAFT takes the buyer given now.
+     * store and buyer: source {@code ORDER}, no business day, no customer, not on account. Idempotent per
+     * {@code (ORDER, orderId)}: an existing document, DRAFT or ISSUED, is returned unchanged (its buyer is kept).
      *
      * <p>Lines follow D59 for tax-inclusive prices, exactly as orders computes them: {@code gross =
      * unitPrice.times(quantity)}, {@code net = gross.divide(1 + rate/100)} (HALF_UP to minor units),
@@ -64,14 +64,15 @@ public class FiscalApi {
     /**
      * tx-A (D50 §7.6), generalized (D66, D70): the SALE draft of an order ({@code ORDER}: the residual document at
      * close) or of an ITEMS partition ({@code PARTITION}), in the caller's transaction, with snapshots of company,
-     * store and buyer. Idempotent per {@code (sourceType, sourceId)}: an existing DRAFT takes the command's buyer,
-     * customer and on-account mark (lines and totals stay as drafted); an ISSUED document is returned unchanged.
+     * store and buyer. Idempotent per {@code (sourceType, sourceId)}: an existing DRAFT must have the command's lines
+     * and totals; a non-null buyer or customer replaces the stored one (null keeps it); on account may be set but
+     * never undone or moved to another customer. An ISSUED document is returned unchanged.
      * Lines follow D59 as described on {@link #createSaleDraft}.
      *
      * @throws com.xavier.backend.shared.exception.BusinessRuleException (422) for inconsistent lines or totals, a
      *         PARTITION without its order, an ORDER for another order, or on account without a customer
-     * @throws com.xavier.backend.shared.exception.ConflictException (409) when a concurrent draft won the race, or a
-     *         stale amendment of the draft
+     * @throws com.xavier.backend.shared.exception.ConflictException (409) {@code DRAFT_MISMATCH} for other lines or
+     *         totals or an undone on-account mark; uncoded when a concurrent draft won the race or the draft is stale
      * @throws org.springframework.transaction.IllegalTransactionStateException without a transaction
      */
     @Transactional(propagation = Propagation.MANDATORY)

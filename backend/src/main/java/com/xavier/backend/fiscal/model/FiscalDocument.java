@@ -2,6 +2,7 @@ package com.xavier.backend.fiscal.model;
 
 import com.xavier.backend.fiscal.IssueResult;
 import com.xavier.backend.fiscal.IssuedDocument;
+import com.xavier.backend.fiscal.exception.DraftMismatchException;
 import com.xavier.backend.fiscal.exception.IllegalDocumentStateException;
 import com.xavier.backend.fiscal.exception.InvalidSaleDraftException;
 import com.xavier.backend.fiscal.model.dto.Buyer;
@@ -241,23 +242,51 @@ public class FiscalDocument {
     }
 
     /**
-     * A DRAFT may still receive (or lose) its buyer snapshot, customer and on-account mark, for example when the
-     * operator picks the customer at close; an ISSUED document never changes.
+     * The same source drafted again (D70): the command must carry this draft's lines and totals (409
+     * {@code DRAFT_MISMATCH} otherwise). A {@code null} buyer or customer keeps the stored one and a given one replaces
+     * it. On account is sticky: it may be set (with its customer) but never undone, nor moved to another customer.
      */
-    public void amendDraft(Buyer buyer, UUID customerId, boolean onAccount, Instant now) {
+    public void amendDraft(DraftCommand command, Instant now) {
         requireDraft("amend");
+        if (!sameContent(command)) {
+            throw DraftMismatchException.lines(id);
+        }
+        if (onAccount && (!command.onAccount()
+                || (command.customerId() != null && !command.customerId().equals(customerId)))) {
+            throw DraftMismatchException.onAccount(id);
+        }
         Buyer before = buyer();
-        UUID customerBefore = this.customerId;
-        boolean onAccountBefore = this.onAccount;
-        buyerName = null;
-        buyerTaxId = null;
-        buyerAddress = null;
-        snapshotBuyer(buyer);
-        chargeTo(customerId, onAccount);
-        if (!Objects.equals(before, buyer()) || !Objects.equals(customerBefore, this.customerId)
-                || onAccountBefore != this.onAccount) {
+        UUID customerBefore = customerId;
+        boolean onAccountBefore = onAccount;
+        if (command.buyer() != null) {
+            buyerName = null;
+            buyerTaxId = null;
+            buyerAddress = null;
+            snapshotBuyer(command.buyer());
+        }
+        // on account needs the command's own customer (422 otherwise); a paid sale keeps its customer unless given
+        chargeTo(command.onAccount() || command.customerId() != null ? command.customerId() : customerId,
+                command.onAccount());
+        if (!Objects.equals(before, buyer()) || !Objects.equals(customerBefore, customerId)
+                || onAccountBefore != onAccount) {
             updatedAt = now; // a retry with the same choice changes nothing, not even the version
         }
+    }
+
+    private boolean sameContent(DraftCommand command) {
+        Currency c = Currency.getInstance(currency);
+        List<DraftLine> given = command.lines() == null ? List.of() : command.lines();
+        if (given.size() != lines.size() || !Money.of(totalGross, c).equals(command.totalGross())
+                || !Money.of(totalNet, c).equals(command.totalNet())
+                || !Money.of(totalTax, c).equals(command.totalTax())) {
+            return false;
+        }
+        for (int i = 0; i < given.size(); i++) {
+            if (!lines.get(i).sameAs(given.get(i), c)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

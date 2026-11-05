@@ -11,10 +11,16 @@ import com.xavier.backend.fiscal.FiscalModuleTest;
 import com.xavier.backend.fiscal.model.dto.Buyer;
 import com.xavier.backend.fiscal.model.dto.DocumentView;
 import com.xavier.backend.fiscal.model.dto.DraftCommand;
+import com.xavier.backend.fiscal.model.dto.DraftLine;
 import com.xavier.backend.fiscal.model.dto.SourceType;
+import com.xavier.backend.shared.Money;
 import com.xavier.backend.shared.exception.BusinessRuleException;
+import com.xavier.backend.shared.exception.ConflictException;
+import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -119,6 +125,71 @@ class PartitionDraftTest {
     }
 
     @Test
+    void aNullBuyerKeepsTheDraftsBuyerAndAnIdenticalCommandChangesNothing() throws Exception {
+        UUID store = fixtures.newStore();
+        UUID partition = UUID.randomUUID();
+        UUID order = UUID.randomUUID();
+        Buyer buyer = new Buyer("Cliente Lda", "500999888", null);
+        DocumentView first = create(draft(store, SourceType.PARTITION, partition, order, buyer, null, false));
+
+        DocumentView again = create(draft(store, SourceType.PARTITION, partition, order, null, null, false));
+
+        assertThat(again.buyer()).isEqualTo(buyer);
+        assertThat(again.version()).isEqualTo(first.version());
+    }
+
+    @Test
+    void anotherBuyerReplacesTheDraftsBuyer() throws Exception {
+        UUID store = fixtures.newStore();
+        UUID partition = UUID.randomUUID();
+        UUID order = UUID.randomUUID();
+        create(draft(store, SourceType.PARTITION, partition, order, new Buyer("Antigo", null, null), null, false));
+
+        DocumentView again = create(draft(store, SourceType.PARTITION, partition, order,
+                new Buyer("Novo", "400111222", null), null, false));
+
+        assertThat(again.buyer()).isEqualTo(new Buyer("Novo", "400111222", null));
+    }
+
+    @Test
+    void onAccountIsStickyAndKeepsItsCustomer() throws Exception {
+        UUID store = fixtures.newStore();
+        UUID partition = UUID.randomUUID();
+        UUID order = UUID.randomUUID();
+        UUID customer = UUID.randomUUID();
+        create(draft(store, SourceType.PARTITION, partition, order, null, customer, true));
+
+        assertMismatch(() -> create(draft(store, SourceType.PARTITION, partition, order, null, null, false)));
+        assertMismatch(() -> create(draft(store, SourceType.PARTITION, partition, order, null, customer, false)));
+        assertMismatch(() -> create(draft(store, SourceType.PARTITION, partition, order, null, UUID.randomUUID(),
+                true)));
+        DocumentView same = create(draft(store, SourceType.PARTITION, partition, order, null, customer, true));
+        assertThat(same.onAccount()).isTrue();
+        assertThat(same.customerId()).isEqualTo(customer);
+    }
+
+    @Test
+    void theSameSourceWithOtherLinesOrTotalsIsRefused() throws Exception {
+        UUID store = fixtures.newStore();
+        UUID partition = UUID.randomUUID();
+        UUID order = UUID.randomUUID();
+        DraftCommand original = draft(store, SourceType.PARTITION, partition, order, null, null, false);
+        create(original);
+        DraftLine line = original.lines().getFirst();
+        DraftLine otherSourceLine = new DraftLine(UUID.randomUUID(), line.description(), line.quantity(),
+                line.unitPrice(), line.taxRatePercent(), line.gross(), line.net(), line.tax());
+        DraftLine sameScaledDifferently = new DraftLine(line.sourceLineId(), line.description(),
+                new BigDecimal("2.000"), line.unitPrice(), line.taxRatePercent(), line.gross(), line.net(),
+                line.tax());
+
+        assertMismatch(() -> create(withLines(original, List.of(otherSourceLine))));
+        assertMismatch(() -> create(withLines(original, List.of(line, line))));
+        DocumentView same = create(withLines(original, List.of(sameScaledDifferently)));
+        assertThat(same.lines()).hasSize(1);
+        assertThat(documentsOfSource(partition)).isEqualTo(1);
+    }
+
+    @Test
     void anIssuedDocumentIsReturnedUnchanged() throws Exception {
         UUID store = fixtures.newStore();
         fixtures.newSeries(store, "P", 1);
@@ -146,6 +217,19 @@ class PartitionDraftTest {
         assertThatThrownBy(() -> jdbc.sql("UPDATE fiscal.fiscal_document SET on_account = true WHERE id = :id")
                 .param("id", draftId).update()).isInstanceOf(DataIntegrityViolationException.class)
                 .hasMessageContaining("fiscal_document_on_account_customer_ck");
+    }
+
+    private static DraftCommand withLines(DraftCommand c, List<DraftLine> lines) {
+        Money gross = lines.stream().map(DraftLine::gross).reduce(Money::plus).orElseThrow();
+        Money net = lines.stream().map(DraftLine::net).reduce(Money::plus).orElseThrow();
+        Money tax = lines.stream().map(DraftLine::tax).reduce(Money::plus).orElseThrow();
+        return new DraftCommand(c.storeId(), c.sourceType(), c.sourceId(), c.orderId(), c.businessDate(), c.buyer(),
+                c.customerId(), c.onAccount(), lines, gross, net, tax);
+    }
+
+    private static void assertMismatch(ThrowingCallable call) {
+        assertThatThrownBy(call).isInstanceOfSatisfying(ConflictException.class,
+                e -> assertThat(e.code()).isEqualTo("DRAFT_MISMATCH"));
     }
 
     private DocumentView create(DraftCommand command) {

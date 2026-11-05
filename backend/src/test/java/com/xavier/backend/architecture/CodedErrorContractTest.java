@@ -15,6 +15,7 @@ import com.xavier.backend.dining.exception.StillOccupiedException;
 import com.xavier.backend.dining.exception.TableOccupiedException;
 import com.xavier.backend.dining.exception.TableUnavailableException;
 import com.xavier.backend.fiscal.FiscalIssueFailedException;
+import com.xavier.backend.fiscal.exception.DraftMismatchException;
 import com.xavier.backend.identity.exception.LoginThrottledException;
 import com.xavier.backend.identity.exception.PinChangeNotRequiredException;
 import com.xavier.backend.identity.exception.PinUnchangedException;
@@ -80,6 +81,8 @@ class CodedErrorContractTest {
                     "The cash day is not open.")),
             Map.entry("fiscal-pending", () -> new FiscalIssueFailedException(ID,
                     new IllegalStateException("adapter offline"))),
+            Map.entry("draft-mismatch-lines", () -> DraftMismatchException.lines(ID)),
+            Map.entry("draft-mismatch-on-account", () -> DraftMismatchException.onAccount(ID)),
             Map.entry("order-not-open", () -> OrderConflictException.notOpen(ID)),
             Map.entry("line-not-draft", () -> OrderConflictException.lineNotDraft(ID)),
             Map.entry("catalog-changed", () -> OrderConflictException.catalogChanged(3, 4)),
@@ -258,6 +261,16 @@ class CodedErrorContractTest {
     void fiscalPending() throws Exception {
         expect("fiscal-pending", 422, "FISCAL_PENDING",
                 "The fiscal document could not be issued and stays pending; payments are kept. Try again later.",
+                ",\"documentId\":\"" + ID + "\"");
+    }
+
+    @Test
+    void fiscalDraftMismatch() throws Exception {
+        expect("draft-mismatch-lines", 409, "DRAFT_MISMATCH",
+                "The draft document " + ID + " has other lines or totals than this command.",
+                ",\"documentId\":\"" + ID + "\"");
+        expect("draft-mismatch-on-account", 409, "DRAFT_MISMATCH",
+                "The draft document " + ID + " is on account: it stays on account for the same customer.",
                 ",\"documentId\":\"" + ID + "\"");
     }
 
