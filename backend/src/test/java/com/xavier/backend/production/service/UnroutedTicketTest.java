@@ -255,6 +255,21 @@ class UnroutedTicketTest {
                 .update()).hasMessageContaining("append-only");
     }
 
+    /** D75: the debt payment slip's source exists in the schema now, so S29 adds only its listener. */
+    @Test
+    void theTableAcceptsAReceiptSlipTicket() {
+        UUID slip = UUID.randomUUID();
+
+        jdbc.sql("""
+                INSERT INTO production.production_ticket (id, store_id, source_type, source_id, destination, kind,
+                    terminal_id, routing, suppressed, content, created_at)
+                VALUES (?, ?, 'RECEIPT_SLIP', ?, 'ORIGINAL', 'ORIGINAL', ?, 'UNROUTED', false, 'slip', now())""")
+                .param(UUID.randomUUID()).param(shop.store()).param(slip).param(terminal).update();
+
+        assertThat(fixtures.tickets(slip)).singleElement()
+                .satisfies(ticket -> assertThat(ticket).containsEntry("source_type", "RECEIPT_SLIP"));
+    }
+
     /** There is no print to copy yet: an UNROUTED ticket is routed, not reprinted. */
     @Test
     void anUnroutedTicketIsNotReprinted() throws Exception {

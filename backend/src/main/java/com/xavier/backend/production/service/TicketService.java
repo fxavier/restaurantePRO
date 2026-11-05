@@ -45,7 +45,9 @@ import org.springframework.transaction.annotation.Transactional;
  * Turns production work into tickets and jobs, in the caller's transaction. Idempotent per ticket key
  * ({@code source_type, source_id, destination}): work that already has its ticket is skipped, so a redelivered event
  * changes nothing. The routed printer's mode decides: IGNORE → a suppressed ticket, no job, an audit row; REDIRECT →
- * the job goes to the target, fixed now (D56); NORMAL and HOLD → a QUEUED job (HOLD keeps it there).
+ * the job goes to the target, fixed now (D56); NORMAL and HOLD → a QUEUED job (HOLD keeps it there). Work with no
+ * printer (no route for its destination, or no printer for its terminal) is kept as an UNROUTED ticket with no job,
+ * routable later (D89 (1)); a line with no destination is still not printed (D56).
  */
 @Service
 public class TicketService {

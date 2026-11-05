@@ -103,8 +103,9 @@ class SubtotalDedupeTest {
     }
 
     private long subtotalTicketsOfOrder() {
-        return jdbc.sql("SELECT count(*) FROM production.production_ticket WHERE order_id = ? AND source_type = 'SUBTOTAL'")
-                .param(order).query(Long.class).single();
+        return jdbc.sql("""
+                        SELECT count(*) FROM production.production_ticket
+                        WHERE order_id = ? AND source_type = 'SUBTOTAL'""").param(order).query(Long.class).single();
     }
 
     private long jobsOfOrder() {

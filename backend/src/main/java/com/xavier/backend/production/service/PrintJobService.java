@@ -38,9 +38,9 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * What people do with the print queue (spec §4 "consulta de falhas, teste e reimpressão auditada"): list it, retry a
  * FAILED or UNKNOWN job as a new job, acknowledge an UNKNOWN job as printed, reprint a ticket as a COPY job, print a
- * test page. An UNROUTED ticket is routed (ProductionTicketService), never reprinted. A reprint creates no document, payment, cash movement or stock movement (§8.4): it is only a job.
- * POS calls take the store from the session (D39); BackOffice calls name it. Resources addressed by id: 404, then
- * 403 (D42).
+ * test page. An UNROUTED ticket is routed (ProductionTicketService), never reprinted. A reprint creates no document,
+ * payment, cash movement or stock movement (§8.4): it is only a job. POS calls take the store from the session (D39);
+ * BackOffice calls name it. Resources addressed by id: 404, then 403 (D42).
  */
 @Service
 public class PrintJobService {
