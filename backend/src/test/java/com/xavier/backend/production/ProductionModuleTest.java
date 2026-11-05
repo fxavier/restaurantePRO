@@ -18,8 +18,9 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 /**
- * Boots production with the modules whose events and API it uses for real: orders (rounds, through dining, catalog
- * and organization) and fiscal (documents and their copies), plus shared, access and audit, on the shared
+ * Boots production with the modules whose events and API it uses for real: orders (rounds, through dining, catalog,
+ * organization and identity, whose ApproverVerifier orders' voids need) and fiscal (documents and their copies),
+ * plus shared, access and audit, on the shared
  * Testcontainers PostgreSQL. {@code config} is not included, so nothing is scheduled here: tests run the worker
  * with {@code PrintWorker.poll()}. Full-application contexts of other tests (cached, same database) do run it, so
  * tests wait for states and match printed content instead of assuming they are alone. One annotation, one cached
@@ -29,7 +30,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
 @ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization", "dining", "catalog", "orders",
-        "fiscal"})
+        "fiscal", "identity"})
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, DiningFixtures.class, OrdersFixtures.class, FiscalFixtures.class,
         ProductionFixtures.class})
@@ -38,6 +39,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
         "restaurantpro.bootstrap.company.tax-id=TEST-TAX-ID",
         "restaurantpro.bootstrap.company.country=MZ",
         "restaurantpro.bootstrap.company.currency=MZN",
+        // identity: orders' void use case needs ApproverVerifier; identity bootstraps an admin at start
+        "restaurantpro.bootstrap.admin.username=production-bootstrap-admin",
+        "restaurantpro.bootstrap.admin.initial-password-file=src/test/resources/identity/admin-initial-password.txt",
         "restaurantpro.production.printer.write-timeout=PT1S"
 })
 // BatchSurvivesCrashTest crashes one listener run; PrintQueueTest checks the PRINT_JOBS notices
