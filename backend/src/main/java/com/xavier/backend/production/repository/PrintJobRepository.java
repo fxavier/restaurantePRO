@@ -53,7 +53,16 @@ public interface PrintJobRepository extends JpaRepository<PrintJob, UUID>, JpaSp
 
     long countByTicketIdAndKindAndRetryOfIsNull(UUID ticketId, JobKind kind);
 
-    long countByStatus(PrintJobStatus status);
+    /** How many jobs are in each status (statuses with none are absent): one scrape of {@code print_jobs}. */
+    @Query("select j.status as status, count(j) as jobs from PrintJob j group by j.status")
+    List<StatusCount> countGroupedByStatus();
+
+    interface StatusCount {
+
+        PrintJobStatus getStatus();
+
+        long getJobs();
+    }
 
     /** REDIRECT (D56): the undelivered jobs of {@code from} go to {@code to}; the version moves like an edit. */
     @Modifying(flushAutomatically = true, clearAutomatically = true)
