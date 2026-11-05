@@ -34,7 +34,7 @@ class CreditChargeController {
     @PostMapping(OrderSettlementController.ORDERS + "/{id}/credit-charges")
     ResponseEntity<CreditChargeView> charge(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
                                             @Valid @RequestBody CreditChargeRequest body, HttpServletRequest request) {
-        return idempotent.steps("settlement.credit.charge", key, request, body, CreditChargeView.class, () -> {
+        return idempotent.steps(CreditSaleService.CHARGE_OPERATION, key, request, body, CreditChargeView.class, () -> {
             CreditChargeView posted = credit.charge(id, body, key);
             return ResponseEntity.created(URI.create(CHARGES + "/" + posted.id())).body(posted);
         });

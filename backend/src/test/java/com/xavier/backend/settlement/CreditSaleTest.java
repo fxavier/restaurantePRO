@@ -121,6 +121,17 @@ class CreditSaleTest {
     }
 
     @Test
+    void anotherCashiersRequestWithTheSameRawKeyDoesNotResumeAPostedCharge() throws Exception {
+        String key = UUID.randomUUID().toString();
+        fixtures.creditCharge(sale.cashier(), sale.order(), customer, "25.00", null, key)
+                .andExpect(status().isCreated());
+
+        fixtures.creditCharge(fixtures.secondCashier(sale), sale.order(), customer, "25.00", null, key)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CREDIT_CHARGE_EXISTS"));
+    }
+
+    @Test
     void aSameKeyRerunAfterThePostCommittedReturnsThePostedCharge() throws Exception {
         String key = UUID.randomUUID().toString();
         org.mockito.Mockito.doAnswer(call -> {

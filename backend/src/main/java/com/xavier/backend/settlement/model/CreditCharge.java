@@ -95,7 +95,10 @@ public class CreditCharge {
     @Column(length = MAX_TEXT)
     private String releaseReason;
 
-    /** The Idempotency-Key of the sale that reserved it: only that sale's re-run resumes it once POSTED. */
+    /**
+     * The scoped Idempotency-Key (operation:actor kind:actor id:key) of the sale that reserved it: only that sale's
+     * re-run resumes it once POSTED.
+     */
     @Column(updatable = false)
     private String requestKey;
 
