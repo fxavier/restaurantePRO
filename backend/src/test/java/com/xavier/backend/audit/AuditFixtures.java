@@ -5,14 +5,12 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import com.xavier.backend.access.Actor;
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.stream.Collectors;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -64,9 +62,5 @@ final class AuditFixtures {
     static RequestPostProcessor as(Actor actor) {
         List<SimpleGrantedAuthority> granted = actor.authorities().stream().map(SimpleGrantedAuthority::new).toList();
         return authentication(UsernamePasswordAuthenticationToken.authenticated(actor, null, granted));
-    }
-
-    static Set<String> authorities(String... authorities) {
-        return Arrays.stream(authorities).collect(Collectors.toUnmodifiableSet());
     }
 }
