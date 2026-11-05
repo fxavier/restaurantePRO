@@ -70,7 +70,7 @@ public class TableMapService {
             return new TableMap.Table(table.getId(), table.getCode(), table.getSeats(), TableStatus.FREE,
                     table.isLocked(), false, null, null, null);
         }
-        OccupationView occupation = open.toView();
+        OccupationView occupation = open.toView(table.getCode());
         return new TableMap.Table(table.getId(), table.getCode(), table.getSeats(), TableStatus.OCCUPIED,
                 table.isLocked(), occupation.subtotalPrintedAt() != null, occupation.openedAt(), occupation.guests(),
                 occupation.openedByEmployeeId());

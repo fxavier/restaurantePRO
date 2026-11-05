@@ -102,8 +102,9 @@ public class TableOccupation {
         return closedAt == null;
     }
 
-    public OccupationView toView() {
-        return new OccupationView(id, storeId, tableId, orderId, guests, openedAt, openedByEmployeeId,
+    /** @param tableCode the code of this occupation's table (the occupation stores only its id) */
+    public OccupationView toView(String tableCode) {
+        return new OccupationView(id, storeId, tableId, tableCode, orderId, guests, openedAt, openedByEmployeeId,
                 subtotalPrintedAt);
     }
 
