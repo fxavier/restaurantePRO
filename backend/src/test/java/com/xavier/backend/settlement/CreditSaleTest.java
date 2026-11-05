@@ -7,8 +7,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.xavier.backend.customers.CustomersApi;
 import com.xavier.backend.customers.CustomersFixtures;
 import com.xavier.backend.settlement.SettlementFixtures.Sale;
+import com.xavier.backend.settlement.service.CreditSaleSteps;
 import java.math.BigDecimal;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,6 +32,9 @@ class CreditSaleTest {
 
     @Autowired
     CustomersApi credit;
+
+    @Autowired
+    CreditSaleSteps steps;
 
     Sale sale;
     UUID customer;
@@ -96,6 +101,41 @@ class CreditSaleTest {
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
 
         assertThat(SettlementFixtures.json(again).get("id")).isEqualTo(SettlementFixtures.json(first).get("id"));
+        assertThat(credit.debtOf(customer).amount()).isEqualByComparingTo("25.00");
+    }
+
+    @AfterEach
+    void realSteps() {
+        org.mockito.Mockito.reset(steps);
+    }
+
+    @Test
+    void aNewKeyForAPostedChargeIsAConflictNotAResume() throws Exception {
+        UUID posted = SettlementFixtures.id(fixtures.creditCharge(sale, customer, "25.00")
+                .andExpect(status().isCreated()));
+
+        fixtures.creditCharge(sale, customer, "25.00").andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CREDIT_CHARGE_EXISTS"))
+                .andExpect(jsonPath("$.chargeId").value(posted.toString()));
+        assertThat(credit.debtOf(customer).amount()).isEqualByComparingTo("25.00");
+    }
+
+    @Test
+    void aSameKeyRerunAfterThePostCommittedReturnsThePostedCharge() throws Exception {
+        String key = UUID.randomUUID().toString();
+        org.mockito.Mockito.doAnswer(call -> {
+            call.callRealMethod(); // s3 commits, then the request dies before its response is stored
+            throw new IllegalStateException("crash after s3");
+        }).when(steps).post(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        try {
+            fixtures.creditCharge(sale.cashier(), sale.order(), customer, "25.00", null, key);
+        } catch (Exception crashed) {
+            // MockMvc rethrows the unhandled crash; the charge is POSTED with no stored response
+        }
+        org.mockito.Mockito.reset(steps);
+
+        fixtures.creditCharge(sale.cashier(), sale.order(), customer, "25.00", null, key)
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.status").value("POSTED"));
         assertThat(credit.debtOf(customer).amount()).isEqualByComparingTo("25.00");
     }
 

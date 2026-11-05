@@ -116,18 +116,31 @@ class CreditChargeTest {
     }
 
     @Test
-    void aReplayRepeatsOnlyTheSameCustomerAndAmount() {
+    void aReservedChargeIsResumedByTheSameCustomerAndAmountUnderAnyKey() {
         UUID customer = UUID.randomUUID();
         CreditCharge charge = CreditCharge.reserve(ORDER, null, UUID.randomUUID(), UUID.randomUUID(), customer,
-                Money.of(new BigDecimal("10.00"), MZN), LocalDate.of(2026, 11, 5), EMPLOYEE, NOW);
+                Money.of(new BigDecimal("10.00"), MZN), LocalDate.of(2026, 11, 5), EMPLOYEE, "key-1", NOW);
 
-        assertThat(charge.repeats(customer, Money.of(new BigDecimal("10.00"), MZN))).isTrue();
-        assertThat(charge.repeats(customer, Money.of(new BigDecimal("10.01"), MZN))).isFalse();
-        assertThat(charge.repeats(UUID.randomUUID(), Money.of(new BigDecimal("10.00"), MZN))).isFalse();
+        assertThat(charge.resumableBy(customer, Money.of(new BigDecimal("10.00"), MZN), "key-2")).isTrue();
+        assertThat(charge.resumableBy(customer, Money.of(new BigDecimal("10.01"), MZN), "key-1")).isFalse();
+        assertThat(charge.resumableBy(UUID.randomUUID(), Money.of(new BigDecimal("10.00"), MZN), "key-1"))
+                .isFalse();
+    }
+
+    @Test
+    void aPostedChargeIsResumedOnlyByItsOwnKey() {
+        UUID customer = UUID.randomUUID();
+        CreditCharge charge = CreditCharge.reserve(ORDER, null, UUID.randomUUID(), UUID.randomUUID(), customer,
+                Money.of(new BigDecimal("10.00"), MZN), LocalDate.of(2026, 11, 5), EMPLOYEE, "key-1", NOW);
+        charge.attachDocument(UUID.randomUUID());
+        charge.post(UUID.randomUUID(), EMPLOYEE, NOW);
+
+        assertThat(charge.resumableBy(customer, Money.of(new BigDecimal("10.00"), MZN), "key-1")).isTrue();
+        assertThat(charge.resumableBy(customer, Money.of(new BigDecimal("10.00"), MZN), "key-2")).isFalse();
     }
 
     static CreditCharge charge(UUID partition, String amount) {
         return CreditCharge.reserve(ORDER, partition, UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
-                Money.of(new BigDecimal(amount), MZN), LocalDate.of(2026, 11, 5), EMPLOYEE, NOW);
+                Money.of(new BigDecimal(amount), MZN), LocalDate.of(2026, 11, 5), EMPLOYEE, "key", NOW);
     }
 }

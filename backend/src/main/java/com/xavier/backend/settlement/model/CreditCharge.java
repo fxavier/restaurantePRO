@@ -95,6 +95,10 @@ public class CreditCharge {
     @Column(length = MAX_TEXT)
     private String releaseReason;
 
+    /** The Idempotency-Key of the sale that reserved it: only that sale's re-run resumes it once POSTED. */
+    @Column(updatable = false)
+    private String requestKey;
+
     @Version
     private Long version;
 
@@ -108,7 +112,7 @@ public class CreditCharge {
      */
     public static CreditCharge reserve(UUID orderId, UUID partitionId, UUID storeId, UUID terminalId,
                                        UUID customerId, Money amount, LocalDate businessDate, UUID employeeId,
-                                       Instant now) {
+                                       String requestKey, Instant now) {
         if (amount.amount().signum() <= 0) {
             throw new SettlementRuleException(SettlementRule.INVALID_AMOUNT, "A credit charge must be positive.");
         }
@@ -125,6 +129,7 @@ public class CreditCharge {
         charge.businessDate = Objects.requireNonNull(businessDate, "businessDate");
         charge.status = CreditChargeStatus.RESERVED;
         charge.createdByEmployeeId = Objects.requireNonNull(employeeId, "employeeId");
+        charge.requestKey = Objects.requireNonNull(requestKey, "requestKey");
         charge.createdAt = now;
         return charge;
     }
@@ -168,9 +173,14 @@ public class CreditCharge {
         releaseReason = reason.length() <= MAX_TEXT ? reason : reason.substring(0, MAX_TEXT);
     }
 
-    /** Whether a retried sale repeats this charge (same customer, same amount). */
-    public boolean repeats(UUID customer, Money other) {
-        return customerId.equals(customer) && amount().equals(other);
+    /**
+     * Whether a sale for {@code customer} and {@code other} resumes this charge: the same customer and amount, and,
+     * once POSTED, only the re-run of the sale that reserved it ({@code key}); a new sale under another key must not
+     * read a finished one as its own.
+     */
+    public boolean resumableBy(UUID customer, Money other, String key) {
+        return customerId.equals(customer) && amount().equals(other)
+                && (status == CreditChargeStatus.RESERVED || key.equals(requestKey));
     }
 
     private void requireReserved(String command) {

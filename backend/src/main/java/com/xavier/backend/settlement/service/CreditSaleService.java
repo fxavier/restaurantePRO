@@ -51,14 +51,16 @@ public class CreditSaleService {
     }
 
     /**
-     * s1 reserve and draft, s2 issue, s3 post; call with no transaction. @return the POSTED charge
+     * s1 reserve and draft, s2 issue, s3 post; call with no transaction. {@code requestKey} is the sale's
+     * Idempotency-Key: a new key never resumes a POSTED charge (409 {@code CREDIT_CHARGE_EXISTS}).
+     * @return the POSTED charge
      *
      * @throws com.xavier.backend.fiscal.FiscalIssueFailedException 422 {@code FISCAL_PENDING} {documentId}: the
      *         charge stays RESERVED with its limit held, and a retry with the same key resumes it
      */
-    public CreditChargeView charge(UUID orderId, CreditChargeRequest request) {
+    public CreditChargeView charge(UUID orderId, CreditChargeRequest request, String requestKey) {
         PosContext pos = accessPolicy.requirePos(Permission.CREDIT_SALE);
-        CreditChargeView reserved = steps.reserve(pos, orderId, request);
+        CreditChargeView reserved = steps.reserve(pos, orderId, request, requestKey);
         if (CreditChargeStatus.POSTED.name().equals(reserved.status())) {
             return reserved;
         }
