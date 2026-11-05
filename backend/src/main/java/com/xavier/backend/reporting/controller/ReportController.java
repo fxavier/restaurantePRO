@@ -2,7 +2,11 @@ package com.xavier.backend.reporting.controller;
 
 import com.xavier.backend.reporting.model.dto.ReceiptsRow;
 import com.xavier.backend.reporting.model.dto.ReportView;
+import com.xavier.backend.reporting.model.dto.SalesRow;
+import com.xavier.backend.reporting.model.dto.TaxRow;
 import com.xavier.backend.reporting.service.ReportService;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Pattern;
 import java.time.LocalDate;
 import java.util.UUID;
@@ -23,6 +27,26 @@ class ReportController {
 
     ReportController(ReportService reports) {
         this.reports = reports;
+    }
+
+    @GetMapping("/sales")
+    ReportView<SalesRow> sales(@RequestParam UUID storeId, @RequestParam LocalDate from, @RequestParam LocalDate to,
+                               @RequestParam @Pattern(regexp = "day|hour|terminal|employee|area|item|family|mode")
+                               String groupBy) {
+        return reports.sales(storeId, from, to, groupBy);
+    }
+
+    @GetMapping("/taxes")
+    ReportView<TaxRow> taxes(@RequestParam UUID storeId, @RequestParam LocalDate from, @RequestParam LocalDate to) {
+        return reports.taxes(storeId, from, to);
+    }
+
+    @GetMapping("/top-items")
+    ReportView<SalesRow> topItems(@RequestParam UUID storeId, @RequestParam LocalDate from,
+                                  @RequestParam LocalDate to,
+                                  @RequestParam(defaultValue = "quantity") @Pattern(regexp = "quantity|gross") String by,
+                                  @RequestParam(defaultValue = "20") @Min(1) @Max(100) int limit) {
+        return reports.topItems(storeId, from, to, by, limit);
     }
 
     @GetMapping("/receipts")

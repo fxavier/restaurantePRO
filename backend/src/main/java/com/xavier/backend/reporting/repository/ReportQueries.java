@@ -36,16 +36,74 @@ public class ReportQueries {
             WHERE store_id = :store AND business_date BETWEEN :from AND :to
             GROUP BY 1 ORDER BY 1 NULLS LAST""";
 
+    public static final String SALES = """
+            SELECT %s AS key, %s AS label, count(DISTINCT l.document_id) AS documents, sum(l.quantity) AS quantity,
+                   sum(l.gross) AS gross, sum(l.net) AS net, sum(l.tax) AS tax, max(l.projected_at) AS as_of
+            FROM reporting.sales_record_line l %s
+            WHERE l.store_id = :store AND l.business_date BETWEEN :from AND :to
+            GROUP BY 1 %s""";
+
+    static final String HEADER_JOIN = "JOIN reporting.sales_record s ON s.document_id = l.document_id";
+    static final String BY_KEY = "ORDER BY 1 NULLS LAST";
+
+    public static final String TAXES = """
+            SELECT tax_code, tax_rate, sum(net) AS net, sum(tax) AS tax, max(projected_at) AS as_of
+            FROM reporting.sales_record_tax
+            WHERE store_id = :store AND business_date BETWEEN :from AND :to
+            GROUP BY tax_code, tax_rate ORDER BY tax_rate, tax_code""";
+
     private final JdbcClient jdbc;
 
     ReportQueries(JdbcClient jdbc) {
         this.jdbc = jdbc;
     }
 
+    public record SalesAggregate(String key, String label, long documents, BigDecimal quantity, BigDecimal gross,
+                                 BigDecimal net, BigDecimal tax, Instant asOf) {
+    }
+
+    public record TaxAggregate(String taxCode, BigDecimal rate, BigDecimal net, BigDecimal tax, Instant asOf) {
+    }
+
     public record ReceiptsAggregate(String key, BigDecimal received, BigDecimal debtCollected, Instant asOf) {
     }
 
     public record CreditAggregate(String key, BigDecimal onAccount, Instant asOf) {
+    }
+
+    /**
+     * Sales lines grouped by {@code keyExpression} (labelled by {@code labelExpression}), joined to their document
+     * header when {@code withHeader}, in key order; {@link #TOTAL} gives the totals.
+     */
+    public List<SalesAggregate> sales(String keyExpression, String labelExpression, boolean withHeader, UUID store,
+                                      LocalDate from, LocalDate to) {
+        return sales(SALES.formatted(keyExpression, labelExpression, withHeader ? HEADER_JOIN : "", BY_KEY), store,
+                from, to).list();
+    }
+
+    /** The {@code limit} items with the greatest quantity (or gross, when {@code byGross}), then by item code. */
+    public List<SalesAggregate> topItems(String keyExpression, String labelExpression, boolean byGross, int limit,
+                                         UUID store, LocalDate from, LocalDate to) {
+        String order = "ORDER BY sum(l.%s) DESC, 1 NULLS LAST LIMIT :limit".formatted(byGross ? "gross" : "quantity");
+        return jdbc.sql(SALES.formatted(keyExpression, labelExpression, "", order)).param("store", store)
+                .param("from", from).param("to", to).param("limit", limit).query(ReportQueries::sales).list();
+    }
+
+    public List<TaxAggregate> taxes(UUID store, LocalDate from, LocalDate to) {
+        return query(TAXES, store, from, to)
+                .query((rs, n) -> new TaxAggregate(rs.getString("tax_code"), rs.getBigDecimal("tax_rate"),
+                        rs.getBigDecimal("net"), rs.getBigDecimal("tax"), instant(rs, "as_of")))
+                .list();
+    }
+
+    private JdbcClient.MappedQuerySpec<SalesAggregate> sales(String sql, UUID store, LocalDate from, LocalDate to) {
+        return query(sql, store, from, to).query(ReportQueries::sales);
+    }
+
+    private static SalesAggregate sales(ResultSet rs, int row) throws SQLException {
+        return new SalesAggregate(rs.getString("key"), rs.getString("label"), rs.getLong("documents"),
+                rs.getBigDecimal("quantity"), rs.getBigDecimal("gross"), rs.getBigDecimal("net"),
+                rs.getBigDecimal("tax"), instant(rs, "as_of"));
     }
 
     /** {@code keyExpression} is one of the receipts groupings over {@code payment_record}, or {@link #TOTAL}. */
