@@ -1,5 +1,6 @@
 package com.xavier.backend.production.adapter;
 
+import com.xavier.backend.production.model.PrintJob;
 import com.xavier.backend.production.model.PrinterAddress;
 import com.xavier.backend.shared.ExternalCalls;
 import java.io.IOException;
@@ -34,6 +35,11 @@ public class EscPosTcpTransport implements PrinterTransport, DisposableBean {
 
     public EscPosTcpTransport(@Value("${restaurantpro.production.printer.connect-timeout:PT2S}") Duration connectTimeout,
                               @Value("${restaurantpro.production.printer.write-timeout:PT5S}") Duration writeTimeout) {
+        // a send outliving its job's lease would let the printer's next job go out while this one is still writing
+        if (connectTimeout.plus(writeTimeout).compareTo(PrintJob.LEASE) >= 0) {
+            throw new IllegalStateException("printer connect-timeout + write-timeout must stay below the "
+                    + PrintJob.LEASE + " print-job lease");
+        }
         this.connectTimeout = connectTimeout;
         this.writeTimeout = writeTimeout;
     }

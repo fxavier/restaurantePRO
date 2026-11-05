@@ -76,6 +76,7 @@ Module layout (D12): `model/`, `model/dto/`, `model/event/`, `repository/`, `ser
   - settlement: `order_settlement` (`SettlementLocks`, the first lock of every pay, issue or close) → `cash_session` / `cash_day` → fiscal (`fiscal_document` before `fiscal_series`).
   - orders: claim an order by moving its version first (`OrderLookup.claim`); several orders are claimed in ascending id order (transfers, merge). A table opening or move writes the order row (and its open-table unique entry) first, then calls `DiningApi` (occupation and table `FOR UPDATE`).
   - dining: table, then area (`DiningRows`).
+  - production: printer rows in id order (`PrinterRepository.lockAll`), mode change only (D51 amended). The print worker's claim locks jobs with `FOR UPDATE OF j SKIP LOCKED`: each printer's head job if due, none for a printer with a PROCESSING job (D50 §7.2 amended).
   - **Decide on the locked row.** A locking JPQL query on an entity the transaction already manages takes the lock but returns the stale instance. Lock with `find` + `refresh(entity, lockMode)` (`cash.service.RowLocks`, `dining.service.DiningRows`), or a compare-and-set `UPDATE … WHERE status = ?` with a row-count check (`PaymentAttemptRepository.markSubmitted`).
 
 ## Events
