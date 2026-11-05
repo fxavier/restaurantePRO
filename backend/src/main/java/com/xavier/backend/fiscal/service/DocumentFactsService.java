@@ -47,11 +47,11 @@ public class DocumentFactsService {
     public DocumentFacts documentFacts(UUID documentId) {
         FiscalDocument document = documents.findById(documentId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
-        return document.toFacts(() -> store(document.getStoreId()).businessDayCutoff());
+        return document.toFacts(() -> store(document.getStoreId()));
     }
 
     public Page<UUID> issuedDocumentIds(UUID storeId, LocalDate from, LocalDate to, Pageable page) {
-        StoreSummary store = store(storeId);
+        StoreSummary store = store(storeId); // R2 rows: the store's current zone and cutoff, as documentFacts (D85)
         Instant start = startOfBusinessDay(from, store.timezone(), store.businessDayCutoff());
         Instant end = startOfBusinessDay(to.plusDays(1), store.timezone(), store.businessDayCutoff());
         return documents.findIssuedIds(storeId, from, to, start, end, page);

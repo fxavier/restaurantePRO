@@ -31,7 +31,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Currency;
@@ -342,11 +341,16 @@ public class FiscalDocument {
 
     /**
      * The facts reporting projects (D84). An R2 document has no business date: it falls back to the business day
-     * of its issue in its store's zone, with the cutoff {@code storeCutoff} supplies (read only then, D85).
+     * of its issue in the store's CURRENT zone and cutoff (D85), the same rule as the backfill listing; the
+     * snapshotted {@code store_timezone} is only what was printed. {@code currentStore} is read only then.
      */
-    public DocumentFacts toFacts(Supplier<LocalTime> storeCutoff) {
-        LocalDate day = businessDate != null ? businessDate
-                : BusinessDays.of(issuedAt != null ? issuedAt : createdAt, ZoneId.of(storeTimezone), storeCutoff.get());
+    public DocumentFacts toFacts(Supplier<StoreSummary> currentStore) {
+        LocalDate day = businessDate;
+        if (day == null) {
+            StoreSummary store = currentStore.get();
+            day = BusinessDays.of(issuedAt != null ? issuedAt : createdAt, store.timezone(),
+                    store.businessDayCutoff());
+        }
         DocumentView view = toView();
         return new DocumentFacts(id, storeId, documentType.name(), status.name(), sourceType.name(), sourceId,
                 orderRef, day, issuedAt, issuedTerminalId, issuedByEmployeeId, customerId, onAccount, seriesCode,
