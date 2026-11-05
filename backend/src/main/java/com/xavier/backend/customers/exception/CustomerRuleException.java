@@ -55,6 +55,11 @@ public class CustomerRuleException extends BusinessRuleException {
         return new CustomerRuleException(CustomerRule.INVALID_AMOUNT, detail);
     }
 
+    public static CustomerRuleException invalidPeriod(Object from, Object to) {
+        return new CustomerRuleException(CustomerRule.INVALID_PERIOD, "The period starts (" + from
+                + ") after it ends (" + to + ").");
+    }
+
     public CustomerRule rule() {
         return rule;
     }
