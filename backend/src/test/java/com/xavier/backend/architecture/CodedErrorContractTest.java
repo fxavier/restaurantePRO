@@ -173,7 +173,10 @@ class CodedErrorContractTest {
             Map.entry("void-self-approval", SettlementRuleException::voidSelfApproval),
             Map.entry("illegal-partition-state", () -> SettlementConflictException.illegalPartitionState(ID,
                     "CANCELLED", "be cancelled")),
-            Map.entry("partition-in-doubt", () -> SettlementConflictException.inDoubt("partition", ID, OTHER)));
+            Map.entry("partition-in-doubt", () -> SettlementConflictException.inDoubt("partition", ID, OTHER)),
+            // R3 settlement (S30): payments in doubt, refunds
+            Map.entry("reclassify-too-early", () -> SettlementRuleException.reclassifyTooEarly(ID,
+                    Duration.ofMinutes(15), 0)));
 
     @Autowired
     MockMvc mvc;
@@ -372,6 +375,13 @@ class CodedErrorContractTest {
                 + " already has a credit charge; cancel it first.", ",\"chargeId\":\"" + OTHER + "\"");
         expect("illegal-charge-state", 409, "ILLEGAL_CHARGE_STATE",
                 "Credit charge " + ID + " is POSTED and cannot be cancelled.", "");
+    }
+
+    @Test
+    void settlementInDoubtAndRefundRules() throws Exception {
+        expect("reclassify-too-early", 422, "RECLASSIFY_TOO_EARLY", "Payment attempt " + ID
+                + " may be reclassified as FAILED only once it is older than PT15M and the provider was asked about "
+                + "it since it became UNKNOWN.", ",\"pollCount\":0");
     }
 
     @Test

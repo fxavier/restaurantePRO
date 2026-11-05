@@ -52,9 +52,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
         "restaurantpro.bootstrap.admin.username=settlement-bootstrap-admin",
         "restaurantpro.bootstrap.admin.initial-password-file=src/test/resources/identity/admin-initial-password.txt",
         "restaurantpro.settlement.provider-timeout=PT2S",
-        // the tests drive the sweeper by hand (AttemptSweeper.sweep), with the test clock
+        // the tests drive the sweepers and the in-doubt resolver by hand, with the test clock
         "restaurantpro.settlement.sweep-interval=PT1H",
-        "restaurantpro.settlement.credit-sweep-interval=PT1H"
+        "restaurantpro.settlement.credit-sweep-interval=PT1H",
+        "restaurantpro.settlement.in-doubt-poll-interval=PT1H"
 })
 @MockitoSpyBean(types = {InternalFiscalAdapter.class, OrderSettlementSteps.class, PaymentSubmitter.class,
         OrdersApi.class, CashApi.class, FiscalApi.class, CreditSaleSteps.class})

@@ -76,5 +76,10 @@ public enum SettlementRule {
     /** R3 (D75, P33): a debt payment is at most the customer's open debt (no advance), or the debits it names. */
     AMOUNT_EXCEEDS_DEBT,
     /** R3 (D75): a debit a debt payment names is unknown, of another customer, or already settled. */
-    DEBIT_NOT_OPEN
+    DEBIT_NOT_OPEN,
+    /**
+     * R3 (D81 (3)): an UNKNOWN attempt is reclassified as FAILED only once it is older than
+     * {@code restaurantpro.settlement.reclassify-failed-min-age} and the provider was asked about it since.
+     */
+    RECLASSIFY_TOO_EARLY
 }

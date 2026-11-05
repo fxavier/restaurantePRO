@@ -12,7 +12,8 @@ import org.springframework.context.annotation.Bean;
 
 /**
  * The integrated provider of the tests (D53: R2 ships no real one), code {@code FAKE}. It keeps what it "really" did
- * per reference, so a status query after a timeout tells the truth, and counts the charges per reference. Like every
+ * per reference, so a status query after a timeout tells the truth (a reference it never received is
+ * {@code NotFound}, D81), and counts the charges per reference. Like every
  * adapter it refuses to run inside a transaction. {@link Behaviour#HANG} takes the money but answers only after
  * {@link #HANG}, longer than the test provider timeout (PT2S), so settlement sees a timeout.
  */
@@ -41,6 +42,11 @@ public class FakePaymentProvider implements PaymentProvider {
     /** The provider decides a PENDING charge later. */
     public void decide(String reference, ProviderOutcome outcome) {
         truth.put(reference, outcome);
+    }
+
+    /** The provider loses every trace of the reference: a status query answers {@code NotFound} (D81). */
+    public void forget(String reference) {
+        truth.remove(reference);
     }
 
     /** Lets a DELAYED charge reach the provider. */
@@ -96,7 +102,7 @@ public class FakePaymentProvider implements PaymentProvider {
     @Override
     public ProviderOutcome status(String reference) {
         ExternalCalls.requireNoTransaction();
-        return truth.getOrDefault(reference, new ProviderOutcome.Failed("unknown reference"));
+        return truth.getOrDefault(reference, new ProviderOutcome.NotFound());
     }
 
     @TestConfiguration(proxyBeanMethods = false)

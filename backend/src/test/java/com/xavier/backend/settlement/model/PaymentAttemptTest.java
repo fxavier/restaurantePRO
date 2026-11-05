@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.xavier.backend.settlement.exception.SettlementConflictException;
 import com.xavier.backend.settlement.exception.SettlementRuleException;
 import com.xavier.backend.shared.Money;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Currency;
 import java.util.EnumSet;
@@ -23,6 +24,7 @@ class PaymentAttemptTest {
     static final Currency MZN = Currency.getInstance("MZN");
     static final Instant NOW = Instant.parse("2026-11-04T12:00:00Z");
     static final UUID EMPLOYEE = UUID.randomUUID();
+    static final Duration MIN_AGE = Duration.ofMinutes(15);
 
     @Test
     void cashSucceedsAtOnceWithItsChange() {
@@ -122,7 +124,7 @@ class PaymentAttemptTest {
     void onlyAnUnknownAttemptIsReclassifiedByHand(AttemptStatus from) {
         UUID approver = UUID.randomUUID();
         expect(PaymentMethodKind.INTEGRATED, from,
-                a -> a.reclassify(AttemptStatus.SUCCEEDED, "bank statement", EMPLOYEE, approver, NOW),
+                a -> a.reclassify(AttemptStatus.SUCCEEDED, "bank statement", EMPLOYEE, approver, NOW, MIN_AGE),
                 EnumSet.of(AttemptStatus.UNKNOWN), AttemptStatus.SUCCEEDED);
     }
 
@@ -130,10 +132,76 @@ class PaymentAttemptTest {
     void aReclassificationNeedsAReasonAndAFinalOutcome() {
         PaymentAttempt attempt = in(PaymentMethodKind.INTEGRATED, AttemptStatus.UNKNOWN);
         UUID approver = UUID.randomUUID();
-        assertThatThrownBy(() -> attempt.reclassify(AttemptStatus.FAILED, " ", EMPLOYEE, approver, NOW))
+        assertThatThrownBy(() -> attempt.reclassify(AttemptStatus.FAILED, " ", EMPLOYEE, approver, NOW, MIN_AGE))
                 .hasFieldOrPropertyWithValue("code", "REASON_REQUIRED");
-        assertThatThrownBy(() -> attempt.reclassify(AttemptStatus.CANCELLED, "x", EMPLOYEE, approver, NOW))
+        assertThatThrownBy(() -> attempt.reclassify(AttemptStatus.CANCELLED, "x", EMPLOYEE, approver, NOW, MIN_AGE))
                 .hasFieldOrPropertyWithValue("code", "INVALID_OUTCOME");
+    }
+
+    @Test
+    void anUnknownAttemptIsPolledAfterOneMinuteThenWithBackoff() {
+        PaymentAttempt attempt = in(PaymentMethodKind.INTEGRATED, AttemptStatus.UNKNOWN);
+        assertThat(attempt.getNextPollAt()).isEqualTo(NOW.plus(Duration.ofMinutes(1)));
+        assertThat(attempt.getPollCount()).isZero();
+
+        Instant at = NOW;
+        for (long minutes : new long[] {2, 5, 10, 30, 60, 60}) {
+            attempt.recordStatusQuery("Pending", at);
+            assertThat(attempt.getNextPollAt()).isEqualTo(at.plus(Duration.ofMinutes(minutes)));
+            at = attempt.getNextPollAt();
+        }
+        assertThat(attempt.getPollCount()).isEqualTo(6);
+        assertThat(attempt.getLastPollAnswer()).isEqualTo("Pending");
+    }
+
+    @Test
+    void aQueryOfAnAttemptThatIsNotUnknownIsNotAPoll() {
+        PaymentAttempt pending = in(PaymentMethodKind.INTEGRATED, AttemptStatus.PENDING);
+
+        pending.recordStatusQuery("Failed", NOW);
+
+        assertThat(pending.getPollCount()).isZero();
+        assertThat(pending.getNextPollAt()).isNull();
+    }
+
+    @Test
+    void reclassifyingToFailedNeedsTheMinimumAgeAndAQuerySinceItBecameUnknown() {
+        UUID approver = UUID.randomUUID();
+        PaymentAttempt unqueried = in(PaymentMethodKind.INTEGRATED, AttemptStatus.UNKNOWN);
+        assertThatThrownBy(() -> unqueried.reclassify(AttemptStatus.FAILED, "not on the statement", EMPLOYEE,
+                approver, NOW.plus(Duration.ofHours(1)), MIN_AGE))
+                .hasFieldOrPropertyWithValue("code", "RECLASSIFY_TOO_EARLY");
+
+        PaymentAttempt young = in(PaymentMethodKind.INTEGRATED, AttemptStatus.UNKNOWN);
+        young.recordStatusQuery("NotFound", NOW.plus(Duration.ofMinutes(1)));
+        assertThatThrownBy(() -> young.reclassify(AttemptStatus.FAILED, "not on the statement", EMPLOYEE, approver,
+                NOW.plus(MIN_AGE), MIN_AGE))
+                .hasFieldOrPropertyWithValue("code", "RECLASSIFY_TOO_EARLY");
+        assertThat(young.getStatus()).isEqualTo(AttemptStatus.UNKNOWN);
+
+        young.reclassify(AttemptStatus.FAILED, "not on the statement", EMPLOYEE, approver,
+                NOW.plus(MIN_AGE).plusSeconds(1), MIN_AGE);
+        assertThat(young.getStatus()).isEqualTo(AttemptStatus.FAILED);
+    }
+
+    @Test
+    void reclassifyingToSucceededHasNoAgeGuard() {
+        PaymentAttempt attempt = in(PaymentMethodKind.INTEGRATED, AttemptStatus.UNKNOWN);
+
+        attempt.reclassify(AttemptStatus.SUCCEEDED, "on the statement", EMPLOYEE, UUID.randomUUID(), NOW, MIN_AGE);
+
+        assertThat(attempt.getStatus()).isEqualTo(AttemptStatus.SUCCEEDED);
+    }
+
+    @Test
+    void notFoundIsFinalOnlyForAnUnknownAttemptPastTheAcceptanceWindow() {
+        Duration window = Duration.ofMinutes(15);
+        PaymentAttempt attempt = in(PaymentMethodKind.INTEGRATED, AttemptStatus.UNKNOWN);
+
+        assertThat(attempt.outlivedAcceptanceWindow(window, NOW.plus(window))).isFalse();
+        assertThat(attempt.outlivedAcceptanceWindow(window, NOW.plus(window).plusSeconds(1))).isTrue();
+        assertThat(in(PaymentMethodKind.INTEGRATED, AttemptStatus.PENDING)
+                .outlivedAcceptanceWindow(window, NOW.plus(Duration.ofDays(1)))).isFalse();
     }
 
     @Test

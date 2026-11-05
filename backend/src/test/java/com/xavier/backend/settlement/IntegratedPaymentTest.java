@@ -152,6 +152,10 @@ class IntegratedPaymentTest {
                             .as("D40: the approver is verified before any transaction or lock").isFalse();
                     return approver;
                 });
+        provider.decide(attempt.toString(), new ProviderOutcome.Pending()); // the provider cannot tell
+        fixtures.resolve(sale.cashier(), attempt, UUID.randomUUID().toString())
+                .andExpect(jsonPath("$.status").value("UNKNOWN"));
+        clock.advance(Duration.ofMinutes(16)); // D81 (3): asked once and older than the minimum age
 
         fixtures.reclassify(sale.cashier(), attempt, "FAILED", "not on the bank statement", "GER01")
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("FAILED"))

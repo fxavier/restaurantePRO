@@ -118,6 +118,15 @@ public class SettlementRuleException extends BusinessRuleException {
                 + " is not an open debit of this customer.", Map.of("debitEntryId", debitEntryId));
     }
 
+    // ---- R3 (D81): payments in doubt ----
+
+    public static SettlementRuleException reclassifyTooEarly(UUID attemptId, java.time.Duration minAge,
+                                                             int pollCount) {
+        return new SettlementRuleException(SettlementRule.RECLASSIFY_TOO_EARLY, "Payment attempt " + attemptId
+                + " may be reclassified as FAILED only once it is older than " + minAge
+                + " and the provider was asked about it since it became UNKNOWN.", Map.of("pollCount", pollCount));
+    }
+
     private static String plain(BigDecimal quantity) {
         return quantity.stripTrailingZeros().toPlainString();
     }

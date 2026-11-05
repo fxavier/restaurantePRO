@@ -13,8 +13,10 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Currency;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -43,6 +45,10 @@ import org.hibernate.type.SqlTypes;
 public class PaymentAttempt {
 
     static final int MAX_TEXT = 500;
+
+    /** D81 (2): the wait before each provider status query of an UNKNOWN attempt; the last one repeats. */
+    static final List<Duration> POLL_BACKOFF = List.of(Duration.ofMinutes(1), Duration.ofMinutes(2),
+            Duration.ofMinutes(5), Duration.ofMinutes(10), Duration.ofMinutes(30), Duration.ofHours(1));
 
     @Id
     private UUID id;
@@ -129,6 +135,19 @@ public class PaymentAttempt {
 
     @Column(nullable = false)
     private Instant updatedAt;
+
+    /** D81 (2): the provider status queries since it became UNKNOWN. */
+    @Column(nullable = false)
+    private int pollCount;
+
+    /** D81 (2): when the in-doubt resolver asks the provider next (UNKNOWN only). */
+    private Instant nextPollAt;
+
+    private Instant lastPolledAt;
+
+    /** The provider's last answer to a status query: Succeeded, Failed, Pending, Unknown or NotFound. */
+    @Column(length = 20)
+    private String lastPollAnswer;
 
     @Version
     private Long version;
@@ -267,10 +286,15 @@ public class PaymentAttempt {
         outcomeDetail = clip(reason);
     }
 
-    /** D48 tx-b or the sweeper: the outcome is not known (timeout, crash during the call). Never FAILED. */
+    /**
+     * D48 tx-b or the sweeper: the outcome is not known (timeout, crash during the call). Never FAILED. The in-doubt
+     * resolver asks the provider a first time a minute later (D81 (2)).
+     */
     public void markUnknown(String detail, Instant now) {
         move(Set.of(AttemptStatus.PENDING), AttemptStatus.UNKNOWN, "become unknown", now);
         outcomeDetail = clip(detail);
+        pollCount = 0;
+        nextPollAt = now.plus(POLL_BACKOFF.getFirst());
     }
 
     /**
@@ -292,11 +316,16 @@ public class PaymentAttempt {
     }
 
     /**
-     * D50 §7.4: an authorized manual reclassification of an UNKNOWN attempt, with an approver and a reason.
+     * D50 §7.4: an authorized manual reclassification of an UNKNOWN attempt, with an approver and a reason. To
+     * FAILED only once the attempt is older than {@code failedMinAge} and the provider was asked about it since it
+     * became UNKNOWN (D81 (3)): a charge still in flight could otherwise succeed after the customer paid again.
+     * To SUCCEEDED there is no such guard.
      *
-     * @throws SettlementRuleException {@code REASON_REQUIRED} or {@code INVALID_OUTCOME}
+     * @throws SettlementRuleException {@code REASON_REQUIRED}, {@code INVALID_OUTCOME} or
+     *         {@code RECLASSIFY_TOO_EARLY}
      */
-    public void reclassify(AttemptStatus outcome, String reason, UUID employeeId, UUID approverId, Instant now) {
+    public void reclassify(AttemptStatus outcome, String reason, UUID employeeId, UUID approverId, Instant now,
+                           Duration failedMinAge) {
         if (reason == null || reason.isBlank()) {
             throw new SettlementRuleException(SettlementRule.REASON_REQUIRED,
                     "A reclassification needs a reason.");
@@ -305,10 +334,38 @@ public class PaymentAttempt {
             throw new SettlementRuleException(SettlementRule.INVALID_OUTCOME,
                     "An attempt is reclassified as SUCCEEDED or FAILED only.");
         }
+        if (status != AttemptStatus.UNKNOWN) {
+            throw SettlementConflictException.illegalState(id, status, "be reclassified");
+        }
+        if (outcome == AttemptStatus.FAILED && (!createdAt.plus(failedMinAge).isBefore(now) || pollCount == 0)) {
+            throw SettlementRuleException.reclassifyTooEarly(id, failedMinAge, pollCount);
+        }
         move(Set.of(AttemptStatus.UNKNOWN), outcome, "be reclassified", now);
         resolvedByEmployeeId = Objects.requireNonNull(employeeId, "employeeId");
         approverEmployeeId = Objects.requireNonNull(approverId, "approverId");
         resolutionReason = clip(reason);
+    }
+
+    /**
+     * D81 (2): the provider was asked about this attempt and answered {@code answer}. For an UNKNOWN attempt it counts
+     * as a poll and schedules the next one by the backoff; a query of an attempt in any other state is not a poll.
+     */
+    public void recordStatusQuery(String answer, Instant now) {
+        if (status != AttemptStatus.UNKNOWN) {
+            return;
+        }
+        pollCount++;
+        lastPolledAt = now;
+        lastPollAnswer = answer;
+        nextPollAt = now.plus(POLL_BACKOFF.get(Math.min(pollCount, POLL_BACKOFF.size() - 1)));
+    }
+
+    /**
+     * D81 (1): a provider that does not know the reference proves it was never charged only once the attempt is
+     * UNKNOWN and older than the provider's acceptance window (a charge may still be on its way before that).
+     */
+    public boolean outlivedAcceptanceWindow(Duration window, Instant now) {
+        return status == AttemptStatus.UNKNOWN && createdAt.plus(window).isBefore(now);
     }
 
     private void move(Set<AttemptStatus> from, AttemptStatus to, String command, Instant now) {
@@ -406,6 +463,26 @@ public class PaymentAttempt {
 
     public UUID getCreatedByEmployeeId() {
         return createdByEmployeeId;
+    }
+
+    public int getPollCount() {
+        return pollCount;
+    }
+
+    public Instant getNextPollAt() {
+        return nextPollAt;
+    }
+
+    public Instant getLastPolledAt() {
+        return lastPolledAt;
+    }
+
+    public String getLastPollAnswer() {
+        return lastPollAnswer;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
     }
 
     public Instant getUpdatedAt() {
