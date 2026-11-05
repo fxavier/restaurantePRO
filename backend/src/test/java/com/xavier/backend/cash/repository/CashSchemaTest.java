@@ -63,6 +63,15 @@ class CashSchemaTest {
     }
 
     @Test
+    void theOldestOpenDayOfAStoreHasAPartialIndex() {
+        assertThat(jdbc.sql("""
+                        SELECT indexdef FROM pg_indexes WHERE schemaname = 'cash' AND indexname = 'cash_day_store_open_ix'""")
+                .query(String.class).optional())
+                .hasValueSatisfying(definition -> assertThat(definition)
+                        .contains("(store_id, business_date)").contains("WHERE ((status)::text = 'OPEN'::text)"));
+    }
+
+    @Test
     void aCashMovementCannotBeUpdatedOrDeleted() {
         assertThatThrownBy(() -> jdbc.sql("UPDATE cash.cash_movement SET amount = 1 WHERE session_id = ?")
                 .param(session).update())

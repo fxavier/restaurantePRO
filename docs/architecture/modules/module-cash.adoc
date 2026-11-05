@@ -1,0 +1,15 @@
+[%autowidth.stretch, cols="h,a"]
+|===
+|Base package
+|`com.xavier.backend.cash`
+|Spring components
+|_Services_
+
+* `c.x.b.c.CashApi`
+|Bean references
+|* `c.x.b.s.idempotency.IdempotencyService` (in Shared kernel)
+* `c.x.b.a.AccessPolicy` (in Access)
+* `c.x.b.a.AuditLog` (in Audit)
+* `c.x.b.o.OrganizationApi` (in Organization)
+* `c.x.b.i.ApproverVerifier` (in Identity)
+|===

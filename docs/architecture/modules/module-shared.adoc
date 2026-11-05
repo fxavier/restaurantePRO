@@ -6,6 +6,7 @@
 |_Services_
 
 * `c.x.b.s.idempotency.IdempotencyService`
+* `c.x.b.s.notify.ChangeNotifier`
 
 _Others_
 

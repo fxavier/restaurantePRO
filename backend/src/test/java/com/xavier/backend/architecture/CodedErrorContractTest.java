@@ -18,6 +18,15 @@ import com.xavier.backend.fiscal.FiscalIssueFailedException;
 import com.xavier.backend.identity.exception.LoginThrottledException;
 import com.xavier.backend.identity.exception.PinChangeNotRequiredException;
 import com.xavier.backend.identity.exception.PinUnchangedException;
+import com.xavier.backend.orders.exception.OrderConflictException;
+import com.xavier.backend.orders.exception.OrderRuleException;
+import com.xavier.backend.production.exception.ProductionRule;
+import com.xavier.backend.production.exception.ProductionRuleViolationException;
+import com.xavier.backend.settlement.exception.SettlementConflictException;
+import com.xavier.backend.settlement.exception.SettlementRule;
+import com.xavier.backend.settlement.exception.SettlementRuleException;
+import com.xavier.backend.settlement.model.AttemptStatus;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -49,6 +58,7 @@ import org.springframework.web.bind.annotation.RestController;
 class CodedErrorContractTest {
 
     static final UUID ID = UUID.fromString("0190a000-0000-7000-8000-0000000000c1");
+    static final UUID OTHER = UUID.fromString("0190a000-0000-7000-8000-0000000000c2");
     static final String PATH = "/api/v1/backoffice/error-contract/";
 
     static final Map<String, Supplier<RuntimeException>> ERRORS = Map.ofEntries(
@@ -68,7 +78,28 @@ class CodedErrorContractTest {
             Map.entry("cash-rule", () -> new CashRuleViolationException(CashRule.DAY_NOT_OPEN,
                     "The cash day is not open.")),
             Map.entry("fiscal-pending", () -> new FiscalIssueFailedException(ID,
-                    new IllegalStateException("adapter offline"))));
+                    new IllegalStateException("adapter offline"))),
+            Map.entry("order-not-open", () -> OrderConflictException.notOpen(ID)),
+            Map.entry("line-not-draft", () -> OrderConflictException.lineNotDraft(ID)),
+            Map.entry("catalog-changed", () -> OrderConflictException.catalogChanged(3, 4)),
+            Map.entry("order-in-settlement", () -> OrderRuleException.inSettlement(ID)),
+            Map.entry("quantity-exceeds-net", () -> OrderRuleException.quantityExceedsNet(ID, new BigDecimal("1.500"))),
+            Map.entry("payment-in-doubt", () -> SettlementConflictException.inDoubt("order", ID, OTHER)),
+            Map.entry("illegal-attempt-state", () -> SettlementConflictException.illegalState(ID,
+                    AttemptStatus.FAILED, "confirm")),
+            // The messages of these two are built inline by PaymentAttemptService and OrderSettlementSteps; the same
+            // format is repeated here so the pinned body is the one clients see.
+            Map.entry("amount-exceeds-balance", () -> new SettlementRuleException(
+                    SettlementRule.AMOUNT_EXCEEDS_BALANCE,
+                    "The amount 60.0000 is more than the balance 40.0000 of the order.",
+                    Map.of("balance", new BigDecimal("40.0000")))),
+            Map.entry("not-settled", () -> new SettlementRuleException(SettlementRule.NOT_SETTLED,
+                    "Order " + ID + " is not settled: 60.0000 paid of 100.0000 due.",
+                    Map.of("balance", new BigDecimal("40.0000")))),
+            Map.entry("session-not-open", () -> new CashRuleViolationException(CashRule.SESSION_NOT_OPEN,
+                    "The cash session " + ID + " is closed.")),
+            Map.entry("printer-ignored", () -> new ProductionRuleViolationException(ProductionRule.PRINTER_IGNORED,
+                    "Printer K1 is in IGNORE: change its mode to print again")));
 
     @Autowired
     MockMvc mvc;
@@ -114,6 +145,48 @@ class CodedErrorContractTest {
     @Test
     void cashRule() throws Exception {
         expect("cash-rule", 422, "DAY_NOT_OPEN", "The cash day is not open.", "");
+    }
+
+    @Test
+    void cashSessionNotOpen() throws Exception {
+        expect("session-not-open", 422, "SESSION_NOT_OPEN", "The cash session " + ID + " is closed.", "");
+    }
+
+    @Test
+    void orderConflicts() throws Exception {
+        expect("order-not-open", 409, "ORDER_NOT_OPEN", "Order " + ID + " is not open.", "");
+        expect("line-not-draft", 409, "LINE_NOT_DRAFT", "Line " + ID + " is not a draft line of this order.", "");
+        expect("catalog-changed", 409, "CATALOG_CHANGED",
+                "The catalog changed (version 3 → 4): review the prices and confirm again.", ",\"catalogVersion\":4");
+    }
+
+    @Test
+    void orderRules() throws Exception {
+        expect("order-in-settlement", 422, "ORDER_IN_SETTLEMENT",
+                "Order " + ID + " has a payment under way: nothing may leave its bill.", "");
+        expect("quantity-exceeds-net", 422, "QUANTITY_EXCEEDS_NET", "Line " + ID + " holds only 1.500.", "");
+    }
+
+    @Test
+    void settlementConflicts() throws Exception {
+        expect("payment-in-doubt", 409, "PAYMENT_IN_DOUBT", "A payment attempt of order " + ID
+                + " is still open or in doubt; resolve it first.", ",\"attemptId\":\"" + OTHER + "\"");
+        expect("illegal-attempt-state", 409, "ILLEGAL_ATTEMPT_STATE",
+                "Payment attempt " + ID + " is FAILED and cannot confirm.", "");
+    }
+
+    @Test
+    void settlementRules() throws Exception {
+        expect("amount-exceeds-balance", 422, "AMOUNT_EXCEEDS_BALANCE",
+                "The amount 60.0000 is more than the balance 40.0000 of the order.", ",\"balance\":40.0000");
+        expect("not-settled", 422, "NOT_SETTLED", "Order " + ID + " is not settled: 60.0000 paid of 100.0000 due.",
+                ",\"balance\":40.0000");
+    }
+
+    @Test
+    void productionRule() throws Exception {
+        expect("printer-ignored", 422, "PRINTER_IGNORED", "Printer K1 is in IGNORE: change its mode to print again",
+                "");
     }
 
     @Test

@@ -6,4 +6,6 @@
 |_Services_
 
 * `c.x.b.a.AuditLog`
+|Bean references
+|* `c.x.b.a.AccessPolicy` (in Access)
 |===

@@ -1,6 +1,7 @@
 package com.xavier.backend.cash.repository;
 
 import com.xavier.backend.cash.model.CashDay;
+import com.xavier.backend.cash.model.CashDayStatus;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Optional;
@@ -22,6 +23,9 @@ public interface CashDayRepository extends JpaRepository<CashDay, UUID> {
                         @Param("now") Instant now);
 
     Optional<CashDay> findByStoreIdAndBusinessDate(UUID storeId, LocalDate businessDate);
+
+    /** With {@code OPEN}: served by the partial index {@code cash_day_store_open_ix} (V8006). */
+    Optional<CashDay> findFirstByStoreIdAndStatusOrderByBusinessDateAsc(UUID storeId, CashDayStatus status);
 
     @Query("select d.storeId from CashDay d where d.id = :id")
     Optional<UUID> findStoreIdById(@Param("id") UUID id);

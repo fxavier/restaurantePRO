@@ -2,4 +2,7 @@
 |===
 |Base package
 |`com.xavier.backend.config`
+|Bean references
+|* `c.x.b.a.AccessPolicy` (in Access)
+* `c.x.b.s.notify.ChangeNotifier` (in Shared kernel)
 |===
