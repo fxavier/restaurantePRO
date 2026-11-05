@@ -133,6 +133,42 @@ final class ArchitectureRules {
             .should().beAssignableTo(org.springframework.web.ErrorResponseException.class)
             .because("extend shared BusinessRuleException/ConflictException/NotFoundException with a code (S7b)");
 
+    /**
+     * The D35 "NOT" edges, which {@code ApplicationModules.verify()} cannot pin: it only checks a module against its
+     * own {@code allowedDependencies}, so adding {@code "settlement"} to orders' list would still pass. These rules
+     * name the forbidden edges directly. {@code root} is the base package ({@code com.xavier.backend} in production,
+     * a fixture package in {@link ArchitectureRulesFireTest}), so the same rules are proven to fire.
+     */
+    static ArchRule[] forbiddenModuleDependencies(String root) {
+        return new ArchRule[] {
+                mustNotDependOn(root, "orders", "settlement",
+                        "settlement reads orders (due, close), never the other way round (D35, spec §6)"),
+                mustNotDependOn(root, "orders", "production",
+                        "production tells orders a batch is dispatched; orders never calls production (D35)"),
+                mustNotDependOn(root, "cash", "orders",
+                        "cash records money movements and knows no orders; settlement links them (D35, spec §6)"),
+                mustNotDependOn(root, "cash", "settlement",
+                        "settlement calls cash (CashApi), never the other way round (D35)"),
+                noOtherModuleDependsOn(root, "production"),
+        };
+    }
+
+    private static ArchRule mustNotDependOn(String root, String module, String forbidden, String why) {
+        return noClasses()
+                .that().resideInAPackage(root + "." + module + "..")
+                .should().dependOnClassesThat().resideInAPackage(root + "." + forbidden + "..")
+                .as(module + " must not depend on " + forbidden)
+                .because(why);
+    }
+
+    private static ArchRule noOtherModuleDependsOn(String root, String module) {
+        return noClasses()
+                .that().resideOutsideOfPackage(root + "." + module + "..")
+                .should().dependOnClassesThat().resideInAPackage(root + "." + module + "..")
+                .as("no module depends on " + module)
+                .because(module + " is a leaf: it reacts to events and calls others, nobody calls it (D35)");
+    }
+
     static final ArchRule[] ALL = {
             CONTROLLERS_DO_NOT_TOUCH_REPOSITORIES_OR_ENTITIES,
             REPOSITORIES_ARE_USED_ONLY_BY_SERVICES,

@@ -26,7 +26,9 @@ class ModularityTests {
 
     @Test
     void anIllegalModuleDependencyIsDetected() {
-        // test fixture: an "orders" module that calls "settlement" although spec §6 forbids it
+        // test fixture: an "orders" module that calls "settlement" although spec §6 forbids it. This proves verify()
+        // reports an edge outside allowedDependencies; it does not pin the D35 "NOT" edges themselves (editing a
+        // package-info would allow them), so ArchitectureTests#forbiddenModuleDependenciesAreAbsent does that.
         Violations violations = ApplicationModules
                 .of("com.xavier.archfixture.modules", new ImportOption.OnlyIncludeTests())
                 .detectViolations();
