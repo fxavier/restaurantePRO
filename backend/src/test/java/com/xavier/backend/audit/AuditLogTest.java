@@ -138,6 +138,15 @@ class AuditLogTest {
     }
 
     @Test
+    void upperCaseCodesAreDataNotFieldNamesSoAByMethodMapIsStored() {
+        // payment method codes are [A-Z0-9_] (CARD, PIN_PAD): keys of a by-method map, not secret field names
+        transaction.executeWithoutResult(tx -> auditLog.record(entry("CASH_SESSION_CLOSED",
+                Map.of("counts", Map.of("CARD", "10.00", "CASH", "5.00", "PIN_PAD", "1.00")))));
+
+        assertThat(countRows()).isOne();
+    }
+
+    @Test
     void missingDetailsAreStoredAsAnEmptyObject() {
         transaction.executeWithoutResult(tx -> auditLog.record(entry("STORE_CREATED", null)));
 
