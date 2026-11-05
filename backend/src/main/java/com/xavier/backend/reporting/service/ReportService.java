@@ -6,10 +6,12 @@ import com.xavier.backend.organization.OrganizationApi;
 import com.xavier.backend.organization.model.dto.StoreSummary;
 import com.xavier.backend.reporting.exception.ReportStoreNotFoundException;
 import com.xavier.backend.reporting.model.dto.ReceiptsRow;
+import com.xavier.backend.reporting.model.dto.ReportStatus;
 import com.xavier.backend.reporting.model.dto.ReportView;
 import com.xavier.backend.reporting.model.dto.SalesRow;
 import com.xavier.backend.reporting.model.dto.TaxRow;
 import com.xavier.backend.reporting.model.dto.VoidsRow;
+import com.xavier.backend.reporting.repository.RebuildRuns;
 import com.xavier.backend.reporting.repository.ReportQueries;
 import com.xavier.backend.reporting.repository.ReportQueries.CreditAggregate;
 import com.xavier.backend.reporting.repository.ReportQueries.ReceiptsAggregate;
@@ -46,14 +48,24 @@ public class ReportService {
     private final ReportQueries queries;
     private final Freshness freshness;
     private final Labels labels;
+    private final RebuildRuns runs;
 
     ReportService(AccessPolicy access, OrganizationApi organization, ReportQueries queries, Freshness freshness,
-                  Labels labels) {
+                  Labels labels, RebuildRuns runs) {
+        this.runs = runs;
         this.access = access;
         this.organization = organization;
         this.queries = queries;
         this.freshness = freshness;
         this.labels = labels;
+    }
+
+    /** Pending facts, the newest projection and the last rebuild of the store (D86). */
+    public ReportStatus status(UUID storeId) {
+        access.require(Permission.REPORT_VIEW, storeId);
+        currencyOf(storeId); // 404 for an unknown store
+        return new ReportStatus(storeId, freshness.pendingFacts(), queries.lastProjectedAt(storeId),
+                runs.last(storeId).orElse(null));
     }
 
     /** Sales by day, hour, terminal, employee (who served the line), area, item, family or mode. */

@@ -144,6 +144,17 @@ public class ReportQueries {
                 .list();
     }
 
+    /** The newest projection of the store, over every projection table; {@code null} before the first. */
+    public Instant lastProjectedAt(UUID store) {
+        return jdbc.sql("""
+                        SELECT greatest(
+                            (SELECT max(projected_at) FROM reporting.sales_record WHERE store_id = :store),
+                            (SELECT max(projected_at) FROM reporting.payment_record WHERE store_id = :store),
+                            (SELECT max(projected_at) FROM reporting.credit_record WHERE store_id = :store),
+                            (SELECT max(projected_at) FROM reporting.void_record WHERE store_id = :store)) AS as_of""")
+                .param("store", store).query((rs, n) -> instant(rs, "as_of")).list().getFirst();
+    }
+
     private JdbcClient.StatementSpec query(String sql, UUID store, LocalDate from, LocalDate to) {
         return jdbc.sql(sql).param("store", store).param("from", from).param("to", to);
     }

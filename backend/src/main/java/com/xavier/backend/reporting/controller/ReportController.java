@@ -1,6 +1,7 @@
 package com.xavier.backend.reporting.controller;
 
 import com.xavier.backend.reporting.model.dto.ReceiptsRow;
+import com.xavier.backend.reporting.model.dto.ReportStatus;
 import com.xavier.backend.reporting.model.dto.ReportView;
 import com.xavier.backend.reporting.model.dto.SalesRow;
 import com.xavier.backend.reporting.model.dto.TaxRow;
@@ -28,6 +29,11 @@ class ReportController {
 
     ReportController(ReportService reports) {
         this.reports = reports;
+    }
+
+    @GetMapping("/status")
+    ReportStatus status(@RequestParam UUID storeId) {
+        return reports.status(storeId);
     }
 
     @GetMapping("/sales")

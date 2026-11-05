@@ -98,6 +98,12 @@ public class Projections {
         }
     }
 
+    /** A rebuild's first step: the store's projection rows in {@code [from, to]} (projections, never facts). */
+    @Transactional
+    public void clear(UUID storeId, java.time.LocalDate from, java.time.LocalDate to) {
+        store.deleteRange(storeId, from, to);
+    }
+
     /** A void of a confirmed line, in its order's business day; local hour at the void (D85). */
     @Transactional
     public void projectVoid(UUID voidId) {

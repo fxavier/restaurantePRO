@@ -27,6 +27,7 @@ import org.springframework.boot.test.context.TestComponent;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.JsonNode;
 
 /**
@@ -196,6 +197,57 @@ public class ReportingFixtures {
                 .forEach(row -> sums.put((String) row.get("method_code"),
                         ((BigDecimal) row.get("signed")).setScale(2)));
         return sums;
+    }
+
+    /** Deletes every projection row of the store, as before its first projection. */
+    public void wipeProjections(UUID store) {
+        for (String table : List.of("sales_record", "payment_record", "credit_record", "void_record")) {
+            jdbc.sql("DELETE FROM reporting." + table + " WHERE store_id = ?").param(store).update();
+        }
+    }
+
+    /** {@code POST /reports/rebuild} as a BackOffice account holding REPORT_REBUILD in the store. */
+    public ResultActions rebuild(UUID store, LocalDate from, LocalDate to, String key) throws Exception {
+        return mvc.perform(CashFixtures.idem(post(REPORTS + "/rebuild"), key)
+                .with(CashFixtures.account(store, Permission.REPORT_REBUILD))
+                .contentType(MediaType.APPLICATION_JSON).content("""
+                        {"storeId": "%s", "from": "%s", "to": "%s"}""".formatted(store, from, to)));
+    }
+
+    /** {@code GET /reports/status} as a BackOffice account holding REPORT_VIEW in the store. */
+    public JsonNode reportStatus(UUID store) throws Exception {
+        return CashFixtures.json(mvc.perform(get(REPORTS + "/status").param("storeId", store.toString())
+                        .with(CashFixtures.account(store, Permission.REPORT_VIEW)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+    }
+
+    /** Polls the store's status until its last rebuild is no longer RUNNING; returns that rebuild. */
+    public JsonNode awaitRebuildFinished(UUID store) throws Exception {
+        long deadline = System.nanoTime() + PROJECTED.toNanos();
+        while (true) {
+            JsonNode last = reportStatus(store).get("lastRebuild");
+            if (last != null && !last.isNull() && !"RUNNING".equals(last.get("status").asString())) {
+                return last;
+            }
+            if (System.nanoTime() > deadline) {
+                throw new AssertionError("the rebuild of " + store + " did not finish: " + last);
+            }
+            Thread.sleep(20); // polls a condition; not a timing guard
+        }
+    }
+
+    /** A RUNNING rebuild of the store written directly, as one in progress would be. @return its id */
+    public UUID runningRebuild(UUID store, LocalDate day) {
+        UUID id = UUID.randomUUID();
+        jdbc.sql("""
+                INSERT INTO reporting.rebuild_run (id, store_id, from_date, to_date, status, started_at)
+                VALUES (?, ?, ?, ?, 'RUNNING', now())""").params(id, store, day, day).update();
+        return id;
+    }
+
+    public void finishRebuild(UUID run) {
+        jdbc.sql("UPDATE reporting.rebuild_run SET status = 'FAILED', finished_at = now() WHERE id = ?").param(run)
+                .update();
     }
 
     /** {@code GET /reports/{report}?storeId&from&to&…} as a BackOffice account holding REPORT_VIEW in the store. */
