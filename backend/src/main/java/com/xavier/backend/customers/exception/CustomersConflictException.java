@@ -15,4 +15,16 @@ public class CustomersConflictException extends ConflictException {
         return new CustomersConflictException("RESERVATION_NOT_ACTIVE",
                 "The credit reservation of charge " + chargeId + " is " + status + " and cannot " + action + ".");
     }
+
+    /** {@code UNIQUE(customer_id, digits)}. */
+    public static CustomersConflictException phoneExists(UUID customerId, String digits) {
+        return new CustomersConflictException("PHONE_EXISTS",
+                "Customer " + customerId + " already has the phone " + digits + ".");
+    }
+
+    /** Two first limit changes opened the account at once; the loser retries. */
+    public static CustomersConflictException accountExists(UUID customerId) {
+        return new CustomersConflictException("CREDIT_ACCOUNT_EXISTS",
+                "The credit account of customer " + customerId + " was opened at the same time; retry.");
+    }
 }

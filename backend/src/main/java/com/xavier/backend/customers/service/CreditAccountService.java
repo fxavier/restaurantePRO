@@ -132,8 +132,7 @@ public class CreditAccountService {
     private CreditAccount open(UUID customerId, Instant now) {
         return UniqueConstraints.saveAndFlush(accounts,
                 CreditAccount.open(customerId, organization.companyProfile().currency(), now),
-                () -> new CustomersConflictException("CREDIT_ACCOUNT_EXISTS",
-                        "The credit account of customer " + customerId + " was opened at the same time; retry."),
+                () -> CustomersConflictException.accountExists(customerId),
                 "credit_account_pk");
     }
 

@@ -118,8 +118,7 @@ public class CustomerService {
         }
         PhoneNumber number = PhoneNumber.of(request.number());
         return UniqueConstraints.saveAndFlush(phones, CustomerPhone.of(id, number, request.label(), primary),
-                () -> new CustomersConflictException("PHONE_EXISTS",
-                        "Customer " + id + " already has the phone " + number.digits() + "."),
+                () -> CustomersConflictException.phoneExists(id, number.digits()),
                 "customer_phone_customer_digits_uk").toView();
     }
 
