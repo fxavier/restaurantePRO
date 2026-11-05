@@ -63,8 +63,9 @@ final class ResidualDocuments {
     }
 
     /**
-     * Fiscal keeps a draft on account once a credit sale marked it (D74; it is never undone): a later draft of the same
-     * document (its close, a retried partition document, after a cancelled charge too) repeats the mark.
+     * Fiscal keeps a draft on account once a credit sale marked it (D74): while that charge is live, a later draft of
+     * the same document (a /documents call, a retried partition document) repeats the mark. A cancelled charge clears
+     * it ({@code FiscalApi.clearOnAccount}), so nothing is repeated after.
      */
     static DraftCommand keepingOnAccount(DraftCommand draft, List<DocumentView> documents) {
         return documents.stream()

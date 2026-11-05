@@ -19,7 +19,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.context.event.ApplicationEvents;
+import org.springframework.test.context.event.RecordApplicationEvents;
 import org.springframework.test.web.servlet.MockMvc;
+import com.xavier.backend.fiscal.model.event.FiscalDocumentIssued;
 
 /**
  * D74: when the document of a credit sale cannot be issued (s2), the sale answers 422 FISCAL_PENDING, the charge stays
@@ -28,7 +31,11 @@ import org.springframework.test.web.servlet.MockMvc;
  * back; after, it cannot.
  */
 @SettlementModuleTest
+@RecordApplicationEvents
 class CreditSaleFiscalFailureTest {
+
+    @Autowired
+    ApplicationEvents events;
 
     @Autowired
     MockMvc mvc;
@@ -116,6 +123,13 @@ class CreditSaleFiscalFailureTest {
         fixtures.close(sale.cashier(), sale.order(), fixtures.orderVersion(sale.cashier(), sale.order()),
                 UUID.randomUUID().toString()).andExpect(status().isOk());
         assertThat(credit.debtOf(customer).amount()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(fixtures.count("SELECT count(*) FROM fiscal.fiscal_document WHERE source_id = ? AND status = "
+                + "'ISSUED' AND NOT on_account AND customer_id IS NULL", sale.order()))
+                .as("the cash-paid sale's document is not on account").isEqualTo(1);
+        assertThat(events.stream(FiscalDocumentIssued.class)
+                .filter(e -> e.storeId().equals(sale.store())))
+                .singleElement().satisfies(issued -> assertThat(issued.printout().lines())
+                        .doesNotContain(InternalFiscalAdapter.ON_ACCOUNT));
     }
 
     @Test

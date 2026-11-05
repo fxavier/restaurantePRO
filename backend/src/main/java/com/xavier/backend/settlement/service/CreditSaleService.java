@@ -4,6 +4,7 @@ import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.PosContext;
 import com.xavier.backend.customers.CustomersApi;
+import com.xavier.backend.fiscal.FiscalApi;
 import com.xavier.backend.settlement.exception.SettlementNotFoundException;
 import com.xavier.backend.settlement.exception.SettlementRuleException;
 import com.xavier.backend.settlement.model.CreditCharge;
@@ -31,17 +32,20 @@ public class CreditSaleService {
     private final CreditChargeRepository charges;
     private final CustomersApi customers;
     private final PaymentLocks paymentLocks;
+    private final FiscalApi fiscal;
     private final SettlementAudit audit;
     private final Clock clock;
 
     CreditSaleService(AccessPolicy accessPolicy, CreditSaleSteps steps, SettlementLocks locks,
-                      CreditChargeRepository charges, CustomersApi customers, PaymentLocks paymentLocks, SettlementAudit audit, Clock clock) {
+                      CreditChargeRepository charges, CustomersApi customers, FiscalApi fiscal,
+                      PaymentLocks paymentLocks, SettlementAudit audit, Clock clock) {
         this.accessPolicy = accessPolicy;
         this.steps = steps;
         this.locks = locks;
         this.charges = charges;
         this.customers = customers;
         this.paymentLocks = paymentLocks;
+        this.fiscal = fiscal;
         this.audit = audit;
         this.clock = clock;
     }
@@ -63,8 +67,8 @@ public class CreditSaleService {
     }
 
     /**
-     * RESERVED → RELEASED while its document is not ISSUED: the customer's reservation is released. Its draft stays
-     * (on account, as fiscal keeps it) until the order's close issues it.
+     * RESERVED → RELEASED while its document is not ISSUED: the customer's reservation is released and the draft is
+     * no longer on account ({@code FiscalApi.clearOnAccount}), so whatever pays the target later issues a paid sale.
      *
      * @throws SettlementRuleException 422 {@code CHARGE_POSTED} for a POSTED charge or an ISSUED document
      * @throws com.xavier.backend.settlement.exception.SettlementConflictException 409 {@code ILLEGAL_CHARGE_STATE}
@@ -83,6 +87,7 @@ public class CreditSaleService {
         }
         charge.release(request.reason(), pos.employeeId(), clock.instant());
         customers.release(chargeId);
+        fiscal.clearOnAccount(charge.getDocumentId()); // a paid sale's document must not print A CRÉDITO
         charges.saveAndFlush(charge);
         audit.charge("CREDIT_CHARGE_RELEASED", chargeId, charge.getStoreId(), charge.getOrderId(),
                 charge.getTerminalId(), request.reason(), CreditSaleSteps.details(charge));
