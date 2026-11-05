@@ -49,7 +49,7 @@ Never run `docker compose down -v`: `-v` deletes the database volume.
 
 `./backup.sh` writes `backups/restaurantpro-<UTC timestamp>.tar` with a `pg_dump -Fc` of the database, the configuration (`compose.yaml`, `Caddyfile`, `.env`) and checksums, and deletes archives beyond the newest 14. Retention only counts names in that exact format, so a renamed copy such as `restaurantpro-before-upgrade.tar` is never deleted. The dump leaves out the rows of the Spring Session tables: after a restore everyone logs in again. Options: `--dir`, `--keep N`, `--age-recipient` (or the env vars `BACKUP_DIR`, `BACKUP_KEEP`, `BACKUP_AGE_RECIPIENT`). It exits non-zero on any failure.
 
-Encrypt the archive with [age](https://age-encryption.org) by setting a recipient (a public key, `age1…`). Without one, `backup.sh` prints a WARNING on every run: spec §10 asks for encrypted backups. Only encrypted archives include `secrets/`. Keep the private key off the server. Spec §10 and §11 require encrypted copies off the machine: copy `backups/` elsewhere (for example with `rsync` to a NAS or external disk) after each run.
+Encrypt the archive with [age](https://age-encryption.org) by setting a recipient (a public key, `age1…`). Without one, `backup.sh` prints a WARNING on every run: spec §10 asks for encrypted backups. Only encrypted archives include `secrets/`. Keep the private key off the server. Spec §10 and §11 require encrypted copies off the machine: copy `backups/` elsewhere (for example with `rsync -a --exclude '.work.*' --exclude '*.tmp.*' --exclude '.lock'` to a NAS or external disk) after each run. The excludes skip copies still in progress.
 
 Schedule with cron (every night at 02:30):
 
@@ -84,13 +84,18 @@ These are nightly logical backups: on their own they can lose up to a day of dat
 Spec §11 sets RPO ≤ 15 minutes (D90). PostgreSQL therefore also keeps its write-ahead log (WAL), the record of every change:
 
 - `compose.yaml` runs PostgreSQL with `wal_level=replica`, `archive_mode=on`, `archive_timeout=300` and an `archive_command` (`postgres/archive-wal.sh`) that copies each finished 16 MB WAL segment into the `pg-wal-archive` volume, flushed to disk before PostgreSQL may recycle it. `archive_timeout` forces a new segment at least every 5 minutes once anything was written, so at most the last 5 minutes of commits are not yet archived. A failing archive copy never loses data: PostgreSQL keeps the segment and retries (watch `docker compose logs postgres` and `SELECT * FROM pg_stat_archiver`). If it keeps failing, `pg_wal` grows on the database volume until the disk is full.
-- `./basebackup.sh` (nightly) takes a base backup with `pg_basebackup`, checks it with `pg_verifybackup`, and writes `backups/pitr/base/restaurantpro-base-<UTC timestamp>-<start WAL>.tar`. It then copies new WAL files into `backups/pitr/wal/`, keeps the newest 7 base backups (`--keep`, `PITR_KEEP`), and deletes the WAL older than the oldest kept base backup, both in `backups/pitr/wal/` and in the `pg-wal-archive` volume. So you can restore to any moment since the oldest kept base backup.
+- `./basebackup.sh` (nightly) takes a base backup with `pg_basebackup`, checks it with `pg_verifybackup`, and writes `backups/pitr/base/restaurantpro-base-<UTC timestamp>-<system id>-<start WAL>.tar`. It then copies new WAL files into `backups/pitr/wal/`, keeps the newest 7 base backups (`--keep`, `PITR_KEEP`), and deletes the WAL older than the oldest kept base backup, both in `backups/pitr/wal/` and in the `pg-wal-archive` volume. So you can restore to any moment since the oldest kept base backup.
 - `./basebackup.sh --wal-only` (every 5 minutes) only copies the new WAL files into `backups/pitr/wal/`. Copy `backups/` off the machine right after it.
+- Only one run works on `backups/pitr/` at a time (a lock directory, `backups/pitr/.lock`, holding the owner's pid; a lock whose process is gone is cleared). A `--wal-only` run that finds the lock taken skips and exits 0, because the run holding it syncs the WAL too. A base backup waits up to an hour for the lock.
+- Each run checks that the archive and `backups/pitr/` belong to the running database cluster. Both hold a `SYSTEM_IDENTIFIER` file, written at the first run, and every base backup name carries it. If they belong to another cluster, the run stops with an error and changes nothing (see "New database cluster" below). A run also exits non-zero, after its work, while PostgreSQL is failing to archive (`pg_stat_archiver`), so cron mail or the log shows it.
+- Plaintext staging happens in a private temporary directory under `$TMPDIR` (or `/tmp`), never under `backups/`. Files appear in `backups/` under a temporary `*.tmp.*` name, are flushed to disk, and are then renamed. `backup.sh` works the same way.
 
 ```cron
-*/5 * * * * cd /opt/restaurantpro/deploy && BACKUP_AGE_RECIPIENT=age1... ./basebackup.sh --wal-only >>backups/pitr.log 2>&1 && rsync -a backups/ nas:/srv/restaurantpro/
-15 2 * * * cd /opt/restaurantpro/deploy && BACKUP_AGE_RECIPIENT=age1... ./basebackup.sh --keep 7 >>backups/pitr.log 2>&1
+*/5 * * * * cd /opt/restaurantpro/deploy && BACKUP_AGE_RECIPIENT=age1... ./basebackup.sh --wal-only >>backups/pitr.log 2>&1 && rsync -a --exclude '.work.*' --exclude '*.tmp.*' --exclude '.lock' backups/ nas:/srv/restaurantpro/
+17 2 * * * cd /opt/restaurantpro/deploy && BACKUP_AGE_RECIPIENT=age1... ./basebackup.sh --keep 7 >>backups/pitr.log 2>&1
 ```
+
+The base backup runs at 02:17 so that it never starts at the same minute as a `--wal-only` run. If it is still running when the next `--wal-only` starts, that run skips (the lock above). Use the same `--exclude` options for any other copy of `backups/`.
 
 **Encryption.** As with `backup.sh`, `--age-recipient` / `BACKUP_AGE_RECIPIENT` encrypts every base archive and every copied WAL file (`.age`). It is optional today, and without it every run prints a WARNING (spec §10 asks for encrypted backups). The `pg-wal-archive` volume itself is plaintext on the server, like the database volume. `pitr-restore.sh` decrypts with `--identity` / `BACKUP_AGE_IDENTITY`.
 
@@ -98,10 +103,22 @@ Spec §11 sets RPO ≤ 15 minutes (D90). PostgreSQL therefore also keeps its wri
 
 | Incident | Data lost at most | Measured |
 | --- | --- | --- |
-| Database container or volume lost, the `pg-wal-archive` volume survives | `archive_timeout`: 5 min | 227 s and 283 s from the last commit to its segment in the archive (two full runs, 2026-11-05; the bound is 300 s) |
+| Database container or volume lost, the `pg-wal-archive` volume survives | `archive_timeout`: 5 min | 227 s, 283 s and 256 s from the last commit to its segment in the archive (three full runs, 2026-11-05; the bound is 300 s) |
 | Whole server lost, restore from the off-box copy | `archive_timeout` + the `--wal-only` interval + the off-box copy: 5 + 5 min, plus the copy, with the cron above | not measured (depends on your copy job) |
 
 The restore time (RTO) is the unpacking of the base backup plus the replay of the WAL written since it, at most a day with nightly base backups. The drill's database is small (a few MB): `pitr-restore.sh` took 3–8 s on an idle machine and up to 34 s while the backend test suite ran beside it. Measure it on your data by restoring a real backup to a scratch name from time to time.
+
+### New database cluster
+
+If the database volume is recreated (lost and started empty, or restored with `pitr-restore.sh` and swapped in as a volume), PostgreSQL is a new cluster: a new system identifier, and WAL names that start again from the beginning. The old cluster's files in the `pg-wal-archive` volume then block archiving: when a new segment has the name of an old one, `archive-wal.sh` refuses to overwrite it, PostgreSQL retries forever, and `pg_wal` grows. `basebackup.sh` refuses to run and says so. After a logical restore with `restore.sh`, the cluster stays the same, so none of this applies.
+
+Once the new cluster is the one to keep:
+
+```bash
+./basebackup.sh --new-cluster
+```
+
+This moves the old cluster's WAL in the volume to `/wal-archive/old-<old system id>-<timestamp>/`, and `backups/pitr/base`, `backups/pitr/wal` and the marker to `backups/pitr/old-<old system id>-<timestamp>/`. It then takes a base backup of the new cluster and waits until PostgreSQL has archived the blocked segment. The moved-aside backups still restore to times before the change (`pitr-restore.sh --wal-dir backups/pitr/old-…/wal backups/pitr/old-…/base/…`). Delete both copies once you no longer need them, for example with `docker compose exec postgres rm -rf /wal-archive/old-<…>`.
 
 ### Restore to a point in time
 
@@ -109,7 +126,7 @@ The restore time (RTO) is the unpacking of the base backup plus the replay of th
 ./pitr-restore.sh --target-time 2026-11-05T14:30:00+00:00 backups/pitr/base/restaurantpro-base-<timestamp>-<wal>.tar
 ```
 
-Pick the newest base backup taken before the target time. The time needs an explicit offset (`Z`, `+00:00`, `+01:00`…); `--target-time latest` replays everything archived. PostgreSQL stops just before the first transaction that committed after the target time. The script creates a new container `restaurantpro-pitr` with no network and its own volume `restaurantpro-pitr-data`, and never touches the live installation. It refuses to run if they already exist unless you pass `--force` (or pick another `--name`). By default it reads the WAL from the live `pg-wal-archive` volume, which is the most recent. If the server was lost, pass the off-box copy instead: `--wal-dir backups/pitr/wal` (with `--identity key.txt` for `.age` files). If the WAL does not reach the target time, PostgreSQL refuses to finish the recovery, and the script fails and removes what it created.
+Pick the newest base backup taken before the target time. The time needs an explicit offset (`Z`, `+00:00`, `+01:00`…); `--target-time latest` replays everything archived. PostgreSQL stops just before the first transaction that committed after the target time. The script creates a new container `restaurantpro-pitr` with no network and its own volume `restaurantpro-pitr-data`, and never touches the live installation. It refuses to run if they already exist unless you pass `--force` (or pick another `--name`). Even with `--force` it replaces only a container and volume that an earlier `pitr-restore.sh --name <same name>` created (label `restaurantpro.pitr`). It never replaces anything else, and above all no Docker Compose object such as the live database container or volume. By default it reads the WAL from the live `pg-wal-archive` volume, which is the most recent. If the server was lost, pass the off-box copy instead: `--wal-dir backups/pitr/wal` (with `--identity key.txt` for `.age` files). If the WAL does not reach the target time, PostgreSQL refuses to finish the recovery, and the script fails and removes what it created.
 
 Check the result with `docker exec -it restaurantpro-pitr psql -U restaurantpro -d restaurantpro`, then bring it into the live database with the logical backup and restore above:
 
@@ -127,7 +144,7 @@ Everyone logs in again afterwards: `backup.sh` leaves out the session rows.
 
 ### Point-in-time recovery drill
 
-`./test-pitr.sh` is the automated PITR drill (A33). It needs only Docker and starts the `postgres` service of `compose.yaml` itself (throwaway project, secrets and volumes), so it tests the settings that ship. It checks the WAL settings, loads `test/sample.sql`, writes W1, takes a base backup, writes W2, notes a target time T and a fingerprint of every table, writes W3, archives and copies the WAL, then restores to T into an isolated container. W1 and W2 must be present, W3 absent, and every table equal to the fingerprint at T. It then checks that a second restore on the same name is refused without `--force`, and that a target beyond the archived WAL fails and leaves nothing behind. Last, it writes W4 and waits, without forcing anything, until `archive_timeout` archives it (the measured RPO), deletes the database container and volume, and restores to `latest` from the `pg-wal-archive` volume: W1 to W4 must be present. It prints the measured RPO and RTO, removes everything it created, and exits non-zero on any mismatch. It takes about 6 minutes, because it waits for `archive_timeout`; `./test-pitr.sh --quick` forces the WAL switch instead and takes under a minute, without measuring the RPO.
+`./test-pitr.sh` is the automated PITR drill (A33). It needs only Docker and starts the `postgres` service of `compose.yaml` itself (throwaway project, secrets and volumes), so it tests the settings that ship. It checks the WAL settings, loads `test/sample.sql`, writes W1, takes a base backup, writes W2, notes a target time T and a fingerprint of every table, writes W3, archives and copies the WAL, then restores to T into an isolated container. W1 and W2 must be present, W3 absent, and every table equal to the fingerprint at T. It then checks that a second restore on the same name is refused without `--force`, that `--force` refuses a volume it did not create and the Compose postgres container, and that a target beyond the archived WAL fails and leaves nothing behind. It also checks that base backup names and both markers carry the system identifier, that no staging or partial files are left under the backup directory, and that `--wal-only` skips while another run holds the lock and clears a stale one. Last, it writes W4 and waits, without forcing anything, until `archive_timeout` archives it (the measured RPO), deletes the database container and volume, and restores to `latest` from the `pg-wal-archive` volume: W1 to W4 must be present. Then it starts a brand-new cluster next to the old archive. `basebackup.sh` must refuse it and change nothing, and the new cluster's archiving must block on a name clash. `basebackup.sh --new-cluster` must move the old files aside and unblock archiving, and a restore of the new cluster to a time T2 must hold N1 and not N2. It prints the measured RPO and RTO, removes everything it created, and exits non-zero on any mismatch. It takes about 7 minutes, because it waits for `archive_timeout`. `./test-pitr.sh --quick` forces the WAL switch instead and takes about 2 minutes, but does not measure the RPO.
 
 ## Restore
 
