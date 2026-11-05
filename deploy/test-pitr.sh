@@ -5,7 +5,8 @@
 # so the WAL settings under test are the ones that ship. Then:
 #   1. checks wal_level / archive_mode / archive_timeout on the running server
 #   2. loads deploy/test/sample.sql and writes W1
-#   3. takes a base backup with basebackup.sh
+#   3. the first default basebackup.sh run refuses the unmarked, non-empty archive; the documented first
+#      run, basebackup.sh --new-cluster, takes the base backup
 #   4. writes W2, notes the target time T and a fingerprint of every table, writes W3
 #   5. archives the segment holding W3 and copies the WAL archive with basebackup.sh --wal-only
 #   6. pitr-restore.sh --target-time T from the copied WAL into an isolated container: W1 and W2
@@ -21,9 +22,13 @@
 #      basebackup.sh refuses and changes nothing; the new cluster's archiving blocks on a name clash;
 #      basebackup.sh --new-cluster moves the old files aside, archiving resumes, and a restore to a
 #      time T2 of the new cluster works
+#  11. an unmarked archive and backup directory (another cluster's files, no marker): refused;
+#      --new-cluster moves them aside; a second --new-cluster is refused (markers match, archiving
+#      healthy); a restore of the new base to T3 works
 # Also: base backup names carry the cluster's system identifier, no plaintext staging or partial
-# files are left in the backup directory, --wal-only skips while another run holds the lock and
-# clears a stale lock, and --force never replaces an object pitr-restore.sh did not create.
+# files are left in the backup directory, --wal-only skips behind a live lock, clears a stale one
+# (dead or reused pid) and fails behind a 2-hour-old one, and --force never replaces an object
+# pitr-restore.sh did not create.
 # Exits non-zero on any mismatch.
 #
 # Usage: deploy/test-pitr.sh [--quick]      (needs only Docker; leaves nothing behind;
@@ -152,14 +157,20 @@ w1="$(write "$SRC" 1 'W1 before the base backup')"
 ok "W1 committed at $w1"
 
 step "3. base backup"
-base="$("$DEPLOY_DIR/basebackup.sh" --container "$SRC" --dir "$WORK/pitr" --keep 2)"
+# A new installation has archived WAL before its first base backup: the default run refuses that unmarked
+# archive, and the documented first run is --new-cluster.
+if "$DEPLOY_DIR/basebackup.sh" --container "$SRC" --dir "$WORK/pitr" 2>"$WORK/first.err" >/dev/null; then
+  fail "the first default run adopted an archive that already holds files"
+fi
+grep -q 'unmarked archive' "$WORK/first.err" || fail "unexpected: $(cat "$WORK/first.err")"
+base="$("$DEPLOY_DIR/basebackup.sh" --new-cluster --container "$SRC" --dir "$WORK/pitr" --keep 2)"
 [[ -f "$base" ]] || fail "basebackup.sh did not report an existing archive (got '$base')"
 sysid="$(sysid_of "$SRC")"
 [[ "$(basename "$base")" == restaurantpro-base-*Z-"$sysid"-[0-9A-F]*.tar ]] || fail "base backup name lacks the system identifier $sysid"
 [[ "$(cat "$WORK/pitr/SYSTEM_IDENTIFIER")" == "$sysid" ]] || fail "backup directory not marked with cluster $sysid"
 [[ "$(docker exec "$SRC" cat /wal-archive/SYSTEM_IDENTIFIER)" == "$sysid" ]] || fail "WAL archive not marked with cluster $sysid"
 no_staging_left
-ok "base backup $(basename "$base"); archive and backup directory marked with cluster $sysid; no staging left"
+ok "first default run refused (unmarked archive); --new-cluster wrote base backup $(basename "$base"); archive and backup directory marked with cluster $sysid; no staging left"
 
 step "4. W2, target time T, W3"
 w2="$(write "$SRC" 2 'W2 after the base backup, before T')"
@@ -181,18 +192,30 @@ ok "$w3_wal archived to the pg-wal-archive volume and copied to $(basename "$WOR
 step "5b. one run at a time per backup directory"
 sleep 600 &
 HOLDER=$!
-mkdir "$WORK/pitr/.lock"
-echo "$HOLDER" >"$WORK/pitr/.lock/pid"
-"$DEPLOY_DIR/basebackup.sh" --wal-only --container "$SRC" --dir "$WORK/pitr" 2>"$WORK/locked.err" || fail "--wal-only failed while locked"
-grep -q 'skipping' "$WORK/locked.err" || fail "--wal-only did not skip while locked: $(cat "$WORK/locked.err")"
-[[ "$(cat "$WORK/pitr/.lock/pid")" == "$HOLDER" ]] || fail "--wal-only took a lock held by a live process"
+proc_start() { ps -o lstart= -p "$1" | sed 's/^ *//; s/ *$//'; } # as basebackup.sh records it
+holder_start="$(proc_start "$HOLDER")"
+lock="$WORK/pitr/.lock"
+hold_lock() { rm -rf "$lock"; mkdir "$lock"; printf '%s\n%s\n' "$1" "$2" >"$lock/owner"; }
+wal_only() { "$DEPLOY_DIR/basebackup.sh" --wal-only --container "$SRC" --dir "$WORK/pitr" 2>"$WORK/$1.err"; }
+hold_lock "$HOLDER" "$holder_start"
+wal_only live || fail "--wal-only failed while a live run holds the lock: $(cat "$WORK/live.err")"
+grep -q 'skipping' "$WORK/live.err" || fail "--wal-only did not skip while locked: $(cat "$WORK/live.err")"
+[[ "$(head -1 "$lock/owner")" == "$HOLDER" ]] || fail "--wal-only took a lock held by a live process"
+hold_lock "$HOLDER" "Thu Jan  1 00:00:00 1970" # the same pid, but another process: a reused pid
+wal_only reused || fail "--wal-only failed with a reused-pid lock: $(cat "$WORK/reused.err")"
+grep -q 'removed the stale lock' "$WORK/reused.err" || fail "reused-pid lock not cleared: $(cat "$WORK/reused.err")"
+[[ ! -e "$lock" ]] || fail "lock left behind"
+hold_lock "$HOLDER" "$holder_start"
+touch -t "$(date -v-2H +%Y%m%d%H%M 2>/dev/null || date -d '-2 hours' +%Y%m%d%H%M)" "$lock"
+if wal_only stuck; then fail "--wal-only skipped silently behind a lock held for 2 hours"; fi
+grep -q 'is held for more than' "$WORK/stuck.err" || fail "unexpected: $(cat "$WORK/stuck.err")"
 kill "$HOLDER"
 wait "$HOLDER" 2>/dev/null || true
 HOLDER=""
-"$DEPLOY_DIR/basebackup.sh" --wal-only --container "$SRC" --dir "$WORK/pitr" 2>"$WORK/stale.err"
-grep -q 'stale lock' "$WORK/stale.err" || fail "stale lock not cleared: $(cat "$WORK/stale.err")"
-[[ ! -e "$WORK/pitr/.lock" ]] || fail "lock left behind"
-ok "--wal-only skips while a live run holds the lock, and clears the lock of a dead one"
+wal_only dead || fail "--wal-only failed with a dead owner's lock: $(cat "$WORK/dead.err")"
+grep -q 'removed the stale lock' "$WORK/dead.err" || fail "dead owner's lock not cleared: $(cat "$WORK/dead.err")"
+[[ ! -e "$lock" ]] && [[ -z "$(compgen -G "$lock.stale.*" || true)" ]] || fail "lock or stale copy left behind"
+ok "--wal-only: skips behind a live owner, clears a reused-pid or dead owner's lock, fails behind a 2-hour-old one"
 
 step "6. restore to T from the copied WAL into an isolated container"
 t0=$SECONDS
@@ -327,3 +350,45 @@ wait_archived "$SRC" "$n2_wal" 60
 [[ "$(rows "$PITR_NAME")" == "11" ]] || fail "rows after restore to T2: $(rows "$PITR_NAME"), expected 11"
 no_staging_left
 ok "new cluster: N1 at $n1 < T2 = $target2 < N2 at $n2; restore to T2 has N1 and not N2"
+
+step "11. an unmarked archive of another cluster"
+compose rm -s -f postgres >/dev/null 2>&1
+docker volume rm "${RUN_ID}_db-data" >/dev/null || fail "could not delete the database volume"
+start_service
+third_sysid="$(sysid_of "$SRC")"
+unmarked_asides() { docker exec "$SRC" sh -c 'ls -d /wal-archive/old-unmarked-* 2>/dev/null | wc -l' | tr -d ' '; }
+asides_before="$(unmarked_asides)"
+docker exec "$SRC" rm /wal-archive/SYSTEM_IDENTIFIER # the previous cluster's files stay, unmarked
+rm "$WORK/pitr/SYSTEM_IDENTIFIER"
+if "$DEPLOY_DIR/basebackup.sh" --container "$SRC" --dir "$WORK/pitr" 2>"$WORK/unmarked.err" >/dev/null; then
+  fail "basebackup.sh adopted an unmarked archive that holds files"
+fi
+grep -q 'unmarked archive' "$WORK/unmarked.err" || fail "unexpected: $(cat "$WORK/unmarked.err")"
+[[ ! -e "$WORK/pitr/SYSTEM_IDENTIFIER" && -f "$new_base" ]] || fail "the refused run changed the backup directory"
+[[ -z "$(docker exec "$SRC" sh -c 'ls /wal-archive/SYSTEM_IDENTIFIER 2>/dev/null' || true)" ]] || fail "the refused run marked the archive"
+ok "refused: $(grep -m1 'unmarked archive' "$WORK/unmarked.err" | sed 's/^basebackup: //'); nothing changed"
+base3="$("$DEPLOY_DIR/basebackup.sh" --new-cluster --container "$SRC" --dir "$WORK/pitr" 2>"$WORK/new3.err")" \
+  || fail "basebackup.sh --new-cluster failed on an unmarked archive: $(cat "$WORK/new3.err")"
+compgen -G "$WORK/pitr/old-unmarked-*/base/*.tar" >/dev/null || fail "unmarked backups not moved aside"
+(("$(unmarked_asides)" == asides_before + 1)) || fail "unmarked WAL not moved aside in the volume"
+[[ "$(cat "$WORK/pitr/SYSTEM_IDENTIFIER")" == "$third_sysid" ]] || fail "backup directory not marked with $third_sysid"
+ok "--new-cluster moved the unmarked files aside; new base $(basename "$base3")"
+if "$DEPLOY_DIR/basebackup.sh" --new-cluster --container "$SRC" --dir "$WORK/pitr" 2>"$WORK/again.err" >/dev/null; then
+  fail "a second --new-cluster moved this cluster's healthy archive aside"
+fi
+grep -q 'nothing to move aside' "$WORK/again.err" || fail "unexpected: $(cat "$WORK/again.err")"
+ok "a second --new-cluster is refused: markers match and archiving works"
+q "$SRC" "CREATE SCHEMA drill; CREATE TABLE drill.pitr_event (id int PRIMARY KEY, label text NOT NULL,
+          committed_at timestamptz NOT NULL DEFAULT clock_timestamp())" >/dev/null
+m1="$(write "$SRC" 21 'M1 third cluster, before T3')"
+target3="$(q "$SRC" "SELECT to_char(clock_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"')")"
+m2="$(write "$SRC" 22 'M2 third cluster, after T3')"
+m2_wal="$(q "$SRC" 'SELECT pg_walfile_name(pg_current_wal_insert_lsn())')"
+q "$SRC" 'SELECT pg_switch_wal()' >/dev/null
+wait_archived "$SRC" "$m2_wal" 60
+"$DEPLOY_DIR/basebackup.sh" --wal-only --container "$SRC" --dir "$WORK/pitr" 2>/dev/null
+"$DEPLOY_DIR/pitr-restore.sh" --force --target-time "$target3" --name "$PITR_NAME" --wal-dir "$WORK/pitr/wal" "$base3" >/dev/null 2>&1 \
+  || fail "restore of the third cluster to T3 failed"
+[[ "$(rows "$PITR_NAME")" == "21" ]] || fail "rows after restore to T3: $(rows "$PITR_NAME"), expected 21"
+no_staging_left
+ok "third cluster: M1 at $m1 < T3 = $target3 < M2 at $m2; restore to T3 has M1 and not M2"
