@@ -43,6 +43,22 @@ public class OrderChanges {
         changeNotifier.notifyAfterCommit(storeId, ChangeTopic.ORDER, orderId);
     }
 
+    /** Notifies {@code ORDER} for an order whose change another record audited (the target of a transfer). */
+    public void notify(Order order) {
+        changeNotifier.notifyAfterCommit(order.getStoreId(), ChangeTopic.ORDER, order.getId());
+    }
+
+    /**
+     * A POS change with its reason and, when one authorized it, its approver (D28, D40; {@code null} otherwise);
+     * always made in a session.
+     */
+    public void recordWithReason(String action, String entityType, UUID entityId, Order order, UUID approverId,
+                               String reason, Map<String, Object> details) {
+        auditLog.recordAsCurrentActor(action, entityType, entityId.toString(), order.getStoreId(), approverId, reason,
+                details);
+        changeNotifier.notifyAfterCommit(order.getStoreId(), ChangeTopic.ORDER, order.getId());
+    }
+
     private static boolean inSession() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         return authentication != null && authentication.isAuthenticated()

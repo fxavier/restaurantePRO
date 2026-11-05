@@ -5,8 +5,6 @@ import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.PosContext;
 import com.xavier.backend.dining.DiningApi;
 import com.xavier.backend.dining.model.dto.OccupationView;
-import com.xavier.backend.dining.model.dto.TableState;
-import com.xavier.backend.orders.exception.OrderRuleException;
 import com.xavier.backend.organization.BusinessDays;
 import com.xavier.backend.organization.OrganizationApi;
 import com.xavier.backend.organization.model.dto.StoreSummary;
@@ -37,6 +35,7 @@ public class OrderOpeningService {
     static final String OPEN_TABLE_UK = "order_header_open_table_uk";
 
     private final OrderRepository orders;
+    private final OrderLookup lookup;
     private final DiningApi dining;
     private final OrganizationApi organization;
     private final AccessPolicy accessPolicy;
@@ -44,9 +43,10 @@ public class OrderOpeningService {
     private final OrderViews views;
     private final Clock clock;
 
-    OrderOpeningService(OrderRepository orders, DiningApi dining, OrganizationApi organization,
+    OrderOpeningService(OrderRepository orders, OrderLookup lookup, DiningApi dining, OrganizationApi organization,
                         AccessPolicy accessPolicy, OrderChanges changes, OrderViews views, Clock clock) {
         this.orders = orders;
+        this.lookup = lookup;
         this.dining = dining;
         this.organization = organization;
         this.accessPolicy = accessPolicy;
@@ -58,7 +58,7 @@ public class OrderOpeningService {
     @Transactional
     public OrderView openTable(UUID tableId, OpenTableRequest request) {
         PosContext pos = accessPolicy.requirePos(Permission.ORDER_EDIT);
-        requireOpenable(tableId, pos);
+        lookup.requireSeatable(tableId, pos);
         StoreSummary store = store(pos);
         Instant now = clock.instant();
         Order order = Order.dineIn(store.id(), pos.terminalId(), orders.nextOrderNumber(), tableId,
@@ -84,27 +84,6 @@ public class OrderOpeningService {
                 pos.employeeId(), now));
         opened(order);
         return views.of(order);
-    }
-
-    /**
-     * Refuses another store's table (422 {@code STORE_MISMATCH}) before anything about its state is told, then an
-     * inactive, locked or occupied one, so a refusal never depends on the order insert. Dining re-checks all of it on
-     * the locked rows; the open-table index decides a race between two openings in this store.
-     */
-    private void requireOpenable(UUID tableId, PosContext pos) {
-        TableState table = dining.tableState(tableId);
-        if (!table.storeId().equals(pos.storeId())) {
-            throw OrderRuleException.storeMismatch(tableId);
-        }
-        if (!table.active() || !table.areaActive()) {
-            throw OrderRuleException.tableInactive(tableId);
-        }
-        if (table.locked()) {
-            throw OrderRuleException.tableLocked(tableId);
-        }
-        if (table.openOrderId() != null) {
-            throw OrderConflictException.tableOccupied(tableId);
-        }
     }
 
     private void opened(Order order) {

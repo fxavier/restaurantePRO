@@ -167,6 +167,50 @@ public class Order {
         return nextBatchNo++;
     }
 
+    /**
+     * Voids and outgoing transfers take quantities off the bill: refused once a payment is under way (D49, P13).
+     *
+     * @throws OrderConflictException {@code ORDER_NOT_OPEN} (409)
+     * @throws OrderRuleException     {@code ORDER_FROZEN}, {@code ORDER_IN_SETTLEMENT} (422)
+     */
+    public void requireBillReducible() {
+        requireChangeable();
+        if (billingLock == BillingLock.PAYMENT) {
+            throw OrderRuleException.inSettlement(id);
+        }
+    }
+
+    /**
+     * OPEN → CANCELLED (r2-decisions §4): only an order that bills nothing and has no payment under way.
+     *
+     * @param nothingBillable every confirmed line has net quantity 0
+     * @throws OrderRuleException {@code ORDER_NOT_EMPTY}, {@code ORDER_IN_SETTLEMENT}, {@code ORDER_FROZEN} (422)
+     */
+    public void cancel(boolean nothingBillable, UUID employeeId, Instant now) {
+        requireBillReducible();
+        if (!nothingBillable) {
+            throw OrderRuleException.notEmpty(id);
+        }
+        lifecycle = OrderLifecycle.CANCELLED;
+        closedByEmployeeId = Objects.requireNonNull(employeeId, "employeeId");
+        closedAt = Objects.requireNonNull(now, "now");
+    }
+
+    /**
+     * Seats the order at {@code toTableId} (a table move). The old code is dropped at once and the new one comes from
+     * dining's moved occupation ({@link #seatedAt}) in the same transaction, so table and code commit together.
+     *
+     * @throws OrderRuleException {@code ORDER_HAS_NO_TABLE} for COUNTER and TAKEAWAY, {@code ORDER_FROZEN}
+     */
+    public void moveTo(UUID toTableId) {
+        requireChangeable();
+        if (mode != OrderMode.DINE_IN) {
+            throw OrderRuleException.hasNoTable(id);
+        }
+        tableId = Objects.requireNonNull(toTableId, "toTableId");
+        tableCode = null;
+    }
+
     /** NONE → PAYMENT (D49). @return {@code false} when already locked (PAYMENT or INVOICE): nothing changed */
     public boolean lockForPayment() {
         requireOpen();

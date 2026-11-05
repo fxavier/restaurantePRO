@@ -6,7 +6,8 @@ import java.util.UUID;
 
 /**
  * The request conflicts with the order's current state (409): the order is no longer OPEN ({@code ORDER_NOT_OPEN}),
- * a line is not a DRAFT any more ({@code LINE_NOT_DRAFT}), the POS priced its drafts from an older catalog than the
+ * a line is not a DRAFT any more ({@code LINE_NOT_DRAFT}) or
+ * not confirmed yet for a void or transfer ({@code LINE_NOT_CONFIRMED}), the POS priced its drafts from an older catalog than the
  * published one ({@code CATALOG_CHANGED}, spec §8.4: the POS re-reads and shows the new prices), or the table already
  * has an OPEN order ({@code TABLE_OCCUPIED}). A stale {@code version}/{@code orderVersion} is a plain 409 as well.
  */
@@ -27,6 +28,11 @@ public class OrderConflictException extends ConflictException {
     public static OrderConflictException lineNotDraft(UUID lineId) {
         return new OrderConflictException("LINE_NOT_DRAFT",
                 "Line " + lineId + " is not a draft line of this order.");
+    }
+
+    public static OrderConflictException lineNotConfirmed(UUID lineId) {
+        return new OrderConflictException("LINE_NOT_CONFIRMED",
+                "Line " + lineId + " is not a confirmed line of this order.");
     }
 
     public static OrderConflictException catalogChanged(long sent, long current) {

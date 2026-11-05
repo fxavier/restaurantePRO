@@ -1,6 +1,7 @@
 package com.xavier.backend.orders.model;
 
 import com.xavier.backend.orders.exception.OrderConflictException;
+import com.xavier.backend.orders.exception.OrderRuleException;
 import com.xavier.backend.shared.Money;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -118,6 +119,38 @@ public class OrderLine {
         return line;
     }
 
+    /**
+     * The confirmed copy a transfer puts on {@code targetOrderId}: the source's snapshot, item, variant and notes for
+     * {@code quantity}, with the transfer as its origin and no round, so production never sees it again (§8.2).
+     */
+    public static OrderLine transferredCopy(OrderLine source, UUID targetOrderId, BigDecimal quantity,
+                                            UUID transferId, UUID employeeId, Instant now) {
+        LineSnapshot snapshot = source.snapshot().orElseThrow(() -> OrderConflictException.lineNotConfirmed(source.id));
+        OrderLine copy = draft(targetOrderId, source.itemId, source.variantId, quantity, source.notes, employeeId, now);
+        copy.stamp(snapshot, employeeId, now);
+        copy.originTransferId = Objects.requireNonNull(transferId, "transferId");
+        return copy;
+    }
+
+    /**
+     * A void or a transfer may take {@code quantity} from this line, which has already given up {@code deducted}
+     * (Σ voids + Σ transferred out): the net quantity is never stored, so the caller reads it under the order's
+     * incremented version (r2-decisions §4 orders).
+     *
+     * @throws OrderConflictException {@code LINE_NOT_CONFIRMED} (409) for a draft
+     * @throws OrderRuleException     {@code QUANTITY_EXCEEDS_NET} (422)
+     */
+    public void requireAvailable(BigDecimal deducted, BigDecimal quantity) {
+        validQuantity(quantity);
+        if (status != LineStatus.CONFIRMED) {
+            throw OrderConflictException.lineNotConfirmed(id);
+        }
+        BigDecimal net = this.quantity.subtract(deducted);
+        if (quantity.compareTo(net) > 0) {
+            throw OrderRuleException.quantityExceedsNet(id, net);
+        }
+    }
+
     /** Replaces a draft's variant, quantity and notes. */
     public void edit(UUID variantId, BigDecimal quantity, String notes) {
         requireDraft();
@@ -134,6 +167,11 @@ public class OrderLine {
     /** DRAFT → CONFIRMED in round {@code batchId}, with what the catalog said at that instant. */
     public void confirm(LineSnapshot snapshot, UUID batchId, UUID employeeId, Instant now) {
         requireDraft();
+        stamp(snapshot, employeeId, now);
+        this.batchId = Objects.requireNonNull(batchId, "batchId");
+    }
+
+    private void stamp(LineSnapshot snapshot, UUID employeeId, Instant now) {
         itemCode = snapshot.itemCode();
         description = snapshot.description();
         variantName = snapshot.variantName();
@@ -145,7 +183,6 @@ public class OrderLine {
         releaseId = snapshot.releaseId();
         catalogVersion = snapshot.catalogVersion();
         destination = snapshot.destination();
-        this.batchId = Objects.requireNonNull(batchId, "batchId");
         confirmedByEmployeeId = Objects.requireNonNull(employeeId, "employeeId");
         confirmedAt = Objects.requireNonNull(now, "now");
         status = LineStatus.CONFIRMED;
@@ -162,14 +199,19 @@ public class OrderLine {
     }
 
     private void set(UUID variantId, BigDecimal quantity, String notes) {
+        this.variantId = variantId;
+        this.quantity = validQuantity(quantity);
+        this.notes = notes == null || notes.isBlank() ? null : notes.strip();
+    }
+
+    /** A quantity is positive, with at most 9 integer digits and 3 decimals ({@code NUMERIC(12,3) > 0}). */
+    public static BigDecimal validQuantity(BigDecimal quantity) {
         Objects.requireNonNull(quantity, "quantity");
         if (quantity.signum() <= 0 || quantity.stripTrailingZeros().scale() > QUANTITY_SCALE
                 || quantity.precision() - quantity.scale() > QUANTITY_INTEGER_DIGITS) {
             throw new IllegalArgumentException("A quantity is positive with at most 3 decimals: " + quantity);
         }
-        this.variantId = variantId;
-        this.quantity = quantity.setScale(QUANTITY_SCALE);
-        this.notes = notes == null || notes.isBlank() ? null : notes.strip();
+        return quantity.setScale(QUANTITY_SCALE);
     }
 
     public boolean isDraft() {
@@ -206,6 +248,14 @@ public class OrderLine {
 
     public UUID getBatchId() {
         return batchId;
+    }
+
+    public UUID getOriginTransferId() {
+        return originTransferId;
+    }
+
+    public UUID getConfirmedByEmployeeId() {
+        return confirmedByEmployeeId;
     }
 
     public Instant getConfirmedAt() {

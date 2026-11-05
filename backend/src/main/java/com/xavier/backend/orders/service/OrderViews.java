@@ -119,7 +119,13 @@ public class OrderViews {
                 .reduce(Money.of(BigDecimal.ZERO, order.currency()), Money::plus);
     }
 
-    private Map<UUID, BigDecimal> deductions(List<UUID> orderIds) {
+    /** Σ voids + Σ transferred out of one confirmed line, as read now. */
+    public BigDecimal deducted(OrderLine line) {
+        return deductions(List.of(line.getOrderId())).getOrDefault(line.getId(), BigDecimal.ZERO);
+    }
+
+    /** Σ voids + Σ transferred out of each confirmed line of the orders, as read now. */
+    public Map<UUID, BigDecimal> deductions(List<UUID> orderIds) {
         return lines.deductions(orderIds).stream().collect(Collectors.toMap(
                 OrderLineRepository.LineDeduction::getLineId, OrderLineRepository.LineDeduction::getDeducted));
     }
