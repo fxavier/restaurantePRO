@@ -40,11 +40,26 @@ class ArchitectureRulesFireTest {
         return ArchitectureRules.forbiddenModuleDependencies(FORBIDDEN_ROOT);
     }
 
-    /** Each D35 "NOT" edge is present in {@code com.xavier.archfixture.forbidden}; each rule must report it. */
+    /** Each D35 and D65 "NOT" edge is present in {@code com.xavier.archfixture.forbidden}; each rule must report it. */
     @ParameterizedTest(name = "{0}")
     @MethodSource("forbiddenModuleDependencies")
     void everyForbiddenModuleDependencyIsCaught(ArchRule rule) {
         assertThat(rule.evaluate(FORBIDDEN_FIXTURE).hasViolation()).as(rule.getDescription()).isTrue();
+    }
+
+    /** D65 (A32): a reporting call to a facade write fails the build; a read-only facade call does not. */
+    @Test
+    void aReportingCallToAFacadeWriteIsCaughtAndAReadOnlyCallIsNot() {
+        EvaluationResult result = ArchitectureRules.reportingCallsOnlyReadOnlyFacadeMethods(FORBIDDEN_ROOT)
+                .evaluate(FORBIDDEN_FIXTURE);
+
+        assertThat(result.hasViolation()).isTrue();
+        assertThat(result.getFailureReport().getDetails())
+                .anySatisfy(line -> assertThat(line).contains("SalesReport").contains("OrdersFacade.close()"))
+                .anySatisfy(line -> assertThat(line).contains("OrdersFacade.reopen()"))
+                .noneSatisfy(line -> assertThat(line).contains("OrdersFacade.find()"))
+                .noneSatisfy(line -> assertThat(line).contains("CountingFacade.count()"))
+                .noneSatisfy(line -> assertThat(line).contains("AuditTrail.record()"));
     }
 
     /** A15: an injected cash → orders dependency fails the build, naming the offending class. */

@@ -13,6 +13,7 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noFields;
 
 import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.core.domain.JavaClass;
+import com.tngtech.archunit.core.domain.JavaMethod;
 import com.tngtech.archunit.core.domain.JavaMethodCall;
 import com.tngtech.archunit.lang.ArchRule;
 import jakarta.persistence.Embeddable;
@@ -27,6 +28,7 @@ import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Repository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -149,8 +151,60 @@ final class ArchitectureRules {
                         "cash records money movements and knows no orders; settlement links them (D35, spec §6)"),
                 mustNotDependOn(root, "cash", "settlement",
                         "settlement calls cash (CashApi), never the other way round (D35)"),
-                noOtherModuleDependsOn(root, "production"),
+                noOtherModuleDependsOn(root, "production",
+                        "production is a leaf: it reacts to events and calls others, nobody calls it (D35)"),
+                // D65 (R3); allowEmptyShould: customers and reporting may not exist yet
+                mustNotDependOn(root, "fiscal", "customers",
+                        "settlement passes the customer snapshot as the document's buyer; fiscal never reads live "
+                                + "customer data (D65, spec §8.2)").allowEmptyShould(true),
+                mustNotDependOn(root, "customers", "orders", CUSTOMERS_OWN_ONLY_THEIR_LEDGER).allowEmptyShould(true),
+                mustNotDependOn(root, "customers", "settlement", CUSTOMERS_OWN_ONLY_THEIR_LEDGER)
+                        .allowEmptyShould(true),
+                mustNotDependOn(root, "customers", "fiscal", CUSTOMERS_OWN_ONLY_THEIR_LEDGER).allowEmptyShould(true),
+                mustNotDependOn(root, "customers", "cash", CUSTOMERS_OWN_ONLY_THEIR_LEDGER).allowEmptyShould(true),
+                mustNotDependOn(root, "customers", "production", CUSTOMERS_OWN_ONLY_THEIR_LEDGER)
+                        .allowEmptyShould(true),
+                noOtherModuleDependsOn(root, "reporting",
+                        "reporting is a read-only projection: nothing depends on it (D65, spec §8.1)")
+                        .allowEmptyShould(true),
         };
+    }
+
+    private static final String CUSTOMERS_OWN_ONLY_THEIR_LEDGER = "customers owns identity, limit and ledger; "
+            + "settlement coordinates the charge without duplicating the balance (D65, spec §8.1)";
+
+    /**
+     * D65/D84: reporting reads, it never writes another module's facts (§8.1: a SalesRecord "nunca gera recebimento ou
+     * stock"). A call from reporting to a facade method (a public method of an {@code @Service} in a module's root
+     * package) must be {@code @Transactional(readOnly = true)}, on the method or, when the method declares none, on
+     * its class. The audit trail is not a facade of facts: reporting records its exports (D86).
+     */
+    static ArchRule reportingCallsOnlyReadOnlyFacadeMethods(String root) {
+        return noClasses()
+                .that().resideInAPackage(root + ".reporting..")
+                .should().callMethodWhere(describe("a facade method that is not @Transactional(readOnly = true)",
+                        (JavaMethodCall call) -> isFacade(root, call.getTargetOwner())
+                                && call.getTarget().resolveMember().map(method -> !isReadOnly(method)).orElse(true)))
+                .allowEmptyShould(true)
+                .as("reporting calls only read-only facade methods")
+                .because("reporting is a read-only projection; it never changes another module's facts (D65, D84)");
+    }
+
+    private static boolean isFacade(String root, JavaClass owner) {
+        String rootPackage = owner.getPackageName();
+        if (!rootPackage.startsWith(root + ".")) {
+            return false;
+        }
+        String module = rootPackage.substring(root.length() + 1);
+        return !module.contains(".") && !Set.of("reporting", "audit").contains(module)
+                && owner.isAnnotatedWith(Service.class);
+    }
+
+    private static boolean isReadOnly(JavaMethod method) {
+        return method.tryGetAnnotationOfType(Transactional.class)
+                .or(() -> method.getOwner().tryGetAnnotationOfType(Transactional.class))
+                .map(Transactional::readOnly)
+                .orElse(false);
     }
 
     private static ArchRule mustNotDependOn(String root, String module, String forbidden, String why) {
@@ -161,12 +215,12 @@ final class ArchitectureRules {
                 .because(why);
     }
 
-    private static ArchRule noOtherModuleDependsOn(String root, String module) {
+    private static ArchRule noOtherModuleDependsOn(String root, String module, String why) {
         return noClasses()
                 .that().resideOutsideOfPackage(root + "." + module + "..")
                 .should().dependOnClassesThat().resideInAPackage(root + "." + module + "..")
                 .as("no module depends on " + module)
-                .because(module + " is a leaf: it reacts to events and calls others, nobody calls it (D35)");
+                .because(why);
     }
 
     static final ArchRule[] ALL = {
