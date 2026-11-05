@@ -15,14 +15,14 @@ import org.springframework.test.context.TestPropertySource;
 
 /**
  * Boots orders with the modules it calls: organization (stores, business day, {@code StoreActivity}), dining (table
- * occupations), catalog (the frozen catalog), plus shared, access and audit, on the shared Testcontainers PostgreSQL.
+ * occupations), catalog (the frozen catalog), identity (void approvers, D40), plus shared, access and audit, on the shared Testcontainers PostgreSQL.
  * Stores, catalogs and tables are built through those modules' HTTP APIs ({@link OrdersFixtures}). One annotation,
  * one cached context. The database is shared by the whole test JVM: never assume empty tables.
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
-@ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization", "dining", "catalog"})
+@ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization", "dining", "catalog", "identity"})
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, DiningFixtures.class, OrdersFixtures.class, OrderEventProbe.class,
         DiningChangeStream.Probe.class})
@@ -30,7 +30,9 @@ import org.springframework.test.context.TestPropertySource;
         "restaurantpro.bootstrap.company.name=Test Company",
         "restaurantpro.bootstrap.company.tax-id=TEST-TAX-ID",
         "restaurantpro.bootstrap.company.country=MZ",
-        "restaurantpro.bootstrap.company.currency=MZN"
+        "restaurantpro.bootstrap.company.currency=MZN",
+        "restaurantpro.bootstrap.admin.username=orders-bootstrap-admin",
+        "restaurantpro.bootstrap.admin.initial-password-file=src/test/resources/identity/admin-initial-password.txt"
 })
 public @interface OrdersModuleTest {
 }
