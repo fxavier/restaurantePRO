@@ -13,8 +13,11 @@ import org.springframework.transaction.annotation.Transactional;
  * What settlement asks the customers module for credit sales and debt payments (D66, D73, D74, D75). Reads are
  * {@code readOnly}; writes are {@code MANDATORY}, so settlement composes them in its own transaction, under the D76
  * lock order ({@code order_settlement} → {@code credit_account} → cash → fiscal). Nothing here authorizes: the calling
- * use case already did. Every write locks the customer's {@code credit_account} {@code FOR UPDATE} and is idempotent
- * per its source id (charge, payment, refund): a repeat returns what was recorded and adds nothing.
+ * use case already did. Every write locks the customer's {@code credit_account} {@code FOR UPDATE} ({@code reserve}
+ * then reads the {@code customer} row {@code FOR SHARE}, so a deactivation in flight is seen) and is idempotent
+ * per its source id (charge, payment, refund): a repeat with the same values returns what was recorded and adds
+ * nothing; a repeat with other values (customer, amount, document, payment) is a 409 {@code CREDIT_SOURCE_MISMATCH}
+ * and changes nothing.
  *
  * <p>Errors: unknown customer, reservation or entry → 404; a stable-coded 422
  * ({@link com.xavier.backend.customers.exception.CustomerRuleException}): {@code CUSTOMER_INACTIVE},
@@ -55,7 +58,8 @@ public class CustomersApi {
 
     /**
      * Holds {@code amount} for {@code chargeId}: under the account lock it re-checks that the customer is active, the
-     * credit not blocked, and available ≥ amount. The same {@code chargeId} returns its reservation.
+     * credit not blocked, and available ≥ amount. The same {@code chargeId} returns its ACTIVE reservation; a
+     * CONSUMED or RELEASED one is a 409 {@code RESERVATION_NOT_ACTIVE} (a cancelled charge reserves under a new id).
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public ReservationView reserve(UUID customerId, Money amount, UUID chargeId) {
@@ -69,8 +73,9 @@ public class CustomersApi {
     }
 
     /**
-     * The credit sale's DEBIT once its document is issued; consumes the reservation (same amount). Idempotent per
-     * charge: the sweeper and the sale's last step may both post it.
+     * The credit sale's DEBIT once its document is issued; consumes the reservation, whose amount it must repeat
+     * (409 {@code CREDIT_SOURCE_MISMATCH} otherwise). Idempotent per charge: the sweeper and the sale's last step may
+     * both post it.
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public LedgerEntryView postDebit(UUID chargeId, UUID documentId, UUID storeId, LocalDate businessDate,
@@ -91,12 +96,14 @@ public class CustomersApi {
     }
 
     /**
-     * The refund of a debt payment: a DEBIT with source REFUND that reopens what the payment settled, latest debit
-     * first. 422 {@code AMOUNT_EXCEEDS_CREDIT} beyond what is left to reverse. Idempotent per refund.
+     * The refund of a debt payment: a DEBIT with source REFUND, on the refund's store and business day (P37), that
+     * reopens what the payment settled, latest debit first. 422 {@code AMOUNT_EXCEEDS_CREDIT} beyond what is left to
+     * reverse. Idempotent per refund.
      */
     @Transactional(propagation = Propagation.MANDATORY)
-    public LedgerEntryView reverseCredit(UUID refundId, UUID paymentId, Money amount) {
-        return ledger.reverseCredit(refundId, paymentId, amount);
+    public LedgerEntryView reverseCredit(UUID refundId, UUID paymentId, Money amount, UUID storeId,
+                                         LocalDate businessDate) {
+        return ledger.reverseCredit(refundId, paymentId, amount, storeId, businessDate);
     }
 
     /** The open debt (balance), zero without an account. */

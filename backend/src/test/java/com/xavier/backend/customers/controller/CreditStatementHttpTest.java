@@ -70,7 +70,7 @@ class CreditStatementHttpTest {
         UUID credit = tx.execute(s -> customers.postCredit(payment, customer, mzn("60.00"), List.of(), store, DAY))
                 .id();
         clock.advance(Duration.ofSeconds(1));
-        tx.execute(s -> customers.reverseCredit(UUID.randomUUID(), payment, mzn("40.00")));
+        tx.execute(s -> customers.reverseCredit(UUID.randomUUID(), payment, mzn("40.00"), store, DAY));
 
         JsonNode statement = statement(null, null);
 

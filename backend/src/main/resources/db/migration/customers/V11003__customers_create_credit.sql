@@ -99,22 +99,24 @@ CREATE TRIGGER credit_reservation_no_truncate
     FOR EACH STATEMENT
 EXECUTE FUNCTION customers.reject_fact_change();
 
--- The ledger: a DEBIT for a credit sale (CREDIT_CHARGE) or the refund of a debt payment (REFUND), a CREDIT for a
--- debt payment (PAYMENT). One entry per source and kind, so a repeated post adds nothing.
+-- The ledger: a DEBIT for a credit sale (CREDIT_CHARGE) or the refund of a debt payment (REFUND, naming the payment's
+-- CREDIT it reverses), a CREDIT for a debt payment (PAYMENT). Every entry has the store and business day it happened
+-- in (P37). One entry per source and kind, so a repeated post adds nothing.
 CREATE TABLE customers.credit_ledger_entry
 (
-    id            UUID                     NOT NULL,
-    customer_id   UUID                     NOT NULL,
-    kind          VARCHAR(6)               NOT NULL,
-    amount        NUMERIC(19, 4)           NOT NULL,
-    currency      CHAR(3)                  NOT NULL,
-    source_type   VARCHAR(15)              NOT NULL,
-    source_id     UUID                     NOT NULL,
-    document_id   UUID,
-    store_id      UUID,
-    business_date DATE,
-    description   VARCHAR(200),
-    occurred_at   TIMESTAMP WITH TIME ZONE NOT NULL,
+    id                UUID                     NOT NULL,
+    customer_id       UUID                     NOT NULL,
+    kind              VARCHAR(6)               NOT NULL,
+    amount            NUMERIC(19, 4)           NOT NULL,
+    currency          CHAR(3)                  NOT NULL,
+    source_type       VARCHAR(15)              NOT NULL,
+    source_id         UUID                     NOT NULL,
+    document_id       UUID,
+    reversed_entry_id UUID,
+    store_id          UUID                     NOT NULL,
+    business_date     DATE                     NOT NULL,
+    description       VARCHAR(200),
+    occurred_at       TIMESTAMP WITH TIME ZONE NOT NULL,
     CONSTRAINT credit_ledger_entry_pk PRIMARY KEY (id),
     CONSTRAINT credit_ledger_entry_account_fk FOREIGN KEY (customer_id)
         REFERENCES customers.credit_account (customer_id),
@@ -125,8 +127,10 @@ CREATE TABLE customers.credit_ledger_entry
     CONSTRAINT credit_ledger_entry_amount_ck CHECK (amount > 0),
     -- a credit sale is debited only once its document exists (D74 s3)
     CONSTRAINT credit_ledger_entry_sale_document_ck CHECK (source_type <> 'CREDIT_CHARGE' OR document_id IS NOT NULL),
-    CONSTRAINT credit_ledger_entry_origin_ck CHECK (
-        source_type = 'REFUND' OR (store_id IS NOT NULL AND business_date IS NOT NULL)),
+    CONSTRAINT credit_ledger_entry_reversed_fk FOREIGN KEY (reversed_entry_id)
+        REFERENCES customers.credit_ledger_entry (id),
+    -- a refund, and only a refund, names the payment CREDIT it reverses
+    CONSTRAINT credit_ledger_entry_reversed_ck CHECK ((source_type = 'REFUND') = (reversed_entry_id IS NOT NULL)),
     CONSTRAINT credit_ledger_entry_source_uk UNIQUE (source_type, source_id, kind)
 );
 -- balance and statement of a customer: an index-only Σ
@@ -247,8 +251,9 @@ BEGIN
     END IF;
     IF NEW.reversal_entry_id IS NOT NULL THEN
         SELECT * INTO reversal FROM customers.credit_ledger_entry WHERE id = NEW.reversal_entry_id;
-        IF reversal.source_type <> 'REFUND' OR reversal.customer_id <> credit.customer_id THEN
-            RAISE EXCEPTION 'customers.credit_settlement % reopens with an entry that is not a refund', NEW.id
+        IF reversal.source_type <> 'REFUND' OR reversal.reversed_entry_id <> credit.id THEN
+            RAISE EXCEPTION 'customers.credit_settlement % reopens with an entry that is not a refund of its credit',
+                NEW.id
                 USING ERRCODE = 'check_violation';
         END IF;
         PERFORM customers.require_reversal_reopened(reversal.id);
@@ -281,6 +286,12 @@ BEGIN
     IF NEW.kind = 'CREDIT' THEN
         PERFORM customers.require_credit_settled(NEW.id);
     ELSIF NEW.source_type = 'REFUND' THEN
+        IF NOT EXISTS (SELECT 1
+                       FROM customers.credit_ledger_entry
+                       WHERE id = NEW.reversed_entry_id AND kind = 'CREDIT' AND customer_id = NEW.customer_id) THEN
+            RAISE EXCEPTION 'customers.credit_ledger_entry: refund % does not reverse a credit of its customer',
+                NEW.id USING ERRCODE = 'check_violation';
+        END IF;
         PERFORM customers.require_reversal_reopened(NEW.id);
     ELSIF NOT EXISTS (SELECT 1
                       FROM customers.credit_reservation

@@ -16,6 +16,15 @@ public class CustomersConflictException extends ConflictException {
                 "The credit reservation of charge " + chargeId + " is " + status + " and cannot " + action + ".");
     }
 
+    /**
+     * A repeated call for an id already recorded ({@code source} = charge, payment or refund) that does not repeat it:
+     * another customer, amount, document or payment. Nothing is changed.
+     */
+    public static CustomersConflictException sourceMismatch(String source, UUID sourceId) {
+        return new CustomersConflictException("CREDIT_SOURCE_MISMATCH", "The " + source + " " + sourceId
+                + " is already recorded with other values.");
+    }
+
     /** {@code UNIQUE(customer_id, digits)}. */
     public static CustomersConflictException phoneExists(UUID customerId, String digits) {
         return new CustomersConflictException("PHONE_EXISTS",

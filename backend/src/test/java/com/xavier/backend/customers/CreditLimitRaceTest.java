@@ -107,6 +107,38 @@ class CreditLimitRaceTest {
         assertThat(customers.credit(customer).available()).isEqualTo(mzn("40.00"));
     }
 
+    /**
+     * A deactivation in flight is not missed: the reservation re-reads the customer under a share lock after the
+     * account lock, so it waits for the deactivation's commit and then refuses.
+     */
+    @Test
+    void aReservationWaitsForADeactivationInFlightAndThenRefuses() throws Exception {
+        CountDownLatch deactivated = new CountDownLatch(1);
+        CountDownLatch mayCommit = new CountDownLatch(1);
+        AtomicInteger deactivator = new AtomicInteger();
+        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+            Future<?> deactivation = pool.submit(() -> tx.executeWithoutResult(status -> {
+                jdbc.sql("UPDATE customers.customer SET active = false, version = version + 1 WHERE id = ?")
+                        .param(customer).update();
+                deactivator.set(jdbc.sql("SELECT pg_backend_pid()").query(Integer.class).single());
+                deactivated.countDown();
+                await(mayCommit);
+            }));
+            assertThat(deactivated.await(30, TimeUnit.SECONDS)).isTrue();
+
+            Future<Object> reservation = pool.submit(outcome(() -> customers.reserve(customer, mzn("10.00"),
+                    UUID.randomUUID())));
+            waitUntil(() -> reservation.isDone() || blockedBy(deactivator.get()));
+
+            assertThat(reservation.isDone()).as("the reservation must wait for the deactivation").isFalse();
+            mayCommit.countDown();
+            deactivation.get(30, TimeUnit.SECONDS);
+            assertThat(reservation.get(30, TimeUnit.SECONDS)).isInstanceOfSatisfying(CustomerRuleException.class,
+                    refused -> assertThat(refused.code()).isEqualTo("CUSTOMER_INACTIVE"));
+        }
+        assertThat(activeReservations()).isZero();
+    }
+
     /** The reservation, or the business refusal, of one transaction. */
     private Callable<Object> outcome(Callable<ReservationView> reserve) {
         return () -> {

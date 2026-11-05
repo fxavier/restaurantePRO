@@ -60,9 +60,12 @@ public class CreditLedgerEntry {
     private UUID documentId;
 
     @Column(updatable = false)
+    private UUID reversedEntryId;
+
+    @Column(nullable = false, updatable = false)
     private UUID storeId;
 
-    @Column(updatable = false)
+    @Column(nullable = false, updatable = false)
     private LocalDate businessDate;
 
     @Column(updatable = false, length = 200)
@@ -76,8 +79,8 @@ public class CreditLedgerEntry {
     }
 
     private CreditLedgerEntry(UUID customerId, EntryKind kind, Money amount, EntrySource sourceType, UUID sourceId,
-                              UUID documentId, UUID storeId, LocalDate businessDate, String description,
-                              Instant now) {
+                              UUID documentId, UUID reversedEntryId, UUID storeId, LocalDate businessDate,
+                              String description, Instant now) {
         if (amount.amount().signum() <= 0) {
             throw new IllegalArgumentException("A ledger amount must be positive");
         }
@@ -88,8 +91,9 @@ public class CreditLedgerEntry {
         this.sourceType = sourceType;
         this.sourceId = Objects.requireNonNull(sourceId, "sourceId");
         this.documentId = documentId;
-        this.storeId = storeId;
-        this.businessDate = businessDate;
+        this.reversedEntryId = reversedEntryId;
+        this.storeId = Objects.requireNonNull(storeId, "storeId");
+        this.businessDate = Objects.requireNonNull(businessDate, "businessDate");
         this.description = description;
         this.occurredAt = now;
     }
@@ -99,21 +103,26 @@ public class CreditLedgerEntry {
                                               LocalDate businessDate, Instant now) {
         return new CreditLedgerEntry(reservation.getCustomerId(), EntryKind.DEBIT, reservation.amount(),
                 EntrySource.CREDIT_CHARGE, reservation.getChargeId(), Objects.requireNonNull(documentId, "documentId"),
-                Objects.requireNonNull(storeId, "storeId"), Objects.requireNonNull(businessDate, "businessDate"),
-                "Credit sale", now);
+                null, storeId, businessDate, "Credit sale", now);
     }
 
     public static CreditLedgerEntry paymentCredit(UUID customerId, UUID paymentId, Money amount, UUID storeId,
                                                   LocalDate businessDate, Instant now) {
-        return new CreditLedgerEntry(customerId, EntryKind.CREDIT, amount, EntrySource.PAYMENT, paymentId, null,
-                Objects.requireNonNull(storeId, "storeId"), Objects.requireNonNull(businessDate, "businessDate"),
-                "Debt payment", now);
+        return new CreditLedgerEntry(customerId, EntryKind.CREDIT, amount, EntrySource.PAYMENT, paymentId, null, null,
+                storeId, businessDate, "Debt payment", now);
     }
 
-    /** The refund of a debt payment: the debt comes back, in the payment's store. */
-    public static CreditLedgerEntry refundDebit(CreditLedgerEntry payment, UUID refundId, Money amount, Instant now) {
+    /** The refund of a debt payment: the debt comes back, on the refund's store and business day (P37). */
+    public static CreditLedgerEntry refundDebit(CreditLedgerEntry payment, UUID refundId, Money amount, UUID storeId,
+                                                LocalDate businessDate, Instant now) {
         return new CreditLedgerEntry(payment.customerId, EntryKind.DEBIT, amount, EntrySource.REFUND, refundId, null,
-                payment.storeId, null, "Debt payment refund", now);
+                payment.id, storeId, businessDate, "Debt payment refund", now);
+    }
+
+    /** True when a replay of this entry's post repeats it: same customer, amount, document and reversed entry. */
+    public boolean repeats(UUID customerId, Money amount, UUID documentId, UUID reversedEntryId) {
+        return this.customerId.equals(customerId) && amount().equals(amount)
+                && Objects.equals(this.documentId, documentId) && Objects.equals(this.reversedEntryId, reversedEntryId);
     }
 
     public LedgerEntryView toView() {

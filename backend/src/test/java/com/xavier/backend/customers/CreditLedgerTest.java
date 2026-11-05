@@ -201,8 +201,8 @@ class CreditLedgerTest {
         inTx(() -> customers.postCredit(payment, customer, mzn("60.00"), List.of(), store, DAY));
         UUID refund = UUID.randomUUID();
 
-        LedgerEntryView reversal = inTx(() -> customers.reverseCredit(refund, payment, mzn("40.00")));
-        LedgerEntryView again = inTx(() -> customers.reverseCredit(refund, payment, mzn("40.00")));
+        LedgerEntryView reversal = inTx(() -> customers.reverseCredit(refund, payment, mzn("40.00"), store, DAY));
+        LedgerEntryView again = inTx(() -> customers.reverseCredit(refund, payment, mzn("40.00"), store, DAY));
 
         assertThat(reversal.kind()).isEqualTo("DEBIT");
         assertThat(reversal.sourceType()).isEqualTo("REFUND");
@@ -211,11 +211,102 @@ class CreditLedgerTest {
         assertThat(settledOn(oldest)).isEqualByComparingTo("20.00");
         assertThat(credit().balance()).isEqualTo(mzn("60.00"));
 
-        assertThatThrownBy(() -> inTx(() -> customers.reverseCredit(UUID.randomUUID(), payment, mzn("20.01"))))
+        assertThatThrownBy(() -> inTx(() -> customers.reverseCredit(UUID.randomUUID(), payment, mzn("20.01"), store, DAY)))
                 .isInstanceOf(CustomerRuleException.class)
                 .hasFieldOrPropertyWithValue("code", "AMOUNT_EXCEEDS_CREDIT");
         pay("10.00", List.of());
         assertThat(settledOn(oldest)).isEqualByComparingTo("30.00");
+    }
+
+    @Test
+    void aReserveReplayMustRepeatTheSameCustomerAndAmount() throws Exception {
+        UUID charge = UUID.randomUUID();
+        inTx(() -> customers.reserve(customer, mzn("60.00"), charge));
+        UUID other = fixtures.creditCustomer("500.00");
+
+        assertMismatch(() -> customers.reserve(customer, mzn("61.00"), charge));
+        assertMismatch(() -> customers.reserve(other, mzn("60.00"), charge));
+    }
+
+    @Test
+    void aReserveReplayOfAClosedReservationIsAConflict() {
+        UUID released = UUID.randomUUID();
+        inTx(() -> customers.reserve(customer, mzn("10.00"), released));
+        inTx(() -> {
+            customers.release(released);
+            return null;
+        });
+        UUID consumed = UUID.randomUUID();
+        inTx(() -> customers.reserve(customer, mzn("20.00"), consumed));
+        inTx(() -> customers.postDebit(consumed, UUID.randomUUID(), store, DAY, mzn("20.00")));
+
+        for (UUID charge : List.of(released, consumed)) {
+            assertThatThrownBy(() -> inTx(() -> customers.reserve(customer, mzn(charge == released ? "10.00"
+                    : "20.00"), charge))).isInstanceOf(CustomersConflictException.class)
+                    .hasFieldOrPropertyWithValue("code", "RESERVATION_NOT_ACTIVE");
+        }
+    }
+
+    @Test
+    void aDebitMustBeForTheReservedAmount() {
+        UUID charge = UUID.randomUUID();
+        inTx(() -> customers.reserve(customer, mzn("60.00"), charge));
+
+        assertMismatch(() -> customers.postDebit(charge, UUID.randomUUID(), store, DAY, mzn("59.00")));
+        assertThat(credit().reserved()).isEqualTo(mzn("60.00"));
+    }
+
+    @Test
+    void aDebitReplayMustRepeatTheSameAmountAndDocument() {
+        UUID charge = UUID.randomUUID();
+        UUID document = UUID.randomUUID();
+        inTx(() -> customers.reserve(customer, mzn("60.00"), charge));
+        inTx(() -> customers.postDebit(charge, document, store, DAY, mzn("60.00")));
+
+        assertMismatch(() -> customers.postDebit(charge, document, store, DAY, mzn("61.00")));
+        assertMismatch(() -> customers.postDebit(charge, UUID.randomUUID(), store, DAY, mzn("60.00")));
+        assertThat(entries()).isEqualTo(1);
+    }
+
+    @Test
+    void aCreditReplayMustRepeatTheSameAmountAndCustomer() throws Exception {
+        sale("50.00");
+        UUID payment = UUID.randomUUID();
+        inTx(() -> customers.postCredit(payment, customer, mzn("10.00"), List.of(), store, DAY));
+        UUID other = fixtures.creditCustomer("500.00");
+
+        assertMismatch(() -> customers.postCredit(payment, customer, mzn("11.00"), List.of(), store, DAY));
+        assertMismatch(() -> customers.postCredit(payment, other, mzn("10.00"), List.of(), store, DAY));
+        assertThat(credit().balance()).isEqualTo(mzn("40.00"));
+    }
+
+    @Test
+    void aRefundReplayMustRepeatTheSameAmountAndPayment() {
+        sale("50.00");
+        UUID payment = UUID.randomUUID();
+        UUID otherPayment = UUID.randomUUID();
+        inTx(() -> customers.postCredit(payment, customer, mzn("20.00"), List.of(), store, DAY));
+        inTx(() -> customers.postCredit(otherPayment, customer, mzn("20.00"), List.of(), store, DAY));
+        UUID refund = UUID.randomUUID();
+        inTx(() -> customers.reverseCredit(refund, payment, mzn("5.00"), store, DAY));
+
+        assertMismatch(() -> customers.reverseCredit(refund, payment, mzn("6.00"), store, DAY));
+        assertMismatch(() -> customers.reverseCredit(refund, otherPayment, mzn("5.00"), store, DAY));
+        assertThat(credit().balance()).isEqualTo(mzn("15.00"));
+    }
+
+    @Test
+    void aRefundDebitCarriesTheRefundsStoreAndBusinessDay() {
+        sale("50.00");
+        UUID payment = UUID.randomUUID();
+        inTx(() -> customers.postCredit(payment, customer, mzn("20.00"), List.of(), store, DAY));
+        UUID refundStore = UUID.randomUUID();
+
+        LedgerEntryView refund = inTx(() -> customers.reverseCredit(UUID.randomUUID(), payment, mzn("5.00"),
+                refundStore, DAY.plusDays(3)));
+
+        assertThat(refund.storeId()).isEqualTo(refundStore);
+        assertThat(refund.businessDate()).isEqualTo(DAY.plusDays(3));
     }
 
     @Test
@@ -283,6 +374,11 @@ class CreditLedgerTest {
     private LedgerEntryView pay(String amount, List<UUID> debits) {
         clock.advance(Duration.ofSeconds(1));
         return inTx(() -> customers.postCredit(UUID.randomUUID(), customer, mzn(amount), debits, store, DAY));
+    }
+
+    private void assertMismatch(Supplier<?> replay) {
+        assertThatThrownBy(() -> inTx(replay)).isInstanceOf(CustomersConflictException.class)
+                .hasFieldOrPropertyWithValue("code", "CREDIT_SOURCE_MISMATCH");
     }
 
     private void assertRefused(UUID who, String code) {

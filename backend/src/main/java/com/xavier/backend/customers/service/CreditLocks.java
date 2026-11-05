@@ -1,6 +1,7 @@
 package com.xavier.backend.customers.service;
 
 import com.xavier.backend.customers.model.CreditAccount;
+import com.xavier.backend.customers.model.Customer;
 import com.xavier.backend.customers.repository.CreditAccountRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
@@ -30,6 +31,15 @@ class CreditLocks {
             entityManager.refresh(account, LockModeType.PESSIMISTIC_WRITE);
             return account;
         });
+    }
+
+    /**
+     * The customer re-read {@code FOR SHARE} once the account is locked: a deactivation in flight is waited for and
+     * then seen, never missed (the customer row comes after {@code credit_account} in the lock order).
+     */
+    Customer customerForShare(Customer customer) {
+        entityManager.refresh(customer, LockModeType.PESSIMISTIC_READ);
+        return customer;
     }
 
     /** Re-reads a row of the account once its lock is held (a reservation loaded to find its customer). */

@@ -5,6 +5,7 @@ import com.xavier.backend.customers.CustomerSnapshot;
 import com.xavier.backend.customers.LedgerEntryView;
 import com.xavier.backend.customers.ReservationView;
 import com.xavier.backend.customers.exception.CustomerRuleException;
+import com.xavier.backend.customers.exception.CustomersConflictException;
 import com.xavier.backend.customers.exception.CustomersNotFoundException;
 import com.xavier.backend.customers.model.AddressKind;
 import com.xavier.backend.customers.model.Allocation;
@@ -18,6 +19,7 @@ import com.xavier.backend.customers.model.Customer;
 import com.xavier.backend.customers.model.CustomerAddress;
 import com.xavier.backend.customers.model.EntryKind;
 import com.xavier.backend.customers.model.EntrySource;
+import com.xavier.backend.customers.model.ReservationStatus;
 import com.xavier.backend.customers.repository.CreditAccountRepository;
 import com.xavier.backend.customers.repository.CreditLedgerEntryRepository;
 import com.xavier.backend.customers.repository.CreditReservationRepository;
@@ -51,6 +53,9 @@ public class CreditLedgerService {
 
     static final String ENTRY = "CreditLedgerEntry";
     static final String RESERVATION = "CreditReservation";
+    private static final String CHARGE = "credit charge";
+    private static final String PAYMENT = "debt payment";
+    private static final String REFUND = "refund";
 
     private final CustomerRepository customers;
     private final CustomerAddressRepository addresses;
@@ -107,11 +112,18 @@ public class CreditLedgerService {
                 .orElseGet(() -> organization.companyProfile().currency()));
     }
 
-    /** Holds {@code amount} of the available credit for {@code chargeId}; the same charge gets its reservation back. */
+    /**
+     * Holds {@code amount} of the available credit for {@code chargeId}. The same charge gets its ACTIVE reservation
+     * back; a closed one is a 409, and other values a 409 {@code CREDIT_SOURCE_MISMATCH}.
+     */
     @Transactional(propagation = Propagation.MANDATORY)
     public ReservationView reserve(UUID customerId, Money amount, UUID chargeId) {
-        activeCustomer(customerId);
+        Customer customer = customers.findById(customerId)
+                .orElseThrow(() -> new CustomersNotFoundException(CustomerService.ENTITY, customerId));
         CreditAccount account = lockedAccount(customerId);
+        if (!locks.customerForShare(customer).isActive()) {
+            throw CustomerRuleException.inactive(customerId);
+        }
         requireCurrency(amount, account);
         Optional<CreditReservation> existing = reservations.findByChargeId(chargeId);
         if (existing.isPresent()) {
@@ -140,18 +152,13 @@ public class CreditLedgerService {
     @Transactional(propagation = Propagation.MANDATORY)
     public LedgerEntryView postDebit(UUID chargeId, UUID documentId, UUID storeId, LocalDate businessDate,
                                      Money amount) {
+        CreditReservation reservation = lockedReservation(chargeId);
         Optional<CreditLedgerEntry> posted = entry(EntrySource.CREDIT_CHARGE, chargeId, EntryKind.DEBIT);
         if (posted.isPresent()) {
-            return posted.get().toView();
-        }
-        CreditReservation reservation = lockedReservation(chargeId);
-        posted = entry(EntrySource.CREDIT_CHARGE, chargeId, EntryKind.DEBIT);
-        if (posted.isPresent()) {
-            return posted.get().toView();
+            return replay(posted.get(), CHARGE, chargeId, reservation.getCustomerId(), amount, documentId, null);
         }
         if (!reservation.amount().equals(amount)) {
-            throw new IllegalArgumentException("Charge " + chargeId + " reserved " + reservation.amount().amount()
-                    + ", not " + amount.amount());
+            throw CustomersConflictException.sourceMismatch(CHARGE, chargeId);
         }
         reservation.consume(clock.instant());
         reservations.saveAndFlush(reservation);
@@ -166,16 +173,12 @@ public class CreditLedgerService {
     @Transactional(propagation = Propagation.MANDATORY)
     public LedgerEntryView postCredit(UUID paymentId, UUID customerId, Money amount, List<UUID> debitEntryIds,
                                       UUID storeId, LocalDate businessDate) {
-        Optional<CreditLedgerEntry> posted = entry(EntrySource.PAYMENT, paymentId, EntryKind.CREDIT);
-        if (posted.isPresent()) {
-            return posted.get().toView();
-        }
         requireCustomer(customerId);
         CreditAccount account = lockedAccount(customerId);
         requireCurrency(amount, account);
-        posted = entry(EntrySource.PAYMENT, paymentId, EntryKind.CREDIT);
+        Optional<CreditLedgerEntry> posted = entry(EntrySource.PAYMENT, paymentId, EntryKind.CREDIT);
         if (posted.isPresent()) {
-            return posted.get().toView();
+            return replay(posted.get(), PAYMENT, paymentId, customerId, amount, null, null);
         }
         Money debt = balances.balance(customerId, account.currency());
         if (amount.amount().compareTo(debt.amount()) > 0) {
@@ -198,17 +201,14 @@ public class CreditLedgerService {
 
     /** The refund of a debt payment: a REFUND DEBIT that reopens what the payment settled, latest debit first. */
     @Transactional(propagation = Propagation.MANDATORY)
-    public LedgerEntryView reverseCredit(UUID refundId, UUID paymentId, Money amount) {
-        Optional<CreditLedgerEntry> posted = entry(EntrySource.REFUND, refundId, EntryKind.DEBIT);
-        if (posted.isPresent()) {
-            return posted.get().toView();
-        }
+    public LedgerEntryView reverseCredit(UUID refundId, UUID paymentId, Money amount, UUID storeId,
+                                         LocalDate businessDate) {
         CreditLedgerEntry payment = entry(EntrySource.PAYMENT, paymentId, EntryKind.CREDIT)
                 .orElseThrow(() -> new CustomersNotFoundException(ENTRY, "of payment " + paymentId));
         requireCurrency(amount, lockedAccount(payment.getCustomerId()));
-        posted = entry(EntrySource.REFUND, refundId, EntryKind.DEBIT);
+        Optional<CreditLedgerEntry> posted = entry(EntrySource.REFUND, refundId, EntryKind.DEBIT);
         if (posted.isPresent()) {
-            return posted.get().toView();
+            return replay(posted.get(), REFUND, refundId, payment.getCustomerId(), amount, null, payment.getId());
         }
         List<Slot> settled = slots(entries.settledBy(payment.getId()));
         Money refundable = Money.of(settled.stream().map(Slot::capacity).reduce(BigDecimal.ZERO, BigDecimal::add),
@@ -217,7 +217,7 @@ public class CreditLedgerService {
             throw CustomerRuleException.exceedsCredit(amount, refundable);
         }
         CreditLedgerEntry reversal = entries.saveAndFlush(CreditLedgerEntry.refundDebit(payment, refundId, amount,
-                clock.instant()));
+                storeId, businessDate, clock.instant()));
         for (Part part : Allocation.fillInOrder(amount.amount(), settled)) {
             settlements.save(CreditSettlement.reopens(payment.getId(), part.entryId(), reversal.getId(),
                     part.amount()));
@@ -260,10 +260,25 @@ public class CreditLedgerService {
         }
     }
 
+    /**
+     * A replay returns what was recorded only when it repeats it. Checked under the account lock, so two different
+     * calls for one id never both pass.
+     */
+    private static LedgerEntryView replay(CreditLedgerEntry recorded, String source, UUID sourceId, UUID customerId,
+                                          Money amount, UUID documentId, UUID reversedEntryId) {
+        if (!recorded.repeats(customerId, amount, documentId, reversedEntryId)) {
+            throw CustomersConflictException.sourceMismatch(source, sourceId);
+        }
+        return recorded.toView();
+    }
+
     private static CreditReservation sameCharge(CreditReservation reservation, UUID customerId, Money amount) {
         if (!reservation.getCustomerId().equals(customerId) || !reservation.amount().equals(amount)) {
-            throw new IllegalArgumentException("Charge " + reservation.getChargeId()
-                    + " already holds a different reservation");
+            throw CustomersConflictException.sourceMismatch(CHARGE, reservation.getChargeId());
+        }
+        if (reservation.getStatus() != ReservationStatus.ACTIVE) {
+            throw CustomersConflictException.reservationClosed(reservation.getChargeId(), reservation.getStatus(),
+                    "be reserved again");
         }
         return reservation;
     }

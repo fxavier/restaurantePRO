@@ -49,7 +49,8 @@ class CustomersErrorContractTest {
             Map.entry("reservation-not-active", () -> CustomersConflictException.reservationClosed(ID, "CONSUMED",
                     "be released")),
             Map.entry("phone-exists", () -> CustomersConflictException.phoneExists(ID, "258841234567")),
-            Map.entry("account-exists", () -> CustomersConflictException.accountExists(ID)));
+            Map.entry("account-exists", () -> CustomersConflictException.accountExists(ID)),
+            Map.entry("source-mismatch", () -> CustomersConflictException.sourceMismatch("debt payment", ID)));
 
     @Autowired
     MockMvc mvc;
@@ -82,6 +83,8 @@ class CustomersErrorContractTest {
         expect("phone-exists", 409, "PHONE_EXISTS", "Customer " + ID + " already has the phone 258841234567.", "");
         expect("account-exists", 409, "CREDIT_ACCOUNT_EXISTS",
                 "The credit account of customer " + ID + " was opened at the same time; retry.", "");
+        expect("source-mismatch", 409, "CREDIT_SOURCE_MISMATCH",
+                "The debt payment " + ID + " is already recorded with other values.", "");
     }
 
     private void expect(String name, int status, String code, String detail, String extra) throws Exception {
