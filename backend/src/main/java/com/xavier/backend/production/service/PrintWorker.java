@@ -3,10 +3,7 @@ package com.xavier.backend.production.service;
 import com.xavier.backend.production.adapter.PrinterTransport;
 import com.xavier.backend.production.adapter.SendOutcome;
 import java.util.List;
-import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -21,8 +18,8 @@ import org.springframework.stereotype.Service;
  * The print worker (D50 §7.2, D46). Each run, on the scheduler thread, expires lost leases and claims due jobs (short
  * transactions), then hands each send to a dedicated bounded pool: the shared scheduler thread never waits on a
  * printer, and no send holds a transaction or a connection (D48; the transport checks). A run claims no more than
- * the pool has free threads, at most one job per printer, and none for a printer with a send in flight. When a send
- * is recorded its sender claims again, so a printer's backlog drains at its own speed rather than one job per poll.
+ * the pool has free threads, at most one job per printer, and none for a printer with a send in flight on any worker
+ * (its job is PROCESSING in the database). When a send is recorded its sender claims again, so a printer's backlog drains at its own speed rather than one job per poll.
  */
 @Service
 public class PrintWorker implements DisposableBean {
@@ -35,7 +32,6 @@ public class PrintWorker implements DisposableBean {
     private final PrinterTransport transport;
     private final Semaphore freeSenders;
     private final ThreadPoolExecutor senders;
-    private final Set<UUID> busyPrinters = ConcurrentHashMap.newKeySet();
 
     PrintWorker(PrintQueue queue, PrinterTransport transport,
                 @Value("${restaurantpro.production.worker.senders:4}") int senders) {
@@ -62,10 +58,9 @@ public class PrintWorker implements DisposableBean {
         if (free == 0 || senders.isShutdown()) {
             return 0;
         }
-        List<Dispatch> claimed = queue.claimDue(Math.min(free, MAX_CLAIM), Set.copyOf(busyPrinters));
+        List<Dispatch> claimed = queue.claimDue(Math.min(free, MAX_CLAIM));
         for (Dispatch dispatch : claimed) {
             freeSenders.acquireUninterruptibly();
-            busyPrinters.add(dispatch.printerId());
             senders.execute(() -> deliver(dispatch));
         }
         return claimed.size();
@@ -79,7 +74,6 @@ public class PrintWorker implements DisposableBean {
             // the job stays PROCESSING; its lease turns it UNKNOWN for a person to resolve
             log.error("Print job {} was not recorded after its send", dispatch.jobId(), e);
         } finally {
-            busyPrinters.remove(dispatch.printerId());
             freeSenders.release();
         }
         claimNext();

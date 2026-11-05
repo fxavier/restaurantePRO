@@ -21,7 +21,6 @@ import java.nio.charset.Charset;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -283,8 +282,8 @@ class PrintQueueTest {
         try {
             fixtures.mode(shop.store(), bar, "NORMAL"); // the locked job is due for every claimer now
 
-            List<Dispatch> claimed = CompletableFuture.supplyAsync(() -> queue.claimDue(PrintWorker.MAX_CLAIM,
-                    Set.of())).get(5, TimeUnit.SECONDS);
+            List<Dispatch> claimed = CompletableFuture.supplyAsync(() -> queue.claimDue(PrintWorker.MAX_CLAIM))
+                    .get(5, TimeUnit.SECONDS);
 
             assertThat(claimed).extracting(Dispatch::jobId).doesNotContain(job);
             assertThat(fixtures.jobStatus(job)).isEqualTo("QUEUED");
@@ -319,9 +318,57 @@ class PrintQueueTest {
             jdbc.sql("UPDATE production.printer SET mode = 'NORMAL' WHERE id IN (?, ?)").param(crowded).param(other)
                     .update();
 
-            List<Dispatch> claimed = queue.claimDue(2, Set.of());
+            List<Dispatch> claimed = queue.claimDue(2);
 
             assertThat(claimed).extracting(Dispatch::jobId).containsExactlyInAnyOrder(oldest, lone);
+        });
+    }
+
+    /** D50 §7.2 (amended): a printer's head job blocks it while it waits to retry; it is still printed first. */
+    @Test
+    void aWaitingHeadJobKeepsNewerJobsOfItsPrinterBehindIt() throws Exception {
+        UUID bar = fixtures.barPrinter(shop.store(), printer.host(), printer.port());
+        fixtures.mode(shop.store(), bar, "HOLD");
+        UUID head = awaitJob(fixtures.confirmedRound(shop, employee, terminal, "1"));
+        UUID newer = copyJob(head, bar, "2000-01-01 00:00:01Z");
+
+        tx.executeWithoutResult(status -> {
+            status.setRollbackOnly();
+            jdbc.sql("""
+                    UPDATE production.print_job SET status = 'RETRY_WAIT', attempts = 1, started_at = now(),
+                        next_attempt_at = now() + interval '1 hour', created_at = timestamptz '2000-01-01 00:00:00Z'
+                    WHERE id = ?""").param(head).update();
+            jdbc.sql("UPDATE production.printer SET mode = 'NORMAL' WHERE id = ?").param(bar).update();
+
+            assertThat(queue.claimDue(PrintWorker.MAX_CLAIM)).extracting(Dispatch::printerId)
+                    .doesNotContain(bar);
+
+            jdbc.sql("UPDATE production.print_job SET next_attempt_at = now() - interval '1 second' WHERE id = ?")
+                    .param(head).update();
+            assertThat(queue.claimDue(PrintWorker.MAX_CLAIM)).extracting(Dispatch::jobId)
+                    .contains(head).doesNotContain(newer);
+        });
+    }
+
+    /**
+     * D50 §7.2 (amended): one job in flight per printer across workers. A send another worker (another context or
+     * instance on this database) has in flight keeps the printer's next job waiting, whatever this JVM knows.
+     */
+    @Test
+    void aSendInFlightElsewhereKeepsThePrintersNextJobWaiting() throws Exception {
+        UUID bar = fixtures.barPrinter(shop.store(), printer.host(), printer.port());
+        fixtures.mode(shop.store(), bar, "HOLD");
+        UUID sending = awaitJob(fixtures.confirmedRound(shop, employee, terminal, "1"));
+        UUID next = copyJob(sending, bar, "2000-01-01 00:00:01Z");
+
+        tx.executeWithoutResult(status -> {
+            status.setRollbackOnly();
+            jdbc.sql("UPDATE production.print_job SET status = 'PROCESSING', attempts = 1, started_at = now() WHERE id = ?")
+                    .param(sending).update();
+            jdbc.sql("UPDATE production.printer SET mode = 'NORMAL' WHERE id = ?").param(bar).update();
+
+            assertThat(queue.claimDue(PrintWorker.MAX_CLAIM)).extracting(Dispatch::jobId)
+                    .doesNotContain(next);
         });
     }
 

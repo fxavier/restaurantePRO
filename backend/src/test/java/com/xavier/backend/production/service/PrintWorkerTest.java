@@ -10,19 +10,19 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 /**
  * The worker without a database or a scheduler: an in-memory queue that, like the claim query, hands out each
- * printer's oldest job unless that printer is busy, and a transport that accepts at once.
+ * printer's oldest job unless it has one in flight (claimed, outcome not yet recorded), and an accepting transport.
  */
 class PrintWorkerTest {
 
@@ -38,9 +38,10 @@ class PrintWorkerTest {
     }
 
     /**
-     * D50 §7.2 (amended): a printer's next job is claimed as soon as its previous send is recorded. One poll drains
-     * the whole backlog, where waiting for the next poll would take one poll interval (1 s) per job, 50 s here; the
-     * test never polls again, so the old behaviour cannot pass however long it waits.
+     * D50 §7.2 (amended): a printer's next job is claimed as soon as its previous send is recorded, never while it
+     * is on the wire. One poll drains the whole backlog, where waiting for the next poll would take one poll interval
+     * (1 s) per job, 50 s here; the test never polls for the drain, so the old behaviour cannot pass however long it
+     * waits.
      */
     @Test
     void onePollDrainsAPrintersBacklogInOrderOneSendAtATime() throws InterruptedException {
@@ -49,16 +50,21 @@ class PrintWorkerTest {
         transport.expect(50);
 
         worker.poll();
+        assertThat(transport.firstStarted.await(5, TimeUnit.SECONDS)).as("first send started").isTrue();
+        assertThat(worker.poll()).as("claimed while the first send is on the wire").isZero();
+        assertThat(transport.sent).hasSize(1);
+        transport.releaseFirst.countDown();
 
         assertThat(transport.allSent.await(5, TimeUnit.SECONDS)).as("all 50 jobs sent after one poll").isTrue();
         assertThat(transport.sent).containsExactlyElementsOf(backlog.stream().map(queue::payloadOf).toList());
-        assertThat(transport.mostInFlight.get()).isEqualTo(1);
     }
 
     static final class InMemoryQueue extends PrintQueue {
 
         private final Map<UUID, Deque<Dispatch>> pendingByPrinter = new HashMap<>();
         private final Map<UUID, String> payloads = new HashMap<>();
+        private final Set<UUID> inFlight = new HashSet<>();
+        private final Map<UUID, UUID> printerOf = new HashMap<>();
 
         InMemoryQueue() {
             super(null, null, null, null, null, null);
@@ -69,6 +75,7 @@ class PrintWorkerTest {
             for (int i = 0; i < count; i++) {
                 UUID id = UUID.randomUUID();
                 payloads.put(id, "job " + i);
+                printerOf.put(id, printer);
                 pendingByPrinter.computeIfAbsent(printer, p -> new ArrayDeque<>())
                         .add(new Dispatch(id, printer, ADDRESS, payloads.get(id).getBytes()));
                 ids.add(id);
@@ -81,12 +88,13 @@ class PrintWorkerTest {
         }
 
         @Override
-        public synchronized List<Dispatch> claimDue(int limit, Set<UUID> busyPrinters) {
+        public synchronized List<Dispatch> claimDue(int limit) {
             List<Dispatch> claimed = new ArrayList<>();
             for (Map.Entry<UUID, Deque<Dispatch>> pending : pendingByPrinter.entrySet()) {
-                if (claimed.size() < limit && !busyPrinters.contains(pending.getKey())
+                if (claimed.size() < limit && !inFlight.contains(pending.getKey())
                         && !pending.getValue().isEmpty()) {
                     claimed.add(pending.getValue().poll());
+                    inFlight.add(pending.getKey());
                 }
             }
             return claimed;
@@ -98,15 +106,17 @@ class PrintWorkerTest {
         }
 
         @Override
-        public void record(UUID jobId, SendOutcome outcome) {
+        public synchronized void record(UUID jobId, SendOutcome outcome) {
+            inFlight.remove(printerOf.get(jobId));
         }
     }
 
+    /** Accepts every send; the first one stays on the wire until {@code releaseFirst}. */
     static final class AcceptingTransport implements PrinterTransport {
 
         final List<String> sent = Collections.synchronizedList(new ArrayList<>());
-        final AtomicInteger inFlight = new AtomicInteger();
-        final AtomicInteger mostInFlight = new AtomicInteger();
+        final CountDownLatch firstStarted = new CountDownLatch(1);
+        final CountDownLatch releaseFirst = new CountDownLatch(1);
         CountDownLatch allSent;
 
         void expect(int sends) {
@@ -115,11 +125,21 @@ class PrintWorkerTest {
 
         @Override
         public SendOutcome send(PrinterAddress address, byte[] payload) {
-            mostInFlight.accumulateAndGet(inFlight.incrementAndGet(), Math::max);
             sent.add(new String(payload));
-            inFlight.decrementAndGet();
+            if (firstStarted.getCount() > 0) {
+                firstStarted.countDown();
+                awaitRelease();
+            }
             allSent.countDown();
             return SendOutcome.ACCEPTED;
+        }
+
+        private void awaitRelease() {
+            try {
+                releaseFirst.await(10, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
         }
     }
 }
