@@ -70,11 +70,22 @@ class LineSplitTest {
     }
 
     @Test
-    void aVoidOfTheWholePoolReducesTheLineByItsGrossLeavingOnlyATaxCent() {
+    void aVoidThatEmptiesThePoolLeavesNoGrossAndAtMostACentOfTaxTheDocumentsDoNotCarry() {
+        // 3 x 1.00 @16 %: a partition of 2 takes tax 0.27; voiding the 1 left makes the line 2 x 1.00, tax 0.28
         LineSplit split = line("1.00", "3", List.of());
-        LineSplit after = with(split, split.take(new BigDecimal("2")), new BigDecimal("2"));
+        Share share = split.take(new BigDecimal("2"));
+        LineSplit after = with(split, share, new BigDecimal("2"));
 
         assertThat(after.voidReduces(BigDecimal.ONE)).isEqualTo(money("1.00"));
+
+        LineAmounts voided = LineAmounts.of(money("1.00"), new BigDecimal("2"), VAT);
+        LineSplit emptied = new LineSplit(LINE, money("1.00"), VAT, new BigDecimal("2"), voided.gross(), voided.tax(),
+                after.live());
+        assertThat(share.tax()).isEqualTo(money("0.27"));
+        assertThat(emptied.pool()).isEqualTo(new LineSplit.Pool(BigDecimal.ZERO.setScale(0), money("0.00"),
+                money("0.01")));
+        assertThat(emptied.taxDrift()).as("the order's tax minus what documents will carry")
+                .isEqualTo(money("0.01"));
     }
 
     static void assertRule(org.assertj.core.api.ThrowableAssert.ThrowingCallable call, SettlementRule rule) {

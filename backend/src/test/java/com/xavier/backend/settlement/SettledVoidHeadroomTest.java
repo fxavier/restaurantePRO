@@ -125,6 +125,30 @@ class SettledVoidHeadroomTest {
     }
 
     @Test
+    void aVoidThatEmptiesAPartitionedLinesPoolShowsTheCentOfTaxTheDocumentsDoNotCarry() throws Exception {
+        Sale sale = fixtures.sale("2"); // the line's tax 3.45; a partition of 1 takes 1.73 (L(2) - L(1))
+        UUID line = fixtures.lineIds(sale.cashier(), sale.order()).getFirst();
+        fixtures.partitionItems(sale.cashier(), sale.order(), fixtures.orderVersion(sale.cashier(), sale.order()),
+                UUID.randomUUID().toString(), line, "1").andExpect(status().isCreated());
+
+        fixtures.settledVoid(sale.cashier(), sale.order(), fixtures.orderVersion(sale.cashier(), sale.order()), line,
+                "1", UUID.randomUUID().toString()).andExpect(status().isCreated());
+
+        // the order now recomputes 1 x 12.50 with tax 1.72; the documents will carry the partition's 1.73
+        fixtures.settlement(sale.cashier(), sale.order())
+                .andExpect(jsonPath("$.taxRoundingDifference[0].ratePercent").value(16))
+                .andExpect(jsonPath("$.taxRoundingDifference[0].difference.amount").value(-0.01));
+    }
+
+    @Test
+    void anOrderWithoutPartitionsHasNoTaxRoundingDifference() throws Exception {
+        Sale sale = fixtures.sale("2");
+
+        fixtures.settlement(sale.cashier(), sale.order())
+                .andExpect(jsonPath("$.taxRoundingDifference[0].difference.amount").value(0));
+    }
+
+    @Test
     void theOperatorCannotApproveTheirOwnVoid() throws Exception {
         Sale sale = fixtures.sale("2");
         when(approvers.verify(any(), any(), eq(Permission.ORDER_VOID_APPROVE), any()))

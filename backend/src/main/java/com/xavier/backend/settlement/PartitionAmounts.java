@@ -26,6 +26,8 @@ public final class PartitionAmounts {
 
     static final int GROSS_UNITS = 1;
     static final int NET_UNITS = 2;
+    /** The most tax an emptied pool may keep after a settled void, in minor units. */
+    static final int DRIFT_UNITS = 1;
 
     private PartitionAmounts() {
     }
@@ -62,14 +64,15 @@ public final class PartitionAmounts {
     /**
      * Whether a line of {@code qty} with these amounts passes fiscal's check for allocated lines: no negative amount,
      * gross within {@value #GROSS_UNITS} minor unit of {@code round(unitPrice × qty)}, net within {@value #NET_UNITS}
-     * of {@code round(gross / (1 + rate/100))}. A pool with nothing left ({@code qty = 0}) is never invoiced, so it
-     * passes only with no gross; its net and tax may keep a minor unit of a void's rounding.
+     * of {@code round(gross / (1 + rate/100))}. A pool with nothing left ({@code qty = 0}) is never invoiced: it
+     * passes only with no gross and at most one minor unit of tax (and net) of a void's rounding, the drift the
+     * documents do not carry (the documents' tax per rate is authoritative, D68 amendment).
      */
     public static boolean withinFiscalBound(BigDecimal qty, Money unitPrice, BigDecimal ratePercent, Money gross,
                                             Money tax) {
         Money net = gross.minus(tax);
         if (qty.signum() == 0) {
-            return gross.amount().signum() == 0;
+            return gross.amount().signum() == 0 && units(tax) <= DRIFT_UNITS;
         }
         if (gross.amount().signum() < 0 || net.amount().signum() < 0 || tax.amount().signum() < 0) {
             return false;

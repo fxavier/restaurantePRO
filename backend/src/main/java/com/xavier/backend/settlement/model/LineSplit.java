@@ -69,6 +69,15 @@ public final class LineSplit {
     }
 
     /**
+     * The line's tax that no document will carry: the tax left in an emptied pool (quantity 0) after a settled void
+     * (at most one minor unit, the guard sees to it), zero otherwise. The order's recomputed tax minus the documents'.
+     */
+    public Money taxDrift() {
+        Pool pool = pool();
+        return pool.quantity().signum() == 0 ? pool.tax() : tax.minus(tax);
+    }
+
+    /**
      * A new share of {@code quantity}, taken from the pool (D68 anchored rule).
      *
      * @throws SettlementRuleException {@code QUANTITY_EXCEEDS_NET}, {@code QUANTITY_ALREADY_PARTITIONED},

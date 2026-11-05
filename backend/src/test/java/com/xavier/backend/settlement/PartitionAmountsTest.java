@@ -89,10 +89,14 @@ class PartitionAmountsTest {
     }
 
     @Test
-    void anEmptyPoolIsWithinTheBoundOnlyWithNoGross() {
+    void anEmptyPoolIsWithinTheBoundOnlyWithNoGrossAndAtMostACentOfTax() {
         Money unit = money("1.00");
         assertThat(PartitionAmounts.withinFiscalBound(BigDecimal.ZERO, unit, VAT, money("0.00"), money("0.01")))
                 .as("a cent of tax drift on nothing left to invoice").isTrue();
+        assertThat(PartitionAmounts.withinFiscalBound(BigDecimal.ZERO, unit, VAT, money("0.00"), money("-0.01")))
+                .isTrue();
+        assertThat(PartitionAmounts.withinFiscalBound(BigDecimal.ZERO, unit, VAT, money("0.00"), money("0.02")))
+                .as("more than one minor unit of drift").isFalse();
         assertThat(PartitionAmounts.withinFiscalBound(BigDecimal.ZERO, unit, VAT, money("0.01"), money("0.00")))
                 .isFalse();
     }

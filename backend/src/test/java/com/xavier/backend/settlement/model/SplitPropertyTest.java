@@ -30,11 +30,13 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 /**
- * §14 #4, D68 amended, D70 (the pure half of SplitPreservesTotalsTest): random orders (whole and 3-decimal
- * quantities, five rates), random partition creates and cancels (the guard refuses some, changing nothing), a random
- * subset of partitions invoiced, and the residual document of the rest. Every document passes fiscal's own check
- * for allocated drafts ({@link FiscalDocument#draft}), and together they give each line its net quantity, the
- * order its gross, and each rate its tax.
+ * §14 #4, D68 amended, D70, D71 (the pure half of SplitPreservesTotalsTest): random orders (whole and 3-decimal
+ * quantities, five rates), random partition creates, cancels and settled voids of pool quantity (the guard refuses
+ * some, changing nothing), a random subset of partitions invoiced, and the residual document of the rest. Every
+ * document passes fiscal's own check for allocated drafts ({@link FiscalDocument#draft}); together they give each
+ * line its net quantity and the order its gross exactly, and each rate the tax of its shares and pools. The order's
+ * recomputed tax differs from the documents' only by the drift of pools a void emptied, at most one minor unit each
+ * (the documents' tax is authoritative).
  */
 class SplitPropertyTest {
 
@@ -51,14 +53,17 @@ class SplitPropertyTest {
     record Partition(UUID id, Map<UUID, Piece> pieces) {
     }
 
+    private int drifts;
+
     @Test
-    void everySplitPreservesQuantitiesGrossAndTaxPerRateAndPassesFiscal() {
+    void everySplitWithCancelsAndVoidsPreservesQuantitiesGrossAndDocumentTaxAndPassesFiscal() {
         Random random = new Random(20261105);
         int refused = 0;
         for (int order = 0; order < 20000; order++) {
             refused += splitOneOrder(random);
         }
         assertThat(refused).as("SPLIT_ROUNDING_LIMIT refusals (the guard was exercised)").isPositive();
+        assertThat(drifts).as("orders whose voids left a tax drift (the documented case was exercised)").isPositive();
     }
 
     private int splitOneOrder(Random random) {
@@ -73,12 +78,16 @@ class SplitPropertyTest {
             lines.add(new Line(UUID.randomUUID(), unit, rate, quantity, LineAmounts.of(unit, quantity, rate)));
         }
         List<Partition> live = new ArrayList<>();
+        java.util.Set<UUID> voided = new java.util.HashSet<>();
         int refused = 0;
         int steps = 1 + random.nextInt(12);
         for (int step = 0; step < steps; step++) {
             try {
-                if (!live.isEmpty() && random.nextInt(5) < 2) {
+                int op = random.nextInt(10);
+                if (!live.isEmpty() && op < 3) {
                     cancel(live, live.get(random.nextInt(live.size())), lines);
+                } else if (op < 5) {
+                    voidSome(live, lines, voided, random);
                 } else {
                     create(live, lines, random);
                 }
@@ -115,8 +124,39 @@ class SplitPropertyTest {
             documents.add(residual);
         }
         documents.forEach(SplitPropertyTest::fiscalAccepts);
-        assertPreserved(lines, documents);
+        if (assertPreserved(lines, documents, live, voided)) {
+            drifts++;
+        }
         return refused;
+    }
+
+    /**
+     * A settled void of part of one line's pool: the line becomes {@code LineAmounts.of(unit, net - v, rate)}, the
+     * LIVE shares stay. The guard may refuse it (SPLIT_ROUNDING_LIMIT), changing nothing.
+     */
+    private static void voidSome(List<Partition> live, List<Line> lines, java.util.Set<UUID> voided, Random random) {
+        if (lines.isEmpty()) {
+            return;
+        }
+        Line line = lines.get(random.nextInt(lines.size()));
+        LineSplit split = split(line, live);
+        BigDecimal pool = split.pool().quantity();
+        if (pool.signum() == 0) {
+            return;
+        }
+        BigDecimal quantity = random.nextBoolean() ? pool
+                : BigDecimal.valueOf(1 + random.nextInt(pool.movePointRight(3).intValueExact()), 3).min(pool);
+        if (line.quantity().scale() == 0) {
+            quantity = quantity.setScale(0, java.math.RoundingMode.CEILING).min(pool);
+        }
+        split.voidReduces(quantity);
+        BigDecimal left = line.quantity().subtract(quantity);
+        lines.remove(line);
+        if (left.signum() > 0) {
+            lines.add(new Line(line.id(), line.unitPrice(), line.rate(), left,
+                    LineAmounts.of(line.unitPrice(), left, line.rate())));
+        }
+        voided.add(line.id());
     }
 
     private static void create(List<Partition> live, List<Line> lines, Random random) {
@@ -171,7 +211,10 @@ class SplitPropertyTest {
                 line.taxRatePercent(), line.gross(), line.tax())).isTrue());
     }
 
-    private static void assertPreserved(List<Line> lines, List<List<DraftLine>> documents) {
+    /** @return whether some rate drifted */
+    private static boolean assertPreserved(List<Line> lines, List<List<DraftLine>> documents, List<Partition> live,
+                                           java.util.Set<UUID> voided) {
+        boolean drifted = false;
         List<DraftLine> all = documents.stream().flatMap(List::stream).toList();
         for (Line line : lines) {
             BigDecimal quantity = all.stream().filter(l -> l.sourceLineId().equals(line.id()))
@@ -181,12 +224,33 @@ class SplitPropertyTest {
         Money due = lines.stream().map(l -> l.amounts().gross()).reduce(zero(), Money::plus);
         assertThat(sum(all, DraftLine::gross)).isEqualTo(due);
         for (BigDecimal rate : RATES) {
-            Money orderTax = lines.stream().filter(l -> l.rate().compareTo(rate) == 0).map(l -> l.amounts().tax())
-                    .reduce(zero(), Money::plus);
+            List<Line> ofRate = lines.stream().filter(l -> l.rate().compareTo(rate) == 0).toList();
+            Money orderTax = ofRate.stream().map(l -> l.amounts().tax()).reduce(zero(), Money::plus);
             Money documentTax = all.stream().filter(l -> l.taxRatePercent().compareTo(rate) == 0)
                     .map(DraftLine::tax).reduce(zero(), Money::plus);
-            assertThat(documentTax).as("tax at %s %%", rate).isEqualTo(orderTax);
+            Money sharesAndPools = zero();
+            Money drift = zero();
+            int emptied = 0;
+            for (Line line : ofRate) {
+                LineSplit split = split(line, live);
+                sharesAndPools = split.live().stream().map(Piece::tax).reduce(sharesAndPools, Money::plus);
+                if (split.pool().quantity().signum() > 0) {
+                    sharesAndPools = sharesAndPools.plus(split.pool().tax());
+                } else {
+                    assertThat(split.pool().gross()).as("an emptied pool keeps no gross").isEqualTo(zero());
+                    emptied++;
+                }
+                if (!voided.contains(line.id())) {
+                    assertThat(split.taxDrift()).as("no drift without a void").isEqualTo(zero());
+                }
+                drift = drift.plus(split.taxDrift());
+            }
+            assertThat(documentTax).as("documents' tax at %s %% = shares + pools", rate).isEqualTo(sharesAndPools);
+            assertThat(orderTax.minus(documentTax)).as("drift at %s %%", rate).isEqualTo(drift);
+            assertThat(drift.amount().abs().movePointRight(2).intValueExact()).isLessThanOrEqualTo(emptied);
+            drifted |= drift.amount().signum() != 0;
         }
+        return drifted;
     }
 
     private static DraftLine draftLine(Line line, BigDecimal quantity, Money gross, Money tax) {
