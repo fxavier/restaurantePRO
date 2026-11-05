@@ -367,12 +367,21 @@ public class SettlementFixtures {
         jdbc.sql("""
                 INSERT INTO settlement.order_settlement (order_id, created_at) VALUES (?, now())
                 ON CONFLICT (order_id) DO NOTHING""").param(order).update();
+        return raceBehindRowLock("SELECT order_id FROM settlement.order_settlement WHERE order_id = ? FOR UPDATE",
+                order, first, second);
+    }
+
+    /**
+     * As {@link #raceBehindOrderLock}, behind any row: {@code lockSql} selects it {@code FOR UPDATE} by {@code id}
+     * (for example a customer's {@code credit_account}, D76).
+     */
+    public <T> List<T> raceBehindRowLock(String lockSql, UUID id, Callable<T> first, Callable<T> second)
+            throws Exception {
         CountDownLatch locked = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         try (var pool = Executors.newFixedThreadPool(3)) {
             var holder = pool.submit(() -> new TransactionTemplate(transactionManager).executeWithoutResult(tx -> {
-                jdbc.sql("SELECT order_id FROM settlement.order_settlement WHERE order_id = ? FOR UPDATE")
-                        .param(order).query(UUID.class).single();
+                jdbc.sql(lockSql).param(id).query(UUID.class).single();
                 locked.countDown();
                 try {
                     release.await(30, TimeUnit.SECONDS);
@@ -391,7 +400,7 @@ public class SettlementFixtures {
             release.countDown();
             holder.get(30, TimeUnit.SECONDS);
             if (blocked < 2) {
-                throw new IllegalStateException("only " + blocked + " request(s) waited on the order lock");
+                throw new IllegalStateException("only " + blocked + " request(s) waited on the lock");
             }
             return List.of(a.get(30, TimeUnit.SECONDS), b.get(30, TimeUnit.SECONDS));
         }
