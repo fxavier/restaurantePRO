@@ -86,6 +86,7 @@ class VoidHttpTest {
                 .andExpect(jsonPath("$.lineId").value(line.toString()))
                 .andExpect(jsonPath("$.quantity").value(2))
                 .andExpect(jsonPath("$.approverEmployeeId").value(manager.id().toString()))
+                .andExpect(jsonPath("$.wasted").value(true))
                 .andExpect(jsonPath("$.order.version").value(2))
                 .andExpect(jsonPath("$.order.lines[0].netQuantity").value(1))
                 .andExpect(jsonPath("$.order.due.amount").value(12.50));
@@ -93,6 +94,7 @@ class VoidHttpTest {
         assertThat(fixtures.count("""
                 SELECT count(*) FROM audit.audit_event WHERE action = 'ORDER_LINE_VOIDED' AND actor_id = ?
                     AND approver_id = ? AND reason = 'wrong dish'""", operator, manager.id())).isOne();
+        assertWasted(true);
         List<OrderLinesVoided> voided = events.voidsOf(order, 1);
         assertThat(voided).singleElement().satisfies(event -> {
             assertThat(event.line().lineId()).isEqualTo(line);
@@ -105,6 +107,16 @@ class VoidHttpTest {
             assertThat(event.terminalId()).isEqualTo(terminal);
             assertThat(event.tableCode()).isEqualTo("M1");
         });
+    }
+
+    @Test
+    void aVoidOfGoodsThatWereNotWastedIsRecordedAsNotWasted() throws Exception {
+        mvc.perform(voidOf(1, "1", manager.code(), PIN, false).with(pos())
+                        .header("Idempotency-Key", UUID.randomUUID().toString()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.wasted").value(false));
+
+        assertWasted(false);
     }
 
     @Test
@@ -196,6 +208,17 @@ class VoidHttpTest {
         assertNothingVoided();
     }
 
+    /** The one void of the order, its fact column and its audit detail, all say {@code wasted}. */
+    void assertWasted(boolean wasted) {
+        assertThat(fixtures.count("SELECT count(*) FROM orders.order_line_void WHERE order_id = ? AND wasted = ?",
+                order, wasted)).isOne();
+        assertThat(fixtures.count("SELECT count(*) FROM orders.order_line_void WHERE order_id = ?", order)).isOne();
+        assertThat(fixtures.count("""
+                SELECT count(*) FROM audit.audit_event WHERE action = 'ORDER_LINE_VOIDED'
+                    AND details ->> 'orderId' = ? AND details ->> 'wasted' = ?""", order.toString(),
+                String.valueOf(wasted))).isOne();
+    }
+
     void assertNothingVoided() throws Exception {
         assertThat(voids()).isZero();
         assertThat(fixtures.order(shop, order).get("version").asLong()).isEqualTo(1);
@@ -213,10 +236,15 @@ class VoidHttpTest {
 
     org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder voidOf(
             long orderVersion, String quantity, String approverCode, String pin) {
+        return voidOf(orderVersion, quantity, approverCode, pin, true);
+    }
+
+    org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder voidOf(
+            long orderVersion, String quantity, String approverCode, String pin, boolean wasted) {
         var request = post(POS + "/orders/" + order + "/voids").with(csrf())
                 .contentType(MediaType.APPLICATION_JSON).content("""
-                        {"orderVersion": %d, "lineId": "%s", "quantity": %s, "reason": "wrong dish", "wasted": true}"""
-                        .formatted(orderVersion, line, quantity));
+                        {"orderVersion": %d, "lineId": "%s", "quantity": %s, "reason": "wrong dish", "wasted": %s}"""
+                        .formatted(orderVersion, line, quantity, wasted));
         if (approverCode != null) {
             request.header("X-Approver-Code", approverCode).header("X-Approver-Pin", pin);
         }

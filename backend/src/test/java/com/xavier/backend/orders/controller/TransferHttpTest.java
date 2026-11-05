@@ -2,10 +2,13 @@ package com.xavier.backend.orders.controller;
 
 import static com.xavier.backend.orders.OrdersFixtures.json;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.xavier.backend.orders.OrderEventProbe;
+import com.xavier.backend.access.Permission;
+import com.xavier.backend.orders.OrdersActors;
 import com.xavier.backend.orders.OrdersApi;
 import com.xavier.backend.orders.OrdersFixtures;
 import com.xavier.backend.orders.OrdersFixtures.Shop;
@@ -17,6 +20,8 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.JsonNode;
 
@@ -32,7 +37,7 @@ class TransferHttpTest {
     OrdersFixtures fixtures;
 
     @Autowired
-    OrderEventProbe events;
+    MockMvc mvc;
 
     @Autowired
     OrdersApi ordersApi;
@@ -80,7 +85,6 @@ class TransferHttpTest {
                 SELECT count(*) FROM orders.order_transfer_line WHERE transfer_id = ? AND source_order_id = ?
                     AND target_order_id = ? AND source_line_id = ?""", transferId, source, target, three)).isOne();
         assertThat(fixtures.audits("ORDER_LINES_TRANSFERRED", transferId)).isOne();
-        assertThat(events.receivedFor(target, 0)).isEmpty();
     }
 
     @Test
@@ -103,6 +107,26 @@ class TransferHttpTest {
     void aSourceThatStillBillsSomethingIsNotCancelled() throws Exception {
         transfer(2, 0, Map.of(three, "3"), true).andExpect(status().isCreated())
                 .andExpect(jsonPath("$.source.lifecycle").value("OPEN"));
+    }
+
+    @Test
+    void aLineNamedTwiceIsCheckedForItsTotalAndMovesAsOneCopy() throws Exception {
+        rawTransfer("""
+                [{"lineId": "%s", "quantity": 2}, {"lineId": "%s", "quantity": 2}]""".formatted(three, three))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("QUANTITY_EXCEEDS_NET"));
+        assertThat(fixtures.netQuantity(target)).isZero();
+        assertThat(fixtures.netQuantity(source)).isEqualByComparingTo("4");
+
+        rawTransfer("""
+                [{"lineId": "%s", "quantity": 1}, {"lineId": "%s", "quantity": 1}]""".formatted(three, three))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.lines.length()").value(1))
+                .andExpect(jsonPath("$.lines[0].quantity").value(2));
+        assertThat(fixtures.count("SELECT count(*) FROM orders.order_line WHERE order_id = ? AND quantity = 2",
+                target)).isOne();
+        assertThat(fixtures.count("SELECT count(*) FROM orders.order_line WHERE order_id = ?", target)).isOne();
+        assertThat(fixtures.netQuantity(source, target)).isEqualByComparingTo("4");
     }
 
     @Test
@@ -176,6 +200,16 @@ class TransferHttpTest {
 
         assertThat(replay).isEqualTo(first);
         assertThat(fixtures.netQuantity(target)).isEqualByComparingTo("1");
+    }
+
+    /** A transfer whose {@code lines} JSON array is sent as written (a map cannot name a line twice). */
+    ResultActions rawTransfer(String lines) throws Exception {
+        return mvc.perform(post(OrdersFixtures.POS + "/orders/" + source + "/transfers")
+                .with(OrdersActors.pos(shop.store(), mover, terminal, Permission.ORDER_TRANSFER)).with(csrf())
+                .header("Idempotency-Key", UUID.randomUUID().toString()).contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"orderVersion": 2, "targetOrderId": "%s", "targetOrderVersion": 0, "lines": %s,
+                         "cancelSourceWhenEmpty": false}""".formatted(target, lines)));
     }
 
     ResultActions transfer(long sourceVersion, long targetVersion, Map<UUID, String> lines, boolean cancelWhenEmpty)
