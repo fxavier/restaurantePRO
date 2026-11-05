@@ -6,6 +6,8 @@ import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.EvaluationResult;
+import java.util.Arrays;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -30,4 +32,32 @@ class ArchitectureRulesFireTest {
         assertThat(result.hasViolation()).as(rule.getDescription()).isTrue();
     }
 
+    static final String FORBIDDEN_ROOT = "com.xavier.archfixture.forbidden";
+
+    static final JavaClasses FORBIDDEN_FIXTURE = new ClassFileImporter().importPackages(FORBIDDEN_ROOT);
+
+    static ArchRule[] forbiddenModuleDependencies() {
+        return ArchitectureRules.forbiddenModuleDependencies(FORBIDDEN_ROOT);
+    }
+
+    /** Each D35 "NOT" edge is present in {@code com.xavier.archfixture.forbidden}; each rule must report it. */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("forbiddenModuleDependencies")
+    void everyForbiddenModuleDependencyIsCaught(ArchRule rule) {
+        assertThat(rule.evaluate(FORBIDDEN_FIXTURE).hasViolation()).as(rule.getDescription()).isTrue();
+    }
+
+    /** A15: an injected cash → orders dependency fails the build, naming the offending class. */
+    @Test
+    void aCashToOrdersDependencyIsCaught() {
+        ArchRule cashMustNotDependOnOrders = Arrays.stream(forbiddenModuleDependencies())
+                .filter(rule -> rule.getDescription().startsWith("cash must not depend on orders"))
+                .findFirst().orElseThrow();
+
+        EvaluationResult result = cashMustNotDependOnOrders.evaluate(FORBIDDEN_FIXTURE);
+
+        assertThat(result.hasViolation()).isTrue();
+        assertThat(result.getFailureReport().getDetails())
+                .anySatisfy(line -> assertThat(line).contains("CashDrawer").contains("OrderTotals"));
+    }
 }

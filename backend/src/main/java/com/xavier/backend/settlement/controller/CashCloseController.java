@@ -1,12 +1,11 @@
 package com.xavier.backend.settlement.controller;
 
-import com.xavier.backend.access.AccessPolicy;
+import com.xavier.backend.access.IdempotentRequests;
 import com.xavier.backend.cash.DayView;
 import com.xavier.backend.cash.SessionView;
 import com.xavier.backend.settlement.model.dto.CloseDayRequest;
 import com.xavier.backend.settlement.model.dto.CloseSessionRequest;
 import com.xavier.backend.settlement.service.CashCloseService;
-import com.xavier.backend.shared.idempotency.IdempotencyService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.UUID;
@@ -22,11 +21,11 @@ import org.springframework.web.bind.annotation.RestController;
 class CashCloseController {
 
     private final CashCloseService closes;
-    private final Idempotent idempotent;
+    private final IdempotentRequests idempotent;
 
-    CashCloseController(CashCloseService closes, IdempotencyService idempotency, AccessPolicy accessPolicy) {
+    CashCloseController(CashCloseService closes, IdempotentRequests idempotent) {
         this.closes = closes;
-        this.idempotent = new Idempotent(idempotency, accessPolicy);
+        this.idempotent = idempotent;
     }
 
     @PostMapping("/api/v1/pos/cash/sessions/{id}/close")

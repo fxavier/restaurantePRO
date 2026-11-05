@@ -1,6 +1,6 @@
 package com.xavier.backend.orders.controller;
 
-import com.xavier.backend.access.AccessPolicy;
+import com.xavier.backend.access.IdempotentRequests;
 import com.xavier.backend.orders.model.dto.CancelOrderRequest;
 import com.xavier.backend.orders.model.dto.OrderView;
 import com.xavier.backend.orders.model.dto.SubtotalView;
@@ -15,7 +15,6 @@ import com.xavier.backend.orders.service.OrderCancelService;
 import com.xavier.backend.orders.service.OrderTransferService;
 import com.xavier.backend.orders.service.SubtotalService;
 import com.xavier.backend.orders.service.TableMoveService;
-import com.xavier.backend.shared.idempotency.IdempotencyService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.net.URI;
@@ -41,17 +40,17 @@ class PosOrderAdjustmentController {
     private final TableMoveService tableMoves;
     private final OrderCancelService cancels;
     private final SubtotalService subtotals;
-    private final Idempotent idempotent;
+    private final IdempotentRequests idempotent;
 
     PosOrderAdjustmentController(LineVoidService voids, OrderTransferService transfers, TableMoveService tableMoves,
                                  OrderCancelService cancels, SubtotalService subtotals,
-                                 IdempotencyService idempotency, AccessPolicy accessPolicy) {
+                                 IdempotentRequests idempotent) {
         this.voids = voids;
         this.transfers = transfers;
         this.tableMoves = tableMoves;
         this.cancels = cancels;
         this.subtotals = subtotals;
-        this.idempotent = new Idempotent(idempotency, accessPolicy);
+        this.idempotent = idempotent;
     }
 
     /** D40: the approver is verified first, outside any transaction; its headers never enter the idempotency hash. */

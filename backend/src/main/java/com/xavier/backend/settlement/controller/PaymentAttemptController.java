@@ -1,6 +1,6 @@
 package com.xavier.backend.settlement.controller;
 
-import com.xavier.backend.access.AccessPolicy;
+import com.xavier.backend.access.IdempotentRequests;
 import com.xavier.backend.settlement.model.dto.AttemptView;
 import com.xavier.backend.settlement.model.dto.CancelAttemptRequest;
 import com.xavier.backend.settlement.model.dto.ConfirmAttemptRequest;
@@ -9,7 +9,6 @@ import com.xavier.backend.settlement.model.dto.ResolveAttemptRequest;
 import com.xavier.backend.settlement.service.Approval;
 import com.xavier.backend.settlement.service.AttemptResolutionService;
 import com.xavier.backend.settlement.service.PaymentAttemptService;
-import com.xavier.backend.shared.idempotency.IdempotencyService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.net.URI;
@@ -32,13 +31,13 @@ class PaymentAttemptController {
 
     private final PaymentAttemptService attempts;
     private final AttemptResolutionService resolution;
-    private final Idempotent idempotent;
+    private final IdempotentRequests idempotent;
 
     PaymentAttemptController(PaymentAttemptService attempts, AttemptResolutionService resolution,
-                             IdempotencyService idempotency, AccessPolicy accessPolicy) {
+                             IdempotentRequests idempotent) {
         this.attempts = attempts;
         this.resolution = resolution;
-        this.idempotent = new Idempotent(idempotency, accessPolicy);
+        this.idempotent = idempotent;
     }
 
     /** CASH → 201 SUCCEEDED, EXTERNAL_TERMINAL → 201 PENDING, INTEGRATED → 202 CREATED; each with its Location. */
