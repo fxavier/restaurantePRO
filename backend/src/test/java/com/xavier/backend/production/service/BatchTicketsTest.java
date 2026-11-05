@@ -22,8 +22,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * A4, production half (D50 §7.1): a confirmed round becomes one ticket per destination with a QUEUED job, holding
  * only that round's lines, and the batch becomes DISPATCHED. A redelivered event creates nothing more. Work with no
- * route is not printed and is counted (D56). The BAR printer is on HOLD: full-application contexts cached in the same
- * JVM run the print worker against this database, and a held job stays QUEUED, so its state is the listener's alone.
+ * route is kept UNROUTED, with no job, and is counted (D89 (1)). The BAR printer is on HOLD: full-application
+ * contexts cached in the same JVM run the print worker against this database, and a held job stays QUEUED, so its
+ * state is the listener's alone.
  */
 @ProductionModuleTest
 class BatchTicketsTest {
@@ -100,13 +101,15 @@ class BatchTicketsTest {
     }
 
     @Test
-    void aDestinationWithoutRouteIsNotPrintedButCountedAndTheRoundIsStillDispatched() throws Exception {
+    void aDestinationWithoutRouteIsKeptUnroutedAndCountedAndTheRoundIsStillDispatched() throws Exception {
         double unroutedBefore = meters.get(ProductionMetrics.UNROUTED).counter().count();
 
         Round round = fixtures.confirmedRound(shop, employee, terminal, "1");
 
         await(() -> "DISPATCHED".equals(fixtures.batchStatus(round.batch())), "batch dispatched");
-        assertThat(fixtures.tickets(round.batch())).isEmpty();
+        assertThat(fixtures.tickets(round.batch())).singleElement()
+                .satisfies(ticket -> assertThat(ticket).containsEntry("routing", "UNROUTED"));
+        assertThat(fixtures.jobsOfSource(round.batch())).isEmpty();
         assertThat(meters.get(ProductionMetrics.UNROUTED).counter().count()).isGreaterThan(unroutedBefore);
     }
 
