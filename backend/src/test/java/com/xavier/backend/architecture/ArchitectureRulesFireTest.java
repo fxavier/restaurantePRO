@@ -62,6 +62,19 @@ class ArchitectureRulesFireTest {
                 .noneSatisfy(line -> assertThat(line).contains("AuditTrail.record()"));
     }
 
+    /** D71: a call to OrdersApi.voidLine from outside settlement is caught; settlement's own call is not. */
+    @Test
+    void aVoidLineCallFromOutsideSettlementIsCaught() {
+        EvaluationResult result = ArchitectureRules.onlySettlementCallsOrdersVoidLine(FORBIDDEN_ROOT)
+                .evaluate(FORBIDDEN_FIXTURE);
+
+        assertThat(result.hasViolation()).isTrue();
+        assertThat(result.getFailureReport().getDetails())
+                .anySatisfy(line -> assertThat(line).contains("VoidShortcut").contains("OrdersApi.voidLine()"))
+                .noneSatisfy(line -> assertThat(line).contains("SettledVoids"))
+                .noneSatisfy(line -> assertThat(line).contains("OrdersApi.billingView()"));
+    }
+
     /** A15: an injected cash → orders dependency fails the build, naming the offending class. */
     @Test
     void aCashToOrdersDependencyIsCaught() {

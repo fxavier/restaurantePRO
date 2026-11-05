@@ -159,8 +159,8 @@ class FiscalDocumentTest {
     }
 
     static FiscalDocument draft(List<DraftLine> lines, Money gross, Money net, Money tax, Buyer buyer) {
-        return FiscalDocument.saleDraft(new SaleDraftCommand(STORE, UUID.randomUUID(), buyer, lines, gross, net, tax),
-                COMPANY, STORE_SUMMARY, NOW);
+        return FiscalDocument.draft(new SaleDraftCommand(STORE, UUID.randomUUID(), buyer, lines, gross, net, tax)
+                .toDraftCommand(), COMPANY, STORE_SUMMARY, NOW);
     }
 
     static Money mzn(String amount) {

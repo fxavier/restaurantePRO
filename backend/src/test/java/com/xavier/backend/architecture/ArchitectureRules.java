@@ -190,6 +190,22 @@ final class ArchitectureRules {
                 .because("reporting is a read-only projection; it never changes another module's facts (D65, D84)");
     }
 
+    /**
+     * D71: {@code OrdersApi.voidLine} bypasses the PAYMENT lock because its caller holds {@code order_settlement} and
+     * checked the headroom. Only settlement does both, so only settlement may call it.
+     */
+    static ArchRule onlySettlementCallsOrdersVoidLine(String root) {
+        String ordersApi = root + ".orders.OrdersApi";
+        return noClasses()
+                .that().resideOutsideOfPackage(root + ".settlement..")
+                .should().callMethodWhere(describe("OrdersApi.voidLine",
+                        (JavaMethodCall call) -> call.getTargetOwner().getFullName().equals(ordersApi)
+                                && call.getName().equals("voidLine")))
+                .as("only settlement calls OrdersApi.voidLine")
+                .because("it bypasses the PAYMENT lock: only settlement holds order_settlement and checks the "
+                        + "headroom (D71)");
+    }
+
     private static boolean isFacade(String root, JavaClass owner) {
         String rootPackage = owner.getPackageName();
         if (!rootPackage.startsWith(root + ".")) {

@@ -1,9 +1,13 @@
 package com.xavier.backend.orders;
 
+import com.xavier.backend.orders.service.LineVoidService;
 import com.xavier.backend.orders.service.OrderCoordinationService;
+import com.xavier.backend.orders.service.VoidFactsService;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,9 +26,13 @@ import org.springframework.transaction.annotation.Transactional;
 public class OrdersApi {
 
     private final OrderCoordinationService coordination;
+    private final LineVoidService voids;
+    private final VoidFactsService voidFacts;
 
-    OrdersApi(OrderCoordinationService coordination) {
+    OrdersApi(OrderCoordinationService coordination, LineVoidService voids, VoidFactsService voidFacts) {
         this.coordination = coordination;
+        this.voids = voids;
+        this.voidFacts = voidFacts;
     }
 
     /**
@@ -80,6 +88,41 @@ public class OrdersApi {
     @Transactional(propagation = Propagation.MANDATORY)
     public void close(UUID orderId, long expectedVersion, UUID actorEmployeeId) {
         coordination.close(orderId, expectedVersion, actorEmployeeId);
+    }
+
+    /**
+     * The coordinated void (D71, P32). <strong>Contract:</strong> the caller holds the order's
+     * {@code order_settlement} lock and has checked the headroom (the quantity is in no live partition and on no
+     * document, and the bill stays at or above what was paid or put on account), so this bypasses the PAYMENT lock;
+     * INVOICE still refuses (422 {@code ORDER_FROZEN}). It claims the order at {@code expectedVersion}, records the
+     * void fact, publishes {@code OrderLinesVoided} (production's VOID ticket) and audits it exactly like the R2 void,
+     * in a POS session (its terminal is the void's).
+     *
+     * @throws com.xavier.backend.orders.exception.OrderRuleException 422 {@code ORDER_FROZEN},
+     *                                                                {@code QUANTITY_EXCEEDS_NET}, {@code SELF_APPROVAL}
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public VoidView voidLine(SettledVoidCommand cmd, UUID approverEmployeeId) {
+        return voids.voidSettled(cmd, approverEmployeeId);
+    }
+
+    /**
+     * One void's facts, for reporting's projection (D84).
+     *
+     * @throws com.xavier.backend.shared.exception.NotFoundException 404 for an unknown void
+     */
+    @Transactional(readOnly = true)
+    public VoidFacts voidFacts(UUID voidId) {
+        return voidFacts.facts(voidId);
+    }
+
+    /**
+     * The ids of the store's voids whose order's business day is in {@code [from, to]}, in creation order (ids are
+     * UUIDv7), for a projection rebuild. The page's sort is ignored.
+     */
+    @Transactional(readOnly = true)
+    public Page<UUID> voidIds(UUID storeId, LocalDate from, LocalDate to, Pageable p) {
+        return voidFacts.ids(storeId, from, to, p);
     }
 
     /** OPEN orders of the store whose business day is on or before {@code businessDayInclusive} (day close). */

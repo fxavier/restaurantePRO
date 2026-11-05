@@ -77,9 +77,11 @@ class OrdersApiTest {
         assertThat(view.lifecycle()).isEqualTo(OrderLifecycle.OPEN);
         assertThat(view.billingLock()).isEqualTo(BillingLock.NONE);
         assertThat(view.storeId()).isEqualTo(shop.store());
+        BillingLine billed = view.lines().getFirst();
         assertThat(view.lines()).containsExactly(new BillingLine(line, "Coca-Cola 33cl", new BigDecimal("2.000"),
-                mzn("12.50"), mzn("25.00"), mzn("21.55"), mzn("3.45"), view.lines().getFirst().taxCode(),
-                new BigDecimal("16.0000")));
+                mzn("12.50"), mzn("25.00"), mzn("21.55"), mzn("3.45"), billed.taxCode(), new BigDecimal("16.0000"),
+                billed.itemId(), billed.itemCode(), billed.releaseId(), billed.servedByEmployeeId(),
+                billed.confirmedAt()));
         assertThat(view.due()).isEqualTo(mzn("25.00"));
     }
 
