@@ -243,6 +243,15 @@ class AuditQueryTest {
         assertThat(definition).endsWith("(store_id, action, occurred_at)");
     }
 
+    @Test
+    void theTimeIdIndexExists() {
+        String definition = jdbc.sql("SELECT indexdef FROM pg_indexes WHERE schemaname = 'audit' "
+                        + "AND indexname = 'audit_event_occurred_ix'")
+                .query(String.class).single();
+
+        assertThat(definition).endsWith("(occurred_at, id)");
+    }
+
     MockHttpServletRequestBuilder list() {
         return get(EVENTS).param("from", T0.minusSeconds(3600).toString()).param("to", T0.plusSeconds(3600).toString())
                 .param("action", action);

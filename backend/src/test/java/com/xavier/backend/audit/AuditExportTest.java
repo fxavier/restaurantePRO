@@ -12,7 +12,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.xavier.backend.TestcontainersConfiguration;
 import com.xavier.backend.access.Actor;
 import com.xavier.backend.access.Permission;
-import java.sql.Timestamp;
+import com.xavier.backend.audit.service.AuditExportService;
+import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -27,6 +29,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.ResultActions;
 
 /**
@@ -48,6 +51,12 @@ class AuditExportTest {
 
     @Autowired
     JdbcClient jdbc;
+
+    @Autowired
+    Clock clock;
+
+    @Autowired
+    AuditExportService exportService;
 
     AuditFixtures audit;
     final UUID storeA = UUID.randomUUID();
@@ -149,20 +158,49 @@ class AuditExportTest {
     }
 
     @Test
-    void anExportOverOneHundredThousandRowsIsRefusedAndNotRecorded() throws Exception {
-        jdbc.sql("""
-                        INSERT INTO audit.audit_event (id, occurred_at, actor_kind, action, entity_type, entity_id,
-                                                       store_id)
-                        SELECT gen_random_uuid(), :at, 'SYSTEM', :action, 'Order', n::text, :store
-                        FROM generate_series(1, 100001) AS n""")
-                .param("at", Timestamp.from(T0)).param("action", action).param("store", storeA).update();
+    void theRecordNamesTheStoresActuallyExported() throws Exception {
+        audit.row(storeA, T0, action);
 
-        export(auditor(Permission.AUDIT_VIEW.authority(), Permission.AUDIT_EXPORT.authority()), filters(storeA))
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(content().json("""
-                        {"status":422,"code":"EXPORT_TOO_LARGE","rows":100001,"maxRows":100000}"""));
+        export(auditor(Permission.AUDIT_VIEW.authority(storeA), Permission.AUDIT_VIEW.authority(storeB),
+                Permission.AUDIT_EXPORT.authority(storeA), Permission.AUDIT_EXPORT.authority(storeB)), filters(null))
+                .andExpect(status().isOk());
 
-        assertThat(exportsRecorded()).isZero();
+        Map<String, Object> row = exportRecord();
+        assertThat(row.get("store_id")).isNull();
+        assertThat(row.get("stores").toString()).contains(storeA.toString()).contains(storeB.toString());
+        assertThat(row.get("all_stores")).isNull();
+    }
+
+    @Test
+    void anInstallationWideExportIsRecordedAsAllStores() throws Exception {
+        audit.row(storeA, T0, action);
+
+        export(auditor(Permission.AUDIT_VIEW.authority(), Permission.AUDIT_EXPORT.authority()), filters(null))
+                .andExpect(status().isOk());
+
+        Map<String, Object> row = exportRecord();
+        assertThat(row).containsEntry("all_stores", "true").containsEntry("stores", null);
+    }
+
+    @Test
+    void anExportEndsWhenItStartsSoItHoldsNoLaterRowNorItsOwnRecord() throws Exception {
+        Instant now = clock.instant();
+        UUID before = audit.row(storeA, now.minusSeconds(60), action);
+        UUID later = audit.row(storeA, now.plusSeconds(3600), action);
+
+        String csv = export(auditor(Permission.AUDIT_VIEW.authority(), Permission.AUDIT_EXPORT.authority()), """
+                {"storeId": "%s", "from": "%s", "to": "%s"}""".formatted(storeA, now.minusSeconds(3600),
+                now.plus(Duration.ofDays(1)))).andExpect(status().isOk()).andReturn().getResponse()
+                .getContentAsString();
+
+        assertThat(csv).contains(before.toString()).doesNotContain(later.toString()).doesNotContain("AUDIT_EXPORTED");
+        Instant recordedTo = Instant.parse(exportRecord().get("to").toString());
+        assertThat(recordedTo).isBefore(now.plus(Duration.ofDays(1))).isAfterOrEqualTo(now);
+    }
+
+    @Test
+    void theDefaultCapIsOneHundredThousandRows() {
+        assertThat(ReflectionTestUtils.getField(exportService, "maxRows")).isEqualTo(100_000L);
     }
 
     @Test
@@ -194,6 +232,14 @@ class AuditExportTest {
                                  String body) throws Exception {
         return mvc.perform(post(EXPORTS).with(actor).with(csrf()).contentType(MediaType.APPLICATION_JSON)
                 .content(body));
+    }
+
+    private Map<String, Object> exportRecord() {
+        return jdbc.sql("""
+                        SELECT store_id, details->>'stores' AS stores, details->>'allStores' AS all_stores,
+                               details->>'to' AS "to"
+                        FROM audit.audit_event WHERE action = 'AUDIT_EXPORTED' AND actor_id = :actor""")
+                .param("actor", auditorId).query().singleRow();
     }
 
     private long exportsRecorded() {

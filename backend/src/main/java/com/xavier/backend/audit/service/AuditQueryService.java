@@ -5,6 +5,7 @@ import com.xavier.backend.audit.exception.AuditEventNotFoundException;
 import com.xavier.backend.audit.model.dto.AuditEventView;
 import com.xavier.backend.audit.model.dto.AuditFilter;
 import com.xavier.backend.audit.repository.AuditEventRepository;
+import com.xavier.backend.audit.repository.AuditEventStore;
 import com.xavier.backend.shared.web.PageResponse;
 import java.util.UUID;
 import org.springframework.data.domain.PageRequest;
@@ -33,10 +34,11 @@ public class AuditQueryService {
         return PageResponse.from(new AuditCriteria(filter, visibility).page(events, unsorted(pageable)));
     }
 
+    /** D42 (b): only the row's store is read (absent → 404), then authorized (→ 403), then the row. */
     public AuditEventView get(UUID id) {
-        AuditEventView event = events.findViewById(id).orElseThrow(() -> new AuditEventNotFoundException(id));
-        access.requireToSee(event.storeId());
-        return event;
+        AuditEventStore row = events.findStoreById(id).orElseThrow(() -> new AuditEventNotFoundException(id));
+        access.requireToSee(row.storeId());
+        return events.findViewById(id).orElseThrow(() -> new AuditEventNotFoundException(id));
     }
 
     /** Every row of one entity that the caller may see; rows of other stores are left out, not refused. */

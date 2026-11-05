@@ -9,12 +9,16 @@ import com.xavier.backend.audit.repository.AuditEventRepository;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.io.Writer;
+import java.time.Clock;
+import java.time.Instant;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.stream.Stream;
 import org.hibernate.id.uuid.UuidVersion7Strategy;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,7 +30,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AuditExportService {
 
-    static final long MAX_ROWS = 100_000;
     static final String EXPORTED = "AUDIT_EXPORTED";
     private static final String HEADER = "id,occurredAt,actorKind,actorId,approverId,action,entityType,entityId,"
             + "storeId,terminalId,reason,details";
@@ -35,29 +38,37 @@ public class AuditExportService {
     private final AuditEventRepository events;
     private final AuditAccess access;
     private final AuditLog auditLog;
+    private final Clock clock;
+    private final long maxRows;
 
-    AuditExportService(AuditEventRepository events, AuditAccess access, AuditLog auditLog) {
+    AuditExportService(AuditEventRepository events, AuditAccess access, AuditLog auditLog, Clock clock,
+                       @Value("${restaurantpro.audit.export.max-rows:100000}") long maxRows) {
         this.events = events;
         this.access = access;
         this.auditLog = auditLog;
+        this.clock = clock;
+        this.maxRows = maxRows;
     }
 
     /**
-     * Needs {@code AUDIT_VIEW} and {@code AUDIT_EXPORT}; the export covers the stores where both are held.
+     * Needs {@code AUDIT_VIEW} and {@code AUDIT_EXPORT}; the export covers the stores where both are held. It ends
+     * when it starts ({@code to} is clamped to now), so the file holds no row written later, its own record included.
      *
-     * @throws AuditQueryException {@code RANGE_TOO_LARGE}, or {@code EXPORT_TOO_LARGE} over 100 000 rows
+     * @throws AuditQueryException {@code RANGE_TOO_LARGE}, or {@code EXPORT_TOO_LARGE} over
+     *                             {@code restaurantpro.audit.export.max-rows} (100 000) rows
      */
     @Transactional
-    public AuditExport start(AuditFilter filter) {
+    public AuditExport start(AuditFilter requested) {
+        AuditFilter filter = endingNoLaterThanNow(requested);
         StoreVisibility visibility = access.visibleStores(filter.storeId(), Permission.AUDIT_VIEW,
                 Permission.AUDIT_EXPORT);
         AuditCriteria criteria = new AuditCriteria(filter, visibility);
         long rows = criteria.count(events);
-        if (rows > MAX_ROWS) {
-            throw AuditQueryException.exportTooLarge(rows, MAX_ROWS);
+        if (rows > maxRows) {
+            throw AuditQueryException.exportTooLarge(rows, maxRows);
         }
         auditLog.recordAsCurrentActor(EXPORTED, "AuditExport", UuidVersion7Strategy.INSTANCE.generateUuid(null)
-                .toString(), filter.storeId(), null, null, details(filter, rows));
+                .toString(), filter.storeId(), null, null, details(filter, visibility, rows));
         return new AuditExport(criteria);
     }
 
@@ -96,7 +107,17 @@ public class AuditExportService {
         return text;
     }
 
-    private static Map<String, Object> details(AuditFilter filter, long rows) {
+    private AuditFilter endingNoLaterThanNow(AuditFilter filter) {
+        Instant now = clock.instant();
+        if (filter.to() == null || !filter.to().isAfter(now)) {
+            return filter;
+        }
+        return new AuditFilter(filter.storeId(), filter.from(), now, filter.actorId(), filter.actorKind(),
+                filter.action(), filter.entityType(), filter.entityId());
+    }
+
+    /** The filters as given (with the clamped {@code to}) and the stores actually exported. */
+    private static Map<String, Object> details(AuditFilter filter, StoreVisibility visibility, long rows) {
         Map<String, Object> details = new LinkedHashMap<>();
         put(details, "storeId", filter.storeId());
         put(details, "from", filter.from());
@@ -106,6 +127,11 @@ public class AuditExportService {
         put(details, "action", filter.action());
         put(details, "entityType", filter.entityType());
         put(details, "entityId", filter.entityId());
+        if (visibility.allStores()) {
+            details.put("allStores", true);
+        } else {
+            details.put("stores", visibility.stores().stream().map(UUID::toString).sorted().toList());
+        }
         details.put("rows", rows);
         return details;
     }
