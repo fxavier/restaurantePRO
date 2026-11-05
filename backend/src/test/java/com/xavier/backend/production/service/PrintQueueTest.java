@@ -227,13 +227,15 @@ class PrintQueueTest {
         fixtures.runWorkerUntil(() -> "RETRY_WAIT".equals(fixtures.jobStatus(job)), "job waiting to retry");
 
         fixtures.mode(shop.store(), bar, "IGNORE");
+        int attemptsWhenIgnored = (int) fixtures.job(job).get("attempts");
         for (int run = 0; run < 3; run++) {
             fixtures.dueNow(job);
             worker.poll();
             Thread.sleep(200);
         }
 
-        assertThat(fixtures.job(job)).containsEntry("status", "RETRY_WAIT").containsEntry("attempts", 1);
+        assertThat(fixtures.job(job)).containsEntry("status", "RETRY_WAIT")
+                .containsEntry("attempts", attemptsWhenIgnored);
     }
 
     /** D56: REDIRECT moves undelivered jobs to the target, and new work goes there (fixed when the job is made). */
@@ -260,28 +262,36 @@ class PrintQueueTest {
         assertThat(fixtures.audits("PRINTER_MODE_CHANGED", bar)).isEqualTo(2);
     }
 
-    /** D46/D50: a claim never waits for, nor takes, a job another claim has locked. */
+    /**
+     * D46/D50: a claim never waits for, nor takes, a job another transaction has locked. The job is created on a
+     * HOLD printer and locked before the printer is released, so no worker (of this or another cached context) can
+     * take it first: the only way the claim below gets it, or blocks on it, is a claim without SKIP LOCKED.
+     */
     @Test
     void overlappingClaimsSkipEachOthersLockedJobs() throws Exception {
-        fixtures.barPrinter(shop.store(), "127.0.0.1", TcpFakePrinter.closedPort());
-        awaitJob(fixtures.confirmedRound(shop, employee, terminal, "1"));
+        UUID bar = fixtures.barPrinter(shop.store(), "127.0.0.1", TcpFakePrinter.closedPort());
+        fixtures.mode(shop.store(), bar, "HOLD");
+        UUID job = awaitJob(fixtures.confirmedRound(shop, employee, terminal, "1"));
         CountDownLatch locked = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
-
-        CompletableFuture<List<Dispatch>> first = CompletableFuture.supplyAsync(() -> tx.execute(s -> {
-            List<Dispatch> claimed = queue.claimDue(PrintWorker.MAX_CLAIM, Set.of());
+        CompletableFuture<Void> holder = CompletableFuture.runAsync(() -> tx.executeWithoutResult(s -> {
+            jdbc.sql("SELECT id FROM production.print_job WHERE id = ? FOR UPDATE").param(job).query().listOfRows();
             locked.countDown();
             waitFor(release);
-            return claimed;
         }));
         assertThat(locked.await(10, TimeUnit.SECONDS)).isTrue();
-        List<Dispatch> second = CompletableFuture.supplyAsync(() -> queue.claimDue(PrintWorker.MAX_CLAIM, Set.of()))
-                .get(5, TimeUnit.SECONDS);
-        release.countDown();
+        try {
+            fixtures.mode(shop.store(), bar, "NORMAL"); // the locked job is due for every claimer now
 
-        List<UUID> firstIds = first.get(10, TimeUnit.SECONDS).stream().map(Dispatch::jobId).toList();
-        assertThat(firstIds).isNotEmpty();
-        assertThat(second).extracting(Dispatch::jobId).doesNotContainAnyElementsOf(firstIds);
+            List<Dispatch> claimed = CompletableFuture.supplyAsync(() -> queue.claimDue(PrintWorker.MAX_CLAIM,
+                    Set.of())).get(5, TimeUnit.SECONDS);
+
+            assertThat(claimed).extracting(Dispatch::jobId).doesNotContain(job);
+            assertThat(fixtures.jobStatus(job)).isEqualTo("QUEUED");
+        } finally {
+            release.countDown();
+            holder.get(10, TimeUnit.SECONDS);
+        }
     }
 
     private UUID awaitJob(Round round) throws InterruptedException {
