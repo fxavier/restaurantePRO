@@ -37,10 +37,10 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * spec §4 "Dia comercial pode atravessar a meia-noite" and §8.4 "Dia não fecha operacionalmente com sessões ou
- * pedidos pendentes": the store's current cash day is the oldest one still OPEN, so the cashier who worked past the
- * cutoff still sees, and closes, the day the work belongs to. With no OPEN day it is the day of today's business date.
- * The store's cutoff is 05:00 in Africa/Maputo (UTC+2): 03:00Z.
+ * P28 (replaces R2's "oldest open day"): the store's current cash day is the day of today's business date. Until
+ * that day has opened, the oldest OPEN day is current, so the POS is never stuck after the cutoff (S17c); with
+ * neither, 404. {@code earlierOpenDays} lists the older days still OPEN, which can only be closed (spec §4 "Dia
+ * comercial pode atravessar a meia-noite", §8.4). The store's cutoff is 05:00 in Africa/Maputo (UTC+2): 03:00Z.
  */
 @CashModuleTest
 class CurrentDayAcrossCutoffTest {
@@ -89,25 +89,32 @@ class CurrentDayAcrossCutoffTest {
     }
 
     @Test
-    void pastTheCutoffTheDayStillOpenStaysCurrent() throws Exception {
+    void pastTheCutoffBeforeTheNewDayOpensTheOldestOpenDayIsCurrent() throws Exception {
         clock.set(AFTER_CUTOFF);
 
         current().andExpect(status().isOk())
                 .andExpect(jsonPath("$.businessDate").value("2026-11-04"))
-                .andExpect(jsonPath("$.status").value("OPEN"));
+                .andExpect(jsonPath("$.status").value("OPEN"))
+                .andExpect(jsonPath("$.earlierOpenDays").isEmpty());
     }
 
     @Test
-    void aMorningSessionOpensTheNewDayButTheOlderOpenDayIsClosedFirst() throws Exception {
+    void onceAMorningSessionOpensTheNewDayItIsCurrentAndTheOlderOpenDayIsListedToClose() throws Exception {
         clock.set(AFTER_CUTOFF);
         fixtures.openSession(pos(store), fixtures.newRegister(store), "10.00");
+        UUID nightDay = cash.sessionDay(nightSession).cashDayId();
 
-        current().andExpect(status().isOk()).andExpect(jsonPath("$.businessDate").value("2026-11-04"));
+        current().andExpect(status().isOk())
+                .andExpect(jsonPath("$.businessDate").value("2026-11-05"))
+                .andExpect(jsonPath("$.earlierOpenDays.length()").value(1))
+                .andExpect(jsonPath("$.earlierOpenDays[0].id").value(nightDay.toString()))
+                .andExpect(jsonPath("$.earlierOpenDays[0].businessDate").value("2026-11-04"));
 
         closeNightDay();
         current().andExpect(status().isOk())
                 .andExpect(jsonPath("$.businessDate").value("2026-11-05"))
-                .andExpect(jsonPath("$.status").value("OPEN"));
+                .andExpect(jsonPath("$.status").value("OPEN"))
+                .andExpect(jsonPath("$.earlierOpenDays").isEmpty());
     }
 
     @Test
@@ -121,9 +128,9 @@ class CurrentDayAcrossCutoffTest {
         current().andExpect(status().isNotFound());
     }
 
-    /** P19: a reopened earlier day is again the one to close; once it is closed again, today's day is current. */
+    /** P19, P25: a reopened earlier day is listed to close again; today's day stays current throughout. */
     @Test
-    void aReopenedEarlierDayIsCurrentUntilItClosesAgain() throws Exception {
+    void aReopenedEarlierDayIsListedUntilItClosesAgain() throws Exception {
         UUID nightDay = closeNightDay();
         clock.set(AFTER_CUTOFF);
         fixtures.openSession(pos(store), fixtures.newRegister(store), "10.00");
@@ -136,14 +143,15 @@ class CurrentDayAcrossCutoffTest {
                                 {"reason": "forgotten receipt"}"""))
                 .andExpect(status().isOk());
         current().andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(nightDay.toString()))
-                .andExpect(jsonPath("$.status").value("OPEN"));
+                .andExpect(jsonPath("$.businessDate").value("2026-11-05"))
+                .andExpect(jsonPath("$.earlierOpenDays[0].id").value(nightDay.toString()));
 
         asNight(() -> cash.closeDayOperationally(nightDay, cash.findDay(nightDay).orElseThrow().version(),
                 night.employeeId(), ActorKind.EMPLOYEE));
         current().andExpect(status().isOk())
                 .andExpect(jsonPath("$.businessDate").value("2026-11-05"))
-                .andExpect(jsonPath("$.status").value("OPEN"));
+                .andExpect(jsonPath("$.status").value("OPEN"))
+                .andExpect(jsonPath("$.earlierOpenDays").isEmpty());
     }
 
     private ResultActions current() throws Exception {

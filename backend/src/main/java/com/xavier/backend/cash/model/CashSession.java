@@ -76,6 +76,12 @@ public class CashSession {
 
     private UUID closedByEmployeeId;
 
+    @Enumerated(EnumType.STRING)
+    @Column(length = 10)
+    private CloseKind closeKind;
+
+    private String closeReason;
+
     @Version
     private Long version;
 
@@ -109,12 +115,37 @@ public class CashSession {
         }
     }
 
+    /** An adjustment corrects only a CLOSED session (D79); an OPEN one takes a normal movement. */
+    public void requireClosed() {
+        if (status != CashSessionStatus.CLOSED) {
+            throw new CashRuleViolationException(CashRule.SESSION_STILL_OPEN,
+                    "The cash session " + id + " is open: record a normal movement instead of an adjustment.");
+        }
+    }
+
     /**
      * OPEN → CLOSED with the operator's blind count. A method not counted counts as zero in the closing.
      *
      * @return one immutable count per method, to be saved with the session
      */
     public List<CashSessionCount> close(List<MethodCount> counts, UUID closedByEmployeeId, Instant now) {
+        return close(counts, closedByEmployeeId, CloseKind.OPERATOR, null, now);
+    }
+
+    /**
+     * OPEN → CLOSED by a manager, for a session its operator abandoned (P22): the manager counts the drawer blind,
+     * like the operator would, and gives the reason.
+     */
+    public List<CashSessionCount> closeForced(List<MethodCount> counts, UUID closerEmployeeId, String reason,
+                                              Instant now) {
+        if (reason == null || reason.isBlank()) {
+            throw new IllegalArgumentException("A forced close needs a reason");
+        }
+        return close(counts, closerEmployeeId, CloseKind.FORCED, reason.strip(), now);
+    }
+
+    private List<CashSessionCount> close(List<MethodCount> counts, UUID closedByEmployeeId, CloseKind kind,
+                                         String reason, Instant now) {
         if (status != CashSessionStatus.OPEN) {
             throw new IllegalCashStateException(ENTITY, id, status, "close");
         }
@@ -131,6 +162,8 @@ public class CashSession {
         status = CashSessionStatus.CLOSED;
         closedAt = now;
         this.closedByEmployeeId = Objects.requireNonNull(closedByEmployeeId, "closedByEmployeeId");
+        closeKind = kind;
+        closeReason = reason;
         return List.copyOf(recorded);
     }
 
@@ -207,6 +240,18 @@ public class CashSession {
 
     public Instant getClosedAt() {
         return closedAt;
+    }
+
+    public UUID getClosedByEmployeeId() {
+        return closedByEmployeeId;
+    }
+
+    public CloseKind getCloseKind() {
+        return closeKind;
+    }
+
+    public String getCloseReason() {
+        return closeReason;
     }
 
     /** Spring Data reads this to tell a new entity (null) from a stored one: never map null to 0 here. */

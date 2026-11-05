@@ -1,0 +1,50 @@
+package com.xavier.backend.customers.service;
+
+import com.xavier.backend.customers.model.CreditAccount;
+import com.xavier.backend.customers.model.Customer;
+import com.xavier.backend.customers.repository.CreditAccountRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
+import java.util.Optional;
+import java.util.UUID;
+import org.springframework.stereotype.Component;
+
+/**
+ * The credit account row lock (D73, D76: after {@code order_settlement}, before cash and fiscal). It always decides
+ * on the locked row: a locking query would hand back an instance this transaction already holds with its old state,
+ * so the account is refreshed under the lock.
+ */
+@Component
+class CreditLocks {
+
+    private final EntityManager entityManager;
+    private final CreditAccountRepository accounts;
+
+    CreditLocks(EntityManager entityManager, CreditAccountRepository accounts) {
+        this.entityManager = entityManager;
+        this.accounts = accounts;
+    }
+
+    /** {@code SELECT … FOR UPDATE} on the customer's account until the transaction ends; empty when it has none. */
+    Optional<CreditAccount> account(UUID customerId) {
+        return accounts.findById(customerId).map(account -> {
+            entityManager.refresh(account, LockModeType.PESSIMISTIC_WRITE);
+            return account;
+        });
+    }
+
+    /**
+     * The customer re-read {@code FOR SHARE} once the account is locked: a deactivation in flight is waited for and
+     * then seen, never missed (the customer row comes after {@code credit_account} in the lock order).
+     */
+    Customer customerForShare(Customer customer) {
+        entityManager.refresh(customer, LockModeType.PESSIMISTIC_READ);
+        return customer;
+    }
+
+    /** Re-reads a row of the account once its lock is held (a reservation loaded to find its customer). */
+    <T> T reread(T entity) {
+        entityManager.refresh(entity);
+        return entity;
+    }
+}

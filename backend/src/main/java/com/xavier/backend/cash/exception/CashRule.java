@@ -6,11 +6,24 @@ package com.xavier.backend.cash.exception;
 public enum CashRule {
     /** The store's cash day for now is not OPEN (closed operationally or financially). */
     DAY_NOT_OPEN,
-    /** The day is FINANCIALLY_CLOSED: nothing more is counted or closed in it. */
+    /**
+     * The day takes corrections only (P25, P28): an earlier day once a later one exists, or a reopened day, opens no
+     * new session.
+     */
+    DAY_CLOSING_ONLY,
+    /**
+     * The register's closing of the day's current round is APPROVED: no adjustment lands under it. Close the day
+     * financially, reopen it, adjust, and close the register again in the next round (D79).
+     */
+    CLOSING_ALREADY_APPROVED,
+    /** The day is FINANCIALLY_CLOSED: nothing more is counted, adjusted, approved or closed in it. */
     DAY_FINANCIALLY_CLOSED,
     /** A movement or receipt into a session that is not OPEN. */
     SESSION_NOT_OPEN,
-    /** A session of the register is still OPEN, so the register cannot be closed for the day. */
+    /**
+     * A session is still OPEN: the register cannot be closed for the day, and the session takes a normal movement,
+     * not an adjustment.
+     */
     SESSION_STILL_OPEN,
     /** The register had no session on that day: there is nothing to close. */
     NO_SESSIONS,
@@ -26,7 +39,7 @@ public enum CashRule {
     CLOSINGS_NOT_APPROVED,
     /** A closing line with a difference other than zero has no justification. */
     JUSTIFICATION_REQUIRED,
-    /** A justification or count names a method the closing has no line for. */
+    /** A justification names a method the closing has no line for, or an adjustment one its session never saw. */
     UNKNOWN_METHOD,
     /** A payment method code is blank or longer than 30 characters. */
     INVALID_METHOD,
@@ -35,5 +48,7 @@ public enum CashRule {
     /** An amount is negative, zero where it must be positive, or has more decimals than the currency allows. */
     INVALID_AMOUNT,
     /** An amount is not in the store's currency (single currency, spec §8.4). */
-    CURRENCY_MISMATCH
+    CURRENCY_MISMATCH,
+    /** The approver of an expense is its operator (P24, D40). */
+    SELF_APPROVAL
 }

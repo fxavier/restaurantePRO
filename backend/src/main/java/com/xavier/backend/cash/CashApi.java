@@ -48,6 +48,17 @@ public class CashApi {
         return coordination.recordReceipt(cmd);
     }
 
+    /**
+     * Records a confirmed Refund as a {@code REFUND} OUT movement of its method in the refunder's session (A23).
+     * Idempotent per {@code refundId}: a repeat returns the movement already recorded, and one with another session,
+     * method or amount is 409 {@code REFUND_MISMATCH}. The session must be OPEN
+     * (422 {@code SESSION_NOT_OPEN}), and the amount positive and in the store currency.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public MovementView recordRefund(RefundCommand cmd) {
+        return coordination.recordRefund(cmd);
+    }
+
     /** Locks the session {@code FOR UPDATE} until the caller's transaction ends. */
     @Transactional(propagation = Propagation.MANDATORY)
     public SessionView lockSession(UUID sessionId) {
@@ -66,6 +77,21 @@ public class CashApi {
         coordination.closeSession(sessionId, expectedVersion, counts, actorEmployeeId);
     }
 
+    /**
+     * OPEN → CLOSED by a manager, for a session its operator abandoned (P22): the blind count as in
+     * {@link #closeSession}, the closer and the reason are recorded, and the session's {@code close_kind} is
+     * {@code FORCED}. Settlement checks first that no payment attempt of the session is in doubt (spec §8.4) and that
+     * the closer holds {@code CASH_SESSION_FORCE_CLOSE} in the session's store.
+     *
+     * <p>Audited as the current actor (D41) with the reason; {@code closerEmployeeId} must be that actor, an
+     * EMPLOYEE, and {@code reason} must not be blank ({@link IllegalArgumentException} otherwise).
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void closeSessionForced(UUID sessionId, long expectedVersion, List<MethodCount> counts,
+                                   UUID closerEmployeeId, String reason) {
+        coordination.closeSessionForced(sessionId, expectedVersion, counts, closerEmployeeId, reason);
+    }
+
     /** Locks the store's cash day of {@code businessDate} {@code FOR UPDATE}; 404 if it was never opened. */
     @Transactional(propagation = Propagation.MANDATORY)
     public DayView lockDay(UUID storeId, LocalDate businessDate) {
@@ -79,6 +105,18 @@ public class CashApi {
     @Transactional(readOnly = true)
     public UUID storeOfDay(UUID dayId) {
         return coordination.storeOfDay(dayId);
+    }
+
+    /** The cash day of the session (D85); 404 if the session does not exist. */
+    @Transactional(readOnly = true)
+    public SessionDay sessionDay(UUID sessionId) {
+        return coordination.sessionDay(sessionId);
+    }
+
+    /** The store's cash day of {@code businessDate}, without a lock; empty if it was never opened (D86 finality). */
+    @Transactional(readOnly = true)
+    public Optional<DayView> findDay(UUID storeId, LocalDate businessDate) {
+        return coordination.findDay(storeId, businessDate);
     }
 
     /** The cash day, without a lock. */

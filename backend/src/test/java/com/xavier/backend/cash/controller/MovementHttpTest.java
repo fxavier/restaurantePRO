@@ -58,15 +58,12 @@ class MovementHttpTest {
                 "CASH_MOVEMENT_RECORDED", store)).isEqualTo(2);
     }
 
+    /** P24 changed R2: an expense needs an approver holding CASH_EXPENSE (ExpenseApprovalTest). */
     @Test
-    void anExpenseNeedsCashExpenseAsWell() throws Exception {
-        mvc.perform(movement(operator, "EXPENSE", "5.00", "bread").with(operator.with(Permission.CASH_OPERATE)))
-                .andExpect(status().isForbidden());
-
+    void anExpenseWithoutAnApproverIsRefused() throws Exception {
         mvc.perform(movement(operator, "EXPENSE", "5.00", "bread")
                         .with(operator.with(Permission.CASH_OPERATE, Permission.CASH_EXPENSE)))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.type").value("EXPENSE"));
+                .andExpect(status().isForbidden());
     }
 
     @Test

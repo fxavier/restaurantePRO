@@ -8,13 +8,16 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.xavier.backend.access.Actor;
+import com.xavier.backend.access.ActorKind;
 import com.xavier.backend.access.Permission;
+import com.xavier.backend.shared.Money;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
+import java.util.Currency;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -31,9 +34,11 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -57,14 +62,84 @@ public class CashFixtures {
     /** The timezone of every test store: UTC+2 all year (no DST). */
     public static final ZoneId STORE_ZONE = ZoneId.of("Africa/Maputo");
 
+    private static final Currency MZN = Currency.getInstance("MZN");
+
     private final MockMvc mvc;
     private final JdbcClient jdbc;
     private final Clock clock;
+    private final CashApi cash;
+    private final TransactionTemplate tx;
 
-    CashFixtures(MockMvc mvc, JdbcClient jdbc, Clock clock) {
+    CashFixtures(MockMvc mvc, JdbcClient jdbc, Clock clock, CashApi cash, TransactionTemplate tx) {
         this.mvc = mvc;
         this.jdbc = jdbc;
         this.clock = clock;
+        this.cash = cash;
+        this.tx = tx;
+    }
+
+    /** Closes {@code session} as its operator would through settlement, counting {@code countedCash} in cash. */
+    public void closeSession(Pos operator, UUID session, String countedCash) {
+        as(operator.actor(Permission.CASH_OPERATE), () -> cash.closeSession(session,
+                cash.lockSession(session).version(), List.of(new MethodCount("CASH", Money.of(countedCash, MZN))),
+                operator.employeeId()));
+    }
+
+    /** The cash day of {@code session}. */
+    public UUID dayOf(UUID session) {
+        return cash.sessionDay(session).cashDayId();
+    }
+
+    /** OPEN → OPERATIONALLY_CLOSED as {@code operator}, as settlement would. */
+    public void closeDayOperationally(Pos operator, UUID day) {
+        as(operator.actor(Permission.CASH_OPERATE), () -> cash.closeDayOperationally(day,
+                cash.findDay(day).orElseThrow().version(), operator.employeeId(), ActorKind.EMPLOYEE));
+    }
+
+    /**
+     * Drafts the closing of {@code register} for {@code day} at the POS, justifies every line, and submits it;
+     * returns the closing id.
+     */
+    public UUID submittedClosing(Pos operator, UUID register, UUID day) throws Exception {
+        JsonNode draft = json(mvc.perform(idem(post(POS_CLOSINGS)).with(operator.with(Permission.CASH_OPERATE))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"registerId": "%s", "cashDayId": "%s"}""".formatted(register, day)))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        UUID closing = UUID.fromString(draft.get("id").asString());
+        String justifications = draft.get("lines").valueStream()
+                .map(line -> """
+                        {"methodCode": "%s", "text": "counted again"}""".formatted(line.get("methodCode").asString()))
+                .collect(Collectors.joining(","));
+        mvc.perform(idem(put(POS_CLOSINGS + "/" + closing)).with(operator.with(Permission.CASH_OPERATE))
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"version": %d, "justifications": [%s]}""".formatted(draft.get("version").asLong(),
+                                justifications)))
+                .andExpect(status().isOk());
+        mvc.perform(idem(post(POS_CLOSINGS + "/" + closing + "/submit")).with(operator.with(Permission.CASH_OPERATE)))
+                .andExpect(status().isOk());
+        return closing;
+    }
+
+    public void approveClosing(UUID store, UUID closing) throws Exception {
+        mvc.perform(idem(post(BO_CLOSINGS + "/" + closing + "/approve"))
+                .with(account(store, Permission.CASH_CLOSING_APPROVE))).andExpect(status().isOk());
+    }
+
+    public void closeDayFinancially(UUID store, UUID day) throws Exception {
+        mvc.perform(idem(post(BO_DAYS + "/" + day + "/financial-close"))
+                .with(account(store, Permission.CASH_CLOSING_APPROVE))).andExpect(status().isOk());
+    }
+
+    /** Runs {@code action} in a transaction with {@code actor} as the current actor, then restores the caller's. */
+    public void as(Actor actor, Runnable action) {
+        Authentication caller = SecurityContextHolder.getContext().getAuthentication();
+        SecurityContextHolder.getContext().setAuthentication(authenticationOf(actor));
+        try {
+            tx.executeWithoutResult(status -> action.run());
+        } finally {
+            SecurityContextHolder.getContext().setAuthentication(caller);
+        }
     }
 
     /**
@@ -98,12 +173,17 @@ public class CashFixtures {
     }
 
     public UUID newStore(LocalTime cutoff) throws Exception {
+        return newStore(cutoff, STORE_ZONE);
+    }
+
+    /** A store in {@code zone}, e.g. one with daylight saving time. */
+    public UUID newStore(LocalTime cutoff, ZoneId zone) throws Exception {
         String code = "C" + UUID.randomUUID().toString().substring(0, 8);
         return id(mvc.perform(post("/api/v1/backoffice/stores").with(account(null, Permission.STORE_MANAGE))
                         .with(csrf()).contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"code": "%s", "name": "Store", "timezone": "Africa/Maputo", "businessDayCutoff": "%s"}"""
-                                .formatted(code, cutoff)))
+                                {"code": "%s", "name": "Store", "timezone": "%s", "businessDayCutoff": "%s"}"""
+                                .formatted(code, zone.getId(), cutoff)))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
     }
 

@@ -6,6 +6,7 @@ import com.xavier.backend.cash.model.dto.ManualMovementRequest;
 import com.xavier.backend.cash.service.CashMovementService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -24,10 +25,14 @@ class PosCashMovementController {
         this.idempotent = idempotent;
     }
 
+    /** D40: an expense's approver is verified first, outside any transaction; the headers are never hashed. */
     @PostMapping("/api/v1/pos/cash/movements")
     ResponseEntity<MovementView> record(@RequestHeader("Idempotency-Key") String key,
+                                        @RequestHeader(value = "X-Approver-Code", required = false) String approverCode,
+                                        @RequestHeader(value = "X-Approver-Pin", required = false) String approverPin,
                                         @Valid @RequestBody ManualMovementRequest body, HttpServletRequest request) {
+        UUID approverId = movements.authorize(body, approverCode, approverPin);
         return idempotent.execute("cash.movement.record", key, request, body, MovementView.class,
-                () -> ResponseEntity.status(HttpStatus.CREATED).body(movements.record(body)));
+                () -> ResponseEntity.status(HttpStatus.CREATED).body(movements.record(body, approverId)));
     }
 }
