@@ -115,8 +115,8 @@ public class ProductionTicket {
     }
 
     public TicketView toView() {
-        return new TicketView(id, storeId, sourceType, sourceId, destination, kind, orderId, terminalId, printerId,
-                suppressed, lines(), createdAt);
+        return new TicketView(id, storeId, sourceType, sourceId, destination, kind, orderId, terminalId, routing,
+                printerId, suppressed, lines(), createdAt);
     }
 
     public UUID getId() {

@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import static com.xavier.backend.fiscal.FiscalActors.inStore;
 import static com.xavier.backend.fiscal.FiscalActors.pos;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -119,6 +120,33 @@ class UnroutedTicketTest {
         assertThat(fixtures.tickets(voided.voidId())).singleElement()
                 .satisfies(ticket -> assertThat(ticket).containsEntry("routing", "UNROUTED"));
         assertThat(unrouted()).isEqualTo(unroutedAfterFirst);
+    }
+
+    @Test
+    void unroutedTicketsAreListedForTheStoreWithThePermissionToView() throws Exception {
+        UUID ticket = unroutedVoidTicket();
+        UUID otherStore = fixtures.shop().store();
+
+        mvc.perform(get(BACKOFFICE_TICKETS).param("storeId", shop.store().toString()).param("routing", "UNROUTED")
+                        .with(inStore(shop.store(), Permission.PRODUCTION_VIEW)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].id").value(ticket.toString()))
+                .andExpect(jsonPath("$.content[0].routing").value("UNROUTED"))
+                .andExpect(jsonPath("$.content[0].sourceType").value("VOID"))
+                .andExpect(jsonPath("$.content[0].printerId").doesNotExist());
+        mvc.perform(get(POS_TICKETS).param("routing", "UNROUTED")
+                        .with(pos(shop.store(), employee, terminal, Permission.PRODUCTION_VIEW)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content[0].id").value(ticket.toString()));
+        mvc.perform(get(POS_TICKETS).param("routing", "ROUTED")
+                        .with(pos(shop.store(), employee, terminal, Permission.PRODUCTION_VIEW)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(0));
+        mvc.perform(get(POS_TICKETS).param("routing", "UNROUTED")
+                        .with(pos(otherStore, employee, terminal, Permission.PRODUCTION_VIEW)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(0));
+        mvc.perform(get(BACKOFFICE_TICKETS).param("storeId", shop.store().toString())
+                .with(inStore(otherStore, Permission.PRODUCTION_VIEW))).andExpect(status().isForbidden());
+        mvc.perform(get(POS_TICKETS).with(pos(shop.store(), employee, terminal, Permission.PRODUCTION_OPERATE)))
+                .andExpect(status().isForbidden());
     }
 
     /** A30: the route is added later, the ticket is routed once, and it gets exactly one job. */
