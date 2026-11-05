@@ -45,7 +45,7 @@ public class SettlementFixtures {
     public static final String METHODS = "/api/v1/backoffice/payment-methods";
     static final Permission[] CASHIER = {Permission.PAYMENT_COLLECT, Permission.ORDER_VIEW, Permission.ORDER_EDIT,
             Permission.CASH_OPERATE, Permission.CASH_VIEW, Permission.PAYMENT_RESOLVE, Permission.CASH_DAY_CLOSE,
-            Permission.BILL_SPLIT, Permission.ORDER_VOID};
+            Permission.BILL_SPLIT, Permission.ORDER_VOID, Permission.CREDIT_SALE};
     public static final String PARTITIONS = "/api/v1/pos/partitions";
 
     /** An order of {@code shop} at its table, sold by {@code cashier}, who has an OPEN {@code session}. */
@@ -298,6 +298,54 @@ public class SettlementFixtures {
                         + "\"wasted\": true}").formatted(orderVersion, line, quantity)));
     }
 
+    // ---- R3: credit sales and debt payments (D74, D75) ----
+
+    public static final String CHARGES = "/api/v1/pos/credit-charges";
+    public static final String CUSTOMERS = "/api/v1/pos/customers";
+
+    /** {@code POST /orders/{id}/credit-charges}: {@code partition} may be null (the order's residual). */
+    public ResultActions creditCharge(Pos who, UUID order, UUID customer, String amount, UUID partition, String key)
+            throws Exception {
+        String target = partition == null ? "" : ", \"partitionId\": \"" + partition + "\"";
+        return send(who, ORDERS + "/" + order + "/credit-charges", key,
+                "{\"customerId\": \"%s\", \"amount\": %s%s}".formatted(customer, amount, target));
+    }
+
+    public ResultActions creditCharge(Sale sale, UUID customer, String amount) throws Exception {
+        return creditCharge(sale.cashier(), sale.order(), customer, amount, null, UUID.randomUUID().toString());
+    }
+
+    public ResultActions cancelCharge(Pos who, UUID charge, String reason) throws Exception {
+        return send(who, CHARGES + "/" + charge + "/cancel", UUID.randomUUID().toString(),
+                "{\"reason\": \"%s\"}".formatted(reason));
+    }
+
+    /** {@code POST /customers/{id}/credit-payments}; {@code debits} names the debit entries (none: FIFO). */
+    public ResultActions payDebt(Pos who, UUID customer, String method, String amount, String tendered, String key,
+                                 UUID... debits) throws Exception {
+        String cash = tendered == null ? "" : ", \"tendered\": " + tendered;
+        String named = debits.length == 0 ? "" : ", \"debitEntryIds\": [" + String.join(", ",
+                java.util.Arrays.stream(debits).map(id -> "\"" + id + "\"").toList()) + "]";
+        return send(who, CUSTOMERS + "/" + customer + "/credit-payments", key,
+                "{\"methodCode\": \"%s\", \"amount\": %s%s%s}".formatted(method, amount, cash, named));
+    }
+
+    public ResultActions confirm(Pos who, UUID attempt, String authorizationCode) throws Exception {
+        return send(who, ATTEMPTS + "/" + attempt + "/confirm", UUID.randomUUID().toString(),
+                "{\"authorizationCode\": \"%s\"}".formatted(authorizationCode));
+    }
+
+    public ResultActions cancelAttempt(Pos who, UUID attempt, String reason) throws Exception {
+        return send(who, ATTEMPTS + "/" + attempt + "/cancel", UUID.randomUUID().toString(),
+                "{\"reason\": \"%s\"}".formatted(reason));
+    }
+
+    /** The payment of a SUCCEEDED attempt. */
+    public UUID paymentOfAttempt(UUID attempt) {
+        return jdbc.sql("SELECT id FROM settlement.payment WHERE attempt_id = ?").param(attempt).query(UUID.class)
+                .single();
+    }
+
     /** The order's line ids in line order, from its settlement view's coverage. */
     public List<UUID> lineIds(Pos who, UUID order) throws Exception {
         List<UUID> ids = new java.util.ArrayList<>();
@@ -319,12 +367,21 @@ public class SettlementFixtures {
         jdbc.sql("""
                 INSERT INTO settlement.order_settlement (order_id, created_at) VALUES (?, now())
                 ON CONFLICT (order_id) DO NOTHING""").param(order).update();
+        return raceBehindRowLock("SELECT order_id FROM settlement.order_settlement WHERE order_id = ? FOR UPDATE",
+                order, first, second);
+    }
+
+    /**
+     * As {@link #raceBehindOrderLock}, behind any row: {@code lockSql} selects it {@code FOR UPDATE} by {@code id}
+     * (for example a customer's {@code credit_account}, D76).
+     */
+    public <T> List<T> raceBehindRowLock(String lockSql, UUID id, Callable<T> first, Callable<T> second)
+            throws Exception {
         CountDownLatch locked = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         try (var pool = Executors.newFixedThreadPool(3)) {
             var holder = pool.submit(() -> new TransactionTemplate(transactionManager).executeWithoutResult(tx -> {
-                jdbc.sql("SELECT order_id FROM settlement.order_settlement WHERE order_id = ? FOR UPDATE")
-                        .param(order).query(UUID.class).single();
+                jdbc.sql(lockSql).param(id).query(UUID.class).single();
                 locked.countDown();
                 try {
                     release.await(30, TimeUnit.SECONDS);
@@ -343,7 +400,7 @@ public class SettlementFixtures {
             release.countDown();
             holder.get(30, TimeUnit.SECONDS);
             if (blocked < 2) {
-                throw new IllegalStateException("only " + blocked + " request(s) waited on the order lock");
+                throw new IllegalStateException("only " + blocked + " request(s) waited on the lock");
             }
             return List.of(a.get(30, TimeUnit.SECONDS), b.get(30, TimeUnit.SECONDS));
         }

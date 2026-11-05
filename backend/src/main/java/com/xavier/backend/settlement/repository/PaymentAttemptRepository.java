@@ -25,13 +25,16 @@ public interface PaymentAttemptRepository extends JpaRepository<PaymentAttempt, 
 
     boolean existsByOrderIdAndStatusIn(UUID orderId, Collection<AttemptStatus> statuses);
 
+    Optional<PaymentAttempt> findFirstByCreditAccountIdAndStatusIn(UUID creditAccountId,
+                                                                  Collection<AttemptStatus> statuses);
+
     boolean existsByPartitionIdAndStatusIn(UUID partitionId, Collection<AttemptStatus> statuses);
 
     long countByStatus(AttemptStatus status);
 
     /** The store and order of an attempt, read alone before authorizing a command on it (D42). */
     @Query("""
-            select new com.xavier.backend.settlement.repository.AttemptRef(a.storeId, a.orderId)
+            select new com.xavier.backend.settlement.repository.AttemptRef(a.storeId, a.orderId, a.creditAccountId)
             from PaymentAttempt a where a.id = :id""")
     Optional<AttemptRef> findRefById(@Param("id") UUID id);
 

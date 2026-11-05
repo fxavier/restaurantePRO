@@ -21,4 +21,9 @@ public interface OrderSettlementRepository extends JpaRepository<OrderSettlement
     @Query(value = "SELECT order_id FROM settlement.order_settlement WHERE order_id = :orderId FOR UPDATE",
             nativeQuery = true)
     UUID lock(@Param("orderId") UUID orderId);
+
+    /** As {@link #lock}, but {@code null} at once when another transaction holds the row (a sweeper skips it). */
+    @Query(value = "SELECT order_id FROM settlement.order_settlement WHERE order_id = :orderId FOR UPDATE SKIP LOCKED",
+            nativeQuery = true)
+    UUID tryLock(@Param("orderId") UUID orderId);
 }

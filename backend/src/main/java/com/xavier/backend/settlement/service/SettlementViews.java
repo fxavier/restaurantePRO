@@ -51,7 +51,8 @@ class SettlementViews {
                 document.map(DocumentView::id).orElse(null),
                 bill.openAttempts().stream().map(PaymentAttempt::toView).toList(),
                 partitions(bill, documents), coverage(bill, fiscal.coverage(orderId)), bill.residualBalance(),
-                taxRoundingDifferences(bill));
+                taxRoundingDifferences(bill), bill.credit(),
+                bill.charges().stream().map(com.xavier.backend.settlement.model.CreditCharge::toView).toList());
     }
 
     /** Per rate of the order's lines (in rate order): Σ of the lines' tax drift (D68 amendment). */
@@ -82,17 +83,17 @@ class SettlementViews {
     }
 
     private static PartitionView of(Bill bill, BillPartition partition, Map<UUID, DocumentView> documents) {
-        Money zero = Money.of(BigDecimal.ZERO, bill.due().currency());
         Money paid = bill.paidOf(partition);
-        Money balance = partition.due().minus(paid);
+        Money credit = bill.creditOn(partition.getId());
+        Money balance = bill.balanceOf(partition);
         DocumentView document = documents.get(partition.getId());
         List<PartitionView.Line> lines = partition.getLines().stream().map(line -> new PartitionView.Line(
                 line.getOrderLineId(), bill.line(line.getOrderLineId()).map(BillingLine::description).orElse(null),
                 line.getQuantity(), line.gross(), line.net(), line.tax())).toList();
         return new PartitionView(partition.getId(), partition.getOrderId(), partition.getKind().name(),
                 partition.getStatus().name(), partition.getLabel(), partition.getGroupId(), partition.getPartNo(),
-                partition.getParts(), lines, partition.due(), paid, zero, balance,
-                FinancialState.of(partition.due(), paid).name(),
+                partition.getParts(), lines, partition.due(), paid, credit, balance,
+                FinancialState.of(partition.due(), paid.plus(credit)).name(),
                 document != null && "ISSUED".equals(document.status()), document == null ? null : document.id(),
                 partition.currentVersion(), partition.getCreatedAt());
     }

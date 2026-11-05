@@ -15,11 +15,14 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param pendingMargin    a PENDING integrated attempt older than {@code providerTimeout + pendingMargin} lost its
  *                         caller (a crash during the call): the sweeper makes it UNKNOWN
  * @param providerThreads  threads (and the bound of each queue) of the submitter and of the provider calls
+ * @param creditSweepGrace a RESERVED credit charge older than this whose document is ISSUED lost its sale's last step
+ *                         (D74): the credit sweeper posts it; a younger one is a sale still running its steps
  */
 @ConfigurationProperties("restaurantpro.settlement")
 public record SettlementProperties(@DefaultValue("PT10S") Duration providerTimeout,
                                    @DefaultValue("PT5S") Duration sweepInterval,
                                    @DefaultValue("PT10S") Duration createdGrace,
                                    @DefaultValue("PT30S") Duration pendingMargin,
-                                   @DefaultValue("4") int providerThreads) {
+                                   @DefaultValue("4") int providerThreads,
+                                   @DefaultValue("PT1M") Duration creditSweepGrace) {
 }

@@ -13,6 +13,7 @@ import com.xavier.backend.orders.OrdersApi;
 import com.xavier.backend.settlement.exception.SettlementConflictException;
 import com.xavier.backend.settlement.exception.SettlementRule;
 import com.xavier.backend.settlement.exception.SettlementRuleException;
+import com.xavier.backend.settlement.model.CreditChargeStatus;
 import com.xavier.backend.settlement.model.dto.OrderSettlementView;
 import com.xavier.backend.settlement.service.Bills.Bill;
 import com.xavier.backend.shared.Money;
@@ -76,7 +77,9 @@ public class OrderSettlementSteps {
             if (closing) {
                 requireSettled(bill); // frozen or not: a close that cannot succeed issues nothing
             }
-            DraftCommand residual = ResidualDocuments.residual(bill, buyer, fiscal.documentsOfOrder(orderId));
+            List<DocumentView> documents = fiscal.documentsOfOrder(orderId);
+            DraftCommand residual = ResidualDocuments.keepingOnAccount(
+                    ResidualDocuments.residual(bill, buyer, documents), documents);
             if (!bill.frozen()) {
                 bill.requireOpen();
                 if (closing) {
@@ -162,9 +165,15 @@ public class OrderSettlementSteps {
         bill.openAttempts().stream().findFirst().ifPresent(open -> {
             throw SettlementConflictException.inDoubt("order", orderId, open.getId());
         });
+        bill.liveCharges().stream().filter(c -> c.getStatus() == CreditChargeStatus.RESERVED).findFirst()
+                .ifPresent(reserved -> {
+                    throw new SettlementRuleException(SettlementRule.NOT_SETTLED, "Order " + orderId + " is not "
+                            + "settled: its credit charge " + reserved.getId() + " is not posted yet.",
+                            Map.of("balance", bill.balance().amount(), "chargeId", reserved.getId()));
+                });
         if (bill.balance().amount().signum() != 0) {
             throw new SettlementRuleException(SettlementRule.NOT_SETTLED, "Order " + orderId + " is not settled: "
-                    + bill.paid().amount() + " paid of " + bill.due().amount() + " due.",
+                    + bill.paid().plus(bill.credit()).amount() + " paid of " + bill.due().amount() + " due.",
                     Map.of("balance", bill.balance().amount()));
         }
     }

@@ -169,6 +169,41 @@ class PartitionDraftTest {
     }
 
     @Test
+    void clearingOnAccountMakesTheDraftAPaidSaleAgain() throws Exception {
+        UUID store = fixtures.newStore();
+        UUID partition = UUID.randomUUID();
+        UUID order = UUID.randomUUID();
+        UUID draftId = create(draft(store, SourceType.PARTITION, partition, order, null, UUID.randomUUID(), true))
+                .id();
+
+        DocumentView cleared = tx.execute(s -> fiscal.clearOnAccount(draftId));
+
+        assertThat(cleared.onAccount()).isFalse();
+        assertThat(cleared.customerId()).isNull();
+        DocumentView paid = create(draft(store, SourceType.PARTITION, partition, order, null, null, false));
+        assertThat(paid.onAccount()).isFalse();
+        assertThat(paid.id()).isEqualTo(draftId);
+    }
+
+    @Test
+    void anIssuedDocumentKeepsItsOnAccountMarkAndClearingNeedsTheCallersTransaction() throws Exception {
+        UUID store = fixtures.newStore();
+        fixtures.newSeries(store, "C", 1);
+        UUID customer = UUID.randomUUID();
+        UUID draftId = create(draft(store, SourceType.PARTITION, UUID.randomUUID(), UUID.randomUUID(), null, customer,
+                true)).id();
+        assertThatThrownBy(() -> fiscal.clearOnAccount(draftId))
+                .isInstanceOf(IllegalTransactionStateException.class);
+        UUID employee = UUID.randomUUID();
+        asEmployee(store, employee, UUID.randomUUID(), () -> fiscal.issue(draftId, employee));
+
+        assertThatThrownBy(() -> tx.execute(s -> fiscal.clearOnAccount(draftId)))
+                .isInstanceOf(ConflictException.class);
+        assertThat(jdbc.sql("SELECT on_account FROM fiscal.fiscal_document WHERE id = :id").param("id", draftId)
+                .query(Boolean.class).single()).isTrue();
+    }
+
+    @Test
     void theSameSourceWithOtherLinesOrTotalsIsRefused() throws Exception {
         UUID store = fixtures.newStore();
         UUID partition = UUID.randomUUID();

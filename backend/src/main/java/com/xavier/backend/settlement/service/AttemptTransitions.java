@@ -126,10 +126,10 @@ class AttemptTransitions {
         return attempt.getStatus() == AttemptStatus.UNKNOWN && attempt.getUpdatedAt().plus(inFlight).isBefore(now);
     }
 
-    /** D51: the order's lock first, then the attempt as committed. */
+    /** D51/D76: the target's lock first (the order's, or a debt payment's credit account), then the attempt. */
     PaymentAttempt locked(UUID attemptId) {
         AttemptRef ref = attempts.findRefById(attemptId).orElseThrow();
-        locks.lockOrder(ref.orderId());
+        locks.lockTargetOf(ref);
         return attempts.findById(attemptId).orElseThrow();
     }
 
