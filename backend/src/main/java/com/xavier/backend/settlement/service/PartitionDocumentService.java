@@ -74,13 +74,15 @@ public class PartitionDocumentService {
             throw SettlementRuleException.partitionNotInvoiceable(partitionId, partition.getStatus(),
                     partition.getKind());
         }
-        boolean drafted = fiscal.documentsOfOrder(ref.orderId()).stream()
+        List<DocumentView> documents = fiscal.documentsOfOrder(ref.orderId());
+        boolean drafted = documents.stream()
                 .anyMatch(d -> "PARTITION".equals(d.sourceType()) && partitionId.equals(d.sourceId()));
         if (!drafted) {
             // once the residual is drafted (INVOICE), an undrafted partition's lines are on it
             bill.requireOpen().requireNotFrozen();
         }
-        DocumentView document = fiscal.createDraft(draftOf(bill, partition, request.buyer()));
+        DocumentView document = fiscal.createDraft(ResidualDocuments.keepingOnAccount(
+                draftOf(bill, partition, request.buyer()), documents));
         if (!drafted) {
             audit.record("BILL_PARTITION_DRAFTED", PartitionService.PARTITION, partitionId, bill.storeId(),
                     Map.of("orderId", ref.orderId().toString(), "documentId", document.id().toString()));

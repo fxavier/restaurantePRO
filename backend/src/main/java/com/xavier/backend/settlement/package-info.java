@@ -7,19 +7,22 @@
  *
  * <p>R3 (D67–D71): bill partitions by items or amount and equal parts, payments per target (order residual or
  * partition), a document per item partition plus the residual document at close, and the coordinated void within
- * headroom; the split rule is {@link com.xavier.backend.settlement.PartitionAmounts} (D68 amended).
+ * headroom; the split rule is {@link com.xavier.backend.settlement.PartitionAmounts} (D68 amended). Credit (D74–D76):
+ * credit sales (a {@code CreditCharge} reserved, its document issued on account, its debit posted through
+ * {@code CustomersApi}; never a payment nor a cash movement) and debt payments to a customer's credit account.
  *
  * <p>Public API: this root package ({@link com.xavier.backend.settlement.PaymentProvider} SPI and its records,
  * {@link com.xavier.backend.settlement.PartitionAmounts}, and {@link com.xavier.backend.settlement.SettlementFacts}
  * for reporting) and the {@code event} named interface ({@code model.event}: PaymentRecorded, RefundRecorded,
  * CreditChargePosted, ReceiptSlipRequested).
  * Allowed dependencies follow D35: organization, identity (only {@code ApproverVerifier}), and the facades
- * {@code OrdersApi}, {@code CashApi} and {@code FiscalApi} (with fiscal's {@code dto} named interface, which its
- * facade takes and returns). Settlement never reads another module's tables.
+ * {@code OrdersApi}, {@code CashApi}, {@code FiscalApi} (with fiscal's {@code dto} named interface, which its
+ * facade takes and returns) and, D65, {@code CustomersApi} (with customers' {@code dto}). Settlement never reads
+ * another module's tables.
  */
 @ApplicationModule(displayName = "Settlement", allowedDependencies = {
         "shared", "audit", "access", "organization", "organization :: dto", "identity", "orders", "cash", "fiscal",
-        "fiscal :: dto"})
+        "fiscal :: dto", "customers", "customers :: dto"})
 package com.xavier.backend.settlement;
 
 import org.springframework.modulith.ApplicationModule;

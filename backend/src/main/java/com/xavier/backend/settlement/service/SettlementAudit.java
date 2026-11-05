@@ -17,6 +17,7 @@ import org.springframework.stereotype.Component;
 class SettlementAudit {
 
     static final String ATTEMPT = "PaymentAttempt";
+    static final String CHARGE = "CreditCharge";
 
     private final AccessPolicy accessPolicy;
     private final AuditLog auditLog;
@@ -37,6 +38,19 @@ class SettlementAudit {
             auditLog.recordAsSystem(action, ATTEMPT, attemptId.toString(), storeId, terminalId, reason, details);
         }
         changeNotifier.notifyAfterCommit(storeId, ChangeTopic.PAYMENT_ATTEMPT, attemptId);
+        if (orderId != null) { // a debt payment has no order (D95: it notifies PAYMENT_ATTEMPT only)
+            changeNotifier.notifyAfterCommit(storeId, ChangeTopic.ORDER, orderId);
+        }
+    }
+
+    /** A credit charge's transition: as the actor in a request, as the system from the sweeper; D95 {@code ORDER}. */
+    void charge(String action, UUID chargeId, UUID storeId, UUID orderId, UUID terminalId, String reason,
+                Map<String, Object> details) {
+        if (accessPolicy.currentIfPresent().isPresent()) {
+            auditLog.recordAsCurrentActor(action, CHARGE, chargeId.toString(), storeId, null, reason, details);
+        } else {
+            auditLog.recordAsSystem(action, CHARGE, chargeId.toString(), storeId, terminalId, reason, details);
+        }
         changeNotifier.notifyAfterCommit(storeId, ChangeTopic.ORDER, orderId);
     }
 

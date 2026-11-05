@@ -97,6 +97,15 @@ class CodedErrorContractTest {
             Map.entry("order-in-settlement", () -> OrderRuleException.inSettlement(ID)),
             Map.entry("quantity-exceeds-net", () -> OrderRuleException.quantityExceedsNet(ID, new BigDecimal("1.500"))),
             Map.entry("payment-in-doubt", () -> SettlementConflictException.inDoubt("order", ID, OTHER)),
+            Map.entry("document-already-issued", () -> SettlementRuleException.documentAlreadyIssued(ID)),
+            Map.entry("charge-posted", () -> SettlementRuleException.chargePosted(ID)),
+            Map.entry("debit-not-open", () -> SettlementRuleException.debitNotOpen(ID)),
+            Map.entry("settlement-amount-exceeds-debt", () -> SettlementRuleException.amountExceedsDebt(
+                    com.xavier.backend.shared.Money.of(new BigDecimal("40.00"), MZN),
+                    com.xavier.backend.shared.Money.of(new BigDecimal("37.50"), MZN))),
+            Map.entry("credit-charge-exists", () -> SettlementConflictException.chargeExists("order", ID, OTHER)),
+            Map.entry("illegal-charge-state", () -> SettlementConflictException.illegalChargeState(ID, "POSTED",
+                    "be cancelled")),
             Map.entry("illegal-attempt-state", () -> SettlementConflictException.illegalState(ID,
                     AttemptStatus.FAILED, "confirm")),
             // The messages of these two are built inline by PaymentAttemptService and OrderSettlementSteps; the same
@@ -355,6 +364,23 @@ class CodedErrorContractTest {
                 "Bill partition " + ID + " is CANCELLED and cannot be cancelled.", "");
         expect("partition-in-doubt", 409, "PAYMENT_IN_DOUBT", "A payment attempt of partition " + ID
                 + " is still open or in doubt; resolve it first.", ",\"attemptId\":\"" + OTHER + "\"");
+    }
+
+    @Test
+    void settlementCreditRules() throws Exception {
+        expect("document-already-issued", 422, "DOCUMENT_ALREADY_ISSUED", "The sale document " + ID
+                + " is issued without this customer on account: it can no longer be a credit sale.",
+                ",\"documentId\":\"" + ID + "\"");
+        expect("charge-posted", 422, "CHARGE_POSTED", "Credit charge " + ID
+                + " is posted or its document is issued: it is on the customer's account.", "");
+        expect("settlement-amount-exceeds-debt", 422, "AMOUNT_EXCEEDS_DEBT",
+                "The amount 40.00 is more than the open debt 37.50.", ",\"debt\":37.50");
+        expect("debit-not-open", 422, "DEBIT_NOT_OPEN", "The debit " + ID
+                + " is not an open debit of this customer.", ",\"debitEntryId\":\"" + ID + "\"");
+        expect("credit-charge-exists", 409, "CREDIT_CHARGE_EXISTS", "The order " + ID
+                + " already has a credit charge; cancel it first.", ",\"chargeId\":\"" + OTHER + "\"");
+        expect("illegal-charge-state", 409, "ILLEGAL_CHARGE_STATE",
+                "Credit charge " + ID + " is POSTED and cannot be cancelled.", "");
     }
 
     @Test

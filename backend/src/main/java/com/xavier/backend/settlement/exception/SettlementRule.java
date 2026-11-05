@@ -65,5 +65,16 @@ public enum SettlementRule {
      * R3 (D68 amendment): the command would leave a partition share or a line's remaining pool outside fiscal's
      * bound for allocated lines (after cancels or a void the rounding drifts): cancel or re-split differently.
      */
-    SPLIT_ROUNDING_LIMIT
+    SPLIT_ROUNDING_LIMIT,
+    /**
+     * R3 (D74): the target's sale document is ISSUED already, without this customer on account: it cannot become a
+     * credit sale any more.
+     */
+    DOCUMENT_ALREADY_ISSUED,
+    /** R3 (D74): the credit charge is posted, or its document is issued (the sweeper posts it): it is not cancelled. */
+    CHARGE_POSTED,
+    /** R3 (D75, P33): a debt payment is at most the customer's open debt (no advance), or the debits it names. */
+    AMOUNT_EXCEEDS_DEBT,
+    /** R3 (D75): a debit a debt payment names is unknown, of another customer, or already settled. */
+    DEBIT_NOT_OPEN
 }

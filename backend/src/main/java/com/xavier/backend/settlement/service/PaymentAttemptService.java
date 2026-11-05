@@ -6,6 +6,8 @@ import com.xavier.backend.access.PosContext;
 import com.xavier.backend.cash.CashApi;
 import com.xavier.backend.cash.OpenSessionView;
 import com.xavier.backend.cash.SessionView;
+import com.xavier.backend.customers.CreditView;
+import com.xavier.backend.customers.CustomersApi;
 import com.xavier.backend.orders.OrdersApi;
 import com.xavier.backend.settlement.exception.SettlementConflictException;
 import com.xavier.backend.settlement.exception.SettlementNotFoundException;
@@ -21,6 +23,7 @@ import com.xavier.backend.settlement.model.dto.CancelAttemptRequest;
 import com.xavier.backend.settlement.model.dto.ConfirmAttemptRequest;
 import com.xavier.backend.settlement.repository.AttemptRef;
 import com.xavier.backend.settlement.model.dto.CreateAttemptRequest;
+import com.xavier.backend.settlement.model.dto.CreditPaymentRequest;
 import com.xavier.backend.settlement.repository.PaymentAttemptRepository;
 import com.xavier.backend.settlement.repository.PaymentMethodRepository;
 import com.xavier.backend.settlement.service.Bills.Bill;
@@ -47,6 +50,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class PaymentAttemptService {
 
     static final String ORDER = "Order";
+    static final String CUSTOMER = "customer";
 
     private final AccessPolicy accessPolicy;
     private final SettlementLocks locks;
@@ -60,13 +64,15 @@ public class PaymentAttemptService {
     private final PaymentLocks paymentLocks;
     private final PaymentProviders providers;
     private final PaymentSubmitter submitter;
+    private final CustomersApi customers;
     private final Clock clock;
 
     PaymentAttemptService(AccessPolicy accessPolicy, SettlementLocks locks, Bills bills,
                           PaymentMethodRepository methods, PaymentAttemptRepository attempts,
                           PaymentRecorder recorder, OrdersApi orders, CashApi cash, SettlementAudit audit,
                           PaymentLocks paymentLocks, PaymentProviders providers, PaymentSubmitter submitter,
-                          Clock clock) {
+                          CustomersApi customers, Clock clock) {
+        this.customers = customers;
         this.accessPolicy = accessPolicy;
         this.locks = locks;
         this.bills = bills;
@@ -109,12 +115,7 @@ public class PaymentAttemptService {
         locks.lockOrder(request.orderId());
         Bill bill = bills.of(request.orderId());
         bill.requireOpen();
-        PaymentMethod method = activeMethod(request.methodCode());
-        if (method.getKind() == PaymentMethodKind.INTEGRATED && !providers.exists(method.getProviderCode())) {
-            throw new SettlementRuleException(SettlementRule.PROVIDER_NOT_AVAILABLE,
-                    "The provider " + method.getProviderCode() + " of method " + method.getCode()
-                            + " is not installed.");
-        }
+        PaymentMethod method = payableMethod(request.methodCode());
         Currency currency = bill.due().currency();
         Money balance = targetBalance(bill, request.partitionId());
         requireNoOpenAttempt(bill, request.partitionId());
@@ -136,6 +137,70 @@ public class PaymentAttemptService {
                 () -> SettlementConflictException.inDoubt(targetName(request.partitionId()),
                         target(request), attempt.getId()),
                 "payment_attempt_open_per_target_uk");
+        return started(attempt);
+    }
+
+    /**
+     * A debt payment (D75) of the customer's open debt, by the R2 flow of its method: CASH → SUCCEEDED with its
+     * Payment, receipt, CREDIT and slip in this transaction; EXTERNAL_TERMINAL → PENDING; INTEGRATED → CREATED. It
+     * starts at the customer's {@code credit_account} lock (D76), so two debt payments of one customer are
+     * serialized and the debt is read as committed. The customer's account is company-wide (P38): any store collects.
+     *
+     * @throws SettlementRuleException 422 {@code AMOUNT_EXCEEDS_DEBT} (P33: no advance), {@code INVALID_AMOUNT},
+     *         {@code UNKNOWN_PAYMENT_METHOD}, {@code NO_OPEN_CASH_SESSION}, ...; customers' 422
+     *         {@code CREDIT_ACCOUNT_MISSING}
+     * @throws SettlementConflictException 409 {@code PAYMENT_IN_DOUBT} while another debt payment of the customer is
+     *         open
+     */
+    @Transactional
+    public AttemptView createForCustomer(UUID customerId, CreditPaymentRequest request) {
+        PosContext pos = accessPolicy.requirePos(Permission.PAYMENT_COLLECT);
+        CreditView account = customers.lockAccount(customerId);
+        PaymentMethod method = payableMethod(request.methodCode());
+        attempts.findFirstByCreditAccountIdAndStatusIn(customerId, AttemptStatus.OPEN).ifPresent(open -> {
+            throw SettlementConflictException.inDoubt(CUSTOMER, customerId, open.getId());
+        });
+        Currency currency = account.balance().currency();
+        Money amount = money(request.amount(), currency);
+        if (amount.amount().compareTo(account.balance().amount()) > 0) {
+            throw SettlementRuleException.amountExceedsDebt(amount, account.balance());
+        }
+        requireNamedDebitsCover(customerId, request.debitEntryIds(), amount);
+        SessionView session = openSessionOf(pos);
+        PaymentAttempt attempt = PaymentAttempt.forCreditAccount(customerId, request.debitEntryIds(), pos.storeId(),
+                pos.terminalId(), session.id(), method, amount,
+                request.tendered() == null ? null : money(request.tendered(), currency), pos.employeeId(),
+                clock.instant());
+        UniqueConstraints.saveAndFlush(attempts, attempt,
+                () -> SettlementConflictException.inDoubt(CUSTOMER, customerId, attempt.getId()),
+                "payment_attempt_open_per_target_uk");
+        return started(attempt);
+    }
+
+    /**
+     * The debits a debt payment names are checked before any money is taken (D75): each must be an open debit of the
+     * customer, and together they must cover the amount, as {@code postCredit} will require on success.
+     */
+    private void requireNamedDebitsCover(UUID customerId, java.util.List<UUID> named, Money amount) {
+        if (named == null || named.isEmpty()) {
+            return;
+        }
+        Map<UUID, Money> open = customers.openDebits(customerId, named);
+        Money covered = Money.of(BigDecimal.ZERO, amount.currency());
+        for (UUID debit : new java.util.LinkedHashSet<>(named)) {
+            Money left = open.get(debit);
+            if (left == null || left.amount().signum() <= 0) {
+                throw SettlementRuleException.debitNotOpen(debit);
+            }
+            covered = covered.plus(left);
+        }
+        if (amount.amount().compareTo(covered.amount()) > 0) {
+            throw SettlementRuleException.amountExceedsDebt(amount, covered);
+        }
+    }
+
+    /** Audits the new attempt, then pays it (cash) or submits it to its provider after commit (integrated). */
+    private AttemptView started(PaymentAttempt attempt) {
         audit.attempt("PAYMENT_ATTEMPT_CREATED", attempt.getId(), attempt.getStoreId(), attempt.getOrderId(),
                 attempt.getTerminalId(), null, null, details(attempt));
         if (attempt.getStatus() == AttemptStatus.SUCCEEDED) {
@@ -194,10 +259,13 @@ public class PaymentAttemptService {
         return attempt.toView();
     }
 
-    /** D42 then D51: the attempt's store (404, 403), the order's settlement lock, then the attempt as committed. */
+    /**
+     * D42 then D51/D76: the attempt's store (404, 403), the lock of its target (the order's settlement lock, or a debt
+     * payment's credit account), then the attempt as committed.
+     */
     PaymentAttempt lockedAttempt(PosContext pos, UUID attemptId) {
         AttemptRef ref = authorized(pos, attemptId);
-        locks.lockOrder(ref.orderId());
+        locks.lockTargetOf(ref);
         return attempts.findById(attemptId).orElseThrow();
     }
 
@@ -208,10 +276,17 @@ public class PaymentAttemptService {
         return ref;
     }
 
-    private PaymentMethod activeMethod(String code) {
-        return methods.findByCode(code).filter(PaymentMethod::isActive)
+    /** An active method whose provider (for an integrated one) is installed (D53). */
+    private PaymentMethod payableMethod(String code) {
+        PaymentMethod method = methods.findByCode(code).filter(PaymentMethod::isActive)
                 .orElseThrow(() -> new SettlementRuleException(SettlementRule.UNKNOWN_PAYMENT_METHOD,
                         "No active payment method has the code " + code + "."));
+        if (method.getKind() == PaymentMethodKind.INTEGRATED && !providers.exists(method.getProviderCode())) {
+            throw new SettlementRuleException(SettlementRule.PROVIDER_NOT_AVAILABLE,
+                    "The provider " + method.getProviderCode() + " of method " + method.getCode()
+                            + " is not installed.");
+        }
+        return method;
     }
 
     /**
@@ -269,7 +344,12 @@ public class PaymentAttemptService {
 
     static Map<String, Object> details(PaymentAttempt attempt) {
         Map<String, Object> details = new HashMap<>();
-        details.put("orderId", attempt.getOrderId().toString());
+        if (attempt.getOrderId() != null) {
+            details.put("orderId", attempt.getOrderId().toString());
+        }
+        if (attempt.getCreditAccountId() != null) {
+            details.put("customerId", attempt.getCreditAccountId().toString());
+        }
         details.put("methodCode", attempt.getMethodCode());
         details.put("amount", attempt.amount().amount().toPlainString());
         details.put("status", attempt.getStatus().name());

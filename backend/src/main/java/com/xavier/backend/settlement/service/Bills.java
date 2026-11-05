@@ -10,12 +10,14 @@ import com.xavier.backend.settlement.exception.SettlementRuleException;
 import com.xavier.backend.settlement.model.AttemptStatus;
 import com.xavier.backend.settlement.model.BillPartition;
 import com.xavier.backend.settlement.model.BillPartitionLine;
+import com.xavier.backend.settlement.model.CreditCharge;
 import com.xavier.backend.settlement.model.FinancialState;
 import com.xavier.backend.settlement.model.LineSplit;
 import com.xavier.backend.settlement.model.PartitionKind;
 import com.xavier.backend.settlement.model.PaymentAttempt;
 import com.xavier.backend.settlement.model.TargetType;
 import com.xavier.backend.settlement.repository.BillPartitionRepository;
+import com.xavier.backend.settlement.repository.CreditChargeRepository;
 import com.xavier.backend.settlement.repository.PaymentAttemptRepository;
 import com.xavier.backend.settlement.repository.PaymentRepository;
 import com.xavier.backend.settlement.repository.TargetPaid;
@@ -29,8 +31,9 @@ import java.util.UUID;
 import org.springframework.stereotype.Component;
 
 /**
- * An order's bill as settlement computes it (spec §8.3, D69): the due from orders, its partitions, what each target
- * (the ORDER residual, each partition) was paid, and the attempts still open. Nothing of it is stored.
+ * An order's bill as settlement computes it (spec §8.3, D69, D74): the due from orders, its partitions, what each
+ * target (the ORDER residual, each partition) was paid or put on account by a live credit charge, and the attempts
+ * still open. Nothing of it is stored.
  */
 @Component
 class Bills {
@@ -39,13 +42,15 @@ class Bills {
     private final PaymentRepository payments;
     private final BillPartitionRepository partitions;
     private final PaymentAttemptRepository attempts;
+    private final CreditChargeRepository charges;
 
     Bills(OrdersApi orders, PaymentRepository payments, BillPartitionRepository partitions,
-          PaymentAttemptRepository attempts) {
+          PaymentAttemptRepository attempts, CreditChargeRepository charges) {
         this.orders = orders;
         this.payments = payments;
         this.partitions = partitions;
         this.attempts = attempts;
+        this.charges = charges;
     }
 
     Bill of(UUID orderId) {
@@ -62,7 +67,8 @@ class Bills {
             }
         }
         return new Bill(view, partitions.findByOrderIdOrderById(orderId), orderPaid, Map.copyOf(partitionPaid),
-                attempts.findByOrderIdAndStatusInOrderByCreatedAt(orderId, AttemptStatus.OPEN));
+                attempts.findByOrderIdAndStatusInOrderByCreatedAt(orderId, AttemptStatus.OPEN),
+                charges.findByOrderIdOrderByCreatedAt(orderId));
     }
 
     /**
@@ -70,9 +76,10 @@ class Bills {
      * @param orderPaid    Σ payments to the ORDER target (R2 payments included)
      * @param partitionPaid Σ payments per partition that was paid
      * @param openAttempts the order's attempts still CREATED, PENDING or UNKNOWN, on any target
+     * @param charges      every credit charge of the order, RESERVED, POSTED and RELEASED, oldest first
      */
     record Bill(OrderBillingView view, List<BillPartition> partitions, Money orderPaid,
-                Map<UUID, Money> partitionPaid, List<PaymentAttempt> openAttempts) {
+                Map<UUID, Money> partitionPaid, List<PaymentAttempt> openAttempts, List<CreditCharge> charges) {
 
         Money due() {
             return view.due();
@@ -83,12 +90,37 @@ class Bills {
             return partitionPaid.values().stream().reduce(orderPaid, Money::plus);
         }
 
+        /** Σ of the live (RESERVED and POSTED) credit charges, on any target: "crédito autorizado" (D74). */
+        Money credit() {
+            return liveCharges().stream().map(CreditCharge::amount).reduce(zero(), Money::plus);
+        }
+
+        /** What is still neither paid nor on account. */
         Money balance() {
-            return due().minus(paid());
+            return due().minus(paid()).minus(credit());
         }
 
         FinancialState financialState() {
-            return FinancialState.of(due(), paid());
+            return FinancialState.of(due(), paid().plus(credit()));
+        }
+
+        List<CreditCharge> liveCharges() {
+            return charges.stream().filter(CreditCharge::isLive).toList();
+        }
+
+        /** The live charge of a target: the ORDER for {@code partitionId == null}, else that partition. */
+        Optional<CreditCharge> liveChargeOn(UUID partitionId) {
+            return liveCharges().stream().filter(c -> java.util.Objects.equals(c.getPartitionId(), partitionId))
+                    .findFirst();
+        }
+
+        /** What a target has on account: its live charge, or zero. */
+        Money creditOn(UUID partitionId) {
+            return liveChargeOn(partitionId).map(CreditCharge::amount).orElse(zero());
+        }
+
+        private Money zero() {
+            return Money.of(BigDecimal.ZERO, due().currency());
         }
 
         UUID storeId() {
@@ -113,9 +145,9 @@ class Bills {
             return live().stream().map(BillPartition::due).reduce(due(), Money::minus);
         }
 
-        /** What the ORDER target still has to collect (D69). */
+        /** What the ORDER target still has to collect (D69): neither paid nor on account. */
         Money residualBalance() {
-            return residualDue().minus(orderPaid);
+            return residualDue().minus(orderPaid).minus(creditOn(null));
         }
 
         /** The residual balance less the attempts open on the ORDER target: what a new partition may take. */
@@ -128,7 +160,7 @@ class Bills {
         }
 
         Money balanceOf(BillPartition partition) {
-            return partition.due().minus(paidOf(partition));
+            return partition.due().minus(paidOf(partition)).minus(creditOn(partition.getId()));
         }
 
         /** The attempts open on a target: the ORDER for {@code partitionId == null}, else that partition. */

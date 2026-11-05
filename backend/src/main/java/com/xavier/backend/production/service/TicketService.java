@@ -146,6 +146,16 @@ public class TicketService {
                 printout.lines(), printout.qrPayload()));
     }
 
+    /**
+     * A debt payment's non-fiscal slip (D75), on the printer of the terminal it was paid at; one per payment (the
+     * payment id is the ticket's source), UNROUTED when that terminal has no printer.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void printReceiptSlip(UUID paymentId, UUID storeId, UUID terminalId, List<String> lines) {
+        onTerminal(storeId, terminalId, new TicketDraft(storeId, TicketSource.RECEIPT_SLIP, paymentId, "ORIGINAL",
+                JobKind.ORIGINAL, null, terminalId, lines, null));
+    }
+
     /** A test page straight to {@code printer}, whatever its mode routes (HOLD still holds it). */
     @Transactional(propagation = Propagation.MANDATORY)
     public Issued printTest(Printer printer) {

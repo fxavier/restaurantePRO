@@ -97,6 +97,27 @@ public class SettlementRuleException extends BusinessRuleException {
                 "The approver of a void cannot be the operator.");
     }
 
+    public static SettlementRuleException documentAlreadyIssued(UUID documentId) {
+        return new SettlementRuleException(SettlementRule.DOCUMENT_ALREADY_ISSUED, "The sale document " + documentId
+                + " is issued without this customer on account: it can no longer be a credit sale.",
+                Map.of("documentId", documentId));
+    }
+
+    public static SettlementRuleException chargePosted(UUID chargeId) {
+        return new SettlementRuleException(SettlementRule.CHARGE_POSTED, "Credit charge " + chargeId
+                + " is posted or its document is issued: it is on the customer's account.");
+    }
+
+    public static SettlementRuleException amountExceedsDebt(Money amount, Money debt) {
+        return new SettlementRuleException(SettlementRule.AMOUNT_EXCEEDS_DEBT, "The amount " + amount.amount()
+                + " is more than the open debt " + debt.amount() + ".", Map.of("debt", debt.amount()));
+    }
+
+    public static SettlementRuleException debitNotOpen(UUID debitEntryId) {
+        return new SettlementRuleException(SettlementRule.DEBIT_NOT_OPEN, "The debit " + debitEntryId
+                + " is not an open debit of this customer.", Map.of("debitEntryId", debitEntryId));
+    }
+
     private static String plain(BigDecimal quantity) {
         return quantity.stripTrailingZeros().toPlainString();
     }
