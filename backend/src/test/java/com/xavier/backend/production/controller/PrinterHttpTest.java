@@ -144,6 +144,38 @@ class PrinterHttpTest {
                 .andExpect(jsonPath("$.assignments[0].printerId").value(kitchen.toString()));
     }
 
+    /** Two replacements of one table at once: the loser gets 409, never 500. */
+    @Test
+    void aConcurrentRouteReplacementIsAConflict() throws Exception {
+        UUID kitchen = fixtures.printer(store, "KIT", "10.0.0.5", 9100);
+        java.util.concurrent.CountDownLatch inserted = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CompletableFuture<Void> other = java.util.concurrent.CompletableFuture.runAsync(() ->
+                tx.executeWithoutResult(s -> {
+                    jdbc.sql("INSERT INTO production.destination_route VALUES (?, 'BAR', ?)").param(store)
+                            .param(kitchen).update();
+                    inserted.countDown();
+                    try {
+                        release.await(20, java.util.concurrent.TimeUnit.SECONDS);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                }));
+        assertThat(inserted.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+        java.util.concurrent.CompletableFuture.delayedExecutor(500, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .execute(release::countDown);
+
+        fixtures.routes(store, Map.of("BAR", kitchen)).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ROUTES_CHANGED_CONCURRENTLY"));
+        other.get(10, java.util.concurrent.TimeUnit.SECONDS);
+    }
+
+    @Autowired
+    org.springframework.transaction.support.TransactionTemplate tx;
+
+    @Autowired
+    org.springframework.jdbc.core.simple.JdbcClient jdbc;
+
     @Test
     void aRouteMustNameAPrinterOfTheStoreOnce() throws Exception {
         UUID elsewhere = fixtures.printer(stores.newStore(), "X", "10.0.0.8", 9100);

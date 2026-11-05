@@ -21,6 +21,12 @@ public class ProductionConflictException extends ConflictException {
                 "A terminal of this table already has a printer in another store");
     }
 
+    /** {@code destination_route_pk}: another replacement of the store's routes committed first; re-read, retry. */
+    public static ProductionConflictException routesChangedConcurrently() {
+        return new ProductionConflictException("ROUTES_CHANGED_CONCURRENTLY",
+                "The store's routes were changed at the same time; read them again and retry");
+    }
+
     /** {@code production_ticket_source_uk} lost to a concurrent delivery of the same source. */
     public static ProductionConflictException ticketExists(Object sourceType, Object sourceId) {
         return new ProductionConflictException("TICKET_EXISTS",

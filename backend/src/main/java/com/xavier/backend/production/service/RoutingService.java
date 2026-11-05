@@ -71,8 +71,15 @@ public class RoutingService {
         requireUnique(request.routes(), route -> route.destinationCode().strip(), "destination");
         requirePrintersOfStore(storeId, request.routes().stream().map(DestinationRouteView::printerId).toList());
         routes.deleteByStore(storeId);
-        routes.saveAllAndFlush(request.routes().stream()
-                .map(route -> new DestinationRoute(storeId, route.destinationCode(), route.printerId())).toList());
+        try {
+            routes.saveAllAndFlush(request.routes().stream()
+                    .map(route -> new DestinationRoute(storeId, route.destinationCode(), route.printerId())).toList());
+        } catch (DataIntegrityViolationException e) {
+            if (UniqueConstraints.isViolated(e, "destination_route_pk")) {
+                throw ProductionConflictException.routesChangedConcurrently();
+            }
+            throw e;
+        }
         auditLog.recordAsCurrentActor("PRODUCTION_ROUTES_REPLACED", "DestinationRoute", storeId.toString(), storeId,
                 null, null, Map.of("routes", request.routes().size()));
         return new RoutesView(storeId, routes.findByStore(storeId).stream().map(DestinationRoute::toView).toList());
