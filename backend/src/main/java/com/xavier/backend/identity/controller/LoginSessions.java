@@ -1,13 +1,16 @@
 package com.xavier.backend.identity.controller;
 
 import com.xavier.backend.access.Actor;
+import com.xavier.backend.access.ActorKind;
 import com.xavier.backend.identity.model.dto.SessionView;
 import com.xavier.backend.identity.service.LoginAudit;
 import com.xavier.backend.identity.service.SessionPrincipals;
+import com.xavier.backend.identity.service.SupportGrantService;
 import com.xavier.backend.identity.service.TerminalSessionService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
+import java.time.Duration;
 import java.util.List;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -42,7 +45,9 @@ import org.springframework.stereotype.Component;
  *   <li>the security context is saved in the session explicitly ({@link HttpSessionSecurityContextRepository}),
  *       which the security filter chain loads on every later request;</li>
  *   <li>a POS session is recorded against its terminal and store, so revoking the terminal or deactivating the
- *       store ends it.</li>
+ *       store ends it;</li>
+ *   <li>a support account's session records its grant and that grant's end, which {@code SupportSessionFilter}
+ *       checks on every request, and may stay idle at most for the rest of the grant (D83).</li>
  * </ol>
  */
 @Component
@@ -52,6 +57,10 @@ class LoginSessions {
     static final String MUST_CHANGE_PASSWORD = "identity.mustChangePassword";
     /** Session attribute: set while the employee must replace a manager-set PIN (see {@code MustChangeCredentialFilter}). */
     static final String MUST_CHANGE_PIN = "identity.mustChangePin";
+    /** Session attributes of a support session (D83): its grant ({@code UUID}, absent when none is usable). */
+    static final String SUPPORT_GRANT_ID = "identity.supportGrantId";
+    /** The grant's end ({@code Instant}); its presence marks a support session (see {@code SupportSessionFilter}). */
+    static final String SUPPORT_VALID_UNTIL = "identity.supportValidUntil";
 
     /**
      * The same cookie repository {@code csrf.spa()} configures in {@code SecurityConfig}; it keeps no state, so this
@@ -64,10 +73,12 @@ class LoginSessions {
     private final SecurityContextHolderStrategy holder = SecurityContextHolder.getContextHolderStrategy();
     private final TerminalSessionService terminalSessions;
     private final LoginAudit audit;
+    private final SupportGrantService supportGrants;
 
-    LoginSessions(TerminalSessionService terminalSessions, LoginAudit audit) {
+    LoginSessions(TerminalSessionService terminalSessions, LoginAudit audit, SupportGrantService supportGrants) {
         this.terminalSessions = terminalSessions;
         this.audit = audit;
+        this.supportGrants = supportGrants;
     }
 
     /** @return the id of the session that now holds the actor */
@@ -84,6 +95,15 @@ class LoginSessions {
         session.setAttribute(FindByIndexNameSessionRepository.PRINCIPAL_NAME_INDEX_NAME, SessionPrincipals.of(actor));
         flag(session, MUST_CHANGE_PASSWORD, view.mustChangePassword());
         flag(session, MUST_CHANGE_PIN, view.mustChangePin());
+        session.removeAttribute(SUPPORT_GRANT_ID);
+        session.removeAttribute(SUPPORT_VALID_UNTIL);
+        if (actor.kind() == ActorKind.ACCOUNT) {
+            supportGrants.sessionGrantOf(actor.userId()).ifPresent(grant -> {
+                session.setAttribute(SUPPORT_GRANT_ID, grant.grantId());
+                session.setAttribute(SUPPORT_VALID_UNTIL, grant.validUntil());
+                capIdleTime(session, grant.remaining());
+            });
+        }
         SecurityContext context = holder.createEmptyContext();
         context.setAuthentication(authentication);
         holder.setContext(context);
@@ -95,6 +115,12 @@ class LoginSessions {
             terminalSessions.register(session.getId(), actor.terminalId(), actor.storeId(), actor.employeeId());
         }
         return session.getId();
+    }
+
+    /** At least one second: zero would mean "never times out" to the servlet API. */
+    private static void capIdleTime(HttpSession session, Duration limit) {
+        long seconds = Math.max(1, Math.min(session.getMaxInactiveInterval(), limit.toSeconds()));
+        session.setMaxInactiveInterval((int) seconds);
     }
 
     private static void flag(HttpSession session, String attribute, boolean set) {

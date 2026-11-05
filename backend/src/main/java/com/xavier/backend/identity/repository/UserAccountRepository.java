@@ -15,9 +15,10 @@ public interface UserAccountRepository extends JpaRepository<UserAccount, UUID> 
 
     Optional<UserAccount> findByEmployeeId(UUID employeeId);
 
+    /** Support accounts do not count: their sessions never hold the access-managing permissions (D83). */
     @Query("select count(a) from UserAccount a join a.roleIds r "
-            + "where r = :roleId and a.active = true and a.id <> :excluded")
-    long countActiveHoldersExcept(UUID roleId, UUID excluded);
+            + "where r = :roleId and a.active = true and a.support = false and a.id <> :excluded")
+    long countActiveNonSupportHoldersExcept(UUID roleId, UUID excluded);
 
     @Query("select a.id from UserAccount a join a.roleIds r where r = :roleId")
     List<UUID> findIdsHoldingRole(UUID roleId);
