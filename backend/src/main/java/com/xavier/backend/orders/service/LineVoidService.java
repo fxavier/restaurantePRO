@@ -23,6 +23,7 @@ import com.xavier.backend.shared.Money;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -112,6 +113,7 @@ public class LineVoidService {
      * @throws OrderRuleException 422 {@code ORDER_FROZEN}, {@code QUANTITY_EXCEEDS_NET}, {@code SELF_APPROVAL}
      */
     public com.xavier.backend.orders.VoidView voidSettled(SettledVoidCommand command, UUID approverEmployeeId) {
+        Objects.requireNonNull(approverEmployeeId, "approverEmployeeId");
         if (approverEmployeeId.equals(command.operatorEmployeeId())) {
             throw OrderRuleException.selfApproval();
         }

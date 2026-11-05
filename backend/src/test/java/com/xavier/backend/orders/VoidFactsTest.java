@@ -112,6 +112,28 @@ class VoidFactsTest {
     }
 
     @Test
+    void aVoidAfterTwoTransfersFollowsBackToTheOriginalRound() throws Exception {
+        dispatch(line);
+        UUID middle = fixtures.openedAt(shop, fixtures.newTable(shop, "M2"), operator, terminal);
+        UUID last = fixtures.openedAt(shop, fixtures.newTable(shop, "M3"), operator, terminal);
+        UUID middleCopy = transferOne(order, line, middle);
+        UUID lastCopy = transferOne(middle, middleCopy, last);
+
+        VoidView voided = voidOf(last, lastCopy, inPos(() -> ordersApi.billingView(last)).version(), "1");
+
+        assertThat(inPos(() -> ordersApi.voidFacts(voided.voidId())).afterDispatch()).isTrue();
+    }
+
+    /** Transfers 1 of {@code sourceLine} to {@code target}; the copy's id on the target. */
+    UUID transferOne(UUID source, UUID sourceLine, UUID target) throws Exception {
+        fixtures.transfer(shop, source, inPos(() -> ordersApi.billingView(source)).version(), target,
+                inPos(() -> ordersApi.billingView(target)).version(), Map.of(sourceLine, "1"), false, operator,
+                terminal, UUID.randomUUID().toString()).andExpect(status().isCreated());
+        return jdbc.sql("SELECT id FROM orders.order_line WHERE order_id = ?").param(target)
+                .query(UUID.class).single();
+    }
+
+    @Test
     void anUnknownVoidIsNotFound() {
         assertThatThrownBy(() -> inPos(() -> ordersApi.voidFacts(UUID.randomUUID())))
                 .isInstanceOf(NotFoundException.class);

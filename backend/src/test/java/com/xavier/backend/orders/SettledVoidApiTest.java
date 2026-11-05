@@ -101,6 +101,15 @@ class SettledVoidApiTest {
     }
 
     @Test
+    void aClosedOrderIsNotOpenAndNothingIsVoided() {
+        inPos(() -> run(() -> ordersApi.close(order, 2, operator)));
+
+        assertThatThrownBy(() -> inPos(() -> ordersApi.voidLine(command(3, "1"), approver)))
+                .isInstanceOfSatisfying(CodedException.class, e -> assertThat(e.code()).isEqualTo("ORDER_NOT_OPEN"));
+        assertThat(voids()).isZero();
+    }
+
+    @Test
     void aStaleVersionLosesAndNothingIsVoided() {
         assertThatThrownBy(() -> inPos(() -> ordersApi.voidLine(command(1, "1"), approver)))
                 .isInstanceOf(OptimisticLockingFailureException.class);
