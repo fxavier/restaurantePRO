@@ -33,6 +33,9 @@ import com.xavier.backend.settlement.exception.SettlementConflictException;
 import com.xavier.backend.settlement.exception.SettlementRule;
 import com.xavier.backend.settlement.exception.SettlementRuleException;
 import com.xavier.backend.settlement.model.AttemptStatus;
+import com.xavier.backend.settlement.reconciliation.exception.ReconciliationConflictException;
+import com.xavier.backend.settlement.reconciliation.exception.ReconciliationRuleException;
+import com.xavier.backend.settlement.reconciliation.model.dto.StatementError;
 import com.xavier.backend.shared.Money;
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -187,6 +190,11 @@ class CodedErrorContractTest {
                     Money.of("5.01", MZN), Money.of("5.00", MZN))),
             Map.entry("external-reference-required", () -> SettlementRuleException.externalReferenceRequired("CARD")),
             Map.entry("refund-self-approval", SettlementRuleException::refundSelfApproval),
+            Map.entry("statement-invalid", () -> ReconciliationRuleException.statementInvalid(List.of(
+                    new StatementError(2, "amount", "More than zero")))),
+            Map.entry("no-statement-source", () -> ReconciliationRuleException.noStatementSource("CARD")),
+            Map.entry("statement-already-imported", () -> ReconciliationConflictException.alreadyImported(ID)),
+            Map.entry("entry-resolved", () -> ReconciliationConflictException.entryResolved(ID)),
             Map.entry("range-reversed", () -> ReportRangeException.reversed(LocalDate.of(2026, 11, 5),
                     LocalDate.of(2026, 11, 4))),
             Map.entry("range-too-large", () -> ReportRangeException.tooLarge(366)),
@@ -404,6 +412,17 @@ class CodedErrorContractTest {
         expect("external-reference-required", 422, "EXTERNAL_REFERENCE_REQUIRED", "A refund to CARD is made on the "
                 + "terminal or the provider's portal first: give its reference.", "");
         expect("refund-self-approval", 422, "SELF_APPROVAL", "The approver of a refund cannot be the refunder.", "");
+    }
+
+    @Test
+    void reconciliationCodes() throws Exception {
+        expect("statement-invalid", 422, "STATEMENT_INVALID", "The statement has 1 error(s); nothing was imported.",
+                ",\"errors\":[{\"line\":2,\"field\":\"amount\",\"message\":\"More than zero\"}]");
+        expect("no-statement-source", 422, "NO_STATEMENT_SOURCE", "The provider of CARD cannot fetch statements: "
+                + "import its statement file instead.", "");
+        expect("statement-already-imported", 409, "STATEMENT_ALREADY_IMPORTED", "This statement was already "
+                + "imported as batch " + ID + ".", ",\"batchId\":\"" + ID + "\"");
+        expect("entry-resolved", 409, "ENTRY_RESOLVED", "Reconciliation entry " + ID + " is already resolved.", "");
     }
 
     @Test
