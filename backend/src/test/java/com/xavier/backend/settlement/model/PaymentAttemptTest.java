@@ -2,7 +2,6 @@ package com.xavier.backend.settlement.model;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.xavier.backend.settlement.exception.SettlementConflictException;
 import com.xavier.backend.settlement.exception.SettlementRuleException;
@@ -13,9 +12,10 @@ import java.util.EnumSet;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /** The PaymentAttempt machine (spec §8.3, r2-decisions §4 settlement): every state × every command. */
 class PaymentAttemptTest {
@@ -63,7 +63,7 @@ class PaymentAttemptTest {
     }
 
     @ParameterizedTest
-    @EnumSource(AttemptStatus.class)
+    @MethodSource("externalTerminalStates")
     void onlyAPendingExternalTerminalAttemptIsConfirmed(AttemptStatus from) {
         expect(PaymentMethodKind.EXTERNAL_TERMINAL, from, a -> a.confirm("AUTH-1", NOW),
                 EnumSet.of(AttemptStatus.PENDING), AttemptStatus.SUCCEEDED);
@@ -76,28 +76,28 @@ class PaymentAttemptTest {
     }
 
     @ParameterizedTest
-    @EnumSource(AttemptStatus.class)
+    @MethodSource("externalTerminalStates")
     void anExternalTerminalAttemptIsCancelledWhileCreatedOrPending(AttemptStatus from) {
         expect(PaymentMethodKind.EXTERNAL_TERMINAL, from, a -> a.cancel("customer left", EMPLOYEE, NOW),
                 EnumSet.of(AttemptStatus.CREATED, AttemptStatus.PENDING), AttemptStatus.CANCELLED);
     }
 
     @ParameterizedTest
-    @EnumSource(AttemptStatus.class)
+    @MethodSource("integratedStates")
     void anIntegratedAttemptIsCancelledOnlyBeforeTheProviderIsCalled(AttemptStatus from) {
         expect(PaymentMethodKind.INTEGRATED, from, a -> a.cancel("customer left", EMPLOYEE, NOW),
                 EnumSet.of(AttemptStatus.CREATED), AttemptStatus.CANCELLED);
     }
 
     @ParameterizedTest
-    @EnumSource(AttemptStatus.class)
+    @MethodSource("integratedStates")
     void theSubmitterMovesOnlyACreatedAttemptToPending(AttemptStatus from) {
         expect(PaymentMethodKind.INTEGRATED, from, a -> a.submit(NOW), EnumSet.of(AttemptStatus.CREATED),
                 AttemptStatus.PENDING);
     }
 
     @ParameterizedTest
-    @EnumSource(AttemptStatus.class)
+    @MethodSource("integratedStates")
     void theProviderOutcomeIsRecordedOnlyOnAPendingAttempt(AttemptStatus from) {
         expect(PaymentMethodKind.INTEGRATED, from, a -> a.recordProviderSuccess("TX-9", NOW),
                 EnumSet.of(AttemptStatus.PENDING), AttemptStatus.SUCCEEDED);
@@ -108,16 +108,17 @@ class PaymentAttemptTest {
     }
 
     @ParameterizedTest
-    @EnumSource(AttemptStatus.class)
+    @MethodSource("integratedStates")
     void aProviderQueryResolvesAnUnknownOrPendingAttempt(AttemptStatus from) {
         expect(PaymentMethodKind.INTEGRATED, from, a -> a.resolveFromProvider(true, "TX-9", null, EMPLOYEE, NOW),
                 EnumSet.of(AttemptStatus.UNKNOWN, AttemptStatus.PENDING), AttemptStatus.SUCCEEDED);
+        // a PENDING charge may still be in flight: only a success is final for it (§7.4)
         expect(PaymentMethodKind.INTEGRATED, from, a -> a.resolveFromProvider(false, null, "declined", EMPLOYEE, NOW),
-                EnumSet.of(AttemptStatus.UNKNOWN, AttemptStatus.PENDING), AttemptStatus.FAILED);
+                EnumSet.of(AttemptStatus.UNKNOWN), AttemptStatus.FAILED);
     }
 
     @ParameterizedTest
-    @EnumSource(AttemptStatus.class)
+    @MethodSource("integratedStates")
     void onlyAnUnknownAttemptIsReclassifiedByHand(AttemptStatus from) {
         UUID approver = UUID.randomUUID();
         expect(PaymentMethodKind.INTEGRATED, from,
@@ -144,7 +145,6 @@ class PaymentAttemptTest {
     private static void expect(PaymentMethodKind kind, AttemptStatus from, Consumer<PaymentAttempt> command,
                                Set<AttemptStatus> allowed, AttemptStatus to) {
         PaymentAttempt attempt = in(kind, from);
-        assumeTrue(attempt != null, () -> kind + " is never " + from);
         if (allowed.contains(from)) {
             command.accept(attempt);
             assertThat(attempt.getStatus()).isEqualTo(to);
@@ -155,11 +155,20 @@ class PaymentAttemptTest {
         }
     }
 
+    /** Every state an integrated attempt can reach. */
+    static Stream<AttemptStatus> integratedStates() {
+        return Stream.of(AttemptStatus.values());
+    }
+
     /**
-     * An attempt of {@code kind} brought to {@code status} through its own transitions, or {@code null} when that
-     * kind never reaches it (cash is born SUCCEEDED; an external terminal attempt is born PENDING and never FAILED
-     * or UNKNOWN: the operator confirms or cancels it).
+     * The states an external terminal attempt can reach: it is born PENDING and the operator confirms or cancels it,
+     * so it is never CREATED, FAILED or UNKNOWN.
      */
+    static Stream<AttemptStatus> externalTerminalStates() {
+        return Stream.of(AttemptStatus.PENDING, AttemptStatus.SUCCEEDED, AttemptStatus.CANCELLED);
+    }
+
+    /** An attempt of {@code kind} brought to {@code status} through its own transitions ({@code null}: unreachable). */
     static PaymentAttempt in(PaymentMethodKind kind, AttemptStatus status) {
         PaymentAttempt attempt = attempt(kind);
         if (kind == PaymentMethodKind.CASH) {

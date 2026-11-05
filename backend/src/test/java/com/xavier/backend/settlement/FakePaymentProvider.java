@@ -4,6 +4,8 @@ import com.xavier.backend.shared.ExternalCalls;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -12,14 +14,20 @@ import org.springframework.context.annotation.Bean;
  * The integrated provider of the tests (D53: R2 ships no real one), code {@code FAKE}. It keeps what it "really" did
  * per reference, so a status query after a timeout tells the truth, and counts the charges per reference. Like every
  * adapter it refuses to run inside a transaction. {@link Behaviour#HANG} takes the money but answers only after
- * {@link #HANG}, longer than the test provider timeout (PT1S), so settlement sees a timeout.
+ * {@link #HANG}, longer than the test provider timeout (PT2S), so settlement sees a timeout.
  */
 public class FakePaymentProvider implements PaymentProvider {
 
     public static final String CODE = "FAKE";
-    static final Duration HANG = Duration.ofSeconds(3);
+    static final Duration HANG = Duration.ofSeconds(5);
 
-    public enum Behaviour { SUCCEED, DECLINE, HANG, PENDING }
+    /**
+     * {@code DELAYED}: the charge reaches the provider only when the test calls {@link #release()} (at most 1.5 s, below
+     * the provider timeout), then succeeds; until then the provider does not know the reference.
+     */
+    public enum Behaviour { SUCCEED, DECLINE, HANG, PENDING, DELAYED }
+
+    private volatile CountDownLatch delayed = new CountDownLatch(1);
 
     private volatile Behaviour next = Behaviour.SUCCEED;
     private final Map<String, ProviderOutcome> truth = new ConcurrentHashMap<>();
@@ -33,6 +41,16 @@ public class FakePaymentProvider implements PaymentProvider {
     /** The provider decides a PENDING charge later. */
     public void decide(String reference, ProviderOutcome outcome) {
         truth.put(reference, outcome);
+    }
+
+    /** Lets a DELAYED charge reach the provider. */
+    public void release() {
+        delayed.countDown();
+    }
+
+    /** Re-arms the DELAYED gate (call before each test that uses it). */
+    public void arm() {
+        delayed = new CountDownLatch(1);
     }
 
     public int charges(String reference) {
@@ -55,6 +73,14 @@ public class FakePaymentProvider implements PaymentProvider {
             case SUCCEED -> truth.put(reference, taken);
             case DECLINE -> truth.put(reference, new ProviderOutcome.Failed("declined by the fake"));
             case PENDING -> truth.put(reference, new ProviderOutcome.Pending());
+            case DELAYED -> {
+                try {
+                    delayed.await(1500, TimeUnit.MILLISECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                truth.put(reference, taken);
+            }
             case HANG -> {
                 truth.put(reference, taken);
                 try {

@@ -7,6 +7,7 @@ import com.xavier.backend.settlement.model.PaymentAttempt;
 import com.xavier.backend.settlement.repository.AttemptRef;
 import com.xavier.backend.settlement.repository.PaymentAttemptRepository;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
@@ -28,15 +29,18 @@ class AttemptTransitions {
     private final PaymentRecorder recorder;
     private final PaymentLocks paymentLocks;
     private final SettlementAudit audit;
+    private final SettlementProperties properties;
     private final Clock clock;
 
     AttemptTransitions(PaymentAttemptRepository attempts, SettlementLocks locks, PaymentRecorder recorder,
-                       PaymentLocks paymentLocks, SettlementAudit audit, Clock clock) {
+                       PaymentLocks paymentLocks, SettlementAudit audit, SettlementProperties properties,
+                       Clock clock) {
         this.attempts = attempts;
         this.locks = locks;
         this.recorder = recorder;
         this.paymentLocks = paymentLocks;
         this.audit = audit;
+        this.properties = properties;
         this.clock = clock;
     }
 
@@ -93,8 +97,18 @@ class AttemptTransitions {
     }
 
     /**
-     * Resolve, step s3 (D63): the provider's answer to a status query settles an UNKNOWN or PENDING attempt; a
-     * Pending or Unknown answer changes nothing. @return the attempt as it now is
+     * Resolve, step s3 (D63, spec §7.4, D50 §7.4): the provider's answer to a status query, under the order's lock.
+     *
+     * <ul>
+     *   <li>{@code Succeeded} settles an UNKNOWN or PENDING attempt: its Payment and receipt, exactly once.</li>
+     *   <li>{@code Failed} settles only an UNKNOWN attempt whose last transition is older than the provider timeout
+     *       plus the pending margin, so no charge for it can still be in flight. For a PENDING attempt, or a recent
+     *       UNKNOWN one, a provider that does not know the reference yet would wrongly fail a charge that then
+     *       succeeds; the attempt stays as it is (the sweeper makes a PENDING one UNKNOWN later).</li>
+     *   <li>{@code Pending} and {@code Unknown} change nothing.</li>
+     * </ul>
+     *
+     * @return the attempt as it now is
      */
     @Transactional(propagation = Propagation.MANDATORY)
     PaymentAttempt resolve(UUID attemptId, ProviderOutcome outcome, UUID employeeId) {
@@ -103,20 +117,20 @@ class AttemptTransitions {
             return attempt;
         }
         Instant now = clock.instant();
-        switch (outcome) {
-            case ProviderOutcome.Succeeded succeeded ->
-                    attempt.resolveFromProvider(true, succeeded.providerRef(), null, employeeId, now);
-            case ProviderOutcome.Failed failed ->
-                    attempt.resolveFromProvider(false, null, failed.reason(), employeeId, now);
-            case ProviderOutcome.Pending pending -> {
-                return attempt;
-            }
-            case ProviderOutcome.Unknown unknown -> {
-                return attempt;
-            }
+        if (outcome instanceof ProviderOutcome.Succeeded succeeded) {
+            attempt.resolveFromProvider(true, succeeded.providerRef(), null, employeeId, now);
+        } else if (outcome instanceof ProviderOutcome.Failed failed && noChargeInFlight(attempt, now)) {
+            attempt.resolveFromProvider(false, null, failed.reason(), employeeId, now);
+        } else {
+            return attempt;
         }
         settle(attempt, "PAYMENT_ATTEMPT_RESOLVED");
         return attempt;
+    }
+
+    private boolean noChargeInFlight(PaymentAttempt attempt, Instant now) {
+        Duration inFlight = properties.providerTimeout().plus(properties.pendingMargin());
+        return attempt.getStatus() == AttemptStatus.UNKNOWN && attempt.getUpdatedAt().plus(inFlight).isBefore(now);
     }
 
     /** D51: the order's lock first, then the attempt as committed. */

@@ -220,11 +220,15 @@ public class PaymentAttempt {
         outcomeDetail = clip(detail);
     }
 
-    /** D50 §7.4: the provider's answer to a status query settles an UNKNOWN (or stuck PENDING) attempt. */
+    /**
+     * D50 §7.4: the provider's answer to a status query. A success settles an UNKNOWN or PENDING attempt. A failure
+     * settles only an UNKNOWN one: while PENDING the charge may still be in flight (the provider may not know the
+     * reference yet), so "failed" is not final for it.
+     */
     public void resolveFromProvider(boolean succeeded, String providerTransactionRef, String reason,
                                     UUID employeeId, Instant now) {
         requireKind(PaymentMethodKind.INTEGRATED, "be resolved by a provider query");
-        move(Set.of(AttemptStatus.UNKNOWN, AttemptStatus.PENDING),
+        move(succeeded ? Set.of(AttemptStatus.UNKNOWN, AttemptStatus.PENDING) : Set.of(AttemptStatus.UNKNOWN),
                 succeeded ? AttemptStatus.SUCCEEDED : AttemptStatus.FAILED, "be resolved", now);
         resolvedByEmployeeId = employeeId;
         if (succeeded) {

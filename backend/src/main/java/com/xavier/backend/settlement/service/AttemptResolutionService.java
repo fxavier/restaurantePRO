@@ -30,7 +30,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <p>By provider query, a D63 multi-step command with no transaction around it: (s1) a short transaction reads the
  * attempt (a final one is returned as it is); (s2) the provider's {@code status} with no transaction; (s3) a short
  * transaction takes the order's lock, re-reads the attempt and records the answer (a SUCCEEDED attempt becomes its
- * Payment and receipt exactly once: the status compare, {@code UNIQUE attempt_id} and {@code UNIQUE source}).
+ * Payment and receipt exactly once: the status compare, {@code UNIQUE attempt_id} and {@code UNIQUE source}). A
+ * {@code Failed} answer is final only for an UNKNOWN attempt with no charge still in flight
+ * ({@link AttemptTransitions#resolve}); a PENDING attempt stays PENDING.
  *
  * <p>By manual reclassification, D40's two phases: {@link #authorizeReclassification} verifies the approver before
  * any transaction; {@link #reclassify} applies it in one transaction.

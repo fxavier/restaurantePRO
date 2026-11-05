@@ -66,6 +66,7 @@ class IntegratedPaymentTest {
     @AfterEach
     void restore() {
         provider.willNext(Behaviour.SUCCEED);
+        provider.release();
         clock.reset();
         Mockito.reset(submitter);
     }
@@ -175,6 +176,41 @@ class IntegratedPaymentTest {
         fixtures.reclassify(sale.cashier(), attempt, "SUCCEEDED", "seen on the terminal", "SELF")
                 .andExpect(status().isUnprocessableContent()).andExpect(jsonPath("$.code").value("SELF_APPROVAL"));
         assertThat(fixtures.settled(sale.cashier(), attempt).get("status").asString()).isEqualTo("UNKNOWN");
+    }
+
+    @Test
+    void aFailedAnswerWhileTheChargeIsInFlightLeavesTheAttemptPending() throws Exception {
+        provider.arm();
+        provider.willNext(Behaviour.DELAYED);
+        UUID attempt = SettlementFixtures.id(pay("25.00"));
+        awaitStatus(attempt, "PENDING");
+
+        fixtures.resolve(sale.cashier(), attempt, UUID.randomUUID().toString()).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PENDING"));
+        assertThat(fixtures.count("SELECT count(*) FROM orders.order_header WHERE id = ? AND billing_lock = 'PAYMENT'",
+                sale.order())).as("the payment lock stays").isEqualTo(1);
+        provider.release();
+
+        assertThat(fixtures.settled(sale.cashier(), attempt).get("status").asString()).isEqualTo("SUCCEEDED");
+        assertThat(provider.charges(attempt.toString())).isEqualTo(1);
+        assertThat(fixtures.payments(sale.order())).isEqualTo(1);
+        assertThat(fixtures.receipts(sale.order())).isEqualTo(1);
+    }
+
+    @Test
+    void aProviderFailureSettlesAnUnknownAttemptOnlyOnceNoChargeCanStillBeInFlight() throws Exception {
+        UUID attempt = unknownAttempt();
+        provider.decide(attempt.toString(), new ProviderOutcome.Failed("never charged"));
+
+        fixtures.resolve(sale.cashier(), attempt, UUID.randomUUID().toString()).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("UNKNOWN"));
+
+        clock.advance(Duration.ofMinutes(5)); // past the provider timeout + margin
+        fixtures.resolve(sale.cashier(), attempt, UUID.randomUUID().toString()).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("FAILED"));
+        assertThat(fixtures.payments(sale.order())).isZero();
+        assertThat(fixtures.count("SELECT count(*) FROM orders.order_header WHERE id = ? AND billing_lock = 'NONE'",
+                sale.order())).isEqualTo(1);
     }
 
     @Test
