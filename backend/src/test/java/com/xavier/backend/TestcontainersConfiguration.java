@@ -1,7 +1,7 @@
 package com.xavier.backend;
 
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.springframework.context.annotation.Bean;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
@@ -53,10 +53,29 @@ public class TestcontainersConfiguration {
         return POSTGRES;
     }
 
-    // destroyMethod = "": closing one cached context must not stop the container the others use.
-    @Bean(destroyMethod = "")
-    @ServiceConnection
-    PostgreSQLContainer postgresContainer() {
-        return POSTGRES;
+    /**
+     * The connection to the shared container, not the container itself: Spring Boot's Testcontainers lifecycle stops
+     * every container bean of a closing context (also with {@code destroyMethod = ""}), and the test context cache
+     * closes contexts while others still use the database ({@code SharedDatabaseSurvivesContextCloseTest}). The
+     * container is started once above and stopped by Ryuk when the JVM exits.
+     */
+    @Bean
+    JdbcConnectionDetails sharedPostgresConnectionDetails() {
+        return new JdbcConnectionDetails() {
+            @Override
+            public String getUsername() {
+                return POSTGRES.getUsername();
+            }
+
+            @Override
+            public String getPassword() {
+                return POSTGRES.getPassword();
+            }
+
+            @Override
+            public String getJdbcUrl() {
+                return POSTGRES.getJdbcUrl();
+            }
+        };
     }
 }
