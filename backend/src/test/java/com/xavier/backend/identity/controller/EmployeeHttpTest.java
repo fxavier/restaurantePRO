@@ -51,7 +51,12 @@ class EmployeeHttpTest {
             Permission.PRODUCTION_MANAGE, Permission.PRODUCTION_SUPPRESS, Permission.PAYMENT_COLLECT,
             Permission.PAYMENT_RESOLVE, Permission.CASH_OPERATE, Permission.CASH_EXPENSE, Permission.CASH_VIEW,
             Permission.CASH_DAY_CLOSE, Permission.CASH_CLOSING_APPROVE, Permission.CASH_REGISTER_MANAGE,
-            Permission.FISCAL_DOCUMENT_VIEW, Permission.FISCAL_DOCUMENT_REPRINT);
+            Permission.FISCAL_DOCUMENT_VIEW, Permission.FISCAL_DOCUMENT_REPRINT,
+            // D92 (V3010)
+            Permission.BILL_SPLIT, Permission.CUSTOMER_VIEW, Permission.CUSTOMER_MANAGE, Permission.CREDIT_LIMIT_MANAGE,
+            Permission.CREDIT_SALE, Permission.PAYMENT_REFUND, Permission.PAYMENT_REFUND_APPROVE, Permission.CASH_ADJUST,
+            Permission.CASH_DAY_REOPEN, Permission.CASH_SESSION_FORCE_CLOSE, Permission.RECONCILIATION_VIEW,
+            Permission.RECONCILIATION_MANAGE, Permission.REPORT_VIEW, Permission.REPORT_EXPORT);
 
     @Autowired
     MockMvc mvc;

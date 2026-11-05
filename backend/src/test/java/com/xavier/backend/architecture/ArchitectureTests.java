@@ -64,7 +64,16 @@ class ArchitectureTests {
         return ArchitectureRules.forbiddenModuleDependencies("com.xavier.backend");
     }
 
-    /** D35: orders ↛ settlement, production; cash ↛ orders, settlement; nothing → production. */
+    /** D65: reporting reads; every facade method it calls is @Transactional(readOnly = true). */
+    @Test
+    void reportingCallsOnlyReadOnlyFacadeMethods() {
+        ArchitectureRules.reportingCallsOnlyReadOnlyFacadeMethods("com.xavier.backend").check(PRODUCTION);
+    }
+
+    /**
+     * D35: orders ↛ settlement, production; cash ↛ orders, settlement; nothing → production. D65: fiscal ↛ customers;
+     * customers ↛ orders, settlement, fiscal, cash, production; nothing → reporting.
+     */
     @ParameterizedTest(name = "{0}")
     @MethodSource("forbiddenModuleDependencies")
     void forbiddenModuleDependenciesAreAbsent(ArchRule rule) {

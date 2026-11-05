@@ -9,6 +9,7 @@ import com.xavier.backend.dining.model.RoomArea;
 import com.xavier.backend.dining.model.TableOccupation;
 import com.xavier.backend.dining.model.dto.CloseReason;
 import com.xavier.backend.dining.model.dto.OccupationView;
+import com.xavier.backend.dining.model.dto.TableInfo;
 import com.xavier.backend.dining.model.dto.TableState;
 import com.xavier.backend.dining.repository.RestaurantTableRepository;
 import com.xavier.backend.dining.repository.RoomAreaRepository;
@@ -19,6 +20,7 @@ import com.xavier.backend.shared.persistence.UniqueConstraints;
 import java.time.Clock;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -30,6 +32,8 @@ import org.springframework.transaction.annotation.Transactional;
  * the caller's transaction ({@code MANDATORY}), so an order and its occupation commit or roll back together. It
  * does not authorize: the calling POS use case already did (D27). The session store (D39) is the store a table
  * must belong to. Every change is audited as the current actor (D41) and notifies {@code TABLES} after commit.
+ *
+ * <p>Reads ({@link #tableState}, {@link #tableInfo}) are {@code readOnly} and need no session.
  *
  * <p>Writes need an authenticated session actor in the security context: the session's store is the store a new
  * occupation must be in, and the audit records that actor. A call from a listener or job (no session) fails.
@@ -131,6 +135,15 @@ public class DiningApi {
                 .map(TableOccupation::getOrderId).orElse(null);
         return new TableState(tableId, table.getStoreId(), table.isActive(), area(table).isActive(), table.isLocked(),
                 openOrderId);
+    }
+
+    /** The table's code and its current area, for labels; empty for an unknown table. Needs no session. */
+    @Transactional(readOnly = true)
+    public Optional<TableInfo> tableInfo(UUID tableId) {
+        return tables.findById(tableId).map(table -> {
+            RoomArea area = area(table);
+            return new TableInfo(tableId, table.getCode(), area.getId(), area.getCode(), area.getName());
+        });
     }
 
     /**

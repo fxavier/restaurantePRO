@@ -35,7 +35,8 @@ public final class IdentityFixtures {
     public static final UUID ADMINISTRATOR = UUID.fromString("01900000-0000-7000-8000-000000000301");
     /** What the seeded waiter role holds: R1 views plus the D62 defaults (V3005). */
     public static final Set<Permission> WAITER_PERMISSIONS = Set.of(Permission.DINING_VIEW, Permission.CATALOG_VIEW,
-            Permission.ORDER_VIEW, Permission.ORDER_EDIT, Permission.ORDER_VOID, Permission.ORDER_TRANSFER);
+            Permission.ORDER_VIEW, Permission.ORDER_EDIT, Permission.ORDER_VOID, Permission.ORDER_TRANSFER,
+            Permission.BILL_SPLIT);
 
     /** The waiter's authorities in {@code store}, as a POS session holds them. */
     public static String[] waiterAuthorities(UUID store) {
