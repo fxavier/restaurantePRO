@@ -27,12 +27,15 @@ public interface CreditChargeRepository extends JpaRepository<CreditCharge, UUID
             from CreditCharge c where c.id = :id""")
     Optional<PartitionRef> findRefById(@Param("id") UUID id);
 
-    /** The sweeper's candidates (D74 recovery): RESERVED charges that have their document, oldest first. */
+    /**
+     * The sweeper's candidates (D74 recovery): RESERVED charges created before {@code before} that have their
+     * document, oldest first.
+     */
     @Query("""
             select c.id from CreditCharge c
             where c.status = com.xavier.backend.settlement.model.CreditChargeStatus.RESERVED
-                and c.documentId is not null order by c.createdAt""")
-    List<UUID> findReservedWithDocument();
+                and c.documentId is not null and c.createdAt < :before order by c.createdAt""")
+    List<UUID> findReservedWithDocument(@Param("before") java.time.Instant before);
 
     /** Reporting's backfill (D84): a store's POSTED charges of business days {@code [from, to]}, oldest first. */
     @Query("""

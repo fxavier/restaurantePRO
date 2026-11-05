@@ -28,9 +28,11 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * D74 recovery: the sale stops after its document was issued (s2) and before the debit was posted (s3), as a crash
- * would leave it. The {@link CreditChargeSweeper}, with no request and no actor (as after a restart), posts the debit
- * once, audited as the system, and publishes {@code CreditChargePosted}; the client's retry then answers POSTED with
- * nothing added. The sweeper leaves alone a charge whose document is not issued, and one whose order a request holds.
+ * would leave it. Past the grace period, the {@link CreditChargeSweeper}, with no request and no actor (as after a
+ * restart), posts the debit once, audited as the system, and publishes {@code CreditChargePosted}; the client's retry
+ * then answers POSTED with nothing added. The sweeper leaves alone a charge younger than the grace (its sale may still
+ * be running), one whose document is not issued, and one whose order a request holds. The test clock is moved past
+ * the grace only here, so sweepers of other cached contexts (real clock) never touch these charges first.
  */
 @SettlementModuleTest
 class CreditChargeRecoveryTest {
@@ -59,6 +61,9 @@ class CreditChargeRecoveryTest {
     @Autowired
     PlatformTransactionManager transactionManager;
 
+    @Autowired
+    SettlementTestClock clock;
+
     Sale sale;
     UUID customer;
     String key;
@@ -73,11 +78,13 @@ class CreditChargeRecoveryTest {
     @AfterEach
     void realSteps() {
         Mockito.reset(steps, fiscalAdapter);
+        clock.reset();
     }
 
     @Test
     void theSweeperPostsTheDebitOfAnIssuedDocumentOnceAsTheSystem(PublishedEvents events) throws Exception {
         crashAfterTheIssue();
+        pastTheGrace();
 
         sweeper.sweep();
         sweeper.sweep();
@@ -103,6 +110,7 @@ class CreditChargeRecoveryTest {
         fixtures.creditCharge(sale.cashier(), sale.order(), customer, "25.00", null, key)
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status()
                         .isUnprocessableContent());
+        pastTheGrace();
 
         sweeper.sweep();
 
@@ -111,8 +119,21 @@ class CreditChargeRecoveryTest {
     }
 
     @Test
+    void aChargeYoungerThanTheGraceIsLeftToItsSale() throws Exception {
+        crashAfterTheIssue();
+
+        sweeper.sweep();
+
+        assertThat(status()).isEqualTo("RESERVED");
+        pastTheGrace();
+        sweeper.sweep();
+        assertThat(status()).isEqualTo("POSTED");
+    }
+
+    @Test
     void theSweeperSkipsAnOrderThatARequestHolds() throws Exception {
         crashAfterTheIssue();
+        pastTheGrace();
         CountDownLatch locked = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         try (var pool = Executors.newSingleThreadExecutor()) {
@@ -147,6 +168,10 @@ class CreditChargeRecoveryTest {
         Mockito.reset(steps);
         assertThat(status()).isEqualTo("RESERVED");
         assertThat(fixtures.issuedNumber(sale.order())).as("s2 committed").isEqualTo(1);
+    }
+
+    private void pastTheGrace() {
+        clock.advance(java.time.Duration.ofMinutes(2)); // credit-sweep-grace defaults to PT1M
     }
 
     private UUID charge() {

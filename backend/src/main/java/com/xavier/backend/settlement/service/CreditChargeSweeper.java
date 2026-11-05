@@ -4,6 +4,7 @@ import com.xavier.backend.settlement.model.CreditCharge;
 import com.xavier.backend.settlement.model.CreditChargeStatus;
 import com.xavier.backend.settlement.repository.CreditChargeRepository;
 import com.xavier.backend.settlement.repository.PartitionRef;
+import java.time.Clock;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,7 +16,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * D74 recovery: a credit sale that stopped after its document was issued (a crash between s2 and s3) still holds a
  * RESERVED charge. Every {@code restaurantpro.settlement.credit-sweep-interval} (PT1M) this posts the debit of each
- * RESERVED charge whose document is ISSUED, one short transaction per charge, audited as the system. It takes the
+ * RESERVED charge older than {@code credit-sweep-grace} (PT1M; a younger one belongs to a sale still running its
+ * steps) whose document is ISSUED, one short transaction per charge, audited as the system. It takes the
  * order's settlement lock with {@code SKIP LOCKED} (D46), so it never waits behind a request (which posts the charge
  * itself) and keeps the D76 lock order; a skipped charge is taken next time. Posting is idempotent
  * ({@code CustomersApi.postDebit} per charge), so an overlap with the sale's own s3 adds nothing.
@@ -29,9 +31,14 @@ public class CreditChargeSweeper {
     private final SettlementLocks locks;
     private final CreditSaleSteps steps;
     private final TransactionTemplate inTransaction;
+    private final SettlementProperties properties;
+    private final Clock clock;
 
     CreditChargeSweeper(CreditChargeRepository charges, SettlementLocks locks, CreditSaleSteps steps,
-                        PlatformTransactionManager transactionManager) {
+                        PlatformTransactionManager transactionManager, SettlementProperties properties,
+                        Clock clock) {
+        this.properties = properties;
+        this.clock = clock;
         this.charges = charges;
         this.locks = locks;
         this.steps = steps;
@@ -41,7 +48,7 @@ public class CreditChargeSweeper {
     @Scheduled(fixedDelayString = "${restaurantpro.settlement.credit-sweep-interval:PT1M}",
             initialDelayString = "${restaurantpro.settlement.credit-sweep-interval:PT1M}")
     public void sweep() {
-        for (UUID chargeId : charges.findReservedWithDocument()) {
+        for (UUID chargeId : charges.findReservedWithDocument(clock.instant().minus(properties.creditSweepGrace()))) {
             try {
                 inTransaction.executeWithoutResult(tx -> postIfIssued(chargeId));
             } catch (RuntimeException e) {
