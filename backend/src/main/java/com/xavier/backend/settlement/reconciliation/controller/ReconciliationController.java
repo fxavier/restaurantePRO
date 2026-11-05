@@ -4,6 +4,7 @@ import com.xavier.backend.access.IdempotentRequests;
 import com.xavier.backend.settlement.reconciliation.model.EntryKind;
 import com.xavier.backend.settlement.reconciliation.model.dto.BatchView;
 import com.xavier.backend.settlement.reconciliation.model.dto.EntryView;
+import com.xavier.backend.settlement.reconciliation.model.dto.FetchRequest;
 import com.xavier.backend.settlement.reconciliation.model.dto.ImportRequest;
 import com.xavier.backend.settlement.reconciliation.model.dto.ResolutionRequest;
 import com.xavier.backend.settlement.reconciliation.model.dto.ResolutionView;
@@ -67,6 +68,17 @@ class ReconciliationController {
         return idempotent.execute("settlement.reconciliation.import", key, request, body, BatchView.class, () -> {
             BatchView batch = imports.importCsv(body, content);
             return ResponseEntity.created(URI.create(PATH + "/batches/" + batch.id())).body(batch);
+        });
+    }
+
+    /** D63: the provider is called with no transaction; 201 for a new batch, 200 for one fetched before. */
+    @PostMapping("/batches/fetch")
+    ResponseEntity<BatchView> fetch(@RequestHeader("Idempotency-Key") String key,
+                                    @Valid @RequestBody FetchRequest body, HttpServletRequest request) {
+        return idempotent.steps("settlement.reconciliation.fetch", key, request, body, BatchView.class, () -> {
+            StatementImportService.Imported imported = imports.fetch(body);
+            return ResponseEntity.status(imported.created() ? HttpStatus.CREATED : HttpStatus.OK)
+                    .location(URI.create(PATH + "/batches/" + imported.batch().id())).body(imported.batch());
         });
     }
 

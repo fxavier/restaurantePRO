@@ -5,8 +5,11 @@ import com.xavier.backend.access.Permission;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.organization.OrganizationApi;
 import com.xavier.backend.organization.model.dto.StoreSummary;
+import com.xavier.backend.settlement.PaymentProvider;
 import com.xavier.backend.settlement.model.PaymentMethod;
 import com.xavier.backend.settlement.model.PaymentMethodKind;
+import com.xavier.backend.settlement.reconciliation.StatementLine;
+import com.xavier.backend.settlement.reconciliation.StatementSource;
 import com.xavier.backend.settlement.reconciliation.exception.ReconciliationConflictException;
 import com.xavier.backend.settlement.reconciliation.exception.ReconciliationNotFoundException;
 import com.xavier.backend.settlement.reconciliation.exception.ReconciliationRuleException;
@@ -21,6 +24,7 @@ import com.xavier.backend.settlement.reconciliation.model.StatementMatcher;
 import com.xavier.backend.settlement.reconciliation.model.StatementRow;
 import com.xavier.backend.settlement.reconciliation.model.StatementRows;
 import com.xavier.backend.settlement.reconciliation.model.dto.BatchView;
+import com.xavier.backend.settlement.reconciliation.model.dto.FetchRequest;
 import com.xavier.backend.settlement.reconciliation.model.dto.ImportRequest;
 import com.xavier.backend.settlement.reconciliation.repository.CandidateRow;
 import com.xavier.backend.settlement.reconciliation.repository.KindCount;
@@ -29,7 +33,9 @@ import com.xavier.backend.settlement.reconciliation.repository.ReconciliationBat
 import com.xavier.backend.settlement.reconciliation.repository.ReconciliationEntryRepository;
 import com.xavier.backend.settlement.reconciliation.repository.ReconciliationResolutionRepository;
 import com.xavier.backend.settlement.repository.PaymentMethodRepository;
+import com.xavier.backend.shared.ExternalCalls;
 import com.xavier.backend.shared.Money;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
@@ -47,11 +53,13 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Importing a provider statement (D78, PRD S31), with {@code RECONCILIATION_MANAGE} in its store: from the canonical
- * CSV. In one transaction it checks every
+ * CSV, or fetched from the provider when its adapter is a {@link StatementSource}. In one transaction it checks every
  * line, matches them ({@link StatementMatcher}) against the store's payments of the method, net of their refunds,
  * and records the batch, one entry per line and per payment the statement lacks, and AUTO_MATCHED for each MATCHED
  * entry. Imports of one method are serialized, so a statement always sees what an earlier one matched.
@@ -68,14 +76,17 @@ public class StatementImportService {
     private final ReconciliationBatchRepository batches;
     private final ReconciliationEntryRepository entries;
     private final ReconciliationResolutionRepository resolutions;
+    private final List<PaymentProvider> providers;
     private final AuditLog audit;
+    private final TransactionTemplate inTransaction;
+    private final TransactionTemplate readOnly;
     private final Clock clock;
 
     StatementImportService(AccessPolicy accessPolicy, OrganizationApi organization, PaymentMethodRepository methods,
                            PaymentReads payments, ReconciliationBatchRepository batches,
                            ReconciliationEntryRepository entries, ReconciliationResolutionRepository resolutions,
-                           AuditLog audit,
-                           Clock clock) {
+                           List<PaymentProvider> providers, AuditLog audit,
+                           PlatformTransactionManager transactionManager, Clock clock) {
         this.accessPolicy = accessPolicy;
         this.organization = organization;
         this.methods = methods;
@@ -83,8 +94,16 @@ public class StatementImportService {
         this.batches = batches;
         this.entries = entries;
         this.resolutions = resolutions;
+        this.providers = providers;
         this.audit = audit;
+        this.inTransaction = new TransactionTemplate(transactionManager);
+        this.readOnly = new TransactionTemplate(transactionManager);
+        this.readOnly.setReadOnly(true);
         this.clock = clock;
+    }
+
+    /** A statement imported now ({@code created}), or the batch an earlier fetch of the same statement recorded. */
+    public record Imported(BatchView batch, boolean created) {
     }
 
     /**
@@ -99,10 +118,37 @@ public class StatementImportService {
             throw new IllegalArgumentException("The request's digest is not the file's");
         }
         return record(target, BatchSource.CSV, request.fileSha256(),
-                t -> StatementRows.fromCsv(file, t.currency(), t.start(), t.end()));
+                t -> StatementRows.fromCsv(file, t.currency(), t.start(), t.end())).batch();
     }
 
-    private BatchView record(Target target, BatchSource source, String digest,
+    /**
+     * The D63 steps of a fetch; call with no transaction (from {@code executeSteps}). (s1) a read-only transaction
+     * authorizes and finds the method's {@link StatementSource}; (s2) the provider's statement, with no transaction;
+     * (s3) a transaction imports it as {@link #importCsv} does. A fetched statement is identified by its store,
+     * period and canonical lines, and a second fetch of the same one returns the recorded batch (each step is
+     * idempotent by the batches stored).
+     *
+     * @throws ReconciliationRuleException 422 {@code NO_STATEMENT_SOURCE} for a method whose provider cannot fetch
+     */
+    public Imported fetch(FetchRequest request) {
+        StatementSource source = readOnly.execute(tx -> {
+            accessPolicy.require(Permission.RECONCILIATION_MANAGE, request.storeId());
+            return sourceOf(target(request.storeId(), request.methodCode(), request.from(), request.to()).method());
+        });
+        ExternalCalls.requireNoTransaction();
+        List<StatementLine> lines = List.copyOf(source.statement(request.methodCode(), request.from(), request.to()));
+        byte[] identity = ("store:" + request.storeId() + "\nperiod:" + request.from() + "/" + request.to() + "\n")
+                .getBytes(StandardCharsets.UTF_8);
+        String digest = sha256(identity, StatementRows.canonicalCsv(lines));
+        return inTransaction.execute(tx -> {
+            accessPolicy.require(Permission.RECONCILIATION_MANAGE, request.storeId());
+            Target target = target(request.storeId(), request.methodCode(), request.from(), request.to());
+            return record(target, BatchSource.PROVIDER, digest,
+                    t -> StatementRows.fromLines(lines, t.currency(), t.start(), t.end()));
+        });
+    }
+
+    private Imported record(Target target, BatchSource source, String digest,
                             Function<Target, StatementRows.Result> read) {
         PaymentMethod method = target.method();
         batches.lockImportsOf(method.getCode());
@@ -112,7 +158,7 @@ public class StatementImportService {
                 throw ReconciliationConflictException.alreadyImported(existing.get().getId());
             }
             ReconciliationBatch batch = existing.get();
-            return ReconciliationViews.batch(batch, entries.countsOf(List.of(batch.getId())));
+            return new Imported(ReconciliationViews.batch(batch, entries.countsOf(List.of(batch.getId()))), false);
         }
         StatementRows.Result statement = read.apply(target);
         if (!statement.errors().isEmpty()) {
@@ -133,7 +179,7 @@ public class StatementImportService {
                 target.storeId(), null, null, Map.of("methodCode", method.getCode(), "source", source.name(),
                         "lineCount", statement.rows().size(), "entries", counts.stream().collect(
                                 Collectors.toMap(c -> c.kind().name(), KindCount::count))));
-        return ReconciliationViews.batch(batch, counts);
+        return new Imported(ReconciliationViews.batch(batch, counts), true);
     }
 
     /**
@@ -176,6 +222,13 @@ public class StatementImportService {
         ZoneId zone = store.timezone();
         return new Target(storeId, method, store.currency(), from, to, from.atStartOfDay(zone).toInstant(),
                 to.plusDays(1).atStartOfDay(zone).toInstant());
+    }
+
+    private StatementSource sourceOf(PaymentMethod method) {
+        return providers.stream()
+                .filter(provider -> provider.code().equals(method.getProviderCode()))
+                .filter(StatementSource.class::isInstance).map(StatementSource.class::cast).findFirst()
+                .orElseThrow(() -> ReconciliationRuleException.noStatementSource(method.getCode()));
     }
 
     /** The statement's store, method and business days, and those days as instants {@code [start, end)}. */
