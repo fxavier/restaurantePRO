@@ -15,7 +15,6 @@ import com.xavier.backend.shared.notify.ChangeTopic;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -59,8 +58,8 @@ public class PrintQueue {
     }
 
     /**
-     * Claims at most {@code limit} due jobs, one per printer and none of {@code busyPrinters}, so each printer gets
-     * its tickets one at a time and in order. A job left on a printer that is now in REDIRECT moves to the target
+     * Claims at most {@code limit} due jobs: the oldest of each printer, none of {@code busyPrinters}, so each
+     * printer gets its tickets one at a time and in order. A job left on a printer that is now in REDIRECT moves to the target
      * instead (it is claimed there on a later run).
      */
     @Transactional
@@ -70,13 +69,12 @@ public class PrintQueue {
         List<PrintJob> due = jobs.lockDue(now, excluded, limit);
         Map<UUID, Printer> printerById = printers.findAllById(due.stream().map(PrintJob::getPrinterId).toList())
                 .stream().collect(Collectors.toMap(Printer::getId, Function.identity()));
-        Set<UUID> claimedPrinters = new HashSet<>();
         List<Dispatch> claimed = new ArrayList<>();
         for (PrintJob job : due) {
             Printer printer = printerById.get(job.getPrinterId());
             if (printer.getMode() == PrinterMode.REDIRECT) {
                 job.moveTo(printer.getRedirectPrinterId());
-            } else if (claimedPrinters.add(printer.getId())) {
+            } else {
                 ProductionTicket ticket = tickets.findById(job.getTicketId()).orElseThrow();
                 job.claim(now);
                 claimed.add(new Dispatch(job.getId(), printer.getId(), printer.address(), renderer.render(

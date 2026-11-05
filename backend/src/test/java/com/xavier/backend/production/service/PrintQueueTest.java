@@ -294,6 +294,50 @@ class PrintQueueTest {
         }
     }
 
+    /**
+     * D50 §7.2 (amended): a claim takes the oldest due job of each printer, so a backlog on one printer never crowds
+     * another printer out. The printers turn NORMAL only inside the claim's own (rolled back) transaction, so no
+     * background worker of another context can take these jobs.
+     */
+    @Test
+    void aBacklogOnOnePrinterDoesNotKeepAnotherPrintersJobFromBeingClaimed() throws Exception {
+        UUID crowded = fixtures.barPrinter(shop.store(), printer.host(), printer.port());
+        fixtures.mode(shop.store(), crowded, "HOLD");
+        UUID oldest = awaitJob(fixtures.confirmedRound(shop, employee, terminal, "1"));
+        UUID other = fixtures.printer(shop.store(), "OT" + UUID.randomUUID().toString().substring(0, 6),
+                printer.host(), printer.port());
+        fixtures.mode(shop.store(), other, "HOLD");
+        jdbc.sql("UPDATE production.print_job SET created_at = timestamptz '2000-01-01 00:00:00Z' WHERE id = ?")
+                .param(oldest).update();
+        for (int i = 1; i <= 3; i++) {
+            copyJob(oldest, crowded, "2000-01-01 00:00:0" + i + "Z");
+        }
+        UUID lone = copyJob(oldest, other, "2000-01-01 00:01:00Z");
+
+        tx.executeWithoutResult(status -> {
+            status.setRollbackOnly();
+            jdbc.sql("UPDATE production.printer SET mode = 'NORMAL' WHERE id IN (?, ?)").param(crowded).param(other)
+                    .update();
+
+            List<Dispatch> claimed = queue.claimDue(2, Set.of());
+
+            assertThat(claimed).extracting(Dispatch::jobId).containsExactlyInAnyOrder(oldest, lone);
+        });
+    }
+
+    /** Another due job for {@code printerId}, a copy of {@code job}'s ticket created at {@code createdAt}. */
+    private UUID copyJob(UUID job, UUID printerId, String createdAt) {
+        UUID copy = UUID.randomUUID();
+        jdbc.sql("""
+                INSERT INTO production.print_job (id, store_id, ticket_id, printer_id, kind, status, attempts,
+                    next_attempt_at, dedupe_key, created_at, version)
+                SELECT ?, store_id, ticket_id, ?, kind, 'QUEUED', 0, now() - interval '1 second', ?,
+                    CAST(? AS timestamptz), 0
+                FROM production.print_job WHERE id = ?""")
+                .param(copy).param(printerId).param("test:" + copy).param(createdAt).param(job).update();
+        return copy;
+    }
+
     private UUID awaitJob(Round round) throws InterruptedException {
         await(() -> !fixtures.jobsOfSource(round.batch()).isEmpty(), "job of batch " + round.batch());
         return (UUID) fixtures.jobsOfSource(round.batch()).getFirst().get("id");

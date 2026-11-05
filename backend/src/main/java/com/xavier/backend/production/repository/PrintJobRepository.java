@@ -17,14 +17,22 @@ import org.springframework.data.repository.query.Param;
 public interface PrintJobRepository extends JpaRepository<PrintJob, UUID>, JpaSpecificationExecutor<PrintJob> {
 
     /**
-     * The worker's due work (D50 §7.2), oldest first, locked so overlapping runs never take the same job. A HOLD, IGNORE
-     * (a suppression, never a failure: spec §8.6) or inactive printer keeps its jobs pending, and a printer with a send in flight ({@code busyPrinters}, never empty) is
-     * skipped so its tickets come out in order.
+     * The worker's due work (D50 §7.2 amended): the oldest due job of each printer, then the oldest of those first,
+     * locked so overlapping runs never take the same job. One per printer keeps a printer's tickets in order and lets
+     * a backlog on one printer never crowd another out of the {@code limit}. A HOLD, IGNORE (a suppression, never a
+     * failure: spec §8.6) or inactive printer keeps its jobs pending, and a printer with a send in flight
+     * ({@code busyPrinters}, never empty) is skipped. The outer status check re-reads a row a concurrent claim
+     * committed while this one waited, so a job is never claimed twice.
      */
     @Query(value = """
-            SELECT j.* FROM production.print_job j JOIN production.printer p ON p.id = j.printer_id
-            WHERE j.status IN ('QUEUED', 'RETRY_WAIT') AND j.next_attempt_at <= :now
-              AND p.mode NOT IN ('HOLD', 'IGNORE') AND p.active AND j.printer_id NOT IN (:busyPrinters)
+            SELECT j.* FROM production.print_job j
+            WHERE j.id IN (
+                SELECT DISTINCT ON (d.printer_id) d.id
+                FROM production.print_job d JOIN production.printer p ON p.id = d.printer_id
+                WHERE d.status IN ('QUEUED', 'RETRY_WAIT') AND d.next_attempt_at <= :now
+                  AND p.mode NOT IN ('HOLD', 'IGNORE') AND p.active AND d.printer_id NOT IN (:busyPrinters)
+                ORDER BY d.printer_id, d.created_at, d.id)
+              AND j.status IN ('QUEUED', 'RETRY_WAIT')
             ORDER BY j.created_at
             LIMIT :limit
             FOR UPDATE OF j SKIP LOCKED""", nativeQuery = true)
