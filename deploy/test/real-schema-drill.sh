@@ -107,7 +107,12 @@ schema_of() {
     | grep -vE '^(--|\\(un)?restrict )' | sed '/^$/d'
 }
 
-without_casts() { sed -E 's/::(character varying|text)(\[\])?//g; s/[()]//g'; }
+# Normalizes only the re-deparse: drops the varchar/text casts, then the parentheses those casts wrapped, around
+# one literal `('A')` and around the array `((ARRAY[...]))`. Grouping parentheses, and so AND/OR precedence,
+# stay as they are (e.g. fiscal_document_issued_ck mixes OR with a grouped AND).
+without_casts() {
+  sed -E "s/::(character varying|text)(\[\])?//g; s/\(('[^']*')\)/\1/g; s/\(\((ARRAY\[[^]]*\])\)\)/(\1)/g"
+}
 # A schema line whose expression PostgreSQL may re-deparse with equivalent casts: a CHECK, or a partial index.
 redeparsable() { [[ "$1" == *"CHECK ("* || ("$1" == "CREATE "*"INDEX "* && "$1" == *" WHERE "*) ]]; }
 
@@ -329,8 +334,8 @@ restored_schema="$(schema_of "$DST")"
 # dump stores the equivalent `ANY (ARRAY[('A'::character varying)::text, ...])`. The predicate of a partial
 # index (e.g. cash.cash_closing_live_uk, `WHERE status IN (...)`) is deparsed the same way. So compare line by
 # line: a line may differ only when both versions are CHECK constraints, or both are the same partial index,
-# that become equal once those casts and parentheses are dropped. Anything else (a missing, extra or other
-# changed line) fails.
+# that become equal once those casts and the parentheses they wrapped are dropped (without_casts). Anything
+# else (a missing, extra or other changed line) fails.
 if [[ "$(wc -l <<<"$restored_schema")" != "$(wc -l <<<"$source_schema")" ]]; then
   diff <(echo "$source_schema") <(echo "$restored_schema") >&2 || true
   fail "restored schema differs from the source (line count)"
