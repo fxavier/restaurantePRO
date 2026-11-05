@@ -11,6 +11,7 @@ import com.xavier.backend.cash.exception.IllegalCashStateException;
 import com.xavier.backend.cash.model.CashClosing;
 import com.xavier.backend.cash.model.CashClosingStatus;
 import com.xavier.backend.cash.model.CashDay;
+import com.xavier.backend.cash.model.CashDayStatus;
 import com.xavier.backend.cash.model.CashRegister;
 import com.xavier.backend.cash.model.CashSessionStatus;
 import com.xavier.backend.cash.model.dto.ClosingView;
@@ -19,6 +20,7 @@ import com.xavier.backend.cash.model.dto.Justification;
 import com.xavier.backend.cash.model.dto.JustifyClosingRequest;
 import com.xavier.backend.cash.model.dto.RejectClosingRequest;
 import com.xavier.backend.cash.repository.CashClosingRepository;
+import com.xavier.backend.cash.repository.CashDayReopeningRepository;
 import com.xavier.backend.cash.repository.CashDayRepository;
 import com.xavier.backend.cash.repository.CashMovementRepository;
 import com.xavier.backend.cash.repository.CashRegisterRepository;
@@ -30,6 +32,7 @@ import com.xavier.backend.shared.persistence.UniqueConstraints;
 import com.xavier.backend.shared.web.PageResponse;
 import org.springframework.data.domain.Pageable;
 import io.micrometer.core.instrument.Counter;
+import jakarta.persistence.LockModeType;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
 import java.time.Instant;
@@ -53,6 +56,7 @@ public class CashClosingService {
     static final String DIFFERENCE_METRIC = "cash.closing.difference";
 
     private final CashClosingRepository closings;
+    private final CashDayReopeningRepository reopenings;
     private final CashRegisterRepository registers;
     private final CashDayRepository days;
     private final CashSessionRepository sessions;
@@ -65,12 +69,14 @@ public class CashClosingService {
     private final MeterRegistry meters;
     private final Clock clock;
 
-    CashClosingService(CashClosingRepository closings, CashRegisterRepository registers, CashDayRepository days,
+    CashClosingService(CashClosingRepository closings, CashDayReopeningRepository reopenings,
+                       CashRegisterRepository registers, CashDayRepository days,
                        CashSessionRepository sessions, CashMovementRepository movements,
                        CashSessionCountRepository counts, OrganizationApi organization, AccessPolicy accessPolicy,
                        RowLocks locks, CashAudit audit, MeterRegistry meters, Clock clock) {
         this.locks = locks;
         this.closings = closings;
+        this.reopenings = reopenings;
         this.registers = registers;
         this.days = days;
         this.sessions = sessions;
@@ -101,17 +107,18 @@ public class CashClosingService {
         CashDay day = locks.dayForUpdate(request.cashDayId());
         day.requireNotFinanciallyClosed();
         requireAllSessionsClosed(register, day);
-        if (closings.existsByRegisterIdAndCashDayIdAndStatusIn(register.getId(), day.getId(),
+        int round = (int) reopenings.countByCashDayIdAndFromStatus(day.getId(), CashDayStatus.FINANCIALLY_CLOSED);
+        if (closings.existsByRegisterIdAndCashDayIdAndDayRoundAndStatusIn(register.getId(), day.getId(), round,
                 CashClosingStatus.LIVE)) {
             throw liveClosingExists(register);
         }
         Currency currency = organization.findStore(pos.storeId())
                 .orElseThrow(() -> new CashNotFoundException("Store", pos.storeId())).currency();
-        // no live closing exists, so the latest attempt (if any) was REJECTED: the new one supersedes it
-        Optional<CashClosing> rejected = closings.findFirstByRegisterIdAndCashDayIdOrderByAttemptNoDesc(
-                register.getId(), day.getId());
+        // no live closing exists in this round, so its latest attempt (if any) was REJECTED: the new one supersedes it
+        Optional<CashClosing> rejected = closings.findFirstByRegisterIdAndCashDayIdAndDayRoundOrderByAttemptNoDesc(
+                register.getId(), day.getId(), round);
         CashClosing closing = UniqueConstraints.saveAndFlush(closings,
-                CashClosing.draft(pos.storeId(), register.getId(), day.getId(),
+                CashClosing.draft(pos.storeId(), register.getId(), day.getId(), round,
                         rejected.map(r -> r.getAttemptNo() + 1).orElse(1),
                         rejected.map(CashClosing::getId).orElse(null),
                         CashAmounts.byMethod(movements.expectedByRegisterAndDay(register.getId(), day.getId()),
@@ -149,12 +156,22 @@ public class CashClosingService {
         return closing.toView();
     }
 
-    /** SUBMITTED → APPROVED. Not the day's financial close, which is its own command (spec §8.3). */
+    /**
+     * SUBMITTED → APPROVED, if what the register should hold is still what the closing compared (D79 (2), else 409
+     * {@code CLOSING_STALE}). The day is read {@code FOR SHARE} first, so an adjustment of the day (which takes it
+     * {@code FOR UPDATE}) lands either before the re-computation or after the approval. Not the day's financial
+     * close, which is its own command (spec §8.3).
+     */
     @Transactional
     public ClosingView approve(UUID id) {
-        CashClosing closing = backOfficeClosing(id);
+        UUID storeId = closings.findStoreIdById(id).orElseThrow(() -> new CashNotFoundException(ENTITY, id));
+        accessPolicy.require(Permission.CASH_CLOSING_APPROVE, storeId);
+        CashDay day = locks.lock(days.findById(closings.findCashDayIdById(id).orElseThrow()).orElseThrow(),
+                LockModeType.PESSIMISTIC_READ);
+        CashClosing closing = closings.findByIdForUpdate(id).orElseThrow(() -> new CashNotFoundException(ENTITY, id));
         Actor actor = accessPolicy.current();
-        closing.approve(actor.userId(), actor.kind(), clock.instant());
+        closing.approve(CashAmounts.byMethod(movements.expectedByRegisterAndDay(closing.getRegisterId(),
+                day.getId()), closing.currency()), actor.userId(), actor.kind(), clock.instant());
         closings.saveAndFlush(closing);
         Counter.builder(DIFFERENCE_METRIC)
                 .description("Absolute difference between counted and expected amounts of approved cash closings")

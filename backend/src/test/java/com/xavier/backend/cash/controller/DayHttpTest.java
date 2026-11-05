@@ -152,8 +152,9 @@ class DayHttpTest {
                 .isZero();
     }
 
+    /** A FINANCIALLY_CLOSED day reopens too, but with CASH_DAY_REOPEN (D79 (3), FinancialReopenTest). */
     @Test
-    void onlyAnOperationallyClosedDayReopens() throws Exception {
+    void anOpenDayDoesNotReopenAndAFinanciallyClosedOneNeedsMoreThanCashDayClose() throws Exception {
         Employee manager = approver(IdentityFixtures.MANAGER);
 
         mvc.perform(reopen(manager.code(), PIN)).andExpect(status().isConflict());
@@ -164,7 +165,7 @@ class DayHttpTest {
                 .with(account(store, Permission.CASH_CLOSING_APPROVE))).andExpect(status().isOk());
         mvc.perform(financialClose()).andExpect(status().isOk());
 
-        mvc.perform(reopen(manager.code(), PIN)).andExpect(status().isConflict());
+        mvc.perform(reopen(manager.code(), PIN)).andExpect(status().isForbidden());
     }
 
     @Test

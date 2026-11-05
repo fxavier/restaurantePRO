@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.xavier.backend.access.ActorKind;
 import com.xavier.backend.cash.exception.CashRule;
 import com.xavier.backend.cash.exception.CashRuleViolationException;
+import com.xavier.backend.cash.exception.ClosingStaleException;
 import com.xavier.backend.cash.exception.IllegalCashStateException;
 import com.xavier.backend.shared.Money;
 import java.math.BigDecimal;
@@ -67,7 +68,7 @@ class CashClosingTest {
     void aDraftCannotBeApprovedOrRejected() {
         CashClosing closing = balancedDraft();
 
-        assertThatThrownBy(() -> closing.approve(ACTOR, ActorKind.ACCOUNT, NOW))
+        assertThatThrownBy(() -> closing.approve(EXPECTED, ACTOR, ActorKind.ACCOUNT, NOW))
                 .isInstanceOf(IllegalCashStateException.class);
         assertThatThrownBy(() -> closing.reject(ACTOR, ActorKind.ACCOUNT, "no", NOW))
                 .isInstanceOf(IllegalCashStateException.class);
@@ -76,7 +77,7 @@ class CashClosingTest {
     @Test
     void aSubmittedClosingIsApprovedOrRejectedOnceAndThenFrozen() {
         CashClosing approved = submitted();
-        approved.approve(ACTOR, ActorKind.ACCOUNT, NOW);
+        approved.approve(EXPECTED, ACTOR, ActorKind.ACCOUNT, NOW);
         assertThat(approved.getStatus()).isEqualTo(CashClosingStatus.APPROVED);
 
         CashClosing rejected = submitted();
@@ -85,7 +86,7 @@ class CashClosingTest {
         assertThat(rejected.getRejectionReason()).isEqualTo("recount");
 
         for (CashClosing decided : new CashClosing[] {approved, rejected}) {
-            assertThatThrownBy(() -> decided.approve(ACTOR, ActorKind.ACCOUNT, NOW))
+            assertThatThrownBy(() -> decided.approve(EXPECTED, ACTOR, ActorKind.ACCOUNT, NOW))
                     .isInstanceOf(IllegalCashStateException.class);
             assertThatThrownBy(() -> decided.reject(ACTOR, ActorKind.ACCOUNT, "x", NOW))
                     .isInstanceOf(IllegalCashStateException.class);
@@ -103,15 +104,32 @@ class CashClosingTest {
     }
 
     @Test
+    void anApprovalIsStaleWhenTheExpectedAmountChangedSinceTheDraft() {
+        CashClosing closing = submitted();
+
+        assertThatThrownBy(() -> closing.approve(Map.of("CASH", money("9.00")), ACTOR, ActorKind.ACCOUNT, NOW))
+                .isInstanceOf(ClosingStaleException.class).hasMessageContaining("CASH");
+        assertThatThrownBy(() -> closing.approve(Map.of("CASH", money("10.00"), "CARD", money("1.00")), ACTOR,
+                ActorKind.ACCOUNT, NOW)).as("a new method").isInstanceOf(ClosingStaleException.class);
+        assertThat(closing.getStatus()).isEqualTo(CashClosingStatus.SUBMITTED);
+
+        closing.approve(Map.of("CASH", money("10.0000"), "CARD", money("0.00")), ACTOR, ActorKind.ACCOUNT, NOW);
+        assertThat(closing.getStatus()).isEqualTo(CashClosingStatus.APPROVED);
+    }
+
+    @Test
     void aRejectionNeedsAReason() {
         assertThatThrownBy(() -> submitted().reject(ACTOR, ActorKind.ACCOUNT, "", NOW))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     static CashClosing draft(Map<String, Money> expected, Map<String, Money> counted) {
-        return CashClosing.draft(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), 1, null, expected, counted,
+        return CashClosing.draft(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), 0, 1, null, expected, counted,
                 MZN, ACTOR, NOW);
     }
+
+    /** What {@link #balancedDraft()} compared: the register should still hold 10.00 in cash. */
+    static final Map<String, Money> EXPECTED = Map.of("CASH", money("10.00"));
 
     static CashClosing balancedDraft() {
         return draft(Map.of("CASH", money("10.00")), Map.of("CASH", money("10.00")));

@@ -37,7 +37,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Cash day use cases outside settlement (spec §8.3 CashDay): the current day at the POS, the financial close and the
- * reopen (P19). The operational close is settlement's ({@code CashApi.closeDayOperationally}, D37).
+ * reopen (P19, D79 (3)). The operational close is settlement's ({@code CashApi.closeDayOperationally}, D37).
  */
 @Service
 public class CashDayService {
@@ -111,14 +111,15 @@ public class CashDayService {
     }
 
     /**
-     * Phase 1 of the reopen (D40), outside any transaction: {@code CASH_DAY_CLOSE} in the day's store, and an
+     * Phase 1 of the reopen (D40), outside any transaction: in the day's store, {@code CASH_DAY_CLOSE} to reopen an
+     * OPERATIONALLY_CLOSED day (P19) or {@code CASH_DAY_REOPEN} for a FINANCIALLY_CLOSED one (D79 (3)), and an
      * approver holding {@code CASH_CLOSING_APPROVE} there. A wrong PIN counts toward the approver's lockout.
      *
      * @throws ApprovalDeniedException (403) for a missing or refused approver
      */
     public Approval authorizeReopen(UUID id, String approverCode, String approverPin) {
         UUID storeId = storeOf(id);
-        accessPolicy.require(Permission.CASH_DAY_CLOSE, storeId);
+        accessPolicy.require(reopenPermission(days.findById(id).orElseThrow().getStatus()), storeId);
         if (approverCode == null || approverCode.isBlank() || approverPin == null || approverPin.isBlank()) {
             throw new ApprovalDeniedException();
         }
@@ -126,22 +127,33 @@ public class CashDayService {
                 storeId));
     }
 
-    /** Phase 2: OPERATIONALLY_CLOSED → OPEN, recorded as a reopening fact that keeps the undone close (P19). */
+    /**
+     * Phase 2: back to OPEN, recorded as a reopening fact that keeps the undone close (P19) and the state it came
+     * from. The permission is checked again against the locked day's state, which may have moved since phase 1.
+     * Later closings of the day get the next round when it came from FINANCIALLY_CLOSED (D79 (3)).
+     */
     @Transactional
     public DayView reopen(UUID id, ReopenDayRequest request, Approval approval) {
         if (!approval.dayId().equals(id)) {
             throw new IllegalArgumentException("The approval is for day " + approval.dayId() + ", not " + id);
         }
-        accessPolicy.require(Permission.CASH_DAY_CLOSE, storeOf(id));
+        UUID storeId = storeOf(id);
         CashDay day = locks.dayForUpdate(id);
+        accessPolicy.require(reopenPermission(day.getStatus()), storeId);
         Actor actor = accessPolicy.current();
         CashDayReopening reopening = day.reopen(actor.userId(), actor.kind(), approval.approverEmployeeId(),
                 request.reason(), clock.instant());
         reopenings.save(reopening);
         days.saveAndFlush(day);
         audit.record("CASH_DAY_REOPENED", ENTITY, id, day.getStoreId(), approval.approverEmployeeId(),
-                request.reason().strip(), Map.of("businessDate", day.getBusinessDate().toString()));
+                request.reason().strip(), Map.of("businessDate", day.getBusinessDate().toString(),
+                        "fromStatus", reopening.getFromStatus().name()));
         return day.toView();
+    }
+
+    /** An OPEN day is refused by the state machine (409) after the R2 permission check. */
+    private static Permission reopenPermission(CashDayStatus status) {
+        return status == CashDayStatus.FINANCIALLY_CLOSED ? Permission.CASH_DAY_REOPEN : Permission.CASH_DAY_CLOSE;
     }
 
     private void requireEveryRegisterApproved(CashDay day) {

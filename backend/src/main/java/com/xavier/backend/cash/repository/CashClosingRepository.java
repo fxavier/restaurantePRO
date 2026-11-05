@@ -19,7 +19,12 @@ public interface CashClosingRepository extends JpaRepository<CashClosing, UUID> 
     boolean existsByRegisterIdAndCashDayIdAndStatusIn(UUID registerId, UUID cashDayId,
                                                       Collection<CashClosingStatus> statuses);
 
-    Optional<CashClosing> findFirstByRegisterIdAndCashDayIdOrderByAttemptNoDesc(UUID registerId, UUID cashDayId);
+    boolean existsByRegisterIdAndCashDayIdAndDayRoundAndStatusIn(UUID registerId, UUID cashDayId, int dayRound,
+                                                                 Collection<CashClosingStatus> statuses);
+
+    Optional<CashClosing> findFirstByRegisterIdAndCashDayIdAndDayRoundOrderByAttemptNoDesc(UUID registerId,
+                                                                                         UUID cashDayId,
+                                                                                         int dayRound);
 
     List<CashClosing> findByCashDayIdAndStatus(UUID cashDayId, CashClosingStatus status);
 
@@ -33,6 +38,9 @@ public interface CashClosingRepository extends JpaRepository<CashClosing, UUID> 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select c from CashClosing c where c.id = :id")
     Optional<CashClosing> findByIdForUpdate(@Param("id") UUID id);
+
+    @Query("select c.cashDayId from CashClosing c where c.id = :id")
+    Optional<UUID> findCashDayIdById(@Param("id") UUID id);
 
     @Query("select c.storeId from CashClosing c where c.id = :id")
     Optional<UUID> findStoreIdById(@Param("id") UUID id);
