@@ -24,16 +24,16 @@ import java.util.regex.Pattern;
  * @param reason     free text the user gave, or {@code null}
  * @param details    small before/after facts only when needed; never PINs, passwords, tokens or card data.
  *                   The guard rejects secret-looking keys at any depth: it walks nested maps, and the maps
- *                   inside lists (D82). Keys are camelCase field names; an UPPER_SNAKE key is a data code (a
- *                   payment method code such as {@code CARD}, an enum constant), not a field, and is not checked.
- *                   It checks keys, not values, so a secret must never be a value either.
+ *                   inside lists (D82). Every key is a field name, matched case-insensitively ({@code pin},
+ *                   {@code PIN}, {@code approverPin}, {@code CARD_NUMBER}), so data codes (payment methods) are
+ *                   values, never keys: {@code "counts": [{"methodCode": "CASH", "amount": "10.00"}]}. It checks
+ *                   keys, not values, so a secret must never be a value either.
  */
 record AuditEntry(UUID actorId, String actorKind, UUID approverId, String action, String entityType, String entityId,
                          UUID storeId, UUID terminalId, String reason, Map<String, Object> details) {
 
     private static final Set<String> SECRET_WORDS =
             Set.of("pin", "password", "passwd", "secret", "token", "card", "pan", "cvv", "cvc");
-    private static final Pattern DATA_CODE = Pattern.compile("[A-Z0-9_]+");
     private static final Pattern WORD_BOUNDARY = Pattern.compile("(?<=[a-z0-9])(?=[A-Z])|[^A-Za-z0-9]+");
 
     public AuditEntry {
@@ -66,9 +66,6 @@ record AuditEntry(UUID actorId, String actorKind, UUID approverId, String action
     }
 
     private static void rejectSecret(String key) {
-        if (DATA_CODE.matcher(key).matches()) {
-            return;
-        }
         for (String word : WORD_BOUNDARY.split(key)) {
             if (SECRET_WORDS.contains(word.toLowerCase(Locale.ROOT))) {
                 throw new IllegalArgumentException("Audit details must not contain secrets: '" + key + "'");

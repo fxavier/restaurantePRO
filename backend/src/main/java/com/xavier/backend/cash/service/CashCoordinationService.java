@@ -33,7 +33,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -108,8 +107,8 @@ public class CashCoordinationService {
         counts.saveAll(recorded);
         sessions.saveAndFlush(session);
         audit.record("CASH_SESSION_CLOSED", CashSessionService.ENTITY, sessionId, session.getStoreId(),
-                Map.of("counts", blindCount.stream().collect(Collectors.toMap(MethodCount::methodCode,
-                        c -> c.amount().amount().toPlainString()))));
+                Map.of("counts", blindCount.stream().map(c -> Map.of("methodCode", c.methodCode(),
+                        "amount", c.amount().amount().toPlainString())).toList()));
     }
 
     @Transactional(propagation = Propagation.MANDATORY)

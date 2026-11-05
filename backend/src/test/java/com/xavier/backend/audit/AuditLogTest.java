@@ -138,12 +138,24 @@ class AuditLogTest {
     }
 
     @Test
-    void upperCaseCodesAreDataNotFieldNamesSoAByMethodMapIsStored() {
-        // payment method codes are [A-Z0-9_] (CARD, PIN_PAD): keys of a by-method map, not secret field names
-        transaction.executeWithoutResult(tx -> auditLog.record(entry("CASH_SESSION_CLOSED",
-                Map.of("counts", Map.of("CARD", "10.00", "CASH", "5.00", "PIN_PAD", "1.00")))));
+    void anUpperOrMixedCaseSecretKeyIsRejectedAtTheTopLevel() {
+        for (String secretKey : new String[] {"PIN", "Pin", "PASSWORD", "API_TOKEN", "CARD_NUMBER", "CVV"}) {
+            assertThatIllegalArgumentException().isThrownBy(() -> transaction.executeWithoutResult(
+                    tx -> auditLog.record(entry("EMPLOYEE_UPDATED", Map.of(secretKey, "x")))))
+                    .withMessageContaining(secretKey);
+        }
+        assertThat(countRows()).isZero();
+    }
 
-        assertThat(countRows()).isOne();
+    @Test
+    void anUpperCaseSecretKeyIsRejectedInANestedMapAndAPinInAListOfMaps() {
+        Map<String, Object> nestedSecret = Map.of("x", Map.of("SECRET", 1));
+        Map<String, Object> pinInAList = Map.of("counts", List.of(Map.of("methodCode", "CASH"), Map.of("pin", "1")));
+        for (Map<String, Object> details : List.of(nestedSecret, pinInAList)) {
+            assertThatIllegalArgumentException().isThrownBy(() -> transaction.executeWithoutResult(
+                    tx -> auditLog.record(entry("EMPLOYEE_UPDATED", details))));
+        }
+        assertThat(countRows()).isZero();
     }
 
     @Test
