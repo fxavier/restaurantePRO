@@ -153,7 +153,7 @@ class RebuildEqualsLiveTest {
 
     @Test
     void aRunARestartInterruptedNoLongerBlocksTheStore() throws Exception {
-        UUID interrupted = reporting.runningRebuild(sale.store(), day);
+        UUID interrupted = reporting.runningRebuild(sale.store(), day, "now() - interval '30 days'");
 
         rebuildService.abandonInterruptedRuns(); // what the application does when it is ready
 
@@ -161,6 +161,19 @@ class RebuildEqualsLiveTest {
                 .containsEntry("status", "FAILED").extractingByKey("error").isNotNull();
         reporting.rebuild(sale.store(), day, day, UUID.randomUUID().toString()).andExpect(status().isAccepted());
         reporting.awaitRebuildFinished(sale.store());
+    }
+
+    @Test
+    void aRunStartedSinceThisProcessStartedIsNotAbandoned() {
+        UUID live = reporting.runningRebuild(sale.store(), day, "now()");
+        try {
+            rebuildService.abandonInterruptedRuns();
+
+            assertThat(reporting.row("SELECT status FROM reporting.rebuild_run WHERE id = ?", live))
+                    .containsEntry("status", "RUNNING");
+        } finally {
+            reporting.finishRebuild(live);
+        }
     }
 
     @Test

@@ -238,10 +238,15 @@ public class ReportingFixtures {
 
     /** A RUNNING rebuild of the store written directly, as one in progress would be. @return its id */
     public UUID runningRebuild(UUID store, LocalDate day) {
+        return runningRebuild(store, day, "now()");
+    }
+
+    /** As {@link #runningRebuild(UUID, LocalDate)}, started at the SQL expression {@code startedAt}. */
+    public UUID runningRebuild(UUID store, LocalDate day, String startedAt) {
         UUID id = UUID.randomUUID();
         jdbc.sql("""
                 INSERT INTO reporting.rebuild_run (id, store_id, from_date, to_date, status, started_at)
-                VALUES (?, ?, ?, ?, 'RUNNING', now())""").params(id, store, day, day).update();
+                VALUES (?, ?, ?, ?, 'RUNNING', %s)""".formatted(startedAt)).params(id, store, day, day).update();
         return id;
     }
 

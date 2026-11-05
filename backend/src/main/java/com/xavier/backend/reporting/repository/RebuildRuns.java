@@ -45,12 +45,15 @@ public class RebuildRuns {
                 .update();
     }
 
-    /** Marks every RUNNING run FAILED: a restart interrupted it. @return how many */
-    public int abandonRunning(String error, Instant at) {
+    /**
+     * Marks FAILED every RUNNING run started before {@code startedBefore} (this process's start): a restart
+     * interrupted it. A run started since belongs to a live process and is left alone. @return how many
+     */
+    public int abandonRunning(Instant startedBefore, String error, Instant at) {
         return jdbc.sql("""
                         UPDATE reporting.rebuild_run SET status = 'FAILED', error = ?, finished_at = ?
-                        WHERE status = 'RUNNING'""")
-                .params(error, Timestamp.from(at)).update();
+                        WHERE status = 'RUNNING' AND started_at < ?""")
+                .params(error, Timestamp.from(at), Timestamp.from(startedBefore)).update();
     }
 
     /**

@@ -9,7 +9,9 @@ import com.xavier.backend.reporting.exception.ReportStoreNotFoundException;
 import com.xavier.backend.reporting.model.dto.RebuildRequest;
 import com.xavier.backend.reporting.model.dto.RebuildView;
 import com.xavier.backend.reporting.repository.RebuildRuns;
+import java.lang.management.ManagementFactory;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 import org.hibernate.id.uuid.UuidVersion7Strategy;
@@ -26,8 +28,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 /**
  * Starts a rebuild of a store's projections over a business-date range (D84): one RUNNING run per store
  * ({@code rebuild_run_running_uk}), audited, and run by {@link RebuildRunner} on the application task executor once
- * the request has committed. A run a restart interrupted is marked FAILED when the application is ready, so it never
- * blocks the next one (one backend per installation, D46).
+ * the request has committed. A run a restart interrupted (started before this JVM) is marked FAILED when the
+ * application is ready, so it never blocks the next one; a run started since is a live one and is left alone.
  */
 @Service
 public class RebuildService {
@@ -90,6 +92,7 @@ public class RebuildService {
     @EventListener(ApplicationReadyEvent.class)
     @Transactional
     public void abandonInterruptedRuns() {
-        runs.abandonRunning(INTERRUPTED, clock.instant());
+        Instant processStart = Instant.ofEpochMilli(ManagementFactory.getRuntimeMXBean().getStartTime());
+        runs.abandonRunning(processStart, INTERRUPTED, clock.instant());
     }
 }
