@@ -7,6 +7,7 @@ import com.xavier.backend.identity.exception.EmployeeAccountTakenException;
 import com.xavier.backend.identity.exception.EmployeeNotFoundException;
 import com.xavier.backend.identity.exception.LastAdministratorException;
 import com.xavier.backend.identity.exception.RoleNotFoundException;
+import com.xavier.backend.identity.exception.SupportAccountLinkedException;
 import com.xavier.backend.identity.exception.UserNotFoundException;
 import com.xavier.backend.identity.exception.UsernameTakenException;
 import com.xavier.backend.identity.model.Role;
@@ -75,8 +76,10 @@ public class UserAccountService {
         requireLinks(request.employeeId(), request.roleIds());
         requireCanGrant(request.roleIds());
         requireCanLink(null, request.employeeId());
-        UserAccount account = save(UserAccount.open(username, encoder.encode(request.initialPassword()),
-                request.employeeId(), request.roleIds(), clock.instant()));
+        String hash = encoder.encode(request.initialPassword());
+        UserAccount account = save(request.support()
+                ? supportAccount(username, hash, request)
+                : UserAccount.open(username, hash, request.employeeId(), request.roleIds(), clock.instant()));
         audit("USER_CREATED", account);
         return account.toSummary();
     }
@@ -115,6 +118,15 @@ public class UserAccountService {
     public PageResponse<UserSummary> list(Pageable pageable) {
         accessPolicy.require(Permission.USER_MANAGE);
         return PageResponse.from(accounts.findAll(pageable).map(UserAccount::toSummary));
+    }
+
+    /** Support accounts are an administrator's matter (D83): creating one needs {@code SUPPORT_ACCESS_MANAGE}. */
+    private UserAccount supportAccount(String username, String hash, UserCreateRequest request) {
+        accessPolicy.require(Permission.SUPPORT_ACCESS_MANAGE);
+        if (request.employeeId() != null) {
+            throw new SupportAccountLinkedException();
+        }
+        return UserAccount.openSupport(username, hash, request.roleIds(), clock.instant());
     }
 
     /** Nobody gives an account a role with a permission they do not hold installation-wide themselves. */
@@ -180,6 +192,7 @@ public class UserAccountService {
         details.put("employeeId", account.getEmployeeId());
         details.put("roleIds", account.getRoleIds());
         details.put("active", account.isActive());
+        details.put("support", account.isSupport());
         auditLog.recordAsCurrentActor(action, "UserAccount", account.getId().toString(), null, null, null, details);
     }
 }

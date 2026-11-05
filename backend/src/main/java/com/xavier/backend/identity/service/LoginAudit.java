@@ -21,17 +21,23 @@ public class LoginAudit {
 
     @Transactional
     public void loggedIn(Actor actor) {
-        record(actor, "LOGGED_IN");
+        loggedIn(actor, Map.of());
+    }
+
+    /** @param details e.g. the support grant a support account logged in with (D83); never a credential */
+    @Transactional
+    public void loggedIn(Actor actor, Map<String, Object> details) {
+        record(actor, "LOGGED_IN", details);
     }
 
     @Transactional
     public void loggedOut(Actor actor) {
-        record(actor, "LOGGED_OUT");
+        record(actor, "LOGGED_OUT", Map.of());
     }
 
-    private void record(Actor actor, String what) {
+    private void record(Actor actor, String what, Map<String, Object> details) {
         boolean pos = actor.kind() == ActorKind.EMPLOYEE;
         auditLog.recordAs(actor, (pos ? "EMPLOYEE_" : "USER_") + what, pos ? "Employee" : "UserAccount",
-                actor.userId().toString(), actor.storeId(), null, Map.of());
+                actor.userId().toString(), actor.storeId(), null, details);
     }
 }

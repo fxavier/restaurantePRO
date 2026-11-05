@@ -1,5 +1,6 @@
 package com.xavier.backend.identity.model;
 
+import com.xavier.backend.identity.exception.SupportAccountLinkedException;
 import com.xavier.backend.identity.model.dto.UserSummary;
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
@@ -20,7 +21,8 @@ import org.hibernate.annotations.UuidGenerator;
 /**
  * A BackOffice login: username + password (D26). Only the password hash is kept. Store permissions come from
  * the linked employee's store assignments; {@code roleIds} are installation-wide roles (every store). A new
- * account must change its password at first login.
+ * account must change its password at first login. A {@code support} account (D83) logs in only while it holds an
+ * active {@link SupportGrant}; the flag is fixed at creation, and such an account is never linked to an employee.
  */
 @Entity
 @Table(schema = "identity", name = "user_account")
@@ -43,6 +45,9 @@ public class UserAccount {
     private boolean active;
 
     private UUID employeeId;
+
+    @Column(nullable = false, updatable = false)
+    private boolean support;
 
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(schema = "identity", name = "user_account_role",
@@ -78,6 +83,14 @@ public class UserAccount {
         return account;
     }
 
+    /** A new support account (D83): no employee link; it logs in only while a grant is active. */
+    public static UserAccount openSupport(String username, String initialPasswordHash, Set<UUID> roleIds,
+                                          Instant now) {
+        UserAccount account = open(username, initialPasswordHash, null, roleIds, now);
+        account.support = true;
+        return account;
+    }
+
     public static String normalize(String username) {
         return username.strip().toLowerCase(Locale.ROOT);
     }
@@ -89,6 +102,9 @@ public class UserAccount {
     }
 
     public void update(UUID newEmployeeId, Set<UUID> newRoleIds, boolean newActive, Instant now) {
+        if (support && newEmployeeId != null) {
+            throw new SupportAccountLinkedException();
+        }
         employeeId = newEmployeeId;
         roleIds.clear();
         roleIds.addAll(newRoleIds);
@@ -97,7 +113,7 @@ public class UserAccount {
     }
 
     public UserSummary toSummary() {
-        return new UserSummary(id, username, employeeId, Set.copyOf(roleIds), active, mustChangePassword,
+        return new UserSummary(id, username, employeeId, Set.copyOf(roleIds), active, mustChangePassword, support,
                 getVersion());
     }
 
@@ -119,6 +135,10 @@ public class UserAccount {
 
     public boolean isActive() {
         return active;
+    }
+
+    public boolean isSupport() {
+        return support;
     }
 
     public UUID getEmployeeId() {

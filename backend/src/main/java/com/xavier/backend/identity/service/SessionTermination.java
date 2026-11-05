@@ -2,6 +2,7 @@ package com.xavier.backend.identity.service;
 
 import com.xavier.backend.identity.repository.EmployeeStoreAssignmentRepository;
 import com.xavier.backend.identity.repository.UserAccountRepository;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.session.FindByIndexNameSessionRepository;
 import org.springframework.stereotype.Component;
@@ -25,13 +26,17 @@ class SessionTermination {
         this.assignments = assignments;
     }
 
-    void endAccountSessions(UUID accountId) {
-        endAccountSessionsExcept(accountId, null);
+    /** @return how many sessions ended */
+    int endAccountSessions(UUID accountId) {
+        return endAccountSessionsExcept(accountId, null);
     }
 
-    /** @param keepSessionId the caller's own session, or {@code null} */
-    void endAccountSessionsExcept(UUID accountId, String keepSessionId) {
-        end(SessionPrincipals.account(accountId), keepSessionId);
+    /**
+     * @param keepSessionId the caller's own session, or {@code null}
+     * @return how many sessions ended
+     */
+    int endAccountSessionsExcept(UUID accountId, String keepSessionId) {
+        return end(SessionPrincipals.account(accountId), keepSessionId);
     }
 
     /**
@@ -54,9 +59,11 @@ class SessionTermination {
         end(SessionPrincipals.employee(employeeId), null);
     }
 
-    private void end(String principalName, String keepSessionId) {
-        sessions.findByPrincipalName(principalName).keySet().stream()
+    private int end(String principalName, String keepSessionId) {
+        List<String> ended = sessions.findByPrincipalName(principalName).keySet().stream()
                 .filter(id -> !id.equals(keepSessionId))
-                .forEach(sessions::deleteById);
+                .toList();
+        ended.forEach(sessions::deleteById);
+        return ended.size();
     }
 }

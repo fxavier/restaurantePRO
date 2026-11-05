@@ -8,7 +8,10 @@ import com.xavier.backend.identity.model.UserAccount;
 import com.xavier.backend.identity.model.dto.SessionView;
 import com.xavier.backend.identity.repository.EmployeeRepository;
 import com.xavier.backend.identity.repository.UserAccountRepository;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -18,7 +21,8 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * BackOffice login (username + password, D26) and the description of the current session. Every refusal is the
  * same {@link InvalidCredentialsException} (401); the reason goes to a WARN log line, never the password. Password
- * guessing is throttled per username and client address ({@link LoginThrottling}, 429).
+ * guessing is throttled per username and client address ({@link LoginThrottling}, 429). A support account logs in
+ * only while it holds a usable support grant (D83); without one it gets the same 401 as a wrong password.
  */
 @Service
 public class LoginService {
@@ -32,11 +36,13 @@ public class LoginService {
     private final AccessPolicy accessPolicy;
     private final LoginAudit audit;
     private final LoginThrottling throttling;
+    private final SupportGrantService supportGrants;
     /** Checked against when the username is unknown, so the answer takes as long as for a wrong password. */
     private final String unknownAccountHash;
 
     LoginService(UserAccountRepository accounts, EmployeeRepository employees, AuthorityResolver authorities,
-                 PasswordEncoder encoder, AccessPolicy accessPolicy, LoginAudit audit, LoginThrottling throttling) {
+                 PasswordEncoder encoder, AccessPolicy accessPolicy, LoginAudit audit, LoginThrottling throttling,
+                 SupportGrantService supportGrants) {
         this.accounts = accounts;
         this.employees = employees;
         this.authorities = authorities;
@@ -44,6 +50,7 @@ public class LoginService {
         this.accessPolicy = accessPolicy;
         this.audit = audit;
         this.throttling = throttling;
+        this.supportGrants = supportGrants;
         this.unknownAccountHash = encoder.encode("no such account");
     }
 
@@ -58,13 +65,19 @@ public class LoginService {
         UserAccount account = accounts.findByUsername(normalized).orElse(null);
         throttling.countAttempt(normalized, clientAddress, account == null ? null : account.getId());
         String refusal = refusalOf(account, password);
+        Optional<UUID> supportGrant = refusal == null && account.isSupport()
+                ? supportGrants.usableGrantOf(account.getId()) : Optional.empty();
+        if (refusal == null && account.isSupport() && supportGrant.isEmpty()) {
+            refusal = "support account without an active support grant";
+        }
         if (refusal != null) {
             throttling.failed(clientAddress);
             throw refused(username, refusal);
         }
         throttling.succeeded(normalized, clientAddress);
         SessionView session = sessionOf(account);
-        audit.loggedIn(session.toActor());
+        audit.loggedIn(session.toActor(), supportGrant.map(id -> Map.<String, Object>of("supportGrantId", id))
+                .orElse(Map.of()));
         return session;
     }
 
