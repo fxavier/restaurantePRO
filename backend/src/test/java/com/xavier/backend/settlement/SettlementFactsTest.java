@@ -112,4 +112,20 @@ class SettlementFactsTest {
                 .contains(new com.xavier.backend.settlement.model.event.CreditChargePosted(charge, sale.store()));
         assertThat(facts.creditChargeFact(UUID.randomUUID())).isEmpty();
     }
+
+    @Test
+    void aDebtPaymentIsAPaymentFactOfItsCustomer() throws Exception {
+        Sale sale = fixtures.sale("2");
+        UUID customer = customers.creditCustomer("100.00");
+        fixtures.creditCharge(sale, customer, "25.00").andExpect(status().isCreated());
+        UUID attempt = SettlementFixtures.id(fixtures.payDebt(sale.cashier(), customer, "CASH", "5.00", "5.00",
+                UUID.randomUUID().toString()));
+
+        PaymentFact fact = facts.paymentFact(fixtures.paymentOfAttempt(attempt)).orElseThrow();
+
+        assertThat(fact.targetType()).isEqualTo("CREDIT_ACCOUNT");
+        assertThat(fact.customerId()).isEqualTo(customer);
+        assertThat(fact.orderId()).isNull();
+        assertThat(fact.amount().amount()).isEqualByComparingTo("5.00");
+    }
 }

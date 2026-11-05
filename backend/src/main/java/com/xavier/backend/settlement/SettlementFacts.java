@@ -92,6 +92,7 @@ public class SettlementFacts {
                 : cash.sessionDay(payment.getSessionId()).businessDate();
         return new PaymentFact(payment.getId(), payment.getStoreId(), businessDate,
                 payment.getConfirmedAt(), payment.getMethodCode(), payment.amount(), payment.getTargetType().name(),
-                payment.getOrderId(), payment.getPartitionId(), null, payment.getCollectedByEmployeeId(), terminal);
+                payment.getOrderId(), payment.getPartitionId(), payment.getCreditAccountId(),
+                payment.getCollectedByEmployeeId(), terminal);
     }
 }
