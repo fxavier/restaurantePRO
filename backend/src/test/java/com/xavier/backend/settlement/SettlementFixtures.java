@@ -129,7 +129,12 @@ public class SettlementFixtures {
     /** Manual reclassification (D50 §7.4) with an approver in the headers (D40). */
     public ResultActions reclassify(Pos who, UUID attempt, String outcome, String reason, String approverCode)
             throws Exception {
-        var request = idem(post(ATTEMPTS + "/" + attempt + "/resolve")).with(who.with(CASHIER))
+        return reclassify(who, attempt, outcome, reason, approverCode, UUID.randomUUID().toString());
+    }
+
+    public ResultActions reclassify(Pos who, UUID attempt, String outcome, String reason, String approverCode,
+                                    String key) throws Exception {
+        var request = idem(post(ATTEMPTS + "/" + attempt + "/resolve"), key).with(who.with(CASHIER))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"outcome\": \"%s\", \"reason\": \"%s\"}".formatted(outcome, reason));
         if (approverCode != null) {

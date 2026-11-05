@@ -160,6 +160,34 @@ class IntegratedPaymentTest {
         assertThat(fixtures.payments(sale.order())).isZero();
         assertThat(fixtures.count("SELECT count(*) FROM audit.audit_event WHERE action = 'PAYMENT_ATTEMPT_RECLASSIFIED'"
                 + " AND entity_id = ? AND approver_id = ?", attempt.toString(), approver)).isEqualTo(1);
+        assertThat(fixtures.count("SELECT count(*) FROM orders.order_header WHERE id = ? AND billing_lock = 'NONE'",
+                sale.order())).as("a FAILED reclassification releases the payment lock").isEqualTo(1);
+    }
+
+    @Test
+    void aReclassificationToSucceededPaysOnceIntoTheAttemptsSessionAndReplays() throws Exception {
+        UUID attempt = unknownAttempt();
+        UUID approver = UUID.randomUUID();
+        given(approvers.verify(eq("GER01"), eq("1234"), eq(Permission.PAYMENT_RESOLVE), eq(sale.store())))
+                .willReturn(approver);
+        String key = UUID.randomUUID().toString();
+
+        String first = fixtures.reclassify(sale.cashier(), attempt, "SUCCEEDED", "seen on the bank statement",
+                        "GER01", key)
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("SUCCEEDED"))
+                .andReturn().getResponse().getContentAsString();
+        String replay = fixtures.reclassify(sale.cashier(), attempt, "SUCCEEDED", "seen on the bank statement",
+                        "GER01", key)
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+
+        assertThat(SettlementFixtures.json(replay)).isEqualTo(SettlementFixtures.json(first));
+        assertThat(fixtures.payments(sale.order())).isEqualTo(1);
+        assertThat(fixtures.count("""
+                SELECT count(*) FROM cash.cash_movement m JOIN settlement.payment p ON p.id = m.source_id
+                WHERE p.attempt_id = ? AND m.session_id = ? AND m.method_code = ?""", attempt, sale.session(), method))
+                .isEqualTo(1);
+        assertThat(fixtures.count("SELECT count(*) FROM audit.audit_event WHERE action = 'PAYMENT_ATTEMPT_RECLASSIFIED'"
+                + " AND entity_id = ? AND approver_id = ?", attempt.toString(), approver)).isEqualTo(1);
     }
 
     @Test

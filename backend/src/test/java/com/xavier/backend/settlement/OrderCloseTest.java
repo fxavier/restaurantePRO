@@ -1,13 +1,17 @@
 package com.xavier.backend.settlement;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.xavier.backend.fiscal.adapter.internal.InternalFiscalAdapter;
 import com.xavier.backend.settlement.SettlementFixtures.Sale;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import tools.jackson.databind.JsonNode;
 
@@ -21,6 +25,14 @@ class OrderCloseTest {
 
     @Autowired
     SettlementFixtures fixtures;
+
+    @Autowired
+    InternalFiscalAdapter fiscalAdapter;
+
+    @AfterEach
+    void realAdapter() {
+        Mockito.reset(fiscalAdapter);
+    }
 
     @Test
     void aPaidOrderClosesWithItsIssuedDocumentAndFreesTheTable() throws Exception {
@@ -134,6 +146,24 @@ class OrderCloseTest {
 
         assertThat(fixtures.documents(sale.order())).isEqualTo(1);
         assertThat(fixtures.nextNumber(sale.series())).isEqualTo(2);
+    }
+
+    @Test
+    void aFrozenButUnpaidOrderDoesNotIssueItsPendingDraftOnClose() throws Exception {
+        Sale sale = fixtures.sale("2");
+        Mockito.doThrow(new IllegalStateException("adapter offline")).when(fiscalAdapter).issue(any());
+        fixtures.issue(sale.cashier(), sale.order(), UUID.randomUUID().toString())
+                .andExpect(status().isUnprocessableContent());
+        Mockito.reset(fiscalAdapter);
+        long version = fixtures.orderVersion(sale.cashier(), sale.order());
+
+        fixtures.close(sale.cashier(), sale.order(), version, UUID.randomUUID().toString())
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("NOT_SETTLED"));
+
+        assertThat(fixtures.count("SELECT count(*) FROM fiscal.fiscal_document WHERE source_id = ? AND status = 'DRAFT'",
+                sale.order())).as("the draft is still pending, not issued").isEqualTo(1);
+        assertThat(fixtures.nextNumber(sale.series())).isEqualTo(1);
     }
 
     @Test

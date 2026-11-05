@@ -66,6 +66,33 @@ class SettlementAccessHttpTest {
     }
 
     @Test
+    void attemptCommandsNeedTheirPermissionInTheAttemptsStore() throws Exception {
+        UUID attempt = SettlementFixtures.id(fixtures.payCash(sale, "10.00", "10.00"));
+        RequestPostProcessor elsewhere = CashFixtures.pos(UUID.randomUUID())
+                .with(Permission.PAYMENT_COLLECT, Permission.PAYMENT_RESOLVE);
+
+        mvc.perform(command(SettlementFixtures.ATTEMPTS + "/" + attempt + "/resolve", "{}")
+                .with(sale.cashier().with(Permission.PAYMENT_COLLECT))).andExpect(status().isForbidden());
+        mvc.perform(command(SettlementFixtures.ATTEMPTS + "/" + attempt + "/confirm", "{}").with(elsewhere))
+                .andExpect(status().isForbidden());
+        mvc.perform(command(SettlementFixtures.ATTEMPTS + "/" + attempt + "/cancel", "{\"reason\": \"x\"}")
+                .with(elsewhere)).andExpect(status().isForbidden());
+        mvc.perform(command(SettlementFixtures.ATTEMPTS + "/" + attempt + "/resolve", "{}").with(elsewhere))
+                .andExpect(status().isForbidden());
+        mvc.perform(get(SettlementFixtures.ATTEMPTS + "/" + attempt).with(elsewhere))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void aWaiterCannotCloseTheDay() throws Exception {
+        String day = fixtures.currentDay(sale.cashier()).get("id").asString();
+
+        mvc.perform(command("/api/v1/pos/cash/days/" + day + "/operational-close", "{\"version\": 0}")
+                .with(sale.cashier().with(Permission.ORDER_VIEW, Permission.ORDER_EDIT, Permission.CASH_VIEW)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void aBackOfficeSessionCannotCallAPosWrite() throws Exception {
         mvc.perform(payment(sale.order()).with(CashFixtures.account(null, Permission.PAYMENT_COLLECT)))
                 .andExpect(status().isForbidden());
