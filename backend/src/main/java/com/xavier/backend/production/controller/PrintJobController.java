@@ -1,10 +1,9 @@
 package com.xavier.backend.production.controller;
 
-import com.xavier.backend.access.AccessPolicy;
+import com.xavier.backend.access.IdempotentRequests;
 import com.xavier.backend.production.model.PrintJobStatus;
 import com.xavier.backend.production.model.dto.PrintJobView;
 import com.xavier.backend.production.service.PrintJobService;
-import com.xavier.backend.shared.idempotency.IdempotencyService;
 import com.xavier.backend.shared.web.PageResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
@@ -33,11 +32,11 @@ class PrintJobController {
     static final String POS_TICKETS = "/api/v1/pos/production-tickets";
 
     private final PrintJobService jobs;
-    private final Idempotent idempotent;
+    private final IdempotentRequests idempotent;
 
-    PrintJobController(PrintJobService jobs, IdempotencyService idempotency, AccessPolicy accessPolicy) {
+    PrintJobController(PrintJobService jobs, IdempotentRequests idempotent) {
         this.jobs = jobs;
-        this.idempotent = new Idempotent(idempotency, accessPolicy);
+        this.idempotent = idempotent;
     }
 
     @GetMapping(BACKOFFICE)

@@ -1,6 +1,6 @@
 package com.xavier.backend.orders.controller;
 
-import com.xavier.backend.access.AccessPolicy;
+import com.xavier.backend.access.IdempotentRequests;
 import com.xavier.backend.orders.OrderLifecycle;
 import com.xavier.backend.orders.model.dto.AddLineRequest;
 import com.xavier.backend.orders.model.dto.BatchView;
@@ -24,7 +24,6 @@ import com.xavier.backend.orders.model.dto.OpenOrderRequest;
 import com.xavier.backend.orders.model.dto.OpenTableRequest;
 import com.xavier.backend.orders.model.dto.OrderView;
 import com.xavier.backend.orders.service.OrderOpeningService;
-import com.xavier.backend.shared.idempotency.IdempotencyService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.net.URI;
@@ -46,15 +45,15 @@ class PosOrderController {
     private final OrderQueryService queries;
     private final DraftLineService drafts;
     private final BatchConfirmationService rounds;
-    private final Idempotent idempotent;
+    private final IdempotentRequests idempotent;
 
     PosOrderController(OrderOpeningService opening, OrderQueryService queries, DraftLineService drafts,
-                       BatchConfirmationService rounds, IdempotencyService idempotency, AccessPolicy accessPolicy) {
+                       BatchConfirmationService rounds, IdempotentRequests idempotent) {
         this.opening = opening;
         this.queries = queries;
         this.drafts = drafts;
         this.rounds = rounds;
-        this.idempotent = new Idempotent(idempotency, accessPolicy);
+        this.idempotent = idempotent;
     }
 
     @GetMapping(ORDERS)
