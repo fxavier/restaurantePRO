@@ -2,9 +2,12 @@ package com.xavier.backend.orders;
 
 import com.xavier.backend.orders.service.LineVoidService;
 import com.xavier.backend.orders.service.OrderCoordinationService;
+import com.xavier.backend.orders.service.VoidFactsService;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,10 +27,12 @@ public class OrdersApi {
 
     private final OrderCoordinationService coordination;
     private final LineVoidService voids;
+    private final VoidFactsService voidFacts;
 
-    OrdersApi(OrderCoordinationService coordination, LineVoidService voids) {
+    OrdersApi(OrderCoordinationService coordination, LineVoidService voids, VoidFactsService voidFacts) {
         this.coordination = coordination;
         this.voids = voids;
+        this.voidFacts = voidFacts;
     }
 
     /**
@@ -99,6 +104,25 @@ public class OrdersApi {
     @Transactional(propagation = Propagation.MANDATORY)
     public VoidView voidLine(SettledVoidCommand cmd, UUID approverEmployeeId) {
         return voids.voidSettled(cmd, approverEmployeeId);
+    }
+
+    /**
+     * One void's facts, for reporting's projection (D84).
+     *
+     * @throws com.xavier.backend.shared.exception.NotFoundException 404 for an unknown void
+     */
+    @Transactional(readOnly = true)
+    public VoidFacts voidFacts(UUID voidId) {
+        return voidFacts.facts(voidId);
+    }
+
+    /**
+     * The ids of the store's voids whose order's business day is in {@code [from, to]}, in creation order (ids are
+     * UUIDv7), for a projection rebuild. The page's sort is ignored.
+     */
+    @Transactional(readOnly = true)
+    public Page<UUID> voidIds(UUID storeId, LocalDate from, LocalDate to, Pageable p) {
+        return voidFacts.ids(storeId, from, to, p);
     }
 
     /** OPEN orders of the store whose business day is on or before {@code businessDayInclusive} (day close). */
