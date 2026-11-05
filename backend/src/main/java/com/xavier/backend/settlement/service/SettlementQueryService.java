@@ -79,7 +79,7 @@ public class SettlementQueryService {
                 .flatMap(order -> fiscal.documentsOfOrder(order.orderId()).stream())
                 .filter(document -> "DRAFT".equals(document.status()))
                 .map(document -> new FiscalDraftView(document.id(), document.orderId(), document.lastError(),
-                        document.lastErrorAt()))
+                        document.lastErrorAt(), document.sourceType(), document.sourceId()))
                 .toList();
         List<OpenOrderBalance> settledOpen = balances(open).stream()
                 .filter(order -> order.due().amount().signum() > 0
