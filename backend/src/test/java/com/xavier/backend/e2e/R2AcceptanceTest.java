@@ -150,15 +150,15 @@ class R2AcceptanceTest {
         try (ChangeStream streamA = ChangeStream.subscribe(cashier);
              ChangeStream streamB = ChangeStream.subscribe(cashierB)) {
             // positive controls: each stream hears its own store's dining change (repeated with fresh writes until it
-            // does, as a subscription takes effect only once the server registered it), so both are live from here on
-            List<UUID> controlB = streamB.makeLive(attempt -> id(office.post("/api/v1/backoffice/areas",
-                    Map.of("storeId", storeB, "code", "SALA" + attempt, "name", "Sala B" + attempt), 201)), "store B");
+            // does, as a subscription takes effect only once the server registered it), so both are live from here on.
+            // A goes live first, so it is listening while B's controls commit.
             List<UUID> controlA = streamA.makeLive(attempt -> id(office.post("/api/v1/backoffice/tables",
                     Map.of("storeId", storeA, "areaId", area, "code", "C" + attempt, "seats", 2), 201)), "store A");
+            List<UUID> controlB = new ArrayList<>(streamB.makeLive(attempt -> areaOf(office, storeB, "SALA" + attempt),
+                    "store B"));
             assertThat(streamA.status()).isEqualTo(200);
             assertThat(streamA.contentType()).startsWith("text/event-stream");
             assertThat(streamB.status()).isEqualTo(200);
-            int storeBControl = streamB.notices().size();
 
             JsonNode session = cashier.command(POS + "/cash/sessions",
                     Map.of("registerId", register, "openingFloat", new BigDecimal("100.00")), 201, "open session");
@@ -264,7 +264,7 @@ class R2AcceptanceTest {
             assertThat(document.get("nonFiscal").asBoolean()).isTrue();
             assertThat(money(document.get("totalGross"))).isEqualByComparingTo("360.00");
             assertThat(awaitPrinted(COUNTER, "DOCUMENTO NÃO FISCAL", s -> true).getFirst())
-                    .contains("FR").contains("Prego no pao").contains("360.00");
+                    .contains("Documento de venda FR/1").contains("Prego no pao").contains("360.00");
 
             JsonNode closed = cashier.command(POS + "/orders/" + order + "/close",
                     Map.of("orderVersion", cashier.get(POS + "/orders/" + order + "/settlement", 200)
@@ -325,28 +325,49 @@ class R2AcceptanceTest {
             assertThat(audits("CASH_DAY_OPERATIONALLY_CLOSED", cashDay)).isEqualTo(1);
             assertThat(audits("CASH_DAY_FINANCIALLY_CLOSED", cashDay)).isEqualTo(1);
 
-            // ---- A14: store A's tab heard the commits, as {topic, id} only; store B's tab heard nothing ----
-            // the table at open and at close, the order after each round, void and payment, every print job
+            // ---- A14: store A's tab heard the commits, as {topic, id} only; store B's tab heard only its own ----
+            // the table at open and at close, the order after each round, void and payment, and every print job: round 1
+            // kitchen + bar, round 2 bar, the void, the subtotal, the document = 6 jobs (several notices each)
+            assertThat(count("SELECT count(*) FROM production.print_job WHERE store_id = ?", storeA)).isEqualTo(6);
             Awaitility.await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
                 List<String> heard = topics(streamA);
                 assertThat(heard).contains("ORDER:" + order, "PAYMENT_ATTEMPT:" + id(cashAttempt),
                         "PAYMENT_ATTEMPT:" + id(cardAttempt));
                 assertThat(heard.stream().filter(("TABLES:" + table)::equals)).hasSizeGreaterThanOrEqualTo(2);
-                assertThat(heard.stream().filter(t -> t.startsWith("PRINT_JOBS:")).distinct())
-                        .hasSizeGreaterThanOrEqualTo(6); // 2 + 1 rounds, the void, the subtotal, the document
+                assertThat(heard.stream().filter(t -> t.startsWith("PRINT_JOBS:")).distinct()).hasSize(6);
             });
             streamA.notices().forEach(notice -> assertThat(notice.propertyNames()).as("notice %s", notice)
                     .isSubsetOf("topic", "id"));
             journey.add("SSE store A: " + streamA.notices().size() + " notices, topics " + topics(streamA).stream()
                     .map(t -> t.contains(":") ? t.substring(0, t.indexOf(':')) : t).distinct().toList());
+
+            // one more control of B after the whole journey: B is still live, and notices go out in commit order, so
+            // anything of store A's that could have reached B has been delivered by now
+            controlB.addAll(streamB.makeLive(attempt -> areaOf(office, storeB, "FIM" + attempt), "store B again"));
             assertThat(topics(streamA)).noneMatch(t -> controlB.stream().anyMatch(b -> t.contains(b.toString())));
-            assertThat(streamB.notices()).as("store B's stream after its own control notice")
-                    .hasSize(storeBControl);
-            assertThat(topics(streamB)).noneMatch(t -> t.contains(order.toString())
-                    || controlA.stream().anyMatch(a -> t.contains(a.toString())));
-            assertThat(topics(streamB)).allMatch(t -> controlB.stream().anyMatch(b -> t.equals("TABLES:" + b)));
-            journey.add("SSE store B: " + storeBControl + " notice(s), all its own (control, " + controlB.size()
-                    + " write(s)); none of store A's");
+            assertThat(streamB.notices()).isNotEmpty();
+            assertThat(topics(streamB)).as("store B's stream: only its own controls")
+                    .allMatch(t -> controlB.stream().anyMatch(b -> t.equals("TABLES:" + b)));
+            journey.add("SSE store B: " + streamB.notices().size() + " notice(s), all its own controls ("
+                    + controlB.size() + " write(s)); none of store A's");
+
+            // ---- A14: a tab that reconnects gets no replay of what it missed, and re-reads through the GET ----
+            List<String> heardBefore = ids(streamA);
+            streamA.close();
+            UUID missed = id(office.post("/api/v1/backoffice/tables", Map.of("storeId", storeA, "areaId", area,
+                    "code", "M9", "seats", 4), 201));
+            try (ChangeStream again = ChangeStream.subscribe(cashier)) {
+                List<UUID> controlAgain = again.makeLive(attempt -> id(office.post("/api/v1/backoffice/tables",
+                        Map.of("storeId", storeA, "areaId", area, "code", "R" + attempt, "seats", 2), 201)),
+                        "store A after reconnecting");
+                assertThat(ids(again)).as("the reconnected stream replays nothing")
+                        .doesNotContain(missed.toString()).doesNotContainAnyElementsOf(heardBefore)
+                        .allMatch(i -> controlAgain.stream().anyMatch(c -> c.toString().equals(i)));
+                assertThat(tableStatus(cashier, storeA, missed)).as("the re-read shows the missed table")
+                        .isEqualTo("FREE");
+                journey.add("SSE store A reconnected: " + again.notices().size()
+                        + " notice(s), only its new control; the missed table M9 came from GET /pos/tables");
+            }
         }
     }
 
@@ -391,6 +412,16 @@ class R2AcceptanceTest {
         List<String> printed = device.awaitPayloads(CP860, match, 1, PRINTED);
         assertThat(printed).as("printed on port %d: %s", device.port(), marker).hasSize(1);
         return printed;
+    }
+
+    /** The ids the stream's notices named. */
+    private static List<String> ids(ChangeStream stream) {
+        return stream.notices().stream().filter(n -> n.hasNonNull("id")).map(n -> n.get("id").asString()).toList();
+    }
+
+    private static UUID areaOf(Browser office, UUID store, String code) throws Exception {
+        return id(office.post("/api/v1/backoffice/areas", Map.of("storeId", store, "code", code, "name", "Sala " + code),
+                201));
     }
 
     private static List<String> topics(ChangeStream stream) {

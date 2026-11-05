@@ -159,6 +159,8 @@ class R2LatencySmoke {
         volume.put("dining.restaurant_table", count("dining.restaurant_table"));
         volume.put("shared.idempotency_record", count("shared.idempotency_record"));
         out.append("  data volume at the end: ").append(volume).append('\n');
+        out.append("  note: each client drafts into its one open order for the whole run, so that order's lines (and"
+                + " GET /pos/orders/{id}) grow from 0 to the final count per order\n");
         latencies.forEach((operation, samples) -> {
             List<Long> sorted = samples.stream().sorted().toList();
             out.append(String.format("  %-38s n=%6d  p50=%6.1f ms  p95=%6.1f ms  p99=%6.1f ms  max=%7.1f ms%n",
