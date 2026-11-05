@@ -47,6 +47,17 @@ class PaymentRows {
                 .params(UUID.randomUUID(), payment, targetType, target, new BigDecimal(amount)).update();
     }
 
+    /** A refund row of {@code payment} (an ORDER target), as settlement writes it. */
+    void refund(UUID payment, UUID order, String amount, UUID operator, UUID approver) {
+        jdbc.sql("""
+                INSERT INTO settlement.refund (id, payment_id, store_id, target_type, order_id, method_code, amount,
+                    currency, reason, session_id, terminal_id, business_date, operator_employee_id,
+                    approver_employee_id, confirmed_at)
+                VALUES (?, ?, ?, 'ORDER', ?, 'CASH', ?, 'MZN', 'returned', ?, ?, current_date, ?, ?, now())""")
+                .params(UUID.randomUUID(), payment, UUID.randomUUID(), order, new BigDecimal(amount),
+                        UUID.randomUUID(), UUID.randomUUID(), operator, approver).update();
+    }
+
     void inTransaction(Runnable work) {
         tx.executeWithoutResult(status -> work.run());
     }

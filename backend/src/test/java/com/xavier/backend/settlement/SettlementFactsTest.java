@@ -71,11 +71,27 @@ class SettlementFactsTest {
                 .getContent()).doesNotContain(payment);
     }
 
+    @Autowired
+    com.xavier.backend.identity.ApproverVerifier approvers;
+
     @Test
-    void refundsAreNoFactsYet() {
-        assertThat(facts.refundFact(UUID.randomUUID())).isEmpty();
-        assertThat(facts.refundIds(UUID.randomUUID(), LocalDate.now(), LocalDate.now(), PageRequest.of(0, 5)))
+    void aRefundIsAFactOfItsStoreAndTheRefundersCashDay() throws Exception {
+        org.mockito.Mockito.when(approvers.verify(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(
+                        com.xavier.backend.access.Permission.PAYMENT_REFUND_APPROVE),
+                org.mockito.ArgumentMatchers.any())).thenReturn(UUID.randomUUID());
+        Sale sale = fixtures.sale("2");
+        fixtures.payCash(sale, "25.00", "25.00").andExpect(status().isCreated());
+        UUID refund = SettlementFixtures.id(fixtures.refund(sale.cashier(), fixtures.paymentOf(sale.order()), "3.00")
+                .andExpect(status().isCreated()));
+        LocalDate day = LocalDate.parse(fixtures.currentDay(sale.cashier()).get("businessDate").asString());
+
+        assertThat(facts.refundFact(refund).orElseThrow().businessDate()).isEqualTo(day);
+        assertThat(facts.refundIds(sale.store(), day, day, PageRequest.of(0, 10)).getContent())
+                .containsExactly(refund);
+        assertThat(facts.refundIds(sale.store(), day.plusDays(1), day.plusDays(1), PageRequest.of(0, 10)))
                 .isEmpty();
+        assertThat(facts.refundFact(UUID.randomUUID())).isEmpty();
     }
 
     @Test

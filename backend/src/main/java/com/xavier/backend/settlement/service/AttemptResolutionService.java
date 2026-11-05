@@ -5,7 +5,6 @@ import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.PosContext;
 import com.xavier.backend.identity.ApprovalDeniedException;
 import com.xavier.backend.identity.ApproverVerifier;
-import com.xavier.backend.settlement.ProviderOutcome;
 import com.xavier.backend.settlement.exception.SettlementConflictException;
 import com.xavier.backend.settlement.exception.SettlementNotFoundException;
 import com.xavier.backend.settlement.exception.SettlementRule;
@@ -42,8 +41,8 @@ public class AttemptResolutionService {
 
     private final AccessPolicy accessPolicy;
     private final PaymentAttemptRepository attempts;
+    private final ProviderStatusQuery statusQuery;
     private final PaymentProviders providers;
-    private final ProviderCalls calls;
     private final AttemptTransitions transitions;
     private final ApproverVerifier approvers;
     private final PaymentRecorder recorder;
@@ -51,16 +50,19 @@ public class AttemptResolutionService {
     private final SettlementAudit audit;
     private final TransactionTemplate inTransaction;
     private final TransactionTemplate readOnly;
+    private final SettlementProperties properties;
     private final Clock clock;
 
     AttemptResolutionService(AccessPolicy accessPolicy, PaymentAttemptRepository attempts,
-                             PaymentProviders providers, ProviderCalls calls, AttemptTransitions transitions,
+                             ProviderStatusQuery statusQuery, PaymentProviders providers,
+                             AttemptTransitions transitions,
                              ApproverVerifier approvers, PaymentRecorder recorder, PaymentLocks paymentLocks,
-                             SettlementAudit audit, PlatformTransactionManager transactionManager, Clock clock) {
+                             SettlementAudit audit, SettlementProperties properties,
+                             PlatformTransactionManager transactionManager, Clock clock) {
         this.accessPolicy = accessPolicy;
         this.attempts = attempts;
+        this.statusQuery = statusQuery;
         this.providers = providers;
-        this.calls = calls;
         this.transitions = transitions;
         this.approvers = approvers;
         this.recorder = recorder;
@@ -69,6 +71,7 @@ public class AttemptResolutionService {
         this.inTransaction = new TransactionTemplate(transactionManager);
         this.readOnly = new TransactionTemplate(transactionManager);
         this.readOnly.setReadOnly(true);
+        this.properties = properties;
         this.clock = clock;
     }
 
@@ -91,10 +94,8 @@ public class AttemptResolutionService {
             throw SettlementConflictException.illegalState(attemptId, read.getStatus(), "be resolved by a provider "
                     + "query (it is " + read.getMethodKind() + ")");
         }
-        ProviderOutcome outcome = providers.find(read.getProviderCode())
-                .map(provider -> calls.status(provider, read.getProviderReference()))
-                .orElseGet(() -> new ProviderOutcome.Unknown("no provider " + read.getProviderCode()));
-        return inTransaction.execute(tx -> transitions.resolve(attemptId, outcome, pos.employeeId()).toView());
+        ProviderStatusQuery.Answer answer = statusQuery.ask(read);
+        return inTransaction.execute(tx -> transitions.resolve(attemptId, answer, pos.employeeId()).toView());
     }
 
     /**
@@ -118,7 +119,14 @@ public class AttemptResolutionService {
         return new Approval(attemptId, approver);
     }
 
-    /** D40 phase 2: UNKNOWN → SUCCEEDED (Payment and receipt) or FAILED, with the approver and the reason. */
+    /**
+     * D40 phase 2: UNKNOWN → SUCCEEDED (Payment and receipt) or FAILED, with the approver and the reason.
+     *
+     * @throws SettlementRuleException 422 {@code RECLASSIFY_TOO_EARLY}: to FAILED before
+     *         {@code restaurantpro.settlement.reclassify-failed-min-age} or before the provider answered a status
+     *         query (D81 (3)); for a method whose provider bean is gone, before
+     *         {@code reclassify-failed-without-provider-min-age} (PT24H)
+     */
     @Transactional
     public AttemptView reclassify(UUID attemptId, ResolveAttemptRequest request, Approval approval) {
         if (!approval.attemptId().equals(attemptId)) {
@@ -127,8 +135,11 @@ public class AttemptResolutionService {
         PosContext pos = accessPolicy.requirePos(Permission.PAYMENT_RESOLVE);
         authorized(pos, attemptId);
         PaymentAttempt attempt = transitions.locked(attemptId);
+        // D81 (3): an attempt whose provider is gone can never be answered; only a longer age guards it then
+        boolean askable = providers.exists(attempt.getProviderCode());
         attempt.reclassify(request.outcome(), request.reason(), pos.employeeId(), approval.approverEmployeeId(),
-                clock.instant());
+                clock.instant(), askable ? properties.reclassifyFailedMinAge()
+                        : properties.reclassifyFailedWithoutProviderMinAge(), askable);
         attempts.saveAndFlush(attempt);
         audit.attempt("PAYMENT_ATTEMPT_RECLASSIFIED", attempt.getId(), attempt.getStoreId(), attempt.getOrderId(),
                 attempt.getTerminalId(), approval.approverEmployeeId(), request.reason(),

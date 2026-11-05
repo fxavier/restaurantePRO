@@ -19,7 +19,9 @@ import com.xavier.backend.settlement.model.TargetType;
 import com.xavier.backend.settlement.repository.BillPartitionRepository;
 import com.xavier.backend.settlement.repository.CreditChargeRepository;
 import com.xavier.backend.settlement.repository.PaymentAttemptRepository;
+import com.xavier.backend.settlement.model.Refund;
 import com.xavier.backend.settlement.repository.PaymentRepository;
+import com.xavier.backend.settlement.repository.RefundRepository;
 import com.xavier.backend.settlement.repository.TargetPaid;
 import com.xavier.backend.shared.Money;
 import java.math.BigDecimal;
@@ -31,9 +33,9 @@ import java.util.UUID;
 import org.springframework.stereotype.Component;
 
 /**
- * An order's bill as settlement computes it (spec §8.3, D69, D74): the due from orders, its partitions, what each
- * target (the ORDER residual, each partition) was paid or put on account by a live credit charge, and the attempts
- * still open. Nothing of it is stored.
+ * An order's bill as settlement computes it (spec §8.3, D69, D74, D77): the due from orders, its partitions, what each
+ * target (the ORDER residual, each partition) was paid, net of its refunds, or put on account by a live credit charge,
+ * and the attempts still open. Nothing of it is stored.
  */
 @Component
 class Bills {
@@ -43,9 +45,11 @@ class Bills {
     private final BillPartitionRepository partitions;
     private final PaymentAttemptRepository attempts;
     private final CreditChargeRepository charges;
+    private final RefundRepository refunds;
 
     Bills(OrdersApi orders, PaymentRepository payments, BillPartitionRepository partitions,
-          PaymentAttemptRepository attempts, CreditChargeRepository charges) {
+          PaymentAttemptRepository attempts, CreditChargeRepository charges, RefundRepository refunds) {
+        this.refunds = refunds;
         this.orders = orders;
         this.payments = payments;
         this.partitions = partitions;
@@ -56,36 +60,44 @@ class Bills {
     Bill of(UUID orderId) {
         OrderBillingView view = orders.billingView(orderId);
         Money zero = Money.of(BigDecimal.ZERO, view.due().currency());
-        Money orderPaid = zero;
         Map<UUID, Money> partitionPaid = new HashMap<>();
-        for (TargetPaid paid : payments.paidByTarget(orderId)) {
-            Money amount = Money.of(paid.paid(), zero.currency());
-            if (paid.targetType() == TargetType.PARTITION) {
-                partitionPaid.put(paid.partitionId(), amount);
-            } else {
-                orderPaid = orderPaid.plus(amount);
-            }
+        Map<UUID, Money> orderPaid = new HashMap<>(); // one key, null: the ORDER target
+        add(payments.paidByTarget(orderId), zero, orderPaid, partitionPaid, false);
+        add(refunds.refundedByTarget(orderId), zero, orderPaid, partitionPaid, true); // D77: paid is net of refunds
+        return new Bill(view, partitions.findByOrderIdOrderById(orderId), orderPaid.getOrDefault(null, zero),
+                Map.copyOf(partitionPaid), attempts.findByOrderIdAndStatusInOrderByCreatedAt(orderId,
+                AttemptStatus.OPEN), charges.findByOrderIdOrderByCreatedAt(orderId),
+                refunds.findByOrderIdOrderById(orderId));
+    }
+
+    private static void add(List<TargetPaid> sums, Money zero, Map<UUID, Money> orderPaid,
+                            Map<UUID, Money> partitionPaid, boolean refunded) {
+        for (TargetPaid sum : sums) {
+            Money amount = Money.of(sum.paid(), zero.currency());
+            Money signed = refunded ? zero.minus(amount) : amount;
+            Map<UUID, Money> target = sum.targetType() == TargetType.PARTITION ? partitionPaid : orderPaid;
+            UUID key = sum.targetType() == TargetType.PARTITION ? sum.partitionId() : null;
+            target.merge(key, signed, Money::plus);
         }
-        return new Bill(view, partitions.findByOrderIdOrderById(orderId), orderPaid, Map.copyOf(partitionPaid),
-                attempts.findByOrderIdAndStatusInOrderByCreatedAt(orderId, AttemptStatus.OPEN),
-                charges.findByOrderIdOrderByCreatedAt(orderId));
     }
 
     /**
      * @param partitions   every partition of the order, LIVE and CANCELLED, oldest first
-     * @param orderPaid    Σ payments to the ORDER target (R2 payments included)
-     * @param partitionPaid Σ payments per partition that was paid
+     * @param orderPaid    Σ payments to the ORDER target (R2 payments included), less its refunds
+     * @param partitionPaid Σ payments per partition that was paid, less its refunds
      * @param openAttempts the order's attempts still CREATED, PENDING or UNKNOWN, on any target
      * @param charges      every credit charge of the order, RESERVED, POSTED and RELEASED, oldest first
+     * @param refunds      every refund of the order's payments, oldest first
      */
     record Bill(OrderBillingView view, List<BillPartition> partitions, Money orderPaid,
-                Map<UUID, Money> partitionPaid, List<PaymentAttempt> openAttempts, List<CreditCharge> charges) {
+                Map<UUID, Money> partitionPaid, List<PaymentAttempt> openAttempts, List<CreditCharge> charges,
+                List<Refund> refunds) {
 
         Money due() {
             return view.due();
         }
 
-        /** Σ of every payment of the order, on any target. */
+        /** Σ of every payment of the order, on any target, less its refunds. */
         Money paid() {
             return partitionPaid.values().stream().reduce(orderPaid, Money::plus);
         }

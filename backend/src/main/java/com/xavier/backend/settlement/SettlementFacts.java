@@ -7,6 +7,7 @@ import com.xavier.backend.settlement.model.PaymentAttempt;
 import com.xavier.backend.settlement.repository.CreditChargeRepository;
 import com.xavier.backend.settlement.repository.PaymentAttemptRepository;
 import com.xavier.backend.settlement.repository.PaymentRepository;
+import com.xavier.backend.settlement.repository.RefundRepository;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -19,8 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Settlement's immutable facts for reporting only (D66, D84): reporting's listeners pull them on
  * {@code PaymentRecorded}, {@code RefundRecorded} and {@code CreditChargePosted}, and a rebuild pages the ids. Every
- * method is read-only and authorizes nothing (reporting's use case did). Refunds come in S30: until then they have no
- * facts. A credit charge is a fact once POSTED (D74): it is never money received, so it is never a payment fact.
+ * method is read-only and authorizes nothing (reporting's use case did). A credit charge is a fact once POSTED (D74): it is never money received, so it is never a payment fact.
  */
 @Service
 public class SettlementFacts {
@@ -32,9 +32,11 @@ public class SettlementFacts {
     private final PaymentAttemptRepository attempts;
     private final CashApi cash;
     private final CreditChargeRepository charges;
+    private final RefundRepository refunds;
 
     SettlementFacts(PaymentRepository payments, PaymentAttemptRepository attempts, CashApi cash,
-                    CreditChargeRepository charges) {
+                    CreditChargeRepository charges, RefundRepository refunds) {
+        this.refunds = refunds;
         this.payments = payments;
         this.attempts = attempts;
         this.cash = cash;
@@ -46,10 +48,17 @@ public class SettlementFacts {
         return payments.findById(paymentId).map(this::fact);
     }
 
-    /** Empty until S30 records refunds. */
+    /**
+     * A refund (D77): its amount is the money given back, positive (reporting signs it); {@code businessDate} and
+     * {@code terminalId} are the refunder's session's day and terminal; {@code customerId} is set for the refund of a
+     * debt payment, which pays no order.
+     */
     @Transactional(readOnly = true)
     public Optional<RefundFact> refundFact(UUID refundId) {
-        return Optional.empty();
+        return refunds.findById(refundId).map(r -> new RefundFact(r.getId(), r.getPaymentId(), r.getStoreId(),
+                r.getBusinessDate(), r.getConfirmedAt(), r.getMethodCode(), r.amount(), r.getOrderId(),
+                r.getPartitionId(), r.getCreditAccountId(), r.getOperatorEmployeeId(), r.getApproverEmployeeId(),
+                r.getTerminalId()));
     }
 
     /** A POSTED credit charge; empty for one still RESERVED or RELEASED (never on the customer's account). */
@@ -73,9 +82,10 @@ public class SettlementFacts {
                 Pageable.ofSize(page.getPageSize()).withPage(page.getPageNumber()));
     }
 
+    /** The ids of the store's refunds of business days {@code [from, to]}, oldest first. */
     @Transactional(readOnly = true)
     public Page<UUID> refundIds(UUID storeId, LocalDate from, LocalDate to, Pageable page) {
-        return Page.empty(page);
+        return refunds.idsOf(storeId, from, to, Pageable.ofSize(page.getPageSize()).withPage(page.getPageNumber()));
     }
 
     /** The ids of the store's POSTED charges of business days {@code [from, to]}, oldest first. */

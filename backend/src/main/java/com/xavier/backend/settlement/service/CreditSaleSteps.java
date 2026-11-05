@@ -100,7 +100,7 @@ public class CreditSaleSteps {
      *         {@code CREDIT_BLOCKED}, {@code CREDIT_ACCOUNT_MISSING}, {@code CUSTOMER_INACTIVE}
      * @throws SettlementConflictException 409 {@code PAYMENT_IN_DOUBT}, {@code CREDIT_CHARGE_EXISTS}
      */
-    public CreditChargeView reserve(PosContext pos, UUID orderId, CreditChargeRequest request) {
+    public CreditChargeView reserve(PosContext pos, UUID orderId, CreditChargeRequest request, String requestKey) {
         return inTransaction.execute(tx -> {
             accessPolicy.requireSessionStore(pos, orders.storeOf(orderId), PaymentAttemptService.ORDER, orderId);
             locks.lockOrder(orderId);
@@ -109,7 +109,7 @@ public class CreditSaleSteps {
             UUID partitionId = request.partitionId();
             Optional<CreditCharge> live = bill.liveChargeOn(partitionId);
             if (live.isPresent()) {
-                return resumed(live.get(), request.customerId(), amount, partitionId, orderId);
+                return resumed(live.get(), request.customerId(), amount, requestKey, partitionId, orderId);
             }
             BillPartition partition = partitionId == null ? null : invoiceable(bill, partitionId);
             bill.openOn(partitionId).stream().findFirst().ifPresent(open -> {
@@ -132,7 +132,8 @@ public class CreditSaleSteps {
             }
             CustomerSnapshot buyer = customers.snapshot(request.customerId());
             CreditCharge charge = CreditCharge.reserve(orderId, partitionId, bill.storeId(), pos.terminalId(),
-                    request.customerId(), amount, bill.view().businessDay(), pos.employeeId(), clock.instant());
+                    request.customerId(), amount, bill.view().businessDay(), pos.employeeId(), requestKey,
+                    clock.instant());
             customers.reserve(request.customerId(), amount, charge.getId());
             UniqueConstraints.saveAndFlush(charges, charge,
                     () -> SettlementConflictException.chargeExists(targetName(partitionId),
@@ -176,7 +177,10 @@ public class CreditSaleSteps {
         if (charge.getStatus() == CreditChargeStatus.POSTED) {
             return charge;
         }
-        if (charge.getStatus() == CreditChargeStatus.RESERVED && !documentIssued(charge)) {
+        if (charge.getStatus() == CreditChargeStatus.RELEASED) { // cancelled between the steps: nothing is owed
+            throw SettlementConflictException.illegalChargeState(charge.getId(), charge.getStatus(), "be posted");
+        }
+        if (!documentIssued(charge)) {
             throw new SettlementRuleException(SettlementRule.FISCAL_PENDING, "The sale document of credit charge "
                     + charge.getId() + " is not issued yet.", Map.of("documentId", charge.getDocumentId()));
         }
@@ -196,9 +200,9 @@ public class CreditSaleSteps {
                 .anyMatch(d -> d.id().equals(charge.getDocumentId()) && "ISSUED".equals(d.status()));
     }
 
-    private static CreditChargeView resumed(CreditCharge live, UUID customerId, Money amount, UUID partitionId,
-                                            UUID orderId) {
-        if (!live.repeats(customerId, amount)) {
+    private static CreditChargeView resumed(CreditCharge live, UUID customerId, Money amount, String requestKey,
+                                            UUID partitionId, UUID orderId) {
+        if (!live.resumableBy(customerId, amount, requestKey)) {
             throw SettlementConflictException.chargeExists(targetName(partitionId),
                     partitionId == null ? orderId : partitionId, live.getId());
         }

@@ -178,6 +178,15 @@ class CodedErrorContractTest {
             Map.entry("illegal-partition-state", () -> SettlementConflictException.illegalPartitionState(ID,
                     "CANCELLED", "be cancelled")),
             Map.entry("partition-in-doubt", () -> SettlementConflictException.inDoubt("partition", ID, OTHER)),
+            // R3 settlement (S30): payments in doubt, refunds
+            Map.entry("reclassify-too-early", () -> SettlementRuleException.reclassifyTooEarly(ID,
+                    Duration.ofMinutes(15), true, 0)),
+            Map.entry("reclassify-too-early-no-provider", () -> SettlementRuleException.reclassifyTooEarly(ID,
+                    Duration.ofHours(24), false, 0)),
+            Map.entry("refund-exceeds-refundable", () -> SettlementRuleException.refundExceedsRefundable(ID,
+                    Money.of("5.01", MZN), Money.of("5.00", MZN))),
+            Map.entry("external-reference-required", () -> SettlementRuleException.externalReferenceRequired("CARD")),
+            Map.entry("refund-self-approval", SettlementRuleException::refundSelfApproval),
             Map.entry("range-reversed", () -> ReportRangeException.reversed(LocalDate.of(2026, 11, 5),
                     LocalDate.of(2026, 11, 4))),
             Map.entry("range-too-large", () -> ReportRangeException.tooLarge(366)),
@@ -381,6 +390,20 @@ class CodedErrorContractTest {
                 + " already has a credit charge; cancel it first.", ",\"chargeId\":\"" + OTHER + "\"");
         expect("illegal-charge-state", 409, "ILLEGAL_CHARGE_STATE",
                 "Credit charge " + ID + " is POSTED and cannot be cancelled.", "");
+    }
+
+    @Test
+    void settlementInDoubtAndRefundRules() throws Exception {
+        expect("reclassify-too-early", 422, "RECLASSIFY_TOO_EARLY", "Payment attempt " + ID
+                + " may be reclassified as FAILED only once it is older than PT15M and the provider answered a status "
+                + "query about it since it became UNKNOWN.", ",\"answeredCount\":0");
+        expect("reclassify-too-early-no-provider", 422, "RECLASSIFY_TOO_EARLY", "Payment attempt " + ID
+                + " may be reclassified as FAILED only once it is older than PT24H.", ",\"answeredCount\":0");
+        expect("refund-exceeds-refundable", 422, "REFUND_EXCEEDS_REFUNDABLE", "The refund 5.01 is more than the "
+                + "5.00 still refundable of payment " + ID + ".", ",\"refundable\":5.00");
+        expect("external-reference-required", 422, "EXTERNAL_REFERENCE_REQUIRED", "A refund to CARD is made on the "
+                + "terminal or the provider's portal first: give its reference.", "");
+        expect("refund-self-approval", 422, "SELF_APPROVAL", "The approver of a refund cannot be the refunder.", "");
     }
 
     @Test

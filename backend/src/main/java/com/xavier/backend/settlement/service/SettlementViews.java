@@ -52,7 +52,8 @@ class SettlementViews {
                 bill.openAttempts().stream().map(PaymentAttempt::toView).toList(),
                 partitions(bill, documents), coverage(bill, fiscal.coverage(orderId)), bill.residualBalance(),
                 taxRoundingDifferences(bill), bill.credit(),
-                bill.charges().stream().map(com.xavier.backend.settlement.model.CreditCharge::toView).toList());
+                bill.charges().stream().map(com.xavier.backend.settlement.model.CreditCharge::toView).toList(),
+                bill.refunds().stream().map(com.xavier.backend.settlement.model.Refund::toView).toList());
     }
 
     /** Per rate of the order's lines (in rate order): Σ of the lines' tax drift (D68 amendment). */

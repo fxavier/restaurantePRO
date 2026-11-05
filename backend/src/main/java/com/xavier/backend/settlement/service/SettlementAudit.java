@@ -18,6 +18,7 @@ class SettlementAudit {
 
     static final String ATTEMPT = "PaymentAttempt";
     static final String CHARGE = "CreditCharge";
+    static final String REFUND = "Refund";
 
     private final AccessPolicy accessPolicy;
     private final AuditLog auditLog;
@@ -52,6 +53,15 @@ class SettlementAudit {
             auditLog.recordAsSystem(action, CHARGE, chargeId.toString(), storeId, terminalId, reason, details);
         }
         changeNotifier.notifyAfterCommit(storeId, ChangeTopic.ORDER, orderId);
+    }
+
+    /** D77: a refund, as the refunder with its approver and reason; D95 {@code ORDER} for an order's payment. */
+    void refund(com.xavier.backend.settlement.model.Refund refund, Map<String, Object> details) {
+        auditLog.recordAsCurrentActor("PAYMENT_REFUNDED", REFUND, refund.getId().toString(), refund.getStoreId(),
+                refund.getApproverEmployeeId(), refund.getReason(), details);
+        if (refund.getOrderId() != null) {
+            changeNotifier.notifyAfterCommit(refund.getStoreId(), ChangeTopic.ORDER, refund.getOrderId());
+        }
     }
 
     void record(String action, String entityType, UUID entityId, UUID storeId, Map<String, Object> details) {
