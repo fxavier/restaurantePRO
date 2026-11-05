@@ -6,6 +6,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
@@ -33,22 +34,39 @@ final class ChangeStream implements AutoCloseable {
     }
 
     /**
-     * Subscribes. The response headers arrive only with the first event, so a caller that needs to know the stream is
-     * registered commits a change of its own and waits for it ({@link #awaitNotice}).
+     * Subscribes. The response headers arrive only with the first event, and the emitter is registered on the server
+     * some time after this returns; a notice committed before that is lost (D60: no replay). A caller that needs the
+     * stream live therefore uses {@link #makeLive}.
      */
     static ChangeStream subscribe(Browser tab) {
         return new ChangeStream(tab);
     }
 
-    /** Waits up to 10 s for a notice matching {@code match}; the stream is then live for every later commit. */
-    void awaitNotice(java.util.function.Predicate<JsonNode> match, String what) throws InterruptedException {
-        long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
-        while (notices().stream().noneMatch(match)) {
-            if (System.nanoTime() > deadline) {
-                throw new AssertionError("No change notice: " + what + "; got " + notices());
+    /** A write of the stream's own store that commits a change notice; returns the changed id the notice names. */
+    @FunctionalInterface
+    interface ControlWrite {
+        UUID write(int attempt) throws Exception;
+    }
+
+    /**
+     * Repeats a fresh control write (up to 20 times, 500 ms apart) until the stream receives the notice naming that
+     * write's id; from then on the emitter is registered, so every later commit reaches it. Returns every id written,
+     * including those whose notice was lost before the subscription took effect.
+     */
+    List<UUID> makeLive(ControlWrite control, String what) throws Exception {
+        List<UUID> written = new java.util.ArrayList<>();
+        for (int attempt = 1; attempt <= 20; attempt++) {
+            UUID id = control.write(attempt);
+            written.add(id);
+            long deadline = System.nanoTime() + Duration.ofMillis(500).toNanos();
+            while (System.nanoTime() < deadline) {
+                if (notices().stream().anyMatch(n -> n.hasNonNull("id") && n.get("id").asString().equals(id.toString()))) {
+                    return written;
+                }
+                Thread.sleep(20);
             }
-            Thread.sleep(20);
         }
+        throw new AssertionError("The change stream never became live: " + what + "; got " + notices());
     }
 
     /** Available once the first event arrived. */

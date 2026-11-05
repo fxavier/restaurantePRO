@@ -149,13 +149,12 @@ class R2AcceptanceTest {
         Browser cashierB = posLogin(office, terminalB, cashierBCode, CASHIER_PIN, "cashier B");
         try (ChangeStream streamA = ChangeStream.subscribe(cashier);
              ChangeStream streamB = ChangeStream.subscribe(cashierB)) {
-            // positive controls: each stream hears its own store's dining change, so both are live from here on
-            UUID areaB = id(office.post("/api/v1/backoffice/areas", Map.of("storeId", storeB, "code", "SALA",
-                    "name", "Sala B"), 201));
-            streamB.awaitNotice(n -> n.get("topic").asString().equals("TABLES"), "store B's own area");
-            UUID tableM2 = id(office.post("/api/v1/backoffice/tables", Map.of("storeId", storeA, "areaId", area,
-                    "code", "M2", "seats", 2), 201));
-            streamA.awaitNotice(n -> n.get("topic").asString().equals("TABLES"), "store A's own table");
+            // positive controls: each stream hears its own store's dining change (repeated with fresh writes until it
+            // does, as a subscription takes effect only once the server registered it), so both are live from here on
+            List<UUID> controlB = streamB.makeLive(attempt -> id(office.post("/api/v1/backoffice/areas",
+                    Map.of("storeId", storeB, "code", "SALA" + attempt, "name", "Sala B" + attempt), 201)), "store B");
+            List<UUID> controlA = streamA.makeLive(attempt -> id(office.post("/api/v1/backoffice/tables",
+                    Map.of("storeId", storeA, "areaId", area, "code", "C" + attempt, "seats", 2), 201)), "store A");
             assertThat(streamA.status()).isEqualTo(200);
             assertThat(streamA.contentType()).startsWith("text/event-stream");
             assertThat(streamB.status()).isEqualTo(200);
@@ -340,11 +339,14 @@ class R2AcceptanceTest {
                     .isSubsetOf("topic", "id"));
             journey.add("SSE store A: " + streamA.notices().size() + " notices, topics " + topics(streamA).stream()
                     .map(t -> t.contains(":") ? t.substring(0, t.indexOf(':')) : t).distinct().toList());
-            assertThat(topics(streamA)).noneMatch(t -> t.contains(areaB.toString()));
+            assertThat(topics(streamA)).noneMatch(t -> controlB.stream().anyMatch(b -> t.contains(b.toString())));
             assertThat(streamB.notices()).as("store B's stream after its own control notice")
                     .hasSize(storeBControl);
-            assertThat(topics(streamB)).noneMatch(t -> t.contains(order.toString()) || t.contains(tableM2.toString()));
-            journey.add("SSE store B: " + storeBControl + " notice(s), all its own (control); none of store A's");
+            assertThat(topics(streamB)).noneMatch(t -> t.contains(order.toString())
+                    || controlA.stream().anyMatch(a -> t.contains(a.toString())));
+            assertThat(topics(streamB)).allMatch(t -> controlB.stream().anyMatch(b -> t.equals("TABLES:" + b)));
+            journey.add("SSE store B: " + storeBControl + " notice(s), all its own (control, " + controlB.size()
+                    + " write(s)); none of store A's");
         }
     }
 
