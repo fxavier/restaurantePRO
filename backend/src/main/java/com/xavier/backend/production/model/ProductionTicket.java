@@ -17,7 +17,9 @@ import org.hibernate.annotations.UuidGenerator;
 /**
  * The logical ticket per source × destination (spec §4): a fact. Its text is fixed when it is created, so a copy or
  * a retry prints the same thing. {@code suppressed} means the printer was in IGNORE: there is no job, and the ticket
- * shows that the work was suppressed, not lost (§8.6).
+ * shows that the work was suppressed, not lost (§8.6). An UNROUTED ticket had no printer to go to (D89 (1)): it has
+ * no printer and no job until it is routed, the one change a ticket takes (a compare-and-set in the repository, which
+ * the table's trigger also allows only that way).
  */
 @Entity
 @Immutable
@@ -32,7 +34,7 @@ public class ProductionTicket {
     private UUID storeId;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 10)
+    @Column(nullable = false, length = 20)
     private TicketSource sourceType;
 
     @Column(nullable = false)
@@ -49,7 +51,10 @@ public class ProductionTicket {
 
     private UUID terminalId;
 
-    @Column(nullable = false)
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 10)
+    private TicketRouting routing;
+
     private UUID printerId;
 
     @Column(nullable = false)
@@ -71,6 +76,21 @@ public class ProductionTicket {
      * @param printerId the printer the work was routed to (before a redirect)
      */
     public static ProductionTicket create(TicketDraft draft, UUID printerId, boolean suppressed, Instant now) {
+        ProductionTicket ticket = of(draft, now);
+        ticket.routing = TicketRouting.ROUTED;
+        ticket.printerId = Objects.requireNonNull(printerId, "printerId");
+        ticket.suppressed = suppressed;
+        return ticket;
+    }
+
+    /** Work with no printer to go to (D89 (1)): kept, with no printer and no job, until it is routed. */
+    public static ProductionTicket unrouted(TicketDraft draft, Instant now) {
+        ProductionTicket ticket = of(draft, now);
+        ticket.routing = TicketRouting.UNROUTED;
+        return ticket;
+    }
+
+    private static ProductionTicket of(TicketDraft draft, Instant now) {
         ProductionTicket ticket = new ProductionTicket();
         ticket.storeId = draft.storeId();
         ticket.sourceType = draft.sourceType();
@@ -79,8 +99,6 @@ public class ProductionTicket {
         ticket.kind = draft.kind();
         ticket.orderId = draft.orderId();
         ticket.terminalId = draft.terminalId();
-        ticket.printerId = Objects.requireNonNull(printerId, "printerId");
-        ticket.suppressed = suppressed;
         ticket.content = String.join("\n", draft.lines());
         ticket.qrPayload = draft.qrPayload();
         ticket.createdAt = now;
@@ -135,6 +153,10 @@ public class ProductionTicket {
 
     public UUID getPrinterId() {
         return printerId;
+    }
+
+    public TicketRouting getRouting() {
+        return routing;
     }
 
     public boolean isSuppressed() {

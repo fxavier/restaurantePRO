@@ -141,21 +141,23 @@ class TerminalAndVoidTicketsTest {
     @Test
     void aSubtotalPrintsOnTheTerminalsPrinterOnceEvenWhenRedelivered() throws Exception {
         UUID order = UUID.randomUUID();
+        UUID request = UUID.randomUUID();
         SubtotalRequested subtotal = new SubtotalRequested(order, shop.store(), terminal, 77, "M1",
                 List.of(new SubtotalLine("Coca-Cola 33cl", new BigDecimal("2"), Money.of("12.50", MZN),
-                        Money.of("25.00", MZN))), Money.of("25.00", MZN));
+                        Money.of("25.00", MZN))), Money.of("25.00", MZN), request);
 
         publish(subtotal);
-        await(() -> fixtures.tickets(order).size() == 1, "subtotal ticket");
+        await(() -> fixtures.tickets(request).size() == 1, "subtotal ticket");
         publish(subtotal);
 
-        Thread.sleep(500);
-        assertThat(fixtures.tickets(order)).singleElement().satisfies(ticket -> {
-            assertThat(ticket).containsEntry("source_type", "SUBTOTAL").containsEntry("printer_id", counter);
+        await(() -> fixtures.completedPublications(request) == 2, "redelivery handled");
+        assertThat(fixtures.tickets(request)).singleElement().satisfies(ticket -> {
+            assertThat(ticket).containsEntry("source_type", "SUBTOTAL").containsEntry("printer_id", counter)
+                    .containsEntry("order_id", order);
             assertThat((String) ticket.get("content")).contains("SUBTOTAL", "2 x Coca-Cola 33cl 12.50 = 25.00",
                     "TOTAL 25.00 MZN");
         });
-        assertThat(fixtures.jobsOfSource(order)).hasSize(1);
+        assertThat(fixtures.jobsOfSource(request)).hasSize(1);
     }
 
     @Test
@@ -179,38 +181,36 @@ class TerminalAndVoidTicketsTest {
         assertThat(fixtures.jobsOfSource(voidId)).hasSize(1);
     }
 
-    /** A terminal mapped to a printer of another store is unrouted: the event completes, nothing is printed. */
+    /** A terminal mapped to a printer of another store is unrouted: the event completes, the ticket is kept. */
     @Test
     void aTerminalMappedToAnotherStoresPrinterIsUnroutedAndTheEventCompletes() throws Exception {
         UUID otherStore = fixtures.shop().store();
-        UUID order = UUID.randomUUID();
+        UUID request = UUID.randomUUID();
         double unroutedBefore = meters.get(ProductionMetrics.UNROUTED).counter().count();
 
-        publish(new SubtotalRequested(order, otherStore, terminal, 79, null, List.of(), Money.of("0.00", MZN)));
+        publish(new SubtotalRequested(UUID.randomUUID(), otherStore, terminal, 79, null, List.of(),
+                Money.of("0.00", MZN), request));
 
-        await(() -> completed(order), "publication completed");
-        assertThat(fixtures.tickets(order)).isEmpty();
+        await(() -> fixtures.completedPublications(request) > 0, "publication completed");
+        assertThat(fixtures.tickets(request)).singleElement().satisfies(ticket -> assertThat(ticket)
+                .containsEntry("routing", "UNROUTED").containsEntry("store_id", otherStore)
+                .containsEntry("printer_id", null));
+        assertThat(fixtures.jobsOfSource(request)).isEmpty();
         assertThat(meters.get(ProductionMetrics.UNROUTED).counter().count()).isGreaterThan(unroutedBefore);
     }
 
     @Autowired
     io.micrometer.core.instrument.MeterRegistry meters;
 
-    private boolean completed(UUID source) {
-        return jdbc.sql("""
-                        SELECT count(*) FROM event_publication WHERE serialized_event LIKE :id
-                          AND listener_id LIKE '%ProductionListeners%' AND completion_date IS NOT NULL""")
-                .param("id", "%" + source + "%").query(Long.class).single() > 0;
-    }
-
     @Test
-    void aTerminalWithoutPrinterGetsNoTicket() throws Exception {
-        UUID order = UUID.randomUUID();
-        publish(new SubtotalRequested(order, shop.store(), UUID.randomUUID(), 78, null, List.of(),
-                Money.of("0.00", MZN)));
+    void aTerminalWithoutPrinterGetsAnUnroutedTicket() throws Exception {
+        UUID request = UUID.randomUUID();
+        publish(new SubtotalRequested(UUID.randomUUID(), shop.store(), UUID.randomUUID(), 78, null, List.of(),
+                Money.of("0.00", MZN), request));
 
-        Thread.sleep(1000);
-        assertThat(fixtures.tickets(order)).isEmpty();
+        await(() -> fixtures.tickets(request).size() == 1, "unrouted subtotal ticket");
+        assertThat(fixtures.tickets(request).getFirst()).containsEntry("routing", "UNROUTED");
+        assertThat(fixtures.jobsOfSource(request)).isEmpty();
     }
 
     private DocumentView issue() throws Exception {
