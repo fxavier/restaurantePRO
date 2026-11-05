@@ -86,9 +86,17 @@ public class CreditLedgerService {
 
     @Transactional(readOnly = true)
     public CustomerSnapshot snapshot(UUID customerId) {
-        Customer customer = activeCustomer(customerId);
+        return snapshotOf(activeCustomer(customerId));
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<CustomerSnapshot> findCustomer(UUID customerId) {
+        return customers.findById(customerId).map(this::snapshotOf);
+    }
+
+    private CustomerSnapshot snapshotOf(Customer customer) {
         return new CustomerSnapshot(customer.getId(), customer.getName(), customer.getTaxId(),
-                addresses.findFirstByCustomerIdAndKindOrderByIdAsc(customerId, AddressKind.BILLING)
+                addresses.findFirstByCustomerIdAndKindOrderByIdAsc(customer.getId(), AddressKind.BILLING)
                         .map(CustomerAddress::toView).orElse(null));
     }
 

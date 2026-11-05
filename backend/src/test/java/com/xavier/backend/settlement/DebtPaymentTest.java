@@ -85,6 +85,19 @@ class DebtPaymentTest {
     }
 
     @Test
+    void anInactiveCustomersSlipStillNamesThem() throws Exception {
+        fixtures.count("WITH off AS (UPDATE customers.customer SET active = false WHERE id = ? RETURNING 1) "
+                + "SELECT count(*) FROM off", customer); // deactivated after the sales: the debt is still paid
+
+        UUID payment = paymentOf(SettlementFixtures.json(fixtures.payDebt(sale.cashier(), customer, "CASH", "10.00",
+                "10.00", UUID.randomUUID().toString()).andExpect(status().isCreated())));
+
+        assertThat(events.stream(ReceiptSlipRequested.class).filter(e -> e.paymentId().equals(payment)))
+                .singleElement().satisfies(slip -> assertThat(slip.lines())
+                        .anyMatch(line -> line.startsWith("Cliente: Credit ")));
+    }
+
+    @Test
     void namedDebitsAreSettledInTheOrderGiven() throws Exception {
         fixtures.payDebt(sale.cashier(), customer, "CASH", "15.00", "15.00", UUID.randomUUID().toString(),
                 newerDebit, olderDebit).andExpect(status().isCreated());
