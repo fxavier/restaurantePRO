@@ -9,11 +9,13 @@ import com.xavier.backend.reporting.model.dto.ReceiptsRow;
 import com.xavier.backend.reporting.model.dto.ReportView;
 import com.xavier.backend.reporting.model.dto.SalesRow;
 import com.xavier.backend.reporting.model.dto.TaxRow;
+import com.xavier.backend.reporting.model.dto.VoidsRow;
 import com.xavier.backend.reporting.repository.ReportQueries;
 import com.xavier.backend.reporting.repository.ReportQueries.CreditAggregate;
 import com.xavier.backend.reporting.repository.ReportQueries.ReceiptsAggregate;
 import com.xavier.backend.reporting.repository.ReportQueries.SalesAggregate;
 import com.xavier.backend.reporting.repository.ReportQueries.TaxAggregate;
+import com.xavier.backend.reporting.repository.ReportQueries.VoidsAggregate;
 import com.xavier.backend.shared.Money;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -101,6 +103,24 @@ public class ReportService {
                 latest(taxes.stream().map(TaxAggregate::asOf).toArray(Instant[]::new)));
     }
 
+    /** Voids by reason, employee (who voided), item or approver. */
+    public ReportView<VoidsRow> voids(UUID storeId, LocalDate from, LocalDate to, String groupBy) {
+        access.require(Permission.REPORT_VIEW, storeId);
+        ReportRange range = new ReportRange(storeId, from, to);
+        VoidsGrouping grouping = VoidsGrouping.valueOf(groupBy.toUpperCase(Locale.ROOT));
+        Currency currency = currencyOf(storeId);
+        List<VoidsAggregate> groups = queries.voids(grouping.key, grouping.label, storeId, from, to);
+        Map<String, String> names = grouping == VoidsGrouping.EMPLOYEE || grouping == VoidsGrouping.APPROVER
+                ? labels.employees(groups.stream().map(VoidsAggregate::key).toList()) : Map.of();
+        List<VoidsRow> rows = groups.stream().map(group -> voidsRow(group,
+                grouping == VoidsGrouping.ITEM ? group.label() : label(names, group.key()), currency)).toList();
+        VoidsAggregate totals = queries.voids(ReportQueries.TOTAL, "NULL::text", storeId, from, to).stream()
+                .findFirst().orElse(null);
+        return view(range, grouping.name(), rows, totals == null
+                        ? new VoidsRow(null, null, 0, BigDecimal.ZERO, money(null, currency), 0, 0)
+                        : voidsRow(totals, null, currency), totals == null ? null : totals.asOf());
+    }
+
     /** Receipts by method, employee or day; credit apart (D87). */
     public ReportView<ReceiptsRow> receipts(UUID storeId, LocalDate from, LocalDate to, String groupBy) {
         access.require(Permission.REPORT_VIEW, storeId);
@@ -160,6 +180,11 @@ public class ReportService {
 
     private static List<String> keys(List<SalesAggregate> groups) {
         return groups.stream().map(SalesAggregate::key).toList();
+    }
+
+    private static VoidsRow voidsRow(VoidsAggregate group, String label, Currency currency) {
+        return new VoidsRow(group.key(), label, group.voids(), group.quantity(), money(group.gross(), currency),
+                group.wasted(), group.afterDispatch());
     }
 
     private static ReceiptsRow receiptsRow(String key, String label, ReceiptsAggregate money, CreditAggregate credit,

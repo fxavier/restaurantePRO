@@ -1,6 +1,7 @@
 package com.xavier.backend.reporting.service;
 
 import com.xavier.backend.fiscal.model.event.FiscalDocumentIssued;
+import com.xavier.backend.orders.model.event.OrderLinesVoided;
 import com.xavier.backend.settlement.model.event.CreditChargePosted;
 import com.xavier.backend.settlement.model.event.PaymentRecorded;
 import com.xavier.backend.settlement.model.event.RefundRecorded;
@@ -25,6 +26,11 @@ public class ProjectionListeners {
     @ApplicationModuleListener
     public void on(FiscalDocumentIssued event) {
         projections.projectDocument(event.documentId());
+    }
+
+    @ApplicationModuleListener
+    public void on(OrderLinesVoided event) {
+        projections.projectVoid(event.voidId());
     }
 
     @ApplicationModuleListener

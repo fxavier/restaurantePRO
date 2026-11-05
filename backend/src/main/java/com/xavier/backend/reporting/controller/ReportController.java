@@ -4,6 +4,7 @@ import com.xavier.backend.reporting.model.dto.ReceiptsRow;
 import com.xavier.backend.reporting.model.dto.ReportView;
 import com.xavier.backend.reporting.model.dto.SalesRow;
 import com.xavier.backend.reporting.model.dto.TaxRow;
+import com.xavier.backend.reporting.model.dto.VoidsRow;
 import com.xavier.backend.reporting.service.ReportService;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -47,6 +48,12 @@ class ReportController {
                                   @RequestParam(defaultValue = "quantity") @Pattern(regexp = "quantity|gross") String by,
                                   @RequestParam(defaultValue = "20") @Min(1) @Max(100) int limit) {
         return reports.topItems(storeId, from, to, by, limit);
+    }
+
+    @GetMapping("/voids")
+    ReportView<VoidsRow> voids(@RequestParam UUID storeId, @RequestParam LocalDate from, @RequestParam LocalDate to,
+                               @RequestParam @Pattern(regexp = "reason|employee|item|approver") String groupBy) {
+        return reports.voids(storeId, from, to, groupBy);
     }
 
     @GetMapping("/receipts")

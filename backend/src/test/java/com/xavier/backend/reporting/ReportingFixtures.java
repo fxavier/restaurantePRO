@@ -127,6 +127,12 @@ public class ReportingFixtures {
                 .query(LocalDate.class).single();
     }
 
+    /** The order's voids, oldest first. */
+    public java.util.List<UUID> voidsOf(UUID order) {
+        return jdbc.sql("SELECT id FROM orders.order_line_void WHERE order_id = ? ORDER BY id").param(order)
+                .query(UUID.class).list();
+    }
+
     /** The order's payments, oldest first. */
     public java.util.List<UUID> payments(UUID order) {
         return jdbc.sql("SELECT id FROM settlement.payment WHERE order_id = ? ORDER BY confirmed_at, id")

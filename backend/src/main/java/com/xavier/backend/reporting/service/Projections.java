@@ -12,6 +12,8 @@ import com.xavier.backend.organization.OrganizationApi;
 import com.xavier.backend.reporting.repository.ProjectionStore;
 import com.xavier.backend.reporting.repository.ProjectionStore.CreditRecord;
 import com.xavier.backend.reporting.repository.ProjectionStore.MoneyRecord;
+import com.xavier.backend.reporting.repository.ProjectionStore.VoidRecord;
+import com.xavier.backend.orders.VoidFacts;
 import com.xavier.backend.reporting.repository.ProjectionStore.SalesHeader;
 import com.xavier.backend.reporting.repository.ProjectionStore.SalesLine;
 import com.xavier.backend.reporting.repository.ProjectionStore.SalesTax;
@@ -94,6 +96,16 @@ public class Projections {
             store.insertSalesTax(header, new SalesTax(taxCodes(doc.lines(), tax.rate(), dimensions), tax.rate(),
                     tax.net().amount(), tax.tax().amount()), now);
         }
+    }
+
+    /** A void of a confirmed line, in its order's business day; local hour at the void (D85). */
+    @Transactional
+    public void projectVoid(UUID voidId) {
+        VoidFacts v = orders.voidFacts(voidId);
+        store.insertVoid(new VoidRecord(v.voidId(), v.storeId(), v.businessDay(), localHour(v.storeId(), v.at()),
+                v.lineSnapshot().itemCode(), v.lineSnapshot().description(), v.quantity(), v.gross().amount(),
+                v.reason(), v.wasted(), v.afterDispatch(), v.operatorEmployeeId(), v.approverEmployeeId()),
+                clock.instant());
     }
 
     /** A confirmed payment, in its session's cash day (D85). An unknown payment has no fact yet and is ignored. */

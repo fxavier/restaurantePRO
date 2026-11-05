@@ -52,6 +52,14 @@ public class ReportQueries {
             WHERE store_id = :store AND business_date BETWEEN :from AND :to
             GROUP BY tax_code, tax_rate ORDER BY tax_rate, tax_code""";
 
+    public static final String VOIDS = """
+            SELECT %s AS key, %s AS label, count(*) AS voids, sum(quantity) AS quantity, sum(gross) AS gross,
+                   count(*) FILTER (WHERE wasted) AS wasted, count(*) FILTER (WHERE after_dispatch) AS after_dispatch,
+                   max(projected_at) AS as_of
+            FROM reporting.void_record
+            WHERE store_id = :store AND business_date BETWEEN :from AND :to
+            GROUP BY 1 ORDER BY 1 NULLS LAST""";
+
     private final JdbcClient jdbc;
 
     ReportQueries(JdbcClient jdbc) {
@@ -63,6 +71,10 @@ public class ReportQueries {
     }
 
     public record TaxAggregate(String taxCode, BigDecimal rate, BigDecimal net, BigDecimal tax, Instant asOf) {
+    }
+
+    public record VoidsAggregate(String key, String label, long voids, BigDecimal quantity, BigDecimal gross,
+                                 long wasted, long afterDispatch, Instant asOf) {
     }
 
     public record ReceiptsAggregate(String key, BigDecimal received, BigDecimal debtCollected, Instant asOf) {
@@ -104,6 +116,16 @@ public class ReportQueries {
         return new SalesAggregate(rs.getString("key"), rs.getString("label"), rs.getLong("documents"),
                 rs.getBigDecimal("quantity"), rs.getBigDecimal("gross"), rs.getBigDecimal("net"),
                 rs.getBigDecimal("tax"), instant(rs, "as_of"));
+    }
+
+    /** Voids grouped by {@code keyExpression} (labelled by {@code labelExpression}), or {@link #TOTAL}. */
+    public List<VoidsAggregate> voids(String keyExpression, String labelExpression, UUID store, LocalDate from,
+                                      LocalDate to) {
+        return query(VOIDS.formatted(keyExpression, labelExpression), store, from, to)
+                .query((rs, n) -> new VoidsAggregate(rs.getString("key"), rs.getString("label"), rs.getLong("voids"),
+                        rs.getBigDecimal("quantity"), rs.getBigDecimal("gross"), rs.getLong("wasted"),
+                        rs.getLong("after_dispatch"), instant(rs, "as_of")))
+                .list();
     }
 
     /** {@code keyExpression} is one of the receipts groupings over {@code payment_record}, or {@link #TOTAL}. */
