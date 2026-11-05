@@ -12,6 +12,7 @@ import com.xavier.backend.orders.model.event.SubtotalRequested;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.hibernate.id.uuid.UuidVersion7Strategy;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,7 +20,8 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * The subtotal printout (spec §8.1: a non-fiscal bill, not a document): publishes {@link SubtotalRequested} for
  * production to print on the session's terminal printer and marks the table ({@code DiningApi.markSubtotalPrinted},
- * §8.4). It changes nothing of the order, so the order's version stays.
+ * §8.4). It changes nothing of the order, so the order's version stays. Each command draws a new
+ * {@link SubtotalRequested#requestId()}, which production dedupes the printout on.
  */
 @Service
 public class SubtotalService {
@@ -52,12 +54,17 @@ public class SubtotalService {
                 .map(line -> new SubtotalLine(line.description(), line.netQty(), line.unitPrice(), line.gross()))
                 .toList();
         events.publishEvent(new SubtotalRequested(orderId, order.getStoreId(), pos.terminalId(),
-                order.getOrderNumber(), order.getTableCode(), lines, bill.due()));
+                order.getOrderNumber(), order.getTableCode(), lines, bill.due(), newRequestId()));
         if (order.getTableId() != null) {
             dining.markSubtotalPrinted(orderId);
         }
         changes.record("ORDER_SUBTOTAL_REQUESTED", order, Map.of("due", bill.due().amount().toPlainString(),
                 "lines", lines.size()));
         return new SubtotalView(orderId, order.getOrderNumber(), order.getTableCode(), lines, bill.due());
+    }
+
+    /** One per command (D89 (2)); an Idempotency-Key replay returns the stored response and never gets here. */
+    private static UUID newRequestId() {
+        return UuidVersion7Strategy.INSTANCE.generateUuid(null);
     }
 }
