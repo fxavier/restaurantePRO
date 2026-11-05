@@ -1,6 +1,6 @@
 # restaurantPRO backend — R3 decisions for approval (spec Stage 3)
 
-Status: **PROPOSED**, 2026-11-05. Awaiting approval by Xavier Francisco. Nothing is built before approval. This document continues [backend-decisions.md](backend-decisions.md) (D1–D33, P1–P6, B1–B3) and [r2-decisions.md](r2-decisions.md) (D34–D63, P7–P21, B4–B5). Those decisions stay in force, and the ids here continue from **D64, P22 and B6**. Answer by id, for example "P24: keep it as built" or "D70: invoice only at close". Once approved, the decisions marked ★ become ADRs `docs/adr/0019…` in S33.
+Status: **APPROVED** 2026-11-05 by Xavier Francisco ("aprovado": every recommendation, P22–P39). This document continues [backend-decisions.md](backend-decisions.md) (D1–D33, P1–P6, B1–B3) and [r2-decisions.md](r2-decisions.md) (D34–D63, P7–P21, B4–B5). Those decisions stay in force, and the ids here continue from **D64, P22 and B6**. Answer by id, for example "P24: keep it as built" or "D70: invoice only at close". Once approved, the decisions marked ★ become ADRs `docs/adr/0019…` in S33.
 
 Source of truth: [product_description.md](../product_description.md), cited as §n. The slices, contracts and graph are in [PRD R3](../prd/r3-stage3.md). The glossary is in [CONTEXT.md](../../CONTEXT.md), and the coding rules are in [backend-conventions.md](../architecture/backend-conventions.md). The R2 code is the baseline: branch `feat/backend-stage2`, 1038 tests green.
 

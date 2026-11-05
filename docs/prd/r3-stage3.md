@@ -1,6 +1,6 @@
 # PRD R3 — Stage 3 "Controlo avançado" (backend)
 
-Status: **PROPOSED** 2026-11-05, together with [r3-decisions.md](../design/r3-decisions.md) (cited as Dn and Pn). Earlier decisions: [backend-decisions.md](../design/backend-decisions.md), [r2-decisions.md](../design/r2-decisions.md). Glossary: [CONTEXT.md](../../CONTEXT.md). Spec: [product_description.md](../product_description.md). Conventions: [backend-conventions.md](../architecture/backend-conventions.md).
+Status: **APPROVED** 2026-11-05, together with [r3-decisions.md](../design/r3-decisions.md) (cited as Dn and Pn). Earlier decisions: [backend-decisions.md](../design/backend-decisions.md), [r2-decisions.md](../design/r2-decisions.md). Glossary: [CONTEXT.md](../../CONTEXT.md). Spec: [product_description.md](../product_description.md). Conventions: [backend-conventions.md](../architecture/backend-conventions.md).
 
 Base package `com.xavier.backend`, per-module layout D12, Flyway blocks D93. Every slice is built with TDD: no `@Disabled`, and `cd backend && rtk mvn clean test` must be green at exit with **0 skipped**.
 
