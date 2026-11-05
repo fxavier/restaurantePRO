@@ -64,6 +64,14 @@ public class OrganizationApi {
     }
 
     /**
+     * Any terminal by id, whatever its status (an export labels the terminal of an old fact even after it was
+     * revoked). {@link TerminalSummary#active()} tells whether it is enrolled and not revoked.
+     */
+    public Optional<TerminalSummary> findTerminal(UUID terminalId) {
+        return terminals.findById(terminalId).map(Terminal::toSummary);
+    }
+
+    /**
      * @throws CompanyNotBootstrappedException if the company was never bootstrapped. It is internal to this
      *         module: callers catch {@link com.xavier.backend.shared.exception.NotFoundException}, which it
      *         extends (404).
