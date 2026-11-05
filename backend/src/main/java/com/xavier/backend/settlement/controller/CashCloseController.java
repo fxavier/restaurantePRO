@@ -5,6 +5,7 @@ import com.xavier.backend.cash.DayView;
 import com.xavier.backend.cash.SessionView;
 import com.xavier.backend.settlement.model.dto.CloseDayRequest;
 import com.xavier.backend.settlement.model.dto.CloseSessionRequest;
+import com.xavier.backend.settlement.model.dto.ForceCloseSessionRequest;
 import com.xavier.backend.settlement.service.CashCloseService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -34,6 +35,15 @@ class CashCloseController {
                                              HttpServletRequest request) {
         return idempotent.execute("settlement.cash.session.close", key, request, body, SessionView.class,
                 () -> ResponseEntity.ok(closes.closeSession(id, body)));
+    }
+
+    /** P22: a manager closes a session its operator abandoned (count and reason; 409 {@code PAYMENT_IN_DOUBT}). */
+    @PostMapping("/api/v1/pos/cash/sessions/{id}/force-close")
+    ResponseEntity<SessionView> forceCloseSession(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
+                                                  @Valid @RequestBody ForceCloseSessionRequest body,
+                                                  HttpServletRequest request) {
+        return idempotent.execute("settlement.cash.session.force-close", key, request, body, SessionView.class,
+                () -> ResponseEntity.ok(closes.forceCloseSession(id, body)));
     }
 
     @PostMapping("/api/v1/pos/cash/days/{id}/operational-close")

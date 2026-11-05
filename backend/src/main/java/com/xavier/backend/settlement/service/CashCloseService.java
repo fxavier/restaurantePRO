@@ -19,6 +19,8 @@ import com.xavier.backend.settlement.exception.SettlementRuleException;
 import com.xavier.backend.settlement.model.AttemptStatus;
 import com.xavier.backend.settlement.model.dto.CloseDayRequest;
 import com.xavier.backend.settlement.model.dto.CloseSessionRequest;
+import com.xavier.backend.settlement.model.dto.CountLine;
+import com.xavier.backend.settlement.model.dto.ForceCloseSessionRequest;
 import com.xavier.backend.settlement.repository.PaymentAttemptRepository;
 import java.util.Currency;
 import java.util.List;
@@ -69,15 +71,43 @@ public class CashCloseService {
     public SessionView closeSession(UUID sessionId, CloseSessionRequest request) {
         PosContext pos = accessPolicy.requirePos(Permission.CASH_OPERATE);
         requireOwnOpenSession(pos, sessionId);
+        SessionView session = lockedWithNothingInDoubt(sessionId);
+        cash.closeSession(sessionId, request.version(), counts(session, request.counts()), pos.employeeId());
+        return cash.lockSession(sessionId);
+    }
+
+    /**
+     * P22, D79 (4): a manager ({@code CASH_SESSION_FORCE_CLOSE}) closes any OPEN session of the POS session's store
+     * that its operator abandoned, with the blind count and a reason. The session's store is read and checked before
+     * the lock (D42: 404, then 403); then, as for the operator's own close, nothing may be open or in doubt in it. Cash
+     * records the closer, {@code close_kind = FORCED} and the reason, and audits it as the manager.
+     *
+     * @throws SettlementConflictException 409 {@code PAYMENT_IN_DOUBT}
+     */
+    @Transactional
+    public SessionView forceCloseSession(UUID sessionId, ForceCloseSessionRequest request) {
+        PosContext pos = accessPolicy.requirePos(Permission.CASH_SESSION_FORCE_CLOSE);
+        UUID storeId = cash.storeOfDay(cash.sessionDay(sessionId).cashDayId());
+        accessPolicy.requireSessionStore(pos, storeId, SESSION, sessionId);
+        SessionView session = lockedWithNothingInDoubt(sessionId);
+        cash.closeSessionForced(sessionId, request.version(), counts(session, request.counts()), pos.employeeId(),
+                request.reason());
+        return cash.lockSession(sessionId);
+    }
+
+    /** The session locked {@code FOR UPDATE} (an attempt being created on it waits), with no attempt open on it. */
+    private SessionView lockedWithNothingInDoubt(UUID sessionId) {
         SessionView session = cash.lockSession(sessionId);
         attempts.findFirstBySessionIdAndStatusIn(sessionId, AttemptStatus.OPEN).ifPresent(open -> {
             throw SettlementConflictException.inDoubt("cash session", sessionId, open.getId());
         });
+        return session;
+    }
+
+    private List<MethodCount> counts(SessionView session, List<CountLine> lines) {
         Currency currency = organization.findStore(session.storeId()).map(StoreSummary::currency).orElseThrow();
-        List<MethodCount> counts = request.counts().stream().map(count -> new MethodCount(count.methodCode(),
+        return lines.stream().map(count -> new MethodCount(count.methodCode(),
                 PaymentAttemptService.money(count.amount(), currency))).toList();
-        cash.closeSession(sessionId, request.version(), counts, pos.employeeId());
-        return cash.lockSession(sessionId);
     }
 
     /**
