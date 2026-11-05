@@ -12,7 +12,8 @@ import org.springframework.context.annotation.Primary;
 
 /**
  * The application clock of the settlement test context: real time (microsecond precise) shifted by an offset a test
- * may {@link #advance} (e.g. past the sweeper's thresholds) and must {@link #reset} afterwards.
+ * may {@link #advance} (e.g. past the sweeper's thresholds) or {@link #moveTo} (e.g. next to a store's business-day
+ * cutoff), and must {@link #reset} afterwards.
  */
 public final class SettlementTestClock extends Clock {
 
@@ -20,6 +21,11 @@ public final class SettlementTestClock extends Clock {
 
     public void advance(Duration by) {
         offset = offset.plus(by);
+    }
+
+    /** Shifts the clock so that it reads {@code instant} now, and runs on from there. */
+    public void moveTo(Instant instant) {
+        offset = Duration.between(Instant.now(Clock.systemUTC()), instant);
     }
 
     public void reset() {
