@@ -1,8 +1,10 @@
 package com.xavier.backend.settlement;
 
 import com.xavier.backend.cash.CashApi;
+import com.xavier.backend.settlement.model.CreditChargeStatus;
 import com.xavier.backend.settlement.model.Payment;
 import com.xavier.backend.settlement.model.PaymentAttempt;
+import com.xavier.backend.settlement.repository.CreditChargeRepository;
 import com.xavier.backend.settlement.repository.PaymentAttemptRepository;
 import com.xavier.backend.settlement.repository.PaymentRepository;
 import java.time.LocalDate;
@@ -17,8 +19,8 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Settlement's immutable facts for reporting only (D66, D84): reporting's listeners pull them on
  * {@code PaymentRecorded}, {@code RefundRecorded} and {@code CreditChargePosted}, and a rebuild pages the ids. Every
- * method is read-only and authorizes nothing (reporting's use case did). Refunds come in S30 and credit charges in
- * S29: until then they have no facts.
+ * method is read-only and authorizes nothing (reporting's use case did). Refunds come in S30: until then they have no
+ * facts. A credit charge is a fact once POSTED (D74): it is never money received, so it is never a payment fact.
  */
 @Service
 public class SettlementFacts {
@@ -29,11 +31,14 @@ public class SettlementFacts {
     private final PaymentRepository payments;
     private final PaymentAttemptRepository attempts;
     private final CashApi cash;
+    private final CreditChargeRepository charges;
 
-    SettlementFacts(PaymentRepository payments, PaymentAttemptRepository attempts, CashApi cash) {
+    SettlementFacts(PaymentRepository payments, PaymentAttemptRepository attempts, CashApi cash,
+                    CreditChargeRepository charges) {
         this.payments = payments;
         this.attempts = attempts;
         this.cash = cash;
+        this.charges = charges;
     }
 
     @Transactional(readOnly = true)
@@ -47,10 +52,13 @@ public class SettlementFacts {
         return Optional.empty();
     }
 
-    /** Empty until S29 posts credit charges. */
+    /** A POSTED credit charge; empty for one still RESERVED or RELEASED (never on the customer's account). */
     @Transactional(readOnly = true)
     public Optional<CreditChargeFact> creditChargeFact(UUID chargeId) {
-        return Optional.empty();
+        return charges.findById(chargeId).filter(c -> c.getStatus() == CreditChargeStatus.POSTED)
+                .map(c -> new CreditChargeFact(c.getId(), c.getStoreId(), c.getBusinessDate(), c.getPostedAt(),
+                        c.amount(), c.getOrderId(), c.getPartitionId(), c.getCustomerId(), c.getDocumentId(),
+                        c.getPostedByEmployeeId(), c.getTerminalId()));
     }
 
     /**
@@ -70,9 +78,11 @@ public class SettlementFacts {
         return Page.empty(page);
     }
 
+    /** The ids of the store's POSTED charges of business days {@code [from, to]}, oldest first. */
     @Transactional(readOnly = true)
     public Page<UUID> creditChargeIds(UUID storeId, LocalDate from, LocalDate to, Pageable page) {
-        return Page.empty(page);
+        return charges.postedIds(storeId, from, to, Pageable.ofSize(page.getPageSize())
+                .withPage(page.getPageNumber()));
     }
 
     private PaymentFact fact(Payment payment) {

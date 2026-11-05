@@ -4,7 +4,6 @@ import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.PosContext;
 import com.xavier.backend.customers.CustomersApi;
-import com.xavier.backend.fiscal.FiscalApi;
 import com.xavier.backend.settlement.exception.SettlementNotFoundException;
 import com.xavier.backend.settlement.exception.SettlementRuleException;
 import com.xavier.backend.settlement.model.CreditCharge;
@@ -31,20 +30,17 @@ public class CreditSaleService {
     private final SettlementLocks locks;
     private final CreditChargeRepository charges;
     private final CustomersApi customers;
-    private final FiscalApi fiscal;
     private final PaymentLocks paymentLocks;
     private final SettlementAudit audit;
     private final Clock clock;
 
     CreditSaleService(AccessPolicy accessPolicy, CreditSaleSteps steps, SettlementLocks locks,
-                      CreditChargeRepository charges, CustomersApi customers, FiscalApi fiscal,
-                      PaymentLocks paymentLocks, SettlementAudit audit, Clock clock) {
+                      CreditChargeRepository charges, CustomersApi customers, PaymentLocks paymentLocks, SettlementAudit audit, Clock clock) {
         this.accessPolicy = accessPolicy;
         this.steps = steps;
         this.locks = locks;
         this.charges = charges;
         this.customers = customers;
-        this.fiscal = fiscal;
         this.paymentLocks = paymentLocks;
         this.audit = audit;
         this.clock = clock;
@@ -82,7 +78,7 @@ public class CreditSaleService {
         accessPolicy.requireSessionStore(pos, ref.storeId(), CreditSaleSteps.CHARGE, chargeId);
         locks.lockOrder(ref.orderId());
         CreditCharge charge = charges.findById(chargeId).orElseThrow();
-        if (charge.getStatus() == CreditChargeStatus.POSTED || documentIssued(charge)) {
+        if (charge.getStatus() == CreditChargeStatus.POSTED || steps.documentIssued(charge)) {
             throw SettlementRuleException.chargePosted(chargeId);
         }
         charge.release(request.reason(), pos.employeeId(), clock.instant());
@@ -92,10 +88,5 @@ public class CreditSaleService {
                 charge.getTerminalId(), request.reason(), CreditSaleSteps.details(charge));
         paymentLocks.releaseIfIdle(charge.getOrderId());
         return charge.toView();
-    }
-
-    private boolean documentIssued(CreditCharge charge) {
-        return charge.getDocumentId() != null && fiscal.documentsOfOrder(charge.getOrderId()).stream()
-                .anyMatch(d -> d.id().equals(charge.getDocumentId()) && "ISSUED".equals(d.status()));
     }
 }

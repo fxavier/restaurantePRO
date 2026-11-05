@@ -176,10 +176,7 @@ public class CreditSaleSteps {
         if (charge.getStatus() == CreditChargeStatus.POSTED) {
             return charge;
         }
-        DocumentView document = fiscal.documentsOfOrder(charge.getOrderId()).stream()
-                .filter(d -> d.id().equals(charge.getDocumentId())).findFirst().orElse(null);
-        if (charge.getStatus() == CreditChargeStatus.RESERVED
-                && (document == null || !"ISSUED".equals(document.status()))) {
+        if (charge.getStatus() == CreditChargeStatus.RESERVED && !documentIssued(charge)) {
             throw new SettlementRuleException(SettlementRule.FISCAL_PENDING, "The sale document of credit charge "
                     + charge.getId() + " is not issued yet.", Map.of("documentId", charge.getDocumentId()));
         }
@@ -191,6 +188,12 @@ public class CreditSaleSteps {
                 charge.getTerminalId(), null, details(charge));
         events.publishEvent(new CreditChargePosted(charge.getId(), charge.getStoreId()));
         return charge;
+    }
+
+    /** Whether the charge's document is ISSUED (a charge has its draft from s1 on). */
+    boolean documentIssued(CreditCharge charge) {
+        return charge.getDocumentId() != null && fiscal.documentsOfOrder(charge.getOrderId()).stream()
+                .anyMatch(d -> d.id().equals(charge.getDocumentId()) && "ISSUED".equals(d.status()));
     }
 
     private static CreditChargeView resumed(CreditCharge live, UUID customerId, Money amount, UUID partitionId,

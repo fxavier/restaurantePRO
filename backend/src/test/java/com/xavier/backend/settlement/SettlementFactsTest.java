@@ -27,6 +27,9 @@ class SettlementFactsTest {
     @Autowired
     ApplicationEvents events;
 
+    @Autowired
+    com.xavier.backend.customers.CustomersFixtures customers;
+
     @Test
     void aPaymentToAPartitionIsAFactWithItsTargetCashDayAndTerminal() throws Exception {
         Sale sale = fixtures.sale("2");
@@ -69,12 +72,44 @@ class SettlementFactsTest {
     }
 
     @Test
-    void refundsAndCreditChargesAreNoFactsYet() {
+    void refundsAreNoFactsYet() {
         assertThat(facts.refundFact(UUID.randomUUID())).isEmpty();
-        assertThat(facts.creditChargeFact(UUID.randomUUID())).isEmpty();
         assertThat(facts.refundIds(UUID.randomUUID(), LocalDate.now(), LocalDate.now(), PageRequest.of(0, 5)))
                 .isEmpty();
-        assertThat(facts.creditChargeIds(UUID.randomUUID(), LocalDate.now(), LocalDate.now(), PageRequest.of(0, 5)))
+    }
+
+    @Test
+    void aPostedCreditChargeIsAFactOfItsOrdersBusinessDayAndNoPayment() throws Exception {
+        Sale sale = fixtures.sale("2");
+        UUID customer = customers.creditCustomer("100.00");
+        com.xavier.backend.settlement.SettlementFixtures.json(fixtures.creditCharge(sale, customer, "25.00")
+                .andExpect(status().isCreated()));
+        UUID charge = UUID.fromString(SettlementFixtures.json(fixtures.settlement(sale.cashier(), sale.order()))
+                .get("creditCharges").get(0).get("id").asString());
+        String document = SettlementFixtures.json(fixtures.settlement(sale.cashier(), sale.order()))
+                .get("documentId").asString();
+        LocalDate day = LocalDate.parse(fixtures.currentDay(sale.cashier()).get("businessDate").asString());
+
+        CreditChargeFact fact = facts.creditChargeFact(charge).orElseThrow();
+
+        assertThat(fact.storeId()).isEqualTo(sale.store());
+        assertThat(fact.businessDate()).isEqualTo(day);
+        assertThat(fact.amount().amount()).isEqualByComparingTo("25.00");
+        assertThat(fact.orderId()).isEqualTo(sale.order());
+        assertThat(fact.partitionId()).isNull();
+        assertThat(fact.customerId()).isEqualTo(customer);
+        assertThat(fact.documentId()).isEqualTo(UUID.fromString(document));
+        assertThat(fact.postedByEmployeeId()).isEqualTo(sale.cashier().employeeId());
+        assertThat(fact.terminalId()).isEqualTo(sale.cashier().terminalId());
+        assertThat(fact.at()).isNotNull();
+        assertThat(facts.creditChargeIds(sale.store(), day, day, PageRequest.of(0, 10)).getContent())
+                .containsExactly(charge);
+        assertThat(facts.creditChargeIds(sale.store(), day.plusDays(1), day.plusDays(1), PageRequest.of(0, 10)))
                 .isEmpty();
+        assertThat(facts.paymentIds(sale.store(), day, day, PageRequest.of(0, 10))).as("credit is not a payment")
+                .isEmpty();
+        assertThat(events.stream(com.xavier.backend.settlement.model.event.CreditChargePosted.class))
+                .contains(new com.xavier.backend.settlement.model.event.CreditChargePosted(charge, sale.store()));
+        assertThat(facts.creditChargeFact(UUID.randomUUID())).isEmpty();
     }
 }
