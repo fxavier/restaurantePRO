@@ -165,7 +165,9 @@ public class Projections {
 
     /**
      * The tax code(s) of the document's lines at {@code rate}: one code in practice; several (joined with "+") when
-     * two catalog codes share a rate, and empty when the order's lines no longer say.
+     * two catalog codes share a rate, and empty when the order's lines no longer say. The document's own tax summary
+     * ({@code DocumentView.TaxSummary(rate, net, tax)}) carries no code, so the code comes from the billed lines;
+     * the amounts always come from the summary.
      */
     private static String taxCodes(List<DocumentView.Line> lines, BigDecimal rate, Dimensions dimensions) {
         return lines.stream().filter(line -> line.taxRatePercent().compareTo(rate) == 0)

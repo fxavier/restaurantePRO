@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.identity.ApproverVerifier;
+import com.xavier.backend.reporting.service.Projections;
 import com.xavier.backend.settlement.CreditChargeFact;
 import com.xavier.backend.settlement.SettlementFacts;
 import com.xavier.backend.settlement.SettlementFixtures;
@@ -24,6 +25,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -80,6 +86,9 @@ class RebuildEqualsLiveTest {
 
     @Autowired
     ApplicationEventPublisher events;
+
+    @Autowired
+    Projections projections;
 
     @Autowired
     com.xavier.backend.reporting.service.RebuildService rebuildService;
@@ -191,8 +200,60 @@ class RebuildEqualsLiveTest {
                 .isOne();
     }
 
+    @Test
+    void aLiveDeliveryThatLandsDuringARebuildLeavesTheLiveRows() throws Exception {
+        Sale other = sales.sale("2");
+        LocalDate otherDay = reporting.businessDayOf(other.order());
+        AtomicBoolean first = new AtomicBoolean();
+        CountDownLatch held = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        doAnswer(call -> {
+            if (first.compareAndSet(false, true)) { // the live delivery; the rebuild's own pull is the second call
+                held.countDown();
+                release.await(30, TimeUnit.SECONDS);
+            }
+            return call.callRealMethod();
+        }).when(projections).projectDocument(any());
+
+        try (var pool = Executors.newSingleThreadExecutor()) {
+            // the listener may run on the closing thread after its commit, so the close is sent from another one
+            Future<?> closed = pool.submit(() -> {
+                sales.payAndClose(other);
+                return null;
+            });
+            assertThat(held.await(20, TimeUnit.SECONDS)).as("the live projection started").isTrue();
+
+            reporting.rebuild(other.store(), otherDay, otherDay, UUID.randomUUID().toString())
+                    .andExpect(status().isAccepted());
+            assertThat(reporting.awaitRebuildFinished(other.store()).get("status").asString())
+                    .isEqualTo("COMPLETED");
+            release.countDown();
+            closed.get(30, TimeUnit.SECONDS);
+        } finally {
+            release.countDown();
+        }
+        reporting.awaitNothingPendingFor(other.store());
+
+        List<List<Map<String, Object>>> afterBoth = projections(other.store());
+        UUID document = reporting.issuedDocument(other.order());
+        assertThat(reporting.count("SELECT count(*) FROM reporting.sales_record WHERE store_id = ?", other.store()))
+                .isOne();
+        assertThat(reporting.count("SELECT count(*) FROM reporting.sales_record_line WHERE document_id = ?",
+                document)).isEqualTo(reporting.count(
+                "SELECT count(*) FROM fiscal.fiscal_document_line WHERE document_id = ?", document));
+        reporting.wipeProjections(other.store());
+        reporting.rebuild(other.store(), otherDay, otherDay, UUID.randomUUID().toString())
+                .andExpect(status().isAccepted());
+        reporting.awaitRebuildFinished(other.store());
+        assertThat(projections(other.store())).as("equal to a rebuild from empty").isEqualTo(afterBoth);
+    }
+
     private List<List<Map<String, Object>>> projections() {
-        return PROJECTIONS.stream().map(sql -> reporting.rows(sql, sale.store())).toList();
+        return projections(sale.store());
+    }
+
+    private List<List<Map<String, Object>>> projections(UUID store) {
+        return PROJECTIONS.stream().map(sql -> reporting.rows(sql, store)).toList();
     }
 
     /** The reports of the day without their freshness ({@code asOf} changes with every projection). */
