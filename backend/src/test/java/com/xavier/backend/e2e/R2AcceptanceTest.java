@@ -1,0 +1,517 @@
+package com.xavier.backend.e2e;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.xavier.backend.TestcontainersConfiguration;
+import com.xavier.backend.e2e.Browser.Csrf;
+import com.xavier.backend.production.TcpFakePrinter;
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.net.http.HttpResponse;
+import java.nio.charset.Charset;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.function.Predicate;
+import org.awaitility.Awaitility;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+import tools.jackson.databind.JsonNode;
+
+/**
+ * R2 end to end (PRD S17, decisions §13): the Stage 2 service of one table through the real HTTP API of a real
+ * embedded server, with the real security chain, CSRF, sessions in PostgreSQL, the production print worker sending
+ * ESC/POS over TCP to {@link TcpFakePrinter}s, the internal (non-certified) fiscal adapter, and no mocks:
+ * <ol>
+ *   <li>R1 setup, then printers, destination routes, the terminal's printer, a cash register, a fiscal series and a
+ *       card payment method (CASH is seeded);</li>
+ *   <li>POS PIN login, a cash session, a table, drafts, round 1 (printed per destination), round 2 (only its line);</li>
+ *   <li>a void with an approver (void ticket), a subtotal print;</li>
+ *   <li>part in cash with change, the rest by external card with confirm, the document (printed, non-fiscal mark),
+ *       the order closed and the table FREE;</li>
+ *   <li>the session closed with counts, the closing created, submitted and approved, the day closed operationally,
+ *       then financially.</li>
+ * </ol>
+ * Along the way (A14) a POS tab of store A follows its change stream and receives TABLES, ORDER and PRINT_JOBS
+ * notices that carry only {@code topic} and {@code id}, while a POS tab of store B receives none.
+ *
+ * <p>Like {@link R1AcceptanceTest} it runs against its own empty PostgreSQL (a bean of this context, closed with it),
+ * so the company and the administrator come from the bootstrap settings and every count below is this journey's.
+ */
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Import(R2AcceptanceTest.FreshDatabase.class)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+class R2AcceptanceTest {
+
+    static final String ADMIN = "owner";
+    static final String INITIAL_PASSWORD = "initial " + UUID.randomUUID();
+    static final String NEW_PASSWORD = "changed " + UUID.randomUUID();
+    static final String CASHIER_PIN = "5172";
+    static final String MANAGER_PIN = "6283";
+    static final UUID MANAGER_ROLE = UUID.fromString("01900000-0000-7000-8000-000000000302");
+    static final UUID CASHIER_ROLE = UUID.fromString("01900000-0000-7000-8000-000000000304");
+    static final String ZONE = "Africa/Maputo";
+    static final Charset CP860 = Charset.forName("IBM860");
+    static final Duration PRINTED = Duration.ofSeconds(20);
+    static final String CATALOG = "/api/v1/backoffice/catalog";
+    static final String POS = "/api/v1/pos";
+
+    static final TcpFakePrinter KITCHEN = open();
+    static final TcpFakePrinter BAR = open();
+    static final TcpFakePrinter COUNTER = open();
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class FreshDatabase {
+
+        /** Stopped when this test's context closes (Spring Boot manages a container bean's lifecycle). */
+        @Bean
+        @ServiceConnection
+        PostgreSQLContainer freshPostgres() {
+            return new PostgreSQLContainer(TestcontainersConfiguration.POSTGRES_IMAGE_NAME)
+                    .withUrlParam("sslmode", "disable");
+        }
+    }
+
+    @DynamicPropertySource
+    static void bootstrapSettings(DynamicPropertyRegistry registry) throws IOException {
+        Path secret = Files.createTempFile("admin-initial-password", "");
+        secret.toFile().deleteOnExit();
+        Files.writeString(secret, INITIAL_PASSWORD + "\n");
+        registry.add("restaurantpro.bootstrap.company.name", () -> "Restaurante R2");
+        registry.add("restaurantpro.bootstrap.company.tax-id", () -> "400000002");
+        registry.add("restaurantpro.bootstrap.company.country", () -> "MZ");
+        registry.add("restaurantpro.bootstrap.company.currency", () -> "MZN");
+        registry.add("restaurantpro.bootstrap.admin.username", () -> ADMIN);
+        registry.add("restaurantpro.bootstrap.admin.initial-password-file", secret::toString);
+        // An open change stream is an active request until its next write fails, so a graceful shutdown would wait
+        // the full phase timeout (30 s) for it when the context closes.
+        registry.add("server.shutdown", () -> "immediate");
+    }
+
+    @AfterAll
+    static void unplugPrinters() throws IOException {
+        KITCHEN.close();
+        BAR.close();
+        COUNTER.close();
+    }
+
+    @LocalServerPort
+    int port;
+
+    @Autowired
+    JdbcClient jdbc;
+
+    private final List<String> journey = new ArrayList<>();
+
+    @Test
+    void aTableIsServedPaidAndTheDayClosed() throws Exception {
+        try {
+            run();
+        } finally {
+            System.out.println("R2 acceptance journey (step -> HTTP status):\n  " + String.join("\n  ", journey));
+        }
+    }
+
+    private void run() throws Exception {
+        // ---- 1. R1 setup: admin, two stores, terminals, employees, a table and a published catalog ----
+        Browser office = new Browser("backoffice", port, journey);
+        office.get("/api/v1/auth/session", 401);
+        Awaitility.await().atMost(Duration.ofSeconds(20)).until(() -> office.tryPost("/api/v1/auth/login",
+                Map.of("username", ADMIN, "password", INITIAL_PASSWORD)), r -> r != null);
+        office.post("/api/v1/auth/password", Map.of("currentPassword", INITIAL_PASSWORD, "newPassword", NEW_PASSWORD),
+                200);
+        UUID storeA = id(office.post("/api/v1/backoffice/stores", store("A"), 201));
+        UUID storeB = id(office.post("/api/v1/backoffice/stores", store("B"), 201));
+        UUID terminal1 = terminal(office, storeA, "POS1");
+        UUID terminal2 = terminal(office, storeA, "POS2");
+        UUID terminalB = terminal(office, storeB, "POSB");
+        String cashierCode = employee(office, storeA, "CX1", "Carla", CASHIER_PIN, CASHIER_ROLE);
+        String managerCode = employee(office, storeA, "GR1", "Gil", MANAGER_PIN, MANAGER_ROLE);
+        String cashierBCode = employee(office, storeB, "CXB", "Beto", CASHIER_PIN, CASHIER_ROLE);
+        UUID area = id(office.post("/api/v1/backoffice/areas", Map.of("storeId", storeA, "code", "SALA",
+                "name", "Sala"), 201));
+        UUID table = id(office.post("/api/v1/backoffice/tables", Map.of("storeId", storeA, "areaId", area,
+                "code", "M1", "seats", 4), 201));
+        Map<String, UUID> items = publishCatalog(office, storeA);
+
+        // ---- 1b. R2 setup: printers, routes, the terminal's printer, register, series, card method ----
+        UUID kitchen = printer(office, storeA, "COZ", KITCHEN);
+        UUID bar = printer(office, storeA, "BAR", BAR);
+        UUID counter = printer(office, storeA, "BALCAO", COUNTER);
+        office.put("/api/v1/backoffice/production-routes", Map.of("storeId", storeA, "routes", List.of(
+                Map.of("destinationCode", "COZINHA", "printerId", kitchen),
+                Map.of("destinationCode", "BAR", "printerId", bar))), 200, "routes");
+        office.put("/api/v1/backoffice/terminal-printers", Map.of("storeId", storeA, "assignments",
+                List.of(Map.of("terminalId", terminal1, "printerId", counter))), 200, "terminal printer");
+        UUID register = id(office.command("/api/v1/backoffice/cash/registers",
+                Map.of("storeId", storeA, "code", "CX1", "name", "Caixa 1"), 201, "register"));
+        UUID series = id(office.command("/api/v1/backoffice/fiscal/series",
+                Map.of("storeId", storeA, "code", "FR", "firstNumber", 1), 201, "series"));
+        Map<String, Object> card = new LinkedHashMap<>();
+        card.put("code", "CARD");
+        card.put("name", "Cartao (TPA)");
+        card.put("kind", "EXTERNAL_TERMINAL");
+        card.put("providerCode", null);
+        office.command("/api/v1/backoffice/payment-methods", card, 201, "card method");
+        assertThat(audits("PRODUCTION_ROUTES_REPLACED", storeA)).isEqualTo(1);
+        assertThat(audits("TERMINAL_PRINTERS_REPLACED", storeA)).isEqualTo(1);
+        assertThat(audits("CASH_REGISTER_CREATED", register)).isEqualTo(1);
+        assertThat(audits("FISCAL_SERIES_CREATED", series)).isEqualTo(1);
+
+        // ---- 2. POS: PIN login, session, change streams, table, two rounds ----
+        Browser cashier = posLogin(office, terminal1, cashierCode, CASHIER_PIN, "cashier");
+        UUID cashierId = UUID.fromString(cashier.get("/api/v1/auth/session", 200).get("employeeId").asString());
+        Browser cashierB = posLogin(office, terminalB, cashierBCode, CASHIER_PIN, "cashier B");
+        try (ChangeStream streamA = ChangeStream.subscribe(cashier);
+             ChangeStream streamB = ChangeStream.subscribe(cashierB)) {
+            // positive controls: each stream hears its own store's dining change, so both are live from here on
+            UUID areaB = id(office.post("/api/v1/backoffice/areas", Map.of("storeId", storeB, "code", "SALA",
+                    "name", "Sala B"), 201));
+            streamB.awaitNotice(n -> n.get("topic").asString().equals("TABLES"), "store B's own area");
+            UUID tableM2 = id(office.post("/api/v1/backoffice/tables", Map.of("storeId", storeA, "areaId", area,
+                    "code", "M2", "seats", 2), 201));
+            streamA.awaitNotice(n -> n.get("topic").asString().equals("TABLES"), "store A's own table");
+            assertThat(streamA.status()).isEqualTo(200);
+            assertThat(streamA.contentType()).startsWith("text/event-stream");
+            assertThat(streamB.status()).isEqualTo(200);
+            int storeBControl = streamB.notices().size();
+
+            JsonNode session = cashier.command(POS + "/cash/sessions",
+                    Map.of("registerId", register, "openingFloat", new BigDecimal("100.00")), 201, "open session");
+            UUID sessionId = id(session);
+            UUID cashDay = UUID.fromString(session.get("cashDayId").asString());
+            long catalogVersion = cashier.get(POS + "/catalog?storeId=" + storeA, 200).get("version").asLong();
+
+            JsonNode opened = cashier.command(POS + "/tables/" + table + "/open", Map.of("guests", 2), 201,
+                    "open table M1");
+            UUID order = id(opened);
+            long orderNumber = opened.get("orderNumber").asLong();
+            String header = "Mesa M1 - Pedido #" + orderNumber;
+            assertThat(tableStatus(cashier, storeA, table)).isEqualTo("OCCUPIED");
+
+            UUID prego = line(cashier, order, items.get("PREGO"), "2");
+            UUID sumo = line(cashier, order, items.get("SUMO"), "1");
+            JsonNode round1 = cashier.command(POS + "/orders/" + order + "/batches", Map.of("orderVersion",
+                    version(cashier, order), "catalogVersion", catalogVersion, "lineIds", List.of(prego, sumo)),
+                    201, "confirm round 1");
+            assertThat(round1.get("batchNo").asInt()).isEqualTo(1);
+            List<String> kitchenRound1 = awaitPrinted(KITCHEN, header, s -> s.contains("Ronda 1"));
+            assertThat(kitchenRound1.getFirst()).contains("COZINHA").contains("2 x Prego no pao")
+                    .doesNotContain("Sumo");
+            List<String> barRound1 = awaitPrinted(BAR, header, s -> s.contains("Ronda 1"));
+            assertThat(barRound1.getFirst()).contains("1 x Sumo de manga").doesNotContain("Prego");
+
+            UUID agua = line(cashier, order, items.get("AGUA"), "1");
+            JsonNode round2 = cashier.command(POS + "/orders/" + order + "/batches", Map.of("orderVersion",
+                    version(cashier, order), "catalogVersion", catalogVersion, "lineIds", List.of(agua)), 201,
+                    "confirm round 2");
+            UUID batch2 = id(round2);
+            List<String> barRound2 = awaitPrinted(BAR, header, s -> s.contains("Ronda 2"));
+            assertThat(barRound2.getFirst()).contains("1 x Agua 50cl").doesNotContain("Sumo").doesNotContain("Prego");
+            // round 2 has no kitchen line: its batch made one ticket (bar), and the kitchen got only round 1
+            assertThat(count("SELECT count(*) FROM production.production_ticket WHERE source_id = ?", batch2))
+                    .isEqualTo(1);
+            assertThat(KITCHEN.matching(CP860, s -> s.contains(header))).hasSize(1);
+            assertThat(audits("ORDER_BATCH_CONFIRMED", order)).isEqualTo(2);
+
+            // ---- 3. void with an approver, subtotal print ----
+            Map<String, Object> voidBody = Map.of("orderVersion", version(cashier, order), "lineId", agua,
+                    "quantity", new BigDecimal("1"), "reason", "Cliente desistiu", "wasted", false);
+            cashier.command(POS + "/orders/" + order + "/voids", voidBody, 403, "void without approver (A6)");
+            Map<String, String> approver = new LinkedHashMap<>(Browser.idem());
+            approver.put("X-Approver-Code", managerCode);
+            approver.put("X-Approver-Pin", MANAGER_PIN);
+            JsonNode voided = cashier.post(POS + "/orders/" + order + "/voids", voidBody, 201, Csrf.SEND, approver,
+                    "void with approver");
+            UUID managerId = UUID.fromString(voided.get("approverEmployeeId").asString());
+            assertThat(voided.get("operatorEmployeeId").asString()).isEqualTo(cashierId.toString());
+            assertThat(managerId).isNotEqualTo(cashierId);
+            assertThat(money(voided.get("order").get("due"))).isEqualByComparingTo("360.00");
+            Map<String, Object> voidAudit = jdbc.sql("""
+                            SELECT actor_id, approver_id, reason FROM audit.audit_event
+                            WHERE action = 'ORDER_LINE_VOIDED' AND entity_id = ?""")
+                    .param(voided.get("id").asString()).query().singleRow();
+            assertThat(voidAudit).containsEntry("actor_id", cashierId).containsEntry("approver_id", managerId)
+                    .containsEntry("reason", "Cliente desistiu");
+            assertThat(awaitPrinted(BAR, header, s -> s.contains("ANULAÇÃO")).getFirst())
+                    .contains("-1 x Agua 50cl").contains("Motivo: Cliente desistiu");
+
+            JsonNode subtotal = cashier.post(POS + "/orders/" + order + "/subtotal/print", null, 202, Csrf.SEND,
+                    Browser.idem(), "subtotal print");
+            assertThat(money(subtotal.get("due"))).isEqualByComparingTo("360.00");
+            assertThat(awaitPrinted(COUNTER, header, s -> s.contains("SUBTOTAL")).getFirst())
+                    .contains("NÃO SERVE DE FATURA").contains("2 x Prego no pao 150.00 = 300.00")
+                    .contains("TOTAL 360.00 MZN").doesNotContain("Agua");
+
+            // ---- 4. pay in cash with change, the rest by card, issue the document, close the order ----
+            office.command(POS + "/payment-attempts", Map.of("orderId", order, "methodCode", "CASH",
+                    "amount", new BigDecimal("200.00")), 403, "a BackOffice session paying at the POS (A12)");
+            Map<String, Object> cashBody = Map.of("orderId", order, "methodCode", "CASH",
+                    "amount", new BigDecimal("200.00"), "tendered", new BigDecimal("250.00"));
+            Map<String, String> cashKey = Browser.idem();
+            HttpResponse<String> cash = cashier.send("POST", POS + "/payment-attempts", cashBody, Csrf.SEND, cashKey);
+            cashier.record("cashier: pay 200.00 in cash, tendered 250.00", cash);
+            assertThat(cash.statusCode()).as(cash.body()).isEqualTo(201);
+            JsonNode cashAttempt = Browser.JSON.readTree(cash.body());
+            assertThat(cashAttempt.get("status").asString()).isEqualTo("SUCCEEDED");
+            assertThat(money(cashAttempt.get("change"))).isEqualByComparingTo("50.00");
+            HttpResponse<String> replay = cashier.send("POST", POS + "/payment-attempts", cashBody, Csrf.SEND,
+                    cashKey);
+            cashier.record("cashier: the same cash payment again (same key)", replay);
+            assertThat(replay.statusCode()).isEqualTo(201);
+            assertThat(Browser.JSON.readTree(replay.body())).isEqualTo(cashAttempt);
+
+            JsonNode cardAttempt = cashier.command(POS + "/payment-attempts", Map.of("orderId", order,
+                    "methodCode", "CARD", "amount", new BigDecimal("160.00")), 201, "pay 160.00 by card");
+            assertThat(cardAttempt.get("status").asString()).isEqualTo("PENDING");
+            JsonNode confirmed = cashier.command(POS + "/payment-attempts/" + id(cardAttempt) + "/confirm",
+                    Map.of("authorizationCode", "TPA-778812"), 200, "confirm card");
+            assertThat(confirmed.get("status").asString()).isEqualTo("SUCCEEDED");
+            JsonNode settled = cashier.get(POS + "/orders/" + order + "/settlement", 200);
+            assertThat(money(settled.get("paid"))).isEqualByComparingTo("360.00");
+            assertThat(money(settled.get("balance"))).isEqualByComparingTo("0.00");
+            assertThat(settled.get("financialState").asString()).isEqualTo("SETTLED");
+
+            JsonNode document = cashier.command(POS + "/orders/" + order + "/documents", Map.of(), 201,
+                    "issue document");
+            assertThat(document.get("status").asString()).isEqualTo("ISSUED");
+            assertThat(document.get("seriesCode").asString()).isEqualTo("FR");
+            assertThat(document.get("number").asLong()).isEqualTo(1);
+            assertThat(document.get("nonFiscal").asBoolean()).isTrue();
+            assertThat(money(document.get("totalGross"))).isEqualByComparingTo("360.00");
+            assertThat(awaitPrinted(COUNTER, "DOCUMENTO NÃO FISCAL", s -> true).getFirst())
+                    .contains("FR").contains("Prego no pao").contains("360.00");
+
+            JsonNode closed = cashier.command(POS + "/orders/" + order + "/close",
+                    Map.of("orderVersion", cashier.get(POS + "/orders/" + order + "/settlement", 200)
+                            .get("orderVersion").asLong()), 200, "close order");
+            assertThat(closed.get("lifecycle").asString()).isEqualTo("CLOSED");
+            assertThat(closed.get("fiscalState").asString()).isEqualTo("ISSUED");
+            assertThat(tableStatus(cashier, storeA, table)).isEqualTo("FREE");
+            assertThat(audits("ORDER_CLOSED", order)).isEqualTo(1);
+
+            // exactly one Payment and one cash receipt per successful attempt, one document, no gap in the series
+            assertThat(count("SELECT count(*) FROM settlement.payment WHERE order_id = ?", order)).isEqualTo(2);
+            assertThat(count("SELECT count(DISTINCT attempt_id) FROM settlement.payment WHERE order_id = ?", order))
+                    .isEqualTo(2);
+            assertThat(count("""
+                    SELECT count(*) FROM cash.cash_movement m JOIN settlement.payment p ON p.id = m.source_id
+                    WHERE m.source_type = 'PAYMENT' AND p.order_id = ?""", order)).isEqualTo(2);
+            assertThat(count("SELECT count(*) FROM fiscal.fiscal_document WHERE source_id = ?", order)).isEqualTo(1);
+            assertThat(count("SELECT next_number FROM fiscal.fiscal_series WHERE id = ?", series)).isEqualTo(2);
+            assertThat(audits("PAYMENT_CONFIRMED", id(cashAttempt))).isEqualTo(1);
+            assertThat(audits("PAYMENT_CONFIRMED", id(cardAttempt))).isEqualTo(1);
+
+            // ---- 5. session close with counts, closing, operational then financial day close ----
+            Browser manager = posLogin(office, terminal2, managerCode, MANAGER_PIN, "manager");
+            JsonNode day = manager.get(POS + "/cash/days/current", 200);
+            assertThat(day.get("id").asString()).isEqualTo(cashDay.toString());
+            manager.command(POS + "/cash/days/" + cashDay + "/operational-close",
+                    Map.of("version", day.get("version").asLong()), 422, "close the day with a session open (A11)");
+
+            long sessionVersion = cashier.get(POS + "/cash/sessions/" + sessionId, 200).get("version").asLong();
+            JsonNode sessionClosed = cashier.command(POS + "/cash/sessions/" + sessionId + "/close", Map.of(
+                    "version", sessionVersion, "counts", List.of(
+                            Map.of("methodCode", "CASH", "amount", new BigDecimal("300.00")),
+                            Map.of("methodCode", "CARD", "amount", new BigDecimal("160.00")))),
+                    200, "close session with counts");
+            assertThat(sessionClosed.get("status").asString()).isEqualTo("CLOSED");
+
+            JsonNode closing = cashier.command(POS + "/cash/closings", Map.of("registerId", register,
+                    "cashDayId", cashDay), 201, "create closing");
+            assertThat(closing.get("status").asString()).isEqualTo("DRAFT");
+            assertThat(closing.get("lines")).isNotEmpty();
+            closing.get("lines").forEach(closingLine -> assertThat(money(closingLine.get("difference")))
+                    .as("difference of %s", closingLine).isEqualByComparingTo("0"));
+            UUID closingId = id(closing);
+            assertThat(cashier.command(POS + "/cash/closings/" + closingId + "/submit", null, 200, "submit closing")
+                    .get("status").asString()).isEqualTo("SUBMITTED");
+            assertThat(office.command("/api/v1/backoffice/cash/closings/" + closingId + "/approve", null, 200,
+                    "approve closing").get("status").asString()).isEqualTo("APPROVED");
+
+            JsonNode operational = manager.command(POS + "/cash/days/" + cashDay + "/operational-close",
+                    Map.of("version", manager.get(POS + "/cash/days/current", 200).get("version").asLong()), 200,
+                    "close the day operationally");
+            assertThat(operational.get("status").asString()).isEqualTo("OPERATIONALLY_CLOSED");
+            JsonNode financial = office.command("/api/v1/backoffice/cash/days/" + cashDay + "/financial-close",
+                    null, 200, "close the day financially");
+            assertThat(financial.get("status").asString()).isEqualTo("FINANCIALLY_CLOSED");
+            assertThat(audits("CASH_SESSION_CLOSED", sessionId)).isEqualTo(1);
+            assertThat(audits("CASH_CLOSING_APPROVED", closingId)).isEqualTo(1);
+            assertThat(audits("CASH_DAY_OPERATIONALLY_CLOSED", cashDay)).isEqualTo(1);
+            assertThat(audits("CASH_DAY_FINANCIALLY_CLOSED", cashDay)).isEqualTo(1);
+
+            // ---- A14: store A's tab heard the commits, as {topic, id} only; store B's tab heard nothing ----
+            // the table at open and at close, the order after each round, void and payment, every print job
+            Awaitility.await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
+                List<String> heard = topics(streamA);
+                assertThat(heard).contains("ORDER:" + order, "PAYMENT_ATTEMPT:" + id(cashAttempt),
+                        "PAYMENT_ATTEMPT:" + id(cardAttempt));
+                assertThat(heard.stream().filter(("TABLES:" + table)::equals)).hasSizeGreaterThanOrEqualTo(2);
+                assertThat(heard.stream().filter(t -> t.startsWith("PRINT_JOBS:")).distinct())
+                        .hasSizeGreaterThanOrEqualTo(6); // 2 + 1 rounds, the void, the subtotal, the document
+            });
+            streamA.notices().forEach(notice -> assertThat(notice.propertyNames()).as("notice %s", notice)
+                    .isSubsetOf("topic", "id"));
+            journey.add("SSE store A: " + streamA.notices().size() + " notices, topics " + topics(streamA).stream()
+                    .map(t -> t.contains(":") ? t.substring(0, t.indexOf(':')) : t).distinct().toList());
+            assertThat(topics(streamA)).noneMatch(t -> t.contains(areaB.toString()));
+            assertThat(streamB.notices()).as("store B's stream after its own control notice")
+                    .hasSize(storeBControl);
+            assertThat(topics(streamB)).noneMatch(t -> t.contains(order.toString()) || t.contains(tableM2.toString()));
+            journey.add("SSE store B: " + storeBControl + " notice(s), all its own (control); none of store A's");
+        }
+    }
+
+    private static TcpFakePrinter open() {
+        try {
+            return TcpFakePrinter.accepting();
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static Map<String, Object> store(String suffix) {
+        // A cutoff 12 h away keeps the business day from turning over while the journey runs.
+        LocalTime cutoff = LocalTime.now(ZoneId.of(ZONE)).plusHours(12).truncatedTo(ChronoUnit.HOURS);
+        return Map.of("code", "LOJA-" + suffix, "name", "Loja " + suffix, "timezone", ZONE,
+                "businessDayCutoff", cutoff.toString());
+    }
+
+    private UUID terminal(Browser office, UUID store, String code) throws Exception {
+        return id(office.post("/api/v1/backoffice/terminals", Map.of("storeId", store, "code", code, "name", code),
+                201));
+    }
+
+    private String employee(Browser office, UUID store, String code, String name, String pin, UUID role)
+            throws Exception {
+        office.post("/api/v1/backoffice/employees", Map.of("code", code, "name", name, "pin", pin, "storeId", store,
+                "roleId", role), 201);
+        return code;
+    }
+
+    /** A new POS tab on {@code terminal}: enrolled with a fresh code, then the employee's PIN login. */
+    private Browser posLogin(Browser office, UUID terminal, String code, String pin, String name) throws Exception {
+        String enrollment = office.post("/api/v1/backoffice/terminals/" + terminal + "/enrollment-code", null, 200)
+                .get("code").asString();
+        Browser pos = new Browser(name, port, journey);
+        pos.get("/api/v1/auth/session", 401);
+        String token = pos.post("/api/v1/auth/terminals/enroll", Map.of("code", enrollment), 200)
+                .get("deviceToken").asString();
+        pos.post("/api/v1/auth/pos-login", Map.of("employeeCode", code, "pin", pin), 200, Csrf.SEND,
+                Map.of("X-Terminal-Token", token), "pos-login");
+        return pos;
+    }
+
+    /** Prego (kitchen) 150.00, Sumo and Agua (bar) 60.00 and 40.00, all 16% VAT, published for {@code store}. */
+    private Map<String, UUID> publishCatalog(Browser office, UUID store) throws Exception {
+        UUID family = id(office.post(CATALOG + "/families", Map.of("code", "REST", "name", "Restaurante"), 201));
+        UUID unit = id(office.post(CATALOG + "/units", Map.of("code", "UN", "name", "Unidade"), 201));
+        UUID tax = id(office.post(CATALOG + "/tax-categories", Map.of("code", "IVA16", "name", "IVA"), 201));
+        office.post(CATALOG + "/tax-categories/" + tax + "/rates",
+                Map.of("ratePercent", new BigDecimal("16"), "effectiveFrom", "2000-01-01T00:00:00Z"), 201);
+        UUID priceList = id(office.post(CATALOG + "/price-lists", Map.of("storeId", store, "name", "Sala"), 201));
+        Map<String, UUID> items = new LinkedHashMap<>();
+        Object[][] menu = {{"PREGO", "Prego no pao", "COZINHA", "150.00"}, {"SUMO", "Sumo de manga", "BAR", "60.00"},
+                {"AGUA", "Agua 50cl", "BAR", "40.00"}};
+        for (Object[] dish : menu) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("code", dish[0]);
+            item.put("name", dish[1]);
+            item.put("familyId", family);
+            item.put("unitId", unit);
+            item.put("taxCategoryId", tax);
+            item.put("productionDestination", dish[2]);
+            item.put("soldByWeight", false);
+            UUID itemId = id(office.post(CATALOG + "/items", item, 201));
+            office.post(CATALOG + "/price-lists/" + priceList + "/prices",
+                    Map.of("itemId", itemId, "amount", new BigDecimal((String) dish[3])), 201);
+            items.put((String) dish[0], itemId);
+        }
+        UUID release = id(office.post(CATALOG + "/releases", Map.of("storeId", store), 201));
+        office.post(CATALOG + "/releases/" + release + "/validate", null, 200);
+        office.command(CATALOG + "/releases/" + release + "/publish", Map.of("note", "R2"), 200, "publish");
+        return items;
+    }
+
+    private UUID printer(Browser office, UUID store, String code, TcpFakePrinter device) throws Exception {
+        return id(office.command("/api/v1/backoffice/printers", Map.of("storeId", store, "code", code,
+                "name", "Impressora " + code, "host", device.host(), "port", device.port(), "codePage", "CP860"),
+                201, "printer " + code));
+    }
+
+    private UUID line(Browser pos, UUID order, UUID item, String quantity) throws Exception {
+        return id(pos.command(POS + "/orders/" + order + "/lines", Map.of("itemId", item,
+                "quantity", new BigDecimal(quantity)), 201, "draft"));
+    }
+
+    private long version(Browser pos, UUID order) throws Exception {
+        return pos.get(POS + "/orders/" + order, 200).get("version").asLong();
+    }
+
+    private String tableStatus(Browser pos, UUID store, UUID table) throws Exception {
+        for (JsonNode area : pos.get(POS + "/tables?storeId=" + store, 200).get("areas")) {
+            for (JsonNode t : area.get("tables")) {
+                if (t.get("id").asString().equals(table.toString())) {
+                    return t.get("status").asString();
+                }
+            }
+        }
+        throw new AssertionError("table " + table + " is not on the map");
+    }
+
+    /** The payloads the printer received that contain {@code marker} and match {@code also}; at least one. */
+    private List<String> awaitPrinted(TcpFakePrinter device, String marker, Predicate<String> also)
+            throws InterruptedException {
+        Predicate<String> match = s -> s.contains(marker) && also.test(s);
+        List<String> printed = device.awaitPayloads(CP860, match, 1, PRINTED);
+        assertThat(printed).as("printed on port %d: %s", device.port(), marker).hasSize(1);
+        return printed;
+    }
+
+    private static List<String> topics(ChangeStream stream) {
+        return stream.notices().stream().map(n -> n.get("topic").asString()
+                + (n.hasNonNull("id") ? ":" + n.get("id").asString() : "")).toList();
+    }
+
+    private long audits(String action, UUID entityId) {
+        return count("SELECT count(*) FROM audit.audit_event WHERE action = ? AND entity_id = ?", action,
+                entityId.toString());
+    }
+
+    private long count(String sql, Object... params) {
+        JdbcClient.StatementSpec statement = jdbc.sql(sql);
+        for (Object param : params) {
+            statement = statement.param(param);
+        }
+        return statement.query(Long.class).single();
+    }
+
+    private static BigDecimal money(JsonNode node) {
+        return new BigDecimal(node.get("amount").asString());
+    }
+
+    private static UUID id(JsonNode body) {
+        return UUID.fromString(body.get("id").asString());
+    }
+}
