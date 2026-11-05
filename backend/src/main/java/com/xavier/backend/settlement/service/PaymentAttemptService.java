@@ -130,7 +130,7 @@ public class PaymentAttemptService {
                 pos.employeeId(), clock.instant());
         UniqueConstraints.saveAndFlush(attempts, attempt,
                 () -> SettlementConflictException.inDoubt("order", request.orderId(), attempt.getId()),
-                "payment_attempt_open_per_order_uk");
+                "payment_attempt_open_per_target_uk");
         audit.attempt("PAYMENT_ATTEMPT_CREATED", attempt.getId(), attempt.getStoreId(), attempt.getOrderId(),
                 attempt.getTerminalId(), null, null, details(attempt));
         if (attempt.getStatus() == AttemptStatus.SUCCEEDED) {

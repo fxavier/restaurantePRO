@@ -2,6 +2,8 @@ package com.xavier.backend.settlement.model;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
@@ -13,15 +15,14 @@ import org.hibernate.annotations.UuidGenerator;
 import org.hibernate.type.SqlTypes;
 
 /**
- * What a payment pays (spec §4 "Alocações impedem cobrar duas vezes"). R2: exactly one allocation per payment, of the
- * full amount, to the order ({@code target_type = 'ORDER'}); R3 adds bill partitions and documents. A fact.
+ * What a payment pays (spec §4 "Alocações impedem cobrar duas vezes"): its target (D69), the order or one of its
+ * partitions, for the full amount (a debt payment, S29, may allocate to several debit entries). Σ allocations of a
+ * payment = its amount, checked by a deferred constraint trigger. A fact.
  */
 @Entity
 @Immutable
 @Table(schema = "settlement", name = "payment_allocation")
 public class PaymentAllocation {
-
-    static final String ORDER = "ORDER";
 
     @Id
     @UuidGenerator(style = UuidGenerator.Style.VERSION_7)
@@ -30,8 +31,9 @@ public class PaymentAllocation {
     @Column(nullable = false, updatable = false)
     private UUID paymentId;
 
-    @Column(nullable = false, updatable = false, length = 10)
-    private String targetType;
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, updatable = false, length = 15)
+    private TargetType targetType;
 
     @Column(nullable = false, updatable = false)
     private UUID targetId;
@@ -49,11 +51,13 @@ public class PaymentAllocation {
     protected PaymentAllocation() {
     }
 
-    public static PaymentAllocation toOrder(Payment payment, Instant now) {
+    /** The whole payment to its target: the order, or the partition it paid. */
+    public static PaymentAllocation toTarget(Payment payment, Instant now) {
         PaymentAllocation allocation = new PaymentAllocation();
         allocation.paymentId = payment.getId();
-        allocation.targetType = ORDER;
-        allocation.targetId = payment.getOrderId();
+        allocation.targetType = payment.getTargetType();
+        allocation.targetId = payment.getTargetType() == TargetType.PARTITION ? payment.getPartitionId()
+                : payment.getOrderId();
         allocation.amount = payment.amount().amount();
         allocation.currency = payment.amount().currency().getCurrencyCode();
         allocation.createdAt = now;
