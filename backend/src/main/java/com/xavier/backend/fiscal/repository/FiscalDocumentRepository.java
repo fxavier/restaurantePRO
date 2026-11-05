@@ -6,6 +6,7 @@ import com.xavier.backend.fiscal.model.FiscalDocument;
 import com.xavier.backend.fiscal.model.dto.SourceType;
 import jakarta.persistence.LockModeType;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -39,6 +40,24 @@ public interface FiscalDocumentRepository extends JpaRepository<FiscalDocument, 
                                com.xavier.backend.fiscal.model.DocumentStatus.ISSUED)
             order by d.createdAt, d.id""")
     List<FiscalDocument> findByOrder(@Param("orderId") UUID orderId);
+
+    /**
+     * ISSUED documents of a store whose business day is in {@code [from, to]}; an R2 document (no business date) is
+     * in range when it was issued in {@code [start, end)}, the instants those business days span.
+     */
+    @Query(value = """
+            select d.id from FiscalDocument d
+            where d.storeId = :storeId and d.status = com.xavier.backend.fiscal.model.DocumentStatus.ISSUED
+              and (d.businessDate between :from and :to
+                   or (d.businessDate is null and d.issuedAt >= :start and d.issuedAt < :end))
+            order by d.issuedAt, d.id""",
+            countQuery = """
+            select count(d) from FiscalDocument d
+            where d.storeId = :storeId and d.status = com.xavier.backend.fiscal.model.DocumentStatus.ISSUED
+              and (d.businessDate between :from and :to
+                   or (d.businessDate is null and d.issuedAt >= :start and d.issuedAt < :end))""")
+    Page<UUID> findIssuedIds(@Param("storeId") UUID storeId, @Param("from") LocalDate from, @Param("to") LocalDate to,
+                             @Param("start") Instant start, @Param("end") Instant end, Pageable page);
 
     Optional<FiscalDocument> findBySeriesIdAndNumber(UUID seriesId, Long number);
 

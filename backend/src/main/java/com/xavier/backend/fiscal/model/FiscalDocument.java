@@ -5,11 +5,13 @@ import com.xavier.backend.fiscal.IssuedDocument;
 import com.xavier.backend.fiscal.exception.IllegalDocumentStateException;
 import com.xavier.backend.fiscal.exception.InvalidSaleDraftException;
 import com.xavier.backend.fiscal.model.dto.Buyer;
+import com.xavier.backend.fiscal.model.dto.DocumentFacts;
 import com.xavier.backend.fiscal.model.dto.DocumentSummary;
 import com.xavier.backend.fiscal.model.dto.DocumentView;
 import com.xavier.backend.fiscal.model.dto.DraftCommand;
 import com.xavier.backend.fiscal.model.dto.DraftLine;
 import com.xavier.backend.fiscal.model.dto.SourceType;
+import com.xavier.backend.organization.BusinessDays;
 import com.xavier.backend.organization.model.dto.CompanyProfileView;
 import com.xavier.backend.organization.model.dto.StoreSummary;
 import com.xavier.backend.shared.Money;
@@ -28,6 +30,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Currency;
@@ -36,6 +39,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.TreeMap;
 import java.util.UUID;
+import java.util.function.Supplier;
 import org.hibernate.annotations.Generated;
 import org.hibernate.annotations.UuidGenerator;
 
@@ -305,6 +309,19 @@ public class FiscalDocument {
     public DocumentSummary toSummary() {
         return new DocumentSummary(id, storeId, documentType.name(), status.name(), sourceId, seriesCode, number,
                 issuedAt, getTotalGross(), buyerName);
+    }
+
+    /**
+     * The facts reporting projects (D84). An R2 document has no business date: it falls back to the business day
+     * of its issue in its store's zone, with the cutoff {@code storeCutoff} supplies (read only then, D85).
+     */
+    public DocumentFacts toFacts(Supplier<LocalTime> storeCutoff) {
+        LocalDate day = businessDate != null ? businessDate
+                : BusinessDays.of(issuedAt != null ? issuedAt : createdAt, ZoneId.of(storeTimezone), storeCutoff.get());
+        DocumentView view = toView();
+        return new DocumentFacts(id, storeId, documentType.name(), status.name(), sourceType.name(), sourceId,
+                orderRef, day, issuedAt, issuedTerminalId, issuedByEmployeeId, customerId, onAccount, seriesCode,
+                number, nonFiscal, view.totalGross(), view.totalNet(), view.totalTax(), view.lines(), view.taxes());
     }
 
     /** What an adapter renders; only for an ISSUED document. */

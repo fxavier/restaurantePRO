@@ -5,6 +5,7 @@ import com.xavier.backend.fiscal.model.DocumentType;
 import com.xavier.backend.fiscal.model.FiscalDocument;
 import com.xavier.backend.fiscal.model.dto.SourceType;
 import com.xavier.backend.fiscal.model.dto.Coverage;
+import com.xavier.backend.fiscal.model.dto.DocumentFacts;
 import com.xavier.backend.fiscal.model.dto.DocumentView;
 import com.xavier.backend.fiscal.model.dto.DraftCommand;
 import com.xavier.backend.fiscal.model.dto.SaleDraftCommand;
@@ -12,9 +13,12 @@ import com.xavier.backend.fiscal.repository.FiscalDocumentRepository;
 import com.xavier.backend.fiscal.service.DocumentFactsService;
 import com.xavier.backend.fiscal.service.DocumentIssueService;
 import com.xavier.backend.fiscal.service.SaleDraftService;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -111,6 +115,29 @@ public class FiscalApi {
     @Transactional(readOnly = true)
     public List<DocumentView> documentsOfOrder(UUID orderId) {
         return facts.documentsOfOrder(orderId);
+    }
+
+    /**
+     * For reporting (D84): the header, lines (with {@code sourceLineId}) and tax summary of one document. An R2
+     * document's business day falls back to the day of its issue (D85).
+     *
+     * @throws com.xavier.backend.shared.exception.NotFoundException (404) for an unknown document
+     */
+    @Transactional(readOnly = true)
+    public DocumentFacts documentFacts(UUID documentId) {
+        return facts.documentFacts(documentId);
+    }
+
+    /**
+     * For the reporting backfill (D84): the ids of a store's ISSUED documents whose business day is in
+     * {@code [fromBusinessDate, toBusinessDate]} (both inclusive), oldest issue first.
+     *
+     * @throws com.xavier.backend.shared.exception.NotFoundException (404) for an unknown store
+     */
+    @Transactional(readOnly = true)
+    public Page<UUID> issuedDocumentIds(UUID storeId, LocalDate fromBusinessDate, LocalDate toBusinessDate,
+                                        Pageable page) {
+        return facts.issuedDocumentIds(storeId, fromBusinessDate, toBusinessDate, page);
     }
 
     /** Fiscal pendencies of a store: drafts not issued yet (D50 §7.8 day close). */
