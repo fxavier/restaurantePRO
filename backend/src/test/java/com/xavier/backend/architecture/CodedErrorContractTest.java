@@ -26,6 +26,9 @@ import com.xavier.backend.orders.exception.OrderRuleException;
 import com.xavier.backend.production.exception.ProductionRule;
 import com.xavier.backend.production.exception.ProductionRuleViolationException;
 import com.xavier.backend.production.model.Printer;
+import com.xavier.backend.reporting.exception.ExportParamsException;
+import com.xavier.backend.reporting.exception.RebuildRunningException;
+import com.xavier.backend.reporting.exception.ReportRangeException;
 import com.xavier.backend.settlement.exception.SettlementConflictException;
 import com.xavier.backend.settlement.exception.SettlementRule;
 import com.xavier.backend.settlement.exception.SettlementRuleException;
@@ -33,6 +36,7 @@ import com.xavier.backend.settlement.model.AttemptStatus;
 import com.xavier.backend.shared.Money;
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -164,7 +168,12 @@ class CodedErrorContractTest {
             Map.entry("void-self-approval", SettlementRuleException::voidSelfApproval),
             Map.entry("illegal-partition-state", () -> SettlementConflictException.illegalPartitionState(ID,
                     "CANCELLED", "be cancelled")),
-            Map.entry("partition-in-doubt", () -> SettlementConflictException.inDoubt("partition", ID, OTHER)));
+            Map.entry("partition-in-doubt", () -> SettlementConflictException.inDoubt("partition", ID, OTHER)),
+            Map.entry("range-reversed", () -> ReportRangeException.reversed(LocalDate.of(2026, 11, 5),
+                    LocalDate.of(2026, 11, 4))),
+            Map.entry("range-too-large", () -> ReportRangeException.tooLarge(366)),
+            Map.entry("rebuild-running", () -> new RebuildRunningException(ID)),
+            Map.entry("invalid-export-params", () -> new ExportParamsException("groupBy")));
 
     @Autowired
     MockMvc mvc;
@@ -369,6 +378,17 @@ class CodedErrorContractTest {
         expect("draft-mismatch-on-account", 409, "DRAFT_MISMATCH",
                 "The draft document " + ID + " is on account: it stays on account for the same customer.",
                 ",\"documentId\":\"" + ID + "\"");
+    }
+
+    @Test
+    void reportingCodes() throws Exception {
+        expect("range-reversed", 422, "RANGE_REVERSED", "The range starts on 2026-11-05, after its end 2026-11-04.",
+                "");
+        expect("range-too-large", 422, "RANGE_TOO_LARGE", "The range is longer than 366 days: narrow it.",
+                ",\"maxDays\":366");
+        expect("rebuild-running", 409, "REBUILD_RUNNING", "A rebuild of store " + ID + " is already running.", "");
+        expect("invalid-export-params", 422, "INVALID_EXPORT_PARAMS",
+                "The export parameter 'groupBy' is missing or not valid for the report.", ",\"param\":\"groupBy\"");
     }
 
     private void expect(String name, int status, String code, String detail, String extra) throws Exception {
