@@ -139,6 +139,30 @@ class DebtPaymentTest {
     }
 
     @Test
+    void namedDebitsAreCheckedBeforeAnyMoneyIsTaken() throws Exception {
+        String method = SettlementFixtures.freshCode("EXT");
+        fixtures.method(method, "EXTERNAL_TERMINAL", null);
+        UUID other = customers.creditCustomer("100.00");
+        UUID foreignDebit = UUID.fromString(SettlementFixtures.json(fixtures.creditCharge(fixtures.sale("1"), other,
+                "12.50").andExpect(status().isCreated())).get("ledgerEntryId").asString());
+        fixtures.payDebt(sale.cashier(), customer, "CASH", "12.50", "12.50", UUID.randomUUID().toString(),
+                newerDebit).andExpect(status().isCreated()); // the newer debit is now settled
+
+        for (UUID named : new UUID[] {UUID.randomUUID(), foreignDebit, newerDebit}) {
+            fixtures.payDebt(sale.cashier(), customer, method, "5.00", null, UUID.randomUUID().toString(), named)
+                    .andExpect(status().isUnprocessableContent())
+                    .andExpect(jsonPath("$.code").value("DEBIT_NOT_OPEN"))
+                    .andExpect(jsonPath("$.debitEntryId").value(named.toString()));
+        }
+        fixtures.payDebt(sale.cashier(), customer, method, "25.01", null, UUID.randomUUID().toString(), olderDebit)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("AMOUNT_EXCEEDS_DEBT"))
+                .andExpect(jsonPath("$.debt").value(25.00));
+        assertThat(fixtures.count("SELECT count(*) FROM settlement.payment_attempt WHERE credit_account_id = ? "
+                + "AND method_code = ?", customer, method)).as("no attempt, no money taken").isZero();
+    }
+
+    @Test
     void anIntegratedDebtPaymentIsPostedWhenTheProviderCharges() throws Exception {
         String method = SettlementFixtures.freshCode("PAY");
         fixtures.method(method, "INTEGRATED", FakePaymentProvider.CODE);

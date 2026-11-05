@@ -113,6 +113,11 @@ public class SettlementRuleException extends BusinessRuleException {
                 + " is more than the open debt " + debt.amount() + ".", Map.of("debt", debt.amount()));
     }
 
+    public static SettlementRuleException debitNotOpen(UUID debitEntryId) {
+        return new SettlementRuleException(SettlementRule.DEBIT_NOT_OPEN, "The debit " + debitEntryId
+                + " is not an open debit of this customer.", Map.of("debitEntryId", debitEntryId));
+    }
+
     private static String plain(BigDecimal quantity) {
         return quantity.stripTrailingZeros().toPlainString();
     }

@@ -165,6 +165,7 @@ public class PaymentAttemptService {
         if (amount.amount().compareTo(account.balance().amount()) > 0) {
             throw SettlementRuleException.amountExceedsDebt(amount, account.balance());
         }
+        requireNamedDebitsCover(customerId, request.debitEntryIds(), amount);
         SessionView session = openSessionOf(pos);
         PaymentAttempt attempt = PaymentAttempt.forCreditAccount(customerId, request.debitEntryIds(), pos.storeId(),
                 pos.terminalId(), session.id(), method, amount,
@@ -174,6 +175,28 @@ public class PaymentAttemptService {
                 () -> SettlementConflictException.inDoubt(CUSTOMER, customerId, attempt.getId()),
                 "payment_attempt_open_per_target_uk");
         return started(attempt);
+    }
+
+    /**
+     * The debits a debt payment names are checked before any money is taken (D75): each must be an open debit of the
+     * customer, and together they must cover the amount, as {@code postCredit} will require on success.
+     */
+    private void requireNamedDebitsCover(UUID customerId, java.util.List<UUID> named, Money amount) {
+        if (named == null || named.isEmpty()) {
+            return;
+        }
+        Map<UUID, Money> open = customers.openDebits(customerId, named);
+        Money covered = Money.of(BigDecimal.ZERO, amount.currency());
+        for (UUID debit : new java.util.LinkedHashSet<>(named)) {
+            Money left = open.get(debit);
+            if (left == null || left.amount().signum() <= 0) {
+                throw SettlementRuleException.debitNotOpen(debit);
+            }
+            covered = covered.plus(left);
+        }
+        if (amount.amount().compareTo(covered.amount()) > 0) {
+            throw SettlementRuleException.amountExceedsDebt(amount, covered);
+        }
     }
 
     /** Audits the new attempt, then pays it (cash) or submits it to its provider after commit (integrated). */

@@ -73,6 +73,8 @@ public enum SettlementRule {
     DOCUMENT_ALREADY_ISSUED,
     /** R3 (D74): the credit charge is posted, or its document is issued (the sweeper posts it): it is not cancelled. */
     CHARGE_POSTED,
-    /** R3 (D75, P33): a debt payment is at most the customer's open debt (no advance). */
-    AMOUNT_EXCEEDS_DEBT
+    /** R3 (D75, P33): a debt payment is at most the customer's open debt (no advance), or the debits it names. */
+    AMOUNT_EXCEEDS_DEBT,
+    /** R3 (D75): a debit a debt payment names is unknown, of another customer, or already settled. */
+    DEBIT_NOT_OPEN
 }
