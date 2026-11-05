@@ -25,9 +25,9 @@ import java.util.function.Predicate;
  *       code alone gives AMOUNT_MISMATCH when only one payment has it). A key that finds no single payment is
  *       MISSING_INTERNAL: it never falls back to the amount.</li>
  *   <li>A line without a key is matched by amount within ±{@link #WINDOW}, against the payments the keys did not
- *       take, <b>only when exactly one payment is a candidate, and that payment is the candidate of this line
- *       alone</b>. Otherwise it is MISSING_INTERNAL: two equal card payments in the same minute are never paired at
- *       random.</li>
+ *       take, <b>only when exactly one payment is a candidate of the line, and that payment is a candidate of no
+ *       other keyless line</b> (unique from both sides). Otherwise it is MISSING_INTERNAL: two equal card payments
+ *       in the same minute are never paired at random.</li>
  *   <li>A line whose one payment is already matched, by an earlier batch or an earlier line of this one, is
  *       DUPLICATE_LINE.</li>
  *   <li>Every payment of {@code [from, to)} with money left that nothing matched, now or earlier, is
@@ -53,8 +53,8 @@ public final class StatementMatcher {
                 outcomes.put(row.lineNo(), byKey(methodKind, row, payments, taken));
             }
         }
-        Map<UUID, List<StatementRow>> picks = new HashMap<>();
-        Map<UUID, PaymentCandidate> picked = new HashMap<>();
+        Map<StatementRow, List<PaymentCandidate>> candidatesOf = new java.util.LinkedHashMap<>();
+        Map<UUID, Integer> linesPerPayment = new HashMap<>();
         for (StatementRow row : lines) {
             if (keyOf(methodKind, row) != null) {
                 continue;
@@ -63,25 +63,18 @@ public final class StatementMatcher {
                     .filter(p -> !taken.contains(p.paymentId()) && p.net().equals(row.amount())
                             && !Duration.between(p.confirmedAt(), row.occurredAt()).abs().minus(WINDOW).isPositive())
                     .toList();
-            if (candidates.size() == 1) {
-                PaymentCandidate only = candidates.getFirst();
-                picks.computeIfAbsent(only.paymentId(), id -> new ArrayList<>()).add(row);
-                picked.put(only.paymentId(), only);
+            candidatesOf.put(row, candidates);
+            candidates.forEach(p -> linesPerPayment.merge(p.paymentId(), 1, Integer::sum));
+        }
+        candidatesOf.forEach((row, candidates) -> {
+            PaymentCandidate only = candidates.size() == 1 ? candidates.getFirst() : null;
+            if (only != null && only.matchedEarlier()) {
+                outcomes.put(row.lineNo(), new Match(EntryKind.DUPLICATE_LINE, row, only));
+            } else if (only != null && linesPerPayment.get(only.paymentId()) == 1) {
+                taken.add(only.paymentId());
+                outcomes.put(row.lineNo(), new Match(EntryKind.MATCHED, row, only));
             } else {
                 outcomes.put(row.lineNo(), new Match(EntryKind.MISSING_INTERNAL, row, null));
-            }
-        }
-        picks.forEach((paymentId, byRows) -> {
-            PaymentCandidate payment = picked.get(paymentId);
-            for (StatementRow row : byRows) {
-                if (payment.matchedEarlier()) {
-                    outcomes.put(row.lineNo(), new Match(EntryKind.DUPLICATE_LINE, row, payment));
-                } else if (byRows.size() == 1) {
-                    taken.add(paymentId);
-                    outcomes.put(row.lineNo(), new Match(EntryKind.MATCHED, row, payment));
-                } else {
-                    outcomes.put(row.lineNo(), new Match(EntryKind.MISSING_INTERNAL, row, null));
-                }
             }
         });
         List<Match> result = new ArrayList<>(outcomes.values());

@@ -126,6 +126,14 @@ class StatementMatcherTest {
                         List.of(payment(P1, "25.00", NOON)),
                         List.of(tuple(1, MISSING_INTERNAL, null), tuple(2, MISSING_INTERNAL, null),
                                 tuple(null, MISSING_PROVIDER, P1))),
+                Arguments.of("no key: a payment another line could also be is never paired",
+                        PaymentMethodKind.EXTERNAL_TERMINAL,
+                        // L1 sees only P1; L2 sees P1 and P2: P1 is not L1's alone, so neither line matches
+                        List.of(row(1, "25.00", NOON.minus(Duration.ofMinutes(9)), null, null),
+                                row(2, "25.00", NOON.plus(Duration.ofMinutes(5)), null, null)),
+                        List.of(payment(P1, "25.00", NOON), payment(P2, "25.00", NOON.plus(Duration.ofMinutes(12)))),
+                        List.of(tuple(1, MISSING_INTERNAL, null), tuple(2, MISSING_INTERNAL, null),
+                                tuple(null, MISSING_PROVIDER, P1), tuple(null, MISSING_PROVIDER, P2))),
                 Arguments.of("no key: a payment the reference already matched is not a candidate",
                         PaymentMethodKind.INTEGRATED,
                         List.of(row(1, "25.00", NOON, null, null), row(2, "25.00", NOON, "ATT-1", null)),
@@ -204,14 +212,18 @@ class StatementMatcherTest {
             result.stream().filter(m -> m.kind() == MATCHED || m.kind() == AMOUNT_MISMATCH)
                     .forEach(m -> paired.merge(m.payment().paymentId(), 1, Integer::sum));
             assertThat(paired.values()).as("seed %d", seed).allMatch(count -> count == 1);
+            java.util.Set<UUID> takenByKey = new java.util.HashSet<>();
+            result.stream().filter(m -> m.row() != null && m.row().authorizationCode() != null)
+                    .filter(m -> m.kind() == MATCHED || m.kind() == AMOUNT_MISMATCH)
+                    .forEach(m -> takenByKey.add(m.payment().paymentId()));
+            List<StatementRow> keyless = numbered.stream().filter(r -> r.authorizationCode() == null).toList();
             for (Match m : result) {
                 if (m.kind() == MATCHED && m.row().authorizationCode() == null) {
-                    assertThat(payments.stream().filter(p -> !paired.containsKey(p.paymentId())
-                                    || p.paymentId().equals(m.payment().paymentId()))
-                            .filter(p -> p.net().equals(m.row().amount()))
-                            .filter(p -> !Duration.between(p.confirmedAt(), m.row().occurredAt()).abs()
-                                    .minus(StatementMatcher.WINDOW).isPositive()))
+                    assertThat(candidates(m.row(), payments, takenByKey))
                             .as("seed %d: an amount match had one candidate", seed).hasSize(1);
+                    assertThat(keyless.stream().filter(r -> candidates(r, payments, takenByKey).stream()
+                                    .anyMatch(p -> p.paymentId().equals(m.payment().paymentId()))))
+                            .as("seed %d: its payment is the candidate of that line alone", seed).hasSize(1);
                 }
             }
             List<StatementRow> shuffled = new ArrayList<>(numbered);
@@ -219,6 +231,16 @@ class StatementMatcherTest {
             assertThat(byLine(match(PaymentMethodKind.EXTERNAL_TERMINAL, shuffled, payments)))
                     .as("seed %d: line order does not matter", seed).isEqualTo(byLine(result));
         }
+    }
+
+    /** The payments a keyless line could be by amount within the window, outside those the keys took. */
+    static List<PaymentCandidate> candidates(StatementRow row, List<PaymentCandidate> payments,
+                                             java.util.Set<UUID> takenByKey) {
+        return payments.stream().filter(p -> !takenByKey.contains(p.paymentId()))
+                .filter(p -> p.net().equals(row.amount()))
+                .filter(p -> !Duration.between(p.confirmedAt(), row.occurredAt()).abs()
+                        .minus(StatementMatcher.WINDOW).isPositive())
+                .toList();
     }
 
     static StatementRow renumber(StatementRow row, int lineNo) {
