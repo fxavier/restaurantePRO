@@ -39,6 +39,31 @@ public enum SettlementRule {
     REASON_REQUIRED,
     /** A manual reclassification is to SUCCEEDED or FAILED only. */
     INVALID_OUTCOME,
-    /** The approver of a reclassification is the operator asking for it (D28, D62). */
-    SELF_APPROVAL
+    /** The approver of a reclassification or a void is the operator asking for it (D28, D62). */
+    SELF_APPROVAL,
+    /** R3 (D67): part of that line's quantity is already in a LIVE partition. */
+    QUANTITY_ALREADY_PARTITIONED,
+    /** R3 (D67, D71): more than the line's net (billable) quantity. */
+    QUANTITY_EXCEEDS_NET,
+    /** R3 (D67, D70): the order's document draft exists (billing lock INVOICE): its split is fixed. */
+    ORDER_FROZEN,
+    /** R3 (D67): the partition is more than the residual still unpaid (due − LIVE partitions − ORDER payments). */
+    AMOUNT_EXCEEDS_RESIDUAL,
+    /** R3 (D67): equal parts of a residual that cannot give every part a positive amount. */
+    NOTHING_TO_SPLIT,
+    /** R3 (D67): the partition has a payment, an open attempt or a document: it cannot be cancelled. */
+    PARTITION_IN_USE,
+    /** R3 (D70): only a LIVE ITEMS partition is invoiced on its own. */
+    PARTITION_NOT_INVOICEABLE,
+    /** R3 (D71): the quantity to void is in a LIVE partition: cancel the partition first. */
+    QUANTITY_PARTITIONED,
+    /** R3 (D71): the void would leave the bill below what was paid or put on account: refund first. */
+    VOID_EXCEEDS_UNPAID,
+    /** R3 (D71, P31): the quantity is on a document; correcting it needs the market's fiscal adapter. */
+    CORRECTION_REQUIRES_FISCAL_ADAPTER,
+    /**
+     * R3 (D68 amendment): the command would leave a partition share or a line's remaining pool outside fiscal's
+     * bound for allocated lines (after cancels or a void the rounding drifts): cancel or re-split differently.
+     */
+    SPLIT_ROUNDING_LIMIT
 }

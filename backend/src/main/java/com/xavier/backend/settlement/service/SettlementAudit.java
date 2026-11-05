@@ -43,4 +43,9 @@ class SettlementAudit {
     void record(String action, String entityType, UUID entityId, UUID storeId, Map<String, Object> details) {
         auditLog.recordAsCurrentActor(action, entityType, entityId.toString(), storeId, null, null, details);
     }
+
+    /** D95: partitions, partition documents and settled voids say "re-read the order" on its {@code ORDER} topic. */
+    void orderChanged(UUID storeId, UUID orderId) {
+        changeNotifier.notifyAfterCommit(storeId, ChangeTopic.ORDER, orderId);
+    }
 }

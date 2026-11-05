@@ -46,8 +46,15 @@ public class PaymentAttempt {
     @Id
     private UUID id;
 
-    @Column(nullable = false, updatable = false)
+    @Column(updatable = false)
     private UUID orderId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, updatable = false, length = 15)
+    private TargetType targetType;
+
+    @Column(updatable = false)
+    private UUID partitionId;
 
     @Column(nullable = false, updatable = false)
     private UUID storeId;
@@ -127,6 +134,16 @@ public class PaymentAttempt {
     public static PaymentAttempt create(UUID orderId, UUID storeId, UUID terminalId, UUID sessionId,
                                         PaymentMethod method, Money amount, Money tendered, UUID employeeId,
                                         Instant now) {
+        return create(orderId, null, storeId, terminalId, sessionId, method, amount, tendered, employeeId, now);
+    }
+
+    /**
+     * An attempt on a target (D69): {@code partitionId == null} pays the order (its residual), otherwise that
+     * partition of the order.
+     */
+    public static PaymentAttempt create(UUID orderId, UUID partitionId, UUID storeId, UUID terminalId,
+                                        UUID sessionId, PaymentMethod method, Money amount, Money tendered,
+                                        UUID employeeId, Instant now) {
         Objects.requireNonNull(amount, "amount");
         if (amount.amount().signum() <= 0) {
             throw new SettlementRuleException(SettlementRule.INVALID_AMOUNT, "A payment amount must be positive.");
@@ -134,6 +151,8 @@ public class PaymentAttempt {
         PaymentAttempt attempt = new PaymentAttempt();
         attempt.id = UuidVersion7Strategy.INSTANCE.generateUuid(null);
         attempt.orderId = Objects.requireNonNull(orderId, "orderId");
+        attempt.partitionId = partitionId;
+        attempt.targetType = partitionId == null ? TargetType.ORDER : TargetType.PARTITION;
         attempt.storeId = Objects.requireNonNull(storeId, "storeId");
         attempt.terminalId = Objects.requireNonNull(terminalId, "terminalId");
         attempt.sessionId = Objects.requireNonNull(sessionId, "sessionId");
@@ -291,7 +310,7 @@ public class PaymentAttempt {
         Currency money = Currency.getInstance(currency);
         return new AttemptView(id, orderId, storeId, sessionId, methodCode, methodKind.name(), status.name(),
                 amount(), tendered == null ? null : Money.of(tendered, money), change(), authorizationCode,
-                outcomeDetail, resolutionReason, createdAt, updatedAt);
+                outcomeDetail, resolutionReason, createdAt, updatedAt, targetType.name(), partitionId);
     }
 
     public UUID getId() {
@@ -300,6 +319,15 @@ public class PaymentAttempt {
 
     public UUID getOrderId() {
         return orderId;
+    }
+
+    public TargetType getTargetType() {
+        return targetType;
+    }
+
+    /** The partition this attempt pays, or {@code null} for an ORDER target. */
+    public UUID getPartitionId() {
+        return partitionId;
     }
 
     public UUID getStoreId() {

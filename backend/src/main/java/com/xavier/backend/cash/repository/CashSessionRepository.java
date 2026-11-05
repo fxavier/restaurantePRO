@@ -25,6 +25,13 @@ public interface CashSessionRepository extends JpaRepository<CashSession, UUID> 
     @Query("select s.id from CashSession s where s.cashDayId = :dayId and s.status = :status order by s.id")
     List<UUID> findIdsByCashDayIdAndStatus(@Param("dayId") UUID dayId, @Param("status") CashSessionStatus status);
 
+    /** The ids of the store's sessions whose cash day's business date is in {@code [from, to]}. */
+    @Query("""
+            select s.id from CashSession s, CashDay d
+            where d.id = s.cashDayId and s.storeId = :storeId and d.businessDate between :from and :to""")
+    List<UUID> findIdsOfStoreBetween(@Param("storeId") UUID storeId, @Param("from") java.time.LocalDate from,
+                                     @Param("to") java.time.LocalDate to);
+
     @Query("select distinct s.registerId from CashSession s where s.cashDayId = :dayId")
     List<UUID> findRegisterIdsByCashDayId(@Param("dayId") UUID dayId);
 

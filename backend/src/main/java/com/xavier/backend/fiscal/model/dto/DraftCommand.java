@@ -12,8 +12,22 @@ import java.util.UUID;
  * {@code sourceId}. {@code businessDate} is the order's business day (D85); {@code null} falls back to the day of
  * issue. {@code buyer} is the customer snapshot (D65) and may be {@code null}; {@code onAccount} (a credit sale)
  * needs {@code customerId}. The totals must be the sums of the lines (D59, see {@link DraftLine}).
+ *
+ * <p>{@code amountsAllocated} (D68 amendment, S28): the lines carry settlement's allocated shares (every PARTITION
+ * draft, and the residual ORDER draft of an order that has or had partitions). Their amounts are checked within a
+ * bound instead of D59's exact recomputation: gross within 1 minor unit of {@code round(unitPrice × quantity)}, net
+ * within 2 of {@code round(gross / (1 + rate/100))}, {@code net + tax = gross} exactly, no negative amount. It is part
+ * of the draft's content: a redraft with the other flag is a {@code DRAFT_MISMATCH}.
  */
 public record DraftCommand(UUID storeId, SourceType sourceType, UUID sourceId, UUID orderId, LocalDate businessDate,
                            Buyer buyer, UUID customerId, boolean onAccount, List<DraftLine> lines, Money totalGross,
-                           Money totalNet, Money totalTax) {
+                           Money totalNet, Money totalTax, boolean amountsAllocated) {
+
+    /** A draft whose lines follow D59 exactly ({@code amountsAllocated = false}). */
+    public DraftCommand(UUID storeId, SourceType sourceType, UUID sourceId, UUID orderId, LocalDate businessDate,
+                        Buyer buyer, UUID customerId, boolean onAccount, List<DraftLine> lines, Money totalGross,
+                        Money totalNet, Money totalTax) {
+        this(storeId, sourceType, sourceId, orderId, businessDate, buyer, customerId, onAccount, lines, totalGross,
+                totalNet, totalTax, false);
+    }
 }

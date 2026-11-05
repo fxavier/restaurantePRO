@@ -3,10 +3,14 @@ package com.xavier.backend.settlement.model;
 import com.xavier.backend.shared.Money;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.Objects;
 import java.util.Currency;
 import java.util.UUID;
 import org.hibernate.annotations.Immutable;
@@ -32,8 +36,23 @@ public class Payment {
     @Column(nullable = false, updatable = false)
     private UUID attemptId;
 
-    @Column(nullable = false, updatable = false)
+    @Column(updatable = false)
     private UUID orderId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, updatable = false, length = 15)
+    private TargetType targetType;
+
+    @Column(updatable = false)
+    private UUID partitionId;
+
+    /** The attempt's terminal (R2 rows: {@code null}; their attempt has it). */
+    @Column(updatable = false)
+    private UUID terminalId;
+
+    /** The business day of the session's cash day (D85; R2 rows: {@code null}). */
+    @Column(updatable = false)
+    private LocalDate businessDate;
 
     @Column(nullable = false, updatable = false)
     private UUID storeId;
@@ -63,14 +82,21 @@ public class Payment {
     protected Payment() {
     }
 
-    /** The payment of a SUCCEEDED attempt, collected by the employee who created it, into its session. */
-    public static Payment of(PaymentAttempt attempt, Instant now) {
+    /**
+     * The payment of a SUCCEEDED attempt to its target, collected by the employee who created it, into its session,
+     * on the business day of the session's cash day.
+     */
+    public static Payment of(PaymentAttempt attempt, LocalDate businessDate, Instant now) {
         if (attempt.getStatus() != AttemptStatus.SUCCEEDED) {
             throw new IllegalStateException("Only a SUCCEEDED attempt is paid: " + attempt.getId());
         }
         Payment payment = new Payment();
         payment.attemptId = attempt.getId();
         payment.orderId = attempt.getOrderId();
+        payment.targetType = attempt.getTargetType();
+        payment.partitionId = attempt.getPartitionId();
+        payment.terminalId = attempt.getTerminalId();
+        payment.businessDate = Objects.requireNonNull(businessDate, "businessDate");
         payment.storeId = attempt.getStoreId();
         payment.sessionId = attempt.getSessionId();
         payment.methodCode = attempt.getMethodCode();
@@ -90,8 +116,32 @@ public class Payment {
         return id;
     }
 
+    public UUID getAttemptId() {
+        return attemptId;
+    }
+
     public UUID getOrderId() {
         return orderId;
+    }
+
+    public TargetType getTargetType() {
+        return targetType;
+    }
+
+    public UUID getPartitionId() {
+        return partitionId;
+    }
+
+    public UUID getStoreId() {
+        return storeId;
+    }
+
+    public UUID getTerminalId() {
+        return terminalId;
+    }
+
+    public LocalDate getBusinessDate() {
+        return businessDate;
     }
 
     public UUID getSessionId() {
