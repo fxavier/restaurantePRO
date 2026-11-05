@@ -16,6 +16,7 @@ import com.xavier.backend.access.Permission;
 import com.xavier.backend.customers.CustomersFixtures;
 import com.xavier.backend.customers.CustomersFixtures.Pos;
 import com.xavier.backend.customers.CustomersModuleTest;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -89,14 +90,18 @@ class CreditAccountHttpTest {
         changeLimit("-1.00", "why").andExpect(status().isBadRequest());
         changeLimit("1.001", "why").andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("INVALID_AMOUNT"));
+        changeLimit("1.00001", "why").andExpect(status().isBadRequest());
+        changeLimit("1" + "0".repeat(15), "why").andExpect(status().isBadRequest());
     }
 
     @Test
-    void limitsAreManagedWithCreditLimitManageInAnyStore() throws Exception {
-        mvc.perform(idem(post(BO + "/" + customer + "/credit-limit-changes"))
-                        .with(account(UUID.randomUUID(), Permission.CREDIT_LIMIT_MANAGE))
-                        .contentType(MediaType.APPLICATION_JSON).content(limitBody("10.00", "store manager")))
-                .andExpect(status().isOk());
+    void limitsAndBlocksNeedCreditLimitManageInstallationWide() throws Exception {
+        for (String path : List.of("/credit-limit-changes", "/credit-block", "/credit-unblock")) {
+            mvc.perform(idem(post(BO + "/" + customer + path))
+                            .with(account(UUID.randomUUID(), Permission.CREDIT_LIMIT_MANAGE))
+                            .contentType(MediaType.APPLICATION_JSON).content(limitBody("10.00", "store manager")))
+                    .andExpect(status().isForbidden());
+        }
         mvc.perform(idem(post(BO + "/" + customer + "/credit-limit-changes"))
                         .with(account(null, Permission.CUSTOMER_MANAGE))
                         .contentType(MediaType.APPLICATION_JSON).content(limitBody("10.00", "no")))

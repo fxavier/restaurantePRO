@@ -29,9 +29,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * The credit account's limit and block (D73, spec §9): {@code CREDIT_LIMIT_MANAGE} installation-wide or in any store
- * (P38), every change audited, and a limit change is also a {@code CreditLimitChange} fact. The account is locked
- * first, so a change and a reservation never interleave (D76).
+ * The credit account's limit and block (D73, spec §9). {@code CREDIT_LIMIT_MANAGE} installation-wide, because the
+ * limit is company-wide (P38); every change is audited, and a limit change is also a {@code CreditLimitChange} fact.
+ * The account is locked first, so a change and a reservation never interleave (D76).
  */
 @Service
 public class CreditAccountService {
@@ -68,7 +68,7 @@ public class CreditAccountService {
     /** Sets the limit; the first change opens the account, in the company currency. */
     @Transactional
     public CreditView changeLimit(UUID customerId, CreditLimitChangeRequest request) {
-        accessPolicy.requireInAnyStore(Permission.CREDIT_LIMIT_MANAGE);
+        accessPolicy.require(Permission.CREDIT_LIMIT_MANAGE);
         requireCustomer(customerId);
         Instant now = clock.instant();
         CreditAccount account = locks.account(customerId).orElse(null);
@@ -92,7 +92,7 @@ public class CreditAccountService {
 
     @Transactional
     public CreditView block(UUID customerId, CreditBlockRequest request) {
-        accessPolicy.requireInAnyStore(Permission.CREDIT_LIMIT_MANAGE);
+        accessPolicy.require(Permission.CREDIT_LIMIT_MANAGE);
         CreditAccount account = requireAccount(customerId);
         account.block(request.reason(), clock.instant());
         accounts.saveAndFlush(account);
@@ -103,7 +103,7 @@ public class CreditAccountService {
 
     @Transactional
     public CreditView unblock(UUID customerId, CreditUnblockRequest request) {
-        accessPolicy.requireInAnyStore(Permission.CREDIT_LIMIT_MANAGE);
+        accessPolicy.require(Permission.CREDIT_LIMIT_MANAGE);
         CreditAccount account = requireAccount(customerId);
         account.unblock();
         accounts.saveAndFlush(account);
