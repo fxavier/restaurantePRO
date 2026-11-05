@@ -3,6 +3,7 @@ package com.xavier.backend.cash.repository;
 import com.xavier.backend.cash.model.CashClosing;
 import com.xavier.backend.cash.model.CashClosingStatus;
 import jakarta.persistence.LockModeType;
+import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -28,7 +29,16 @@ public interface CashClosingRepository extends JpaRepository<CashClosing, UUID> 
 
     List<CashClosing> findByCashDayIdAndStatus(UUID cashDayId, CashClosingStatus status);
 
-    List<CashClosing> findByCashDayIdIn(Collection<UUID> cashDayIds);
+    List<CashClosing> findByRegisterIdAndCashDayIdAndStatusIn(UUID registerId, UUID cashDayId,
+                                                              Collection<CashClosingStatus> statuses);
+
+    /** The closings, with their lines, of the store's days in a business-date range (reconciliation). */
+    @Query("""
+            select distinct c from CashClosing c left join fetch c.lines
+            where c.storeId = :storeId and c.cashDayId in (
+                select d.id from CashDay d where d.storeId = :storeId and d.businessDate between :from and :to)""")
+    List<CashClosing> findWithLinesByStoreAndBusinessDates(@Param("storeId") UUID storeId,
+                                                           @Param("from") LocalDate from, @Param("to") LocalDate to);
 
     /** A store's closings, optionally of one cash day and/or in one status. */
     @Query("""

@@ -7,11 +7,11 @@ import com.xavier.backend.access.PosContext;
 import com.xavier.backend.cash.exception.CashNotFoundException;
 import com.xavier.backend.cash.exception.CashRule;
 import com.xavier.backend.cash.exception.CashRuleViolationException;
+import com.xavier.backend.cash.exception.ClosingStaleException;
 import com.xavier.backend.cash.exception.IllegalCashStateException;
 import com.xavier.backend.cash.model.CashClosing;
 import com.xavier.backend.cash.model.CashClosingStatus;
 import com.xavier.backend.cash.model.CashDay;
-import com.xavier.backend.cash.model.CashDayStatus;
 import com.xavier.backend.cash.model.CashRegister;
 import com.xavier.backend.cash.model.CashSessionStatus;
 import com.xavier.backend.cash.model.dto.ClosingView;
@@ -20,7 +20,6 @@ import com.xavier.backend.cash.model.dto.Justification;
 import com.xavier.backend.cash.model.dto.JustifyClosingRequest;
 import com.xavier.backend.cash.model.dto.RejectClosingRequest;
 import com.xavier.backend.cash.repository.CashClosingRepository;
-import com.xavier.backend.cash.repository.CashDayReopeningRepository;
 import com.xavier.backend.cash.repository.CashDayRepository;
 import com.xavier.backend.cash.repository.CashMovementRepository;
 import com.xavier.backend.cash.repository.CashRegisterRepository;
@@ -56,7 +55,7 @@ public class CashClosingService {
     static final String DIFFERENCE_METRIC = "cash.closing.difference";
 
     private final CashClosingRepository closings;
-    private final CashDayReopeningRepository reopenings;
+    private final ClosingRounds rounds;
     private final CashRegisterRepository registers;
     private final CashDayRepository days;
     private final CashSessionRepository sessions;
@@ -69,14 +68,14 @@ public class CashClosingService {
     private final MeterRegistry meters;
     private final Clock clock;
 
-    CashClosingService(CashClosingRepository closings, CashDayReopeningRepository reopenings,
+    CashClosingService(CashClosingRepository closings, ClosingRounds rounds,
                        CashRegisterRepository registers, CashDayRepository days,
                        CashSessionRepository sessions, CashMovementRepository movements,
                        CashSessionCountRepository counts, OrganizationApi organization, AccessPolicy accessPolicy,
                        RowLocks locks, CashAudit audit, MeterRegistry meters, Clock clock) {
         this.locks = locks;
         this.closings = closings;
-        this.reopenings = reopenings;
+        this.rounds = rounds;
         this.registers = registers;
         this.days = days;
         this.sessions = sessions;
@@ -107,7 +106,7 @@ public class CashClosingService {
         CashDay day = locks.dayForUpdate(request.cashDayId());
         day.requireNotFinanciallyClosed();
         requireAllSessionsClosed(register, day);
-        int round = (int) reopenings.countByCashDayIdAndFromStatus(day.getId(), CashDayStatus.FINANCIALLY_CLOSED);
+        int round = rounds.current(day.getId());
         if (closings.existsByRegisterIdAndCashDayIdAndDayRoundAndStatusIn(register.getId(), day.getId(), round,
                 CashClosingStatus.LIVE)) {
             throw liveClosingExists(register);
@@ -157,8 +156,9 @@ public class CashClosingService {
     }
 
     /**
-     * SUBMITTED → APPROVED, if what the register should hold is still what the closing compared (D79 (2), else 409
-     * {@code CLOSING_STALE}). The day is read {@code FOR SHARE} first, so an adjustment of the day (which takes it
+     * SUBMITTED → APPROVED, if what the register should hold is still what the closing compared and the closing is of
+     * the day's current round (D79 (2), (3); else 409 {@code CLOSING_STALE}), on a day not FINANCIALLY_CLOSED (422
+     * {@code DAY_FINANCIALLY_CLOSED}). The day is read {@code FOR SHARE} first, so an adjustment of the day (which takes it
      * {@code FOR UPDATE}) lands either before the re-computation or after the approval. Not the day's financial
      * close, which is its own command (spec §8.3).
      */
@@ -169,6 +169,11 @@ public class CashClosingService {
         CashDay day = locks.lock(days.findById(closings.findCashDayIdById(id).orElseThrow()).orElseThrow(),
                 LockModeType.PESSIMISTIC_READ);
         CashClosing closing = closings.findByIdForUpdate(id).orElseThrow(() -> new CashNotFoundException(ENTITY, id));
+        day.requireNotFinanciallyClosed();
+        int round = rounds.current(day.getId());
+        if (closing.getDayRound() != round) {
+            throw ClosingStaleException.earlierRound(id, closing.getDayRound(), round);
+        }
         Actor actor = accessPolicy.current();
         closing.approve(CashAmounts.byMethod(movements.expectedByRegisterAndDay(closing.getRegisterId(),
                 day.getId()), closing.currency()), actor.userId(), actor.kind(), clock.instant());

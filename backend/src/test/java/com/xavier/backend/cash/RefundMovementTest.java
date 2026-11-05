@@ -9,6 +9,7 @@ import com.xavier.backend.cash.CashFixtures.Pos;
 import com.xavier.backend.cash.exception.CashRule;
 import com.xavier.backend.cash.exception.CashRuleViolationException;
 import com.xavier.backend.shared.Money;
+import com.xavier.backend.shared.exception.ConflictException;
 import java.util.Currency;
 import java.util.List;
 import java.util.UUID;
@@ -88,6 +89,19 @@ class RefundMovementTest {
         MovementView second = inTx(() -> cash.recordRefund(refund("CASH", "5.00", refund)));
 
         assertThat(second.id()).isEqualTo(first.id());
+        assertThat(fixtures.count("SELECT count(*) FROM cash.cash_movement WHERE source_id = ?", refund)).isOne();
+    }
+
+    @Test
+    void aRepeatedRefundIdWithAnotherAmountOrMethodIsAConflict() {
+        UUID refund = UUID.randomUUID();
+        inTx(() -> cash.recordRefund(refund("CASH", "5.00", refund)));
+
+        for (RefundCommand other : List.of(refund("CASH", "6.00", refund), refund("CARD", "5.00", refund))) {
+            assertThatThrownBy(() -> inTx(() -> cash.recordRefund(other)))
+                    .isInstanceOfSatisfying(ConflictException.class,
+                            e -> assertThat(e.code()).isEqualTo("REFUND_MISMATCH"));
+        }
         assertThat(fixtures.count("SELECT count(*) FROM cash.cash_movement WHERE source_id = ?", refund)).isOne();
     }
 

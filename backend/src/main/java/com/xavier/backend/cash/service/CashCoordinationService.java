@@ -15,6 +15,7 @@ import com.xavier.backend.cash.exception.CashNotFoundException;
 import com.xavier.backend.cash.exception.CashRule;
 import com.xavier.backend.cash.exception.CashRuleViolationException;
 import com.xavier.backend.cash.exception.ReceiptAlreadyRecordedException;
+import com.xavier.backend.cash.exception.RefundMismatchException;
 import com.xavier.backend.cash.model.CashDay;
 import com.xavier.backend.cash.model.CashDayStatus;
 import com.xavier.backend.cash.model.CashMovement;
@@ -93,13 +94,22 @@ public class CashCoordinationService {
                 () -> new ReceiptAlreadyRecordedException(command.paymentId()), "cash_movement_source_uk").toView();
     }
 
-    /** As {@link #recordReceipt}, for a confirmed Refund: one {@code REFUND} OUT movement per refund (A23). */
+    /**
+     * As {@link #recordReceipt}, for a confirmed Refund: one {@code REFUND} OUT movement per refund (A23). A repeat
+     * must carry the same session, method and amount (409 {@code REFUND_MISMATCH} otherwise).
+     */
     @Transactional(propagation = Propagation.MANDATORY)
     public MovementView recordRefund(RefundCommand command) {
         Optional<CashMovement> recorded = movements.findBySourceTypeAndSourceId(CashMovement.REFUND_SOURCE,
                 command.refundId());
         if (recorded.isPresent()) {
-            return recorded.get().toView();
+            MovementView view = recorded.get().toView();
+            if (!view.sessionId().equals(command.sessionId()) || !view.methodCode().equals(command.methodCode())
+                    || !view.amount().currency().equals(command.amount().currency())
+                    || view.amount().amount().compareTo(command.amount().amount()) != 0) {
+                throw new RefundMismatchException(command.refundId());
+            }
+            return view;
         }
         CashSession session = locks.sessionForShare(command.sessionId());
         CashMovement refund = CashMovement.refund(session, command.methodCode(), command.amount(),

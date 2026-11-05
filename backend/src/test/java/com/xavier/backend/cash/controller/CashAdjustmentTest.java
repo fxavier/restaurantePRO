@@ -11,9 +11,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.xavier.backend.access.Permission;
+import com.xavier.backend.cash.CashApi;
 import com.xavier.backend.cash.CashFixtures;
 import com.xavier.backend.cash.CashFixtures.Pos;
 import com.xavier.backend.cash.CashModuleTest;
+import com.xavier.backend.cash.ReceiptCommand;
+import com.xavier.backend.shared.Money;
+import java.util.Currency;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,6 +46,9 @@ class CashAdjustmentTest {
 
     @Autowired
     JdbcClient jdbc;
+
+    @Autowired
+    CashApi cash;
 
     UUID store;
     UUID register;
@@ -85,11 +92,24 @@ class CashAdjustmentTest {
     }
 
     @Test
-    void anAdjustmentMayBeOfAnyMethodAndInEitherDirection() throws Exception {
-        mvc.perform(adjust(session, "IN", "CARD", "12.50", "card slip found")
+    void anAdjustmentMayBeOfAnyMethodTheSessionKnowsInEitherDirection() throws Exception {
+        UUID withCard = fixtures.openSession(operator, register, "0");
+        fixtures.as(operator.actor(Permission.CASH_OPERATE), () -> cash.recordReceipt(new ReceiptCommand(withCard,
+                "CARD", Money.of("30.00", Currency.getInstance("MZN")), UUID.randomUUID(), operator.employeeId())));
+        fixtures.closeSession(operator, withCard, "0");
+
+        mvc.perform(adjust(withCard, "IN", "card", "12.50", "card slip found")
                         .with(account(store, Permission.CASH_ADJUST)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.methodCode").value("CARD"));
+    }
+
+    /** Cash cannot see settlement's payment methods (D35): a known code is one the session has moved or counted. */
+    @Test
+    void anAdjustmentOfAMethodTheSessionNeverSawIsRefused() throws Exception {
+        mvc.perform(adjust(session, "IN", "PIX", "1.00", "x").with(account(store, Permission.CASH_ADJUST)))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("UNKNOWN_METHOD"));
     }
 
     @Test

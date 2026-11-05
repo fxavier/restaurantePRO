@@ -13,8 +13,9 @@ import com.xavier.backend.cash.model.CashClosingStatus;
 import com.xavier.backend.cash.model.CashDay;
 import com.xavier.backend.cash.model.CashDayReopening;
 import com.xavier.backend.cash.model.CashDayStatus;
+import com.xavier.backend.cash.model.dto.CurrentDayView;
 import com.xavier.backend.cash.model.dto.ReopenDayRequest;
-import com.xavier.backend.cash.repository.CashClosingRepository;
+import com.xavier.backend.cash.repository.CashMovementRepository;
 import com.xavier.backend.cash.repository.CashDayReopeningRepository;
 import com.xavier.backend.cash.repository.CashDayRepository;
 import com.xavier.backend.cash.repository.CashSessionRepository;
@@ -25,13 +26,12 @@ import com.xavier.backend.organization.OrganizationApi;
 import com.xavier.backend.organization.model.dto.StoreSummary;
 import java.time.Clock;
 import java.time.LocalDate;
-import java.util.HashSet;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,7 +47,8 @@ public class CashDayService {
     private final CashDayRepository days;
     private final CashDayReopeningRepository reopenings;
     private final CashSessionRepository sessions;
-    private final CashClosingRepository closings;
+    private final CashMovementRepository movements;
+    private final ClosingRounds rounds;
     private final OrganizationApi organization;
     private final ApproverVerifier approvers;
     private final AccessPolicy accessPolicy;
@@ -56,13 +57,14 @@ public class CashDayService {
     private final Clock clock;
 
     CashDayService(CashDayRepository days, CashDayReopeningRepository reopenings, CashSessionRepository sessions,
-                   CashClosingRepository closings, OrganizationApi organization, ApproverVerifier approvers,
+                   CashMovementRepository movements, ClosingRounds rounds, OrganizationApi organization, ApproverVerifier approvers,
                    AccessPolicy accessPolicy, RowLocks locks, CashAudit audit, Clock clock) {
         this.days = days;
         this.locks = locks;
         this.reopenings = reopenings;
         this.sessions = sessions;
-        this.closings = closings;
+        this.movements = movements;
+        this.rounds = rounds;
         this.organization = organization;
         this.approvers = approvers;
         this.accessPolicy = accessPolicy;
@@ -71,29 +73,30 @@ public class CashDayService {
     }
 
     /**
-     * The POS store's current cash day: the oldest one still OPEN, else the day of today's business date (the
-     * store's cutoff decides it) in whatever state; 404 when neither exists. A day worked past the cutoff stays
-     * current until it closes (spec §4: a business day may cross midnight; §8.4: a day with open sessions or orders
-     * does not close), even when a morning session has already opened the next one.
+     * The POS store's current cash day (P28): the day of today's business date (the store's cutoff decides it), in
+     * whatever state; until that day has opened, the oldest OPEN day, so the POS is not stuck after the cutoff; 404
+     * when neither exists. {@code earlierOpenDays} are the OPEN days before it, which take corrections only and must
+     * be closed (spec §4 "dia comercial pode atravessar a meia-noite", §8.4).
      */
     @Transactional(readOnly = true)
-    public DayView current() {
+    public CurrentDayView current() {
         PosContext pos = accessPolicy.requirePos(Permission.CASH_VIEW);
-        Optional<CashDay> oldestOpen = days.findFirstByStoreIdAndStatusOrderByBusinessDateAsc(pos.storeId(),
-                CashDayStatus.OPEN);
-        if (oldestOpen.isPresent()) {
-            return oldestOpen.get().toView();
-        }
         StoreSummary store = organization.findStore(pos.storeId())
                 .orElseThrow(() -> new CashNotFoundException("Store", pos.storeId()));
         LocalDate businessDate = BusinessDays.of(clock.instant(), store.timezone(), store.businessDayCutoff());
-        return days.findByStoreIdAndBusinessDate(store.id(), businessDate).map(CashDay::toView)
+        CashDay current = days.findByStoreIdAndBusinessDate(store.id(), businessDate)
+                .or(() -> days.findFirstByStoreIdAndStatusOrderByBusinessDateAsc(store.id(), CashDayStatus.OPEN))
                 .orElseThrow(() -> new CashNotFoundException(ENTITY, store.id() + "/" + businessDate));
+        List<CurrentDayView.OpenDay> earlier = days.findByStoreIdAndStatusAndBusinessDateBeforeOrderByBusinessDateAsc(
+                        store.id(), CashDayStatus.OPEN, current.getBusinessDate()).stream()
+                .map(day -> new CurrentDayView.OpenDay(day.getId(), day.getBusinessDate())).toList();
+        return CurrentDayView.of(current.toView(), earlier);
     }
 
     /**
-     * OPERATIONALLY_CLOSED → FINANCIALLY_CLOSED, once every register that had a session on the day has an APPROVED
-     * closing (422 {@code CLOSINGS_NOT_APPROVED}). Distinct from approving a closing (spec §8.3).
+     * OPERATIONALLY_CLOSED → FINANCIALLY_CLOSED, once every register that had a session on the day has a current
+     * APPROVED closing ({@link #requireEveryRegisterApproved}), under the day's lock. Distinct from approving a
+     * closing (spec §8.3).
      */
     @Transactional
     public DayView closeFinancially(UUID id) {
@@ -156,15 +159,26 @@ public class CashDayService {
         return status == CashDayStatus.FINANCIALLY_CLOSED ? Permission.CASH_DAY_REOPEN : Permission.CASH_DAY_CLOSE;
     }
 
+    /**
+     * D79: per register that worked on the day, its latest closing that was not rejected (latest round, then latest
+     * attempt) is APPROVED (else 422 {@code CLOSINGS_NOT_APPROVED}) and still compares what the register should hold
+     * now (else 409 {@code CLOSING_STALE}: an adjustment after a financial reopen needs a closing of the new round).
+     */
     private void requireEveryRegisterApproved(CashDay day) {
-        Set<UUID> worked = new HashSet<>(sessions.findRegisterIdsByCashDayId(day.getId()));
-        Set<UUID> approved = closings.findByCashDayIdAndStatus(day.getId(), CashClosingStatus.APPROVED).stream()
-                .map(CashClosing::getRegisterId).collect(Collectors.toSet());
-        worked.removeAll(approved);
-        if (!worked.isEmpty()) {
+        List<UUID> unapproved = new ArrayList<>();
+        for (UUID register : new TreeSet<>(sessions.findRegisterIdsByCashDayId(day.getId()))) {
+            Optional<CashClosing> latest = rounds.latestLive(register, day.getId());
+            if (latest.isEmpty() || latest.get().getStatus() != CashClosingStatus.APPROVED) {
+                unapproved.add(register);
+                continue;
+            }
+            latest.get().requireCurrent(CashAmounts.byMethod(movements.expectedByRegisterAndDay(register,
+                    day.getId()), latest.get().currency()));
+        }
+        if (!unapproved.isEmpty()) {
             throw new CashRuleViolationException(CashRule.CLOSINGS_NOT_APPROVED,
-                    worked.size() + " cash register(s) of " + day.getBusinessDate() + " have no approved closing: "
-                            + List.copyOf(worked) + ".");
+                    unapproved.size() + " cash register(s) of " + day.getBusinessDate()
+                            + " have no approved closing: " + unapproved + ".");
         }
     }
 

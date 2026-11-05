@@ -37,6 +37,11 @@ public interface CashDayRepository extends JpaRepository<CashDay, UUID> {
     /** With {@code OPEN}: an earlier day still to close (P28 warning); served by {@code cash_day_store_open_ix}. */
     boolean existsByStoreIdAndStatusAndBusinessDateBefore(UUID storeId, CashDayStatus status, LocalDate businessDate);
 
+    /** With {@code OPEN}: the days left to close before the current one (P28). */
+    List<CashDay> findByStoreIdAndStatusAndBusinessDateBeforeOrderByBusinessDateAsc(UUID storeId,
+                                                                                   CashDayStatus status,
+                                                                                   LocalDate businessDate);
+
     @Query("select d.storeId from CashDay d where d.id = :id")
     Optional<UUID> findStoreIdById(@Param("id") UUID id);
 }

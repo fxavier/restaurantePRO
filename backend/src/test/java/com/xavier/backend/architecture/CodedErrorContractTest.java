@@ -8,6 +8,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.xavier.backend.TestcontainersConfiguration;
 import com.xavier.backend.cash.exception.CashRule;
 import com.xavier.backend.cash.exception.CashRuleViolationException;
+import com.xavier.backend.cash.exception.ClosingStaleException;
+import com.xavier.backend.cash.exception.RefundMismatchException;
 import com.xavier.backend.catalog.exception.ReleaseValidationFailedException;
 import com.xavier.backend.catalog.model.dto.ReleaseValidationError;
 import com.xavier.backend.dining.exception.IllegalOccupationStateException;
@@ -126,6 +128,16 @@ class CodedErrorContractTest {
                     "The cash day cannot close operationally: a fiscal document is still pending.")),
             Map.entry("cash-open-sessions", () -> new CashRuleViolationException(CashRule.OPEN_SESSIONS,
                     "The cash day 2026-11-05 still has open sessions.")),
+            Map.entry("cash-closing-stale", () -> new ClosingStaleException(ID, "CASH")),
+            Map.entry("cash-closing-earlier-round", () -> ClosingStaleException.earlierRound(ID, 0, 1)),
+            Map.entry("cash-refund-mismatch", () -> new RefundMismatchException(ID)),
+            Map.entry("cash-day-closing-only", () -> new CashRuleViolationException(CashRule.DAY_CLOSING_ONLY,
+                    "The cash day 2026-11-04 was reopened: it takes corrections only, not new sessions.")),
+            Map.entry("cash-self-approval", () -> new CashRuleViolationException(CashRule.SELF_APPROVAL,
+                    "The approver must be another employee than the operator.")),
+            Map.entry("cash-closing-already-approved", () -> new CashRuleViolationException(
+                    CashRule.CLOSING_ALREADY_APPROVED, "The closing of this register for 2026-11-04 is approved: "
+                    + "close the day financially, reopen it, and adjust in the next round.")),
             Map.entry("duplicate-route", () -> new ProductionRuleViolationException(ProductionRule.DUPLICATE_ROUTE,
                     "The destination KITCHEN appears twice")));
 
@@ -173,6 +185,23 @@ class CodedErrorContractTest {
     @Test
     void cashRule() throws Exception {
         expect("cash-rule", 422, "DAY_NOT_OPEN", "The cash day is not open.", "");
+    }
+
+    @Test
+    void cashR3Codes() throws Exception {
+        expect("cash-closing-stale", 409, "CLOSING_STALE", "The expected CASH amount of cash closing " + ID
+                + " changed since it was drafted: reject it and draft it again.", "");
+        expect("cash-closing-earlier-round", 409, "CLOSING_STALE", "Cash closing " + ID
+                + " is of round 0, but the day is in round 1: draft a closing of the current round.", "");
+        expect("cash-refund-mismatch", 409, "REFUND_MISMATCH", "Refund " + ID
+                + " was already recorded with another session, method or amount.", "");
+        expect("cash-day-closing-only", 422, "DAY_CLOSING_ONLY",
+                "The cash day 2026-11-04 was reopened: it takes corrections only, not new sessions.", "");
+        expect("cash-self-approval", 422, "SELF_APPROVAL",
+                "The approver must be another employee than the operator.", "");
+        expect("cash-closing-already-approved", 422, "CLOSING_ALREADY_APPROVED",
+                "The closing of this register for 2026-11-04 is approved: close the day financially, reopen it, "
+                        + "and adjust in the next round.", "");
     }
 
     @Test

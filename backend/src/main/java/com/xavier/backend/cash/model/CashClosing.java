@@ -167,6 +167,17 @@ public class CashClosing {
      */
     public void approve(Map<String, Money> expectedNow, UUID actorId, ActorKind actorKind, Instant now) {
         requireStatus(CashClosingStatus.SUBMITTED, "be approved");
+        requireCurrent(expectedNow);
+        decide(CashClosingStatus.APPROVED, actorId, actorKind, now, "be approved");
+    }
+
+    /**
+     * What the closing compared per method is still what the register should hold (D79 (2)); checked again by the
+     * financial close of an APPROVED closing.
+     *
+     * @throws ClosingStaleException 409 {@code CLOSING_STALE}
+     */
+    public void requireCurrent(Map<String, Money> expectedNow) {
         TreeSet<String> methods = new TreeSet<>(expectedNow.keySet());
         lines.forEach(line -> methods.add(line.getMethodCode()));
         Money zero = Money.of(BigDecimal.ZERO, Currency.getInstance(currency));
@@ -177,7 +188,6 @@ public class CashClosing {
                 throw new ClosingStaleException(id, method);
             }
         }
-        decide(CashClosingStatus.APPROVED, actorId, actorKind, now, "be approved");
     }
 
     public void reject(UUID actorId, ActorKind actorKind, String reason, Instant now) {

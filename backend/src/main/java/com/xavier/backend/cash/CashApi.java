@@ -50,7 +50,8 @@ public class CashApi {
 
     /**
      * Records a confirmed Refund as a {@code REFUND} OUT movement of its method in the refunder's session (A23).
-     * Idempotent per {@code refundId}: a repeat returns the movement already recorded. The session must be OPEN
+     * Idempotent per {@code refundId}: a repeat returns the movement already recorded, and one with another session,
+     * method or amount is 409 {@code REFUND_MISMATCH}. The session must be OPEN
      * (422 {@code SESSION_NOT_OPEN}), and the amount positive and in the store currency.
      */
     @Transactional(propagation = Propagation.MANDATORY)

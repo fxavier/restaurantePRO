@@ -2,6 +2,7 @@ package com.xavier.backend.cash.controller;
 
 import com.xavier.backend.access.IdempotentRequests;
 import com.xavier.backend.cash.DayView;
+import com.xavier.backend.cash.model.dto.CurrentDayView;
 import com.xavier.backend.cash.model.dto.ReopenDayRequest;
 import com.xavier.backend.cash.service.Approval;
 import com.xavier.backend.cash.service.CashDayService;
@@ -33,7 +34,7 @@ class CashDayController {
     }
 
     @GetMapping("/api/v1/pos/cash/days/current")
-    DayView current() {
+    CurrentDayView current() {
         return days.current();
     }
 

@@ -100,6 +100,10 @@ class ReconciliationHttpTest {
         mvc.perform(get(RECONCILIATION).param("storeId", store.toString())
                         .with(account(store, Permission.CASH_VIEW)))
                 .andExpect(status().isBadRequest());
+        reconciliation(store, businessDate.minusDays(366), businessDate, Permission.CASH_VIEW)
+                .andExpect(status().isOk());
+        reconciliation(store, businessDate.minusDays(367), businessDate, Permission.CASH_VIEW)
+                .andExpect(status().isBadRequest());
     }
 
     private ResultActions reconciliation(UUID storeId, LocalDate from, LocalDate to, Permission permission)

@@ -11,7 +11,12 @@ public enum CashRule {
      * new session.
      */
     DAY_CLOSING_ONLY,
-    /** The day is FINANCIALLY_CLOSED: nothing more is counted, adjusted or closed in it. */
+    /**
+     * The register's closing of the day's current round is APPROVED: no adjustment lands under it. Close the day
+     * financially, reopen it, adjust, and close the register again in the next round (D79).
+     */
+    CLOSING_ALREADY_APPROVED,
+    /** The day is FINANCIALLY_CLOSED: nothing more is counted, adjusted, approved or closed in it. */
     DAY_FINANCIALLY_CLOSED,
     /** A movement or receipt into a session that is not OPEN. */
     SESSION_NOT_OPEN,
@@ -34,7 +39,7 @@ public enum CashRule {
     CLOSINGS_NOT_APPROVED,
     /** A closing line with a difference other than zero has no justification. */
     JUSTIFICATION_REQUIRED,
-    /** A justification or count names a method the closing has no line for. */
+    /** A justification names a method the closing has no line for, or an adjustment one its session never saw. */
     UNKNOWN_METHOD,
     /** A payment method code is blank or longer than 30 characters. */
     INVALID_METHOD,

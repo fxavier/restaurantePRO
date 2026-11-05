@@ -55,7 +55,13 @@ public class CashReconciliationService {
         this.accessPolicy = accessPolicy;
     }
 
-    /** {@code CASH_VIEW} in the store; the store's days with {@code from ≤ businessDate ≤ to}, in date order. */
+    /** At most this many days after {@code from}: a year, leap day included. */
+    public static final int MAX_RANGE_DAYS = 366;
+
+    /**
+     * {@code CASH_VIEW} in the store; the store's days with {@code from ≤ businessDate ≤ to}, in date order. Four
+     * queries whatever the range: days, movement totals, counts, and the closings with their lines.
+     */
     @Transactional(readOnly = true)
     public List<ReconciliationLine> reconcile(UUID storeId, LocalDate from, LocalDate to) {
         accessPolicy.require(Permission.CASH_VIEW, storeId);
@@ -67,17 +73,24 @@ public class CashReconciliationService {
         Currency currency = organization.findStore(storeId)
                 .orElseThrow(() -> new CashNotFoundException("Store", storeId)).currency();
         Map<Key, BigDecimal[]> amounts = new TreeMap<>(Key.order(dayById));
-        for (DayRegisterMethodTotal total : movements.totalsByDayRegisterAndMethod(dayById.keySet())) {
+        // each query reads its own snapshot: a day opened in between is left for the next read
+        for (DayRegisterMethodTotal total : movements.totalsByDayRegisterAndMethod(storeId, from, to)) {
+            if (!dayById.containsKey(total.cashDayId())) {
+                continue;
+            }
             BigDecimal[] row = row(amounts, new Key(total.cashDayId(), total.registerId(), total.methodCode()));
             row[0] = total.expected();
             row[2] = total.adjustments();
         }
-        for (DayRegisterMethodCount count : counts.countedByDayRegisterAndMethod(dayById.keySet())) {
+        for (DayRegisterMethodCount count : counts.countedByDayRegisterAndMethod(storeId, from, to)) {
+            if (!dayById.containsKey(count.cashDayId())) {
+                continue;
+            }
             row(amounts, new Key(count.cashDayId(), count.registerId(), count.methodCode()))[1] = count.counted();
         }
-        Map<List<UUID>, CashClosing> latestClosing = closings.findByCashDayIdIn(dayById.keySet()).stream()
+        Map<List<UUID>, CashClosing> latestClosing = closings.findWithLinesByStoreAndBusinessDates(storeId, from, to).stream()
                 .collect(Collectors.toMap(c -> List.of(c.getCashDayId(), c.getRegisterId()), Function.identity(),
-                        (a, b) -> LATEST.compare(a, b) >= 0 ? a : b));
+                        (a, b) -> ClosingRounds.LATEST.compare(a, b) >= 0 ? a : b));
         List<ReconciliationLine> lines = new ArrayList<>();
         amounts.forEach((key, row) -> {
             CashDay day = dayById.get(key.dayId());
@@ -96,9 +109,6 @@ public class CashReconciliationService {
         });
         return List.copyOf(lines);
     }
-
-    private static final Comparator<CashClosing> LATEST = Comparator.comparingInt(CashClosing::getDayRound)
-            .thenComparingInt(CashClosing::getAttemptNo);
 
     /** expected, counted, adjustments; zero until a query fills them. */
     private static BigDecimal[] row(Map<Key, BigDecimal[]> amounts, Key key) {
