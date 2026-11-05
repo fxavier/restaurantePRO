@@ -2,8 +2,14 @@
 |===
 |Base package
 |`com.xavier.backend.dining`
+|Spring components
+|_Services_
+
+* `c.x.b.d.DiningApi`
 |Bean references
-|* `c.x.b.a.AuditLog` (in Audit)
-* `c.x.b.a.AccessPolicy` (in Access)
+|* `c.x.b.a.AccessPolicy` (in Access)
+* `c.x.b.s.idempotency.IdempotencyService` (in Shared kernel)
+* `c.x.b.a.AuditLog` (in Audit)
+* `c.x.b.s.notify.ChangeNotifier` (in Shared kernel)
 * `c.x.b.o.OrganizationApi` (in Organization)
 |===

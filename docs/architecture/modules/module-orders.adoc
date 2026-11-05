@@ -1,0 +1,19 @@
+[%autowidth.stretch, cols="h,a"]
+|===
+|Base package
+|`com.xavier.backend.orders`
+|Spring components
+|_Services_
+
+* `c.x.b.o.OrdersApi`
+* `c.x.b.o.OrdersProductionApi`
+|Bean references
+|* `c.x.b.s.idempotency.IdempotencyService` (in Shared kernel)
+* `c.x.b.a.AccessPolicy` (in Access)
+* `c.x.b.c.CatalogApi` (in Catalog)
+* `c.x.b.i.ApproverVerifier` (in Identity)
+* `c.x.b.d.DiningApi` (in Dining)
+* `c.x.b.a.AuditLog` (in Audit)
+* `c.x.b.s.notify.ChangeNotifier` (in Shared kernel)
+* `c.x.b.o.OrganizationApi` (in Organization)
+|===
