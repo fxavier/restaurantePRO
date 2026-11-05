@@ -11,11 +11,12 @@ import java.util.UUID;
 /**
  * What the documents control (D80) knows of one order: its lifecycle ({@code OPEN}, {@code CLOSED}, ...), its billable
  * lines, its DRAFT and ISSUED documents, the quantity its ISSUED documents cover per line, what was paid net of
- * refunds (every target), and its credit charges.
+ * refunds (every target), its credit charges, and per rate the tax drift settlement's split leaves (D68
+ * amendment: its lines' tax minus its documents', non-zero only where a settled void emptied a partitioned pool).
  */
 public record OrderFacts(UUID orderId, String lifecycle, Currency currency, List<Line> lines,
                          List<Document> documents, Map<UUID, BigDecimal> issuedQuantity, Money paidNet,
-                         List<Charge> charges) {
+                         List<Charge> charges, Map<BigDecimal, Money> expectedTaxDrift) {
 
     /** A billable line: its net quantity and the tax the order computes for it. */
     public record Line(UUID lineId, BigDecimal netQty, BigDecimal ratePercent, Money tax) {

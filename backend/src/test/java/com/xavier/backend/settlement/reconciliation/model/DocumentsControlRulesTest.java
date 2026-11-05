@@ -47,9 +47,10 @@ class DocumentsControlRulesTest {
         Map<UUID, BigDecimal> covered = new java.util.HashMap<>(Map.of(LINE, new BigDecimal("2")));
         Money paid = m("25.00");
         List<Charge> charges = new ArrayList<>();
+        Map<BigDecimal, Money> drift = Map.of();
 
         OrderFacts facts() {
-            return new OrderFacts(ORDER, lifecycle, MZN, lines, documents, covered, paid, charges);
+            return new OrderFacts(ORDER, lifecycle, MZN, lines, documents, covered, paid, charges, drift);
         }
 
         List<String> kinds() {
@@ -166,6 +167,7 @@ class DocumentsControlRulesTest {
         order.covered = Map.of(LINE, BigDecimal.ONE);
         order.documents = List.of(issued(DOC, "12.50", "1.73", false));
         order.paid = m("12.50");
+        order.drift = Map.of(VAT, m("-0.01")); // what settlement's split computes for the emptied pool
 
         DocumentsControl.Findings findings = DocumentsControl.check(order.facts(), NOW);
 
@@ -175,6 +177,32 @@ class DocumentsControlRulesTest {
             assertThat(r.ratePercent()).isEqualByComparingTo("16");
             assertThat(r.difference()).isEqualTo(m("-0.01"));
         });
+    }
+
+    @Test
+    void aCentOfTaxTheSplitDoesNotExplainIsATaxMismatch() {
+        Builder order = settled(); // no partition: the expected drift is zero
+        order.documents = List.of(issued(DOC, "25.00", "3.44", false));
+
+        assertThat(order.kinds()).containsExactly("TAX_MISMATCH");
+    }
+
+    @Test
+    void manyLinesDoNotWidenTheTolerance() {
+        Builder order = settled();
+        List<Line> twenty = new ArrayList<>();
+        Map<UUID, BigDecimal> covered = new java.util.HashMap<>();
+        for (int i = 0; i < 20; i++) {
+            UUID line = UUID.randomUUID();
+            twenty.add(new Line(line, BigDecimal.ONE, VAT, m("1.72")));
+            covered.put(line, BigDecimal.ONE);
+        }
+        order.lines = twenty; // the lines' tax 34.40; the documents carry 0.15 less
+        order.covered = covered;
+        order.documents = List.of(issued(DOC, "250.00", "34.25", false));
+        order.paid = m("250.00");
+
+        assertThat(order.kinds()).containsExactly("TAX_MISMATCH");
     }
 
     @Test

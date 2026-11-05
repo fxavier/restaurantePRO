@@ -18,6 +18,8 @@ import com.xavier.backend.settlement.reconciliation.model.dto.ExplainedRoundingD
 import com.xavier.backend.settlement.reconciliation.repository.PaymentReads;
 import com.xavier.backend.settlement.model.CreditCharge;
 import com.xavier.backend.settlement.repository.CreditChargeRepository;
+import com.xavier.backend.settlement.model.dto.TaxRoundingDifference;
+import com.xavier.backend.settlement.service.OrderTaxDrift;
 import com.xavier.backend.organization.OrganizationApi;
 import com.xavier.backend.shared.Money;
 import java.math.BigDecimal;
@@ -54,11 +56,12 @@ public class DocumentsControlService {
     private final CustomersApi customers;
     private final PaymentReads payments;
     private final CreditChargeRepository charges;
+    private final OrderTaxDrift taxDrift;
     private final Clock clock;
 
     DocumentsControlService(AccessPolicy accessPolicy, OrganizationApi organization, OrdersApi orders,
                             FiscalApi fiscal, CustomersApi customers, PaymentReads payments,
-                            CreditChargeRepository charges, Clock clock) {
+                            CreditChargeRepository charges, OrderTaxDrift taxDrift, Clock clock) {
         this.accessPolicy = accessPolicy;
         this.organization = organization;
         this.orders = orders;
@@ -66,6 +69,7 @@ public class DocumentsControlService {
         this.customers = customers;
         this.payments = payments;
         this.charges = charges;
+        this.taxDrift = taxDrift;
         this.clock = clock;
     }
 
@@ -119,7 +123,16 @@ public class DocumentsControlService {
                 .map(CreditCharge::toView).map(this::charge).toList();
         return new OrderFacts(order.orderId(), order.lifecycle().name(), currency, lines, documents, issued,
                 Money.of(payments.paidOf(order.orderId()).subtract(payments.refundedOf(order.orderId())), currency),
-                credit);
+                credit, expectedDrift(order));
+    }
+
+    /** D68 amendment: per rate, the tax drift settlement's split leaves on a closed order (zero without one). */
+    private Map<BigDecimal, Money> expectedDrift(OrderBillingView order) {
+        if (order.lifecycle() != com.xavier.backend.orders.OrderLifecycle.CLOSED) {
+            return Map.of();
+        }
+        return taxDrift.of(order.orderId()).stream().collect(Collectors.toMap(TaxRoundingDifference::ratePercent,
+                TaxRoundingDifference::difference, Money::plus));
     }
 
     private static OrderFacts.Document document(DocumentView document) {
