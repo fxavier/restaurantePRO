@@ -6,6 +6,7 @@ import com.xavier.backend.settlement.reconciliation.model.dto.BatchView;
 import com.xavier.backend.settlement.reconciliation.model.dto.EntryView;
 import com.xavier.backend.settlement.reconciliation.model.dto.FetchRequest;
 import com.xavier.backend.settlement.reconciliation.model.dto.ImportRequest;
+import com.xavier.backend.settlement.reconciliation.model.dto.InDoubtAttemptView;
 import com.xavier.backend.settlement.reconciliation.model.dto.ResolutionRequest;
 import com.xavier.backend.settlement.reconciliation.model.dto.ResolutionView;
 import com.xavier.backend.settlement.reconciliation.service.ReconciliationQueryService;
@@ -17,6 +18,7 @@ import jakarta.validation.Valid;
 import java.io.IOException;
 import java.net.URI;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Pageable;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -98,5 +100,10 @@ class ReconciliationController {
                                            @Valid @RequestBody ResolutionRequest body, HttpServletRequest request) {
         return idempotent.execute("settlement.reconciliation.resolve", key, request, body, ResolutionView.class,
                 () -> ResponseEntity.status(HttpStatus.CREATED).body(resolutions.resolve(id, body)));
+    }
+
+    @GetMapping("/in-doubt")
+    List<InDoubtAttemptView> inDoubt(@RequestParam UUID storeId) {
+        return queries.inDoubt(storeId);
     }
 }
