@@ -4,6 +4,7 @@ import com.xavier.backend.TestcontainersConfiguration;
 import com.xavier.backend.cash.CashApi;
 import com.xavier.backend.cash.CashFixtures;
 import com.xavier.backend.dining.DiningFixtures;
+import com.xavier.backend.fiscal.FiscalApi;
 import com.xavier.backend.fiscal.FiscalFixtures;
 import com.xavier.backend.fiscal.adapter.internal.InternalFiscalAdapter;
 import com.xavier.backend.identity.ApproverVerifier;
@@ -28,7 +29,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
  * cash, fiscal and identity, plus shared, access and audit, on the shared Testcontainers PostgreSQL. One annotation,
  * one cached context. The clock is {@link SettlementTestClock}; the integrated provider is
  * {@link FakePaymentProvider} (code {@code FAKE}). Spies: the fiscal adapter and the order steps, so a test can make a
- * step fail after it committed (D63); the orders and cash facades, so a test can prove what was not read (D42);
+ * step fail after it committed (D63); the orders, cash and fiscal facades, so a test can prove what was not read (D42);
  * {@link ApproverVerifier} is a mock (identity proves the PIN check itself).
  * The database is shared by the whole test JVM: never assume empty tables.
  */
@@ -53,7 +54,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
         "restaurantpro.settlement.sweep-interval=PT1H"
 })
 @MockitoSpyBean(types = {InternalFiscalAdapter.class, OrderSettlementSteps.class, PaymentSubmitter.class,
-        OrdersApi.class, CashApi.class})
+        OrdersApi.class, CashApi.class, FiscalApi.class})
 @MockitoBean(types = ApproverVerifier.class)
 public @interface SettlementModuleTest {
 }

@@ -3,14 +3,17 @@ package com.xavier.backend.settlement.controller;
 import static com.xavier.backend.cash.CashFixtures.idem;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.cash.CashApi;
 import com.xavier.backend.cash.CashFixtures;
+import com.xavier.backend.fiscal.FiscalApi;
 import com.xavier.backend.orders.OrdersApi;
 import com.xavier.backend.settlement.SettlementFixtures;
 import com.xavier.backend.settlement.SettlementFixtures.Sale;
@@ -65,6 +68,9 @@ class StoreFirstAuthorizationHttpTest {
     @Autowired
     CashApi cashApi;
 
+    @Autowired
+    FiscalApi fiscal;
+
     Sale sale;
     RequestPostProcessor stranger;
     ExecutorService threads;
@@ -91,6 +97,18 @@ class StoreFirstAuthorizationHttpTest {
         assertThat(cash.count("SELECT count(*) FROM settlement.order_settlement WHERE order_id = ?", sale.order()))
                 .isZero();
         verify(orders, never()).billingView(sale.order());
+    }
+
+    @Test
+    void aStrangersCloseOfAnOrderWithAnIssuedDocumentIs403WithoutLoadingTheDocument() throws Exception {
+        fixtures.issue(sale.cashier(), sale.order(), UUID.randomUUID().toString())
+                .andExpect(status().isCreated());
+        clearInvocations(fiscal);
+
+        mvc.perform(command(SettlementFixtures.ORDERS + "/" + sale.order() + "/close", "{\"orderVersion\": 1}")
+                .with(stranger)).andExpect(status().isForbidden());
+
+        verify(fiscal, never()).saleDocumentFor(sale.order());
     }
 
     @Test
