@@ -12,6 +12,7 @@ import com.xavier.backend.settlement.exception.SettlementNotFoundException;
 import com.xavier.backend.settlement.exception.SettlementRule;
 import com.xavier.backend.settlement.exception.SettlementRuleException;
 import com.xavier.backend.settlement.model.AttemptStatus;
+import com.xavier.backend.settlement.model.BillPartition;
 import com.xavier.backend.settlement.model.PaymentAttempt;
 import com.xavier.backend.settlement.model.PaymentMethod;
 import com.xavier.backend.settlement.model.PaymentMethodKind;
@@ -114,22 +115,26 @@ public class PaymentAttemptService {
                     "The provider " + method.getProviderCode() + " of method " + method.getCode()
                             + " is not installed.");
         }
-        requireNoOpenAttempt(request.orderId());
         Currency currency = bill.due().currency();
+        Money balance = targetBalance(bill, request.partitionId());
+        requireNoOpenAttempt(bill, request.partitionId());
         Money amount = money(request.amount(), currency);
-        if (amount.amount().compareTo(bill.balance().amount()) > 0) {
+        if (amount.amount().compareTo(balance.amount()) > 0) {
             throw new SettlementRuleException(SettlementRule.AMOUNT_EXCEEDS_BALANCE, "The amount " + amount.amount()
-                    + " is more than the balance " + bill.balance().amount() + " of the order.",
-                    Map.of("balance", bill.balance().amount()));
+                    + " is more than the balance " + balance.amount() + " of the "
+                    + (request.partitionId() == null ? "order" : "partition") + ".",
+                    Map.of("balance", balance.amount()));
         }
         SessionView session = openSessionOf(pos);
         orders.lockForPayment(request.orderId());
 
-        PaymentAttempt attempt = PaymentAttempt.create(request.orderId(), pos.storeId(), pos.terminalId(),
+        PaymentAttempt attempt = PaymentAttempt.create(request.orderId(), request.partitionId(), pos.storeId(),
+                pos.terminalId(),
                 session.id(), method, amount, request.tendered() == null ? null : money(request.tendered(), currency),
                 pos.employeeId(), clock.instant());
         UniqueConstraints.saveAndFlush(attempts, attempt,
-                () -> SettlementConflictException.inDoubt("order", request.orderId(), attempt.getId()),
+                () -> SettlementConflictException.inDoubt(targetName(request.partitionId()),
+                        target(request), attempt.getId()),
                 "payment_attempt_open_per_target_uk");
         audit.attempt("PAYMENT_ATTEMPT_CREATED", attempt.getId(), attempt.getStoreId(), attempt.getOrderId(),
                 attempt.getTerminalId(), null, null, details(attempt));
@@ -209,11 +214,36 @@ public class PaymentAttemptService {
                         "No active payment method has the code " + code + "."));
     }
 
-    private void requireNoOpenAttempt(UUID orderId) {
-        attempts.findByOrderIdAndStatusInOrderByCreatedAt(orderId, AttemptStatus.OPEN).stream().findFirst()
-                .ifPresent(open -> {
-                    throw SettlementConflictException.inDoubt("order", orderId, open.getId());
-                });
+    /**
+     * D69: the balance of the target: a LIVE partition of the order (404 for another order's, 409 once cancelled), or
+     * the order's residual.
+     */
+    private static Money targetBalance(Bill bill, UUID partitionId) {
+        if (partitionId == null) {
+            return bill.residualBalance();
+        }
+        BillPartition partition = bill.partition(partitionId)
+                .orElseThrow(() -> new SettlementNotFoundException(PartitionService.PARTITION, partitionId));
+        if (!partition.isLive()) {
+            throw SettlementConflictException.illegalPartitionState(partitionId, partition.getStatus(), "be paid");
+        }
+        return bill.balanceOf(partition);
+    }
+
+    /** D69: one open attempt per target; an attempt in doubt on another target does not block this one. */
+    private static void requireNoOpenAttempt(Bill bill, UUID partitionId) {
+        bill.openOn(partitionId).stream().findFirst().ifPresent(open -> {
+            throw SettlementConflictException.inDoubt(targetName(partitionId),
+                    partitionId == null ? bill.view().orderId() : partitionId, open.getId());
+        });
+    }
+
+    private static String targetName(UUID partitionId) {
+        return partitionId == null ? "order" : "partition";
+    }
+
+    private static UUID target(CreateAttemptRequest request) {
+        return request.partitionId() == null ? request.orderId() : request.partitionId();
     }
 
     /** The paying employee's OPEN session, locked against a concurrent close (D51: after order_settlement). */

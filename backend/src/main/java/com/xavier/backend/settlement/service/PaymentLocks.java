@@ -2,6 +2,8 @@ package com.xavier.backend.settlement.service;
 
 import com.xavier.backend.orders.OrdersApi;
 import com.xavier.backend.settlement.model.AttemptStatus;
+import com.xavier.backend.settlement.model.PartitionStatus;
+import com.xavier.backend.settlement.repository.BillPartitionRepository;
 import com.xavier.backend.settlement.repository.PaymentAttemptRepository;
 import com.xavier.backend.settlement.repository.PaymentRepository;
 import java.util.UUID;
@@ -10,8 +12,8 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * D49: the order's payment lock is released when every attempt ended FAILED or CANCELLED and nothing was paid, so a
- * void or an outgoing transfer is possible again. Called under the order's settlement lock.
+ * D49: the order's payment lock is released when every attempt ended FAILED or CANCELLED, nothing was paid and no
+ * partition is LIVE (D67: the first partition took the lock), so a void or an outgoing transfer is possible again. Called under the order's settlement lock.
  */
 @Component
 class PaymentLocks {
@@ -19,8 +21,11 @@ class PaymentLocks {
     private final PaymentAttemptRepository attempts;
     private final PaymentRepository payments;
     private final OrdersApi orders;
+    private final BillPartitionRepository partitions;
 
-    PaymentLocks(PaymentAttemptRepository attempts, PaymentRepository payments, OrdersApi orders) {
+    PaymentLocks(PaymentAttemptRepository attempts, PaymentRepository payments, OrdersApi orders,
+                 BillPartitionRepository partitions) {
+        this.partitions = partitions;
         this.attempts = attempts;
         this.payments = payments;
         this.orders = orders;
@@ -28,7 +33,8 @@ class PaymentLocks {
 
     @Transactional(propagation = Propagation.MANDATORY)
     void releaseIfIdle(UUID orderId) {
-        if (!attempts.existsByOrderIdAndStatusIn(orderId, AttemptStatus.OPEN) && !payments.existsByOrderId(orderId)) {
+        if (!attempts.existsByOrderIdAndStatusIn(orderId, AttemptStatus.OPEN) && !payments.existsByOrderId(orderId)
+                && !partitions.existsByOrderIdAndStatus(orderId, PartitionStatus.LIVE)) {
             orders.releasePaymentLock(orderId);
         }
     }

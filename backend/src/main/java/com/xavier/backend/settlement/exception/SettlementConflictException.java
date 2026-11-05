@@ -8,7 +8,8 @@ import java.util.UUID;
 /**
  * The request conflicts with the settlement state (409): an attempt of the order or session is still in doubt
  * ({@code PAYMENT_IN_DOUBT}, spec §7.4, §8.4), an attempt cannot take that transition ({@code ILLEGAL_ATTEMPT_STATE}),
- * or a payment method code is taken ({@code PAYMENT_METHOD_CODE_TAKEN}).
+ * a bill partition cannot take that transition ({@code ILLEGAL_PARTITION_STATE}), or a payment method code is taken
+ * ({@code PAYMENT_METHOD_CODE_TAKEN}).
  */
 public class SettlementConflictException extends ConflictException {
 
@@ -23,6 +24,12 @@ public class SettlementConflictException extends ConflictException {
 
     public static SettlementConflictException illegalState(UUID attemptId, AttemptStatus status, String command) {
         return new SettlementConflictException("ILLEGAL_ATTEMPT_STATE", "Payment attempt " + attemptId + " is "
+                + status + " and cannot " + command + ".", Map.of());
+    }
+
+    public static SettlementConflictException illegalPartitionState(UUID partitionId, Object status,
+                                                                    String command) {
+        return new SettlementConflictException("ILLEGAL_PARTITION_STATE", "Bill partition " + partitionId + " is "
                 + status + " and cannot " + command + ".", Map.of());
     }
 

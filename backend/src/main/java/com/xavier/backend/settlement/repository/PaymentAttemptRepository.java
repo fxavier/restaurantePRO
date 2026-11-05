@@ -25,6 +25,8 @@ public interface PaymentAttemptRepository extends JpaRepository<PaymentAttempt, 
 
     boolean existsByOrderIdAndStatusIn(UUID orderId, Collection<AttemptStatus> statuses);
 
+    boolean existsByPartitionIdAndStatusIn(UUID partitionId, Collection<AttemptStatus> statuses);
+
     long countByStatus(AttemptStatus status);
 
     /** The store and order of an attempt, read alone before authorizing a command on it (D42). */

@@ -69,9 +69,9 @@ public class SettlementQueryService {
         accessPolicy.require(Permission.PAYMENT_RESOLVE, storeId);
         List<OrderBillingView> open = orders.openBillingViews(storeId);
         List<FiscalDraftView> drafts = open.stream()
-                .flatMap(order -> fiscal.saleDocumentFor(order.orderId()).stream())
+                .flatMap(order -> fiscal.documentsOfOrder(order.orderId()).stream())
                 .filter(document -> "DRAFT".equals(document.status()))
-                .map(document -> new FiscalDraftView(document.id(), document.sourceId(), document.lastError(),
+                .map(document -> new FiscalDraftView(document.id(), document.orderId(), document.lastError(),
                         document.lastErrorAt()))
                 .toList();
         List<OpenOrderBalance> settledOpen = balances(open).stream()
@@ -96,7 +96,7 @@ public class SettlementQueryService {
         return open.stream().map(order -> {
             Money paidSoFar = Money.of(paid.getOrDefault(order.orderId(), BigDecimal.ZERO), order.due().currency());
             return new OpenOrderBalance(order.orderId(), order.due(), paidSoFar, order.due().minus(paidSoFar),
-                    FinancialState.of(order.due(), paidSoFar).name());
+                    FinancialState.of(order.due(), paidSoFar).name(), order.tableId(), order.tableCode());
         }).toList();
     }
 }

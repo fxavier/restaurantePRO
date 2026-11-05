@@ -15,6 +15,23 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID> {
 
     boolean existsByAttemptId(UUID attemptId);
 
+    boolean existsByPartitionId(UUID partitionId);
+
+    /** Σ of the order's payments per target (D69): the ORDER target and each partition that was paid. */
+    @Query("""
+            select new com.xavier.backend.settlement.repository.TargetPaid(p.targetType, p.partitionId, sum(p.amount))
+            from Payment p where p.orderId = :orderId group by p.targetType, p.partitionId""")
+    List<TargetPaid> paidByTarget(@Param("orderId") UUID orderId);
+
+    /** The ids of a store's payments whose business day is in {@code [from, to]}, oldest first (reporting). */
+    @Query("""
+            select p.id from Payment p where p.storeId = :storeId and p.businessDate between :from and :to
+            order by p.id""")
+    org.springframework.data.domain.Page<UUID> idsOf(@Param("storeId") UUID storeId,
+                                                     @Param("from") java.time.LocalDate from,
+                                                     @Param("to") java.time.LocalDate to,
+                                                     org.springframework.data.domain.Pageable page);
+
     /** Σ of the order's payments (the "paid" of §8.3), zero when there is none. */
     @Query("select coalesce(sum(p.amount), 0) from Payment p where p.orderId = :orderId")
     BigDecimal paidFor(@Param("orderId") UUID orderId);
