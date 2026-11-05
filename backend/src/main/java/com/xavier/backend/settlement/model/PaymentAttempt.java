@@ -23,7 +23,8 @@ import org.hibernate.id.uuid.UuidVersion7Strategy;
 import org.hibernate.type.SqlTypes;
 
 /**
- * One try to collect money for an order (spec §7.3–§7.5, §8.3; r2-decisions §4 settlement). Every transition is a
+ * One try to collect money for an order, or for a customer's debt (D75) (spec §7.3–§7.5, §8.3; r2-decisions §4
+ * settlement). Every transition is a
  * method; an illegal one throws {@code ILLEGAL_ATTEMPT_STATE} (409) and changes nothing.
  *
  * <ul>
@@ -55,6 +56,15 @@ public class PaymentAttempt {
 
     @Column(updatable = false)
     private UUID partitionId;
+
+    /** The customer whose debt a CREDIT_ACCOUNT attempt pays (the account's id is its customer's, D73). */
+    @Column(updatable = false)
+    private UUID creditAccountId;
+
+    /** The debits a debt payment names, in order; {@code null} settles the oldest first (D75). */
+    @JdbcTypeCode(SqlTypes.ARRAY)
+    @Column(updatable = false, columnDefinition = "uuid[]")
+    private UUID[] debitEntryIds;
 
     @Column(nullable = false, updatable = false)
     private UUID storeId;
@@ -144,15 +154,36 @@ public class PaymentAttempt {
     public static PaymentAttempt create(UUID orderId, UUID partitionId, UUID storeId, UUID terminalId,
                                         UUID sessionId, PaymentMethod method, Money amount, Money tendered,
                                         UUID employeeId, Instant now) {
+        PaymentAttempt attempt = new PaymentAttempt();
+        attempt.orderId = Objects.requireNonNull(orderId, "orderId");
+        attempt.partitionId = partitionId;
+        attempt.targetType = partitionId == null ? TargetType.ORDER : TargetType.PARTITION;
+        return attempt.start(storeId, terminalId, sessionId, method, amount, tendered, employeeId, now);
+    }
+
+    /**
+     * A debt payment (D75): an attempt on the customer's CREDIT_ACCOUNT, with the debits it names ({@code null} or
+     * empty: the oldest first).
+     */
+    public static PaymentAttempt forCreditAccount(UUID customerId, java.util.List<UUID> debitEntryIds, UUID storeId,
+                                                  UUID terminalId, UUID sessionId, PaymentMethod method,
+                                                  Money amount, Money tendered, UUID employeeId, Instant now) {
+        PaymentAttempt attempt = new PaymentAttempt();
+        attempt.creditAccountId = Objects.requireNonNull(customerId, "customerId");
+        attempt.debitEntryIds = debitEntryIds == null || debitEntryIds.isEmpty() ? null
+                : debitEntryIds.toArray(UUID[]::new);
+        attempt.targetType = TargetType.CREDIT_ACCOUNT;
+        return attempt.start(storeId, terminalId, sessionId, method, amount, tendered, employeeId, now);
+    }
+
+    private PaymentAttempt start(UUID storeId, UUID terminalId, UUID sessionId, PaymentMethod method, Money amount,
+                                 Money tendered, UUID employeeId, Instant now) {
         Objects.requireNonNull(amount, "amount");
         if (amount.amount().signum() <= 0) {
             throw new SettlementRuleException(SettlementRule.INVALID_AMOUNT, "A payment amount must be positive.");
         }
-        PaymentAttempt attempt = new PaymentAttempt();
+        PaymentAttempt attempt = this;
         attempt.id = UuidVersion7Strategy.INSTANCE.generateUuid(null);
-        attempt.orderId = Objects.requireNonNull(orderId, "orderId");
-        attempt.partitionId = partitionId;
-        attempt.targetType = partitionId == null ? TargetType.ORDER : TargetType.PARTITION;
         attempt.storeId = Objects.requireNonNull(storeId, "storeId");
         attempt.terminalId = Objects.requireNonNull(terminalId, "terminalId");
         attempt.sessionId = Objects.requireNonNull(sessionId, "sessionId");
@@ -310,7 +341,8 @@ public class PaymentAttempt {
         Currency money = Currency.getInstance(currency);
         return new AttemptView(id, orderId, storeId, sessionId, methodCode, methodKind.name(), status.name(),
                 amount(), tendered == null ? null : Money.of(tendered, money), change(), authorizationCode,
-                outcomeDetail, resolutionReason, createdAt, updatedAt, targetType.name(), partitionId);
+                outcomeDetail, resolutionReason, createdAt, updatedAt, targetType.name(), partitionId,
+                creditAccountId);
     }
 
     public UUID getId() {
@@ -323,6 +355,16 @@ public class PaymentAttempt {
 
     public TargetType getTargetType() {
         return targetType;
+    }
+
+    /** The customer of a CREDIT_ACCOUNT attempt, else {@code null}. */
+    public UUID getCreditAccountId() {
+        return creditAccountId;
+    }
+
+    /** The debits a debt payment names, in order; empty: the oldest first. */
+    public java.util.List<UUID> debitEntryIds() {
+        return debitEntryIds == null ? java.util.List.of() : java.util.List.of(debitEntryIds);
     }
 
     /** The partition this attempt pays, or {@code null} for an ORDER target. */

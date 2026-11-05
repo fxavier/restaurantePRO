@@ -19,7 +19,7 @@ import org.hibernate.annotations.UuidGenerator;
 import org.hibernate.type.SqlTypes;
 
 /**
- * Money received for an order (spec §8.3: CONFIRMED only; a refund is a separate record, R3). A fact: the database
+ * Money received for an order or a customer's debt (spec §8.3: CONFIRMED only; a refund is a separate record, R3). A fact: the database
  * refuses UPDATE and DELETE. {@code UNIQUE(attempt_id)}: one attempt never becomes two payments (§7.5).
  */
 @Entity
@@ -45,6 +45,10 @@ public class Payment {
 
     @Column(updatable = false)
     private UUID partitionId;
+
+    /** The customer whose debt a CREDIT_ACCOUNT payment paid (D75). */
+    @Column(updatable = false)
+    private UUID creditAccountId;
 
     /** The attempt's terminal (R2 rows: {@code null}; their attempt has it). */
     @Column(updatable = false)
@@ -95,6 +99,7 @@ public class Payment {
         payment.orderId = attempt.getOrderId();
         payment.targetType = attempt.getTargetType();
         payment.partitionId = attempt.getPartitionId();
+        payment.creditAccountId = attempt.getCreditAccountId();
         payment.terminalId = attempt.getTerminalId();
         payment.businessDate = Objects.requireNonNull(businessDate, "businessDate");
         payment.storeId = attempt.getStoreId();
@@ -130,6 +135,10 @@ public class Payment {
 
     public UUID getPartitionId() {
         return partitionId;
+    }
+
+    public UUID getCreditAccountId() {
+        return creditAccountId;
     }
 
     public UUID getStoreId() {

@@ -330,6 +330,22 @@ public class SettlementFixtures {
                 "{\"methodCode\": \"%s\", \"amount\": %s%s%s}".formatted(method, amount, cash, named));
     }
 
+    public ResultActions confirm(Pos who, UUID attempt, String authorizationCode) throws Exception {
+        return send(who, ATTEMPTS + "/" + attempt + "/confirm", UUID.randomUUID().toString(),
+                "{\"authorizationCode\": \"%s\"}".formatted(authorizationCode));
+    }
+
+    public ResultActions cancelAttempt(Pos who, UUID attempt, String reason) throws Exception {
+        return send(who, ATTEMPTS + "/" + attempt + "/cancel", UUID.randomUUID().toString(),
+                "{\"reason\": \"%s\"}".formatted(reason));
+    }
+
+    /** The payment of a SUCCEEDED attempt. */
+    public UUID paymentOfAttempt(UUID attempt) {
+        return jdbc.sql("SELECT id FROM settlement.payment WHERE attempt_id = ?").param(attempt).query(UUID.class)
+                .single();
+    }
+
     /** The order's line ids in line order, from its settlement view's coverage. */
     public List<UUID> lineIds(Pos who, UUID order) throws Exception {
         List<UUID> ids = new java.util.ArrayList<>();

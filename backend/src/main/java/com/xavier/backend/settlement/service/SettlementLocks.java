@@ -1,5 +1,7 @@
 package com.xavier.backend.settlement.service;
 
+import com.xavier.backend.customers.CustomersApi;
+import com.xavier.backend.settlement.repository.AttemptRef;
 import com.xavier.backend.settlement.repository.OrderSettlementRepository;
 import java.time.Clock;
 import java.util.UUID;
@@ -16,10 +18,12 @@ import org.springframework.transaction.annotation.Transactional;
 class SettlementLocks {
 
     private final OrderSettlementRepository rows;
+    private final CustomersApi customers;
     private final Clock clock;
 
-    SettlementLocks(OrderSettlementRepository rows, Clock clock) {
+    SettlementLocks(OrderSettlementRepository rows, CustomersApi customers, Clock clock) {
         this.rows = rows;
+        this.customers = customers;
         this.clock = clock;
     }
 
@@ -27,6 +31,19 @@ class SettlementLocks {
     void lockOrder(UUID orderId) {
         rows.createIfAbsent(orderId, clock.instant());
         rows.lock(orderId);
+    }
+
+    /**
+     * The first lock of a command on an attempt (D76): its order's settlement lock, or, for a debt payment, its
+     * customer's {@code credit_account}.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    void lockTargetOf(AttemptRef attempt) {
+        if (attempt.creditAccountId() != null) {
+            customers.lockAccount(attempt.creditAccountId());
+        } else {
+            lockOrder(attempt.orderId());
+        }
     }
 
     /** {@link #lockOrder} for a background job (D46): false, without waiting, while a request holds the order. */

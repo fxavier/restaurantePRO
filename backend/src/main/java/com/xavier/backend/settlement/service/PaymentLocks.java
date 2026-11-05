@@ -41,6 +41,9 @@ class PaymentLocks {
 
     @Transactional(propagation = Propagation.MANDATORY)
     void releaseIfIdle(UUID orderId) {
+        if (orderId == null) {
+            return; // a debt payment (D75) pays no order, so it never took an order's payment lock
+        }
         if (!attempts.existsByOrderIdAndStatusIn(orderId, AttemptStatus.OPEN) && !payments.existsByOrderId(orderId)
                 && !partitions.existsByOrderIdAndStatus(orderId, PartitionStatus.LIVE)
                 && !charges.existsByOrderIdAndStatusIn(orderId, LIVE_CHARGES)) {
