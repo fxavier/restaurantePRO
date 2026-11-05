@@ -71,13 +71,15 @@ class TerminalAndVoidTicketsTest {
     TransactionTemplate tx;
 
     final UUID employee = UUID.randomUUID();
-    final UUID terminal = UUID.randomUUID();
+    /** Per test: the test instance is shared by the class's methods, and a terminal prints in one store. */
+    UUID terminal;
     Shop shop;
     TcpFakePrinter printer;
     UUID counter;
 
     @BeforeEach
     void counterPrinter() throws Exception {
+        terminal = UUID.randomUUID();
         shop = fixtures.shop();
         printer = TcpFakePrinter.accepting();
         counter = fixtures.printer(shop.store(), "CX" + UUID.randomUUID().toString().substring(0, 6), printer.host(),

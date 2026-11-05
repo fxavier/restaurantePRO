@@ -75,12 +75,14 @@ class PrintQueueTest {
     ChangeNotifier notifier;
 
     final UUID employee = UUID.randomUUID();
-    final UUID terminal = UUID.randomUUID();
+    /** Per test: the test instance is shared by the class's methods, and a terminal prints in one store. */
+    UUID terminal;
     Shop shop;
     TcpFakePrinter printer;
 
     @BeforeEach
     void shop() throws Exception {
+        terminal = UUID.randomUUID();
         shop = fixtures.shop();
         printer = TcpFakePrinter.accepting();
     }
