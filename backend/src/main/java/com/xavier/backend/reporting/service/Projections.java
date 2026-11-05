@@ -8,22 +8,22 @@ import com.xavier.backend.fiscal.model.dto.DocumentView;
 import com.xavier.backend.orders.BillingLine;
 import com.xavier.backend.orders.OrderBillingView;
 import com.xavier.backend.orders.OrdersApi;
+import com.xavier.backend.orders.VoidFacts;
 import com.xavier.backend.organization.OrganizationApi;
 import com.xavier.backend.reporting.repository.ProjectionStore;
 import com.xavier.backend.reporting.repository.ProjectionStore.CreditRecord;
 import com.xavier.backend.reporting.repository.ProjectionStore.MoneyRecord;
-import com.xavier.backend.reporting.repository.ProjectionStore.VoidRecord;
-import com.xavier.backend.orders.VoidFacts;
 import com.xavier.backend.reporting.repository.ProjectionStore.SalesHeader;
 import com.xavier.backend.reporting.repository.ProjectionStore.SalesLine;
 import com.xavier.backend.reporting.repository.ProjectionStore.SalesTax;
-import com.xavier.backend.settlement.CreditChargeFact;
+import com.xavier.backend.reporting.repository.ProjectionStore.VoidRecord;
 import com.xavier.backend.settlement.PaymentFact;
 import com.xavier.backend.settlement.RefundFact;
 import com.xavier.backend.settlement.SettlementFacts;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
@@ -100,7 +100,7 @@ public class Projections {
 
     /** A rebuild's first step: the store's projection rows in {@code [from, to]} (projections, never facts). */
     @Transactional
-    public void clear(UUID storeId, java.time.LocalDate from, java.time.LocalDate to) {
+    public void clear(UUID storeId, LocalDate from, LocalDate to) {
         store.deleteRange(storeId, from, to);
     }
 
@@ -177,7 +177,9 @@ public class Projections {
     /**
      * The order's billing lines by id, its table's area (the table's current area: a documented approximation, D84)
      * and its mode: DINE_IN when it sits at a table; unknown otherwise (the billing view does not tell COUNTER from
-     * TAKEAWAY).
+     * TAKEAWAY). The serving employee is the line's {@code servedByEmployeeId}: the round's confirmer, and for a line
+     * transferred in, the employee who made the transfer (who took the line over on this order); reporting cannot
+     * see the source order's round, and a transfer is a confirmed fact of its own.
      */
     private Dimensions dimensionsOf(UUID orderId) {
         if (orderId == null) {
@@ -190,6 +192,7 @@ public class Projections {
                 order.tableId() == null ? null : DINE_IN);
     }
 
+    /** The store's zone now: a fact's local date and hour are computed once, when it is projected (D85). */
     private ZoneId zoneOf(UUID storeId) {
         return organization.zoneOf(storeId);
     }
