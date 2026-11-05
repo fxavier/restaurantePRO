@@ -280,6 +280,19 @@ public class FiscalDocument {
         }
     }
 
+    /**
+     * DRAFT only: the credit sale that marked it on account was cancelled before issue (D74), so the draft is a paid
+     * sale again, with no customer. The only way the mark is undone; {@link #amendDraft} keeps it sticky.
+     */
+    public void clearOnAccount(Instant now) {
+        requireDraft("clear the on-account mark of");
+        if (onAccount || customerId != null) {
+            onAccount = false;
+            customerId = null;
+            updatedAt = now;
+        }
+    }
+
     private boolean sameContent(DraftCommand command) {
         Currency c = Currency.getInstance(currency);
         List<DraftLine> given = command.lines() == null ? List.of() : command.lines();
