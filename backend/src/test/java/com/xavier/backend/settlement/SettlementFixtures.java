@@ -95,6 +95,25 @@ public class SettlementFixtures {
         return new Sale(shop, cashier, register, session, series, order);
     }
 
+    /**
+     * Confirms a round of {@code quantity} of a new item of the sale's store, priced {@code price} with a
+     * {@code ratePercent} tax rate (the catalog is republished for it). @return the new line's id
+     */
+    public UUID confirmOtherRate(Sale sale, String price, String ratePercent, String quantity) throws Exception {
+        var catalog = new com.xavier.backend.catalog.CatalogFixtures(mvc);
+        UUID item = com.xavier.backend.catalog.CatalogFixtures.id(catalog.item(catalog.family(), catalog.unit(),
+                catalog.taxCategory(ratePercent)));
+        catalog.price(sale.store(), sale.shop().priceList(), item, null, price);
+        long catalogVersion = orders.republish(sale.store());
+        Pos who = sale.cashier();
+        UUID line = OrdersFixtures.id(OrdersFixtures.json(orders.addLine(sale.shop(), sale.order(),
+                "{\"itemId\": \"%s\", \"quantity\": %s}".formatted(item, quantity), who.employeeId(),
+                who.terminalId(), UUID.randomUUID().toString()).andReturn().getResponse().getContentAsString()));
+        orders.confirm(sale.shop(), sale.order(), orderVersion(who, sale.order()), catalogVersion, List.of(line),
+                who.employeeId(), who.terminalId(), UUID.randomUUID().toString()).andExpect(status().isCreated());
+        return line;
+    }
+
     /** Another cashier of the same store with an OPEN session on a new register (a second terminal). */
     public Pos secondCashier(Sale sale) throws Exception {
         Pos other = CashFixtures.pos(sale.store());

@@ -39,6 +39,46 @@ class SplitPreservesTotalsTest {
         }
     }
 
+    @Test
+    void aSplitAcrossTwoTaxRatesAndItsResidualKeepTheTaxOfEachRate() throws Exception {
+        Sale sale = fixtures.sale("3"); // 3 x 12.50 at 16 %
+        UUID other = fixtures.confirmOtherRate(sale, "3.33", "5", "2.500"); // 2.5 x 3.33 at 5 %
+        UUID first = fixtures.lineIds(sale.cashier(), sale.order()).stream().filter(id -> !id.equals(other))
+                .findFirst().orElseThrow();
+        JsonNode partition = SettlementFixtures.json(fixtures.partitionItems(sale.cashier(), sale.order(),
+                fixtures.orderVersion(sale.cashier(), sale.order()), UUID.randomUUID().toString(), first, "1",
+                other, "1.250").andExpect(status().isCreated()));
+        UUID id = UUID.fromString(partition.get("id").asString());
+        fixtures.partitionDocument(sale.cashier(), id, UUID.randomUUID().toString()).andExpect(status().isCreated());
+        String due = partition.get("due").get("amount").asString();
+        fixtures.payPartition(sale.cashier(), sale.order(), id, "CASH", due, due, UUID.randomUUID().toString())
+                .andExpect(status().isCreated());
+        String residual = SettlementFixtures.json(fixtures.settlement(sale.cashier(), sale.order()))
+                .get("residualBalance").get("amount").asString();
+        fixtures.payCash(sale, residual, residual).andExpect(status().isCreated());
+
+        fixtures.close(sale.cashier(), sale.order(), fixtures.orderVersion(sale.cashier(), sale.order()),
+                UUID.randomUUID().toString()).andExpect(status().isOk());
+
+        assertThat(fixtures.count("SELECT count(*) FROM fiscal.fiscal_document WHERE order_ref = ?", sale.order()))
+                .isEqualTo(2);
+        Money vat16 = LineAmounts.of(UNIT, new BigDecimal("3"), VAT).tax();
+        Money vat5 = LineAmounts.of(Money.of("3.33", UNIT.currency()), new BigDecimal("2.500"), new BigDecimal("5"))
+                .tax();
+        assertThat(taxAt(sale, "16")).isEqualByComparingTo(vat16.amount());
+        assertThat(taxAt(sale, "5")).isEqualByComparingTo(vat5.amount());
+        assertThat(fixtures.decimal("SELECT sum(total_gross) FROM fiscal.fiscal_document WHERE order_ref = ?",
+                sale.order())).isEqualByComparingTo(LineAmounts.of(UNIT, new BigDecimal("3"), VAT).gross()
+                .plus(LineAmounts.of(Money.of("3.33", UNIT.currency()), new BigDecimal("2.500"),
+                        new BigDecimal("5")).gross()).amount());
+    }
+
+    private BigDecimal taxAt(Sale sale, String rate) {
+        return fixtures.decimal("""
+                SELECT sum(t.tax) FROM fiscal.fiscal_document_tax t JOIN fiscal.fiscal_document d
+                ON d.id = t.document_id WHERE d.order_ref = ? AND t.tax_rate = ?::numeric""", sale.order(), rate);
+    }
+
     private void splitAndClose(Random random) throws Exception {
         Sale sale = fixtures.sale(quantity(random));
         fixtures.confirmRound(sale.shop(), sale.cashier(), sale.order(), quantity(random),
