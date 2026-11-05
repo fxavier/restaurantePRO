@@ -21,7 +21,6 @@ import java.nio.charset.Charset;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -283,8 +282,8 @@ class PrintQueueTest {
         try {
             fixtures.mode(shop.store(), bar, "NORMAL"); // the locked job is due for every claimer now
 
-            List<Dispatch> claimed = CompletableFuture.supplyAsync(() -> queue.claimDue(PrintWorker.MAX_CLAIM,
-                    Set.of())).get(5, TimeUnit.SECONDS);
+            List<Dispatch> claimed = CompletableFuture.supplyAsync(() -> queue.claimDue(PrintWorker.MAX_CLAIM))
+                    .get(5, TimeUnit.SECONDS);
 
             assertThat(claimed).extracting(Dispatch::jobId).doesNotContain(job);
             assertThat(fixtures.jobStatus(job)).isEqualTo("QUEUED");
@@ -292,6 +291,98 @@ class PrintQueueTest {
             release.countDown();
             holder.get(10, TimeUnit.SECONDS);
         }
+    }
+
+    /**
+     * D50 §7.2 (amended): a claim takes the oldest due job of each printer, so a backlog on one printer never crowds
+     * another printer out. The printers turn NORMAL only inside the claim's own (rolled back) transaction, so no
+     * background worker of another context can take these jobs.
+     */
+    @Test
+    void aBacklogOnOnePrinterDoesNotKeepAnotherPrintersJobFromBeingClaimed() throws Exception {
+        UUID crowded = fixtures.barPrinter(shop.store(), printer.host(), printer.port());
+        fixtures.mode(shop.store(), crowded, "HOLD");
+        UUID oldest = awaitJob(fixtures.confirmedRound(shop, employee, terminal, "1"));
+        UUID other = fixtures.printer(shop.store(), "OT" + UUID.randomUUID().toString().substring(0, 6),
+                printer.host(), printer.port());
+        fixtures.mode(shop.store(), other, "HOLD");
+        jdbc.sql("UPDATE production.print_job SET created_at = timestamptz '2000-01-01 00:00:00Z' WHERE id = ?")
+                .param(oldest).update();
+        for (int i = 1; i <= 3; i++) {
+            copyJob(oldest, crowded, "2000-01-01 00:00:0" + i + "Z");
+        }
+        UUID lone = copyJob(oldest, other, "2000-01-01 00:01:00Z");
+
+        tx.executeWithoutResult(status -> {
+            status.setRollbackOnly();
+            jdbc.sql("UPDATE production.printer SET mode = 'NORMAL' WHERE id IN (?, ?)").param(crowded).param(other)
+                    .update();
+
+            List<Dispatch> claimed = queue.claimDue(2);
+
+            assertThat(claimed).extracting(Dispatch::jobId).containsExactlyInAnyOrder(oldest, lone);
+        });
+    }
+
+    /** D50 §7.2 (amended): a printer's head job blocks it while it waits to retry; it is still printed first. */
+    @Test
+    void aWaitingHeadJobKeepsNewerJobsOfItsPrinterBehindIt() throws Exception {
+        UUID bar = fixtures.barPrinter(shop.store(), printer.host(), printer.port());
+        fixtures.mode(shop.store(), bar, "HOLD");
+        UUID head = awaitJob(fixtures.confirmedRound(shop, employee, terminal, "1"));
+        UUID newer = copyJob(head, bar, "2000-01-01 00:00:01Z");
+
+        tx.executeWithoutResult(status -> {
+            status.setRollbackOnly();
+            jdbc.sql("""
+                    UPDATE production.print_job SET status = 'RETRY_WAIT', attempts = 1, started_at = now(),
+                        next_attempt_at = now() + interval '1 hour', created_at = timestamptz '2000-01-01 00:00:00Z'
+                    WHERE id = ?""").param(head).update();
+            jdbc.sql("UPDATE production.printer SET mode = 'NORMAL' WHERE id = ?").param(bar).update();
+
+            assertThat(queue.claimDue(PrintWorker.MAX_CLAIM)).extracting(Dispatch::printerId)
+                    .doesNotContain(bar);
+
+            jdbc.sql("UPDATE production.print_job SET next_attempt_at = now() - interval '1 second' WHERE id = ?")
+                    .param(head).update();
+            assertThat(queue.claimDue(PrintWorker.MAX_CLAIM)).extracting(Dispatch::jobId)
+                    .contains(head).doesNotContain(newer);
+        });
+    }
+
+    /**
+     * D50 §7.2 (amended): one job in flight per printer across workers. A send another worker (another context or
+     * instance on this database) has in flight keeps the printer's next job waiting, whatever this JVM knows.
+     */
+    @Test
+    void aSendInFlightElsewhereKeepsThePrintersNextJobWaiting() throws Exception {
+        UUID bar = fixtures.barPrinter(shop.store(), printer.host(), printer.port());
+        fixtures.mode(shop.store(), bar, "HOLD");
+        UUID sending = awaitJob(fixtures.confirmedRound(shop, employee, terminal, "1"));
+        UUID next = copyJob(sending, bar, "2000-01-01 00:00:01Z");
+
+        tx.executeWithoutResult(status -> {
+            status.setRollbackOnly();
+            jdbc.sql("UPDATE production.print_job SET status = 'PROCESSING', attempts = 1, started_at = now() WHERE id = ?")
+                    .param(sending).update();
+            jdbc.sql("UPDATE production.printer SET mode = 'NORMAL' WHERE id = ?").param(bar).update();
+
+            assertThat(queue.claimDue(PrintWorker.MAX_CLAIM)).extracting(Dispatch::jobId)
+                    .doesNotContain(next);
+        });
+    }
+
+    /** Another due job for {@code printerId}, a copy of {@code job}'s ticket created at {@code createdAt}. */
+    private UUID copyJob(UUID job, UUID printerId, String createdAt) {
+        UUID copy = UUID.randomUUID();
+        jdbc.sql("""
+                INSERT INTO production.print_job (id, store_id, ticket_id, printer_id, kind, status, attempts,
+                    next_attempt_at, dedupe_key, created_at, version)
+                SELECT ?, store_id, ticket_id, ?, kind, 'QUEUED', 0, now() - interval '1 second', ?,
+                    CAST(? AS timestamptz), 0
+                FROM production.print_job WHERE id = ?""")
+                .param(copy).param(printerId).param("test:" + copy).param(createdAt).param(job).update();
+        return copy;
     }
 
     private UUID awaitJob(Round round) throws InterruptedException {

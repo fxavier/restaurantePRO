@@ -17,19 +17,28 @@ import org.springframework.data.repository.query.Param;
 public interface PrintJobRepository extends JpaRepository<PrintJob, UUID>, JpaSpecificationExecutor<PrintJob> {
 
     /**
-     * The worker's due work (D50 §7.2), oldest first, locked so overlapping runs never take the same job. A HOLD, IGNORE
-     * (a suppression, never a failure: spec §8.6) or inactive printer keeps its jobs pending, and a printer with a send in flight ({@code busyPrinters}, never empty) is
-     * skipped so its tickets come out in order.
+     * The worker's due work (D50 §7.2 amended): each printer's head job (its oldest QUEUED or RETRY_WAIT job), if
+     * it is due, the oldest heads first, locked so overlapping runs never take the same job. A head that waits to
+     * retry blocks its printer, so tickets come out in order, and a printer with a job PROCESSING (a send in flight
+     * on any worker sharing this database) is skipped, so it has one send at a time. A HOLD, IGNORE (a suppression,
+     * never a failure: spec §8.6) or inactive printer keeps its jobs pending. The outer status check re-reads a row
+     * that a concurrent claim committed while this one waited, so a job is never claimed twice; matching on the
+     * printer too drops a job that a REDIRECT moved meanwhile, whose new printer may already be sending.
      */
     @Query(value = """
-            SELECT j.* FROM production.print_job j JOIN production.printer p ON p.id = j.printer_id
-            WHERE j.status IN ('QUEUED', 'RETRY_WAIT') AND j.next_attempt_at <= :now
-              AND p.mode NOT IN ('HOLD', 'IGNORE') AND p.active AND j.printer_id NOT IN (:busyPrinters)
+            SELECT j.* FROM production.print_job j
+            WHERE (j.id, j.printer_id) IN (
+                SELECT DISTINCT ON (d.printer_id) d.id, d.printer_id
+                FROM production.print_job d JOIN production.printer p ON p.id = d.printer_id
+                WHERE d.status IN ('QUEUED', 'RETRY_WAIT') AND p.mode NOT IN ('HOLD', 'IGNORE') AND p.active
+                  AND NOT EXISTS (SELECT 1 FROM production.print_job x
+                                  WHERE x.printer_id = d.printer_id AND x.status = 'PROCESSING')
+                ORDER BY d.printer_id, d.created_at, d.id)
+              AND j.status IN ('QUEUED', 'RETRY_WAIT') AND j.next_attempt_at <= :now
             ORDER BY j.created_at
             LIMIT :limit
             FOR UPDATE OF j SKIP LOCKED""", nativeQuery = true)
-    List<PrintJob> lockDue(@Param("now") Instant now, @Param("busyPrinters") Collection<UUID> busyPrinters,
-                           @Param("limit") int limit);
+    List<PrintJob> lockDue(@Param("now") Instant now, @Param("limit") int limit);
 
     /** PROCESSING jobs whose send started before {@code startedBefore}: a crash during the send. */
     @Query(value = """
@@ -45,7 +54,16 @@ public interface PrintJobRepository extends JpaRepository<PrintJob, UUID>, JpaSp
 
     long countByTicketIdAndKindAndRetryOfIsNull(UUID ticketId, JobKind kind);
 
-    long countByStatus(PrintJobStatus status);
+    /** How many jobs are in each status (statuses with none are absent): one scrape of {@code print_jobs}. */
+    @Query("select j.status as status, count(j) as jobs from PrintJob j group by j.status")
+    List<StatusCount> countGroupedByStatus();
+
+    interface StatusCount {
+
+        PrintJobStatus getStatus();
+
+        long getJobs();
+    }
 
     /** REDIRECT (D56): the undelivered jobs of {@code from} go to {@code to}; the version moves like an edit. */
     @Modifying(flushAutomatically = true, clearAutomatically = true)

@@ -15,10 +15,8 @@ import com.xavier.backend.shared.notify.ChangeTopic;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -35,9 +33,6 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class PrintQueue {
-
-    /** Never an id: stands for "no busy printer" in the claim's NOT IN. */
-    private static final UUID NO_PRINTER = new UUID(0, 0);
 
     private static final Logger log = LoggerFactory.getLogger(PrintQueue.class);
 
@@ -59,24 +54,22 @@ public class PrintQueue {
     }
 
     /**
-     * Claims at most {@code limit} due jobs, one per printer and none of {@code busyPrinters}, so each printer gets
-     * its tickets one at a time and in order. A job left on a printer that is now in REDIRECT moves to the target
+     * Claims at most {@code limit} due jobs: each printer's head job, if due, and none for a printer with a send in
+     * flight, so each printer gets its tickets one at a time and in order. A job left on a printer that is now in REDIRECT moves to the target
      * instead (it is claimed there on a later run).
      */
     @Transactional
-    public List<Dispatch> claimDue(int limit, Set<UUID> busyPrinters) {
+    public List<Dispatch> claimDue(int limit) {
         Instant now = clock.instant();
-        Set<UUID> excluded = busyPrinters.isEmpty() ? Set.of(NO_PRINTER) : busyPrinters;
-        List<PrintJob> due = jobs.lockDue(now, excluded, limit);
+        List<PrintJob> due = jobs.lockDue(now, limit);
         Map<UUID, Printer> printerById = printers.findAllById(due.stream().map(PrintJob::getPrinterId).toList())
                 .stream().collect(Collectors.toMap(Printer::getId, Function.identity()));
-        Set<UUID> claimedPrinters = new HashSet<>();
         List<Dispatch> claimed = new ArrayList<>();
         for (PrintJob job : due) {
             Printer printer = printerById.get(job.getPrinterId());
             if (printer.getMode() == PrinterMode.REDIRECT) {
                 job.moveTo(printer.getRedirectPrinterId());
-            } else if (claimedPrinters.add(printer.getId())) {
+            } else {
                 ProductionTicket ticket = tickets.findById(job.getTicketId()).orElseThrow();
                 job.claim(now);
                 claimed.add(new Dispatch(job.getId(), printer.getId(), printer.address(), renderer.render(

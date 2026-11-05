@@ -26,6 +26,12 @@ class EscPosTcpTransportTest {
     }
 
     @Test
+    void timeoutsThatOutliveTheJobLeaseAreRefusedAtStartup() {
+        assertThatThrownBy(() -> new EscPosTcpTransport(Duration.ofSeconds(2), Duration.ofSeconds(58)))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("lease");
+    }
+
+    @Test
     void aListeningPrinterReceivesTheBytes() throws Exception {
         try (TcpFakePrinter printer = TcpFakePrinter.accepting()) {
             SendOutcome outcome = transport.send(new PrinterAddress(printer.host(), printer.port()),
