@@ -115,8 +115,7 @@ public class PartitionService {
         int parts = request.parts();
         if (residual.amount().movePointRight(residual.currency().getDefaultFractionDigits())
                 .compareTo(BigDecimal.valueOf(parts)) < 0) {
-            throw new SettlementRuleException(SettlementRule.NOTHING_TO_SPLIT, "The residual " + residual.amount()
-                    + " of order " + orderId + " cannot be split in " + parts + " positive parts.");
+            throw SettlementRuleException.nothingToSplit(orderId, residual, parts);
         }
         OptimisticLocking.requireVersion(OrderBillingView.class, orderId, bill.view().version(),
                 request.orderVersion());
@@ -181,9 +180,8 @@ public class PartitionService {
                 throw new SettlementRuleException(SettlementRule.INVALID_AMOUNT,
                         "Line " + line.lineId() + " appears twice.");
             }
-            BillingLine billing = bill.line(line.lineId()).orElseThrow(() -> new SettlementRuleException(
-                    SettlementRule.QUANTITY_EXCEEDS_NET, "Line " + line.lineId() + " has nothing billable.",
-                    Map.of("lineId", line.lineId())));
+            BillingLine billing = bill.line(line.lineId()).orElseThrow(() ->
+                    SettlementRuleException.quantityExceedsNet(line.lineId(), BigDecimal.ZERO, line.quantity()));
             LineSplit split = bill.split(billing);
             var share = split.take(line.quantity());
             shares.add(new ItemShare(line.lineId(), line.quantity(), share, billing.taxCode(),
@@ -210,9 +208,7 @@ public class PartitionService {
     private static void requireWithinResidual(Bill bill, Money due) {
         Money headroom = bill.residualHeadroom();
         if (due.amount().compareTo(headroom.amount()) > 0) {
-            throw new SettlementRuleException(SettlementRule.AMOUNT_EXCEEDS_RESIDUAL, "The partition of "
-                    + due.amount() + " is more than the residual " + headroom.amount() + " of order "
-                    + bill.view().orderId() + ".", Map.of("residual", headroom.amount()));
+            throw SettlementRuleException.amountExceedsResidual(bill.view().orderId(), due, headroom);
         }
     }
 
@@ -223,8 +219,7 @@ public class PartitionService {
         if (payments.existsByPartitionId(id)
                 || attempts.existsByPartitionIdAndStatusIn(id, com.xavier.backend.settlement.model.AttemptStatus.OPEN)
                 || documented) {
-            throw new SettlementRuleException(SettlementRule.PARTITION_IN_USE, "Bill partition " + id
-                    + " has a payment, an open attempt or a document: it cannot be cancelled.");
+            throw SettlementRuleException.partitionInUse(id);
         }
     }
 

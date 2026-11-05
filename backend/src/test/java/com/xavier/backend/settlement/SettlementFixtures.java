@@ -369,6 +369,12 @@ public class SettlementFixtures {
         return spec.query(java.math.BigDecimal.class).single();
     }
 
+    /** The order's one payment. */
+    public UUID paymentOf(UUID order) {
+        return jdbc.sql("SELECT id FROM settlement.payment WHERE order_id = ?").param(order).query(UUID.class)
+                .single();
+    }
+
     public long payments(UUID order) {
         return count("SELECT count(*) FROM settlement.payment WHERE order_id = ?", order);
     }

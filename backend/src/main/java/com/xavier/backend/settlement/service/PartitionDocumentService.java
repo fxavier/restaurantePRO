@@ -71,9 +71,8 @@ public class PartitionDocumentService {
         Bill bill = bills.of(ref.orderId());
         BillPartition partition = bill.partition(partitionId).orElseThrow();
         if (partition.getKind() != PartitionKind.ITEMS || !partition.isLive()) {
-            throw new SettlementRuleException(SettlementRule.PARTITION_NOT_INVOICEABLE, "Only a LIVE ITEMS "
-                    + "partition is invoiced on its own; " + partitionId + " is " + partition.getStatus() + " "
-                    + partition.getKind() + ".");
+            throw SettlementRuleException.partitionNotInvoiceable(partitionId, partition.getStatus(),
+                    partition.getKind());
         }
         boolean drafted = fiscal.documentsOfOrder(ref.orderId()).stream()
                 .anyMatch(d -> "PARTITION".equals(d.sourceType()) && partitionId.equals(d.sourceId()));

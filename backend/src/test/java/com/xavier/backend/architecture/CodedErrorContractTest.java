@@ -28,6 +28,7 @@ import com.xavier.backend.settlement.exception.SettlementConflictException;
 import com.xavier.backend.settlement.exception.SettlementRule;
 import com.xavier.backend.settlement.exception.SettlementRuleException;
 import com.xavier.backend.settlement.model.AttemptStatus;
+import com.xavier.backend.shared.Money;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.List;
@@ -59,6 +60,7 @@ import org.springframework.web.bind.annotation.RestController;
 @WithMockUser
 class CodedErrorContractTest {
 
+    static final java.util.Currency MZN = java.util.Currency.getInstance("MZN");
     static final UUID ID = UUID.fromString("0190a000-0000-7000-8000-0000000000c1");
     static final UUID OTHER = UUID.fromString("0190a000-0000-7000-8000-0000000000c2");
     static final String PATH = "/api/v1/backoffice/error-contract/";
@@ -127,7 +129,30 @@ class CodedErrorContractTest {
             Map.entry("cash-open-sessions", () -> new CashRuleViolationException(CashRule.OPEN_SESSIONS,
                     "The cash day 2026-11-05 still has open sessions.")),
             Map.entry("duplicate-route", () -> new ProductionRuleViolationException(ProductionRule.DUPLICATE_ROUTE,
-                    "The destination KITCHEN appears twice")));
+                    "The destination KITCHEN appears twice")),
+            // R3 settlement (S28): partitions, the residual and the settled void
+            Map.entry("quantity-already-partitioned", () -> SettlementRuleException.quantityAlreadyPartitioned(ID,
+                    new BigDecimal("1.500"))),
+            Map.entry("settlement-quantity-exceeds-net", () -> SettlementRuleException.quantityExceedsNet(ID,
+                    new BigDecimal("2.000"), new BigDecimal("3"))),
+            Map.entry("quantity-partitioned", () -> SettlementRuleException.quantityPartitioned(ID, BigDecimal.ONE)),
+            Map.entry("split-rounding-limit", () -> SettlementRuleException.splitRoundingLimit(ID,
+                    new BigDecimal("0.843"), Money.of("3.55", MZN), Money.of("0.49", MZN))),
+            Map.entry("settlement-order-frozen", () -> SettlementRuleException.orderFrozen(ID)),
+            Map.entry("amount-exceeds-residual", () -> SettlementRuleException.amountExceedsResidual(ID,
+                    Money.of("20.01", MZN), Money.of("20.00", MZN))),
+            Map.entry("nothing-to-split", () -> SettlementRuleException.nothingToSplit(ID, Money.of("0.01", MZN), 2)),
+            Map.entry("partition-in-use", () -> SettlementRuleException.partitionInUse(ID)),
+            Map.entry("partition-not-invoiceable", () -> SettlementRuleException.partitionNotInvoiceable(ID, "LIVE",
+                    "AMOUNT")),
+            Map.entry("void-exceeds-unpaid", () -> SettlementRuleException.voidExceedsUnpaid(ID,
+                    Money.of("12.50", MZN), Money.of("20.00", MZN), Money.of("5.00", MZN))),
+            Map.entry("correction-requires-fiscal-adapter", () -> SettlementRuleException
+                    .correctionRequiresFiscalAdapter("Order " + ID + " has its document")),
+            Map.entry("void-self-approval", SettlementRuleException::voidSelfApproval),
+            Map.entry("illegal-partition-state", () -> SettlementConflictException.illegalPartitionState(ID,
+                    "CANCELLED", "be cancelled")),
+            Map.entry("partition-in-doubt", () -> SettlementConflictException.inDoubt("partition", ID, OTHER)));
 
     @Autowired
     MockMvc mvc;
@@ -257,6 +282,41 @@ class CodedErrorContractTest {
                 "The amount 60.0000 is more than the balance 40.0000 of the order.", ",\"balance\":40.0000");
         expect("not-settled", 422, "NOT_SETTLED", "Order " + ID + " is not settled: 60.0000 paid of 100.0000 due.",
                 ",\"balance\":40.0000");
+    }
+
+    @Test
+    void settlementPartitionAndVoidRules() throws Exception {
+        expect("quantity-already-partitioned", 422, "QUANTITY_ALREADY_PARTITIONED",
+                "Only 1.5 of line " + ID + " is not in a partition yet.",
+                ",\"lineId\":\"" + ID + "\",\"available\":1.500");
+        expect("settlement-quantity-exceeds-net", 422, "QUANTITY_EXCEEDS_NET",
+                "Line " + ID + " has 2 billable, less than 3.", ",\"lineId\":\"" + ID + "\"");
+        expect("quantity-partitioned", 422, "QUANTITY_PARTITIONED", "Only 1 of line " + ID
+                + " is in no partition: cancel the partition before voiding more.",
+                ",\"lineId\":\"" + ID + "\",\"available\":1");
+        expect("split-rounding-limit", 422, "SPLIT_ROUNDING_LIMIT", "Line " + ID + " cannot be split this way: a "
+                + "share of 0.843 would carry 3.55 (tax 0.49), beyond the rounding a document allows. Cancel or "
+                + "split it differently.", ",\"lineId\":\"" + ID + "\"");
+        expect("settlement-order-frozen", 422, "ORDER_FROZEN",
+                "Order " + ID + " has its document draft: its split can no longer change.", "");
+        expect("amount-exceeds-residual", 422, "AMOUNT_EXCEEDS_RESIDUAL",
+                "The partition of 20.01 is more than the residual 20.00 of order " + ID + ".",
+                ",\"residual\":20.00");
+        expect("nothing-to-split", 422, "NOTHING_TO_SPLIT",
+                "The residual 0.01 of order " + ID + " cannot be split in 2 positive parts.", "");
+        expect("partition-in-use", 422, "PARTITION_IN_USE", "Bill partition " + ID
+                + " has a payment, an open attempt or a document: it cannot be cancelled.", "");
+        expect("partition-not-invoiceable", 422, "PARTITION_NOT_INVOICEABLE",
+                "Only a LIVE ITEMS partition is invoiced on its own; " + ID + " is LIVE AMOUNT.", "");
+        expect("void-exceeds-unpaid", 422, "VOID_EXCEEDS_UNPAID", "The void would leave 12.50 due on order " + ID
+                + ", less than the 20.00 paid or being paid: refund first.", ",\"unpaid\":5.00");
+        expect("correction-requires-fiscal-adapter", 422, "CORRECTION_REQUIRES_FISCAL_ADAPTER", "Order " + ID
+                + " has its document: correcting invoiced quantities needs the market's fiscal adapter.", "");
+        expect("void-self-approval", 422, "SELF_APPROVAL", "The approver of a void cannot be the operator.", "");
+        expect("illegal-partition-state", 409, "ILLEGAL_PARTITION_STATE",
+                "Bill partition " + ID + " is CANCELLED and cannot be cancelled.", "");
+        expect("partition-in-doubt", 409, "PAYMENT_IN_DOUBT", "A payment attempt of partition " + ID
+                + " is still open or in doubt; resolve it first.", ",\"attemptId\":\"" + OTHER + "\"");
     }
 
     @Test

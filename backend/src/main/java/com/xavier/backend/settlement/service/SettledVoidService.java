@@ -71,8 +71,7 @@ public class SettledVoidService {
         }
         UUID approver = approvers.verify(approverCode, approverPin, Permission.ORDER_VOID_APPROVE, pos.storeId());
         if (approver.equals(pos.employeeId())) {
-            throw new SettlementRuleException(SettlementRule.SELF_APPROVAL,
-                    "The approver of a void cannot be the operator.");
+            throw SettlementRuleException.voidSelfApproval();
         }
         return new VoidApproval(orderId, approver);
     }
@@ -94,9 +93,8 @@ public class SettledVoidService {
         locks.lockOrder(orderId);
         Bill bill = bills.of(orderId).requireOpen();
         requireNotInvoiced(bill, request);
-        BillingLine line = bill.line(request.lineId()).orElseThrow(() -> new SettlementRuleException(
-                SettlementRule.QUANTITY_EXCEEDS_NET, "Line " + request.lineId() + " has nothing billable.",
-                Map.of("lineId", request.lineId())));
+        BillingLine line = bill.line(request.lineId()).orElseThrow(() -> SettlementRuleException
+                .quantityExceedsNet(request.lineId(), BigDecimal.ZERO, request.quantity()));
         Money reduction = bill.split(line).voidReduces(request.quantity());
         requireHeadroom(bill, reduction);
         VoidView voided = orders.voidLine(new SettledVoidCommand(orderId, request.orderVersion(), request.lineId(),
@@ -127,15 +125,12 @@ public class SettledVoidService {
         Money residualAfter = bill.residualDue().minus(reduction);
         Money owed = bill.openOn(null).stream().map(PaymentAttempt::amount).reduce(bill.orderPaid(), Money::plus);
         if (residualAfter.amount().compareTo(owed.amount()) < 0) {
-            throw new SettlementRuleException(SettlementRule.VOID_EXCEEDS_UNPAID, "The void would leave "
-                    + residualAfter.amount() + " due on order " + bill.view().orderId() + ", less than the "
-                    + owed.amount() + " paid or being paid: refund first.", Map.of("unpaid",
-                    bill.residualDue().minus(owed).amount()));
+            throw SettlementRuleException.voidExceedsUnpaid(bill.view().orderId(), residualAfter, owed,
+                    bill.residualDue().minus(owed));
         }
     }
 
     private static SettlementRuleException correction(String what) {
-        return new SettlementRuleException(SettlementRule.CORRECTION_REQUIRES_FISCAL_ADAPTER, what
-                + ": correcting invoiced quantities needs the market's fiscal adapter.");
+        return SettlementRuleException.correctionRequiresFiscalAdapter(what);
     }
 }

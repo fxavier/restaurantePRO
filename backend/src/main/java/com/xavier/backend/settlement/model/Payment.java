@@ -116,6 +116,10 @@ public class Payment {
         return id;
     }
 
+    public UUID getAttemptId() {
+        return attemptId;
+    }
+
     public UUID getOrderId() {
         return orderId;
     }

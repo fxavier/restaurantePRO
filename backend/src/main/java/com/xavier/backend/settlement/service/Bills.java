@@ -176,8 +176,7 @@ class Bills {
         /** @throws SettlementRuleException {@code ORDER_FROZEN} once the order's document draft exists (D70) */
         Bill requireNotFrozen() {
             if (frozen()) {
-                throw new SettlementRuleException(SettlementRule.ORDER_FROZEN, "Order " + view.orderId()
-                        + " has its document draft: its split can no longer change.");
+                throw SettlementRuleException.orderFrozen(view.orderId());
             }
             return this;
         }

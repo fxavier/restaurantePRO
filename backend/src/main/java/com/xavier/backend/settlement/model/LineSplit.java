@@ -81,10 +81,7 @@ public final class LineSplit {
         }
         Pool pool = pool();
         if (quantity.compareTo(pool.quantity()) > 0) {
-            throw new SettlementRuleException(SettlementRule.QUANTITY_ALREADY_PARTITIONED, "Only "
-                    + pool.quantity().stripTrailingZeros().toPlainString() + " of line " + lineId
-                    + " is not in a partition yet.", java.util.Map.of("lineId", lineId,
-                    "available", pool.quantity()));
+            throw SettlementRuleException.quantityAlreadyPartitioned(lineId, pool.quantity());
         }
         Share share = PartitionAmounts.share(unitPrice, ratePercent, pool.quantity(), pool.gross(), pool.tax(),
                 quantity);
@@ -123,10 +120,7 @@ public final class LineSplit {
         }
         Pool pool = pool();
         if (quantity.compareTo(pool.quantity()) > 0) {
-            throw new SettlementRuleException(SettlementRule.QUANTITY_PARTITIONED, "Only "
-                    + pool.quantity().stripTrailingZeros().toPlainString() + " of line " + lineId
-                    + " is in no partition: cancel the partition before voiding more.",
-                    java.util.Map.of("lineId", lineId, "available", pool.quantity()));
+            throw SettlementRuleException.quantityPartitioned(lineId, pool.quantity());
         }
         LineAmounts after = LineAmounts.of(unitPrice, netQty.subtract(quantity), ratePercent);
         Money reduction = gross.minus(after.gross());
@@ -137,11 +131,7 @@ public final class LineSplit {
 
     private void requireBound(BigDecimal quantity, Money shareGross, Money shareTax) {
         if (!PartitionAmounts.withinFiscalBound(quantity, unitPrice, ratePercent, shareGross, shareTax)) {
-            throw new SettlementRuleException(SettlementRule.SPLIT_ROUNDING_LIMIT, "Line " + lineId
-                    + " cannot be split this way: a share of " + quantity.stripTrailingZeros().toPlainString()
-                    + " would carry " + shareGross.amount() + " (tax " + shareTax.amount()
-                    + "), beyond the rounding a document allows. Cancel or split it differently.",
-                    java.util.Map.of("lineId", lineId));
+            throw SettlementRuleException.splitRoundingLimit(lineId, quantity, shareGross, shareTax);
         }
     }
 
@@ -152,9 +142,7 @@ public final class LineSplit {
     }
 
     private SettlementRuleException exceedsNet(BigDecimal quantity) {
-        return new SettlementRuleException(SettlementRule.QUANTITY_EXCEEDS_NET, "Line " + lineId + " has "
-                + netQty.stripTrailingZeros().toPlainString() + " billable, less than "
-                + quantity.stripTrailingZeros().toPlainString() + ".", java.util.Map.of("lineId", lineId));
+        return SettlementRuleException.quantityExceedsNet(lineId, netQty, quantity);
     }
 
     public UUID lineId() {
