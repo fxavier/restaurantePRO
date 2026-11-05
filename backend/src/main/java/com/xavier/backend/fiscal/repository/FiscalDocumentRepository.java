@@ -6,6 +6,7 @@ import com.xavier.backend.fiscal.model.FiscalDocument;
 import com.xavier.backend.fiscal.model.dto.SourceType;
 import jakarta.persistence.LockModeType;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
@@ -29,6 +30,15 @@ public interface FiscalDocumentRepository extends JpaRepository<FiscalDocument, 
                                com.xavier.backend.fiscal.model.DocumentStatus.ISSUED)""")
     Optional<FiscalDocument> findBySource(@Param("sourceType") SourceType sourceType, @Param("sourceId") UUID sourceId,
                                           @Param("documentType") DocumentType documentType);
+
+    /** Every document of an order (by {@code order_ref}, so R2 documents too), oldest first. */
+    @Query("""
+            select d from FiscalDocument d
+            where d.orderRef = :orderId
+              and d.status in (com.xavier.backend.fiscal.model.DocumentStatus.DRAFT,
+                               com.xavier.backend.fiscal.model.DocumentStatus.ISSUED)
+            order by d.createdAt, d.id""")
+    List<FiscalDocument> findByOrder(@Param("orderId") UUID orderId);
 
     Optional<FiscalDocument> findBySeriesIdAndNumber(UUID seriesId, Long number);
 

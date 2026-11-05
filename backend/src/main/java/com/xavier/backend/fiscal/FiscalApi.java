@@ -4,12 +4,15 @@ import com.xavier.backend.fiscal.model.DocumentStatus;
 import com.xavier.backend.fiscal.model.DocumentType;
 import com.xavier.backend.fiscal.model.FiscalDocument;
 import com.xavier.backend.fiscal.model.dto.SourceType;
+import com.xavier.backend.fiscal.model.dto.Coverage;
 import com.xavier.backend.fiscal.model.dto.DocumentView;
 import com.xavier.backend.fiscal.model.dto.DraftCommand;
 import com.xavier.backend.fiscal.model.dto.SaleDraftCommand;
 import com.xavier.backend.fiscal.repository.FiscalDocumentRepository;
+import com.xavier.backend.fiscal.service.DocumentFactsService;
 import com.xavier.backend.fiscal.service.DocumentIssueService;
 import com.xavier.backend.fiscal.service.SaleDraftService;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -25,11 +28,14 @@ public class FiscalApi {
     private final SaleDraftService drafts;
     private final DocumentIssueService issuer;
     private final FiscalDocumentRepository documents;
+    private final DocumentFactsService facts;
 
-    FiscalApi(SaleDraftService drafts, DocumentIssueService issuer, FiscalDocumentRepository documents) {
+    FiscalApi(SaleDraftService drafts, DocumentIssueService issuer, FiscalDocumentRepository documents,
+              DocumentFactsService facts) {
         this.drafts = drafts;
         this.issuer = issuer;
         this.documents = documents;
+        this.facts = facts;
     }
 
     /**
@@ -90,6 +96,21 @@ public class FiscalApi {
     public Optional<DocumentView> saleDocumentFor(UUID orderId) {
         return documents.findBySource(SourceType.ORDER, orderId, DocumentType.SALE)
                 .map(FiscalDocument::toView);
+    }
+
+    /**
+     * D70 step 1: per source line, the quantity, gross and tax on the order's ISSUED and on its DRAFT documents
+     * (partition, residual and R2 documents alike), and the DRAFT documents still to issue.
+     */
+    @Transactional(readOnly = true)
+    public Coverage coverage(UUID orderId) {
+        return facts.coverage(orderId);
+    }
+
+    /** Every DRAFT or ISSUED document of an order, whatever its source, oldest first. */
+    @Transactional(readOnly = true)
+    public List<DocumentView> documentsOfOrder(UUID orderId) {
+        return facts.documentsOfOrder(orderId);
     }
 
     /** Fiscal pendencies of a store: drafts not issued yet (D50 §7.8 day close). */
