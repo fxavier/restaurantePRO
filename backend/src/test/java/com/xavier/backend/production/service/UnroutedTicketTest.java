@@ -171,6 +171,27 @@ class UnroutedTicketTest {
         assertThat(fixtures.audits("PRODUCTION_TICKET_ROUTED", ticket)).isEqualTo(1);
     }
 
+    /** The ticket key still holds once the ticket is ROUTED: a late redelivery adds no ticket, job or count. */
+    @Test
+    void anEventRedeliveredAfterTheTicketWasRoutedChangesNothing() throws Exception {
+        OrderLinesVoided voided = voidOn(ProductionFixtures.DESTINATION);
+        publish(voided);
+        await(() -> fixtures.tickets(voided.voidId()).size() == 1, "unrouted void ticket");
+        UUID ticket = (UUID) fixtures.tickets(voided.voidId()).getFirst().get("id");
+        heldBarPrinter();
+        route(ticket, key(), operator()).andExpect(status().isCreated());
+        await(() -> completions(voided) == 1, "first delivery handled");
+        double unroutedAfterRoute = unrouted();
+
+        publish(voided);
+        await(() -> completions(voided) == 2, "redelivery handled");
+
+        assertThat(fixtures.tickets(voided.voidId())).singleElement()
+                .satisfies(row -> assertThat(row).containsEntry("id", ticket).containsEntry("routing", "ROUTED"));
+        assertThat(fixtures.jobsOfSource(voided.voidId())).hasSize(1);
+        assertThat(unrouted()).isEqualTo(unroutedAfterRoute);
+    }
+
     @Test
     void routingWhileThereIsStillNoRouteIsRefusedAndTheTicketStaysUnrouted() throws Exception {
         UUID ticket = unroutedVoidTicket();
