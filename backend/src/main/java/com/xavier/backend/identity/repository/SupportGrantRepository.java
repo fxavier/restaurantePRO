@@ -16,8 +16,6 @@ public interface SupportGrantRepository extends JpaRepository<SupportGrant, UUID
     /** The account's ACTIVE grant (neither revoked nor expired by the job); its end may already have passed. */
     Optional<SupportGrant> findByAccountIdAndRevokedAtIsNullAndExpiredAtIsNull(UUID accountId);
 
-    boolean existsByAccountIdAndRevokedAtIsNullAndExpiredAtIsNull(UUID accountId);
-
     Page<SupportGrant> findByAccountId(UUID accountId, Pageable pageable);
 
     @Query("select g.id from SupportGrant g "

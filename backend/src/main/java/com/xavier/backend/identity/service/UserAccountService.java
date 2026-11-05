@@ -93,6 +93,10 @@ public class UserAccountService {
         requireCanGrant(request.roleIds().stream().filter(role -> !account.getRoleIds().contains(role))
                 .collect(Collectors.toSet()));
         requireCanLink(account.getEmployeeId(), request.employeeId());
+        if (account.isSupport() && (account.isActive() != request.active()
+                || !account.getRoleIds().equals(request.roleIds()))) {
+            accessPolicy.require(Permission.SUPPORT_ACCESS_MANAGE); // what a support account may do is D83's matter
+        }
         boolean wasAdministrator = isActiveAdministrator(account);
         boolean authoritiesMayShrink = !request.active() || !account.getRoleIds().equals(request.roleIds())
                 || !Objects.equals(account.getEmployeeId(), request.employeeId());

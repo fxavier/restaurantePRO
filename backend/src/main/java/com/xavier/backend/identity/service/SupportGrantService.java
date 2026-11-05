@@ -70,10 +70,12 @@ public class SupportGrantService {
         if (!account.isSupport()) {
             throw new SupportAccountRequiredException();
         }
-        if (grants.existsByAccountIdAndRevokedAtIsNullAndExpiredAtIsNull(account.getId())) {
+        Instant now = clock.instant();
+        Optional<SupportGrant> current = grants.findByAccountIdAndRevokedAtIsNullAndExpiredAtIsNull(account.getId());
+        if (current.isPresent() && current.get().isUsableAt(now)) {
             throw new SupportGrantActiveException();
         }
-        Instant now = clock.instant();
+        current.ifPresent(ended -> expire(ended.getId())); // past its end, not yet swept by the job
         SupportGrant grant = UniqueConstraints.saveAndFlush(grants,
                 SupportGrant.grant(account.getId(), Duration.ofMinutes(request.durationMinutes()),
                         request.reason().strip(), granter.userId(), now),
@@ -122,19 +124,37 @@ public class SupportGrantService {
     }
 
     /**
-     * How long a new session of this account may stay idle at most: empty for an ordinary account; the rest of the
-     * usable grant for a support account, or zero when it holds none (so a session opened in a race with the grant's
-     * end is dead at once).
+     * The grant a new session of this account rides on: empty for an ordinary account. For a support account without
+     * a usable grant (a race with the grant's end) the session is dead at once: no grant id, ended now.
      */
     @Transactional(readOnly = true)
-    public Optional<Duration> sessionLimitOf(UUID accountId) {
+    public Optional<SupportSession> sessionGrantOf(UUID accountId) {
         if (!accounts.findById(accountId).map(UserAccount::isSupport).orElse(false)) {
             return Optional.empty();
         }
         Instant now = clock.instant();
         return Optional.of(grants.findByAccountIdAndRevokedAtIsNullAndExpiredAtIsNull(accountId)
-                .map(grant -> grant.remainingAt(now))
-                .orElse(Duration.ZERO));
+                .filter(grant -> grant.isUsableAt(now))
+                .map(grant -> new SupportSession(grant.getId(), grant.getValidUntil(), grant.remainingAt(now)))
+                .orElse(new SupportSession(null, now, Duration.ZERO)));
+    }
+
+    /**
+     * Whether a support session may serve this request: its grant has not reached {@code validUntil} and is still
+     * ACTIVE (one primary-key read). Sessions are also deleted when a grant ends, but a revoke that commits while a
+     * login is still saving its session finds nothing to delete; this check does not depend on that.
+     */
+    @Transactional(readOnly = true)
+    public boolean sessionGrantHolds(UUID grantId, Instant validUntil) {
+        Instant now = clock.instant();
+        if (grantId == null || !now.isBefore(validUntil)) {
+            return false;
+        }
+        return grants.findById(grantId).map(grant -> grant.isUsableAt(now)).orElse(false);
+    }
+
+    /** The grant a support session was opened with, and how long the session may still stay idle. */
+    public record SupportSession(UUID grantId, Instant validUntil, Duration remaining) {
     }
 
     /** ACTIVE grants whose end has come, oldest end first. */

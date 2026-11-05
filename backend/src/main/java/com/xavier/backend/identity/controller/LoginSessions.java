@@ -46,7 +46,8 @@ import org.springframework.stereotype.Component;
  *       which the security filter chain loads on every later request;</li>
  *   <li>a POS session is recorded against its terminal and store, so revoking the terminal or deactivating the
  *       store ends it;</li>
- *   <li>a support account's session may stay idle at most for the rest of its support grant (D83).</li>
+ *   <li>a support account's session records its grant and that grant's end, which {@code SupportSessionFilter}
+ *       checks on every request, and may stay idle at most for the rest of the grant (D83).</li>
  * </ol>
  */
 @Component
@@ -56,6 +57,10 @@ class LoginSessions {
     static final String MUST_CHANGE_PASSWORD = "identity.mustChangePassword";
     /** Session attribute: set while the employee must replace a manager-set PIN (see {@code MustChangeCredentialFilter}). */
     static final String MUST_CHANGE_PIN = "identity.mustChangePin";
+    /** Session attributes of a support session (D83): its grant ({@code UUID}, absent when none is usable). */
+    static final String SUPPORT_GRANT_ID = "identity.supportGrantId";
+    /** The grant's end ({@code Instant}); its presence marks a support session (see {@code SupportSessionFilter}). */
+    static final String SUPPORT_VALID_UNTIL = "identity.supportValidUntil";
 
     /**
      * The same cookie repository {@code csrf.spa()} configures in {@code SecurityConfig}; it keeps no state, so this
@@ -90,8 +95,14 @@ class LoginSessions {
         session.setAttribute(FindByIndexNameSessionRepository.PRINCIPAL_NAME_INDEX_NAME, SessionPrincipals.of(actor));
         flag(session, MUST_CHANGE_PASSWORD, view.mustChangePassword());
         flag(session, MUST_CHANGE_PIN, view.mustChangePin());
+        session.removeAttribute(SUPPORT_GRANT_ID);
+        session.removeAttribute(SUPPORT_VALID_UNTIL);
         if (actor.kind() == ActorKind.ACCOUNT) {
-            supportGrants.sessionLimitOf(actor.userId()).ifPresent(limit -> capIdleTime(session, limit));
+            supportGrants.sessionGrantOf(actor.userId()).ifPresent(grant -> {
+                session.setAttribute(SUPPORT_GRANT_ID, grant.grantId());
+                session.setAttribute(SUPPORT_VALID_UNTIL, grant.validUntil());
+                capIdleTime(session, grant.remaining());
+            });
         }
         SecurityContext context = holder.createEmptyContext();
         context.setAuthentication(authentication);

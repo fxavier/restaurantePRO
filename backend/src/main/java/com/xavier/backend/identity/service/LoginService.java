@@ -65,7 +65,8 @@ public class LoginService {
         UserAccount account = accounts.findByUsername(normalized).orElse(null);
         throttling.countAttempt(normalized, clientAddress, account == null ? null : account.getId());
         String refusal = refusalOf(account, password);
-        Optional<UUID> supportGrant = refusal == null && account.isSupport()
+        // looked up whatever the password check said, so the answer's timing does not tell a right password apart
+        Optional<UUID> supportGrant = account != null && account.isSupport()
                 ? supportGrants.usableGrantOf(account.getId()) : Optional.empty();
         if (refusal == null && account.isSupport() && supportGrant.isEmpty()) {
             refusal = "support account without an active support grant";

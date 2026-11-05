@@ -74,9 +74,9 @@ public class SupportGrant {
         return grant;
     }
 
-    /** Ends the grant early; an ended grant (revoked, or expired by the job) is a conflict. */
+    /** Ends the grant early; an ended grant (revoked, expired, or past its end before the job ran) is a conflict. */
     public void revoke(UUID by, Instant now) {
-        if (revokedAt != null || expiredAt != null) {
+        if (statusAt(now) != SupportGrantStatus.ACTIVE) {
             throw new IllegalSupportGrantStateException();
         }
         revokedAt = now;

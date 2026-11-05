@@ -41,6 +41,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.json.JsonCompareMode;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -54,6 +55,7 @@ import tools.jackson.databind.JsonNode;
  */
 @IdentityTest
 @Import(MutableClock.Config.class)
+@TestPropertySource(properties = "restaurantpro.identity.support-expiry-cron=-") // the job runs only when a test calls it
 class SupportAccessTest {
 
     static final String GRANTS = "/api/v1/backoffice/support-grants";
@@ -134,6 +136,107 @@ class SupportAccessTest {
         Cookie session = fixtures.login(user.username(), PASSWORD);
 
         assertThat(maxInactiveSeconds(session)).isEqualTo(Duration.ofMinutes(30).toSeconds());
+    }
+
+    // --- a support session checks its grant on every request (no reliance on deletion) ---
+
+    @Test
+    void aRevokeThatFoundNoSessionToDeleteStillEndsTheSessionAtItsNextRequest() throws Exception {
+        User support = supportAccount(Set.of());
+        UUID grant = grant(support, 120);
+        Cookie session = fixtures.login(support.username(), PASSWORD);
+        // as if the revoke had committed between the login's grant check and the session's save: no row deleted
+        jdbc.sql("UPDATE identity.support_grant SET revoked_at = now(), revoked_by_account_id = :admin WHERE id = :id")
+                .param("admin", administrator.id()).param("id", grant).update();
+
+        mvc.perform(get("/api/v1/auth/session").cookie(session))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().json(unauthenticatedBody(), JsonCompareMode.STRICT));
+        assertThat(sessionCount(support)).isZero();
+    }
+
+    @Test
+    void aSessionInUseThatCrossesTheGrantEndGets401WithoutTheJob() throws Exception {
+        User support = supportAccount(Set.of());
+        UUID grant = grant(support, 10);
+        Cookie session = fixtures.login(support.username(), PASSWORD);
+        mvc.perform(get("/api/v1/auth/session").cookie(session)).andExpect(status().isOk());
+        clock.advance(Duration.ofMinutes(10));
+
+        mvc.perform(get("/api/v1/auth/session").cookie(session))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().json(unauthenticatedBody(), JsonCompareMode.STRICT));
+        assertThat(jdbc.sql("SELECT expired_at IS NULL FROM identity.support_grant WHERE id = :id")
+                .param("id", grant).query(Boolean.class).single()).isTrue();
+    }
+
+    @Test
+    void anOrdinarySessionIsNotCheckedAgainstAnyGrant() throws Exception {
+        User user = fixtures.newUser(PASSWORD, Set.of());
+        Cookie session = fixtures.login(user.username(), PASSWORD);
+        clock.advance(Duration.ofHours(25));
+
+        mvc.perform(get("/api/v1/auth/session").cookie(session)).andExpect(status().isOk());
+    }
+
+    @Test
+    void aGrantPastItsEndCannotBeRevokedBeforeTheJobRuns() throws Exception {
+        User support = supportAccount(Set.of());
+        UUID grant = grant(support, 30);
+        clock.advance(Duration.ofMinutes(30));
+
+        mvc.perform(revoke(grant).with(asAdministrator()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SUPPORT_GRANT_ENDED"));
+    }
+
+    @Test
+    void aNewGrantAfterAnUnsweptEndExpiresTheOldOneFirst() throws Exception {
+        User support = supportAccount(Set.of());
+        UUID old = grant(support, 30);
+        Cookie oldSession = fixtures.login(support.username(), PASSWORD);
+        clock.advance(Duration.ofMinutes(30));
+
+        grant(support, 60);
+
+        assertThat(jdbc.sql("""
+                        SELECT actor_kind FROM audit.audit_event
+                        WHERE action = 'SUPPORT_GRANT_EXPIRED' AND entity_id = :id""")
+                .param("id", old.toString()).query(String.class).list()).containsExactly("SYSTEM");
+        mvc.perform(get("/api/v1/auth/session").cookie(oldSession)).andExpect(status().isUnauthorized());
+        mvc.perform(loginRequest(support.username(), PASSWORD).cookie(oldSession)).andExpect(status().isOk());
+    }
+
+    @Test
+    void changingASupportAccountsRolesOrActiveFlagNeedsSupportAccessManage() throws Exception {
+        User support = supportAccount(Set.of());
+        RequestPostProcessor userManager = as(Set.of(Permission.USER_MANAGE.authority()));
+
+        mvc.perform(put("/api/v1/backoffice/users/" + support.id()).with(userManager).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json("roleIds", Set.of(), "active", false, "version", 0)))
+                .andExpect(status().isForbidden());
+        mvc.perform(put("/api/v1/backoffice/users/" + support.id()).with(userManager).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json("roleIds", Set.of(), "active", true, "version", 0)))
+                .andExpect(status().isOk());
+        mvc.perform(put("/api/v1/backoffice/users/" + support.id()).with(as(Set.of(Permission.USER_MANAGE.authority(),
+                                Permission.SUPPORT_ACCESS_MANAGE.authority()))).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json("roleIds", Set.of(), "active", false, "version", 0)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void addingARoleToASupportAccountNeedsSupportAccessManage() throws Exception {
+        User support = supportAccount(Set.of());
+        Set<String> waiterGranter = new java.util.HashSet<>(Set.of(Permission.USER_MANAGE.authority()));
+        IdentityFixtures.WAITER_PERMISSIONS.forEach(p -> waiterGranter.add(p.authority()));
+
+        mvc.perform(put("/api/v1/backoffice/users/" + support.id()).with(as(waiterGranter)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json("roleIds", Set.of(IdentityFixtures.WAITER), "active", true, "version", 0)))
+                .andExpect(status().isForbidden());
     }
 
     // --- expiry (job, injected clock) ---
@@ -436,7 +539,8 @@ class SupportAccessTest {
 
         assertThat(permissions).contains(Permission.CATALOG_MANAGE.authority())
                 .doesNotContain(Permission.SUPPORT_ACCESS_MANAGE.authority(), Permission.USER_MANAGE.authority(),
-                        Permission.ROLE_MANAGE.authority(), Permission.EMPLOYEE_MANAGE.authority());
+                        Permission.ROLE_MANAGE.authority(), Permission.EMPLOYEE_MANAGE.authority(),
+                        Permission.TERMINAL_MANAGE.authority());
     }
 
     @Test
@@ -563,6 +667,12 @@ class SupportAccessTest {
         Actor actor = Actor.account(accountId, Set.of(authorities));
         return authentication(UsernamePasswordAuthenticationToken.authenticated(actor, null,
                 Arrays.stream(authorities).map(SimpleGrantedAuthority::new).toList()));
+    }
+
+    /** What the security chain answers a request with no session. */
+    private String unauthenticatedBody() throws Exception {
+        return mvc.perform(get(GRANTS)).andExpect(status().isUnauthorized()).andReturn().getResponse()
+                .getContentAsString();
     }
 
     private long maxInactiveSeconds(Cookie session) {

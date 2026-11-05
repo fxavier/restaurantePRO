@@ -57,6 +57,14 @@ class SupportGrantTest {
     }
 
     @Test
+    void aGrantPastItsEndCannotBeRevokedEvenBeforeTheJobRuns() {
+        SupportGrant grant = SupportGrant.grant(ACCOUNT, Duration.ofHours(2), "ticket", ADMIN, NOW);
+
+        assertThatThrownBy(() -> grant.revoke(ADMIN, NOW.plus(Duration.ofHours(2))))
+                .isInstanceOf(IllegalSupportGrantStateException.class);
+    }
+
+    @Test
     void anEndedGrantCannotBeRevokedAgain() {
         SupportGrant grant = SupportGrant.grant(ACCOUNT, Duration.ofHours(2), "ticket", ADMIN, NOW);
         grant.revoke(ADMIN, NOW.plusSeconds(60));
