@@ -9,8 +9,13 @@ dst="/wal-archive/$2"
 
 if [ -e "$dst" ]; then
   # Already archived: a crash after the copy but before PostgreSQL recorded it. Success only if it is
-  # the same file; anything else means two clusters share the archive, which must stop archiving.
-  exec cmp -s "$src" "$dst"
+  # the same file. A different file means the archive holds another cluster's WAL (the database volume
+  # was recreated): archiving stops, loudly, until basebackup.sh --new-cluster moves that WAL aside.
+  # Flush again: the earlier run may have died before its own sync.
+  cmp -s "$src" "$dst" || exit 1
+  sync "$dst"
+  sync /wal-archive
+  exit 0
 fi
 cp "$src" "$dst.tmp"
 sync "$dst.tmp"
