@@ -149,8 +149,8 @@ class DebtPaymentTest {
         assertThat(fixtures.settled(sale.cashier(), attempt).get("status").asString()).isEqualTo("SUCCEEDED");
         assertThat(credit.debtOf(customer).amount()).isEqualByComparingTo("17.50");
         assertThat(settled(olderDebit)).isEqualByComparingTo("20.00");
-        assertThat(events.stream(ReceiptSlipRequested.class)
-                .filter(e -> e.paymentId().equals(fixtures.paymentOfAttempt(attempt)))).hasSize(1);
+        assertThat(fixtures.count("SELECT count(*) FROM cash.cash_movement WHERE source_id = ?",
+                fixtures.paymentOfAttempt(attempt))).isEqualTo(1);
     }
 
     @Test
