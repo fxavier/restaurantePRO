@@ -156,8 +156,12 @@ public class CashDayService {
         }
     }
 
-    /** D42: the day's store only, 404 if the day does not exist. */
     private UUID storeOf(UUID id) {
+        return storeOf(days, id);
+    }
+
+    /** D42: the day's store only, 404 if the day does not exist (also behind {@code CashApi.storeOfDay}). */
+    static UUID storeOf(CashDayRepository days, UUID id) {
         return days.findStoreIdById(id).orElseThrow(() -> new CashNotFoundException(ENTITY, id));
     }
 }
