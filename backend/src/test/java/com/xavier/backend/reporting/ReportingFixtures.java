@@ -27,10 +27,12 @@ public class ReportingFixtures {
 
     private final MockMvc mvc;
     private final JdbcClient jdbc;
+    private final com.xavier.backend.settlement.SettlementFixtures sales;
 
-    ReportingFixtures(MockMvc mvc, JdbcClient jdbc) {
+    ReportingFixtures(MockMvc mvc, JdbcClient jdbc, com.xavier.backend.settlement.SettlementFixtures sales) {
         this.mvc = mvc;
         this.jdbc = jdbc;
+        this.sales = sales;
     }
 
     /** The order's ISSUED documents, oldest first. */
@@ -105,6 +107,46 @@ public class ReportingFixtures {
             spec = spec.param(i + 1, params[i]);
         }
         return spec.query().listOfRows();
+    }
+
+    /** Pays {@code amount} of the sale's order on an external terminal of {@code method}, confirmed (A1B2). */
+    public void payByCard(com.xavier.backend.settlement.SettlementFixtures.Sale sale, String method, String amount)
+            throws Exception {
+        UUID attempt = com.xavier.backend.settlement.SettlementFixtures.id(sales().pay(sale.cashier(), sale.order(),
+                method, amount, null, UUID.randomUUID().toString()).andExpect(status().isCreated()));
+        mvc.perform(CashFixtures.idem(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(
+                        com.xavier.backend.settlement.SettlementFixtures.ATTEMPTS + "/" + attempt + "/confirm"))
+                .with(sale.cashier().with(Permission.PAYMENT_COLLECT))
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .content("{\"authorizationCode\": \"A1B2\"}")).andExpect(status().isOk());
+    }
+
+    /** The order's business day (fixed when it opened, D85). */
+    public LocalDate businessDayOf(UUID order) {
+        return jdbc.sql("SELECT business_day FROM orders.order_header WHERE id = ?").param(order)
+                .query(LocalDate.class).single();
+    }
+
+    /** The order's payments, oldest first. */
+    public java.util.List<UUID> payments(UUID order) {
+        return jdbc.sql("SELECT id FROM settlement.payment WHERE order_id = ? ORDER BY confirmed_at, id")
+                .param(order).query(UUID.class).list();
+    }
+
+    /** Σ of the store's PAYMENT_RECEIPT and REFUND movements (signed) per method, in cash. */
+    public Map<String, java.math.BigDecimal> movementsByMethod(UUID store) {
+        Map<String, java.math.BigDecimal> sums = new java.util.TreeMap<>();
+        jdbc.sql("""
+                SELECT method_code, sum(CASE WHEN direction = 'IN' THEN amount ELSE -amount END) AS signed
+                FROM cash.cash_movement WHERE store_id = ? AND type IN ('PAYMENT_RECEIPT', 'REFUND')
+                GROUP BY method_code""").param(store).query().listOfRows()
+                .forEach(row -> sums.put((String) row.get("method_code"),
+                        ((java.math.BigDecimal) row.get("signed")).setScale(2)));
+        return sums;
+    }
+
+    private com.xavier.backend.settlement.SettlementFixtures sales() {
+        return sales;
     }
 
     /** {@code GET /reports/{report}?storeId&from&to&…} as a BackOffice account holding REPORT_VIEW in the store. */

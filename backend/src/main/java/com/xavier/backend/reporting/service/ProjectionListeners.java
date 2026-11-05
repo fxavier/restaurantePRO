@@ -1,6 +1,9 @@
 package com.xavier.backend.reporting.service;
 
 import com.xavier.backend.fiscal.model.event.FiscalDocumentIssued;
+import com.xavier.backend.settlement.model.event.CreditChargePosted;
+import com.xavier.backend.settlement.model.event.PaymentRecorded;
+import com.xavier.backend.settlement.model.event.RefundRecorded;
 import org.springframework.modulith.events.ApplicationModuleListener;
 import org.springframework.stereotype.Service;
 
@@ -22,5 +25,20 @@ public class ProjectionListeners {
     @ApplicationModuleListener
     public void on(FiscalDocumentIssued event) {
         projections.projectDocument(event.documentId());
+    }
+
+    @ApplicationModuleListener
+    public void on(PaymentRecorded event) {
+        projections.projectPayment(event.paymentId());
+    }
+
+    @ApplicationModuleListener
+    public void on(RefundRecorded event) {
+        projections.projectRefund(event.refundId());
+    }
+
+    @ApplicationModuleListener
+    public void on(CreditChargePosted event) {
+        projections.projectCreditCharge(event.chargeId());
     }
 }

@@ -6,7 +6,6 @@ import com.xavier.backend.fiscal.model.event.FiscalDocumentIssued;
 import com.xavier.backend.settlement.SettlementFixtures;
 import com.xavier.backend.settlement.SettlementFixtures.Sale;
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -52,7 +51,7 @@ class SalesProjectionTest {
                 FROM reporting.sales_record WHERE document_id = ?""", document);
         assertThat(record).containsAllEntriesOf(fact).containsEntry("order_id", sale.order())
                 .containsEntry("on_account", false);
-        assertThat(record.get("business_date")).isEqualTo(java.sql.Date.valueOf(businessDayOf(sale)));
+        assertThat(record.get("business_date")).isEqualTo(java.sql.Date.valueOf(reporting.businessDayOf(sale.order())));
 
         List<Map<String, Object>> lines = reporting.rows("""
                 SELECT line_no, description, quantity, gross, net, tax, tax_rate FROM reporting.sales_record_line
@@ -97,10 +96,5 @@ class SalesProjectionTest {
                 document)).isOne();
         assertThat(reporting.row("SELECT projected_at FROM reporting.sales_record WHERE document_id = ?", document)
                 .get("projected_at")).isEqualTo(projectedAt);
-    }
-
-    private LocalDate businessDayOf(Sale sale) {
-        return LocalDate.parse(reporting.row("SELECT business_day FROM orders.order_header WHERE id = ?",
-                sale.order()).get("business_day").toString());
     }
 }

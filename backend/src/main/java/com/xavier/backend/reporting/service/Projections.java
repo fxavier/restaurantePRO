@@ -10,9 +10,15 @@ import com.xavier.backend.orders.OrderBillingView;
 import com.xavier.backend.orders.OrdersApi;
 import com.xavier.backend.organization.OrganizationApi;
 import com.xavier.backend.reporting.repository.ProjectionStore;
+import com.xavier.backend.reporting.repository.ProjectionStore.CreditRecord;
+import com.xavier.backend.reporting.repository.ProjectionStore.MoneyRecord;
 import com.xavier.backend.reporting.repository.ProjectionStore.SalesHeader;
 import com.xavier.backend.reporting.repository.ProjectionStore.SalesLine;
 import com.xavier.backend.reporting.repository.ProjectionStore.SalesTax;
+import com.xavier.backend.settlement.CreditChargeFact;
+import com.xavier.backend.settlement.PaymentFact;
+import com.xavier.backend.settlement.RefundFact;
+import com.xavier.backend.settlement.SettlementFacts;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -41,12 +47,14 @@ public class Projections {
     private final OrdersApi orders;
     private final DiningApi dining;
     private final OrganizationApi organization;
+    private final SettlementFacts settlement;
     private final ReleaseFamilies families;
     private final ProjectionStore store;
     private final Clock clock;
 
     Projections(FiscalApi fiscal, OrdersApi orders, DiningApi dining, OrganizationApi organization,
-                ReleaseFamilies families, ProjectionStore store, Clock clock) {
+                SettlementFacts settlement, ReleaseFamilies families, ProjectionStore store, Clock clock) {
+        this.settlement = settlement;
         this.fiscal = fiscal;
         this.orders = orders;
         this.dining = dining;
@@ -88,7 +96,44 @@ public class Projections {
         }
     }
 
-    private SalesLine salesLine(java.util.UUID storeId, DocumentView.Line line, Dimensions dimensions) {
+    /** A confirmed payment, in its session's cash day (D85). An unknown payment has no fact yet and is ignored. */
+    @Transactional
+    public void projectPayment(UUID paymentId) {
+        settlement.paymentFact(paymentId).ifPresent(this::insert);
+    }
+
+    /** A refund, signed negative, in the refunder's cash day (D85). Empty until S30 records refunds. */
+    @Transactional
+    public void projectRefund(UUID refundId) {
+        settlement.refundFact(refundId).ifPresent(this::insert);
+    }
+
+    /** A posted credit charge, apart from money (D87), in its order's business day. Empty until S29 posts them. */
+    @Transactional
+    public void projectCreditCharge(UUID chargeId) {
+        settlement.creditChargeFact(chargeId).ifPresent(charge -> store.insertCredit(new CreditRecord(
+                charge.chargeId(), charge.storeId(), charge.businessDate(), charge.customerId(), charge.orderId(),
+                charge.amount().amount()), clock.instant()));
+    }
+
+    private void insert(PaymentFact p) {
+        store.insertMoney(new MoneyRecord("PAYMENT", p.paymentId(), p.storeId(), p.businessDate(),
+                localHour(p.storeId(), p.at()), p.methodCode(), p.amount().amount(), p.targetType(), p.orderId(),
+                p.customerId(), p.collectedByEmployeeId(), p.terminalId()), clock.instant());
+    }
+
+    private void insert(RefundFact r) {
+        String target = r.partitionId() != null ? "PARTITION" : r.orderId() != null ? "ORDER" : "CREDIT_ACCOUNT";
+        store.insertMoney(new MoneyRecord("REFUND", r.refundId(), r.storeId(), r.businessDate(),
+                localHour(r.storeId(), r.at()), r.methodCode(), r.amount().amount().negate(), target, r.orderId(),
+                r.customerId(), r.refundedByEmployeeId(), r.terminalId()), clock.instant());
+    }
+
+    private int localHour(UUID storeId, Instant at) {
+        return LocalDateTime.ofInstant(at, zoneOf(storeId)).getHour();
+    }
+
+    private SalesLine salesLine(UUID storeId, DocumentView.Line line, Dimensions dimensions) {
         BillingLine billed = dimensions.lines().get(line.sourceLineId());
         UUID itemId = billed == null ? null : billed.itemId();
         return new SalesLine(line.lineNo(), itemId, billed == null ? null : billed.itemCode(),
