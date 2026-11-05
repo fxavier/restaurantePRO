@@ -21,7 +21,9 @@
 #                  installation's pg-wal-archive volume; mounted read-only)
 #   --identity     age identity file, for .age files (default: $BACKUP_AGE_IDENTITY)
 #   --timeout      seconds to wait for recovery (default: 1800)
-#   --force        replace an existing container <name> and volume <name>-data
+#   --force        replace the container <name> and volume <name>-data of an earlier pitr-restore.sh run
+#                  (label restaurantpro.pitr=<name>); anything else, Compose-managed objects above all,
+#                  is refused even with --force
 # Prints the container name on stdout. Exits non-zero on any failure.
 set -euo pipefail
 umask 077
@@ -76,24 +78,41 @@ else
 fi
 volume="$name-data"
 
-exists=()
-docker container inspect "$name" >/dev/null 2>&1 && exists+=("container $name")
-docker volume inspect "$volume" >/dev/null 2>&1 && exists+=("volume $volume")
-if ((${#exists[@]})); then
-  $force || die "${exists[*]} already exists; use --force to replace it, or pick another --name"
-  log "--force: removing ${exists[*]}"
-  docker rm -f -v "$name" >/dev/null 2>&1 || true
-  docker volume rm "$volume" >/dev/null 2>&1 || true
-fi
+# --force replaces only what an earlier pitr-restore.sh --name "$name" created (label restaurantpro.pitr),
+# never a Compose-managed object such as the live database container or volume.
+replaceable() { # $1 container|volume, $2 object name; "absent", "ours" or a reason to refuse
+  local labels
+  if ! labels="$(docker "$1" inspect -f '{{json .'"$([[ $1 == container ]] && echo Config.)"'Labels}}' "$2" 2>/dev/null)"; then
+    echo absent; return
+  fi
+  if [[ "$labels" == *'"com.docker.compose.project"'* ]]; then
+    echo "$1 $2 belongs to a Docker Compose project (the live installation?)"
+  elif [[ "$labels" == *"\"restaurantpro.pitr\":\"$name\""* ]]; then
+    echo ours
+  else
+    echo "$1 $2 was not created by pitr-restore.sh --name $name"
+  fi
+}
+for kind in container volume; do
+  object="$name"; [[ "$kind" == volume ]] && object="$volume"
+  verdict="$(replaceable "$kind" "$object")"
+  [[ "$verdict" == absent ]] && continue
+  [[ "$verdict" == ours ]] || die "$verdict; refusing to touch it: pick another --name"
+  $force || die "$kind $object already exists; use --force to replace it, or pick another --name"
+  log "--force: removing $kind $object"
+  if [[ "$kind" == container ]]; then docker rm -f -v "$object" >/dev/null; else docker volume rm "$object" >/dev/null; fi
+  [[ "$(replaceable "$kind" "$object")" == absent ]] || die "could not remove $kind $object"
+done
 
 work="$(mktemp -d "${TMPDIR:-/tmp}/rp-pitr.XXXXXX")"
-created=false # true while the container/volume exist but recovery has not succeeded
+created=false # true once this run created the volume; on failure it removes only what it created
+cid=""
 cleanup() {
   local status=$?
   rm -rf "$work"
   if $created && ((status != 0)); then
-    docker rm -f -v "$name" >/dev/null 2>&1 || true
-    docker volume rm "$volume" >/dev/null 2>&1 || true
+    if [[ -n "$cid" ]]; then docker rm -f -v "$cid" >/dev/null 2>&1 || log "could not remove container $name"; fi
+    docker volume rm "$volume" >/dev/null 2>&1 || log "could not remove volume $volume"
     log "removed $name and $volume after the failure"
   fi
 }
@@ -138,6 +157,8 @@ else
 fi
 
 log "unpacking the base backup into new volume $volume"
+# "docker volume create" silently reuses an existing volume: make sure this run creates it.
+[[ "$(replaceable volume "$volume")" == absent ]] || die "volume $volume appeared meanwhile; refusing to reuse it"
 docker volume create --label restaurantpro.pitr="$name" "$volume" >/dev/null
 created=true
 recovery_target=""
@@ -166,25 +187,25 @@ docker run --rm --network none -v "$volume:/var/lib/postgresql" -v "$work/base:/
 
 log "starting $name (no network) and replaying WAL up to ${target}"
 started=$SECONDS
-docker run -d --name "$name" --network none --label restaurantpro.pitr="$name" \
-  -v "$volume:/var/lib/postgresql" "$PG_IMAGE" >/dev/null
+cid="$(docker run -d --name "$name" --network none --label restaurantpro.pitr="$name" \
+  -v "$volume:/var/lib/postgresql" "$PG_IMAGE")"
 state=""
 while ((SECONDS - started < timeout)); do
-  if [[ "$(docker container inspect -f '{{.State.Running}}' "$name")" != true ]]; then
-    docker logs --tail 15 "$name" >&2 2>&1 || true
+  if [[ "$(docker container inspect -f '{{.State.Running}}' "$cid")" != true ]]; then
+    docker logs --tail 15 "$cid" >&2 2>&1 || true
     die "PostgreSQL stopped during recovery (see the log above)"
   fi
-  state="$(docker exec "$name" psql -X -At -U "$DB_USER" -d postgres -c 'SELECT pg_is_in_recovery()' 2>/dev/null || true)"
+  state="$(docker exec "$cid" psql -X -At -U "$DB_USER" -d postgres -c 'SELECT pg_is_in_recovery()' 2>/dev/null || true)"
   [[ "$state" == f ]] && break
   sleep 1
 done
 [[ "$state" == f ]] || die "recovery did not finish within ${timeout}s"
 
-docker exec "$name" psql -X -q -v ON_ERROR_STOP=1 -U "$DB_USER" -d postgres \
+docker exec "$cid" psql -X -q -v ON_ERROR_STOP=1 -U "$DB_USER" -d postgres \
   -c 'ALTER SYSTEM RESET restore_command' -c 'ALTER SYSTEM RESET recovery_target_time' \
   -c 'ALTER SYSTEM RESET recovery_target_action' -c 'SELECT pg_reload_conf()' >/dev/null
-docker exec "$name" rm -rf "$WAL_COPY"
-docker logs "$name" 2>&1 | grep -E 'recovery stopping|last completed transaction|archive recovery complete|selected new timeline' \
+docker exec "$cid" rm -rf "$WAL_COPY"
+docker logs "$cid" 2>&1 | grep -E 'recovery stopping|last completed transaction|archive recovery complete|selected new timeline' \
   | sed 's/^/pitr-restore:   /' >&2 || true
 log "done in $((SECONDS - started))s: container $name holds the database as of $target"
 created=false
