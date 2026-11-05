@@ -17,9 +17,11 @@ import org.springframework.transaction.support.TransactionTemplate;
  * {@code restaurantpro.settlement.in-doubt-poll-interval} (PT30S) it asks the provider about each UNKNOWN attempt that
  * is due (a minute after it became UNKNOWN, then after 2, 5, 10 and 30 minutes, then every hour), with the resolve's
  * own D63 steps and no request: s1 reads the attempt, s2 asks the provider with no transaction, s3 records the answer
- * under the target's lock through {@link AttemptTransitions#resolve}, audited as the system. A final answer is the
- * same compare-and-set as the operator's resolve, so there is still exactly one Payment; an overlap with it, or with
- * another run, at most counts one more poll.
+ * under the target's lock through {@link AttemptTransitions#resolveIfFree} (an order a request holds is skipped,
+ * {@code SKIP LOCKED}, D46), audited as the system. A final answer is the same compare-and-set as the operator's
+ * resolve, so there is still exactly one Payment; an overlap with it, or with another run, at most counts one more
+ * poll. One run takes at most {@code in-doubt-poll-batch} (20) attempts, so slow providers never hold the scheduler
+ * (shared with the sweepers, pool of 4) for long; the rest wait for the next run.
  */
 @Service
 public class InDoubtResolver {
@@ -31,10 +33,13 @@ public class InDoubtResolver {
     private final AttemptTransitions transitions;
     private final TransactionTemplate inTransaction;
     private final TransactionTemplate readOnly;
+    private final SettlementProperties properties;
     private final Clock clock;
 
     InDoubtResolver(PaymentAttemptRepository attempts, ProviderStatusQuery statusQuery,
-                    AttemptTransitions transitions, PlatformTransactionManager transactionManager, Clock clock) {
+                    AttemptTransitions transitions, SettlementProperties properties,
+                    PlatformTransactionManager transactionManager, Clock clock) {
+        this.properties = properties;
         this.attempts = attempts;
         this.statusQuery = statusQuery;
         this.transitions = transitions;
@@ -47,7 +52,8 @@ public class InDoubtResolver {
     @Scheduled(fixedDelayString = "${restaurantpro.settlement.in-doubt-poll-interval:PT30S}",
             initialDelayString = "${restaurantpro.settlement.in-doubt-poll-interval:PT30S}")
     public void poll() {
-        for (UUID attemptId : attempts.findDueForPoll(clock.instant())) {
+        for (UUID attemptId : attempts.findDueForPoll(clock.instant(),
+                org.springframework.data.domain.Pageable.ofSize(properties.inDoubtPollBatch()))) {
             try {
                 pollOne(attemptId);
             } catch (RuntimeException e) {
@@ -62,9 +68,9 @@ public class InDoubtResolver {
             return;
         }
         ProviderStatusQuery.Answer answer = statusQuery.ask(read);
-        PaymentAttempt after = inTransaction.execute(tx -> transitions.resolve(attemptId, answer, null));
-        if (after.getStatus() != AttemptStatus.UNKNOWN) {
-            log.info("Payment attempt {} was resolved by polling: {}", attemptId, after.getStatus());
-        }
+        inTransaction.execute(tx -> transitions.resolveIfFree(attemptId, answer))
+                .filter(after -> after.getStatus() != AttemptStatus.UNKNOWN)
+                .ifPresent(after -> log.info("Payment attempt {} was resolved by polling: {}", attemptId,
+                        after.getStatus()));
     }
 }

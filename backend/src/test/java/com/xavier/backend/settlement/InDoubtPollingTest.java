@@ -39,6 +39,9 @@ class InDoubtPollingTest {
     @Autowired
     JdbcClient jdbc;
 
+    @Autowired
+    org.springframework.transaction.PlatformTransactionManager transactionManager;
+
     Sale sale;
     UUID attempt;
 
@@ -122,6 +125,36 @@ class InDoubtPollingTest {
 
         provider.decide(attempt.toString(), new ProviderOutcome.Succeeded("FAKE-late"));
         clock.advance(Duration.ofMinutes(3));
+        resolver.poll();
+        assertThat(status()).isEqualTo("SUCCEEDED");
+        assertThat(fixtures.payments(sale.order())).isEqualTo(1);
+    }
+
+    @Test
+    void theResolverSkipsAnOrderARequestHoldsAndTakesItNextTime() throws Exception {
+        clock.advance(Duration.ofMinutes(2));
+        java.util.concurrent.CountDownLatch locked = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        try (var pool = java.util.concurrent.Executors.newSingleThreadExecutor()) {
+            var holder = pool.submit(() -> new org.springframework.transaction.support.TransactionTemplate(
+                    transactionManager).executeWithoutResult(tx -> {
+                jdbc.sql("SELECT order_id FROM settlement.order_settlement WHERE order_id = ? FOR UPDATE")
+                        .param(sale.order()).query(UUID.class).single();
+                locked.countDown();
+                try {
+                    release.await(10, java.util.concurrent.TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }));
+            locked.await(10, java.util.concurrent.TimeUnit.SECONDS);
+
+            resolver.poll(); // SKIP LOCKED (D46): returns at once, the held order untouched
+
+            assertThat(status()).isEqualTo("UNKNOWN");
+            release.countDown();
+            holder.get(10, java.util.concurrent.TimeUnit.SECONDS);
+        }
         resolver.poll();
         assertThat(status()).isEqualTo("SUCCEEDED");
         assertThat(fixtures.payments(sale.order())).isEqualTo(1);

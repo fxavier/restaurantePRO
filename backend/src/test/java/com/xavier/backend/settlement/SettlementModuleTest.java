@@ -55,7 +55,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
         // the tests drive the sweepers and the in-doubt resolver by hand, with the test clock
         "restaurantpro.settlement.sweep-interval=PT1H",
         "restaurantpro.settlement.credit-sweep-interval=PT1H",
-        "restaurantpro.settlement.in-doubt-poll-interval=PT1H"
+        "restaurantpro.settlement.in-doubt-poll-interval=PT1H",
+        // the shared database keeps other tests' UNKNOWN attempts: a run polls them all, so a test's own is never
+        // left past the batch
+        "restaurantpro.settlement.in-doubt-poll-batch=10000"
 })
 @MockitoSpyBean(types = {InternalFiscalAdapter.class, OrderSettlementSteps.class, PaymentSubmitter.class,
         OrdersApi.class, CashApi.class, FiscalApi.class, CreditSaleSteps.class})

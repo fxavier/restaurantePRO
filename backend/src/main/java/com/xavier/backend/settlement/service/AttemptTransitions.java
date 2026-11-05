@@ -109,7 +109,28 @@ class AttemptTransitions {
      */
     @Transactional(propagation = Propagation.MANDATORY)
     PaymentAttempt resolve(UUID attemptId, ProviderStatusQuery.Answer answer, UUID employeeId) {
-        PaymentAttempt attempt = locked(attemptId);
+        return resolveLocked(locked(attemptId), answer, employeeId);
+    }
+
+    /**
+     * {@link #resolve} for the in-doubt resolver (D46): an order's attempt is skipped, empty, without waiting while a
+     * request holds the order's lock ({@code SKIP LOCKED}); it is polled again next run. A debt payment's attempt
+     * still waits for its customer's {@code credit_account} (customers has no skip-locked lock; held only briefly).
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    Optional<PaymentAttempt> resolveIfFree(UUID attemptId, ProviderStatusQuery.Answer answer) {
+        AttemptRef ref = attempts.findRefById(attemptId).orElseThrow();
+        if (ref.creditAccountId() == null && !locks.tryLockOrder(ref.orderId())) {
+            return Optional.empty();
+        }
+        if (ref.creditAccountId() != null) {
+            locks.lockTargetOf(ref);
+        }
+        return Optional.of(resolveLocked(attempts.findById(attemptId).orElseThrow(), answer, null));
+    }
+
+    private PaymentAttempt resolveLocked(PaymentAttempt attempt, ProviderStatusQuery.Answer answer,
+                                         UUID employeeId) {
         if (attempt.getStatus() != AttemptStatus.UNKNOWN && attempt.getStatus() != AttemptStatus.PENDING) {
             return attempt;
         }
