@@ -9,12 +9,15 @@ import com.xavier.backend.orders.model.event.OrderBatchConfirmed;
 import com.xavier.backend.orders.model.event.OrderLinesVoided;
 import com.xavier.backend.orders.model.event.SubtotalRequested;
 import com.xavier.backend.production.exception.ProductionConflictException;
+import com.xavier.backend.production.exception.ProductionRule;
+import com.xavier.backend.production.exception.ProductionRuleViolationException;
 import com.xavier.backend.production.model.JobKind;
 import com.xavier.backend.production.model.PrintJob;
 import com.xavier.backend.production.model.Printer;
 import com.xavier.backend.production.model.PrinterMode;
 import com.xavier.backend.production.model.ProductionTicket;
 import com.xavier.backend.production.model.TicketDraft;
+import com.xavier.backend.production.model.TicketRouting;
 import com.xavier.backend.production.model.TicketSource;
 import com.xavier.backend.production.repository.PrintJobRepository;
 import com.xavier.backend.production.repository.PrinterRepository;
@@ -150,6 +153,38 @@ public class TicketService {
                 TicketLayouts.test(printer.getCode(), now, zone(printer.getStoreId())), null);
         ProductionTicket ticket = save(ProductionTicket.create(draft, printer.getId(), false, now));
         return new Issued(ticket, queue(ticket, printer.getId(), now));
+    }
+
+    /**
+     * D89 (1): resolves the UNROUTED ticket's route now (its destination, or its terminal's printer) and queues its
+     * first job, once: the compare-and-set lets one request win, and the job's dedupe key backs it.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public PrintJob route(ProductionTicket ticket) {
+        if (ticket.getRouting() == TicketRouting.ROUTED) {
+            throw ProductionConflictException.ticketAlreadyRouted(ticket.getId());
+        }
+        Printer routed = (ticket.getSourceType().routedByDestination()
+                ? routing.printerForDestination(ticket.getStoreId(), ticket.getDestination())
+                : printerForTerminal(ticket.getStoreId(), ticket.getTerminalId()))
+                .orElseThrow(() -> new ProductionRuleViolationException(ProductionRule.STILL_UNROUTED,
+                        "Production ticket " + ticket.getId() + " still has no printer to go to: add its route "
+                                + "or its terminal's printer first"));
+        Printer target = printing(routed);
+        if (tickets.route(ticket.getId(), routed.getId()) == 0) {
+            throw ProductionConflictException.ticketAlreadyRouted(ticket.getId());
+        }
+        return queue(ticket, target.getId(), clock.instant());
+    }
+
+    /** Where a new job for work routed to {@code routed} goes now; refused when that printer ignores work. */
+    Printer printing(Printer routed) {
+        Printer printer = effective(routed);
+        if (printer.getMode() == PrinterMode.IGNORE) {
+            throw new ProductionRuleViolationException(ProductionRule.PRINTER_IGNORED,
+                    "Printer " + printer.getCode() + " is in IGNORE: change its mode to print again");
+        }
+        return printer;
     }
 
     /** A ticket and its first job ({@code null} when suppressed). */

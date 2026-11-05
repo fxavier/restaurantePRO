@@ -12,8 +12,8 @@ import com.xavier.backend.production.model.JobKind;
 import com.xavier.backend.production.model.PrintJob;
 import com.xavier.backend.production.model.PrintJobStatus;
 import com.xavier.backend.production.model.Printer;
-import com.xavier.backend.production.model.PrinterMode;
 import com.xavier.backend.production.model.ProductionTicket;
+import com.xavier.backend.production.model.TicketRouting;
 import com.xavier.backend.production.model.TicketSource;
 import com.xavier.backend.production.model.dto.PrintJobView;
 import com.xavier.backend.production.repository.PrintJobRepository;
@@ -38,7 +38,7 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * What people do with the print queue (spec §4 "consulta de falhas, teste e reimpressão auditada"): list it, retry a
  * FAILED or UNKNOWN job as a new job, acknowledge an UNKNOWN job as printed, reprint a ticket as a COPY job, print a
- * test page. A reprint creates no document, payment, cash movement or stock movement (§8.4): it is only a job.
+ * test page. An UNROUTED ticket is routed (ProductionTicketService), never reprinted. A reprint creates no document, payment, cash movement or stock movement (§8.4): it is only a job.
  * POS calls take the store from the session (D39); BackOffice calls name it. Resources addressed by id: 404, then
  * 403 (D42).
  */
@@ -121,6 +121,10 @@ public class PrintJobService {
             throw new ProductionRuleViolationException(ProductionRule.DOCUMENT_REPRINT_THROUGH_FISCAL,
                     "A document copy is reprinted through the document (fiscal), which numbers its copies");
         }
+        if (ticket.getRouting() == TicketRouting.UNROUTED) {
+            throw new ProductionRuleViolationException(ProductionRule.STILL_UNROUTED,
+                    "Production ticket " + ticketId + " was never printed: route it instead of reprinting it");
+        }
         Printer printer = printing(ticket.getPrinterId());
         int copyNo = Math.toIntExact(jobs.countByTicketIdAndKindAndRetryOfIsNull(ticketId, JobKind.COPY)) + 1;
         PrintJob copy = UniqueConstraints.saveAndFlush(jobs,
@@ -168,12 +172,7 @@ public class PrintJobService {
 
     /** Where a new job for {@code printerId} goes now; refused when that printer ignores work. */
     private Printer printing(UUID printerId) {
-        Printer printer = ticketService.effective(printers.findById(printerId).orElseThrow());
-        if (printer.getMode() == PrinterMode.IGNORE) {
-            throw new ProductionRuleViolationException(ProductionRule.PRINTER_IGNORED,
-                    "Printer " + printer.getCode() + " is in IGNORE: change its mode to print again");
-        }
-        return printer;
+        return ticketService.printing(printers.findById(printerId).orElseThrow());
     }
 
     private UUID jobStore(UUID jobId) {

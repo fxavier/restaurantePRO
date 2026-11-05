@@ -13,5 +13,7 @@ public enum ProductionRule {
     /** A document copy is a fiscal reprint (spec §8.4), never a production reprint. */
     DOCUMENT_REPRINT_THROUGH_FISCAL,
     /** The store does not exist. */
-    UNKNOWN_STORE
+    UNKNOWN_STORE,
+    /** An UNROUTED ticket still has no route or terminal printer to go to (D89 (1)). */
+    STILL_UNROUTED
 }

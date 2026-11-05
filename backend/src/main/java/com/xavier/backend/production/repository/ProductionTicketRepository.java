@@ -5,6 +5,7 @@ import com.xavier.backend.production.model.TicketSource;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -14,4 +15,14 @@ public interface ProductionTicketRepository extends JpaRepository<ProductionTick
 
     @Query("select t.storeId from ProductionTicket t where t.id = :id")
     Optional<UUID> findStoreIdById(@Param("id") UUID id);
+
+    /**
+     * D89 (1): the compare-and-set UNROUTED -> ROUTED, the one change a ticket takes (the table's trigger allows no
+     * other). 0 when the ticket is ROUTED already; a concurrent route waits on the row lock and then gets 0.
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(value = """
+            UPDATE production.production_ticket SET routing = 'ROUTED', printer_id = :printerId
+            WHERE id = :id AND routing = 'UNROUTED'""", nativeQuery = true)
+    int route(@Param("id") UUID id, @Param("printerId") UUID printerId);
 }

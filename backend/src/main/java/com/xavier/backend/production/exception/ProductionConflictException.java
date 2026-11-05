@@ -1,6 +1,7 @@
 package com.xavier.backend.production.exception;
 
 import com.xavier.backend.shared.exception.ConflictException;
+import java.util.UUID;
 
 /** A production duplicate decided by a unique key (409 with a stable {@code code}). */
 public class ProductionConflictException extends ConflictException {
@@ -25,6 +26,12 @@ public class ProductionConflictException extends ConflictException {
     public static ProductionConflictException routesChangedConcurrently() {
         return new ProductionConflictException("ROUTES_CHANGED_CONCURRENTLY",
                 "The store's routes were changed at the same time; read them again and retry");
+    }
+
+    /** The ticket is ROUTED already: routed earlier, or by a concurrent request that committed first (D89 (1)). */
+    public static ProductionConflictException ticketAlreadyRouted(UUID ticketId) {
+        return new ProductionConflictException("TICKET_ALREADY_ROUTED",
+                "Production ticket " + ticketId + " is already routed");
     }
 
     /** {@code production_ticket_source_uk} lost to a concurrent delivery of the same source. */
