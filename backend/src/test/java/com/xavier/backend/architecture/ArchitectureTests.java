@@ -70,6 +70,12 @@ class ArchitectureTests {
         ArchitectureRules.reportingCallsOnlyReadOnlyFacadeMethods("com.xavier.backend").check(PRODUCTION);
     }
 
+    /** D71: the coordinated void bypasses the PAYMENT lock, so only settlement calls OrdersApi.voidLine. */
+    @Test
+    void onlySettlementCallsOrdersVoidLine() {
+        ArchitectureRules.onlySettlementCallsOrdersVoidLine("com.xavier.backend").check(PRODUCTION);
+    }
+
     /**
      * D35: orders ↛ settlement, production; cash ↛ orders, settlement; nothing → production. D65: fiscal ↛ customers;
      * customers ↛ orders, settlement, fiscal, cash, production; nothing → reporting.

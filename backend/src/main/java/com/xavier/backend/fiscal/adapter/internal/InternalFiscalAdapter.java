@@ -26,6 +26,7 @@ import org.springframework.stereotype.Component;
 public class InternalFiscalAdapter implements FiscalAdapter {
 
     public static final String CODE = "internal";
+    public static final String ON_ACCOUNT = "A CRÉDITO";
 
     private static final DateTimeFormatter PRINTED_DATE = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
@@ -58,6 +59,9 @@ public class InternalFiscalAdapter implements FiscalAdapter {
         lines.add("Data: " + PRINTED_DATE.format(document.issuedAt().atZone(document.storeZone())));
         if (copy) {
             lines.add("CÓPIA");
+        }
+        if (document.onAccount()) {
+            lines.add(ON_ACCOUNT); // a credit sale: no payment was received (A20)
         }
         Buyer buyer = document.buyer();
         if (buyer != null) {

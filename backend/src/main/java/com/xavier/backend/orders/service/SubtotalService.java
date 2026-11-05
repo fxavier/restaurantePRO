@@ -43,12 +43,15 @@ public class SubtotalService {
         this.changes = changes;
     }
 
-    /** @throws com.xavier.backend.orders.exception.OrderConflictException 409 {@code ORDER_NOT_OPEN} */
+    /**
+     * @throws com.xavier.backend.orders.exception.OrderConflictException 409 {@code ORDER_NOT_OPEN}
+     * @throws com.xavier.backend.orders.exception.OrderRuleException     422 {@code DOCUMENT_ISSUED} (P27)
+     */
     @Transactional
     public SubtotalView print(UUID orderId) {
         PosContext pos = accessPolicy.requirePos(Permission.ORDER_EDIT);
         Order order = lookup.inSessionStore(pos, orderId);
-        order.requireChangeable();
+        order.requireSubtotalPrintable();
         OrderBillingView bill = views.billing(order);
         List<SubtotalLine> lines = bill.lines().stream()
                 .map(line -> new SubtotalLine(line.description(), line.netQty(), line.unitPrice(), line.gross()))
