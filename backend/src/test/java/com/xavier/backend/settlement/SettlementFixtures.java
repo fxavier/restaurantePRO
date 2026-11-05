@@ -196,6 +196,29 @@ public class SettlementFixtures {
         return count("SELECT count(*) FROM cash.cash_movement WHERE store_id = ?", store);
     }
 
+    /** The order's SALE documents: (count, ISSUED count, max number). */
+    public long documents(UUID order) {
+        return count("SELECT count(*) FROM fiscal.fiscal_document WHERE source_id = ?", order);
+    }
+
+    public long issuedNumber(UUID order) {
+        return count("SELECT number FROM fiscal.fiscal_document WHERE source_id = ? AND status = 'ISSUED'", order);
+    }
+
+    public long nextNumber(UUID series) {
+        return count("SELECT next_number FROM fiscal.fiscal_series WHERE id = ?", series);
+    }
+
+    public long closes(UUID order) {
+        return count("SELECT count(*) FROM audit.audit_event WHERE action = 'ORDER_CLOSED' AND entity_id = ?",
+                order.toString());
+    }
+
+    public boolean tableFree(UUID order) {
+        return count("SELECT count(*) FROM dining.table_occupation WHERE order_id = ? AND closed_at IS NULL",
+                order) == 0;
+    }
+
     public static JsonNode json(ResultActions result) throws Exception {
         return CashFixtures.json(result.andReturn().getResponse().getContentAsString());
     }
