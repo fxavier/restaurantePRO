@@ -8,6 +8,7 @@ import com.xavier.backend.fiscal.model.dto.Coverage;
 import com.xavier.backend.fiscal.model.dto.DocumentFacts;
 import com.xavier.backend.fiscal.model.dto.DocumentView;
 import com.xavier.backend.fiscal.model.dto.DraftCommand;
+import com.xavier.backend.fiscal.model.dto.PaymentSnapshot;
 import com.xavier.backend.fiscal.model.dto.SaleDraftCommand;
 import com.xavier.backend.fiscal.repository.FiscalDocumentRepository;
 import com.xavier.backend.fiscal.service.DocumentFactsService;
@@ -66,7 +67,9 @@ public class FiscalApi {
      * close) or of an ITEMS partition ({@code PARTITION}), in the caller's transaction, with snapshots of company,
      * store and buyer. Idempotent per {@code (sourceType, sourceId)}: an existing DRAFT must have the command's lines
      * and totals; a non-null buyer or customer replaces the stored one (null keeps it); on account may be set but
-     * never undone or moved to another customer. An ISSUED document is returned unchanged.
+     * never undone or moved to another customer; setting it clears a payment snapshot recorded before (D97 rule 5:
+     * issue then waits for settlement's refresh). The snapshot is not part of the draft's content, so it never causes
+     * {@code DRAFT_MISMATCH}. An ISSUED document is returned unchanged.
      * Lines follow D59 as described on {@link #createSaleDraft}.
      *
      * @throws com.xavier.backend.shared.exception.BusinessRuleException (422) for inconsistent lines or totals, a
@@ -82,7 +85,8 @@ public class FiscalApi {
 
     /**
      * In the caller's transaction: a DRAFT that a cancelled credit sale had put on account (D74) becomes a paid sale
-     * again: {@code onAccount = false}, no customer. Its buyer and lines stay. {@code createDraft}'s sticky rule is
+     * again: {@code onAccount = false}, no customer, and no payment snapshot (D97: issue refuses it until settlement
+     * records a new one). Its buyer and lines stay. {@code createDraft}'s sticky rule is
      * unchanged otherwise.
      *
      * @throws com.xavier.backend.shared.exception.NotFoundException (404) for an unknown document
@@ -95,6 +99,32 @@ public class FiscalApi {
     }
 
     /**
+     * D97 rule 4, in the caller's transaction (settlement's refresh, under {@code order_settlement}): replaces the
+     * payment snapshot of a DRAFT. On an ISSUED document it changes nothing and returns the stored snapshot
+     * ({@code null} for one issued before D97).
+     *
+     * @throws com.xavier.backend.shared.exception.BusinessRuleException (422) {@code PAYMENT_SNAPSHOT_MISMATCH}
+     *         when paid + credit + outstanding is not the draft's gross, the status is not {@code PaymentStatus.of}
+     *         of it, or the credit contradicts the on-account mark
+     * @throws com.xavier.backend.shared.exception.NotFoundException (404) for an unknown document
+     * @throws org.springframework.transaction.IllegalTransactionStateException without a transaction
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public PaymentSnapshot recordPayments(UUID documentId, PaymentSnapshot snapshot) {
+        return drafts.recordPayments(documentId, snapshot);
+    }
+
+    /**
+     * The payment snapshot of a document (D97), empty until it is recorded and for a document issued before D97.
+     *
+     * @throws com.xavier.backend.shared.exception.NotFoundException (404) for an unknown document
+     */
+    @Transactional(readOnly = true)
+    public Optional<PaymentSnapshot> paymentSnapshot(UUID documentId) {
+        return drafts.paymentSnapshot(documentId);
+    }
+
+    /**
      * tx-B (D50 §7.6) in its own transaction. Commit the draft first, then call issue with no transaction bound:
      * called inside one it throws {@link IllegalStateException} before doing anything. It numbers the draft from
      * its store's active series without gaps, issues it through the adapter and publishes
@@ -103,7 +133,8 @@ public class FiscalApi {
      * business reason, or only the failure type for a technical error (details in the server log).
      *
      * @throws FiscalIssueFailedException (422 {@code FISCAL_PENDING}) when issuing failed: no number was used and
-     *         the draft keeps {@code lastError}, recorded in a separate transaction
+     *         the draft keeps {@code lastError}, recorded in a separate transaction; a DRAFT without its payment
+     *         snapshot (D97) fails so, with {@code lastError = PAYMENT_SNAPSHOT_MISSING}
      * @throws com.xavier.backend.shared.exception.NotFoundException (404) for an unknown document
      * @throws IllegalStateException when the caller has a transaction open
      */

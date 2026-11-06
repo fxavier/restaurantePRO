@@ -121,6 +121,7 @@ class CoverageTest {
     }
 
     private UUID issue(UUID draft) {
+        fixtures.recordPaid(draft);
         UUID employee = UUID.randomUUID();
         return asEmployee(store, employee, UUID.randomUUID(), () -> fiscal.issue(draft, employee)).id();
     }

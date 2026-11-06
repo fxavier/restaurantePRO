@@ -33,6 +33,9 @@ import java.util.stream.Collectors;
  *       (D96: the residual draft or the close records each one; a bug alarm).</li>
  *   <li>{@code TAX_CORRECTION_PENDING}: one per open pending fiscal correction of a rate whose difference the
  *       recorded corrections explain (D96 rule 8).</li>
+ *   <li>{@code SNAPSHOT_CREDIT_MISMATCH}: a closed order's ISSUED document whose payment snapshot (D97) holds another
+ *       credit than Σ of the POSTED charges naming it (credit is final at issue: a bug alarm). A document without a
+ *       snapshot (issued before D97) is not checked.</li>
  *   <li>{@code TAX_MISMATCH}: per rate of a closed order, the lines' tax minus the ISSUED documents' tax is not what its
  *       recorded pending corrections (open and resolved) hold.</li>
  * </ul>
@@ -62,6 +65,7 @@ public final class DocumentsControl {
         List<Document> issued = order.documents().stream().filter(d -> ISSUED.equals(d.status())).toList();
         if (closed) {
             unpaid(order, issued).ifPresent(exceptions::add);
+            exceptions.addAll(snapshotCredit(order, issued));
             exceptions.addAll(coverage(order));
             tax(order, issued, exceptions, rounding);
         }
@@ -105,6 +109,20 @@ public final class DocumentsControl {
         return java.util.Optional.of(exception("DOCUMENT_UNPAID", order, null, null, null, "The closed order's "
                 + "issued documents total " + invoiced.amount() + " but it was paid " + order.paidNet().amount()
                 + " and put on account " + onAccount.amount() + "."));
+    }
+
+    private static List<DocumentException> snapshotCredit(OrderFacts order, List<Document> issued) {
+        Money zero = Money.of(BigDecimal.ZERO, order.currency());
+        Map<UUID, Money> posted = order.charges().stream().filter(c -> POSTED.equals(c.status())
+                        && c.documentId() != null)
+                .collect(Collectors.toMap(Charge::documentId, Charge::amount, Money::plus));
+        return issued.stream().filter(d -> d.snapshotCredit() != null)
+                .filter(d -> d.snapshotCredit().amount().compareTo(posted.getOrDefault(d.documentId(), zero)
+                        .amount()) != 0)
+                .map(d -> exception("SNAPSHOT_CREDIT_MISMATCH", order, d.documentId(), null, null, "The document "
+                        + "was issued with " + d.snapshotCredit().amount() + " on account but its posted credit "
+                        + "charges total " + posted.getOrDefault(d.documentId(), zero).amount() + "."))
+                .toList();
     }
 
     private static List<DocumentException> coverage(OrderFacts order) {

@@ -52,7 +52,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  *       document draft, on account with the customer's snapshot as buyer (an ORDER target freezes the order for its
  *       residual document; a PARTITION target drafts its own). A live charge of the same customer and amount on the
  *       target is resumed as it is.</li>
- *   <li><b>s2</b>, no transaction: {@code FiscalApi.issue}.</li>
+ *   <li><b>s2</b>, no transaction: {@link SettlementIssuer#issue} (the payment snapshot, then
+ *       {@code FiscalApi.issue}).</li>
  *   <li><b>s3</b>, one transaction: {@code order_settlement} → RESERVED → POSTED with {@code CustomersApi.postDebit},
  *       publishing {@link CreditChargePosted}. The {@link CreditChargeSweeper} runs the same step for a charge whose
  *       sale stopped after s2.</li>
@@ -73,14 +74,16 @@ public class CreditSaleSteps {
     private final SettlementAudit audit;
     private final ApplicationEventPublisher events;
     private final TaxRoundingAdjustments taxRounding;
+    private final SettlementIssuer issuer;
     private final TransactionTemplate inTransaction;
     private final Clock clock;
 
     CreditSaleSteps(AccessPolicy accessPolicy, SettlementLocks locks, Bills bills, OrdersApi orders, FiscalApi fiscal,
                     CustomersApi customers, CreditChargeRepository charges, SettlementAudit audit,
-                    ApplicationEventPublisher events, TaxRoundingAdjustments taxRounding,
+                    ApplicationEventPublisher events, TaxRoundingAdjustments taxRounding, SettlementIssuer issuer,
                     PlatformTransactionManager transactionManager, Clock clock) {
         this.taxRounding = taxRounding;
+        this.issuer = issuer;
         this.accessPolicy = accessPolicy;
         this.locks = locks;
         this.bills = bills;
@@ -155,9 +158,12 @@ public class CreditSaleSteps {
         });
     }
 
-    /** s2, no transaction (D55, D63): an ISSUED document comes back unchanged. */
-    public DocumentView issue(PosContext pos, UUID documentId) {
-        return fiscal.issue(documentId, pos.employeeId());
+    /**
+     * s2, no transaction (D55, D63): the payment snapshot refreshed, then the draft issued ({@link SettlementIssuer},
+     * D97: a charge for the whole balance is ON_ACCOUNT, a partial one MIXED); an ISSUED document comes back unchanged.
+     */
+    public DocumentView issue(PosContext pos, UUID orderId, UUID documentId) {
+        return issuer.issue(pos, orderId, documentId);
     }
 
     /**

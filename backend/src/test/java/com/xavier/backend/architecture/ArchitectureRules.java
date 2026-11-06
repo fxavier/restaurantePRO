@@ -206,6 +206,20 @@ final class ArchitectureRules {
                         + "headroom (D71)");
     }
 
+    /** D97 rule 4: every settlement issue refreshes the document's payment snapshot first. */
+    static ArchRule onlySettlementIssuerCallsFiscalIssue(String root) {
+        String fiscalApi = root + ".fiscal.FiscalApi";
+        return noClasses()
+                .that().resideInAPackage(root + ".settlement..")
+                .and().doNotHaveFullyQualifiedName(root + ".settlement.service.SettlementIssuer")
+                .should().callMethodWhere(describe("FiscalApi.issue",
+                        (JavaMethodCall call) -> call.getTargetOwner().getFullName().equals(fiscalApi)
+                                && call.getName().equals("issue")))
+                .as("only SettlementIssuer issues fiscal documents in settlement")
+                .because("issue refuses a draft without its payment snapshot, which SettlementIssuer records "
+                        + "under order_settlement just before (D97)");
+    }
+
     private static boolean isFacade(String root, JavaClass owner) {
         String rootPackage = owner.getPackageName();
         if (!rootPackage.startsWith(root + ".")) {

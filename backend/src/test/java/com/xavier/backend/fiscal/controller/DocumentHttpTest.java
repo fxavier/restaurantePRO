@@ -111,7 +111,14 @@ class DocumentHttpTest {
                 .andExpect(jsonPath("$.companyName").value(issued.companyName()))
                 .andExpect(jsonPath("$.lines[0].description").value("Cerveja 2M"))
                 .andExpect(jsonPath("$.taxes[0].tax.amount").value(16.00))
-                .andExpect(jsonPath("$.nonFiscal").value(true));
+                .andExpect(jsonPath("$.nonFiscal").value(true))
+                // D97: the payment block frozen at issue
+                .andExpect(jsonPath("$.payments.status").value("PAID"))
+                .andExpect(jsonPath("$.payments.methods[0].methodCode").value("CASH"))
+                .andExpect(jsonPath("$.payments.methods[0].label").value("Numerário"))
+                .andExpect(jsonPath("$.payments.methods[0].amount.amount").value(116.00))
+                .andExpect(jsonPath("$.payments.credit.amount").value(0.00))
+                .andExpect(jsonPath("$.payments.outstanding.amount").value(0.00));
     }
 
     @Test
@@ -162,6 +169,7 @@ class DocumentHttpTest {
     }
 
     private DocumentView issue(UUID store, UUID draft) {
+        fixtures.recordPaid(draft);
         UUID employee = UUID.randomUUID();
         return asEmployee(store, employee, UUID.randomUUID(), () -> fiscal.issue(draft, employee));
     }

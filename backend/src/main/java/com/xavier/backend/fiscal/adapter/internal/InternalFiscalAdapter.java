@@ -6,6 +6,8 @@ import com.xavier.backend.fiscal.IssueResult;
 import com.xavier.backend.fiscal.IssuedDocument;
 import com.xavier.backend.fiscal.model.dto.Buyer;
 import com.xavier.backend.fiscal.model.dto.DocumentView;
+import com.xavier.backend.fiscal.model.dto.PaymentSnapshot;
+import com.xavier.backend.fiscal.model.dto.PaymentStatus;
 import com.xavier.backend.fiscal.model.event.DocumentPrintout;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -27,6 +29,7 @@ public class InternalFiscalAdapter implements FiscalAdapter {
 
     public static final String CODE = "internal";
     public static final String ON_ACCOUNT = "A CRÉDITO";
+    static final String CREDIT_LABEL = "A crédito";
 
     private static final DateTimeFormatter PRINTED_DATE = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
@@ -60,8 +63,8 @@ public class InternalFiscalAdapter implements FiscalAdapter {
         if (copy) {
             lines.add("CÓPIA");
         }
-        if (document.onAccount()) {
-            lines.add(ON_ACCOUNT); // a credit sale: no payment was received (A20)
+        if (wholeOnAccount(document)) {
+            lines.add(ON_ACCOUNT); // the whole document is a credit sale (A20, D97 rule 5)
         }
         Buyer buyer = document.buyer();
         if (buyer != null) {
@@ -81,7 +84,36 @@ public class InternalFiscalAdapter implements FiscalAdapter {
         }
         lines.add("TOTAL " + document.totalGross().amount().toPlainString() + " "
                 + document.totalGross().currency().getCurrencyCode());
+        if (document.payments() != null) {
+            addPayments(lines, document.payments());
+        }
         return new DocumentPrintout(lines, document.qrPayload());
+    }
+
+    /** A document issued before D97 has no snapshot: its on-account mark alone decides, as it did. */
+    private static boolean wholeOnAccount(IssuedDocument document) {
+        PaymentSnapshot payments = document.payments();
+        return payments == null ? document.onAccount() : payments.status() == PaymentStatus.ON_ACCOUNT;
+    }
+
+    /** D97 rule 6: methods in snapshot order, credit always last, then what is still outstanding. */
+    private static void addPayments(List<String> lines, PaymentSnapshot payments) {
+        List<String> parts = new ArrayList<>();
+        payments.methods().forEach(m -> parts.add(m.label() + ": " + m.amount().amount().toPlainString()));
+        if (payments.credit().amount().signum() > 0) {
+            parts.add(CREDIT_LABEL + ": " + payments.credit().amount().toPlainString());
+        }
+        String heading = switch (payments.status()) {
+            case PARTIALLY_PAID -> "Pagamento parcial";
+            case MIXED -> "Pagamento misto";
+            default -> parts.size() > 1 ? "Pagamento misto" : "Pagamento";
+        };
+        if (!parts.isEmpty()) {
+            lines.add(heading + " — " + String.join("; ", parts));
+        }
+        if (payments.outstanding().amount().signum() > 0) {
+            lines.add("Saldo em aberto: " + payments.outstanding().amount().toPlainString());
+        }
     }
 
     private static void addIfPresent(List<String> lines, String label, String value) {

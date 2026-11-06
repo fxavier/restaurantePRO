@@ -18,7 +18,9 @@ import java.util.UUID;
  * is Σ of the live (RESERVED and POSTED) credit charges, never part of {@code paid}; {@code balance = due − paid −
  * credit} and the financial state counts both; {@code creditCharges} are every charge of the order, oldest first.
  * R3 (D77): {@code paid} is net of refunds, and {@code refunds} are every refund of the order's payments, oldest
- * first.
+ * first. R3 (D97): {@code paymentStatus} is live, {@code PaymentStatus.of(due, paid, credit)} over every target
+ * ({@code UNPAID}, {@code PARTIALLY_PAID}, {@code PAID}, {@code ON_ACCOUNT} or {@code MIXED}); a document keeps the
+ * one of its issue.
  */
 public record OrderSettlementView(UUID orderId, UUID storeId, String lifecycle, long orderVersion, Money due,
                                   Money paid, Money balance, String financialState, String fiscalState,
@@ -26,5 +28,5 @@ public record OrderSettlementView(UUID orderId, UUID storeId, String lifecycle, 
                                   List<LineCoverage> coverage, Money residualBalance,
                                   List<TaxRoundingDifference> taxRoundingDifference, Money credit,
                                   List<CreditChargeView> creditCharges, List<RefundView> refunds,
-                                  List<TaxRoundingAdjustmentView> taxRoundingAdjustments) {
+                                  List<TaxRoundingAdjustmentView> taxRoundingAdjustments, String paymentStatus) {
 }

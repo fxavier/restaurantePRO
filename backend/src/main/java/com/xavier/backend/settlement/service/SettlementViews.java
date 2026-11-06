@@ -3,6 +3,7 @@ package com.xavier.backend.settlement.service;
 import com.xavier.backend.fiscal.FiscalApi;
 import com.xavier.backend.fiscal.model.dto.Coverage;
 import com.xavier.backend.fiscal.model.dto.DocumentView;
+import com.xavier.backend.fiscal.model.dto.PaymentStatus;
 import com.xavier.backend.orders.BillingLine;
 import com.xavier.backend.settlement.model.BillPartition;
 import com.xavier.backend.settlement.model.FinancialState;
@@ -55,7 +56,8 @@ class SettlementViews {
                 taxRounding.differences(bill), bill.credit(),
                 bill.charges().stream().map(com.xavier.backend.settlement.model.CreditCharge::toView).toList(),
                 bill.refunds().stream().map(com.xavier.backend.settlement.model.Refund::toView).toList(),
-                taxRounding.views(orderId));
+                taxRounding.views(orderId),
+                PaymentStatus.of(bill.due(), bill.paid(), bill.credit()).name());
     }
 
     List<PartitionView> partitions(Bill bill) {
@@ -89,7 +91,8 @@ class SettlementViews {
                 partition.getParts(), lines, partition.due(), paid, credit, balance,
                 FinancialState.of(partition.due(), paid.plus(credit)).name(),
                 document != null && "ISSUED".equals(document.status()), document == null ? null : document.id(),
-                partition.currentVersion(), partition.getCreatedAt());
+                partition.currentVersion(), partition.getCreatedAt(),
+                PaymentStatus.of(partition.due(), paid, credit).name());
     }
 
     private static List<LineCoverage> coverage(Bill bill, Coverage coverage) {
