@@ -45,4 +45,4 @@ Recorded in the ADRs above, plus one decision without an ADR:
 - D63: takeover is `lease_until <= now` (the text was aligned); `orderVersion` is not checked once the order is frozen (ADR 0018).
 - S10 login throttle: a fixed 15-minute window; the per-pair counter counts attempts (reset on success), the per-address counter counts failures; not a sliding per-username window (ADR 0008).
 - D78: a statement's period is computed from calendar midnights, not from the store's business-day cutoff (BUG-0002, ADR 0022).
-- D97: the em dash of the payment breakdown prints as `?` on every printer table except WPC1252 (BUG-0001, ADR 0026).
+- D97: the em dash of the payment breakdown prints as `?` on every printer table except WPC1252 (BUG-0001, ADR 0026). Fixed in ef16b3d: an ASCII hyphen fallback.

@@ -39,7 +39,7 @@ Levels: **U** unit/model test; **M** module IT (`@ApplicationModuleTest` + Postg
 | 11 | Void after partial payment within headroom → 201; beyond → 422 `VOID_EXCEEDS_UNPAID`; on invoiced quantity → 422 | rule | M + S | `SettledVoidHeadroomTest`, `VoidVersusPaymentRaceTest`, `R3AcceptanceTest` |
 | 12 | D96: the cent absorbed by another line of the rate; pending when nothing can; listed until resolved; a retry places identically | money, fiscal | U + M + S | `TaxRoundingPlacementTest`, `TaxRoundingResidualTest`, `TaxCorrectionResolutionTest`, `R3AcceptanceTest` (M1, M2), `RestartMatrixTest` (g) |
 | 13 | D97: "Pagamento misto — Numerário: X; A crédito: Y", "Saldo em aberto: Z", MIXED/ON_ACCOUNT, immutable, reprinted identically | fiscal | U + M + S | `InternalPrintoutPaymentsTest`, `DocumentPaymentBreakdownTest`, `PaymentSnapshotContentTest`, `R3AcceptanceTest` (B, M3) |
-| 14 | The breakdown on a CP860/CP850/CP437/CP858 printer | failure | U | `PaymentBreakdownCodePageRepro` (expected failure, BUG-0001) |
+| 14 | The breakdown on a CP860/CP850/CP437/CP858 printer | failure | U | `PaymentBreakdownCodePageTest` (BUG-0001, fixed in ef16b3d: hyphen fallback) |
 | 15 | Timeout → UNKNOWN → the poller resolves exactly one Payment; NotFound inside the window stays UNKNOWN; FAILED too early → 422 | failure | M + S | `InDoubtPollingTest`, `ReclassifyAgeGuardTest`, `R3AcceptanceTest` (M3), `RestartMatrixTest` (e) |
 | 16 | Forced close of an abandoned session with a count and reason, refused while a payment is in doubt | permission, rule | M + S | `ForcedSessionCloseTest`, `R3AcceptanceTest` |
 | 17 | After the cutoff with yesterday open: a session opens in the new day with `PREVIOUS_DAY_OPEN` | time | M + S | `NewDayPolicyTest`, `R3AcceptanceTest` |
@@ -65,7 +65,7 @@ Each system test runs on its own empty PostgreSQL (`Installation.FreshDatabase`)
 
 ## Open questions (not decided by QA)
 
-- BUG-0001: what a printer without U+2014 should print in the D97 breakdown.
+- BUG-0001 (resolved): a printer without U+2014 prints a hyphen in the D97 breakdown.
 - BUG-0002: whether MISSING_PROVIDER candidates are selected by `payment.business_date` or by the period's instants.
 - §14 #6 (Internet cut keeps local operation; server/LAN cut shows "unavailable" without a false confirmation) needs the POS frontend, which does not exist yet.
 - §14 #1 (installations A and B isolated: credentials, data and restore) has no automated test; the deploy design gives each company its own Compose project, volumes and secrets, but no drill installs two and crosses them.
