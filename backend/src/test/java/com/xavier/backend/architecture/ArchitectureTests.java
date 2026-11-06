@@ -70,6 +70,12 @@ class ArchitectureTests {
         ArchitectureRules.reportingCallsOnlyReadOnlyFacadeMethods("com.xavier.backend").check(PRODUCTION);
     }
 
+    /** D99: inventory reads; every facade method it calls is @Transactional(readOnly = true). */
+    @Test
+    void inventoryCallsOnlyReadOnlyFacadeMethods() {
+        ArchitectureRules.inventoryCallsOnlyReadOnlyFacadeMethods("com.xavier.backend").check(PRODUCTION);
+    }
+
     /** D71: the coordinated void bypasses the PAYMENT lock, so only settlement calls OrdersApi.voidLine. */
     @Test
     void onlySettlementCallsOrdersVoidLine() {
@@ -78,7 +84,9 @@ class ArchitectureTests {
 
     /**
      * D35: orders ↛ settlement, production; cash ↛ orders, settlement; nothing → production. D65: fiscal ↛ customers;
-     * customers ↛ orders, settlement, fiscal, cash, production; nothing → reporting.
+     * customers ↛ orders, settlement, fiscal, cash, production; nothing → reporting. D99: promotions ↛ orders,
+     * settlement, fiscal, cash, production, inventory, dining, reporting; inventory ↛ settlement, fiscal, cash,
+     * customers, promotions, dining, production; orders ↛ inventory; nothing but reporting → inventory.
      */
     @ParameterizedTest(name = "{0}")
     @MethodSource("forbiddenModuleDependencies")

@@ -40,7 +40,7 @@ class ArchitectureRulesFireTest {
         return ArchitectureRules.forbiddenModuleDependencies(FORBIDDEN_ROOT);
     }
 
-    /** Each D35 and D65 "NOT" edge is present in {@code com.xavier.archfixture.forbidden}; each rule must report it. */
+    /** Each D35, D65 and D99 "NOT" edge is present in {@code com.xavier.archfixture.forbidden}; each rule must report it. */
     @ParameterizedTest(name = "{0}")
     @MethodSource("forbiddenModuleDependencies")
     void everyForbiddenModuleDependencyIsCaught(ArchRule rule) {
@@ -60,6 +60,35 @@ class ArchitectureRulesFireTest {
                 .noneSatisfy(line -> assertThat(line).contains("OrdersFacade.find()"))
                 .noneSatisfy(line -> assertThat(line).contains("CountingFacade.count()"))
                 .noneSatisfy(line -> assertThat(line).contains("AuditTrail.record()"));
+    }
+
+    /** D99: an inventory call to a facade write is caught; read-only calls, its own services and audit are not. */
+    @Test
+    void anInventoryCallToAFacadeWriteIsCaughtAndAReadOnlyCallIsNot() {
+        EvaluationResult result = ArchitectureRules.inventoryCallsOnlyReadOnlyFacadeMethods(FORBIDDEN_ROOT)
+                .evaluate(FORBIDDEN_FIXTURE);
+
+        assertThat(result.hasViolation()).isTrue();
+        assertThat(result.getFailureReport().getDetails())
+                .anySatisfy(line -> assertThat(line).contains("StockConsumption").contains("OrdersFacade.close()"))
+                .noneSatisfy(line -> assertThat(line).contains("OrdersFacade.find()"))
+                .noneSatisfy(line -> assertThat(line).contains("CountingFacade.count()"))
+                .noneSatisfy(line -> assertThat(line).contains("StockLedger.post()"))
+                .noneSatisfy(line -> assertThat(line).contains("AuditTrail.record()"));
+    }
+
+    /** D99: an orders → inventory edge is caught; reporting reading inventory is allowed. */
+    @Test
+    void onlyReportingMayDependOnInventory() {
+        ArchRule onlyReporting = Arrays.stream(forbiddenModuleDependencies())
+                .filter(rule -> rule.getDescription().startsWith("no module but reporting depends on inventory"))
+                .findFirst().orElseThrow();
+
+        EvaluationResult result = onlyReporting.evaluate(FORBIDDEN_FIXTURE);
+
+        assertThat(result.getFailureReport().getDetails())
+                .anySatisfy(line -> assertThat(line).contains("StockShortcut").contains("StockLedger"))
+                .noneSatisfy(line -> assertThat(line).contains("StockReport"));
     }
 
     /** D71: a call to OrdersApi.voidLine from outside settlement is caught; settlement's own call is not. */
