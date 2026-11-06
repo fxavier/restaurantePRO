@@ -45,6 +45,11 @@ spring:
     web:
       pageable:
         max-page-size: 200 # D23
+  servlet:
+    multipart:
+      # PRD S31: a provider statement upload (canonical CSV, at most 50 000 lines) is the only multipart request
+      max-file-size: 5MB
+      max-request-size: 6MB
 
 server:
   servlet:

@@ -57,7 +57,7 @@ class SettlementViews {
     }
 
     /** Per rate of the order's lines (in rate order): Σ of the lines' tax drift (D68 amendment). */
-    private static List<TaxRoundingDifference> taxRoundingDifferences(Bill bill) {
+    static List<TaxRoundingDifference> taxRoundingDifferences(Bill bill) {
         Map<BigDecimal, Money> perRate = new java.util.TreeMap<>();
         for (BillingLine line : bill.view().lines()) {
             perRate.merge(line.ratePercent().stripTrailingZeros(), bill.split(line).taxDrift(), Money::plus);
