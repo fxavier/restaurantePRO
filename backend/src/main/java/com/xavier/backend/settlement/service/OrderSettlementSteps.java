@@ -42,11 +42,14 @@ public class OrderSettlementSteps {
     private final SettlementViews views;
     private final OrdersApi orders;
     private final FiscalApi fiscal;
+    private final TaxRoundingAdjustments taxRounding;
     private final TransactionTemplate inTransaction;
     private final TransactionTemplate readOnly;
 
     OrderSettlementSteps(AccessPolicy accessPolicy, SettlementLocks locks, Bills bills, SettlementViews views,
-                         OrdersApi orders, FiscalApi fiscal, PlatformTransactionManager transactionManager) {
+                         OrdersApi orders, FiscalApi fiscal, TaxRoundingAdjustments taxRounding,
+                         PlatformTransactionManager transactionManager) {
+        this.taxRounding = taxRounding;
         this.accessPolicy = accessPolicy;
         this.locks = locks;
         this.bills = bills;
@@ -60,7 +63,8 @@ public class OrderSettlementSteps {
 
     /**
      * s1, one transaction: the order's lock → {@code freezeForInvoice} → the residual ORDER draft (fiscal returns the
-     * existing document, DRAFT or ISSUED). A close ({@code expectedVersion} given) first checks that the order is
+     * existing document, DRAFT or ISSUED), with the tax cent of settled voids placed on it, or the placement recorded
+     * before re-applied (D96). A close ({@code expectedVersion} given) first checks that the order is
      * settled (nothing in doubt on any target, paid = due), frozen or not, so a close that cannot succeed never
      * freezes the order, drafts or issues its document. Until the order is frozen it also checks the client's
      * version; once frozen nothing of the order can change, so a retry (whose client version predates the freeze)
@@ -78,8 +82,8 @@ public class OrderSettlementSteps {
                 requireSettled(bill); // frozen or not: a close that cannot succeed issues nothing
             }
             List<DocumentView> documents = fiscal.documentsOfOrder(orderId);
-            DraftCommand residual = ResidualDocuments.keepingOnAccount(
-                    ResidualDocuments.residual(bill, buyer, documents), documents);
+            TaxRoundingAdjustments.Placed placed = taxRounding.residual(bill, buyer, documents);
+            DraftCommand residual = ResidualDocuments.keepingOnAccount(placed.draft().command(), documents);
             if (!bill.frozen()) {
                 bill.requireOpen();
                 if (closing) {
@@ -91,7 +95,9 @@ public class OrderSettlementSteps {
                 }
                 orders.freezeForInvoice(orderId);
             }
-            return fiscal.createDraft(residual);
+            DocumentView document = fiscal.createDraft(residual);
+            taxRounding.record(bill, placed, document, documents);
+            return document;
         });
     }
 
@@ -117,7 +123,8 @@ public class OrderSettlementSteps {
      * s3, one transaction (D50 §7.8, D70 step 3): the order's lock; an order already CLOSED answers with its view
      * (idempotent by state); otherwise nothing in doubt on any target, paid = due, every document of the order
      * ISSUED and together covering every line's net quantity and the due, then {@code OrdersApi.close} at the version
-     * read under the lock (the freeze in s1 moved it), which also frees the table.
+     * read under the lock (the freeze in s1 moved it), which also frees the table. A drift no residual document took
+     * (partition documents cover every quantity) is recorded as a pending fiscal correction first (D96 rule 4).
      */
     public OrderSettlementView close(PosContext pos, UUID orderId) {
         return inTransaction.execute(tx -> {
@@ -128,6 +135,7 @@ public class OrderSettlementSteps {
             bill.requireOpen();
             requireSettled(bill);
             requireInvoiced(bill);
+            taxRounding.recordUnplaced(bill, fiscal.documentsOfOrder(orderId)); // D96: no residual document took it
             orders.close(orderId, bill.view().version(), pos.employeeId());
             return views.of(orderId);
         });

@@ -7,6 +7,7 @@ import com.xavier.backend.fiscal.model.dto.DraftLine;
 import com.xavier.backend.fiscal.model.dto.SourceType;
 import com.xavier.backend.orders.BillingLine;
 import com.xavier.backend.settlement.model.LineSplit;
+import com.xavier.backend.settlement.model.TaxRoundingPlacement.Candidate;
 import com.xavier.backend.settlement.service.Bills.Bill;
 import com.xavier.backend.shared.Money;
 import java.math.BigDecimal;
@@ -22,37 +23,55 @@ import java.util.stream.Collectors;
  * per billing line: one line per LIVE ITEMS share whose partition has no document, with that share's amounts, and one
  * line for the line's pool (what no LIVE partition holds). Each document line is then one share or one pool, so each
  * stays within fiscal's bound (D68 amendment); together with the partition documents they sum to the order's lines.
- * An unpartitioned order's residual is its billing lines exactly (R2's document, strict D59).
+ * An unpartitioned order's residual is its billing lines exactly (R2's document, strict D59). A line's shares are
+ * listed by partition {@code created_at}, then id, so the tax cent of a settled void lands deterministically (D96).
  */
 final class ResidualDocuments {
 
     private ResidualDocuments() {
     }
 
-    /** @param documents the order's documents (DRAFT or ISSUED), for which partitions are already invoiced */
-    static DraftCommand residual(Bill bill, Buyer buyer, List<DocumentView> documents) {
+    /**
+     * The residual draft and its candidates for the tax cent (D96), one per draft line, in draft order.
+     *
+     * @param documents the order's documents (DRAFT or ISSUED), for which partitions are already invoiced
+     */
+    static ResidualDraft residual(Bill bill, Buyer buyer, List<DocumentView> documents) {
         Set<UUID> invoiced = documents.stream().filter(d -> "PARTITION".equals(d.sourceType()))
                 .map(DocumentView::sourceId).collect(Collectors.toSet());
-        List<DraftLine> lines = new ArrayList<>();
+        List<Candidate> candidates = new ArrayList<>();
         for (BillingLine line : bill.view().lines()) {
             LineSplit split = bill.split(line);
             for (LineSplit.Piece piece : split.live()) {
                 if (!invoiced.contains(piece.partitionId())) {
-                    lines.add(draftLine(line, piece.quantity(), piece.gross(), piece.tax()));
+                    candidates.add(candidate(candidates.size(), line, piece.partitionId(), piece.quantity(),
+                            piece.gross(), piece.tax()));
                 }
             }
             LineSplit.Pool pool = split.pool();
             if (pool.quantity().signum() > 0) {
-                lines.add(draftLine(line, pool.quantity(), pool.gross(), pool.tax()));
+                candidates.add(candidate(candidates.size(), line, null, pool.quantity(), pool.gross(), pool.tax()));
             }
         }
-        return command(bill, SourceType.ORDER, bill.view().orderId(), buyer, lines);
+        return new ResidualDraft(bill, buyer, candidates);
+    }
+
+    /**
+     * The order's residual draft (D70) built from its {@code candidates} (one per draft line, in order), with the tax
+     * of each as placed (D96: a placed cent changes a candidate's tax and net, never its gross); totals are Σ lines.
+     */
+    record ResidualDraft(DraftCommand command, List<Candidate> candidates) {
+
+        ResidualDraft(Bill bill, Buyer buyer, List<Candidate> candidates) {
+            this(ResidualDocuments.command(bill, SourceType.ORDER, bill.view().orderId(), buyer, candidates.stream()
+                    .map(c -> draftLine(bill, c)).toList()), List.copyOf(candidates));
+        }
     }
 
     /** Whether the order has billable quantity no document covers yet (D70 step 2). */
     static boolean hasUncovered(Bill bill, List<DocumentView> documents) {
         return !residual(bill, null, documents.stream().filter(d -> !"ORDER".equals(d.sourceType())).toList())
-                .lines().isEmpty();
+                .command().lines().isEmpty();
     }
 
     static DraftCommand command(Bill bill, SourceType source, UUID sourceId, Buyer buyer, List<DraftLine> lines) {
@@ -81,9 +100,17 @@ final class ResidualDocuments {
                 draft.totalTax(), draft.amountsAllocated());
     }
 
-    private static DraftLine draftLine(BillingLine line, BigDecimal quantity, Money gross, Money tax) {
-        return new DraftLine(line.lineId(), line.description(), quantity, line.unitPrice(), line.ratePercent(),
-                gross, gross.minus(tax), tax);
+    private static Candidate candidate(int index, BillingLine line, UUID partitionId, BigDecimal quantity,
+                                       Money gross, Money tax) {
+        return new Candidate(index, line.lineId(), partitionId, quantity, line.unitPrice(), line.ratePercent(), gross,
+                tax);
+    }
+
+    private static DraftLine draftLine(Bill bill, Candidate candidate) {
+        String description = bill.line(candidate.sourceLineId()).orElseThrow().description();
+        return new DraftLine(candidate.sourceLineId(), description, candidate.quantity(), candidate.unitPrice(),
+                candidate.ratePercent(), candidate.gross(), candidate.gross().minus(candidate.tax()),
+                candidate.tax());
     }
 
     private static Money sum(List<DraftLine> lines, Function<DraftLine, Money> amount, Money zero) {

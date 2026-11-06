@@ -12,7 +12,6 @@ import com.xavier.backend.settlement.model.PaymentAttempt;
 import com.xavier.backend.settlement.model.dto.LineCoverage;
 import com.xavier.backend.settlement.model.dto.OrderSettlementView;
 import com.xavier.backend.settlement.model.dto.PartitionView;
-import com.xavier.backend.settlement.model.dto.TaxRoundingDifference;
 import com.xavier.backend.settlement.service.Bills.Bill;
 import com.xavier.backend.shared.Money;
 import java.math.BigDecimal;
@@ -30,10 +29,12 @@ class SettlementViews {
 
     private final Bills bills;
     private final FiscalApi fiscal;
+    private final TaxRoundingAdjustments taxRounding;
 
-    SettlementViews(Bills bills, FiscalApi fiscal) {
+    SettlementViews(Bills bills, FiscalApi fiscal, TaxRoundingAdjustments taxRounding) {
         this.bills = bills;
         this.fiscal = fiscal;
+        this.taxRounding = taxRounding;
     }
 
     OrderSettlementView of(UUID orderId) {
@@ -51,18 +52,10 @@ class SettlementViews {
                 document.map(DocumentView::id).orElse(null),
                 bill.openAttempts().stream().map(PaymentAttempt::toView).toList(),
                 partitions(bill, documents), coverage(bill, fiscal.coverage(orderId)), bill.residualBalance(),
-                taxRoundingDifferences(bill), bill.credit(),
+                taxRounding.differences(bill), bill.credit(),
                 bill.charges().stream().map(com.xavier.backend.settlement.model.CreditCharge::toView).toList(),
-                bill.refunds().stream().map(com.xavier.backend.settlement.model.Refund::toView).toList());
-    }
-
-    /** Per rate of the order's lines (in rate order): Σ of the lines' tax drift (D68 amendment). */
-    static List<TaxRoundingDifference> taxRoundingDifferences(Bill bill) {
-        Map<BigDecimal, Money> perRate = new java.util.TreeMap<>();
-        for (BillingLine line : bill.view().lines()) {
-            perRate.merge(line.ratePercent().stripTrailingZeros(), bill.split(line).taxDrift(), Money::plus);
-        }
-        return perRate.entrySet().stream().map(e -> new TaxRoundingDifference(e.getKey(), e.getValue())).toList();
+                bill.refunds().stream().map(com.xavier.backend.settlement.model.Refund::toView).toList(),
+                taxRounding.views(orderId));
     }
 
     List<PartitionView> partitions(Bill bill) {

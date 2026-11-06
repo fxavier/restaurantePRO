@@ -20,7 +20,8 @@ import tools.jackson.databind.JsonNode;
  * §14 #4, D91, A16 (the integration half; {@code model.SplitPropertyTest} is the pure half over thousands of random
  * orders, rates and cancels): seeded random orders with 3-decimal quantities split into random ITEMS partitions,
  * every partition invoiced and paid, the residual paid, then the close. Through the real endpoints and fiscal: Σ
- * document gross = due, Σ document tax = Σ order line tax, Σ document quantity per line = net quantity.
+ * document gross = due, Σ document tax = Σ order line tax, Σ document quantity per line = net quantity. With random
+ * settled voids (D96): Σ document tax = Σ order line tax − Σ pending corrections.
  */
 @SettlementModuleTest
 class SplitPreservesTotalsTest {
@@ -31,6 +32,31 @@ class SplitPreservesTotalsTest {
     @Autowired
     SettlementFixtures fixtures;
 
+    @Autowired
+    com.xavier.backend.identity.ApproverVerifier approvers;
+
+    @org.junit.jupiter.api.BeforeEach
+    void aManagerApprovesVoids() {
+        org.mockito.Mockito.when(approvers.verify(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq(com.xavier.backend.access.Permission.ORDER_VOID_APPROVE),
+                org.mockito.ArgumentMatchers.any())).thenReturn(UUID.randomUUID());
+    }
+
+    /**
+     * D96: random splits, then settled voids of whole pools (each may leave a line's tax cent), some partitions
+     * invoiced on their own, the rest on the residual, then the close. Σ document tax = order tax − Σ pending
+     * corrections, and Σ document gross = due, always.
+     */
+    @Test
+    void randomSettledVoidsLeaveTheDocumentsTaxAtTheOrdersLessOnlyThePendingCorrections() throws Exception {
+        Random random = new Random(20261106);
+        int drifted = 0;
+        for (int scenario = 0; scenario < 6; scenario++) {
+            drifted += splitVoidAndClose(random);
+        }
+        assertThat(drifted).as("scenarios whose voids left a tax cent").isPositive();
+    }
     @Test
     void randomFractionalSplitsAndTheirDocumentsSumToTheOrder() throws Exception {
         Random random = new Random(1105);
@@ -131,6 +157,70 @@ class SplitPreservesTotalsTest {
                 sale.order())).isEqualByComparingTo(due.amount());
         assertThat(fixtures.decimal("SELECT sum(total_tax) FROM fiscal.fiscal_document WHERE order_ref = ?",
                 sale.order())).isEqualByComparingTo(tax.amount());
+    }
+
+    /** @return how many adjustment rows the close left (absorbed or pending) */
+    private int splitVoidAndClose(Random random) throws Exception {
+        Sale sale = fixtures.sale(String.valueOf(2 + random.nextInt(4)));
+        fixtures.confirmRound(sale.shop(), sale.cashier(), sale.order(), quantity(random),
+                fixtures.orderVersion(sale.cashier(), sale.order()));
+        List<UUID> lines = fixtures.lineIds(sale.cashier(), sale.order());
+        java.util.Map<UUID, String> partitions = new java.util.LinkedHashMap<>();
+        for (UUID line : lines) {
+            BigDecimal pool = poolOf(coverage(sale), line);
+            BigDecimal quantity = pool.stripTrailingZeros().scale() <= 0 ? BigDecimal.ONE // a whole line keeps a pool
+                    : BigDecimal.valueOf(1 + random.nextInt(pool.movePointRight(3).intValueExact() - 1), 3);
+            var created = fixtures.partitionItems(sale.cashier(), sale.order(),
+                    fixtures.orderVersion(sale.cashier(), sale.order()), UUID.randomUUID().toString(), line,
+                    quantity.toPlainString()).andReturn().getResponse();
+            if (created.getStatus() == 201) {
+                JsonNode partition = SettlementFixtures.json(created.getContentAsString());
+                partitions.put(UUID.fromString(partition.get("id").asString()),
+                        partition.get("due").get("amount").asString());
+            }
+            BigDecimal left = poolOf(coverage(sale), line);
+            if (left.signum() > 0 && random.nextInt(4) != 0) {
+                int voided = fixtures.settledVoid(sale.cashier(), sale.order(),
+                        fixtures.orderVersion(sale.cashier(), sale.order()), line, left.toPlainString(),
+                        UUID.randomUUID().toString()).andReturn().getResponse().getStatus();
+                assertThat(voided).as("a void is recorded or refused by the guard").isIn(201, 422);
+            }
+        }
+        for (var partition : partitions.entrySet()) {
+            if (random.nextBoolean()) {
+                fixtures.partitionDocument(sale.cashier(), partition.getKey(), UUID.randomUUID().toString())
+                        .andExpect(status().isCreated());
+            }
+            fixtures.payPartition(sale.cashier(), sale.order(), partition.getKey(), "CASH", partition.getValue(),
+                    partition.getValue(), UUID.randomUUID().toString()).andExpect(status().isCreated());
+        }
+        String residual = SettlementFixtures.json(fixtures.settlement(sale.cashier(), sale.order()))
+                .get("residualBalance").get("amount").asString();
+        if (new BigDecimal(residual).signum() > 0) {
+            fixtures.payCash(sale, residual, residual).andExpect(status().isCreated());
+        }
+        JsonNode coverage = coverage(sale);
+
+        fixtures.close(sale.cashier(), sale.order(), fixtures.orderVersion(sale.cashier(), sale.order()),
+                UUID.randomUUID().toString()).andExpect(status().isOk())
+                .andExpect(jsonPath("$.lifecycle").value("CLOSED"));
+
+        Money due = Money.of("0.00", UNIT.currency());
+        Money tax = Money.of("0.00", UNIT.currency());
+        for (JsonNode line : coverage) {
+            LineAmounts amounts = LineAmounts.of(UNIT, new BigDecimal(line.get("netQty").asString()), VAT);
+            due = due.plus(amounts.gross());
+            tax = tax.plus(amounts.tax());
+        }
+        BigDecimal pending = fixtures.decimal("""
+                SELECT coalesce(sum(amount), 0) FROM settlement.tax_rounding_adjustment
+                WHERE order_id = ? AND kind = 'PENDING_CORRECTION'""", sale.order());
+        assertThat(fixtures.decimal("SELECT sum(total_gross) FROM fiscal.fiscal_document WHERE order_ref = ?",
+                sale.order())).isEqualByComparingTo(due.amount());
+        assertThat(fixtures.decimal("SELECT sum(total_tax) FROM fiscal.fiscal_document WHERE order_ref = ?",
+                sale.order())).isEqualByComparingTo(tax.amount().subtract(pending));
+        return (int) fixtures.count("SELECT count(*) FROM settlement.tax_rounding_adjustment WHERE order_id = ?",
+                sale.order());
     }
 
     private JsonNode coverage(Sale sale) throws Exception {

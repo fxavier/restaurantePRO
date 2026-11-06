@@ -72,12 +72,15 @@ public class CreditSaleSteps {
     private final CreditChargeRepository charges;
     private final SettlementAudit audit;
     private final ApplicationEventPublisher events;
+    private final TaxRoundingAdjustments taxRounding;
     private final TransactionTemplate inTransaction;
     private final Clock clock;
 
     CreditSaleSteps(AccessPolicy accessPolicy, SettlementLocks locks, Bills bills, OrdersApi orders, FiscalApi fiscal,
                     CustomersApi customers, CreditChargeRepository charges, SettlementAudit audit,
-                    ApplicationEventPublisher events, PlatformTransactionManager transactionManager, Clock clock) {
+                    ApplicationEventPublisher events, TaxRoundingAdjustments taxRounding,
+                    PlatformTransactionManager transactionManager, Clock clock) {
+        this.taxRounding = taxRounding;
         this.accessPolicy = accessPolicy;
         this.locks = locks;
         this.bills = bills;
@@ -139,7 +142,11 @@ public class CreditSaleSteps {
                     () -> SettlementConflictException.chargeExists(targetName(partitionId),
                             partitionId == null ? orderId : partitionId, charge.getId()),
                     "credit_charge_live_per_target_uk");
-            DocumentView draft = fiscal.createDraft(draftOf(bill, partition, documents, buyer));
+            TaxRoundingAdjustments.Placed residual = partition == null ? residualOf(bill, documents, buyer) : null;
+            DocumentView draft = fiscal.createDraft(draftOf(bill, partition, residual, buyer));
+            if (residual != null) {
+                taxRounding.record(bill, residual, draft, documents);
+            }
             charge.attachDocument(draft.id());
             charges.saveAndFlush(charge);
             audit.charge("CREDIT_CHARGE_RESERVED", charge.getId(), charge.getStoreId(), orderId,
@@ -225,23 +232,27 @@ public class CreditSaleSteps {
                 : "PARTITION".equals(d.sourceType()) && partitionId.equals(d.sourceId())).findFirst();
     }
 
-    /** The target's draft, on account: the residual of the order (frozen now), or the partition's own. */
-    private DraftCommand draftOf(Bill bill, BillPartition partition, List<DocumentView> documents,
-                                 CustomerSnapshot customer) {
-        Buyer buyer = buyer(customer);
-        if (partition != null) {
-            return ResidualDocuments.onAccount(PartitionDocumentService.draftOf(bill, partition, buyer), buyer,
-                    customer.customerId());
-        }
-        DraftCommand residual = ResidualDocuments.residual(bill, buyer, documents);
+    /** The order's residual draft (frozen now), with the tax cent of settled voids placed (D96). */
+    private TaxRoundingAdjustments.Placed residualOf(Bill bill, List<DocumentView> documents,
+                                                     CustomerSnapshot customer) {
+        TaxRoundingAdjustments.Placed residual = taxRounding.residual(bill, buyer(customer), documents);
         if (!bill.frozen()) {
-            if (residual.lines().isEmpty()) {
+            if (residual.draft().command().lines().isEmpty()) {
                 throw new SettlementRuleException(SettlementRule.NOTHING_TO_BILL,
                         "Order " + bill.view().orderId() + " has nothing to bill: cancel it instead.");
             }
             orders.freezeForInvoice(bill.view().orderId());
         }
-        return ResidualDocuments.onAccount(residual, buyer, customer.customerId());
+        return residual;
+    }
+
+    /** The target's draft, on account: the order's {@code residual}, or the partition's own. */
+    private static DraftCommand draftOf(Bill bill, BillPartition partition, TaxRoundingAdjustments.Placed residual,
+                                        CustomerSnapshot customer) {
+        Buyer buyer = buyer(customer);
+        DraftCommand draft = partition != null ? PartitionDocumentService.draftOf(bill, partition, buyer)
+                : residual.draft().command();
+        return ResidualDocuments.onAccount(draft, buyer, customer.customerId());
     }
 
     /** §8.2: the document keeps the customer as read now (P17's inline buyer). */
