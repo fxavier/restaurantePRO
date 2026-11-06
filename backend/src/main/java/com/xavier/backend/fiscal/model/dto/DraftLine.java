@@ -21,6 +21,19 @@ public record DraftLine(UUID sourceLineId, String description, BigDecimal quanti
                         BigDecimal taxRatePercent, Money gross, Money net, Money tax, String taxCode,
                         Money listUnitPrice, String discountLabel) {
 
+    /**
+     * A list price equal to the unit price with no label is no discount: it is normalised to {@code null}, so an
+     * allocated line's rounding cent never prints as a discount and an undiscounted redraft matches an R3 draft.
+     */
+    public DraftLine {
+        if (listUnitPrice != null && unitPrice != null && (discountLabel == null || discountLabel.isBlank())
+                && listUnitPrice.currency().equals(unitPrice.currency())
+                && listUnitPrice.amount().compareTo(unitPrice.amount()) == 0) {
+            listUnitPrice = null;
+            discountLabel = null;
+        }
+    }
+
     /** A line with no discount (R3). */
     public DraftLine(UUID sourceLineId, String description, BigDecimal quantity, Money unitPrice,
                      BigDecimal taxRatePercent, Money gross, Money net, Money tax, String taxCode) {

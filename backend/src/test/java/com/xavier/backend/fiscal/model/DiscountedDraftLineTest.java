@@ -50,6 +50,17 @@ class DiscountedDraftLineTest {
     }
 
     @Test
+    void aListPriceEqualToTheUnitPriceWithNoLabelIsNoDiscount() {
+        // an allocated share 3 x 1.00 = 2.99 must not print a phantom 0.01 "discount"; an undiscounted redraft
+        // must match an R3 draft (S43 review)
+        DraftLine sameAsUnit = line("3", "1.00", "2.99", "2.58", "0.41", "1.00", null);
+
+        assertThat(sameAsUnit.listUnitPrice()).isNull();
+        assertThat(sameAsUnit.discountLabel()).isNull();
+        assertThat(line("1", "1.00", "1.00", "0.86", "0.14", "1.00", "Promo").listUnitPrice()).isNotNull();
+    }
+
+    @Test
     void aDiscountedLineWhoseGrossFollowsTheListPriceIsRejected() {
         assertThatThrownBy(() -> draft(false, line("2", "1.13", "2.50", "2.16", "0.34", "1.25", "Happy hour")))
                 .isInstanceOf(InvalidSaleDraftException.class)
