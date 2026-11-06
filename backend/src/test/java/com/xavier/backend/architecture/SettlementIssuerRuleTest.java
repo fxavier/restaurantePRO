@@ -9,7 +9,7 @@ import com.tngtech.archunit.lang.EvaluationResult;
 import org.junit.jupiter.api.Test;
 
 /**
- * D97 rule 4 over the real settlement module: no class but {@code SettlementIssuer} calls {@code FiscalApi.issue},
+ * D97 rule 4 over the real code base: outside fiscal, no class but {@code SettlementIssuer} calls {@code FiscalApi.issue} or {@code recordPayments},
  * and the rule is not vacuous, because {@code SettlementIssuer} really does (the fixture side is in
  * {@link ArchitectureRulesFireTest}).
  */
@@ -21,7 +21,7 @@ class SettlementIssuerRuleTest {
             .importPackages(ROOT);
 
     @Test
-    void onlySettlementIssuerIssuesFiscalDocumentsInSettlement() {
+    void onlySettlementIssuerIssuesFiscalDocumentsAndRecordsTheirSnapshot() {
         EvaluationResult result = ArchitectureRules.onlySettlementIssuerCallsFiscalIssue(ROOT).evaluate(PRODUCTION);
 
         assertThat(result.hasViolation()).as(result.getFailureReport().toString()).isFalse();
@@ -29,6 +29,10 @@ class SettlementIssuerRuleTest {
                 .anySatisfy(call -> {
                     assertThat(call.getTargetOwner().getFullName()).isEqualTo(ROOT + ".fiscal.FiscalApi");
                     assertThat(call.getName()).isEqualTo("issue");
+                })
+                .anySatisfy(call -> {
+                    assertThat(call.getTargetOwner().getFullName()).isEqualTo(ROOT + ".fiscal.FiscalApi");
+                    assertThat(call.getName()).isEqualTo("recordPayments");
                 });
     }
 }
