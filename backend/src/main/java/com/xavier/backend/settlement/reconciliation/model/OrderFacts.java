@@ -11,12 +11,25 @@ import java.util.UUID;
 /**
  * What the documents control (D80) knows of one order: its lifecycle ({@code OPEN}, {@code CLOSED}, ...), its billable
  * lines, its DRAFT and ISSUED documents, the quantity its ISSUED documents cover per line, what was paid net of
- * refunds (every target), its credit charges, and per rate the tax drift settlement's split leaves (D68
- * amendment: its lines' tax minus its documents', non-zero only where a settled void emptied a partitioned pool).
+ * refunds (every target), its credit charges, its recorded pending fiscal corrections (D96: open or resolved, the only
+ * explanation of a tax difference) and per rate the settled voids' tax drift no adjustment records ({@code unassigned},
+ * D96 rule 7: zero once the residual is drafted or the order closed).
  */
 public record OrderFacts(UUID orderId, String lifecycle, Currency currency, List<Line> lines,
                          List<Document> documents, Map<UUID, BigDecimal> issuedQuantity, Money paidNet,
-                         List<Charge> charges, Map<BigDecimal, Money> expectedTaxDrift) {
+                         List<Charge> charges, List<Correction> corrections, Map<BigDecimal, Money> unassignedTax) {
+
+    /**
+     * A PENDING_CORRECTION adjustment (D96): {@code amount} of tax at {@code ratePercent} of {@code sourceLineId} that
+     * {@code documentId} lacks; {@code correctionReference} is its resolution's, {@code null} while it is open.
+     */
+    public record Correction(UUID adjustmentId, BigDecimal ratePercent, UUID sourceLineId, UUID documentId,
+                             Money amount, String correctionReference) {
+
+        public boolean open() {
+            return correctionReference == null;
+        }
+    }
 
     /** A billable line: its net quantity and the tax the order computes for it. */
     public record Line(UUID lineId, BigDecimal netQty, BigDecimal ratePercent, Money tax) {

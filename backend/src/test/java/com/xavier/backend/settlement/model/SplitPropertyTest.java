@@ -15,6 +15,9 @@ import com.xavier.backend.settlement.PartitionAmounts.Share;
 import com.xavier.backend.settlement.exception.SettlementRule;
 import com.xavier.backend.settlement.exception.SettlementRuleException;
 import com.xavier.backend.settlement.model.LineSplit.Piece;
+import com.xavier.backend.settlement.model.TaxRoundingPlacement.Candidate;
+import com.xavier.backend.settlement.model.TaxRoundingPlacement.Drift;
+import com.xavier.backend.settlement.model.TaxRoundingPlacement.Placement;
 import com.xavier.backend.shared.Money;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -34,9 +37,9 @@ import org.junit.jupiter.api.Test;
  * quantities, five rates), random partition creates, cancels and settled voids of pool quantity (the guard refuses
  * some, changing nothing), a random subset of partitions invoiced, and the residual document of the rest. Every
  * document passes fiscal's own check for allocated drafts ({@link FiscalDocument#draft}); together they give each
- * line its net quantity and the order its gross exactly, and each rate the tax of its shares and pools. The order's
- * recomputed tax differs from the documents' only by the drift of pools a void emptied, at most one minor unit each
- * (the documents' tax is authoritative).
+ * line its net quantity and the order its gross exactly, and each rate the tax of its shares and pools plus the cents
+ * the residual absorbed (D96, {@link TaxRoundingPlacement}). The order's recomputed tax per rate then equals the
+ * documents', or differs by exactly the cents no residual line could take (the pending corrections).
  */
 class SplitPropertyTest {
 
@@ -54,6 +57,8 @@ class SplitPropertyTest {
     }
 
     private int drifts;
+    private int absorbed;
+    private int pending;
 
     @Test
     void everySplitWithCancelsAndVoidsPreservesQuantitiesGrossAndDocumentTaxAndPassesFiscal() {
@@ -64,6 +69,8 @@ class SplitPropertyTest {
         }
         assertThat(refused).as("SPLIT_ROUNDING_LIMIT refusals (the guard was exercised)").isPositive();
         assertThat(drifts).as("orders whose voids left a tax drift (the documented case was exercised)").isPositive();
+        assertThat(absorbed).as("drifts the residual absorbed (D96)").isPositive();
+        assertThat(pending).as("drifts left as pending corrections (D96)").isPositive();
     }
 
     private int splitOneOrder(Random random) {
@@ -109,25 +116,48 @@ class SplitPropertyTest {
                                 e.getValue().tax())).toList());
             }
         }
+        List<Candidate> candidates = new ArrayList<>();
         for (Line line : lines) {
             LineSplit split = split(line, live);
             for (Piece piece : split.live()) {
                 if (!invoiced.get(piece.partitionId())) {
-                    residual.add(draftLine(line, piece.quantity(), piece.gross(), piece.tax()));
+                    candidates.add(candidate(candidates.size(), line, piece.partitionId(), piece.quantity(),
+                            piece.gross(), piece.tax()));
                 }
             }
             if (split.pool().quantity().signum() > 0) {
-                residual.add(draftLine(line, split.pool().quantity(), split.pool().gross(), split.pool().tax()));
+                candidates.add(candidate(candidates.size(), line, null, split.pool().quantity(), split.pool().gross(),
+                        split.pool().tax()));
             }
+        }
+        // D96: the residual draft absorbs each drift within its rate, or the drift becomes a pending correction
+        List<Drift> lineDrifts = new ArrayList<>();
+        for (Line line : lines) {
+            Money drift = split(line, live).taxDrift();
+            if (drift.amount().signum() != 0) {
+                lineDrifts.add(new Drift(line.id(), line.rate(), drift));
+            }
+        }
+        List<Placement> placements = TaxRoundingPlacement.place(lineDrifts, candidates);
+        for (Candidate candidate : TaxRoundingPlacement.apply(placements, candidates)) {
+            residual.add(draftLine(line(lines, candidate.sourceLineId()), candidate.quantity(), candidate.gross(),
+                    candidate.tax()));
         }
         if (!residual.isEmpty()) {
             documents.add(residual);
         }
         documents.forEach(SplitPropertyTest::fiscalAccepts);
-        if (assertPreserved(lines, documents, live, voided)) {
+        absorbed += (int) placements.stream().filter(Placement::absorbed).count();
+        pending += (int) placements.stream().filter(p -> !p.absorbed()).count();
+        if (assertPreserved(lines, documents, live, voided, placements)) {
             drifts++;
         }
         return refused;
+    }
+
+    private static Candidate candidate(int index, Line line, UUID partitionId, BigDecimal quantity, Money gross,
+                                       Money tax) {
+        return new Candidate(index, line.id(), partitionId, quantity, line.unitPrice(), line.rate(), gross, tax);
     }
 
     /**
@@ -211,9 +241,12 @@ class SplitPropertyTest {
                 line.taxRatePercent(), line.gross(), line.tax())).isTrue());
     }
 
-    /** @return whether some rate drifted */
+    /**
+     * The documents' tax per rate equals the order's, except for exactly the cents no residual line could take (the
+     * pending corrections, D96). @return whether some rate drifted
+     */
     private static boolean assertPreserved(List<Line> lines, List<List<DraftLine>> documents, List<Partition> live,
-                                           java.util.Set<UUID> voided) {
+                                           java.util.Set<UUID> voided, List<Placement> placements) {
         boolean drifted = false;
         List<DraftLine> all = documents.stream().flatMap(List::stream).toList();
         for (Line line : lines) {
@@ -245,12 +278,23 @@ class SplitPropertyTest {
                 }
                 drift = drift.plus(split.taxDrift());
             }
-            assertThat(documentTax).as("documents' tax at %s %% = shares + pools", rate).isEqualTo(sharesAndPools);
-            assertThat(orderTax.minus(documentTax)).as("drift at %s %%", rate).isEqualTo(drift);
+            Money absorbedAtRate = sumOf(placements, rate, true);
+            Money pendingAtRate = sumOf(placements, rate, false);
+            assertThat(documentTax).as("documents' tax at %s %% = shares + pools + absorbed", rate)
+                    .isEqualTo(sharesAndPools.plus(absorbedAtRate));
+            assertThat(orderTax.minus(sharesAndPools)).as("drift at %s %%", rate).isEqualTo(drift);
+            assertThat(orderTax.minus(documentTax)).as("order tax - document tax at %s %% = pending", rate)
+                    .isEqualTo(pendingAtRate);
             assertThat(drift.amount().abs().movePointRight(2).intValueExact()).isLessThanOrEqualTo(emptied);
             drifted |= drift.amount().signum() != 0;
         }
         return drifted;
+    }
+
+    private static Money sumOf(List<Placement> placements, BigDecimal rate, boolean absorbed) {
+        return placements.stream().filter(p -> p.absorbed() == absorbed
+                        && p.drift().ratePercent().compareTo(rate) == 0)
+                .map(p -> p.drift().amount()).reduce(zero(), Money::plus);
     }
 
     private static DraftLine draftLine(Line line, BigDecimal quantity, Money gross, Money tax) {

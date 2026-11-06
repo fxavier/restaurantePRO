@@ -190,9 +190,12 @@ class Bills {
             return line(lineId).map(this::split);
         }
 
+        /** Its shares in partition {@code created_at} order, then id: the residual's line order (D96). */
         LineSplit split(BillingLine line) {
             List<LineSplit.Piece> pieces = live().stream()
                     .filter(p -> p.getKind() == PartitionKind.ITEMS)
+                    .sorted(java.util.Comparator.comparing(BillPartition::getCreatedAt)
+                            .thenComparing(BillPartition::getId))
                     .flatMap(p -> p.getLines().stream().filter(l -> l.getOrderLineId().equals(line.lineId()))
                             .map(l -> piece(p, l)))
                     .toList();

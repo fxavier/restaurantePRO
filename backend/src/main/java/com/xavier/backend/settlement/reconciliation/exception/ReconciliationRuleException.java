@@ -25,4 +25,9 @@ public class ReconciliationRuleException extends BusinessRuleException {
         return new ReconciliationRuleException(ReconciliationRule.NO_STATEMENT_SOURCE, "The provider of " + methodCode
                 + " cannot fetch statements: import its statement file instead.", Map.of());
     }
+
+    public static ReconciliationRuleException notAPendingCorrection(java.util.UUID adjustmentId) {
+        return new ReconciliationRuleException(ReconciliationRule.NOT_A_PENDING_CORRECTION, "Tax rounding adjustment "
+                + adjustmentId + " was absorbed by the residual document: there is nothing to correct.", Map.of());
+    }
 }

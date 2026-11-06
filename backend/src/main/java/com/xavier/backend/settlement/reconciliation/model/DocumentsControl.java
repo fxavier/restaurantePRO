@@ -1,6 +1,7 @@
 package com.xavier.backend.settlement.reconciliation.model;
 
 import com.xavier.backend.settlement.reconciliation.model.OrderFacts.Charge;
+import com.xavier.backend.settlement.reconciliation.model.OrderFacts.Correction;
 import com.xavier.backend.settlement.reconciliation.model.OrderFacts.Document;
 import com.xavier.backend.settlement.reconciliation.model.OrderFacts.Line;
 import com.xavier.backend.settlement.reconciliation.model.dto.DocumentException;
@@ -28,12 +29,15 @@ import java.util.stream.Collectors;
  *   <li>{@code COVERAGE_MISMATCH}: a closed order's line whose ISSUED quantity is not its net quantity.</li>
  *   <li>{@code CHARGE_RESERVED_STALE}: a charge RESERVED for more than {@link #STALE}.</li>
  *   <li>{@code DRAFT_STALE}: a DRAFT of a closed order, or whose issue failed more than {@link #STALE} ago.</li>
- *   <li>{@code TAX_MISMATCH}: per rate of a closed order, the lines' tax and the documents' tax differ by anything but
- *       the drift settlement's split computes for that rate.</li>
+ *   <li>{@code TAX_DRIFT_UNASSIGNED}: per rate of a closed order, a settled void's tax cent that no adjustment records
+ *       (D96: the residual draft or the close records each one; a bug alarm).</li>
+ *   <li>{@code TAX_CORRECTION_PENDING}: one per open pending fiscal correction of a rate whose difference the
+ *       recorded corrections explain (D96 rule 8).</li>
+ *   <li>{@code TAX_MISMATCH}: per rate of a closed order, the lines' tax minus the ISSUED documents' tax is not what its
+ *       recorded pending corrections (open and resolved) hold.</li>
  * </ul>
- * A difference equal to that drift is the D68 amendment's rounding (a settled void that emptied a split line's pool,
- * {@code OrderSettlementView.taxRoundingDifference}): the documents' tax is authoritative, and it is reported as an
- * explained rounding difference. An order without such a pool expects zero.
+ * D96: the order's tax per rate is the target, and a difference is explained only by a recorded pending correction,
+ * never by the split alone. A resolved one is reported as an explained rounding difference with its reference.
  */
 public final class DocumentsControl {
 
@@ -132,24 +136,46 @@ public final class DocumentsControl {
         Map<BigDecimal, Money> documentTax = new TreeMap<>();
         issued.forEach(d -> d.taxByRate().forEach((rate, tax) -> documentTax.merge(rate.stripTrailingZeros(), tax,
                 Money::plus)));
-        Map<BigDecimal, Money> expected = new TreeMap<>();
-        order.expectedTaxDrift().forEach((rate, drift) -> expected.merge(rate.stripTrailingZeros(), drift,
+        Map<BigDecimal, List<Correction>> corrections = order.corrections().stream()
+                .collect(Collectors.groupingBy(c -> c.ratePercent().stripTrailingZeros(), TreeMap::new,
+                        Collectors.toList()));
+        Map<BigDecimal, Money> unassigned = new TreeMap<>();
+        order.unassignedTax().forEach((rate, amount) -> unassigned.merge(rate.stripTrailingZeros(), amount,
                 Money::plus));
         Set<BigDecimal> rates = new java.util.TreeSet<>(lineTax.keySet());
         rates.addAll(documentTax.keySet());
+        rates.addAll(corrections.keySet());
+        rates.addAll(unassigned.keySet());
         for (BigDecimal rate : rates) {
             Money difference = lineTax.getOrDefault(rate, zero).minus(documentTax.getOrDefault(rate, zero));
-            if (difference.amount().signum() == 0) {
-                continue;
-            }
-            if (difference.equals(expected.getOrDefault(rate, zero))) {
-                rounding.add(new ExplainedRoundingDifference(order.orderId(), rate, difference));
-            } else {
+            List<Correction> recorded = corrections.getOrDefault(rate, List.of());
+            Money expected = recorded.stream().map(Correction::amount).reduce(zero, Money::plus);
+            Money nobodys = unassigned.getOrDefault(rate, zero);
+            if (nobodys.amount().signum() != 0) {
+                exceptions.add(exception("TAX_DRIFT_UNASSIGNED", order, null, null, null, "At "
+                        + rate.toPlainString() + "% settled voids left " + nobodys.amount() + " of tax that no "
+                        + "residual document absorbed and no pending correction records."));
+            } else if (difference.equals(expected)) {
+                recorded.forEach(c -> explain(order, rate, c, exceptions, rounding));
+            } else if (difference.amount().signum() != 0 || expected.amount().signum() != 0) {
                 exceptions.add(exception("TAX_MISMATCH", order, null, null, null, "At " + rate.toPlainString()
                         + "% the lines' tax is " + lineTax.getOrDefault(rate, zero).amount()
                         + " but the issued documents carry " + documentTax.getOrDefault(rate, zero).amount()
-                        + " (the split explains " + expected.getOrDefault(rate, zero).amount() + ")."));
+                        + " (recorded pending corrections explain " + expected.amount() + ")."));
             }
+        }
+    }
+
+    private static void explain(OrderFacts order, BigDecimal rate, Correction correction,
+                                List<DocumentException> exceptions, List<ExplainedRoundingDifference> rounding) {
+        if (correction.open()) {
+            exceptions.add(exception("TAX_CORRECTION_PENDING", order, correction.documentId(), null,
+                    correction.sourceLineId(), "The document lacks " + correction.amount().amount() + " of tax at "
+                            + rate.toPlainString() + "%: it awaits the fiscal correction process (adjustment "
+                            + correction.adjustmentId() + ")."));
+        } else {
+            rounding.add(new ExplainedRoundingDifference(order.orderId(), rate, correction.amount(),
+                    correction.adjustmentId(), correction.correctionReference()));
         }
     }
 

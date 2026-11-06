@@ -26,4 +26,9 @@ public class ReconciliationConflictException extends ConflictException {
         return new ReconciliationConflictException(ReconciliationRule.ENTRY_RESOLVED, "Reconciliation entry "
                 + entryId + " is already resolved.", Map.of());
     }
+
+    public static ReconciliationConflictException taxCorrectionResolved(UUID adjustmentId) {
+        return new ReconciliationConflictException(ReconciliationRule.TAX_CORRECTION_RESOLVED, "The pending fiscal "
+                + "correction " + adjustmentId + " is already resolved.", Map.of());
+    }
 }

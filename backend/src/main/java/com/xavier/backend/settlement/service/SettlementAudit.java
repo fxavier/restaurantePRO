@@ -68,6 +68,21 @@ class SettlementAudit {
         auditLog.recordAsCurrentActor(action, entityType, entityId.toString(), storeId, null, null, details);
     }
 
+    /**
+     * A fact about an order (entity {@code Order}, D96's tax rounding adjustments): as the actor in a request, as the
+     * system otherwise; D95 {@code ORDER}.
+     */
+    void orderFact(String action, UUID orderId, UUID storeId, Map<String, Object> details) {
+        if (accessPolicy.currentIfPresent().isPresent()) {
+            auditLog.recordAsCurrentActor(action, PaymentAttemptService.ORDER, orderId.toString(), storeId, null, null,
+                    details);
+        } else {
+            auditLog.recordAsSystem(action, PaymentAttemptService.ORDER, orderId.toString(), storeId, null, null,
+                    details);
+        }
+        changeNotifier.notifyAfterCommit(storeId, ChangeTopic.ORDER, orderId);
+    }
+
     /** D95: partitions, partition documents and settled voids say "re-read the order" on its {@code ORDER} topic. */
     void orderChanged(UUID storeId, UUID orderId) {
         changeNotifier.notifyAfterCommit(storeId, ChangeTopic.ORDER, orderId);
