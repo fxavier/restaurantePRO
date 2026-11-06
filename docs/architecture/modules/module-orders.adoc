@@ -8,9 +8,9 @@
 * `c.x.b.o.OrdersApi`
 * `c.x.b.o.OrdersProductionApi`
 |Bean references
-|* `c.x.b.s.idempotency.IdempotencyService` (in Shared kernel)
-* `c.x.b.a.AccessPolicy` (in Access)
+|* `c.x.b.a.IdempotentRequests` (in Access)
 * `c.x.b.c.CatalogApi` (in Catalog)
+* `c.x.b.a.AccessPolicy` (in Access)
 * `c.x.b.i.ApproverVerifier` (in Identity)
 * `c.x.b.d.DiningApi` (in Dining)
 * `c.x.b.a.AuditLog` (in Audit)

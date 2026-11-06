@@ -1,13 +1,13 @@
 == BackendApplication
 plantuml::components.puml[,,format=svg]
 
-== Access
-plantuml::module-access.puml[,,format=svg]
-include::module-access.adoc[]
-
 == Shared kernel
 plantuml::module-shared.puml[,,format=svg]
 include::module-shared.adoc[]
+
+== Access
+plantuml::module-access.puml[,,format=svg]
+include::module-access.adoc[]
 
 == Audit
 plantuml::module-audit.puml[,,format=svg]
@@ -24,6 +24,10 @@ include::module-organization.adoc[]
 == Catalog
 plantuml::module-catalog.puml[,,format=svg]
 include::module-catalog.adoc[]
+
+== Customers
+plantuml::module-customers.puml[,,format=svg]
+include::module-customers.adoc[]
 
 == Dining
 plantuml::module-dining.puml[,,format=svg]
@@ -45,11 +49,15 @@ include::module-cash.adoc[]
 plantuml::module-orders.puml[,,format=svg]
 include::module-orders.adoc[]
 
+== Settlement
+plantuml::module-settlement.puml[,,format=svg]
+include::module-settlement.adoc[]
+
 == Production
 plantuml::module-production.puml[,,format=svg]
 include::module-production.adoc[]
 
-== Settlement
-plantuml::module-settlement.puml[,,format=svg]
-include::module-settlement.adoc[]
+== Reporting
+plantuml::module-reporting.puml[,,format=svg]
+include::module-reporting.adoc[]
 
