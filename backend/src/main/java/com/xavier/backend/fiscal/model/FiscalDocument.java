@@ -477,7 +477,7 @@ public class FiscalDocument {
                 storeCode, storeName, buyer(), lines.stream().map(l -> l.toView(c)).toList(),
                 taxes.stream().map(t -> t.toView(c)).toList(), Money.of(totalGross, c), Money.of(totalNet, c),
                 Money.of(totalTax, c), adapterCode, nonFiscal, lastError, lastErrorAt, version, orderRef, businessDate,
-                customerId, onAccount, paymentSnapshot().orElse(null));
+                customerId, onAccount, paymentSnapshot().orElse(null), createdAt);
     }
 
     public DocumentSummary toSummary() {

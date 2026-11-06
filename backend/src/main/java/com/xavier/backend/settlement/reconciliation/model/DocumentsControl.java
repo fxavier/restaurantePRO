@@ -28,7 +28,7 @@ import java.util.stream.Collectors;
  *   <li>{@code CHARGE_DEBIT_MISSING}: a POSTED charge whose customer ledger debit is missing.</li>
  *   <li>{@code COVERAGE_MISMATCH}: a closed order's line whose ISSUED quantity is not its net quantity.</li>
  *   <li>{@code CHARGE_RESERVED_STALE}: a charge RESERVED for more than {@link #STALE}.</li>
- *   <li>{@code DRAFT_STALE}: a DRAFT of a closed order, or whose issue failed more than {@link #STALE} ago.</li>
+ *   <li>{@code DRAFT_STALE}: a DRAFT drafted more than {@link #STALE} ago (D80).</li>
  *   <li>{@code TAX_DRIFT_UNASSIGNED}: per rate of a closed order, a settled void's tax cent that no adjustment records
  *       (D96: the residual draft or the close records each one; a bug alarm).</li>
  *   <li>{@code TAX_CORRECTION_PENDING}: one per open pending fiscal correction of a rate whose difference the
@@ -77,11 +77,9 @@ public final class DocumentsControl {
                 exceptions.add(exception("ON_ACCOUNT_WITHOUT_CHARGE", order, document.documentId(), null, null,
                         "The document is on account but no posted credit charge names it."));
             }
-            if (DRAFT.equals(document.status()) && (closed
-                    || (document.lastErrorAt() != null && document.lastErrorAt().isBefore(staleBefore)))) {
-                exceptions.add(exception("DRAFT_STALE", order, document.documentId(), null, null, closed
-                        ? "The order is closed but this document is still a draft."
-                        : "The draft's issue failed at " + document.lastErrorAt() + " and was not retried."));
+            if (DRAFT.equals(document.status()) && document.createdAt().isBefore(staleBefore)) {
+                exceptions.add(exception("DRAFT_STALE", order, document.documentId(), null, null,
+                        "The document has been a draft since " + document.createdAt() + "."));
             }
         }
         for (Charge charge : order.charges()) {

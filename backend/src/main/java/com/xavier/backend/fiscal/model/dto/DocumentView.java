@@ -14,7 +14,7 @@ import java.util.UUID;
  * {@code orderId} is the order the document belongs to (its source for an ORDER document); {@code businessDate} is
  * {@code null} for an R2 document; {@code onAccount} marks a document with a credit share of {@code customerId} (R3,
  * D97 rule 5); {@code payments} is its payment snapshot (D97), {@code null} until settlement records it before the
- * issue, and for a document issued before D97.
+ * issue, and for a document issued before D97. {@code createdAt} is when it was first drafted.
  */
 public record DocumentView(UUID id, UUID storeId, String documentType, String status, String sourceType,
                            UUID sourceId, String seriesCode, Long number, Instant issuedAt, UUID issuedByEmployeeId,
@@ -23,7 +23,7 @@ public record DocumentView(UUID id, UUID storeId, String documentType, String st
                            Money totalGross, Money totalNet, Money totalTax, String adapterCode, Boolean nonFiscal,
                            String lastError, Instant lastErrorAt, Long version, UUID orderId,
                            LocalDate businessDate, UUID customerId, boolean onAccount,
-                           PaymentSnapshot payments) {
+                           PaymentSnapshot payments, Instant createdAt) {
 
     public record Line(int lineNo, UUID sourceLineId, String description, BigDecimal quantity, Money unitPrice,
                        BigDecimal taxRatePercent, Money gross, Money net, Money tax) {
