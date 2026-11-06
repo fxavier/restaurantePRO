@@ -36,6 +36,7 @@ import jakarta.persistence.Version;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -249,7 +250,7 @@ public class FiscalDocument {
         document.snapshotBuyer(command.buyer());
         document.chargeTo(command.customerId(), command.onAccount());
         document.amountsAllocated = command.amountsAllocated();
-        document.createdAt = now;
+        document.createdAt = now.truncatedTo(ChronoUnit.MICROS); // as stored, so a reload sees the same view
         document.updatedAt = now;
 
         Money gross = zero(currency);
