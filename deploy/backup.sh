@@ -47,8 +47,10 @@ if [[ -z "$container" ]]; then
 fi
 
 mkdir -p "$dir"
-# A run killed mid-way leaves a .work.* dir that may hold a plaintext dump: sweep old ones.
+# Leftovers of killed runs: .work.* dirs of older versions of this script (may hold a plaintext dump)
+# and partial copies of a final archive.
 find "$dir" -maxdepth 1 -type d -name '.work.*' -mmin +60 -exec rm -rf {} +
+find "$dir" -maxdepth 1 -type f -name '.restaurantpro-*.tmp.*' -mmin +60 -exec rm -f {} +
 if [[ -z "$recipient" ]]; then
   log "WARNING: backup is NOT encrypted (spec §10 asks for encrypted backups); set BACKUP_AGE_RECIPIENT"
 fi
@@ -58,8 +60,10 @@ name="restaurantpro-$stamp.tar"
 final="$dir/$name"
 [[ ! -e "$final" ]] || die "$final already exists"
 
-work="$(mktemp -d "$dir/.work.XXXXXX")"
-trap 'rm -rf "$work"' EXIT
+# Plaintext staging (the dump, and secrets/ when encrypting) stays outside <dir>, which is copied off the box.
+work="$(mktemp -d "${TMPDIR:-/tmp}/rp-backup.XXXXXX")"
+partial=""
+trap 'rm -rf "$work"; if [[ -n "$partial" ]]; then rm -f "$partial"; fi' EXIT
 
 log "dumping database $DB from container $container"
 docker exec "$container" pg_dump -U "$DB_USER" -d "$DB" -Fc \
@@ -85,7 +89,13 @@ if [[ -n "$recipient" ]]; then
 else
   mv "$work/payload.tar" "$work/payload.out"
 fi
-mv "$work/payload.out" "$final" # same filesystem: the archive appears complete or not at all
+# Copy next to the final name, flush, then rename: the archive appears complete or not at all.
+partial="$(mktemp "$dir/.$name.tmp.XXXXXX")"
+cp "$work/payload.out" "$partial"
+sync "$partial" # coreutils: fsync of the file; macOS: a global sync
+mv "$partial" "$final"
+partial=""
+sync "$dir"
 log "wrote $final ($(wc -c <"$final" | tr -d ' ') bytes)"
 
 # Retention: UTC timestamps sort lexically, so everything before the last N names goes.
