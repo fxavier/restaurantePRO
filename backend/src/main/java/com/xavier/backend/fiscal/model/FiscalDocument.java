@@ -387,7 +387,7 @@ public class FiscalDocument {
         DocumentView view = toView();
         return new IssuedDocument(id, documentType.name(), seriesCode, number, issuedAt, ZoneId.of(storeTimezone),
                 companyName, companyTaxId, companyCountry, storeCode, storeName, buyer(), view.lines(), view.taxes(),
-                view.totalGross(), view.totalNet(), view.totalTax(), adapterData, qrPayload, onAccount);
+                view.totalGross(), view.totalNet(), view.totalTax(), adapterData, qrPayload, onAccount, null);
     }
 
     private Buyer buyer() {

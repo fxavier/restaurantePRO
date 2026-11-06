@@ -94,7 +94,7 @@ public class DocumentIssueService {
         long number = numbering.takeNextNumber(now);
         IssueResult result = adapter.issue(new IssueRequest(document.getId(), document.getDocumentType().name(),
                 numbering.getCode(), number, now, document.getTotalGross(), document.getTotalTax(),
-                previousAdapterData(numbering, number), document.isOnAccount()));
+                previousAdapterData(numbering, number), document.isOnAccount(), null));
         document.issue(numbering, number, now, employeeId, terminalId, adapter.code(), !adapter.certified(), result);
         documents.flush();
         events.publishEvent(new FiscalDocumentIssued(document.getId(), document.getStoreId(), terminalId,

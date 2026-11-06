@@ -103,6 +103,6 @@ class OnAccountPrintoutTest {
         return new IssuedDocument(d.id(), d.documentType(), d.seriesCode(), d.number(),
                 d.issuedAt(), d.storeZone(), d.companyName(), d.companyTaxId(), d.companyCountry(), d.storeCode(),
                 d.storeName(), d.buyer(), List.copyOf(d.lines()), List.copyOf(d.taxes()), d.totalGross(),
-                d.totalNet(), d.totalTax(), d.adapterData(), d.qrPayload(), true);
+                d.totalNet(), d.totalTax(), d.adapterData(), d.qrPayload(), true, null);
     }
 }

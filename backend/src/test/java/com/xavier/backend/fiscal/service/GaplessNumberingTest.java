@@ -203,7 +203,7 @@ class GaplessNumberingTest {
                         rs.getString("series_code"), rs.getLong("number"),
                         rs.getObject("issued_at", OffsetDateTime.class).toInstant(),
                         Money.of(rs.getBigDecimal("total_gross"), Currency.getInstance(rs.getString("currency"))),
-                        null, fixtures.adapterData(first), false))
+                        null, fixtures.adapterData(first), false, null))
                 .single();
 
         assertThat(new InternalFiscalAdapter().issue(fromStoredRow).adapterData())
