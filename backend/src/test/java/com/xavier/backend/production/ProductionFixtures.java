@@ -136,6 +136,14 @@ public class ProductionFixtures {
                 .param(sourceId).query().listOfRows();
     }
 
+    /** How many deliveries of an event about {@code source} production's listeners completed. */
+    public long completedPublications(UUID source) {
+        return jdbc.sql("""
+                        SELECT count(*) FROM event_publication WHERE serialized_event LIKE :id
+                          AND listener_id LIKE '%ProductionListeners%' AND completion_date IS NOT NULL""")
+                .param("id", "%" + source + "%").query(Long.class).single();
+    }
+
     public Map<String, Object> job(UUID job) {
         return jdbc.sql("SELECT * FROM production.print_job WHERE id = ?").param(job).query().singleRow();
     }
