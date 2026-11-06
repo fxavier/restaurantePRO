@@ -12,11 +12,13 @@ import com.xavier.backend.shared.Money;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Currency;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /** What orders (S13) read: the typed frozen catalog of a store, current or by release. */
@@ -100,6 +102,34 @@ class CatalogApiTest {
 
         // as trees: jsonb normalizes key order and whitespace
         assertThat(json.readTree(json.writeValueAsString(snapshot))).isEqualTo(json.readTree(stored));
+    }
+
+    /** D100: recipes (S47) name working-copy items and variants, published or not. */
+    @Test
+    void itemRefsAreReadFromTheWorkingCopyAndUnknownIdsAreLeftOut() throws Exception {
+        CatalogFixtures fixtures = new CatalogFixtures(mvc);
+        JsonNode withVariants = fixtures.item();
+        UUID item = id(withVariants);
+        UUID large = id(fixtures.variant(item));
+        UUID small = id(fixtures.variant(item));
+        UUID inactive = id(fixtures.item());
+        jdbc.sql("UPDATE catalog.item SET availability = 'INACTIVE' WHERE id = ?").param(inactive).update();
+
+        List<ItemRef> refs = catalogApi.items(List.of(item, inactive, UUID.randomUUID()));
+
+        assertThat(refs).extracting(ItemRef::id).containsExactlyInAnyOrder(item, inactive);
+        ItemRef ref = refs.stream().filter(candidate -> candidate.id().equals(item)).findFirst().orElseThrow();
+        assertThat(ref.code()).isEqualTo(withVariants.get("code").asString());
+        assertThat(ref.name()).isEqualTo("Coca-Cola 33cl");
+        assertThat(ref.familyId()).hasToString(withVariants.get("familyId").asString());
+        assertThat(ref.active()).isTrue();
+        assertThat(ref.variantIds()).containsExactlyInAnyOrder(large, small);
+        assertThat(refs).filteredOn(candidate -> candidate.id().equals(inactive)).singleElement()
+                .satisfies(candidate -> {
+                    assertThat(candidate.active()).isFalse();
+                    assertThat(candidate.variantIds()).isEmpty();
+                });
+        assertThat(catalogApi.items(List.of())).isEmpty();
     }
 
     private Publications publications() {

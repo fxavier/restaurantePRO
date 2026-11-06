@@ -106,7 +106,58 @@ public enum Permission {
     /** Audit CSV export (audited). */
     AUDIT_EXPORT,
     /** Support access grants. */
-    SUPPORT_ACCESS_MANAGE;
+    SUPPORT_ACCESS_MANAGE,
+    // R4 (D134). Granted by V3012__identity_r4_permissions.sql.
+    /** Promotions, promotion releases and discount limits (read). */
+    PROMOTION_VIEW,
+    /** Edit, validate and publish promotion releases. */
+    PROMOTION_MANAGE,
+    /** Manual discount within the free limit. */
+    ORDER_DISCOUNT,
+    /** Be the approver of a discount above the free limit, or of an offer. */
+    ORDER_DISCOUNT_APPROVE,
+    /** Request an offer. */
+    ORDER_OFFER,
+    /** Sold-out flag and daily dishes. */
+    CATALOG_AVAILABILITY,
+    /** Loyalty accounts and statements (read). */
+    LOYALTY_VIEW,
+    /** Enroll and suspend loyalty members. */
+    LOYALTY_ENROLL,
+    /** Redeem a reward. */
+    LOYALTY_REDEEM,
+    /** Manual loyalty adjustment, with a reason. */
+    LOYALTY_ADJUST,
+    /** Loyalty program versions and rewards. */
+    LOYALTY_PROGRAM_MANAGE,
+    /** Reservation calendar (read). */
+    RESERVATION_VIEW,
+    /** Create, edit and cancel reservations; mark a no-show. */
+    RESERVATION_MANAGE,
+    /** Delivery orders, dispatch, delivered, returned. */
+    DELIVERY_OPERATE,
+    /** Delivery zones. */
+    DELIVERY_ZONE_MANAGE,
+    /** Stock, movements, inventory reports and status (read). */
+    INVENTORY_VIEW,
+    /** Stock items, warehouses, routes, minimums, policy and activation. */
+    INVENTORY_MANAGE,
+    /** Waste, manual adjustment, return to stock, preparation. */
+    INVENTORY_MOVE,
+    /** Ship and receive stock transfers. */
+    INVENTORY_TRANSFER,
+    /** Enter and submit a stock count. */
+    INVENTORY_COUNT,
+    /** Approve or reject a stock count. */
+    INVENTORY_COUNT_APPROVE,
+    /** Recipes and their versions, the consumption policy. */
+    RECIPE_MANAGE,
+    /** Suppliers and purchase orders. */
+    PURCHASE_MANAGE,
+    /** Goods receipts, returns and cost corrections. */
+    GOODS_RECEIVE,
+    /** Rebuild stock balances, reprocess consumption exceptions. */
+    INVENTORY_REBUILD;
 
     private static final String PREFIX = "PERM_";
 

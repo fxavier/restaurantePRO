@@ -24,6 +24,9 @@ public interface OrderLineRepository extends JpaRepository<OrderLine, UUID> {
 
     Optional<OrderLine> findByIdAndOrderId(UUID id, UUID orderId);
 
+    /** The lines confirmed in a round, in creation order; a line transferred in has no round. */
+    List<OrderLine> findByBatchIdOrderById(UUID batchId);
+
     /** What the facts take off each confirmed line of the orders: Σ voids + Σ transferred out (never stored). */
     @Query(value = """
             SELECT l.id AS lineId,

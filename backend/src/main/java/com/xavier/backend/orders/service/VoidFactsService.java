@@ -45,7 +45,8 @@ public class VoidFactsService {
                 snapshot.releaseId()), voided.getQuantity(),
                 LineAmounts.of(snapshot.unitPrice(), voided.getQuantity(), snapshot.taxRatePercent()).gross(),
                 voided.getReason(), voided.isWasted(), voided.getOperatorEmployeeId(),
-                voided.getApproverEmployeeId(), voids.wasAfterDispatch(voidId));
+                voided.getApproverEmployeeId(), voids.wasAfterDispatch(voidId), voids.consumedLineId(voidId)
+                .orElseThrow(() -> new IllegalStateException("Void " + voidId + " descends from no round line")));
     }
 
     public Page<UUID> ids(UUID storeId, LocalDate from, LocalDate to, Pageable pageable) {

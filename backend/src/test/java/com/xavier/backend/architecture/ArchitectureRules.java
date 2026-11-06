@@ -167,8 +167,50 @@ final class ArchitectureRules {
                 noOtherModuleDependsOn(root, "reporting",
                         "reporting is a read-only projection: nothing depends on it (D65, spec §8.1)")
                         .allowEmptyShould(true),
+                // D99 (R4); allowEmptyShould: promotions and inventory are skeletons until Group 1
+                mustNotDependOn(root, "promotions", "orders", PROMOTIONS_GET_THEIR_FACTS_PASSED)
+                        .allowEmptyShould(true),
+                mustNotDependOn(root, "promotions", "settlement", PROMOTIONS_GET_THEIR_FACTS_PASSED)
+                        .allowEmptyShould(true),
+                mustNotDependOn(root, "promotions", "fiscal", PROMOTIONS_GET_THEIR_FACTS_PASSED)
+                        .allowEmptyShould(true),
+                mustNotDependOn(root, "promotions", "cash", PROMOTIONS_GET_THEIR_FACTS_PASSED).allowEmptyShould(true),
+                mustNotDependOn(root, "promotions", "production", PROMOTIONS_GET_THEIR_FACTS_PASSED)
+                        .allowEmptyShould(true),
+                mustNotDependOn(root, "promotions", "inventory", PROMOTIONS_GET_THEIR_FACTS_PASSED)
+                        .allowEmptyShould(true),
+                mustNotDependOn(root, "promotions", "dining", PROMOTIONS_GET_THEIR_FACTS_PASSED)
+                        .allowEmptyShould(true),
+                mustNotDependOn(root, "promotions", "reporting", PROMOTIONS_GET_THEIR_FACTS_PASSED)
+                        .allowEmptyShould(true),
+                mustNotDependOn(root, "inventory", "settlement", INVENTORY_READS_ORDER_AND_CATALOG_FACTS)
+                        .allowEmptyShould(true),
+                mustNotDependOn(root, "inventory", "fiscal", INVENTORY_READS_ORDER_AND_CATALOG_FACTS)
+                        .allowEmptyShould(true),
+                mustNotDependOn(root, "inventory", "cash", INVENTORY_READS_ORDER_AND_CATALOG_FACTS)
+                        .allowEmptyShould(true),
+                mustNotDependOn(root, "inventory", "customers", INVENTORY_READS_ORDER_AND_CATALOG_FACTS)
+                        .allowEmptyShould(true),
+                mustNotDependOn(root, "inventory", "promotions", INVENTORY_READS_ORDER_AND_CATALOG_FACTS)
+                        .allowEmptyShould(true),
+                mustNotDependOn(root, "inventory", "dining", INVENTORY_READS_ORDER_AND_CATALOG_FACTS)
+                        .allowEmptyShould(true),
+                mustNotDependOn(root, "inventory", "production", INVENTORY_READS_ORDER_AND_CATALOG_FACTS)
+                        .allowEmptyShould(true),
+                mustNotDependOn(root, "orders", "inventory",
+                        "stock consumes order facts through events; confirming a sale never waits on stock (D99, "
+                                + "spec §5)").allowEmptyShould(true),
+                noOtherModuleExceptDependsOn(root, "inventory", "reporting",
+                        "a financial reversal never restores stock: only reporting reads inventory (D99, spec §8.4)")
+                        .allowEmptyShould(true),
         };
     }
+
+    private static final String PROMOTIONS_GET_THEIR_FACTS_PASSED = "promotions owns rules and the points ledger; "
+            + "its callers pass the facts it needs, and orders calling it would otherwise form a cycle (D99)";
+
+    private static final String INVENTORY_READS_ORDER_AND_CATALOG_FACTS = "stock consumes order facts through "
+            + "persisted mechanisms and reads catalog; it knows no money, customers or promotions (D99, spec §6)";
 
     private static final String CUSTOMERS_OWN_ONLY_THEIR_LEDGER = "customers owns identity, limit and ledger; "
             + "settlement coordinates the charge without duplicating the balance (D65, spec §8.1)";
@@ -180,14 +222,29 @@ final class ArchitectureRules {
      * its class. The audit trail is not a facade of facts: reporting records its exports (D86).
      */
     static ArchRule reportingCallsOnlyReadOnlyFacadeMethods(String root) {
+        return callsOnlyReadOnlyFacadeMethods(root, "reporting",
+                "reporting is a read-only projection; it never changes another module's facts (D65, D84)");
+    }
+
+    /**
+     * D99: inventory consumes order and catalog facts, it never writes them. The same check as
+     * {@link #reportingCallsOnlyReadOnlyFacadeMethods}: a call to another module's facade method must be
+     * {@code @Transactional(readOnly = true)}; inventory's own services and the audit trail are not facades of facts.
+     */
+    static ArchRule inventoryCallsOnlyReadOnlyFacadeMethods(String root) {
+        return callsOnlyReadOnlyFacadeMethods(root, "inventory",
+                "stock consumes facts through persisted mechanisms and never writes to orders or catalog (D99, §6)");
+    }
+
+    private static ArchRule callsOnlyReadOnlyFacadeMethods(String root, String module, String why) {
         return noClasses()
-                .that().resideInAPackage(root + ".reporting..")
+                .that().resideInAPackage(root + "." + module + "..")
                 .should().callMethodWhere(describe("a facade method that is not @Transactional(readOnly = true)",
-                        (JavaMethodCall call) -> isFacade(root, call.getTargetOwner())
+                        (JavaMethodCall call) -> isFacadeOfAnotherModule(root, module, call.getTargetOwner())
                                 && call.getTarget().resolveMember().map(method -> !isReadOnly(method)).orElse(true)))
                 .allowEmptyShould(true)
-                .as("reporting calls only read-only facade methods")
-                .because("reporting is a read-only projection; it never changes another module's facts (D65, D84)");
+                .as(module + " calls only read-only facade methods")
+                .because(why);
     }
 
     /**
@@ -220,13 +277,13 @@ final class ArchitectureRules {
                         + "under order_settlement just before (D97)");
     }
 
-    private static boolean isFacade(String root, JavaClass owner) {
+    private static boolean isFacadeOfAnotherModule(String root, String caller, JavaClass owner) {
         String rootPackage = owner.getPackageName();
         if (!rootPackage.startsWith(root + ".")) {
             return false;
         }
         String module = rootPackage.substring(root.length() + 1);
-        return !module.contains(".") && !Set.of("reporting", "audit").contains(module)
+        return !module.contains(".") && !Set.of(caller, "audit").contains(module)
                 && owner.isAnnotatedWith(Service.class);
     }
 
@@ -242,6 +299,14 @@ final class ArchitectureRules {
                 .that().resideInAPackage(root + "." + module + "..")
                 .should().dependOnClassesThat().resideInAPackage(root + "." + forbidden + "..")
                 .as(module + " must not depend on " + forbidden)
+                .because(why);
+    }
+
+    private static ArchRule noOtherModuleExceptDependsOn(String root, String module, String allowed, String why) {
+        return noClasses()
+                .that().resideOutsideOfPackages(root + "." + module + "..", root + "." + allowed + "..")
+                .should().dependOnClassesThat().resideInAPackage(root + "." + module + "..")
+                .as("no module but " + allowed + " depends on " + module)
                 .because(why);
     }
 
