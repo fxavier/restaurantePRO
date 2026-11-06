@@ -34,6 +34,8 @@ import com.xavier.backend.identity.exception.PinUnchangedException;
 import com.xavier.backend.orders.exception.OrderConflictException;
 import com.xavier.backend.orders.exception.OrderRuleException;
 import com.xavier.backend.production.exception.ProductionRule;
+import com.xavier.backend.promotions.loyalty.exception.LoyaltyConflictException;
+import com.xavier.backend.promotions.loyalty.exception.LoyaltyRuleException;
 import com.xavier.backend.production.exception.ProductionRuleViolationException;
 import com.xavier.backend.production.model.Printer;
 import com.xavier.backend.reporting.exception.ExportParamsException;
@@ -249,7 +251,26 @@ class CodedErrorContractTest {
                     "be released")),
             Map.entry("phone-exists", () -> CustomersConflictException.phoneExists(ID, "258841234567")),
             Map.entry("credit-account-exists", () -> CustomersConflictException.accountExists(ID)),
-            Map.entry("credit-source-mismatch", () -> CustomersConflictException.sourceMismatch("debt payment", ID)));
+            Map.entry("credit-source-mismatch", () -> CustomersConflictException.sourceMismatch("debt payment", ID)),
+            Map.entry("loyalty-not-member", () -> LoyaltyRuleException.notMember(ID)),
+            Map.entry("loyalty-suspended", () -> LoyaltyRuleException.suspended(ID)),
+            Map.entry("loyalty-insufficient-points", () -> LoyaltyRuleException.insufficientPoints(10, 40)),
+            Map.entry("loyalty-reward-not-applicable", () -> LoyaltyRuleException.rewardNotApplicable("COFFEE",
+                    "the item is outside its scope")),
+            Map.entry("loyalty-program-invalid", () -> LoyaltyRuleException.programInvalid(
+                    "A reward is scoped to an item or a family, not both.")),
+            Map.entry("loyalty-reason-required", () -> LoyaltyRuleException.reasonRequired("loyalty adjustment")),
+            Map.entry("loyalty-invalid-period", () -> LoyaltyRuleException.invalidPeriod(
+                    java.time.Instant.parse("2026-11-05T00:00:00Z"), java.time.Instant.parse("2026-11-04T00:00:00Z"))),
+            Map.entry("loyalty-program-not-draft", () -> LoyaltyConflictException.programNotDraft(ID, "PUBLISHED",
+                    "be published")),
+            Map.entry("loyalty-program-concurrent", LoyaltyConflictException::programConcurrent),
+            Map.entry("loyalty-reward-code-taken", () -> LoyaltyConflictException.rewardCodeTaken("COFFEE")),
+            Map.entry("loyalty-already-enrolled", () -> LoyaltyConflictException.alreadyEnrolled(ID)),
+            Map.entry("loyalty-account-state", () -> LoyaltyConflictException.accountState(ID, "SUSPENDED",
+                    "be suspended")),
+            Map.entry("loyalty-source-mismatch", () -> LoyaltyConflictException.sourceMismatch("order line", ID)),
+            Map.entry("loyalty-source-concurrent", () -> LoyaltyConflictException.sourceConcurrent("order", ID)));
 
     @Autowired
     MockMvc mvc;
@@ -586,6 +607,40 @@ class CodedErrorContractTest {
                 "The credit account of customer " + ID + " was opened at the same time; retry.", "");
         expect("credit-source-mismatch", 409, "CREDIT_SOURCE_MISMATCH",
                 "The debt payment " + ID + " is already recorded with other values.", "");
+    }
+
+    @Test
+    void loyaltyRules() throws Exception {
+        expect("loyalty-not-member", 422, "LOYALTY_NOT_MEMBER", "Customer " + ID + " is not a loyalty member.", "");
+        expect("loyalty-suspended", 422, "LOYALTY_ACCOUNT_SUSPENDED",
+                "The loyalty account of customer " + ID + " is suspended.", "");
+        expect("loyalty-insufficient-points", 422, "LOYALTY_INSUFFICIENT_POINTS",
+                "The balance of 10 points is less than the 40 needed.", ",\"balance\":10,\"required\":40");
+        expect("loyalty-reward-not-applicable", 422, "LOYALTY_REWARD_NOT_APPLICABLE",
+                "The reward COFFEE cannot be redeemed here: the item is outside its scope.", "");
+        expect("loyalty-program-invalid", 422, "LOYALTY_PROGRAM_INVALID",
+                "A reward is scoped to an item or a family, not both.", "");
+        expect("loyalty-reason-required", 422, "REASON_REQUIRED", "A loyalty adjustment needs a reason.", "");
+        expect("loyalty-invalid-period", 422, "INVALID_PERIOD",
+                "The period starts (2026-11-05T00:00:00Z) after it ends (2026-11-04T00:00:00Z).", "");
+    }
+
+    @Test
+    void loyaltyConflicts() throws Exception {
+        expect("loyalty-program-not-draft", 409, "LOYALTY_PROGRAM_NOT_DRAFT",
+                "The loyalty program version " + ID + " is PUBLISHED and cannot be published.", "");
+        expect("loyalty-program-concurrent", 409, "LOYALTY_PROGRAM_CONCURRENT",
+                "Another loyalty program version was created or published at the same time; retry.", "");
+        expect("loyalty-reward-code-taken", 409, "LOYALTY_REWARD_CODE_TAKEN",
+                "The program version already has a reward COFFEE.", "");
+        expect("loyalty-already-enrolled", 409, "LOYALTY_ALREADY_ENROLLED",
+                "Customer " + ID + " is already a loyalty member.", "");
+        expect("loyalty-account-state", 409, "LOYALTY_ACCOUNT_STATE",
+                "The loyalty account of customer " + ID + " is SUSPENDED and cannot be suspended.", "");
+        expect("loyalty-source-mismatch", 409, "LOYALTY_SOURCE_MISMATCH",
+                "The order line " + ID + " is already recorded in the loyalty ledger with other values.", "");
+        expect("loyalty-source-concurrent", 409, "LOYALTY_SOURCE_CONCURRENT",
+                "The order " + ID + " was recorded in the loyalty ledger at the same time; retry.", "");
     }
 
     private void expect(String name, int status, String code, String detail, String extra) throws Exception {
