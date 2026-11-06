@@ -59,6 +59,9 @@ public class CustomersApi {
     /** The customer's address {@code addressId}; empty when unknown or another customer's. Never throws. */
     @Transactional(readOnly = true)
     public Optional<AddressSnapshot> address(UUID customerId, UUID addressId) {
+        if (customerId == null || addressId == null) {
+            return Optional.empty(); // findById(null) would throw and mark a joined caller transaction rollback-only
+        }
         return addresses.findById(addressId)
                 .filter(address -> address.getCustomerId().equals(customerId))
                 .map(CustomerAddress::toView)

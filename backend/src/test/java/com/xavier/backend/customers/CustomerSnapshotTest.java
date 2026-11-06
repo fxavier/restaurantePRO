@@ -75,6 +75,8 @@ class CustomerSnapshotTest {
                 "Rua da Entrega 1", null, null, null, null, null));
         assertThat(customers.address(other, address)).isEmpty();
         assertThat(customers.address(customer, UUID.randomUUID())).isEmpty();
+        assertThat(customers.address(customer, null)).isEmpty();
+        assertThat(customers.address(null, address)).isEmpty();
     }
 
     private UUID addAddress(UUID customer, String kind, String line1) throws Exception {
