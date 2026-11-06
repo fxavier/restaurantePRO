@@ -85,7 +85,7 @@ class EventPublicationRecoveryTest {
         clock.advance(PAST_THE_AGE);
         recovery.resubmitDue();
 
-        awaitTrue(() -> completed(id), "publication completed by the resubmission");
+        assertThat(completed(id)).as("publication completed by the resubmission").isTrue();
         assertThat(FlakyListener.deliveries(id)).isEqualTo(2);
         assertThat(attempts(id)).isEqualTo(2);
     }
@@ -99,9 +99,9 @@ class EventPublicationRecoveryTest {
 
         for (int attempt = 2; attempt <= 10; attempt++) { // the first delivery was attempt 1
             clock.advance(PAST_THE_AGE);
-            recovery.resubmitDue();
-            int expected = attempt;
-            awaitTrue(() -> attempts(id) == expected && "FAILED".equals(status(id)), "attempt " + attempt + " failed");
+            recovery.resubmitDue(); // the delivery runs on this thread: it has failed when this returns
+            assertThat(attempts(id)).as("attempt %d", attempt).isEqualTo(attempt);
+            assertThat(status(id)).as("attempt %d", attempt).isEqualTo("FAILED");
         }
         clock.advance(PAST_THE_AGE);
         recovery.resubmitDue();
@@ -132,7 +132,7 @@ class EventPublicationRecoveryTest {
         registry.markStalePublicationsFailed(staleness);
         recovery.resubmitDue();
 
-        awaitTrue(() -> completed(id), "redelivered after the staleness monitor freed it");
+        assertThat(completed(id)).as("redelivered after the staleness monitor freed it").isTrue();
         assertThat(FlakyListener.deliveries(id)).isOne();
     }
 
@@ -268,6 +268,17 @@ class EventPublicationRecoveryTest {
         @Primary
         MovableClock movableClock() {
             return new MovableClock();
+        }
+
+        /**
+         * The module listeners' executor, synchronous in this context only: a delivery (first or resubmitted) runs on
+         * the calling thread and has finished, completed or FAILED, when {@code publish} or {@code resubmitDue}
+         * returns. The test then asserts at once instead of polling wall-clock time (S19 flake: the 10-attempt test
+         * waited up to 20 s per attempt for async deliveries and timed out once under load).
+         */
+        @Bean(name = "taskExecutor")
+        org.springframework.core.task.SyncTaskExecutor taskExecutor() {
+            return new org.springframework.core.task.SyncTaskExecutor();
         }
     }
 }

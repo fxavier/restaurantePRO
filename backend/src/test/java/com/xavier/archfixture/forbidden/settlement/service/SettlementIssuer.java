@@ -6,6 +6,7 @@ import com.xavier.archfixture.forbidden.fiscal.FiscalApi;
 public class SettlementIssuer {
 
     public void issue(FiscalApi fiscal) {
+        fiscal.recordPayments();
         fiscal.issue();
     }
 }

@@ -11,6 +11,7 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.awaitility.Awaitility;
@@ -135,6 +136,48 @@ final class Installation {
         office.post(CATALOG + "/releases/" + release + "/validate", null, 200);
         office.command(CATALOG + "/releases/" + release + "/publish", Map.of("note", "R2"), 200, "publish");
         return items;
+    }
+
+    /**
+     * Prego (kitchen) 150.00, Sumo, Agua (bar) 60.00 and 37.00, Bolo (kitchen, dessert) 45.00, all 16 % VAT; Pao and
+     * Molho (kitchen) 1.00 and 2.00 at 23 %, published for {@code store}.
+     */
+    static Map<String, UUID> publishTwoRateCatalog(Browser bo, UUID store) throws Exception {
+        String catalog = CATALOG;
+        UUID family = id(bo.post(catalog + "/families", Map.of("code", "REST", "name", "Restaurante"), 201));
+        UUID unit = id(bo.post(catalog + "/units", Map.of("code", "UN", "name", "Unidade"), 201));
+        Map<String, UUID> taxes = new LinkedHashMap<>();
+        for (String rate : List.of("16", "23")) {
+            UUID tax = id(bo.post(catalog + "/tax-categories", Map.of("code", "IVA" + rate, "name", "IVA " + rate),
+                    201));
+            bo.post(catalog + "/tax-categories/" + tax + "/rates", Map.of("ratePercent", new BigDecimal(rate),
+                    "effectiveFrom", "2000-01-01T00:00:00Z"), 201);
+            taxes.put(rate, tax);
+        }
+        UUID priceList = id(bo.post(catalog + "/price-lists", Map.of("storeId", store, "name", "Sala"), 201));
+        Map<String, UUID> menu = new LinkedHashMap<>();
+        String[][] dishes = {{"PREGO", "Prego no pao", "COZINHA", "150.00", "16"},
+                {"SUMO", "Sumo de manga", "BAR", "60.00", "16"}, {"AGUA", "Agua 50cl", "BAR", "37.00", "16"},
+                {"BOLO", "Bolo de coco", "COZINHA", "45.00", "16"}, {"PAO", "Pao", "COZINHA", "1.00", "23"},
+                {"MOLHO", "Molho piri-piri", "COZINHA", "2.00", "23"}};
+        for (String[] dish : dishes) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("code", dish[0]);
+            item.put("name", dish[1]);
+            item.put("familyId", family);
+            item.put("unitId", unit);
+            item.put("taxCategoryId", taxes.get(dish[4]));
+            item.put("productionDestination", dish[2]);
+            item.put("soldByWeight", false);
+            UUID itemId = id(bo.post(catalog + "/items", item, 201));
+            bo.post(catalog + "/price-lists/" + priceList + "/prices", Map.of("itemId", itemId,
+                    "amount", new BigDecimal(dish[3])), 201);
+            menu.put(dish[0], itemId);
+        }
+        UUID release = id(bo.post(catalog + "/releases", Map.of("storeId", store), 201));
+        bo.post(catalog + "/releases/" + release + "/validate", null, 200);
+        bo.command(catalog + "/releases/" + release + "/publish", Map.of("note", "R3"), 200, "publish");
+        return menu;
     }
 
     static UUID id(JsonNode body) {

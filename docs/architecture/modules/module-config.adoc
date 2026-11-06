@@ -5,4 +5,7 @@
 |Bean references
 |* `c.x.b.a.AccessPolicy` (in Access)
 * `c.x.b.s.notify.ChangeNotifier` (in Shared kernel)
+* `c.x.b.s.events.EventPublicationStats` (in Shared kernel)
+* `c.x.b.s.events.EventPublicationRecovery` (in Shared kernel)
+* `c.x.b.a.AuditLog` (in Audit)
 |===

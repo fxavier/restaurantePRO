@@ -1,0 +1,18 @@
+[%autowidth.stretch, cols="h,a"]
+|===
+|Base package
+|`com.xavier.backend.customers`
+|Spring components
+|_Services_
+
+* `c.x.b.c.CustomersApi`
+
+_Others_
+
+* `c.x.b.c.model.dto.PhoneDigits.Validator`
+|Bean references
+|* `c.x.b.a.IdempotentRequests` (in Access)
+* `c.x.b.o.OrganizationApi` (in Organization)
+* `c.x.b.a.AccessPolicy` (in Access)
+* `c.x.b.a.AuditLog` (in Audit)
+|===
