@@ -2,9 +2,11 @@ package com.xavier.backend.architecture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.xavier.backend.BackendApplication;
 import java.nio.file.Path;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.modulith.core.ApplicationModules;
 import org.springframework.modulith.core.Violations;
@@ -22,6 +24,21 @@ class ModularityTests {
     @Test
     void modulesRespectTheirDeclaredBoundaries() {
         MODULES.verify();
+    }
+
+    /** S37: the R4 modules exist from the prefactor on, with the named interfaces the later slices code against. */
+    @Test
+    void theR4ModulesExposeTheirFrozenContracts() {
+        assertThat(namedInterfaceTypes("promotions", "dto")).contains("PricingRequest", "PricingLine",
+                "PricingResult", "PricedLine", "AppliedPromotion", "DiscountLimits");
+        assertThat(namedInterfaceTypes("inventory", "event")).contains("StockMovementsPosted");
+    }
+
+    private static List<String> namedInterfaceTypes(String module, String namedInterface) {
+        return MODULES.getModuleByName(module)
+                .flatMap(found -> found.getNamedInterfaces().getByName(namedInterface))
+                .map(types -> types.asJavaClasses().map(JavaClass::getSimpleName).toList())
+                .orElse(List.of());
     }
 
     @Test

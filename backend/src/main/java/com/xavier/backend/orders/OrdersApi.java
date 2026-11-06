@@ -1,5 +1,6 @@
 package com.xavier.backend.orders;
 
+import com.xavier.backend.orders.service.BatchFactsService;
 import com.xavier.backend.orders.service.LineVoidService;
 import com.xavier.backend.orders.service.OrderCoordinationService;
 import com.xavier.backend.orders.service.VoidFactsService;
@@ -28,11 +29,14 @@ public class OrdersApi {
     private final OrderCoordinationService coordination;
     private final LineVoidService voids;
     private final VoidFactsService voidFacts;
+    private final BatchFactsService batchFacts;
 
-    OrdersApi(OrderCoordinationService coordination, LineVoidService voids, VoidFactsService voidFacts) {
+    OrdersApi(OrderCoordinationService coordination, LineVoidService voids, VoidFactsService voidFacts,
+              BatchFactsService batchFacts) {
         this.coordination = coordination;
         this.voids = voids;
         this.voidFacts = voidFacts;
+        this.batchFacts = batchFacts;
     }
 
     /**
@@ -123,6 +127,16 @@ public class OrdersApi {
     @Transactional(readOnly = true)
     public Page<UUID> voidIds(UUID storeId, LocalDate from, LocalDate to, Pageable p) {
         return voidFacts.ids(storeId, from, to, p);
+    }
+
+    /**
+     * One round's facts, for inventory's consumption (D100).
+     *
+     * @throws com.xavier.backend.shared.exception.NotFoundException 404 for an unknown round
+     */
+    @Transactional(readOnly = true)
+    public BatchFacts batchFacts(UUID batchId) {
+        return batchFacts.facts(batchId);
     }
 
     /** OPEN orders of the store whose business day is on or before {@code businessDayInclusive} (day close). */

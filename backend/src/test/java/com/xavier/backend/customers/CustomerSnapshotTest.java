@@ -63,10 +63,28 @@ class CustomerSnapshotTest {
         assertThatThrownBy(() -> customers.snapshot(UUID.randomUUID())).isInstanceOf(NotFoundException.class);
     }
 
-    private void addAddress(UUID customer, String kind, String line1) throws Exception {
-        mvc.perform(idem(post(BO + "/" + customer + "/addresses")).with(account(null, Permission.CUSTOMER_MANAGE))
+    /** D100: a delivery order snapshots one of its customer's addresses, read through the owner's API. */
+    @Test
+    void anAddressIsReadOnlyThroughItsOwnCustomer() throws Exception {
+        UUID store = fixtures.newStore();
+        UUID customer = fixtures.newCustomer(CustomersFixtures.pos(store), "Address " + token(), null, null);
+        UUID other = fixtures.newCustomer(CustomersFixtures.pos(store), "Other " + token(), null, null);
+        UUID address = addAddress(customer, "DELIVERY", "Rua da Entrega 1");
+
+        assertThat(customers.address(customer, address)).hasValue(new AddressSnapshot(address, "DELIVERY",
+                "Rua da Entrega 1", null, null, null, null, null));
+        assertThat(customers.address(other, address)).isEmpty();
+        assertThat(customers.address(customer, UUID.randomUUID())).isEmpty();
+        assertThat(customers.address(customer, null)).isEmpty();
+        assertThat(customers.address(null, address)).isEmpty();
+    }
+
+    private UUID addAddress(UUID customer, String kind, String line1) throws Exception {
+        String body = mvc.perform(idem(post(BO + "/" + customer + "/addresses"))
+                        .with(account(null, Permission.CUSTOMER_MANAGE))
                         .contentType(MediaType.APPLICATION_JSON).content("""
                                 {"kind": "%s", "line1": "%s"}""".formatted(kind, line1)))
-                .andExpect(status().isCreated());
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        return UUID.fromString(CustomersFixtures.JSON.readTree(body).get("id").asString());
     }
 }

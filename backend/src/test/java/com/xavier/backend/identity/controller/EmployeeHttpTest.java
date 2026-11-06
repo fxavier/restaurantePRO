@@ -56,7 +56,16 @@ class EmployeeHttpTest {
             Permission.BILL_SPLIT, Permission.CUSTOMER_VIEW, Permission.CUSTOMER_MANAGE, Permission.CREDIT_LIMIT_MANAGE,
             Permission.CREDIT_SALE, Permission.PAYMENT_REFUND, Permission.PAYMENT_REFUND_APPROVE, Permission.CASH_ADJUST,
             Permission.CASH_DAY_REOPEN, Permission.CASH_SESSION_FORCE_CLOSE, Permission.RECONCILIATION_VIEW,
-            Permission.RECONCILIATION_MANAGE, Permission.REPORT_VIEW, Permission.REPORT_EXPORT);
+            Permission.RECONCILIATION_MANAGE, Permission.REPORT_VIEW, Permission.REPORT_EXPORT,
+            // D134 (V3012)
+            Permission.PROMOTION_VIEW, Permission.PROMOTION_MANAGE, Permission.ORDER_DISCOUNT,
+            Permission.ORDER_DISCOUNT_APPROVE, Permission.ORDER_OFFER, Permission.CATALOG_AVAILABILITY,
+            Permission.LOYALTY_VIEW, Permission.LOYALTY_ENROLL, Permission.LOYALTY_REDEEM, Permission.LOYALTY_ADJUST,
+            Permission.RESERVATION_VIEW, Permission.RESERVATION_MANAGE, Permission.DELIVERY_OPERATE,
+            Permission.DELIVERY_ZONE_MANAGE, Permission.INVENTORY_VIEW, Permission.INVENTORY_MANAGE,
+            Permission.INVENTORY_MOVE, Permission.INVENTORY_TRANSFER, Permission.INVENTORY_COUNT,
+            Permission.INVENTORY_COUNT_APPROVE, Permission.RECIPE_MANAGE, Permission.PURCHASE_MANAGE,
+            Permission.GOODS_RECEIVE);
 
     @Autowired
     MockMvc mvc;
