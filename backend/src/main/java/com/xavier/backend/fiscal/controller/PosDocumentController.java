@@ -1,11 +1,10 @@
 package com.xavier.backend.fiscal.controller;
 
-import com.xavier.backend.access.AccessPolicy;
+import com.xavier.backend.access.IdempotentRequests;
 import com.xavier.backend.fiscal.model.dto.DocumentView;
 import com.xavier.backend.fiscal.model.dto.ReprintView;
 import com.xavier.backend.fiscal.service.DocumentQueryService;
 import com.xavier.backend.fiscal.service.ReprintService;
-import com.xavier.backend.shared.idempotency.IdempotencyService;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -26,15 +25,12 @@ class PosDocumentController {
 
     private final DocumentQueryService documents;
     private final ReprintService reprints;
-    private final IdempotencyService idempotency;
-    private final AccessPolicy accessPolicy;
+    private final IdempotentRequests idempotency;
 
-    PosDocumentController(DocumentQueryService documents, ReprintService reprints, IdempotencyService idempotency,
-                          AccessPolicy accessPolicy) {
+    PosDocumentController(DocumentQueryService documents, ReprintService reprints, IdempotentRequests idempotency) {
         this.documents = documents;
         this.reprints = reprints;
         this.idempotency = idempotency;
-        this.accessPolicy = accessPolicy;
     }
 
     @GetMapping("/{id}")
@@ -46,8 +42,7 @@ class PosDocumentController {
     @PostMapping("/{id}/reprints")
     ResponseEntity<ReprintView> reprint(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
                                         HttpServletRequest request) {
-        return idempotency.execute(accessPolicy.current().idempotencyScope("fiscal.document.reprint"), key,
-                request.getMethod() + " " + request.getRequestURI(), null, ReprintView.class,
+        return idempotency.execute("fiscal.document.reprint", key, request, null, ReprintView.class,
                 () -> ResponseEntity.status(HttpStatus.CREATED).body(reprints.reprint(id)));
     }
 }

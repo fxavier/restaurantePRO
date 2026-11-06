@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.xavier.backend.dining.model.dto.CloseReason;
 import com.xavier.backend.dining.model.dto.OccupationView;
+import com.xavier.backend.dining.model.dto.TableInfo;
 import com.xavier.backend.dining.model.dto.TableState;
 import com.xavier.backend.shared.exception.BusinessRuleException;
 import com.xavier.backend.shared.exception.CodedException;
@@ -112,6 +113,14 @@ class DiningApiTest {
 
         assertRefused(() -> open(secondTable, order), 409, "ORDER_SEATED");
         assertThat(inPosTransaction(() -> dining.tableState(secondTable)).openOrderId()).isNull();
+    }
+
+    @Test
+    void tableInfoNamesTheTableAndItsAreaWithoutASessionOrATransaction() {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+
+        assertThat(dining.tableInfo(table)).contains(new TableInfo(table, "M1", area, "SALA", "Sala"));
+        assertThat(dining.tableInfo(UUID.randomUUID())).isEmpty();
     }
 
     @Test

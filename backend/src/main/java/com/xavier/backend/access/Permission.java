@@ -71,7 +71,42 @@ public enum Permission {
     /** Reprint a document as a copy. */
     FISCAL_DOCUMENT_REPRINT,
     /** Fiscal series. */
-    FISCAL_MANAGE;
+    FISCAL_MANAGE,
+    // R3 (D92). Granted by V3010__identity_r3_permissions.sql.
+    /** Create and cancel bill partitions. */
+    BILL_SPLIT,
+    /** Search and view customers, their statement and aging. Company-wide (P38): checked with requireInAnyStore. */
+    CUSTOMER_VIEW,
+    /** Create and edit customers, contacts and addresses. */
+    CUSTOMER_MANAGE,
+    /** Credit limit changes, credit block and unblock. */
+    CREDIT_LIMIT_MANAGE,
+    /** Credit charges and their cancel. */
+    CREDIT_SALE,
+    /** Request a refund. */
+    PAYMENT_REFUND,
+    /** Be the approver of a refund. */
+    PAYMENT_REFUND_APPROVE,
+    /** Adjustments on closed cash sessions. */
+    CASH_ADJUST,
+    /** Reopen a financially closed day (with an approver). */
+    CASH_DAY_REOPEN,
+    /** Close an abandoned cash session (P22). */
+    CASH_SESSION_FORCE_CLOSE,
+    /** Reconciliation batches, entries, controls and the in-doubt list (read). */
+    RECONCILIATION_VIEW,
+    /** Import statements, resolve reconciliation entries. */
+    RECONCILIATION_MANAGE,
+    /** Reports. */
+    REPORT_VIEW,
+    /** Report CSV export (audited). */
+    REPORT_EXPORT,
+    /** Rebuild the reporting projections. */
+    REPORT_REBUILD,
+    /** Audit CSV export (audited). */
+    AUDIT_EXPORT,
+    /** Support access grants. */
+    SUPPORT_ACCESS_MANAGE;
 
     private static final String PREFIX = "PERM_";
 

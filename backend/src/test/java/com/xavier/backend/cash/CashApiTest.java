@@ -125,6 +125,19 @@ class CashApiTest {
     }
 
     @Test
+    void closingASessionAuditsTheCountsAsAListOfMethodCodesAndAmounts() {
+        close(session);
+
+        // codes are values, never keys: the audit guard checks every key as a field name (D82)
+        assertThat(fixtures.count("""
+                SELECT count(*) FROM audit.audit_event
+                WHERE action = 'CASH_SESSION_CLOSED' AND entity_id = ? AND jsonb_typeof(details -> 'counts') = 'array'
+                  AND details @> '{"counts": [{"methodCode": "CASH", "amount": "110.00"},
+                                              {"methodCode": "CARD", "amount": "0.00"}]}'::jsonb""",
+                session.toString())).isOne();
+    }
+
+    @Test
     void aSessionClosedByAnotherTransactionRefusesTheReceiptEvenWhenThisOneReadItBefore() {
         TransactionTemplate other = new TransactionTemplate(tx.getTransactionManager());
         other.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);

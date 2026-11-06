@@ -1,11 +1,10 @@
 package com.xavier.backend.catalog.controller;
 
-import com.xavier.backend.access.AccessPolicy;
+import com.xavier.backend.access.IdempotentRequests;
 import com.xavier.backend.catalog.model.dto.PublishRequest;
 import com.xavier.backend.catalog.model.dto.ReleaseCreateRequest;
 import com.xavier.backend.catalog.model.dto.ReleaseSummary;
 import com.xavier.backend.catalog.service.ReleaseService;
-import com.xavier.backend.shared.idempotency.IdempotencyService;
 import com.xavier.backend.shared.web.PageResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -31,13 +30,11 @@ class ReleaseController {
     static final String PATH = "/api/v1/backoffice/catalog/releases";
 
     private final ReleaseService releases;
-    private final IdempotencyService idempotency;
-    private final AccessPolicy accessPolicy;
+    private final IdempotentRequests idempotency;
 
-    ReleaseController(ReleaseService releases, IdempotencyService idempotency, AccessPolicy accessPolicy) {
+    ReleaseController(ReleaseService releases, IdempotentRequests idempotency) {
         this.releases = releases;
         this.idempotency = idempotency;
-        this.accessPolicy = accessPolicy;
     }
 
     @GetMapping
@@ -67,8 +64,7 @@ class ReleaseController {
     ResponseEntity<ReleaseSummary> publish(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
                               @Valid @RequestBody(required = false) PublishRequest body, HttpServletRequest request) {
         PublishRequest publish = body == null ? PublishRequest.EMPTY : body;
-        return idempotency.execute(accessPolicy.current().idempotencyScope("catalog.release.publish"), key,
-                request.getMethod() + " " + request.getRequestURI(), publish, ReleaseSummary.class,
+        return idempotency.execute("catalog.release.publish", key, request, publish, ReleaseSummary.class,
                 () -> ResponseEntity.ok(releases.publish(id, publish)));
     }
 }

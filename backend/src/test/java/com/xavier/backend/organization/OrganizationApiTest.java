@@ -19,6 +19,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.context.SecurityContextHolder;
+import tools.jackson.databind.json.JsonMapper;
 
 /** Other modules call OrganizationApi after their own authorization, or before login: it needs no actor. */
 @OrganizationModuleTest
@@ -33,6 +34,9 @@ class OrganizationApiTest {
 
     @Autowired
     TerminalService terminals;
+
+    @Autowired
+    JsonMapper json;
 
     @Test
     void findsAStoreWithTheCompanyCurrency() {
@@ -74,6 +78,42 @@ class OrganizationApiTest {
 
         terminals.revoke(terminal.id());
         assertThat(organization.findTerminalByDeviceToken(token)).isEmpty();
+    }
+
+    @Test
+    void findsATerminalByIdWhateverItsStatus() throws Exception {
+        StoreSummary store = newStore("Africa/Maputo");
+        TerminalSummary terminal = terminals.create(new TerminalCreateRequest(store.id(), "POS2", "Esplanada"));
+        SecurityContextHolder.clearContext();
+
+        assertThat(organization.findTerminal(terminal.id())).hasValueSatisfying(found -> {
+            assertThat(found.storeId()).isEqualTo(store.id());
+            assertThat(found.code()).isEqualTo("POS2");
+            assertThat(found.name()).isEqualTo("Esplanada");
+            assertThat(found.active()).isFalse(); // registered, not enrolled yet
+        });
+        assertThat(organization.findTerminal(UUID.randomUUID())).isEmpty();
+    }
+
+    @Test
+    void anEnrolledTerminalIsActiveAndARevokedOneIsStillFoundButInactive() {
+        StoreSummary store = newStore("Africa/Maputo");
+        TerminalSummary terminal = terminals.create(new TerminalCreateRequest(store.id(), "POS3", "Sala"));
+        terminals.enroll(terminals.issueEnrollmentCode(terminal.id()).code(), "192.0.2.1");
+
+        assertThat(organization.findTerminal(terminal.id())).hasValueSatisfying(found ->
+                assertThat(found.active()).isTrue());
+
+        terminals.revoke(terminal.id());
+        assertThat(organization.findTerminal(terminal.id())).hasValueSatisfying(found ->
+                assertThat(found.active()).isFalse());
+    }
+
+    @Test
+    void theTerminalJsonKeepsItsR2Shape() {
+        TerminalSummary terminal = new TerminalSummary(UUID.randomUUID(), UUID.randomUUID(), "POS1", "Bar", "ACTIVE");
+
+        assertThat(json.writeValueAsString(terminal)).contains("\"status\":\"ACTIVE\"").doesNotContain("active\"");
     }
 
     @Test
