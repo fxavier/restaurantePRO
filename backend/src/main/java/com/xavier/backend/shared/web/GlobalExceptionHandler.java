@@ -4,6 +4,7 @@ import com.xavier.backend.shared.exception.BusinessRuleException;
 import com.xavier.backend.shared.exception.CodedException;
 import com.xavier.backend.shared.exception.ConflictException;
 import com.xavier.backend.shared.exception.NotFoundException;
+import com.xavier.backend.shared.exception.UnavailableException;
 import java.util.List;
 import org.hibernate.query.sqm.UnknownPathException;
 import org.slf4j.Logger;
@@ -62,6 +63,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(BusinessRuleException.class)
     ProblemDetail businessRule(BusinessRuleException e) {
         return problem(HttpStatus.UNPROCESSABLE_CONTENT, e);
+    }
+
+    @ExceptionHandler(UnavailableException.class)
+    ProblemDetail unavailable(UnavailableException e) {
+        return problem(HttpStatus.SERVICE_UNAVAILABLE, e);
     }
 
     /** {@code detail} is the message; the stable {@code code} (when set) and the extra properties are added. */

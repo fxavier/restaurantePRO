@@ -11,10 +11,10 @@ import java.util.Set;
  * ProblemDetail {@code detail}, an optional stable {@code code} that clients switch on (never renamed once
  * released), and optional extra ProblemDetail properties (e.g. {@code documentId}, an {@code errors} list). The
  * {@code GlobalExceptionHandler} renders all three. Modules extend {@link NotFoundException},
- * {@link ConflictException} or {@link BusinessRuleException}, never this class.
+ * {@link ConflictException}, {@link BusinessRuleException} or {@link UnavailableException}, never this class.
  */
 public abstract sealed class CodedException extends RuntimeException
-        permits BusinessRuleException, ConflictException, NotFoundException {
+        permits BusinessRuleException, ConflictException, NotFoundException, UnavailableException {
 
     /** ProblemDetail members and the code itself: a property must not shadow them. */
     private static final Set<String> RESERVED = Set.of("code", "type", "title", "status", "detail", "instance");
