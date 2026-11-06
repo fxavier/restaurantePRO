@@ -55,7 +55,7 @@ class CashDayTest {
     }
 
     @Test
-    void aFinanciallyClosedDayAcceptsNoCommand() {
+    void aFinanciallyClosedDayClosesNoFurther() {
         CashDay day = operationallyClosed();
         day.closeFinancially(ACTOR, ActorKind.ACCOUNT, NOW);
 
@@ -63,8 +63,19 @@ class CashDayTest {
                 .isInstanceOf(IllegalCashStateException.class);
         assertThatThrownBy(() -> day.closeFinancially(ACTOR, ActorKind.ACCOUNT, NOW))
                 .isInstanceOf(IllegalCashStateException.class);
-        assertThatThrownBy(() -> day.reopen(ACTOR, ActorKind.ACCOUNT, UUID.randomUUID(), "x", NOW))
-                .isInstanceOf(IllegalCashStateException.class);
+    }
+
+    /** D79 (3): the financial reopen goes straight back to OPEN and records where it came from. */
+    @Test
+    void aFinanciallyClosedDayReopensAndTheFactKeepsTheStateItCameFrom() {
+        CashDay day = operationallyClosed();
+        day.closeFinancially(ACTOR, ActorKind.ACCOUNT, NOW);
+
+        CashDayReopening reopening = day.reopen(ACTOR, ActorKind.ACCOUNT, UUID.randomUUID(), "missed refund", NOW);
+
+        assertThat(day.getStatus()).isEqualTo(CashDayStatus.OPEN);
+        assertThat(reopening.getFromStatus()).isEqualTo(CashDayStatus.FINANCIALLY_CLOSED);
+        assertThat(reopening.getPreviousClosedAt()).isEqualTo(NOW.minusSeconds(60));
     }
 
     @Test
@@ -78,6 +89,7 @@ class CashDayTest {
         assertThat(reopening.getApproverEmployeeId()).isEqualTo(approver);
         assertThat(reopening.getPreviousClosedAt()).isEqualTo(NOW.minusSeconds(60));
         assertThat(reopening.getReason()).isEqualTo("forgotten receipt");
+        assertThat(reopening.getFromStatus()).isEqualTo(CashDayStatus.OPERATIONALLY_CLOSED);
     }
 
     @Test
