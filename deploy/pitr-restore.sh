@@ -4,9 +4,12 @@
 # inspect the result, then bring it into the live database with backup.sh + restore.sh --force
 # (deploy/README.md, "Point-in-time recovery").
 #
-# Steps: decrypt (.age), check SHA256SUMS, unpack the base backup into a new volume <name>-data,
-# copy the WAL files into it, start PostgreSQL in archive recovery up to --target-time, wait until
-# it has promoted, then remove the recovery settings and the WAL copy. PostgreSQL stops before the
+# Steps, in a preparing container of the pinned image (no network) that alone sees the identity, read-only
+# (D98): decrypt the base archive (.age) into the new volume <name>-data, check it against its sidecar and
+# SHA256SUMS, run pg_verifybackup, unpack it, then decrypt each <segment>.age WAL file (checked against its
+# <segment>.sha256 sidecar) into the same volume. Plaintext exists only inside that volume, as in any
+# database volume. Then start PostgreSQL in archive recovery up to --target-time, wait until it has
+# promoted, and remove the recovery settings and the WAL copy. PostgreSQL stops before the
 # first transaction that committed after the target time. If the WAL does not reach the target,
 # PostgreSQL refuses to finish ("recovery ended before configured recovery target was reached") and
 # this script fails and removes what it created.
@@ -16,10 +19,11 @@
 #   --target-time  ISO 8601 with an explicit offset, e.g. 2026-11-05T14:30:00Z or 2026-11-05T15:30:00+01:00;
 #                  or "latest" to replay every archived WAL file
 #   --name         container to create (default: restaurantpro-pitr); its volume is <name>-data
-#   --wal-dir      directory of WAL files as written by basebackup.sh (<dir>/wal, .age files decrypted)
+#   --wal-dir      directory of WAL files as written by basebackup.sh (<dir>/wal; mounted read-only)
 #   --wal-volume   Docker volume holding the WAL archive (default: restaurantpro_pg-wal-archive, the live
 #                  installation's pg-wal-archive volume; mounted read-only)
-#   --identity     age identity file, for .age files (default: $BACKUP_AGE_IDENTITY)
+#   --identity     age identity file, for .age files (default: $BACKUP_AGE_IDENTITY). It must be yours, mode
+#                  0600 or 0400, outside deploy/ and the backup directories (D98 rule 2), e.g. on a tmpfs
 #   --timeout      seconds to wait for recovery (default: 1800)
 #   --force        replace the container <name> and volume <name>-data of an earlier pitr-restore.sh run
 #                  (label restaurantpro.pitr=<name>); anything else, Compose-managed objects above all,
@@ -28,11 +32,12 @@
 set -euo pipefail
 umask 077
 
-PG_IMAGE="postgres:18.6-alpine" # D4: same pin as compose.yaml
+DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DB_USER=restaurantpro
 PGDATA_IN_IMAGE=/var/lib/postgresql/18/docker
 WAL_COPY=/var/lib/postgresql/pitr-wal # inside the new volume, outside PGDATA; removed after recovery
 WAL_NAME='^([0-9A-F]{24}(\.partial|\.[0-9A-F]{8}\.backup)?|[0-9A-F]{8}\.history)$'
+STAGING=/var/lib/postgresql/pitr-staging # the decrypted base archive, inside the new volume; removed at once
 target=""
 name=restaurantpro-pitr
 wal_dir=""
@@ -44,7 +49,11 @@ archive=""
 
 die() { echo "pitr-restore: $*" >&2; exit 1; }
 log() { echo "pitr-restore: $*" >&2; }
-sha256_check() { if command -v sha256sum >/dev/null; then sha256sum -c --quiet "$@"; else shasum -a 256 -c --quiet "$@"; fi; }
+# shellcheck source=lib/common.sh
+. "$DEPLOY_DIR/lib/common.sh"
+# shellcheck source=lib/age.sh
+. "$DEPLOY_DIR/lib/age.sh"
+PG_IMAGE="$RP_AGE_IMAGE" # D4 PostgreSQL plus the pinned age (deploy/postgres/Dockerfile), as compose.yaml
 
 while (($#)); do
   case "$1" in
@@ -76,6 +85,27 @@ if [[ -n "$wal_dir" ]]; then
 else
   docker volume inspect "$wal_volume" >/dev/null 2>&1 || die "WAL volume not found: $wal_volume"
 fi
+env_mode
+sidecar="${archive%.age}"
+sidecar="${sidecar%.tar}.tar.sha256"
+allow_plain_wal=1 # plaintext WAL only next to a plaintext base, or in test mode
+if [[ "$archive" == *.age ]]; then
+  [[ -n "$identity" ]] || die "encrypted base archive: pass --identity or set BACKUP_AGE_IDENTITY"
+  ! production || allow_plain_wal=""
+  if [[ -e "$sidecar" ]]; then
+    is_sidecar "$sidecar" || die "$sidecar is not a well-formed sidecar"
+    # Key-free, before anything is created: damaged or swapped ciphertext.
+    [[ "$(sha256_hex "$archive")" == "$(sidecar_cipher "$sidecar")" ]] || die "checksum mismatch: $archive does not match the ciphertext SHA-256 in $sidecar"
+  elif production; then
+    die "no sidecar $sidecar next to $archive: copy it too (production restores check it)"
+  fi
+fi
+if [[ -n "$identity" ]]; then
+  backup_dir="$(dirname "$archive")"
+  [[ "$(basename "$backup_dir")" != base ]] || backup_dir="$(dirname "$backup_dir")" # <dir>/base/<archive>
+  require_identity "$identity" "$backup_dir" ${wal_dir:+"$wal_dir"}
+fi
+age_image_ready
 volume="$name-data"
 
 # --force replaces only what an earlier pitr-restore.sh --name "$name" created (label restaurantpro.pitr),
@@ -104,12 +134,10 @@ for kind in container volume; do
   [[ "$(replaceable "$kind" "$object")" == absent ]] || die "could not remove $kind $object"
 done
 
-work="$(mktemp -d "${TMPDIR:-/tmp}/rp-pitr.XXXXXX")"
 created=false # true once this run created the volume; on failure it removes only what it created
 cid=""
 cleanup() {
   local status=$?
-  rm -rf "$work"
   if $created && ((status != 0)); then
     if [[ -n "$cid" ]]; then docker rm -f -v "$cid" >/dev/null 2>&1 || log "could not remove container $name"; fi
     docker volume rm "$volume" >/dev/null 2>&1 || log "could not remove volume $volume"
@@ -119,44 +147,19 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT TERM
 
-decrypt() { # $1 encrypted file, $2 output
-  command -v age >/dev/null || die "age is not installed"
-  [[ -n "$identity" ]] || die "encrypted file: pass --identity or set BACKUP_AGE_IDENTITY"
-  age -d -i "$identity" -o "$2" "$1" || die "cannot decrypt $1"
-}
-
-if [[ "$archive" == *.age ]]; then decrypt "$archive" "$work/payload.tar"; else cp "$archive" "$work/payload.tar"; fi
-log "verifying $archive"
-mkdir "$work/base"
-tar -xf "$work/payload.tar" -C "$work/base" SHA256SUMS backup_manifest base.tar.gz pg_wal.tar.gz \
-  || die "not a basebackup.sh archive"
-rm "$work/payload.tar"
-(cd "$work/base" && sha256_check SHA256SUMS >&2) || die "checksum mismatch: archive is corrupted"
-
-wal_mount=()
+# Read-only inputs of the preparing container; the identity is mounted into it alone.
+mounts=(-v "$(abs_path "$archive"):/backup/payload:ro")
+if [[ -f "$sidecar" ]]; then mounts+=(-v "$(abs_path "$sidecar"):/backup/payload.sha256:ro"); fi
+if [[ -n "$identity" ]]; then mounts+=(-v "$(abs_path "$identity"):/run/rp/identity:ro"); fi
 if [[ -n "$wal_dir" ]]; then
-  mkdir "$work/wal"
-  copied=0
-  for f in "$wal_dir"/*; do
-    [[ -f "$f" ]] || continue
-    base="$(basename "$f")"
-    if [[ "$base" == *.age && "${base%.age}" =~ $WAL_NAME ]]; then
-      decrypt "$f" "$work/wal/${base%.age}"
-    elif [[ "$base" =~ $WAL_NAME ]]; then
-      cp "$f" "$work/wal/$base"
-    else
-      continue
-    fi
-    copied=$((copied + 1))
-  done
-  log "using $copied WAL file(s) from $wal_dir"
-  wal_mount=(-v "$work/wal:/wal-source:ro")
+  log "using the WAL files in $wal_dir"
+  mounts+=(-v "$(abs_dir "$wal_dir"):/wal-source:ro")
 else
   log "using the WAL archive in volume $wal_volume"
-  wal_mount=(-v "$wal_volume:/wal-source:ro")
+  mounts+=(-v "$wal_volume:/wal-source:ro")
 fi
 
-log "unpacking the base backup into new volume $volume"
+log "verifying $archive and unpacking it into new volume $volume"
 # "docker volume create" silently reuses an existing volume: make sure this run creates it.
 [[ "$(replaceable volume "$volume")" == absent ]] || die "volume $volume appeared meanwhile; refusing to reuse it"
 docker volume create --label restaurantpro.pitr="$name" "$volume" >/dev/null
@@ -165,14 +168,48 @@ recovery_target=""
 # PostgreSQL rejects time zone abbreviations here, and "Z" counts as one: write it as +00:00.
 [[ "$target" == latest ]] || recovery_target="recovery_target_time = '${target%Z}$([[ "$target" == *Z ]] && echo +00:00)'"
 # The values are validated above and passed through the environment, never spliced into the script.
-docker run --rm --network none -v "$volume:/var/lib/postgresql" -v "$work/base:/restore:ro" "${wal_mount[@]}" \
-  -e RECOVERY_TARGET="$recovery_target" -e WAL_COPY="$WAL_COPY" -e WAL_NAME="$WAL_NAME" \
+docker run --rm --network none -v "$volume:/var/lib/postgresql" "${mounts[@]}" \
+  -e RECOVERY_TARGET="$recovery_target" -e WAL_COPY="$WAL_COPY" -e WAL_NAME="$WAL_NAME" -e STAGING="$STAGING" \
+  -e ENCRYPTED="$([[ "$archive" == *.age ]] && echo 1 || true)" -e ALLOW_PLAIN_WAL="$allow_plain_wal" \
   --entrypoint sh "$PG_IMAGE" -euc '
+    say() { echo "pitr-restore: $*" >&2; }
+    decrypt() { # $1 ciphertext, $2 plaintext output
+      [ -f /run/rp/identity ] || { say "$1 is encrypted: pass --identity"; exit 1; }
+      age -d -i /run/rp/identity -o "$2" "$1" 2>/dev/null || { say "cannot decrypt $1 with this identity (wrong key?)"; exit 1; }
+    }
+    matches() { # $1 file, $2 sidecar, $3 line: 1 = plaintext, 2 = ciphertext SHA-256
+      [ "$(sha256sum "$1" | cut -d" " -f1)" = "$(sed -n "$3p" "$2" | cut -d" " -f1)" ] || { say "checksum mismatch against ${2##*/}: corrupted"; exit 1; }
+    }
     d='"$PGDATA_IN_IMAGE"'
-    mkdir -p "$d" "$WAL_COPY"
-    tar -xzf /restore/base.tar.gz -C "$d"
-    tar -xzf /restore/pg_wal.tar.gz -C "$d/pg_wal"
-    ls -1 /wal-source | grep -E "$WAL_NAME" | while IFS= read -r f; do cp "/wal-source/$f" "$WAL_COPY/$f"; done
+    mkdir -p "$d" "$WAL_COPY" "$STAGING"
+    if [ -n "$ENCRYPTED" ]; then decrypt /backup/payload "$STAGING/payload.tar"; else cp /backup/payload "$STAGING/payload.tar"; fi
+    if [ -f /backup/payload.sha256 ]; then matches "$STAGING/payload.tar" /backup/payload.sha256 1; fi
+    tar -xf "$STAGING/payload.tar" -C "$STAGING" SHA256SUMS backup_manifest base.tar.gz pg_wal.tar.gz       || { say "not a basebackup.sh archive"; exit 1; }
+    rm "$STAGING/payload.tar"
+    (cd "$STAGING" && sha256sum -c SHA256SUMS >/dev/null) || { say "checksum mismatch: archive is corrupted"; exit 1; }
+    rm "$STAGING/SHA256SUMS" # pg_verifybackup accepts only the backup files themselves
+    pg_verifybackup -n "$STAGING" >&2 || { say "pg_verifybackup rejected the base backup"; exit 1; }
+    tar -xzf "$STAGING/base.tar.gz" -C "$d"
+    tar -xzf "$STAGING/pg_wal.tar.gz" -C "$d/pg_wal"
+    rm -rf "$STAGING"
+    n=0
+    for p in /wal-source/*; do
+      [ -f "$p" ] || continue
+      f="${p##*/}"
+      if [ "${f%.age}" != "$f" ] && echo "${f%.age}" | grep -qE "$WAL_NAME"; then
+        [ -f "/wal-source/${f%.age}.sha256" ] || { say "$f has no ${f%.age}.sha256 sidecar"; exit 1; }
+        matches "$p" "/wal-source/${f%.age}.sha256" 2
+        decrypt "$p" "$WAL_COPY/${f%.age}"
+        matches "$WAL_COPY/${f%.age}" "/wal-source/${f%.age}.sha256" 1
+      elif echo "$f" | grep -qE "$WAL_NAME" && [ ! -e "$p.age" ]; then
+        [ -n "$ALLOW_PLAIN_WAL" ] || { say "plaintext WAL $f next to an encrypted base in production: refusing it (basebackup.sh --encrypt-legacy)"; exit 1; }
+        cp "$p" "$WAL_COPY/$f"
+      else
+        continue
+      fi
+      n=$((n + 1))
+    done
+    say "base backup verified (SHA256SUMS, pg_verifybackup); $n WAL file(s) ready in the volume"
     touch "$d/recovery.signal"
     {
       echo "# pitr-restore.sh: removed once recovery has finished"
