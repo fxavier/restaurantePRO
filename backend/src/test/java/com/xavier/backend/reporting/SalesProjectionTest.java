@@ -78,6 +78,18 @@ class SalesProjectionTest {
     }
 
     @Test
+    void aWalkInSalesLinesCarryTheOrdersMode() throws Exception {
+        Sale sale = sales.walkInSale("2", "TAKEAWAY");
+        sales.payAndClose(sale);
+        UUID document = reporting.issuedDocument(sale.order());
+
+        reporting.awaitSalesRecord(document);
+
+        assertThat(reporting.row("SELECT mode, area_code FROM reporting.sales_record_line WHERE document_id = ? "
+                + "AND line_no = 1", document)).containsEntry("mode", "TAKEAWAY").containsEntry("area_code", null);
+    }
+
+    @Test
     void aRedeliveredDocumentEventProjectsNothingNew() throws Exception {
         Sale sale = sales.sale("2");
         sales.payAndClose(sale);

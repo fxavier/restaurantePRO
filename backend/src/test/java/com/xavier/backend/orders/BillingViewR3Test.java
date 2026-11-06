@@ -57,15 +57,16 @@ class BillingViewR3Test {
     }
 
     @Test
-    void aSeatedOrdersViewNamesItsTable() {
+    void aSeatedOrdersViewIsDineInAndNamesItsTable() {
         OrderBillingView view = inPos(() -> ordersApi.billingView(order));
 
         assertThat(view.tableId()).isEqualTo(shop.table());
         assertThat(view.tableCode()).isEqualTo("M1");
+        assertThat(view.mode()).isEqualTo(OrderMode.DINE_IN);
     }
 
     @Test
-    void aWalkInOrderHasNoTable() throws Exception {
+    void aWalkInOrderHasItsModeAndNoTable() throws Exception {
         UUID takeaway = id(OrdersFixtures.json(mvc.perform(post(OrdersFixtures.POS + "/orders")
                         .with(OrdersActors.pos(shop.store(), opener, terminal, Permission.ORDER_EDIT)).with(csrf())
                         .header("Idempotency-Key", UUID.randomUUID().toString())
@@ -77,6 +78,7 @@ class BillingViewR3Test {
 
         assertThat(view.tableId()).isNull();
         assertThat(view.tableCode()).isNull();
+        assertThat(view.mode()).isEqualTo(OrderMode.TAKEAWAY);
     }
 
     @Test

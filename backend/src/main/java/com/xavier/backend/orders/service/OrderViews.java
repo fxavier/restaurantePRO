@@ -91,8 +91,8 @@ public class OrderViews {
         return orders.stream().map(order -> {
             List<BillingLine> billable = billingLines(confirmed.getOrDefault(order.getId(), List.of()), deducted);
             return new OrderBillingView(order.getId(), order.getStoreId(), order.getVersion(), order.getLifecycle(),
-                    order.getBillingLock(), order.getBusinessDay(), billable, due(order, billable), order.getTableId(),
-                    order.getTableCode());
+                    order.getBillingLock(), order.getBusinessDay(), billable, due(order, billable), order.getMode(),
+                    order.getTableId(), order.getTableCode());
         }).toList();
     }
 
