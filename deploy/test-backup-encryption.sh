@@ -342,6 +342,21 @@ grep -q 'no sidecar' "$WORK/nosidecar.err" || fail "unexpected: $(cat "$WORK/nos
 docker volume inspect "$PITR_NAME-data" >/dev/null 2>&1 && fail "the refused restore left volume $PITR_NAME-data"
 rm -rf "$WORK/nosidecar"
 ok "a base or logical archive without its sidecar: refused by pitr-restore.sh and restore.sh"
+mkdir -m 700 "$WORK/flipped" "$WORK/flipped/base" "$WORK/flipped/wal"
+cp -p "$base" "${base%.age}.sha256" "$WORK/flipped/base/"
+printf garbage | dd of="$WORK/flipped/base/$(basename "$base")" bs=1 seek=300 conv=notrunc status=none
+if "$DEPLOY_DIR/pitr-restore.sh" --target-time latest --name "$PITR_NAME" --wal-dir "$BACKUPS/pitr/wal" --identity "$KEYS/operational.key" \
+  "$WORK/flipped/base/$(basename "$base")" >/dev/null 2>"$WORK/flipped.err"; then fail "pitr-restore.sh accepted a damaged base ciphertext"; fi
+grep -q 'checksum mismatch: .*ciphertext' "$WORK/flipped.err" || fail "unexpected: $(cat "$WORK/flipped.err")"
+cp -p "$BACKUPS/pitr/wal/"* "$WORK/flipped/wal/"
+f="$(find "$WORK/flipped/wal" -name '*.age' | sort | tail -1)"
+printf garbage | dd of="$f" bs=1 seek=300 conv=notrunc status=none
+if "$DEPLOY_DIR/pitr-restore.sh" --target-time latest --name "$PITR_NAME" --wal-dir "$WORK/flipped/wal" --identity "$KEYS/operational.key" \
+  "$base" >/dev/null 2>"$WORK/flipped.err"; then fail "pitr-restore.sh accepted a damaged WAL ciphertext"; fi
+grep -q "checksum mismatch against $(basename "${f%.age}").sha256" "$WORK/flipped.err" || fail "unexpected: $(tail -3 "$WORK/flipped.err")"
+docker volume inspect "$PITR_NAME-data" >/dev/null 2>&1 && fail "the refused restore left volume $PITR_NAME-data"
+rm -rf "$WORK/flipped"
+ok "damaged base or WAL ciphertext: refused by pitr-restore.sh before decryption (sidecar's ciphertext SHA-256)"
 
 step "8. offbox-sync.sh over ssh to an rrsync destination"
 mkdir "$WORK/sshd"
@@ -398,9 +413,14 @@ seal "$WORK/ransom.bin" "${logical%.age}" "$KEYS/recipients.txt"
 offbox --known-hosts "$WORK/ssh/known_hosts" 2>"$WORK/ransom.err" || fail "offbox-sync.sh after the rewrite: $(tail -3 "$WORK/ransom.err")"
 [[ "$(remote_sum "$(basename "$logical")")" == "$good_sum" ]] || fail "the rewritten archive replaced the off-box copy"
 [[ "$(remote_sum "$(basename "${logical%.age}.sha256")")" == "$(sha256_hex "$WORK/sidecar.keep")" ]] || fail "the forged sidecar replaced the off-box copy"
+ok "a rewritten archive and its forged sidecar never replace the off-box copy (destination: rrsync -no-overwrite)"
+authorize 'command="rrsync -wo -no-del /srv/offbox",restrict ' # the client's --ignore-existing alone
+offbox --known-hosts "$WORK/ssh/known_hosts" 2>"$WORK/ransom.err" || fail "offbox-sync.sh after the rewrite: $(tail -3 "$WORK/ransom.err")"
+[[ "$(remote_sum "$(basename "$logical")")" == "$good_sum" ]] || fail "the rewritten archive replaced the off-box copy (client side)"
+authorize 'command="rrsync -wo -no-del -no-overwrite /srv/offbox",restrict '
 mv "$WORK/logical.keep" "$logical"
 mv "$WORK/sidecar.keep" "${logical%.age}.sha256"
-ok "a rewritten archive and its forged sidecar never replace the off-box copy (write-once)"
+ok "... and not either behind a destination without -no-overwrite (client: --ignore-existing)"
 offbox --known-hosts "$WORK/ssh/known_hosts" --check-append-only 2>"$WORK/ao.err" || fail "--check-append-only behind rrsync: $(tail -5 "$WORK/ao.err")"
 ok "--check-append-only behind rrsync -wo -no-del -no-overwrite: $(grep -m1 'write-once' "$WORK/ao.err")"
 authorize 'command="rrsync -wo -no-del /srv/offbox",restrict '
@@ -517,6 +537,8 @@ assert_no_plaintext "$volume_copy" "$LEGACY" || fail "plaintext left after --enc
 rm -rf "$volume_copy"
 [[ -f "$old_base.age" && ! -e "$old_base" && -f "$old_logical.age" && ! -e "$old_logical" ]] || fail "legacy archives not encrypted in place"
 ok "--encrypt-legacy: volume, base, WAL and logical archives are ciphertext; new base $(basename "$new_base")"
+"$DEPLOY_DIR/backup.sh" --container "$OLD" --dir "$LEGACY" 2>"$WORK/legacy.err" >/dev/null || fail "production backup.sh after --encrypt-legacy: $(cat "$WORK/legacy.err")"
+ok "production backup.sh runs in the upgraded logical directory (its recipients were recorded)"
 "$DEPLOY_DIR/pitr-restore.sh" --target-time "$old_t" --name "$PITR_NAME" --wal-dir "$LEGACY/pitr/wal" \
   --identity "$KEYS/recovery-only.key" "$old_base.age" >/dev/null 2>"$WORK/legacy.err" || fail "restore of the legacy base: $(tail -5 "$WORK/legacy.err")"
 [[ "$(rows "$PITR_NAME")" == "1,2" ]] || fail "legacy restore to T has rows $(rows "$PITR_NAME")"
