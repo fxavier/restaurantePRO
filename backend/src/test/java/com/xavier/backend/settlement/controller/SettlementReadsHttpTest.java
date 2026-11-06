@@ -14,7 +14,6 @@ import com.xavier.backend.settlement.FakePaymentProvider.Behaviour;
 import com.xavier.backend.settlement.SettlementFixtures;
 import com.xavier.backend.settlement.SettlementFixtures.Sale;
 import com.xavier.backend.settlement.SettlementModuleTest;
-import io.micrometer.core.instrument.MeterRegistry;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -24,7 +23,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 /**
  * The settlement reads: the POS map's consumption and balance per open order, and the BackOffice pendings (attempts in
- * doubt, fiscal drafts, settled orders still open), plus the {@code payment_attempts_in_doubt} gauge.
+ * doubt, fiscal drafts, settled orders still open). The {@code payment_attempts_in_doubt} gauge: InDoubtGaugeTest.
  */
 @SettlementModuleTest
 class SettlementReadsHttpTest {
@@ -43,9 +42,6 @@ class SettlementReadsHttpTest {
 
     @Autowired
     InternalFiscalAdapter fiscalAdapter;
-
-    @Autowired
-    MeterRegistry meters;
 
     @AfterEach
     void restore() {
@@ -106,7 +102,7 @@ class SettlementReadsHttpTest {
     }
 
     @Test
-    void anAttemptInDoubtIsPendingAndCounted() throws Exception {
+    void anAttemptInDoubtIsPending() throws Exception {
         String method = SettlementFixtures.freshCode("PAY");
         fixtures.method(method, "INTEGRATED", FakePaymentProvider.CODE);
         Sale sale = fixtures.sale("2");
@@ -120,7 +116,6 @@ class SettlementReadsHttpTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.inDoubtAttempts[0].id").value(attempt.toString()))
                 .andExpect(jsonPath("$.inDoubtAttempts[0].status").value("UNKNOWN"));
-        assertThat(meters.get("payment_attempts_in_doubt").gauge().value()).isGreaterThanOrEqualTo(1);
     }
 
     @Test

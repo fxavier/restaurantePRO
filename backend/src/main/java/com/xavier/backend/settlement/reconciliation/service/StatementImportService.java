@@ -3,6 +3,7 @@ package com.xavier.backend.settlement.reconciliation.service;
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.audit.AuditLog;
+import com.xavier.backend.organization.BusinessDays;
 import com.xavier.backend.organization.OrganizationApi;
 import com.xavier.backend.organization.model.dto.StoreSummary;
 import com.xavier.backend.settlement.PaymentProvider;
@@ -44,6 +45,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.Currency;
 import java.util.HexFormat;
@@ -269,8 +271,9 @@ public class StatementImportService {
                 .orElseThrow(() -> ReconciliationRuleException.statementInvalid("methodCode",
                         "No card, terminal or provider payment method has the code " + methodCode));
         ZoneId zone = store.timezone();
+        LocalTime cutoff = store.businessDayCutoff();
         return new Target(storeId, method.getCode(), method.getKind(), store.currency(), from, to,
-                from.atStartOfDay(zone).toInstant(), to.plusDays(1).atStartOfDay(zone).toInstant());
+                BusinessDays.startOf(from, zone, cutoff), BusinessDays.startOf(to.plusDays(1), zone, cutoff));
     }
 
     private StatementSource sourceOf(PaymentMethod method) {

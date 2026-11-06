@@ -70,7 +70,7 @@ public class InternalFiscalAdapterTest {
                 List.of(new DocumentView.Line(1, null, "Cerveja 2M", new BigDecimal("2.000"),
                         Money.of("58.00", MZN), new BigDecimal("16.0000"), gross, Money.of("100.00", MZN),
                         Money.of("16.00", MZN))),
-                List.of(new DocumentView.TaxSummary(new BigDecimal("16.0000"), Money.of("100.00", MZN),
+                List.of(new DocumentView.TaxSummary("IVA", new BigDecimal("16.0000"), Money.of("100.00", MZN),
                         Money.of("16.00", MZN))),
                 gross, Money.of("100.00", MZN), Money.of("16.00", MZN), "hash", null, false, null);
     }

@@ -70,11 +70,25 @@ class SalesProjectionTest {
                 .containsEntry("area_code", "SALA").containsEntry("mode", "DINE_IN");
 
         assertThat(reporting.rows("""
-                SELECT tax_rate, net, tax FROM reporting.sales_record_tax WHERE document_id = ? ORDER BY tax_rate""",
-                document)).isEqualTo(reporting.rows("""
-                SELECT tax_rate, net, tax FROM fiscal.fiscal_document_tax WHERE document_id = ? ORDER BY tax_rate""",
-                document));
+                SELECT tax_code, tax_rate, net, tax FROM reporting.sales_record_tax WHERE document_id = ?
+                ORDER BY tax_rate""", document)).isEqualTo(reporting.rows("""
+                SELECT tax_code, tax_rate, net, tax FROM fiscal.fiscal_document_tax WHERE document_id = ?
+                ORDER BY tax_rate""", document));
+        assertThat(reporting.row("SELECT tax_code FROM fiscal.fiscal_document_tax WHERE document_id = ?", document)
+                .get("tax_code")).as("the document's tax summary names the code").isEqualTo(line.get("tax_code"));
         assertThat(record.get("total_tax")).isEqualTo(new BigDecimal("3.4500"));
+    }
+
+    @Test
+    void aWalkInSalesLinesCarryTheOrdersMode() throws Exception {
+        Sale sale = sales.walkInSale("2", "TAKEAWAY");
+        sales.payAndClose(sale);
+        UUID document = reporting.issuedDocument(sale.order());
+
+        reporting.awaitSalesRecord(document);
+
+        assertThat(reporting.row("SELECT mode, area_code FROM reporting.sales_record_line WHERE document_id = ? "
+                + "AND line_no = 1", document)).containsEntry("mode", "TAKEAWAY").containsEntry("area_code", null);
     }
 
     @Test

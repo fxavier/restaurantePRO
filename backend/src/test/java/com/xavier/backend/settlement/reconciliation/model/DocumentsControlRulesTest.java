@@ -154,22 +154,28 @@ class DocumentsControlRulesTest {
     }
 
     @Test
-    void aDraftIsStaleWhenItsIssueFailedAnHourAgoOrItsOrderClosed() {
+    void aDraftIsStaleAnHourAfterItWasCreated() {
         Builder order = settled();
         order.lifecycle = "OPEN";
-        order.documents = List.of(new Document(DOC, "DRAFT", "ORDER", ORDER, false, m("25.00"), Map.of(),
-                NOW.minus(Duration.ofMinutes(61)), null));
+        order.documents = List.of(draftCreated(NOW.minus(Duration.ofMinutes(61))));
         assertThat(order.kinds()).containsExactly("DRAFT_STALE");
 
-        order.documents = List.of(new Document(DOC, "DRAFT", "ORDER", ORDER, false, m("25.00"), Map.of(),
-                NOW.minus(Duration.ofMinutes(30)), null));
+        order.documents = List.of(draftCreated(NOW.minus(Duration.ofMinutes(59))));
         assertThat(order.kinds()).isEmpty();
+    }
 
-        order.lifecycle = "CLOSED";
+    @Test
+    void aDraftYoungerThanAnHourIsNotStaleEvenWhenItsOrderClosed() {
+        Builder order = settled();
         order.documents = new ArrayList<>(List.of(issued(UUID.randomUUID(), "25.00", "3.45", false),
-                new Document(DOC, "DRAFT", "PARTITION", UUID.randomUUID(), false, m("0.00"), Map.of(), null,
-                        null)));
-        assertThat(order.kinds()).containsExactly("DRAFT_STALE");
+                new Document(DOC, "DRAFT", "PARTITION", UUID.randomUUID(), false, m("0.00"), Map.of(),
+                        NOW.minus(Duration.ofMinutes(5)), null)));
+
+        assertThat(order.kinds()).doesNotContain("DRAFT_STALE");
+    }
+
+    private static Document draftCreated(java.time.Instant createdAt) {
+        return new Document(DOC, "DRAFT", "ORDER", ORDER, false, m("25.00"), Map.of(), createdAt, null);
     }
 
     @Test
@@ -218,6 +224,8 @@ class DocumentsControlRulesTest {
             assertThat(e.documentId()).isEqualTo(DOC);
             assertThat(e.lineId()).isEqualTo(LINE);
             assertThat(e.detail()).contains("-0.01");
+            assertThat(e.amount()).isEqualTo(m("-0.01"));
+            assertThat(e.adjustmentId()).isEqualTo(ADJUSTMENT);
         });
     }
 

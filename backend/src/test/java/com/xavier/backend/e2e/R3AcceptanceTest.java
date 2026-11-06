@@ -580,11 +580,8 @@ class R3AcceptanceTest {
         String csv = "occurred_at,amount,fee,reference,authorization_code,line_ref\n"
                 + confirmedAt.atOffset(java.time.ZoneOffset.UTC) + ",211.00,3.17,,TPA-A1,L1\n"
                 + confirmedAt.plusSeconds(60).atOffset(java.time.ZoneOffset.UTC) + ",15.00,0.23,,TPA-ZZ9,L2\n";
-        // BUG-0002 (docs/qa/bugs/0002): the period's instants are calendar midnights, not the store's business-day
-        // cutoff, so day 1's card payment (confirmed after midnight, before the cutoff) is outside "day 1..day 1".
-        // The journey widens the period by a day until it is fixed; StatementPeriodIsBusinessDaysTest reproduces it.
         Map<String, String> fields = Map.of("storeId", storeA.toString(), "methodCode", "CARD",
-                "periodFrom", day1.toString(), "periodTo", day1.plusDays(1).toString());
+                "periodFrom", day1.toString(), "periodTo", day1.toString());
         JsonNode batch = office.upload(RECON + "/batches", fields, "tpa.csv", csv.getBytes(StandardCharsets.UTF_8),
                 201, Browser.idem(), "import the card statement");
         assertThat(batch.get("entries").get("MATCHED").asLong()).isEqualTo(1);

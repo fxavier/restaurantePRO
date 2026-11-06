@@ -1,5 +1,7 @@
 # BUG-0002: a provider statement's period uses calendar midnights, not the store's business days
 
+- **Status:** fixed in 8c1bd64. `StatementImportService.target` computes the period as `[BusinessDays.startOf(from), BusinessDays.startOf(to + 1))` in the store's zone and with its cutoff; fiscal's private copy is deleted in favour of the now-public `organization.BusinessDays.startOf`. The repro is now `StatementPeriodIsBusinessDaysTest` and runs in the suite; `R3AcceptanceTest` no longer widens its period.
+
 - **Severity:** Medium. Reconciliation (D78) of any store whose business day crosses midnight (the normal case: the cutoff is e.g. 05:00) refuses, or misclassifies, the payments taken between midnight and the cutoff: importing "day D" rejects the provider's lines of the night of D (422), and a period that includes D+1 lists D's late payments under the wrong day (MISSING_PROVIDER noise). No money fact changes (reconciliation never writes money), so it is not High.
 - **Breaks:** r3-decisions D78 (a batch per statement: store, method, **period**), P37/D85 ("the cash day for money": a payment belongs to its business day), spec §8.3 business day "que pode atravessar a meia-noite". The code's own contract: `StatementImportService.Target` — "The statement's store, method and business days, and those days as instants [start, end)".
 - **Environment:** branch `s33-integrate` at `511e434`, macOS 15.3 x86_64, Java 25.0.4.1, PostgreSQL 18.6 in Docker; store zone Africa/Maputo.
@@ -36,8 +38,8 @@ Cause: `StatementImportService.target(...)` builds the instants as `from.atStart
 
 ## Reproducing test
 
-`backend/src/test/java/com/xavier/backend/settlement/reconciliation/StatementPeriodIsBusinessDaysRepro.java` (`@Disabled("BUG-0002 …")`, named outside Surefire's include patterns). `R3AcceptanceTest` widens its statement period by one day until this is fixed (comment names BUG-0002).
+`backend/src/test/java/com/xavier/backend/settlement/reconciliation/StatementPeriodIsBusinessDaysTest.java` (was `StatementPeriodIsBusinessDaysRepro`, disabled; enabled and renamed with the fix). `R3AcceptanceTest` imports day 1..day 1.
 
-## Open question (not decided by QA)
+## Open question (still open; the window and business_date now agree)
 
 Should the candidate payments for MISSING_PROVIDER be selected by `payment.business_date` (P37) or by the same instant window? They should agree once the window follows the cutoff; confirm which is authoritative.

@@ -1,8 +1,7 @@
-package com.xavier.backend.fiscal.service;
+package com.xavier.backend.organization;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.xavier.backend.organization.BusinessDays;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -11,7 +10,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
 /**
- * The backfill window of an R2 document must agree with {@link BusinessDays#of}: the computed start of a business
+ * {@link BusinessDays#startOf} is the inverse of {@link BusinessDays#of} (the fiscal backfill window and a
+ * reconciliation statement period both use it): the computed start of a business
  * day belongs to that day and the microsecond before it to the previous one, also across DST gaps and overlaps.
  */
 class BusinessDayStartTest {
@@ -29,7 +29,7 @@ class BusinessDayStartTest {
         LocalTime c = LocalTime.parse(cutoff);
         LocalDate d = LocalDate.parse(day);
 
-        Instant start = DocumentFactsService.startOfBusinessDay(d, z, c);
+        Instant start = BusinessDays.startOf(d, z, c);
 
         assertThat(BusinessDays.of(start, z, c)).isEqualTo(d);
         assertThat(BusinessDays.of(start.minusNanos(1_000), z, c)).isEqualTo(d.minusDays(1));

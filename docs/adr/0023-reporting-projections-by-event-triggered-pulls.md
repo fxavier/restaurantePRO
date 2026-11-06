@@ -17,5 +17,5 @@ Reports (§5 "Relatórios", §8.6) need sales, taxes, receipts, credit and voids
 
 - Tax per rate is read from the documents; after D96 that equals the order's tax except for open pending corrections.
 - D86 target measured in S33 (`R3ReportBenchmark`, 150 k documents, 600 k lines): every 31-day report p95 ≤ 258 ms (< 1 s), every 1-day report p95 ≤ 18 ms (< 300 ms); no rollup tables are needed.
-- Review backlog not done in S33 (production code): `OrderBillingView.mode` to tell COUNTER from TAKEAWAY, and a tax code on fiscal's `TaxSummary` so one rate cannot split into two rows.
+- Review backlog done in S33b: `OrderBillingView.mode` tells COUNTER from TAKEAWAY (69567ec; a rebuild fills older rows in), and fiscal's `TaxSummary.taxCode` (the rate's codes joined with "+") is the sales_record_tax code (d9eb64f; documents drafted before it keep the derived code).
 - Proofs: `SalesProjectionTest`, `RebuildEqualsLiveTest`, `ReportFreshnessTest`, `ReportPlanTest`; end to end, `R3AcceptanceTest` (sales by item, hour, employee and area equal the documents; taxes per rate = Σ `fiscal_document_tax`; receipts by method = Σ (PAYMENT_RECEIPT − REFUND); on account 150.00 separate; `final`; rebuild from empty identical), `RestartMatrixTest` (f).

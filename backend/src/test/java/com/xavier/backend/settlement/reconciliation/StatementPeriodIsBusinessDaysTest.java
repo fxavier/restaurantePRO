@@ -19,7 +19,6 @@ import java.time.LocalTime;
 import java.time.ZonedDateTime;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -33,13 +32,10 @@ import org.springframework.test.web.servlet.MockMvc;
  * before a 05:00 cutoff, belongs to business day D; the statement for D..D refuses its own line (422
  * {@code STATEMENT_INVALID}, "The line is not of the statement's period") and would list the payment of D under D+1.
  *
- * <p>An expected failure: disabled with the bug id, and named outside Surefire's include patterns so the suite never
- * lists it as skipped. Reproduce it with {@code rtk mvn test -Dtest=StatementPeriodIsBusinessDaysRepro
- * -Djunit.jupiter.conditions.deactivate=org.junit.*DisabledCondition}. The clock is moved, never slept.
+ * <p>The clock is moved, never slept.
  */
 @SettlementModuleTest
-@Disabled("BUG-0002: the statement period uses calendar midnights, not the business-day cutoff")
-class StatementPeriodIsBusinessDaysRepro {
+class StatementPeriodIsBusinessDaysTest {
 
     @Autowired
     MockMvc mvc;

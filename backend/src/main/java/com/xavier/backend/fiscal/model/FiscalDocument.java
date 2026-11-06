@@ -36,6 +36,7 @@ import jakarta.persistence.Version;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -44,7 +45,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.function.Supplier;
 import org.hibernate.annotations.Generated;
@@ -247,13 +250,14 @@ public class FiscalDocument {
         document.snapshotBuyer(command.buyer());
         document.chargeTo(command.customerId(), command.onAccount());
         document.amountsAllocated = command.amountsAllocated();
-        document.createdAt = now;
+        document.createdAt = now.truncatedTo(ChronoUnit.MICROS); // as stored, so a reload sees the same view
         document.updatedAt = now;
 
         Money gross = zero(currency);
         Money net = zero(currency);
         Money tax = zero(currency);
         Map<BigDecimal, Money[]> perRate = new TreeMap<>();
+        Map<BigDecimal, Set<String>> codesPerRate = new TreeMap<>();
         for (DraftLine line : lines) {
             FiscalDocumentLine copied = copy(document.lines.size() + 1, line, currency, command.amountsAllocated());
             document.lines.add(copied);
@@ -264,6 +268,10 @@ public class FiscalDocument {
             Money[] sums = perRate.computeIfAbsent(rate, r -> new Money[]{zero(currency), zero(currency)});
             sums[0] = sums[0].plus(line.net());
             sums[1] = sums[1].plus(line.tax());
+            Set<String> codes = codesPerRate.computeIfAbsent(rate, r -> new TreeSet<>());
+            if (line.taxCode() != null) {
+                codes.add(line.taxCode());
+            }
         }
         requireTotal("totalGross", command.totalGross(), gross, currency);
         requireTotal("totalNet", command.totalNet(), net, currency);
@@ -271,7 +279,8 @@ public class FiscalDocument {
         document.totalGross = gross.amount();
         document.totalNet = net.amount();
         document.totalTax = tax.amount();
-        perRate.forEach((rate, sums) -> document.taxes.add(new FiscalDocumentTax(rate, sums[0], sums[1])));
+        perRate.forEach((rate, sums) -> document.taxes.add(
+                new FiscalDocumentTax(taxCodeOf(codesPerRate.get(rate)), rate, sums[0], sums[1])));
         return document;
     }
 
@@ -404,6 +413,10 @@ public class FiscalDocument {
         }
     }
 
+    private static String taxCodeOf(Set<String> codes) {
+        return codes.isEmpty() ? null : String.join("+", codes);
+    }
+
     private boolean sameContent(DraftCommand command) {
         Currency c = Currency.getInstance(currency);
         List<DraftLine> given = command.lines() == null ? List.of() : command.lines();
@@ -465,7 +478,7 @@ public class FiscalDocument {
                 storeCode, storeName, buyer(), lines.stream().map(l -> l.toView(c)).toList(),
                 taxes.stream().map(t -> t.toView(c)).toList(), Money.of(totalGross, c), Money.of(totalNet, c),
                 Money.of(totalTax, c), adapterCode, nonFiscal, lastError, lastErrorAt, version, orderRef, businessDate,
-                customerId, onAccount, paymentSnapshot().orElse(null));
+                customerId, onAccount, paymentSnapshot().orElse(null), createdAt);
     }
 
     public DocumentSummary toSummary() {

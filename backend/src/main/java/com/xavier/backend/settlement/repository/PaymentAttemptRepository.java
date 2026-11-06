@@ -30,7 +30,11 @@ public interface PaymentAttemptRepository extends JpaRepository<PaymentAttempt, 
 
     boolean existsByPartitionIdAndStatusIn(UUID partitionId, Collection<AttemptStatus> statuses);
 
-    long countByStatus(AttemptStatus status);
+    /** D81 (4): every UNKNOWN attempt with its store, for the in-doubt gauge and its 30-minute alert. */
+    @Query("""
+            select new com.xavier.backend.settlement.repository.InDoubtAttempt(a.id, a.storeId, a.createdAt)
+            from PaymentAttempt a where a.status = com.xavier.backend.settlement.model.AttemptStatus.UNKNOWN""")
+    List<InDoubtAttempt> findInDoubt();
 
     /** The store and order of an attempt, read alone before authorizing a command on it (D42). */
     @Query("""
