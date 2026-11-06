@@ -123,7 +123,7 @@ If `--new-cluster` is interrupted, run it again. The old files may then be split
   backups/pitr/base/restaurantpro-base-<timestamp>-<system id>-<wal>.tar.age
 ```
 
-Pick the newest base backup taken before the target time. The time needs an explicit offset (`Z`, `+00:00`, `+01:00`…); `--target-time latest` replays everything archived. PostgreSQL stops just before the first transaction that committed after the target time. The script creates a new container `restaurantpro-pitr` with no network and its own volume `restaurantpro-pitr-data`, and never touches the live installation. It refuses to run if they already exist unless you pass `--force` (or pick another `--name`). Even with `--force` it replaces only a container and volume that an earlier `pitr-restore.sh --name <same name>` created (label `restaurantpro.pitr`). It never replaces anything else, and above all no Docker Compose object such as the live database container or volume. By default it reads the WAL from the live `pg-wal-archive` volume, which is the most recent. If the server was lost, pass the off-box copy instead: `--wal-dir <copy>/pitr/wal`. The identity must be yours, mode 0600 or 0400, and outside `deploy/` and the backups (a tmpfs such as `/dev/shm`). It is mounted read-only into the preparing container alone, which decrypts the base backup and each WAL file (checked against its sidecar) straight into the new volume, and runs `pg_verifybackup` before the start. Plaintext never lands anywhere else. If the WAL does not reach the target time, PostgreSQL refuses to finish the recovery, and the script fails and removes what it created. The same happens with a wrong key ("cannot decrypt").
+Pick the newest base backup taken before the target time. The time needs an explicit offset (`Z`, `+00:00`, `+01:00`…); `--target-time latest` replays everything archived. PostgreSQL stops just before the first transaction that committed after the target time. The script creates a new container `restaurantpro-pitr` with no network and its own volume `restaurantpro-pitr-data`, and never touches the live installation. It refuses to run if they already exist unless you pass `--force` (or pick another `--name`). Even with `--force` it replaces only a container and volume that an earlier `pitr-restore.sh --name <same name>` created (label `restaurantpro.pitr`). It never replaces anything else, and above all no Docker Compose object such as the live database container or volume. By default it reads the WAL from the live `pg-wal-archive` volume, which is the most recent. If the server was lost, pass the off-box copy instead: `--wal-dir <copy>/pitr-<system id>/wal`. The identity must be yours, mode 0600 or 0400, and outside `deploy/` and the backups (a tmpfs such as `/dev/shm`). It is mounted read-only into the preparing container alone, which decrypts the base backup and each WAL file (checked against its sidecar) straight into the new volume, and runs `pg_verifybackup` before the start. Plaintext never lands anywhere else. The ciphertext SHA-256 in each sidecar is checked before anything is decrypted. In production, a missing sidecar, or plaintext WAL next to an encrypted base backup, is refused; `restore.sh` likewise requires the archive's sidecar. If the WAL does not reach the target time, PostgreSQL refuses to finish the recovery, and the script fails and removes what it created. The same happens with a wrong key ("cannot decrypt").
 
 The identity is a private key, so the server is never its home (D98). Copy it to a tmpfs for the restore, then shred it: `shred -u /dev/shm/operational.key`. The backup scripts refuse to run while an identity is under `deploy/` or `BACKUP_AGE_IDENTITY` is set.
 
@@ -149,9 +149,12 @@ Everyone logs in again afterwards: `backup.sh` leaves out the session rows.
 
 D98: production backups are encrypted at rest and in transit, the keys are held apart from the backups, access is restricted, and restores are tested, including the recovery of the keys. The server holds **public keys only**. A stolen server, disk or backup copy reveals nothing.
 
-**Mode.** `RESTAURANTPRO_ENVIRONMENT` comes from the environment, or else from `.env`, which the scripts read with grep and never source. It is `production` when unset. In production, PostgreSQL does not start, and `backup.sh` / `basebackup.sh` exit non-zero writing nothing, unless the checks below pass. Nothing is ever written in plaintext as a fallback. `test` is for developer stacks only. It allows plaintext with a WARNING; for a stack without keys, set `BACKUP_AGE_RECIPIENTS_FILE=/dev/null` in that stack's `.env`. Any other value makes every script exit.
+**Mode.** `RESTAURANTPRO_ENVIRONMENT` comes from the environment, or else from `.env`, which the scripts read with grep and never source. Since `.env` decides the mode, every script refuses a `.env` that is writable by group or others, or owned by anyone but root or the user running it (`chmod 600 .env`). It is `production` when unset. In production, PostgreSQL does not start, and `backup.sh` / `basebackup.sh` exit non-zero writing nothing, unless the checks below pass. Nothing is ever written in plaintext as a fallback. `test` is for developer stacks only. It allows plaintext with a WARNING; for a stack without keys, set `BACKUP_AGE_RECIPIENTS_FILE=/dev/null` in that stack's `.env`. Any other value makes every script exit.
 
-**What is encrypted.** WAL is encrypted by the `archive_command`, so the `pg-wal-archive` volume holds only `<segment>.age` and `<segment>.sha256`. Base backups and logical dumps are written as `.tar.age` and `.tar.sha256`, and `--wal-only` copies WAL as it is. Every `.age` has a `.sha256` sidecar holding the SHA-256 of its plaintext. The only plaintext files allowed in `backups/` and the volume are the markers `SYSTEM_IDENTIFIER`, `RECIPIENTS`, `RECIPIENTS_SHA256`, `LAST_OFFBOX_SYNC` and `ARCHIVER_FAILED_COUNT`, plus the sidecars. Logs go to `logs/`, never to `backups/`. Every script uses `lib/age.sh`, which runs the host's `age` when it is at least 1.3.2, and otherwise `age` from the pinned `restaurantpro-postgres:18.6-r1` image (`docker run --rm -i --network none`, key file mounted read-only).
+**What is encrypted.** WAL is encrypted by the `archive_command`, so the `pg-wal-archive` volume holds only `<segment>.age` and `<segment>.sha256`. Base backups and logical dumps are written as `.tar.age` and `.tar.sha256`, and `--wal-only` copies WAL as it is. Every `<x>.age` has a sidecar `<x>.sha256` with two lines in `sha256sum` format: the SHA-256 of the plaintext (`<x>`) and of the ciphertext (`<x>.age`). The ciphertext line lets the key-free checks catch bit rot or a swapped file. The only plaintext files allowed in `backups/` and the volume are well-formed sidecars and these markers:
+
+- `SYSTEM_IDENTIFIER` and `RECIPIENTS-<UTC>-<fingerprint>` (a copy of the accepted recipients file), which are written once and go off the box;
+- `RECIPIENTS_SHA256`, `LAST_OFFBOX_SYNC` and `ARCHIVER_FAILED_COUNT`, which change in place and therefore stay on the server. Logs go to `logs/`, never to `backups/`. Every script uses `lib/age.sh`, which runs the host's `age` when it is at least 1.3.2, and otherwise `age` from the pinned `restaurantpro-postgres:18.6-r1` image (`docker run --rm -i --network none`, key file mounted read-only).
 
 ### Keys and custody
 
@@ -165,7 +168,8 @@ age1...
 ```
 
 ```bash
-chmod 644 backup-recipients.txt          # owned by root or the backup user; not writable by group or others
+chmod 644 backup-recipients.txt          # owned by root or the backup user; not writable by group or others;
+                                         # readable by the postgres user (uid 70 in the container)
 ```
 
 Fill in this table at installation and keep it with the drill log:
@@ -177,12 +181,12 @@ Fill in this table at installation and keep it with the drill log:
 
 The checks behind the keys:
 
-- PostgreSQL's preflight (`postgres/preflight.sh`) and the backup scripts refuse fewer than two distinct X25519 recipients, and a recipients file writable by group or others. The preflight also refuses a file that age rejects. The backup scripts and `verify-backups.sh` also refuse a file owned by anyone other than root or the backup user; the preflight cannot see host owners.
+- PostgreSQL's preflight (`postgres/preflight.sh`) and the backup scripts refuse fewer than two distinct X25519 recipients, and a recipients file writable by group or others. The preflight also refuses a file that age rejects, or one the postgres user cannot read (the archive command runs as postgres). The backup scripts and `verify-backups.sh` also refuse a file owned by anyone other than root or the backup user; the preflight cannot see host owners.
 - The backup scripts refuse to run while `BACKUP_AGE_IDENTITY` is set, or while any file of 64 KiB or less under `deploy/` or the backup directory contains an age identity.
 - Restores take `--identity FILE`. The file must be yours, mode 0600 or 0400, and outside `deploy/` and the backups. Use a tmpfs such as `/dev/shm`, and `shred -u` it afterwards.
-- `verify-backups.sh` keeps the recipients' fingerprint in `backups/RECIPIENTS_SHA256`, and a copy of the file in `backups/RECIPIENTS` for the restore host. A change fails every run until `./verify-backups.sh --accept-recipients-change`, which writes an `AUDIT` line to the log. That is how a silent swap to an attacker's key is caught.
+- The recipients' fingerprint (the SHA-256 of their sorted keys) is recorded in `RECIPIENTS_SHA256` of `backups/` and of `backups/pitr/`, with a write-once copy of the file as `RECIPIENTS-<UTC>-<fingerprint>` for the restore host. A change makes `verify-backups.sh` fail, and `backup.sh` / `basebackup.sh` refuse to write, until `./verify-backups.sh --accept-recipients-change`, which writes an `AUDIT` line to the log. A directory that holds ciphertext but no record is treated the same way; only an empty installation is recorded silently. That is how a silent swap to an attacker's key is caught before anything is encrypted to it.
 
-**Rotation.** Add the new public key to `backup-recipients.txt`, then run `./verify-backups.sh --accept-recipients-change` and `docker compose up -d postgres`, so the archive command reads the new file. Keep the old key until every backup encrypted only to it has aged out of retention, here and off the box. Then remove it the same way, and run a key-recovery drill with the new key.
+**Rotation.** Add the new public key to `backup-recipients.txt`, then run `./verify-backups.sh --accept-recipients-change` (backups are refused until then) and `docker compose up -d postgres`, so the archive command reads the new file. An editor that replaces the file gives it a new inode, which the running container does not see until that restart. Keep the old key until every backup encrypted only to it has aged out of retention, here and off the box. Then remove it the same way, and run a key-recovery drill with the new key.
 
 ### Access
 
@@ -199,15 +203,18 @@ The `pg-wal-archive` volume stays `postgres:postgres 0700`. Run every backup job
 
 Backup data crosses a network only on the off-box copy. `pg_basebackup` and `pg_dump` run through `docker exec` over the local socket, and PostgreSQL publishes no port. The backend's JDBC connection stays on the internal Docker network of the same host, without TLS. A remote backup client is not supported; if one is ever added, it must use `hostssl` with `sslmode=verify-full`.
 
-`./offbox-sync.sh` is the only off-box copier. It runs `rsync` over ssh with `BatchMode=yes`, `StrictHostKeyChecking=yes`, the pinned `deploy/offbox_known_hosts` and key authentication only, or copies to a local removable disk. It copies the sidecars first and the ciphertext after. In production it refuses any file that is not ciphertext, a marker or a sidecar, and a local target on a network filesystem (nfs, cifs, smb). Each successful run writes `backups/LAST_OFFBOX_SYNC`.
+`./offbox-sync.sh` is the only off-box copier. It runs `rsync` over ssh with `-F /dev/null` (no ssh config), `BatchMode=yes`, `StrictHostKeyChecking=yes`, the pinned `deploy/offbox_known_hosts`, key authentication only and no agent or port forwarding, or copies to a local removable disk. It copies the sidecars first and the ciphertext after.
+
+The destination is **write-once**: the client passes `--ignore-existing`, and the destination enforces it with `rrsync -no-overwrite`. An archive and sidecar rewritten on the server, by ransomware for example, never replace a good copy off the box. Because of that, `backups/pitr/` goes to `pitr-<system identifier>/` at the destination: a new cluster starts its WAL names again, and those names must not collide with the old cluster's. The markers that change in place stay on the server. In production it refuses any file that is not ciphertext, a marker or a sidecar, and a local target on a network filesystem (nfs, cifs, smb). Each successful run writes `backups/LAST_OFFBOX_SYNC`.
 
 Set up the destination so that this server can neither read nor delete what it wrote:
 
 ```bash
 # On the destination host (rsync >= 3.2.4, which ships rrsync), as root:
 adduser --disabled-password restaurantpro && install -d -o restaurantpro -m 700 /srv/restaurantpro
-# ~restaurantpro/.ssh/authorized_keys, one line: the server's ssh public key, forced into write-only, no-delete mode
-command="rrsync -wo -no-del /srv/restaurantpro",restrict ssh-ed25519 AAAA... restaurantpro@server
+# ~restaurantpro/.ssh/authorized_keys, one line: the server's ssh public key, forced into write-only,
+# no-delete, no-overwrite mode
+command="rrsync -wo -no-del -no-overwrite /srv/restaurantpro",restrict ssh-ed25519 AAAA... restaurantpro@server
 
 # On the server, as the backup user:
 ssh-keygen -t ed25519 -N '' -f ~/.ssh/offbox_ed25519          # this key may write, nothing more
@@ -217,7 +224,7 @@ chmod 644 offbox_known_hosts
 ./offbox-sync.sh --check-append-only
 ```
 
-`--check-append-only` writes a canary, then checks that reading it back and deleting it are both refused. Run it after any change on the destination. Overwriting a file is still possible under `-wo`, so the destination should also keep snapshots (ZFS, btrfs or the NAS's own versioning) and its own retention, at least as long as the server's. With a removable disk only, `--check-append-only` is skipped: a disk the server can mount, it can also erase. Rotate two disks and keep one away from the server.
+`--check-append-only` writes a canary under a new name, then checks that reading it back, deleting it and overwriting it are all refused. It detects an overwrite from rsync's itemized changes, since this server cannot read the file back. Run it after any change on the destination. Keep snapshots on the destination too (ZFS, btrfs or the NAS's own versioning), and its own retention, at least as long as the server's. With a removable disk only, `--check-append-only` is skipped: a disk the server can mount, it can also erase. Rotate two disks and keep one away from the server.
 
 ### Schedule
 
@@ -253,13 +260,13 @@ Do the same for `--wal-only` + `offbox-sync` (`OnCalendar=*:0/5`), the nightly b
 - the archiver: archiving is on with `archive_timeout` ≤ 300 s, it is not failing now, `failed_count` has not grown, and no segment has waited more than 15 min;
 - every segment older than 15 min is in `backups/pitr/wal`;
 - the newest base backup is at most 26 h old, and the WAL chain is continuous from the oldest kept base;
-- every file in the volume and in `backups/` is ciphertext with its sidecar;
+- every file in the volume and in `backups/` is ciphertext whose sidecar holds its SHA-256. This reads every backup file on each run: seconds for a few GB;
 - the modes, the recipients and their fingerprint, no identity on the server;
 - `LAST_OFFBOX_SYNC` is at most 30 min old.
 
 ### Restore checks
 
-- **Weekly, on a restore host** (never the server; it needs only Docker and a checkout of `deploy/`). Pull the off-box copy down, then run `./verify-restore.sh --from <copy> --identity /dev/shm/operational.key`. It checks that the key is one of the copied recipients. It restores the newest base backup with all copied WAL (`pitr-restore.sh --target-time latest`, with `pg_verifybackup` before the start) into an isolated container, and checks that recovery reached the newest copied segment, that `pg_amcheck --all` is clean, and the Flyway history. It does the same for the newest `backup.sh` archive with `restore.sh` in a scratch container. It writes `drill-<UTC>.json` (base, WAL reached, RTO, key) and removes what it created. A non-zero exit is an alert.
+- **Weekly, on a restore host** (never the server; it needs only Docker and a checkout of `deploy/`). Pull the off-box copy down, then run `./verify-restore.sh --from <copy> --identity /dev/shm/operational.key`. It checks that the key is one of the current recipients, taken from the newest `RECIPIENTS-<UTC>-<fingerprint>`, whose keys must match its name. It uses the newest `pitr-<system id>/` tree. It restores the newest base backup with all copied WAL (`pitr-restore.sh --target-time latest`, with `pg_verifybackup` before the start) into an isolated container, and checks that recovery reached the newest copied segment, that `pg_amcheck --all` is clean, and the Flyway history. It does the same for the newest `backup.sh` archive with `restore.sh` in a scratch container. It writes `drill-<UTC>.json` (base, WAL reached, RTO, key) and removes what it created. A non-zero exit is an alert.
 - **Quarterly key-recovery drill**, on a **clean machine** with no operational key:
   1. The second custodian retrieves the recovery identity from escrow and notes the time: `T0=$(date -u +%Y-%m-%dT%H:%M:%SZ)` when retrieval starts.
   2. Copy the identity to `/dev/shm/recovery.key`, mode 0600, holding that one key only.
@@ -280,7 +287,7 @@ Drill log template (one row per drill, kept with the custody table):
 Before D98, the `pg-wal-archive` volume and an unencrypted `backups/` held plaintext. Upgrade in this order:
 
 1. Create `backup-recipients.txt` (above), then `docker compose up -d --build postgres`. From then on the archive command writes only `.age`.
-2. `./basebackup.sh --encrypt-legacy`. It encrypts the plaintext WAL in the volume, the plaintext base backups and WAL in `backups/pitr` (including any `old-*` directories), and the plaintext `backup.sh` archives in `backups/`. It does this in place, and deletes each plaintext once its `.age` is on disk. It then takes a new base backup. Until then, production runs of `basebackup.sh` refuse and point here.
+2. `./basebackup.sh --encrypt-legacy`. It encrypts the plaintext WAL in the volume, the plaintext base backups and WAL in `backups/pitr` (including any `old-*` directories), and the plaintext `backup.sh` archives in `backups/`. It does this in place, and deletes each plaintext once its `.age` is on disk. It records the recipients for those directories (as the first production run does). It then takes a new base backup. Until then, production runs of `basebackup.sh` refuse and point here.
 3. Run `./verify-backups.sh`, then `./offbox-sync.sh --check-append-only`. Off-box copies made before the upgrade are plaintext: delete them on the destination by hand.
 
 ## Restore
@@ -346,6 +353,7 @@ docker compose up -d --build
 ## Known limitations (later slices)
 
 - The `pg-wal-archive` volume and `backups/` hold only ciphertext, but they are on the database server's disk until the off-box copy runs. Use a separate disk for `backups/` if you can.
+- Backups are encrypted, not signed. Someone with access to the server can encrypt forged backups to the public recipients and send them off the box under new names; the write-once destination keeps the genuine ones beside them, but a restore cannot tell which is which. Signing backups against forgery is out of scope for now.
 - The live database volume (`db-data`) is not a backup and is plaintext, as any running database is. Use full-disk encryption on the host (for example LUKS); it is recommended, not checked.
 - A base backup is tied to the PostgreSQL major version (18). After a major upgrade, take a new base backup at once; older ones restore only with the old image.
 - `backup.sh` does not include the `caddy-data` volume (Caddy's local CA). Back it up by hand if replacing the server without re-trusting clients matters.
