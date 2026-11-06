@@ -28,7 +28,11 @@ public final class BusinessDays {
         return instant.isBefore(startOf(localDate, zone, cutoff)) ? localDate.minusDays(1) : localDate;
     }
 
-    private static Instant startOf(LocalDate day, ZoneId zone, LocalTime cutoff) {
+    /**
+     * The first instant of business day {@code day}: the inverse of {@link #of}. A period of business days
+     * {@code from..to} is the instants {@code [startOf(from), startOf(to + 1))}.
+     */
+    public static Instant startOf(LocalDate day, ZoneId zone, LocalTime cutoff) {
         LocalDateTime start = day.atTime(cutoff);
         ZoneOffsetTransition gap = zone.getRules().getTransition(start);
         if (gap != null && gap.isGap()) {
