@@ -224,6 +224,8 @@ class DocumentsControlRulesTest {
             assertThat(e.documentId()).isEqualTo(DOC);
             assertThat(e.lineId()).isEqualTo(LINE);
             assertThat(e.detail()).contains("-0.01");
+            assertThat(e.amount()).isEqualTo(m("-0.01"));
+            assertThat(e.adjustmentId()).isEqualTo(ADJUSTMENT);
         });
     }
 

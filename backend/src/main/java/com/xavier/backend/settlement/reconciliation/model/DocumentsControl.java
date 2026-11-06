@@ -185,10 +185,11 @@ public final class DocumentsControl {
     private static void explain(OrderFacts order, BigDecimal rate, Correction correction,
                                 List<DocumentException> exceptions, List<ExplainedRoundingDifference> rounding) {
         if (correction.open()) {
-            exceptions.add(exception("TAX_CORRECTION_PENDING", order, correction.documentId(), null,
-                    correction.sourceLineId(), "The document lacks " + correction.amount().amount() + " of tax at "
-                            + rate.toPlainString() + "%: it awaits the fiscal correction process (adjustment "
-                            + correction.adjustmentId() + ")."));
+            exceptions.add(new DocumentException("TAX_CORRECTION_PENDING", order.orderId(), correction.documentId(),
+                    null, correction.sourceLineId(), "The document lacks " + correction.amount().amount()
+                            + " of tax at " + rate.toPlainString() + "%: it awaits the fiscal correction process "
+                            + "(adjustment " + correction.adjustmentId() + ").", correction.amount(),
+                    correction.adjustmentId()));
         } else {
             rounding.add(new ExplainedRoundingDifference(order.orderId(), rate, correction.amount(),
                     correction.adjustmentId(), correction.correctionReference()));
@@ -197,7 +198,7 @@ public final class DocumentsControl {
 
     private static DocumentException exception(String kind, OrderFacts order, UUID documentId, UUID chargeId,
                                                UUID lineId, String detail) {
-        return new DocumentException(kind, order.orderId(), documentId, chargeId, lineId, detail);
+        return new DocumentException(kind, order.orderId(), documentId, chargeId, lineId, detail, null, null);
     }
 
     private static String plain(BigDecimal quantity) {

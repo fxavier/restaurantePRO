@@ -88,6 +88,8 @@ class TaxCorrectionResolutionTest {
         assertThat(control().get("exceptions")).singleElement().satisfies(e -> {
             assertThat(e.get("kind").asString()).isEqualTo("TAX_CORRECTION_PENDING");
             assertThat(e.get("documentId").asString()).isEqualTo(documentA.toString());
+            assertThat(e.path("adjustmentId").asString()).isEqualTo(pending.toString());
+            assertThat(e.path("amount").path("amount").decimalValue()).isEqualByComparingTo("-0.01");
         });
     }
 
