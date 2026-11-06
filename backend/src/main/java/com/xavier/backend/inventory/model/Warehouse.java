@@ -1,5 +1,6 @@
 package com.xavier.backend.inventory.model;
 
+import com.xavier.backend.inventory.model.dto.WarehouseView;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -63,6 +64,10 @@ public class Warehouse {
         this.negativePolicy = policy;
         this.active = active;
         this.updatedAt = now;
+    }
+
+    public WarehouseView toView() {
+        return new WarehouseView(id, storeId, code, name, negativePolicy.name(), active, getVersion());
     }
 
     public UUID getId() {

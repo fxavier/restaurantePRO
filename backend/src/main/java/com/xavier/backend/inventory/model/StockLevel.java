@@ -1,5 +1,6 @@
 package com.xavier.backend.inventory.model;
 
+import com.xavier.backend.inventory.model.dto.LevelView;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -46,6 +47,10 @@ public class StockLevel {
             throw new IllegalArgumentException("a minimum is never negative");
         }
         this.minQuantity = minQuantity.setScale(StockPosition.QUANTITY_SCALE, RoundingMode.UNNECESSARY);
+    }
+
+    public LevelView toView() {
+        return new LevelView(warehouseId, stockItemId, minQuantity, getVersion());
     }
 
     public UUID getWarehouseId() {

@@ -1,5 +1,6 @@
 package com.xavier.backend.inventory.model;
 
+import com.xavier.backend.inventory.model.dto.RouteView;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -46,6 +47,10 @@ public class ConsumptionRoute {
 
     public void routeTo(UUID warehouseId) {
         this.warehouseId = warehouseId;
+    }
+
+    public RouteView toView() {
+        return new RouteView(id, storeId, destinationCode, warehouseId, getVersion());
     }
 
     public UUID getId() {
