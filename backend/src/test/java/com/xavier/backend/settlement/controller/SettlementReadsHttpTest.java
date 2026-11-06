@@ -65,7 +65,9 @@ class SettlementReadsHttpTest {
                 .andExpect(jsonPath("$[0].due.amount").value(25.00))
                 .andExpect(jsonPath("$[0].paid.amount").value(10.00))
                 .andExpect(jsonPath("$[0].balance.amount").value(15.00))
-                .andExpect(jsonPath("$[0].financialState").value("PARTIALLY_SETTLED"));
+                .andExpect(jsonPath("$[0].financialState").value("PARTIALLY_SETTLED"))
+                .andExpect(jsonPath("$[0].tableId").value(sale.shop().table().toString()))
+                .andExpect(jsonPath("$[0].tableCode").value("M1"));
     }
 
     @Test

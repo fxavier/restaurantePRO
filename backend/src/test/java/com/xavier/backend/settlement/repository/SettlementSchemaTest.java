@@ -42,7 +42,7 @@ class SettlementSchemaTest {
     }
 
     @Test
-    void anAttemptIsPaidOnceAndAnOrderHasOneOpenAttempt() throws Exception {
+    void anAttemptIsPaidOnceAndAnOrderTargetHasOneOpenAttempt() throws Exception {
         Sale sale = fixtures.sale("2");
         UUID attempt = SettlementFixtures.id(fixtures.payCash(sale, "10.00", "10.00"));
 
@@ -57,7 +57,7 @@ class SettlementSchemaTest {
             openAttempt(sale);
             openAttempt(sale);
         }).isInstanceOf(DataIntegrityViolationException.class)
-                .hasMessageContaining("payment_attempt_open_per_order_uk");
+                .hasMessageContaining("payment_attempt_open_per_target_uk");
     }
 
     private void openAttempt(Sale sale) {

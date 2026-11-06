@@ -113,6 +113,15 @@ public class CashApi {
         return coordination.sessionDay(sessionId);
     }
 
+    /**
+     * The ids of the store's sessions whose cash day's business date is in {@code [from, to]} (both inclusive), for
+     * settlement's reporting facts: payments recorded before R3 carry no business date and take their session's.
+     */
+    @Transactional(readOnly = true)
+    public List<UUID> sessionIdsOfDays(UUID storeId, LocalDate from, LocalDate to) {
+        return coordination.sessionIdsOfDays(storeId, from, to);
+    }
+
     /** The store's cash day of {@code businessDate}, without a lock; empty if it was never opened (D86 finality). */
     @Transactional(readOnly = true)
     public Optional<DayView> findDay(UUID storeId, LocalDate businessDate) {

@@ -22,6 +22,13 @@ import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import tools.jackson.databind.JsonNode;
 
 /**
@@ -37,7 +44,9 @@ public class SettlementFixtures {
     public static final String ORDERS = "/api/v1/pos/orders";
     public static final String METHODS = "/api/v1/backoffice/payment-methods";
     static final Permission[] CASHIER = {Permission.PAYMENT_COLLECT, Permission.ORDER_VIEW, Permission.ORDER_EDIT,
-            Permission.CASH_OPERATE, Permission.CASH_VIEW, Permission.PAYMENT_RESOLVE, Permission.CASH_DAY_CLOSE};
+            Permission.CASH_OPERATE, Permission.CASH_VIEW, Permission.PAYMENT_RESOLVE, Permission.CASH_DAY_CLOSE,
+            Permission.BILL_SPLIT, Permission.ORDER_VOID};
+    public static final String PARTITIONS = "/api/v1/pos/partitions";
 
     /** An order of {@code shop} at its table, sold by {@code cashier}, who has an OPEN {@code session}. */
     public record Sale(Shop shop, Pos cashier, UUID register, UUID session, UUID series, UUID order) {
@@ -52,9 +61,11 @@ public class SettlementFixtures {
     private final OrdersFixtures orders;
     private final CashFixtures cash;
     private final FiscalFixtures fiscal;
+    private final PlatformTransactionManager transactionManager;
 
     SettlementFixtures(MockMvc mvc, JdbcClient jdbc, OrdersFixtures orders, CashFixtures cash,
-                       FiscalFixtures fiscal) {
+                       FiscalFixtures fiscal, PlatformTransactionManager transactionManager) {
+        this.transactionManager = transactionManager;
         this.mvc = mvc;
         this.jdbc = jdbc;
         this.orders = orders;
@@ -82,6 +93,25 @@ public class SettlementFixtures {
         UUID order = OrdersFixtures.id(orders.openedOrder(shop, cashier.employeeId(), cashier.terminalId()));
         confirmRound(shop, cashier, order, quantity, 0);
         return new Sale(shop, cashier, register, session, series, order);
+    }
+
+    /**
+     * Confirms a round of {@code quantity} of a new item of the sale's store, priced {@code price} with a
+     * {@code ratePercent} tax rate (the catalog is republished for it). @return the new line's id
+     */
+    public UUID confirmOtherRate(Sale sale, String price, String ratePercent, String quantity) throws Exception {
+        var catalog = new com.xavier.backend.catalog.CatalogFixtures(mvc);
+        UUID item = com.xavier.backend.catalog.CatalogFixtures.id(catalog.item(catalog.family(), catalog.unit(),
+                catalog.taxCategory(ratePercent)));
+        catalog.price(sale.store(), sale.shop().priceList(), item, null, price);
+        long catalogVersion = orders.republish(sale.store());
+        Pos who = sale.cashier();
+        UUID line = OrdersFixtures.id(OrdersFixtures.json(orders.addLine(sale.shop(), sale.order(),
+                "{\"itemId\": \"%s\", \"quantity\": %s}".formatted(item, quantity), who.employeeId(),
+                who.terminalId(), UUID.randomUUID().toString()).andReturn().getResponse().getContentAsString()));
+        orders.confirm(sale.shop(), sale.order(), orderVersion(who, sale.order()), catalogVersion, List.of(line),
+                who.employeeId(), who.terminalId(), UUID.randomUUID().toString()).andExpect(status().isCreated());
+        return line;
     }
 
     /** Another cashier of the same store with an OPEN session on a new register (a second terminal). */
@@ -213,6 +243,118 @@ public class SettlementFixtures {
                 .andExpect(status().isOk());
     }
 
+    // ---- R3: partitions, partition payments and documents, settled voids ----
+
+    /** {@code POST /orders/{id}/partitions} of kind ITEMS: {@code lines} are {@code lineId, quantity} pairs. */
+    public ResultActions partitionItems(Pos who, UUID order, long orderVersion, String key, Object... lines)
+            throws Exception {
+        StringBuilder body = new StringBuilder();
+        for (int i = 0; i < lines.length; i += 2) {
+            body.append(i == 0 ? "" : ", ").append("{\"lineId\": \"%s\", \"quantity\": %s}"
+                    .formatted(lines[i], lines[i + 1]));
+        }
+        return send(who, ORDERS + "/" + order + "/partitions", key,
+                "{\"orderVersion\": %d, \"kind\": \"ITEMS\", \"lines\": [%s]}".formatted(orderVersion, body));
+    }
+
+    public ResultActions partitionAmount(Pos who, UUID order, long orderVersion, String amount) throws Exception {
+        return send(who, ORDERS + "/" + order + "/partitions", UUID.randomUUID().toString(),
+                "{\"orderVersion\": %d, \"kind\": \"AMOUNT\", \"amount\": %s}".formatted(orderVersion, amount));
+    }
+
+    public ResultActions equalParts(Pos who, UUID order, long orderVersion, int parts) throws Exception {
+        return send(who, ORDERS + "/" + order + "/partitions/equal", UUID.randomUUID().toString(),
+                "{\"orderVersion\": %d, \"parts\": %d}".formatted(orderVersion, parts));
+    }
+
+    public ResultActions partitions(Pos who, UUID order) throws Exception {
+        return mvc.perform(get(ORDERS + "/" + order + "/partitions").with(who.with(CASHIER)));
+    }
+
+    public ResultActions cancelPartition(Pos who, UUID partition, long version, String reason) throws Exception {
+        return send(who, PARTITIONS + "/" + partition + "/cancel", UUID.randomUUID().toString(),
+                "{\"version\": %d, \"reason\": \"%s\"}".formatted(version, reason));
+    }
+
+    public ResultActions partitionDocument(Pos who, UUID partition, String key) throws Exception {
+        return send(who, PARTITIONS + "/" + partition + "/documents", key, "{}");
+    }
+
+    /** Pays {@code partition} of {@code order}. */
+    public ResultActions payPartition(Pos who, UUID order, UUID partition, String method, String amount,
+                                      String tendered, String key) throws Exception {
+        String cash = tendered == null ? "" : ", \"tendered\": " + tendered;
+        return send(who, ATTEMPTS, key, "{\"orderId\": \"%s\", \"partitionId\": \"%s\", \"methodCode\": \"%s\", "
+                .formatted(order, partition, method) + "\"amount\": " + amount + cash + "}");
+    }
+
+    /** The settled void (D71) with an approver; the approver verifier is a mock in the settlement context. */
+    public ResultActions settledVoid(Pos who, UUID order, long orderVersion, UUID line, String quantity, String key)
+            throws Exception {
+        return mvc.perform(idem(post(ORDERS + "/" + order + "/settlement/voids"), key).with(who.with(CASHIER))
+                .header("X-Approver-Code", "MGR").header("X-Approver-Pin", "1234")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(("{\"orderVersion\": %d, \"lineId\": \"%s\", \"quantity\": %s, \"reason\": \"dropped\", "
+                        + "\"wasted\": true}").formatted(orderVersion, line, quantity)));
+    }
+
+    /** The order's line ids in line order, from its settlement view's coverage. */
+    public List<UUID> lineIds(Pos who, UUID order) throws Exception {
+        List<UUID> ids = new java.util.ArrayList<>();
+        json(settlement(who, order).andExpect(status().isOk())).get("coverage")
+                .forEach(line -> ids.add(UUID.fromString(line.get("lineId").asString())));
+        return ids;
+    }
+
+    private ResultActions send(Pos who, String path, String key, String body) throws Exception {
+        return mvc.perform(idem(MockMvcRequestBuilders.post(path), key).with(who.with(CASHIER))
+                .contentType(MediaType.APPLICATION_JSON).content(body));
+    }
+
+    /**
+     * Fires both requests while a test transaction holds the order's {@code order_settlement} row, waits until both
+     * are blocked behind it ({@code pg_blocking_pids}), then releases it: the two really contend for the lock.
+     */
+    public <T> List<T> raceBehindOrderLock(UUID order, Callable<T> first, Callable<T> second) throws Exception {
+        jdbc.sql("""
+                INSERT INTO settlement.order_settlement (order_id, created_at) VALUES (?, now())
+                ON CONFLICT (order_id) DO NOTHING""").param(order).update();
+        CountDownLatch locked = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        try (var pool = Executors.newFixedThreadPool(3)) {
+            var holder = pool.submit(() -> new TransactionTemplate(transactionManager).executeWithoutResult(tx -> {
+                jdbc.sql("SELECT order_id FROM settlement.order_settlement WHERE order_id = ? FOR UPDATE")
+                        .param(order).query(UUID.class).single();
+                locked.countDown();
+                try {
+                    release.await(30, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }));
+            locked.await(30, TimeUnit.SECONDS);
+            var a = pool.submit(first);
+            var b = pool.submit(second);
+            long deadline = System.nanoTime() + java.time.Duration.ofSeconds(30).toNanos();
+            while (blockedOnLocks() < 2 && System.nanoTime() < deadline) {
+                Thread.sleep(5); // polls a condition; not a timing guard
+            }
+            long blocked = blockedOnLocks();
+            release.countDown();
+            holder.get(30, TimeUnit.SECONDS);
+            if (blocked < 2) {
+                throw new IllegalStateException("only " + blocked + " request(s) waited on the order lock");
+            }
+            return List.of(a.get(30, TimeUnit.SECONDS), b.get(30, TimeUnit.SECONDS));
+        }
+    }
+
+    /** Backends of this database waiting on a lock (the second waiter queues behind the first, not the holder). */
+    private long blockedOnLocks() {
+        return jdbc.sql("SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() "
+                + "AND cardinality(pg_blocking_pids(pid)) > 0").query(Long.class).single();
+    }
+
     /** Creates an active payment method (BackOffice); returns its JSON view. */
     public JsonNode method(String code, String kind, String providerCode) throws Exception {
         String provider = providerCode == null ? "null" : "\"" + providerCode + "\"";
@@ -238,6 +380,20 @@ public class SettlementFixtures {
         return spec.query(Long.class).single();
     }
 
+    public java.math.BigDecimal decimal(String sql, Object... params) {
+        var spec = jdbc.sql(sql);
+        for (int i = 0; i < params.length; i++) {
+            spec = spec.param(i + 1, params[i]);
+        }
+        return spec.query(java.math.BigDecimal.class).single();
+    }
+
+    /** The order's one payment. */
+    public UUID paymentOf(UUID order) {
+        return jdbc.sql("SELECT id FROM settlement.payment WHERE order_id = ?").param(order).query(UUID.class)
+                .single();
+    }
+
     public long payments(UUID order) {
         return count("SELECT count(*) FROM settlement.payment WHERE order_id = ?", order);
     }
@@ -259,6 +415,36 @@ public class SettlementFixtures {
 
     public long issuedNumber(UUID order) {
         return count("SELECT number FROM fiscal.fiscal_document WHERE source_id = ? AND status = 'ISSUED'", order);
+    }
+
+    /**
+     * A CASH payment of the sale's order in the cashier's session written the way an R2 build wrote it (attempt,
+     * payment and allocation; no target, terminal or business date columns). @return the payment id
+     */
+    public UUID r2Payment(Sale sale, String amount) {
+        UUID attempt = UUID.randomUUID();
+        UUID payment = UUID.randomUUID();
+        java.math.BigDecimal value = new java.math.BigDecimal(amount);
+        new TransactionTemplate(transactionManager).executeWithoutResult(tx -> {
+            jdbc.sql("""
+                    INSERT INTO settlement.payment_attempt (id, order_id, store_id, terminal_id, session_id,
+                        method_code, method_kind, amount, tendered, change_given, currency, status,
+                        created_by_employee_id, created_at, updated_at, version)
+                    VALUES (?, ?, ?, ?, ?, 'CASH', 'CASH', ?, ?, 0, 'MZN', 'SUCCEEDED', ?, now(), now(), 0)""")
+                    .params(attempt, sale.order(), sale.store(), sale.cashier().terminalId(), sale.session(), value,
+                            value, sale.cashier().employeeId()).update();
+            jdbc.sql("""
+                    INSERT INTO settlement.payment (id, attempt_id, order_id, store_id, session_id, method_code,
+                        amount, currency, status, collected_by_employee_id, confirmed_at)
+                    VALUES (?, ?, ?, ?, ?, 'CASH', ?, 'MZN', 'CONFIRMED', ?, now())""")
+                    .params(payment, attempt, sale.order(), sale.store(), sale.session(), value,
+                            sale.cashier().employeeId()).update();
+            jdbc.sql("""
+                    INSERT INTO settlement.payment_allocation (id, payment_id, target_type, target_id, amount,
+                        currency, created_at) VALUES (?, ?, 'ORDER', ?, ?, 'MZN', now())""")
+                    .params(UUID.randomUUID(), payment, sale.order(), value).update();
+        });
+        return payment;
     }
 
     public long nextNumber(UUID series) {

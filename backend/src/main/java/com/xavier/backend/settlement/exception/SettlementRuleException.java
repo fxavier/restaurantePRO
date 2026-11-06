@@ -1,7 +1,10 @@
 package com.xavier.backend.settlement.exception;
 
+import com.xavier.backend.shared.Money;
 import com.xavier.backend.shared.exception.BusinessRuleException;
+import java.math.BigDecimal;
 import java.util.Map;
+import java.util.UUID;
 
 /** A settlement business rule refused the request: 422 with the stable {@code code} property. */
 public class SettlementRuleException extends BusinessRuleException {
@@ -21,6 +24,81 @@ public class SettlementRuleException extends BusinessRuleException {
     public static SettlementRuleException noOpenSession() {
         return new SettlementRuleException(SettlementRule.NO_OPEN_CASH_SESSION,
                 "You have no open cash session in this store: open one before collecting.");
+    }
+
+    // ---- R3 (D67-D71): partitions and the settled void ----
+
+    public static SettlementRuleException quantityAlreadyPartitioned(UUID lineId, BigDecimal available) {
+        return new SettlementRuleException(SettlementRule.QUANTITY_ALREADY_PARTITIONED, "Only " + plain(available)
+                + " of line " + lineId + " is not in a partition yet.",
+                Map.of("lineId", lineId, "available", available));
+    }
+
+    public static SettlementRuleException quantityExceedsNet(UUID lineId, BigDecimal net, BigDecimal quantity) {
+        return new SettlementRuleException(SettlementRule.QUANTITY_EXCEEDS_NET, "Line " + lineId + " has "
+                + plain(net) + " billable, less than " + plain(quantity) + ".", Map.of("lineId", lineId));
+    }
+
+    public static SettlementRuleException quantityPartitioned(UUID lineId, BigDecimal available) {
+        return new SettlementRuleException(SettlementRule.QUANTITY_PARTITIONED, "Only " + plain(available)
+                + " of line " + lineId + " is in no partition: cancel the partition before voiding more.",
+                Map.of("lineId", lineId, "available", available));
+    }
+
+    public static SettlementRuleException splitRoundingLimit(UUID lineId, BigDecimal quantity, Money gross,
+                                                             Money tax) {
+        return new SettlementRuleException(SettlementRule.SPLIT_ROUNDING_LIMIT, "Line " + lineId
+                + " cannot be split this way: a share of " + plain(quantity) + " would carry " + gross.amount()
+                + " (tax " + tax.amount() + "), beyond the rounding a document allows. Cancel or split it "
+                + "differently.", Map.of("lineId", lineId));
+    }
+
+    public static SettlementRuleException orderFrozen(UUID orderId) {
+        return new SettlementRuleException(SettlementRule.ORDER_FROZEN, "Order " + orderId
+                + " has its document draft: its split can no longer change.");
+    }
+
+    public static SettlementRuleException amountExceedsResidual(UUID orderId, Money due, Money residual) {
+        return new SettlementRuleException(SettlementRule.AMOUNT_EXCEEDS_RESIDUAL, "The partition of "
+                + due.amount() + " is more than the residual " + residual.amount() + " of order " + orderId + ".",
+                Map.of("residual", residual.amount()));
+    }
+
+    public static SettlementRuleException nothingToSplit(UUID orderId, Money residual, int parts) {
+        return new SettlementRuleException(SettlementRule.NOTHING_TO_SPLIT, "The residual " + residual.amount()
+                + " of order " + orderId + " cannot be split in " + parts + " positive parts.");
+    }
+
+    public static SettlementRuleException partitionInUse(UUID partitionId) {
+        return new SettlementRuleException(SettlementRule.PARTITION_IN_USE, "Bill partition " + partitionId
+                + " has a payment, an open attempt or a document: it cannot be cancelled.");
+    }
+
+    public static SettlementRuleException partitionNotInvoiceable(UUID partitionId, Object status, Object kind) {
+        return new SettlementRuleException(SettlementRule.PARTITION_NOT_INVOICEABLE, "Only a LIVE ITEMS partition"
+                + " is invoiced on its own; " + partitionId + " is " + status + " " + kind + ".");
+    }
+
+    public static SettlementRuleException voidExceedsUnpaid(UUID orderId, Money residualAfter, Money owed,
+                                                            Money unpaid) {
+        return new SettlementRuleException(SettlementRule.VOID_EXCEEDS_UNPAID, "The void would leave "
+                + residualAfter.amount() + " due on order " + orderId + ", less than the " + owed.amount()
+                + " paid or being paid: refund first.", Map.of("unpaid", unpaid.amount()));
+    }
+
+    /** @param what why the quantity is invoiced, e.g. "Order … has its document" */
+    public static SettlementRuleException correctionRequiresFiscalAdapter(String what) {
+        return new SettlementRuleException(SettlementRule.CORRECTION_REQUIRES_FISCAL_ADAPTER, what
+                + ": correcting invoiced quantities needs the market's fiscal adapter.");
+    }
+
+    public static SettlementRuleException voidSelfApproval() {
+        return new SettlementRuleException(SettlementRule.SELF_APPROVAL,
+                "The approver of a void cannot be the operator.");
+    }
+
+    private static String plain(BigDecimal quantity) {
+        return quantity.stripTrailingZeros().toPlainString();
     }
 
     public SettlementRule rule() {
