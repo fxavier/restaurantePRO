@@ -65,6 +65,34 @@ class FiscalDocumentTest {
     }
 
     @Test
+    void theTaxSummaryOfARateNamesTheTaxCodesOfItsLines() {
+        DraftLine beer = coded(BEER, "IVA");
+        DraftLine bread = coded(BREAD, "ISENTO");
+        DraftLine wine = coded(WINE, "IVA-VINHO");
+
+        DocumentView view = draft(List.of(beer, bread, wine), mzn("398.00"), mzn("350.00"), mzn("48.00"), null)
+                .toView();
+
+        assertThat(view.taxes()).extracting(t -> t.rate().stripTrailingZeros().toPlainString(),
+                        DocumentView.TaxSummary::taxCode)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("0", "ISENTO"),
+                        org.assertj.core.groups.Tuple.tuple("16", "IVA+IVA-VINHO"));
+    }
+
+    @Test
+    void aTaxSummaryOfLinesWithoutATaxCodeHasNone() {
+        DocumentView view = draft(List.of(BREAD), mzn("50.00"), mzn("50.00"), mzn("0.00"), null).toView();
+
+        assertThat(view.taxes()).extracting(DocumentView.TaxSummary::taxCode).containsExactly((String) null);
+    }
+
+    static DraftLine coded(DraftLine line, String taxCode) {
+        return new DraftLine(line.sourceLineId(), line.description(), line.quantity(), line.unitPrice(),
+                line.taxRatePercent(), line.gross(), line.net(), line.tax(), taxCode);
+    }
+
+    @Test
     void aDraftNeedsAtLeastOneLine() {
         assertThatThrownBy(() -> draft(List.of(), mzn("0.00"), mzn("0.00"), mzn("0.00"), null))
                 .isInstanceOf(InvalidSaleDraftException.class);

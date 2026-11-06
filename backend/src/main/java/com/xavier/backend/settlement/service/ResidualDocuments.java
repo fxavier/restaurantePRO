@@ -107,10 +107,10 @@ final class ResidualDocuments {
     }
 
     private static DraftLine draftLine(Bill bill, Candidate candidate) {
-        String description = bill.line(candidate.sourceLineId()).orElseThrow().description();
-        return new DraftLine(candidate.sourceLineId(), description, candidate.quantity(), candidate.unitPrice(),
-                candidate.ratePercent(), candidate.gross(), candidate.gross().minus(candidate.tax()),
-                candidate.tax());
+        BillingLine billed = bill.line(candidate.sourceLineId()).orElseThrow();
+        return new DraftLine(candidate.sourceLineId(), billed.description(), candidate.quantity(),
+                candidate.unitPrice(), candidate.ratePercent(), candidate.gross(),
+                candidate.gross().minus(candidate.tax()), candidate.tax(), billed.taxCode());
     }
 
     private static Money sum(List<DraftLine> lines, Function<DraftLine, Money> amount, Money zero) {

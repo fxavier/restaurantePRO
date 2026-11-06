@@ -91,8 +91,9 @@ public class Projections {
             store.insertSalesLine(header, salesLine(doc.storeId(), line, dimensions), now);
         }
         for (DocumentView.TaxSummary tax : doc.taxes()) {
-            store.insertSalesTax(header, new SalesTax(taxCodes(doc.lines(), tax.rate(), dimensions), tax.rate(),
-                    tax.net().amount(), tax.tax().amount()), now);
+            String taxCode = tax.taxCode() != null ? tax.taxCode() : taxCodes(doc.lines(), tax.rate(), dimensions);
+            store.insertSalesTax(header, new SalesTax(taxCode, tax.rate(), tax.net().amount(), tax.tax().amount()),
+                    now);
         }
     }
 
@@ -162,10 +163,10 @@ public class Projections {
     }
 
     /**
-     * The tax code(s) of the document's lines at {@code rate}: one code in practice; several (joined with "+") when
-     * two catalog codes share a rate, and empty when the order's lines no longer say. The document's own tax summary
-     * ({@code DocumentView.TaxSummary(rate, net, tax)}) carries no code, so the code comes from the billed lines;
-     * the amounts always come from the summary.
+     * The tax code(s) at {@code rate} of a document drafted before its tax summary named them: derived from the
+     * order's billed lines (joined with "+" when two codes share a rate, as fiscal does), and empty when the order's
+     * lines no longer say. A newer document's {@code TaxSummary.taxCode} is used as it is; the amounts always come
+     * from the summary.
      */
     private static String taxCodes(List<DocumentView.Line> lines, BigDecimal rate, Dimensions dimensions) {
         return lines.stream().filter(line -> line.taxRatePercent().compareTo(rate) == 0)

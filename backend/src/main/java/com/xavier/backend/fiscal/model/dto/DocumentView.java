@@ -29,7 +29,11 @@ public record DocumentView(UUID id, UUID storeId, String documentType, String st
                        BigDecimal taxRatePercent, Money gross, Money net, Money tax) {
     }
 
-    /** Σ of the lines' net and tax for one rate (D59: no re-rounding of totals). */
-    public record TaxSummary(BigDecimal rate, Money net, Money tax) {
+    /**
+     * Σ of the lines' net and tax for one rate (D59: no re-rounding of totals). {@code taxCode} names the lines'
+     * catalog tax code(s) at that rate, sorted and joined with "+" when two codes share it; {@code null} when the
+     * lines carried none (and for documents drafted before the code was recorded).
+     */
+    public record TaxSummary(String taxCode, BigDecimal rate, Money net, Money tax) {
     }
 }

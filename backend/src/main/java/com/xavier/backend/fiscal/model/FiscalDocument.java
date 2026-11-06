@@ -44,7 +44,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.function.Supplier;
 import org.hibernate.annotations.Generated;
@@ -254,6 +256,7 @@ public class FiscalDocument {
         Money net = zero(currency);
         Money tax = zero(currency);
         Map<BigDecimal, Money[]> perRate = new TreeMap<>();
+        Map<BigDecimal, Set<String>> codesPerRate = new TreeMap<>();
         for (DraftLine line : lines) {
             FiscalDocumentLine copied = copy(document.lines.size() + 1, line, currency, command.amountsAllocated());
             document.lines.add(copied);
@@ -264,6 +267,10 @@ public class FiscalDocument {
             Money[] sums = perRate.computeIfAbsent(rate, r -> new Money[]{zero(currency), zero(currency)});
             sums[0] = sums[0].plus(line.net());
             sums[1] = sums[1].plus(line.tax());
+            Set<String> codes = codesPerRate.computeIfAbsent(rate, r -> new TreeSet<>());
+            if (line.taxCode() != null) {
+                codes.add(line.taxCode());
+            }
         }
         requireTotal("totalGross", command.totalGross(), gross, currency);
         requireTotal("totalNet", command.totalNet(), net, currency);
@@ -271,7 +278,8 @@ public class FiscalDocument {
         document.totalGross = gross.amount();
         document.totalNet = net.amount();
         document.totalTax = tax.amount();
-        perRate.forEach((rate, sums) -> document.taxes.add(new FiscalDocumentTax(rate, sums[0], sums[1])));
+        perRate.forEach((rate, sums) -> document.taxes.add(
+                new FiscalDocumentTax(taxCodeOf(codesPerRate.get(rate)), rate, sums[0], sums[1])));
         return document;
     }
 
@@ -402,6 +410,10 @@ public class FiscalDocument {
         if (other) {
             throw new PaymentSnapshotMismatchException(id, "every amount must be in " + c);
         }
+    }
+
+    private static String taxCodeOf(Set<String> codes) {
+        return codes.isEmpty() ? null : String.join("+", codes);
     }
 
     private boolean sameContent(DraftCommand command) {

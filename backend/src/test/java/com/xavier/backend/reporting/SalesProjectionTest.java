@@ -70,10 +70,12 @@ class SalesProjectionTest {
                 .containsEntry("area_code", "SALA").containsEntry("mode", "DINE_IN");
 
         assertThat(reporting.rows("""
-                SELECT tax_rate, net, tax FROM reporting.sales_record_tax WHERE document_id = ? ORDER BY tax_rate""",
-                document)).isEqualTo(reporting.rows("""
-                SELECT tax_rate, net, tax FROM fiscal.fiscal_document_tax WHERE document_id = ? ORDER BY tax_rate""",
-                document));
+                SELECT tax_code, tax_rate, net, tax FROM reporting.sales_record_tax WHERE document_id = ?
+                ORDER BY tax_rate""", document)).isEqualTo(reporting.rows("""
+                SELECT tax_code, tax_rate, net, tax FROM fiscal.fiscal_document_tax WHERE document_id = ?
+                ORDER BY tax_rate""", document));
+        assertThat(reporting.row("SELECT tax_code FROM fiscal.fiscal_document_tax WHERE document_id = ?", document)
+                .get("tax_code")).as("the document's tax summary names the code").isEqualTo(line.get("tax_code"));
         assertThat(record.get("total_tax")).isEqualTo(new BigDecimal("3.4500"));
     }
 
