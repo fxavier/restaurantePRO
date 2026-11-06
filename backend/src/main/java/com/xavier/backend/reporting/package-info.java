@@ -13,12 +13,13 @@
  * <p>Nothing depends on reporting (D65), and it calls only read-only facade methods
  * ({@code ArchitectureTests.reportingCallsOnlyReadOnlyFacadeMethods}); its own writes are its projections and the
  * audit records of its exports and rebuilds. Allowed dependencies follow D65, plus {@code audit} (the export is
- * audited, D86) and {@code dining :: dto} ({@code DiningApi.tableInfo} returns {@code TableInfo}).
+ * audited, D86) and {@code dining :: dto} ({@code DiningApi.tableInfo} returns {@code TableInfo}). D99 adds inventory
+ * (its movement facts and {@code StockMovementsPosted}); reporting is the only module that may depend on it.
  */
 @ApplicationModule(displayName = "Reporting", allowedDependencies = {
         "shared", "access", "audit", "organization", "organization :: dto", "identity", "dining", "dining :: dto",
         "catalog", "catalog :: dto", "orders", "orders :: event", "fiscal", "fiscal :: dto", "fiscal :: event",
-        "settlement", "settlement :: event", "cash"})
+        "settlement", "settlement :: event", "cash", "inventory", "inventory :: event"})
 package com.xavier.backend.reporting;
 
 import org.springframework.modulith.ApplicationModule;

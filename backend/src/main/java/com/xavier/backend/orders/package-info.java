@@ -7,12 +7,13 @@
  * <p>Public API: this root package ({@link com.xavier.backend.orders.OrdersApi} for settlement,
  * {@link com.xavier.backend.orders.OrdersProductionApi} for production, {@link com.xavier.backend.orders.LineAmounts}
  * and the billing views) and the {@code model.event} named interface. Allowed dependencies follow D35: never
- * settlement or production. {@code :: dto} interfaces are named next to their module because the facades of
+ * settlement or production; D99 adds promotions (prices fixed at confirmation, loyalty writes) and customers (the
+ * customer of a delivery or loyalty order), and forbids inventory. {@code :: dto} interfaces are named next to their module because the facades of
  * organization, dining and catalog return those types; naming a module alone grants only its root package.
  */
 @ApplicationModule(displayName = "Orders", allowedDependencies = {
         "shared", "audit", "access", "organization", "organization :: dto", "dining", "dining :: dto",
-        "catalog", "catalog :: dto", "identity"})
+        "catalog", "catalog :: dto", "identity", "promotions", "promotions :: dto", "customers", "customers :: dto"})
 package com.xavier.backend.orders;
 
 import org.springframework.modulith.ApplicationModule;
