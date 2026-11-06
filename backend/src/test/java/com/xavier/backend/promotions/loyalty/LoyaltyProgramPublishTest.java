@@ -194,6 +194,28 @@ class LoyaltyProgramPublishTest {
                 .andExpect(status().isForbidden());
     }
 
+    /** D134: the program is company-wide and administrator only, so a grant in one store is not enough. */
+    @Test
+    void aStoreScopedGrantCannotManageTheProgram() throws Exception {
+        UUID draft = loyalty.draft("10.00", 1);
+        UUID store = UUID.randomUUID();
+
+        mvc.perform(idem(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(PROGRAMS))
+                        .with(account(store, Permission.LOYALTY_PROGRAM_MANAGE))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"spendUnit": 10.00, "pointsPerUnit": 1, "itemIds": [], "familyIds": []}"""))
+                .andExpect(status().isForbidden());
+        mvc.perform(idem(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(
+                                PROGRAMS + "/" + draft + "/publish"))
+                        .with(account(store, Permission.LOYALTY_PROGRAM_MANAGE))
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"version": 0}"""))
+                .andExpect(status().isForbidden());
+        mvc.perform(get(PROGRAMS + "/" + draft).with(account(store, Permission.LOYALTY_PROGRAM_MANAGE)))
+                .andExpect(status().isForbidden());
+    }
+
     private void assertRefused(String sql, Object param) {
         assertThatThrownBy(() -> jdbc.sql(sql).param(param).update()).isInstanceOf(DataAccessException.class)
                 .hasMessageContaining("not allowed");

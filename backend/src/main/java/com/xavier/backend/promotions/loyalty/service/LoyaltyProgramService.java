@@ -35,8 +35,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * The company-wide loyalty program (D111): DRAFT versions with their rule, scope and rewards, and publishing one, which
- * retires the version in force. {@code LOYALTY_PROGRAM_MANAGE} installation-wide or in any store (the program is
- * company-wide, like customers); every change is audited.
+ * retires the version in force. {@code LOYALTY_PROGRAM_MANAGE} installation-wide only: the program is company-wide
+ * and administrator only (D134), like the credit limits (S20); a grant in one store is not enough. Every change is
+ * audited.
  */
 @Service
 public class LoyaltyProgramService {
@@ -60,7 +61,7 @@ public class LoyaltyProgramService {
 
     @Transactional
     public ProgramVersionView create(ProgramVersionRequest request) {
-        accessPolicy.requireInAnyStore(Permission.LOYALTY_PROGRAM_MANAGE);
+        accessPolicy.require(Permission.LOYALTY_PROGRAM_MANAGE);
         Currency currency = organization.companyProfile().currency();
         LoyaltyProgramVersion draft = LoyaltyProgramVersion.draft(versions.maxVersionNo() + 1,
                 money(request.spendUnit(), currency), request.pointsPerUnit(), orEmpty(request.itemIds()),
@@ -73,7 +74,7 @@ public class LoyaltyProgramService {
 
     @Transactional
     public ProgramVersionView edit(UUID versionId, ProgramVersionEditRequest request) {
-        accessPolicy.requireInAnyStore(Permission.LOYALTY_PROGRAM_MANAGE);
+        accessPolicy.require(Permission.LOYALTY_PROGRAM_MANAGE);
         LoyaltyProgramVersion draft = requireVersion(versionId);
         draft.requireDraft("be edited");
         OptimisticLocking.requireVersion(LoyaltyProgramVersion.class, versionId, draft.getVersion(),
@@ -88,7 +89,7 @@ public class LoyaltyProgramService {
     /** DRAFT → PUBLISHED; the version in force is RETIRED at the same instant. */
     @Transactional
     public ProgramVersionView publish(UUID versionId, PublishRequest request) {
-        accessPolicy.requireInAnyStore(Permission.LOYALTY_PROGRAM_MANAGE);
+        accessPolicy.require(Permission.LOYALTY_PROGRAM_MANAGE);
         LoyaltyProgramVersion draft = requireVersion(versionId);
         draft.requireDraft("be published");
         OptimisticLocking.requireVersion(LoyaltyProgramVersion.class, versionId, draft.getVersion(),
@@ -107,7 +108,7 @@ public class LoyaltyProgramService {
 
     @Transactional(readOnly = true)
     public List<ProgramVersionView> list() {
-        accessPolicy.requireInAnyStore(Permission.LOYALTY_PROGRAM_MANAGE);
+        accessPolicy.require(Permission.LOYALTY_PROGRAM_MANAGE);
         List<LoyaltyProgramVersion> all = versions.findAllByOrderByVersionNoDesc();
         Map<UUID, List<RewardView>> byVersion = rewards.findByVersionIdInOrderByCode(
                         all.stream().map(LoyaltyProgramVersion::getId).toList()).stream()
@@ -118,13 +119,13 @@ public class LoyaltyProgramService {
 
     @Transactional(readOnly = true)
     public ProgramVersionView get(UUID versionId) {
-        accessPolicy.requireInAnyStore(Permission.LOYALTY_PROGRAM_MANAGE);
+        accessPolicy.require(Permission.LOYALTY_PROGRAM_MANAGE);
         return view(requireVersion(versionId));
     }
 
     @Transactional
     public RewardView addReward(UUID versionId, RewardRequest request) {
-        accessPolicy.requireInAnyStore(Permission.LOYALTY_PROGRAM_MANAGE);
+        accessPolicy.require(Permission.LOYALTY_PROGRAM_MANAGE);
         LoyaltyProgramVersion draft = requireVersion(versionId);
         draft.requireDraft("get rewards");
         requireValid(request);
@@ -138,7 +139,7 @@ public class LoyaltyProgramService {
 
     @Transactional
     public RewardView editReward(UUID versionId, UUID rewardId, RewardRequest request) {
-        accessPolicy.requireInAnyStore(Permission.LOYALTY_PROGRAM_MANAGE);
+        accessPolicy.require(Permission.LOYALTY_PROGRAM_MANAGE);
         LoyaltyProgramVersion draft = requireVersion(versionId);
         draft.requireDraft("change its rewards");
         LoyaltyReward reward = requireReward(versionId, rewardId);
@@ -152,7 +153,7 @@ public class LoyaltyProgramService {
 
     @Transactional
     public void removeReward(UUID versionId, UUID rewardId) {
-        accessPolicy.requireInAnyStore(Permission.LOYALTY_PROGRAM_MANAGE);
+        accessPolicy.require(Permission.LOYALTY_PROGRAM_MANAGE);
         requireVersion(versionId).requireDraft("change its rewards");
         LoyaltyReward reward = requireReward(versionId, rewardId);
         rewards.delete(reward);
