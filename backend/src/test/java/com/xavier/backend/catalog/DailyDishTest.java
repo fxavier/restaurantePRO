@@ -9,10 +9,17 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.catalog.Publications.SellableStore;
+import com.xavier.backend.catalog.controller.CatalogNoticeHttpTest;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.regex.Pattern;
+import org.springframework.context.annotation.Import;
+import org.springframework.mock.web.MockHttpServletResponse;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -29,6 +36,7 @@ import tools.jackson.databind.JsonNode;
  * the store's published release. Setting them replaces the day's list, in order.
  */
 @CatalogModuleTest
+@Import(CatalogNoticeHttpTest.NoticeStream.class) // the same context as CatalogNoticeHttpTest and SoldOutFlagTest
 class DailyDishTest {
 
     static final String BACKOFFICE = CATALOG + "/daily-dishes";
@@ -96,6 +104,30 @@ class DailyDishTest {
     }
 
     @Test
+    void aChangeIsAuditedAndNotifiesThePosButAnUnchangedListDoesNeither() throws Exception {
+        SellableStore sellable = publications().sellableStore();
+        MockHttpServletResponse stream = subscribe(sellable.store());
+        publications().publishNew(sellable.store());
+        eventually(() -> assertThat(notices(stream)).isEqualTo(1)); // the publication's own notice
+
+        setDishes(sellable.store(), DAY, id(sellable.item())).andExpect(status().isOk());
+        eventually(() -> assertThat(notices(stream)).isEqualTo(2));
+        setDishes(sellable.store(), DAY, id(sellable.item())).andExpect(status().isOk());
+        setDishes(sellable.store(), DAY).andExpect(status().isOk());
+        eventually(() -> assertThat(notices(stream)).isEqualTo(3));
+
+        assertThat(jdbc.sql("""
+                        SELECT count(*) FROM audit.audit_event WHERE action = 'DAILY_DISHES_SET' AND store_id = :s""")
+                .param("s", sellable.store()).query(Long.class).single()).isEqualTo(2);
+        assertThat(notices(stream)).isEqualTo(3);
+    }
+
+    @Test
+    void anUnknownStoreIsNotFound() throws Exception {
+        setDishes(UUID.randomUUID(), DAY).andExpect(status().isNotFound());
+    }
+
+    @Test
     void aDishOutsideThePublishedReleaseIsRefused() throws Exception {
         SellableStore sellable = publications().sellableStore();
         publications().publishNew(sellable.store());
@@ -147,6 +179,34 @@ class DailyDishTest {
     private static String body(UUID store, LocalDate date, UUID... items) {
         return "{\"storeId\": \"%s\", \"businessDate\": \"%s\", \"itemIds\": [%s]}".formatted(store, date,
                 String.join(",", java.util.Arrays.stream(items).map(item -> "\"" + item + "\"").toList()));
+    }
+
+    private MockHttpServletResponse subscribe(UUID store) throws Exception {
+        return mvc.perform(get(CatalogNoticeHttpTest.NoticeStream.PATH + store)
+                        .with(pos(store, Permission.CATALOG_VIEW)).accept(MediaType.TEXT_EVENT_STREAM))
+                .andExpect(request().asyncStarted())
+                .andReturn().getResponse();
+    }
+
+    private static long notices(MockHttpServletResponse response) {
+        String content = new String(response.getContentAsByteArray(), StandardCharsets.UTF_8);
+        return Pattern.compile(Pattern.quote(CatalogNoticeHttpTest.CATALOG_NOTICE)).matcher(content).results().count();
+    }
+
+    /** Notices are sent off the committing thread; poll until a deadline (as CatalogNoticeHttpTest). */
+    private static void eventually(Runnable assertion) throws InterruptedException {
+        long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+        while (true) {
+            try {
+                assertion.run();
+                return;
+            } catch (AssertionError e) {
+                if (System.nanoTime() > deadline) {
+                    throw e;
+                }
+                Thread.sleep(20);
+            }
+        }
     }
 
     private CatalogFixtures fixtures() {
