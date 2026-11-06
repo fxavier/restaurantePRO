@@ -114,6 +114,30 @@ class LoyaltyProgramPublishTest {
     }
 
     @Test
+    void editingADraftReplacesItsScope() throws Exception {
+        UUID oldItem = UUID.randomUUID();
+        UUID oldFamily = UUID.randomUUID();
+        UUID newItem = UUID.randomUUID();
+        String created = loyalty.createDraft("10.00", 1, "\"" + oldItem + "\"", "\"" + oldFamily + "\"")
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        UUID draft = id(created);
+
+        mvc.perform(idem(put(PROGRAMS + "/" + draft)).with(manager()).contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"version": %d, "spendUnit": 10.00, "pointsPerUnit": 1, "itemIds": ["%s"], "familyIds": []}"""
+                                .formatted(json(created).get("version").asLong(), newItem)))
+                .andExpect(status().isOk());
+
+        mvc.perform(get(PROGRAMS + "/" + draft).with(manager())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.itemIds.length()").value(1))
+                .andExpect(jsonPath("$.itemIds[0]").value(newItem.toString()))
+                .andExpect(jsonPath("$.familyIds").isEmpty());
+        assertThat(jdbc.sql("""
+                        SELECT coalesce(item_id, family_id) FROM promotions.loyalty_program_scope WHERE version_id = ?""")
+                .param(draft).query(UUID.class).list()).containsExactly(newItem);
+    }
+
+    @Test
     void rewardsAreValidatedAndTheirCodeIsUniquePerVersion() throws Exception {
         UUID draft = loyalty.draft("10.00", 1);
 

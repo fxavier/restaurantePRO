@@ -169,6 +169,9 @@ public class LoyaltyLedgerService {
 
     @Transactional(readOnly = true)
     public LoyaltyBalance balance(UUID customerId) {
+        if (customerId == null) {
+            return new LoyaltyBalance(null, false, null, 0); // findById(null) would doom a joined caller transaction
+        }
         return accounts.findById(customerId)
                 .map(a -> new LoyaltyBalance(customerId, true, a.getStatus().name(), entries.balance(customerId)))
                 .orElseGet(() -> new LoyaltyBalance(customerId, false, null, 0));

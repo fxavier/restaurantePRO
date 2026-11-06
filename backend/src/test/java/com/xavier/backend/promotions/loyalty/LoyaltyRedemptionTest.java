@@ -185,6 +185,18 @@ class LoyaltyRedemptionTest {
                 .isInstanceOf(IllegalTransactionStateException.class);
     }
 
+    /** Orders asks for an order without a customer too: the answer is empty and never dooms its transaction. */
+    @Test
+    void noCustomerIsNotAMemberAndNeverDoomsTheCallersTransaction() {
+        Boolean rollbackOnly = tx.execute(status -> {
+            assertThat(api.isMember(null)).isFalse();
+            assertThat(api.balance(null).enrolled()).isFalse();
+            return status.isRollbackOnly();
+        });
+
+        assertThat(rollbackOnly).isFalse();
+    }
+
     private RedemptionResult redeem(RedeemCommand command) {
         return tx.execute(status -> api.redeem(command));
     }

@@ -160,8 +160,10 @@ public class LoyaltyProgramVersion {
         Set<ProgramScope> next = new HashSet<>();
         itemIds.stream().map(ProgramScope::item).forEach(next::add);
         familyIds.stream().map(ProgramScope::family).forEach(next::add);
-        scope.retainAll(next);
-        scope.addAll(next);
+        // Replaced whole (one delete by version_id, then inserts), never row by row: each scope row has a null column.
+        if (!scope.equals(next)) {
+            scope = next;
+        }
     }
 
     public ProgramVersionView toView(List<RewardView> rewards) {
