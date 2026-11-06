@@ -177,7 +177,7 @@ Fill in this table at installation and keep it with the drill log:
 
 The checks behind the keys:
 
-- PostgreSQL's preflight (`postgres/preflight.sh`) and the backup scripts refuse fewer than two distinct X25519 recipients, a recipients file writable by group or others, or one owned by another user. The preflight also refuses a file that age rejects.
+- PostgreSQL's preflight (`postgres/preflight.sh`) and the backup scripts refuse fewer than two distinct X25519 recipients, and a recipients file writable by group or others. The preflight also refuses a file that age rejects. The backup scripts and `verify-backups.sh` also refuse a file owned by anyone other than root or the backup user; the preflight cannot see host owners.
 - The backup scripts refuse to run while `BACKUP_AGE_IDENTITY` is set, or while any file of 64 KiB or less under `deploy/` or the backup directory contains an age identity.
 - Restores take `--identity FILE`. The file must be yours, mode 0600 or 0400, and outside `deploy/` and the backups. Use a tmpfs such as `/dev/shm`, and `shred -u` it afterwards.
 - `verify-backups.sh` keeps the recipients' fingerprint in `backups/RECIPIENTS_SHA256`, and a copy of the file in `backups/RECIPIENTS` for the restore host. A change fails every run until `./verify-backups.sh --accept-recipients-change`, which writes an `AUDIT` line to the log. That is how a silent swap to an attacker's key is caught.

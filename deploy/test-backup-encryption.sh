@@ -458,6 +458,12 @@ retrieval_started="$(date -u +%Y-%m-%dT%H:%M:%SZ)" # the custodian starts retrie
   --retrieval-started "$retrieval_started" --name "$RUN_ID-verify" --report-dir "$WORK/reports" 2>"$WORK/drill.err" \
   || fail "verify-restore.sh --key-recovery: $(tail -15 "$WORK/drill.err")"
 report="$(find "$WORK/reports" -name 'drill-*.json' | head -1)"
+mkdir -m 700 "$WORK/reports-weekly"
+"$DEPLOY_DIR/verify-restore.sh" --from "$from" --identity "$KEYS/operational.key" --name "$RUN_ID-verify" \
+  --report-dir "$WORK/reports-weekly" 2>"$WORK/weekly.err" || fail "weekly verify-restore.sh: $(tail -15 "$WORK/weekly.err")"
+weekly="$(cat "$WORK/reports-weekly"/drill-*.json)"
+[[ "$weekly" == *'"mode": "weekly"'* && "$weekly" == *'"result": "PASS"'* ]] || fail "weekly report: $weekly"
+ok "weekly verify-restore.sh with the operational key: PASS ($(grep -m1 '^verify-restore: PITR' "$WORK/weekly.err" | cut -c1-120))"
 mkdir -m 700 "$WORK/reports-wrong"
 if "$DEPLOY_DIR/verify-restore.sh" --from "$from" --identity "$KEYS/wrong.key" --name "$RUN_ID-verify" \
   --report-dir "$WORK/reports-wrong" 2>"$WORK/drill-wrong.err"; then fail "verify-restore.sh passed with a key that is not a recipient"; fi
