@@ -47,6 +47,11 @@ public class LoyaltyRuleException extends BusinessRuleException {
         return new LoyaltyRuleException(LoyaltyRule.REASON_REQUIRED, "A " + action + " needs a reason.");
     }
 
+    public static LoyaltyRuleException invalidPeriod(Object from, Object to) {
+        return new LoyaltyRuleException(LoyaltyRule.INVALID_PERIOD, "The period starts (" + from
+                + ") after it ends (" + to + ").");
+    }
+
     public LoyaltyRule rule() {
         return rule;
     }

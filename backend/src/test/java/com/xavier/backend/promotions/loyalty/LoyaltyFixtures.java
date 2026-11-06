@@ -10,7 +10,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.customers.CustomersFixtures;
 import com.xavier.backend.customers.CustomersFixtures.Pos;
+import com.xavier.backend.promotions.EarnCommand;
+import com.xavier.backend.promotions.EarnLine;
+import com.xavier.backend.promotions.EarnResult;
+import com.xavier.backend.promotions.LoyaltyApi;
+import com.xavier.backend.promotions.RedeemCommand;
+import com.xavier.backend.promotions.RedemptionResult;
+import com.xavier.backend.shared.Money;
+import java.time.Clock;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.boot.test.context.TestComponent;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -27,12 +39,52 @@ public class LoyaltyFixtures {
     public static final String PROGRAMS = "/api/v1/backoffice/loyalty/program-versions";
     public static final String ACCOUNTS = "/api/v1/backoffice/loyalty/accounts";
 
+    public static final LocalDate DAY = LocalDate.of(2026, 11, 6);
+    public static final UUID STORE = UUID.fromString("0190a000-0000-7000-8000-0000000005e0");
+
     private final MockMvc mvc;
     private final CustomersFixtures customers;
+    private final LoyaltyApi loyalty;
+    private final TransactionTemplate tx;
+    private final Clock clock;
 
-    LoyaltyFixtures(MockMvc mvc, CustomersFixtures customers) {
+    LoyaltyFixtures(MockMvc mvc, CustomersFixtures customers, LoyaltyApi loyalty, TransactionTemplate tx,
+                    Clock clock) {
         this.mvc = mvc;
         this.customers = customers;
+        this.loyalty = loyalty;
+        this.tx = tx;
+        this.clock = clock;
+    }
+
+    /** The order's earning at the clock's instant, one line of {@code gross} MZN, in its own transaction. */
+    public Optional<EarnResult> earn(UUID customer, UUID order, String gross) {
+        return tx.execute(status -> loyalty.earnForOrder(earnCommand(customer, order, gross)));
+    }
+
+    public EarnCommand earnCommand(UUID customer, UUID order, String gross) {
+        return new EarnCommand(order, STORE, customer, DAY, clock.instant(),
+                List.of(new EarnLine(UUID.randomUUID(), UUID.randomUUID(), CustomersFixtures.mzn(gross), false)));
+    }
+
+    /** Redeems {@code rewardCode} on a new line of a unit at {@code unitPrice}, in its own transaction. */
+    public RedemptionResult redeem(UUID customer, String rewardCode, String unitPrice) {
+        return tx.execute(status -> loyalty.redeem(redeemCommand(customer, rewardCode, UUID.randomUUID(),
+                UUID.randomUUID(), null, unitPrice)));
+    }
+
+    public static RedeemCommand redeemCommand(UUID customer, String rewardCode, UUID line, UUID item, UUID family,
+                                              String unitPrice) {
+        return new RedeemCommand(customer, rewardCode, line, UUID.randomUUID(), STORE, DAY, item, family,
+                CustomersFixtures.mzn(unitPrice));
+    }
+
+    public long balance(UUID customer) {
+        return loyalty.balance(customer).points();
+    }
+
+    public static Money mzn(String amount) {
+        return CustomersFixtures.mzn(amount);
     }
 
     public ResultActions createDraft(String spendUnit, int pointsPerUnit, String itemIds, String familyIds)
