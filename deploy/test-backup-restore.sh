@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 # Restore drill (PRD S5, acceptance criterion 10; D32).
 #
+# Runs in production mode (D98) with throwaway age keys (operational + recovery) outside deploy/.
 # Starts two throwaway PostgreSQL containers, loads deploy/test/sample.sql into the first,
 # runs backup.sh against it, restores the archive into the second with restore.sh, and
 # compares per-table row counts + checksums, sequence positions and the normalised schema
 # (pg_dump --schema-only). Spring Session rows must come back empty (not backed up).
 # Also checks:
-#   - retention keeps the newest N timestamped archives and ignores hand-named files
-#   - a corrupted archive is rejected by the checksum check, target untouched
+#   - the archive is age ciphertext with its sidecar, the directory 0700 and the files 0600
+#   - retention keeps the newest N timestamped archives (and their sidecars) and ignores hand-named files
+#   - a corrupted archive is rejected: by age for damaged ciphertext, by the checksums for a damaged
+#     payload that was re-encrypted; target untouched
 #   - a non-empty target is refused without --force, target untouched
 #   - --force replaces the target while a client holds a session on it, and removes objects
 #     created after the backup (rollback after an upgrade)
@@ -41,7 +44,18 @@ cleanup() {
 trap cleanup EXIT
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
+die() { fail "$@"; }
 step() { echo "--- $*" >&2; }
+# shellcheck source=lib/common.sh
+. "$DEPLOY_DIR/lib/common.sh"
+# shellcheck source=lib/age.sh
+. "$DEPLOY_DIR/lib/age.sh"
+# shellcheck source=test/keys.sh
+. "$DEPLOY_DIR/test/keys.sh"
+KEYS="$WORK/keys"
+mkdir -m 700 "$KEYS"
+make_throwaway_keys "$KEYS"
+restore() { "$DEPLOY_DIR/restore.sh" --identity "$KEYS/operational.key" "$@"; }
 
 start_pg() {
   local name=$1
@@ -115,26 +129,41 @@ source_schema="$(schema_of "$SRC")"
 expected_fp="$(sed -E 's/^(shared\.spring_session(_attributes)?)\|[0-9]+\|[0-9a-f]+$/\1|0|d41d8cd98f00b204e9800998ecf8427e/' <<<"$before")"
 
 step "backup with retention 2 (two older archives and one hand-named file already present)"
-mkdir -p "$WORK/backups"
-touch "$WORK/backups/restaurantpro-20000101T000000Z.tar" "$WORK/backups/restaurantpro-20000102T000000Z.tar" \
-  "$WORK/backups/restaurantpro-before-upgrade.tar"
+mkdir -m 700 "$WORK/backups"
+for f in restaurantpro-20000101T000000Z.tar.age restaurantpro-20000101T000000Z.tar.sha256 \
+  restaurantpro-20000102T000000Z.tar.age restaurantpro-20000102T000000Z.tar.sha256 restaurantpro-before-upgrade.tar.age; do
+  (umask 077 && touch "$WORK/backups/$f")
+done
 archive="$("$DEPLOY_DIR/backup.sh" --container "$SRC" --dir "$WORK/backups" --keep 2)"
-[[ -f "$archive" ]] || fail "backup.sh did not report an existing archive (got '$archive')"
+[[ -f "$archive" && "$archive" == *.tar.age ]] || fail "backup.sh did not report an encrypted archive (got '$archive')"
+is_age_file "$archive" || fail "$archive is not age ciphertext"
+assert_no_plaintext "$archive" || fail "the archive is not ciphertext with its sidecar"
+[[ "$(file_mode "$WORK/backups")" == 700 && "$(file_mode "$archive")" == 600 && "$(file_mode "${archive%.age}.sha256")" == 600 ]] \
+  || fail "the backup directory or files are not 0700/0600"
 kept="$(cd "$WORK/backups" && ls)"
-expected="$(printf '%s\n' restaurantpro-20000102T000000Z.tar "$(basename "$archive")" restaurantpro-before-upgrade.tar | sort)"
+expected="$(printf '%s\n' restaurantpro-20000102T000000Z.tar.age restaurantpro-20000102T000000Z.tar.sha256 "$(basename "$archive")" \
+  "$(basename "${archive%.age}.sha256")" restaurantpro-before-upgrade.tar.age | sort)"
 [[ "$kept" == "$expected" ]] || fail "retention kept: $(tr '\n' ' ' <<<"$kept"); expected: $(tr '\n' ' ' <<<"$expected")"
 
 step "corrupted archive is rejected before touching the target"
-cp "$archive" "$WORK/corrupt.tar"
-# Flip bytes in the middle of the archive: inside db.dump, which is nearly all of it.
-printf 'garbage' | dd of="$WORK/corrupt.tar" bs=1 seek=$(($(wc -c <"$archive") / 2)) conv=notrunc status=none
-if "$DEPLOY_DIR/restore.sh" --container "$DST" "$WORK/corrupt.tar" 2>"$WORK/corrupt.err"; then fail "restore.sh accepted a corrupted archive"; fi
-grep -q 'checksum mismatch' "$WORK/corrupt.err" || fail "corruption not caught by the checksum check: $(cat "$WORK/corrupt.err")"
+mkdir -m 700 "$WORK/corrupt"
+cp "$archive" "$WORK/corrupt/restaurantpro-corrupt.tar.age"
+# Flip bytes in the middle of the ciphertext: age's authentication rejects it.
+printf 'garbage' | dd of="$WORK/corrupt/restaurantpro-corrupt.tar.age" bs=1 seek=$(($(wc -c <"$archive") / 2)) conv=notrunc status=none
+if restore --container "$DST" "$WORK/corrupt/restaurantpro-corrupt.tar.age" 2>"$WORK/corrupt.err"; then fail "restore.sh accepted a corrupted archive"; fi
+grep -q 'cannot decrypt' "$WORK/corrupt.err" || fail "corrupted ciphertext not caught by age: $(cat "$WORK/corrupt.err")"
+# A payload damaged before encryption (inside db.dump, nearly all of it) decrypts, but fails the checksums.
+age_decrypt "$KEYS/operational.key" <"$archive" >"$WORK/corrupt/payload.tar"
+printf 'garbage' | dd of="$WORK/corrupt/payload.tar" bs=1 seek=$(($(wc -c <"$WORK/corrupt/payload.tar") / 2)) conv=notrunc status=none
+age_encrypt "$KEYS/recipients.txt" <"$WORK/corrupt/payload.tar" >"$WORK/corrupt/restaurantpro-damaged.tar.age"
+rm "$WORK/corrupt/payload.tar"
+if restore --container "$DST" "$WORK/corrupt/restaurantpro-damaged.tar.age" 2>"$WORK/corrupt.err"; then fail "restore.sh accepted a damaged payload"; fi
+grep -q 'checksum mismatch' "$WORK/corrupt.err" || fail "damaged payload not caught by the checksum check: $(cat "$WORK/corrupt.err")"
 [[ "$(psql_in "$DST" -At -c "SELECT count(*) FROM pg_namespace WHERE nspname = 'organization'")" == 0 ]] \
   || fail "corrupted archive changed the target"
 
 step "restore into the fresh container"
-"$DEPLOY_DIR/restore.sh" --container "$DST" "$archive"
+restore --container "$DST" "$archive"
 same_as_source "$DST" "restore"
 while IFS= read -r line; do echo "    $line" >&2; done <<<"$(fingerprint "$DST")"
 
@@ -152,7 +181,7 @@ CREATE SCHEMA added_module;
 CREATE TABLE added_module.thing (id int);
 SQL
 changed="$(fingerprint "$DST")"
-if "$DEPLOY_DIR/restore.sh" --container "$DST" "$archive" 2>"$WORK/refused.err"; then fail "restore.sh overwrote a non-empty target without --force"; fi
+if restore --container "$DST" "$archive" 2>"$WORK/refused.err"; then fail "restore.sh overwrote a non-empty target without --force"; fi
 grep -q 'is not empty' "$WORK/refused.err" || fail "not refused by the non-empty guard: $(cat "$WORK/refused.err")"
 [[ "$(fingerprint "$DST")" == "$changed" ]] || fail "refused restore changed the target"
 
@@ -168,7 +197,7 @@ for _ in $(seq 1 20); do
 done
 [[ "$(psql_in "$DST" -At -c "SELECT count(*) FROM pg_stat_activity WHERE query LIKE 'SELECT pg_sleep(300)%'")" == 1 ]] \
   || fail "could not open the holding session"
-"$DEPLOY_DIR/restore.sh" --container "$DST" --force "$archive"
+restore --container "$DST" --force "$archive"
 wait "$HOLDER" 2>/dev/null || true # its session was terminated by the swap
 HOLDER=""
 same_as_source "$DST" "--force restore"
@@ -178,9 +207,8 @@ step "a --force restore that fails mid-way leaves the target unchanged"
 # A grant to a role that exists only in the source cluster: pg_restore fails at the ACL step,
 # after all tables and data are loaded, with a checksum-valid archive.
 psql_in "$SRC" -c "CREATE ROLE drill_reader; GRANT SELECT ON organization.store TO drill_reader"
-mkdir "$WORK/bad"
 bad_archive="$("$DEPLOY_DIR/backup.sh" --container "$SRC" --dir "$WORK/bad" --keep 1 2>/dev/null)"
-if "$DEPLOY_DIR/restore.sh" --container "$DST" --force "$bad_archive" 2>"$WORK/bad.err"; then
+if restore --container "$DST" --force "$bad_archive" 2>"$WORK/bad.err"; then
   fail "restore.sh --force succeeded with a dump that cannot be restored"
 fi
 grep -q 'pg_restore failed' "$WORK/bad.err" || fail "unexpected failure: $(cat "$WORK/bad.err")"

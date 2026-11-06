@@ -65,7 +65,17 @@ cleanup() {
 trap cleanup EXIT
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
+die() { fail "$@"; }
 step() { echo "--- $*" >&2; }
+# D98: production mode with throwaway keys (both recipients), as an installation runs.
+# shellcheck source=lib/common.sh
+. "$DEPLOY_DIR/lib/common.sh"
+# shellcheck source=lib/age.sh
+. "$DEPLOY_DIR/lib/age.sh"
+# shellcheck source=test/keys.sh
+. "$DEPLOY_DIR/test/keys.sh"
+mkdir -m 700 "$WORK/keys"
+make_throwaway_keys "$WORK/keys"
 
 [[ -f "$jar" ]] || fail "no backend jar (got '$jar'): build it with (cd backend && ./mvnw -q package -DskipTests)"
 
@@ -319,10 +329,11 @@ while IFS='|' read -r t rows _; do
 done <<<"$before"
 expected_fp="$(sed -E 's/^(shared\.spring_session(_attributes)?)\|[0-9]+\|[0-9a-f]+$/\1|0|d41d8cd98f00b204e9800998ecf8427e/' <<<"$before")"
 archive="$("$DEPLOY_DIR/backup.sh" --container "$SRC" --dir "$WORK/backups" --keep 1)"
-[[ -f "$archive" ]] || fail "backup.sh did not report an existing archive"
+[[ -f "$archive" && "$archive" == *.tar.age ]] || fail "backup.sh did not report an encrypted archive (got '$archive')"
+assert_no_plaintext "$WORK/backups" || fail "plaintext in the backup directory"
 
 step "restore.sh into the fresh $DST and compare every table and the schema"
-"$DEPLOY_DIR/restore.sh" --container "$DST" "$archive"
+"$DEPLOY_DIR/restore.sh" --container "$DST" --identity "$WORK/keys/operational.key" "$archive"
 after="$(fingerprint "$DST")"
 if [[ "$after" != "$expected_fp" ]]; then
   diff <(echo "$expected_fp") <(echo "$after") >&2 || true
