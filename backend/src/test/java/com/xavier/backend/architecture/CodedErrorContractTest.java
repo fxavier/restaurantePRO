@@ -19,6 +19,7 @@ import com.xavier.backend.cash.exception.CashRule;
 import com.xavier.backend.cash.exception.CashRuleViolationException;
 import com.xavier.backend.cash.exception.ClosingStaleException;
 import com.xavier.backend.cash.exception.RefundMismatchException;
+import com.xavier.backend.catalog.exception.CatalogRuleException;
 import com.xavier.backend.catalog.exception.ReleaseValidationFailedException;
 import com.xavier.backend.catalog.model.dto.ReleaseValidationError;
 import com.xavier.backend.dining.exception.IllegalOccupationStateException;
@@ -249,7 +250,11 @@ class CodedErrorContractTest {
                     "be released")),
             Map.entry("phone-exists", () -> CustomersConflictException.phoneExists(ID, "258841234567")),
             Map.entry("credit-account-exists", () -> CustomersConflictException.accountExists(ID)),
-            Map.entry("credit-source-mismatch", () -> CustomersConflictException.sourceMismatch("debt payment", ID)));
+            Map.entry("credit-source-mismatch", () -> CustomersConflictException.sourceMismatch("debt payment", ID)),
+            // R4 catalog (S38): menus and daily dishes
+            Map.entry("menu-group-invalid", () -> CatalogRuleException.menuGroupInvalid(
+                    "Item BURGER is STANDARD: only a MENU item has menu groups.")),
+            Map.entry("item-not-published", () -> CatalogRuleException.itemNotPublished(OTHER, List.of(ID))));
 
     @Autowired
     MockMvc mvc;
@@ -586,6 +591,14 @@ class CodedErrorContractTest {
                 "The credit account of customer " + ID + " was opened at the same time; retry.", "");
         expect("credit-source-mismatch", 409, "CREDIT_SOURCE_MISMATCH",
                 "The debt payment " + ID + " is already recorded with other values.", "");
+    }
+
+    @Test
+    void catalogR4Rules() throws Exception {
+        expect("menu-group-invalid", 422, "MENU_GROUP_INVALID",
+                "Item BURGER is STANDARD: only a MENU item has menu groups.", "");
+        expect("item-not-published", 422, "ITEM_NOT_PUBLISHED", "Item(s) [" + ID
+                + "] are not in the published catalog of store " + OTHER + ".", ",\"itemIds\":[\"" + ID + "\"]");
     }
 
     private void expect(String name, int status, String code, String detail, String extra) throws Exception {
