@@ -3,17 +3,23 @@ package com.xavier.backend.catalog;
 import com.xavier.backend.catalog.exception.CatalogEntryNotFoundException;
 import com.xavier.backend.catalog.exception.NoPublishedCatalogException;
 import com.xavier.backend.catalog.model.ConfigurationRelease;
+import com.xavier.backend.catalog.model.DailyDish;
 import com.xavier.backend.catalog.model.Item;
 import com.xavier.backend.catalog.model.ItemVariant;
 import com.xavier.backend.catalog.model.ReleaseStatus;
+import com.xavier.backend.catalog.model.SoldOutFlag;
 import com.xavier.backend.catalog.model.dto.CatalogSnapshot;
 import com.xavier.backend.catalog.repository.ConfigurationReleaseRepository;
+import com.xavier.backend.catalog.repository.DailyDishRepository;
 import com.xavier.backend.catalog.repository.ItemRepository;
 import com.xavier.backend.catalog.repository.ItemVariantRepository;
+import com.xavier.backend.catalog.repository.SoldOutFlagRepository;
+import java.time.LocalDate;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
@@ -33,13 +39,17 @@ public class CatalogApi {
     private final ConfigurationReleaseRepository releases;
     private final ItemRepository items;
     private final ItemVariantRepository variants;
+    private final SoldOutFlagRepository soldOutFlags;
+    private final DailyDishRepository dailyDishes;
     private final JsonMapper json;
 
     CatalogApi(ConfigurationReleaseRepository releases, ItemRepository items, ItemVariantRepository variants,
-               JsonMapper json) {
+               SoldOutFlagRepository soldOutFlags, DailyDishRepository dailyDishes, JsonMapper json) {
         this.releases = releases;
         this.items = items;
         this.variants = variants;
+        this.soldOutFlags = soldOutFlags;
+        this.dailyDishes = dailyDishes;
         this.json = json;
     }
 
@@ -79,6 +89,21 @@ public class CatalogApi {
                 .map(item -> new ItemRef(item.getId(), item.getCode(), item.getName(), item.getFamilyId(),
                         item.isActive(), variantIds.getOrDefault(item.getId(), List.of())))
                 .toList();
+    }
+
+    /**
+     * The sold-out keys of the store now (D109, operational: outside any release). An item-level key
+     * ({@code variantId} null) covers every variant of the item.
+     */
+    public Set<ItemKey> soldOut(UUID storeId) {
+        return soldOutFlags.findAllByStoreIdOrderBySoldOutAtAscIdAsc(storeId).stream().map(SoldOutFlag::key)
+                .collect(Collectors.toUnmodifiableSet());
+    }
+
+    /** The daily dishes of the store for {@code businessDate}, in order (D109); empty when none were set. */
+    public List<UUID> dailyDishes(UUID storeId, LocalDate businessDate) {
+        return dailyDishes.findAllByIdStoreIdAndIdBusinessDateOrderByPosition(storeId, businessDate).stream()
+                .map(DailyDish::getItemId).toList();
     }
 
     private CatalogSnapshot parse(ConfigurationRelease release) {
