@@ -189,6 +189,24 @@ class DocumentsControlTest {
     }
 
     @Test
+    void aPostedChargeThatNoLongerMatchesItsDocumentsSnapshotIsAnAlarm() throws Exception {
+        Sale sale = fixtures.sale("2");
+        fixtures.creditCharge(sale, customers.creditCustomer("100.00"), "25.00").andExpect(status().isCreated());
+        fixtures.close(sale.cashier(), sale.order(), fixtures.orderVersion(sale.cashier(), sale.order()),
+                UUID.randomUUID().toString()).andExpect(status().isOk());
+        assertThat(kinds(control(sale))).isEmpty();
+        // a bug's doing, written past the services and the charge's trigger: the posted credit moved after issue
+        new TransactionTemplate(transactionManager).executeWithoutResult(tx -> {
+            jdbc.sql("ALTER TABLE settlement.credit_charge DISABLE TRIGGER credit_charge_immutable").update();
+            jdbc.sql("UPDATE settlement.credit_charge SET amount = 20.00 WHERE order_id = ?").param(sale.order())
+                    .update();
+            jdbc.sql("ALTER TABLE settlement.credit_charge ENABLE TRIGGER credit_charge_immutable").update();
+        });
+
+        assertThat(kinds(control(sale))).containsExactlyInAnyOrder("SNAPSHOT_CREDIT_MISMATCH", "DOCUMENT_UNPAID");
+    }
+
+    @Test
     void needsReconciliationViewInTheStore() throws Exception {
         UUID store = UUID.randomUUID();
         mvc.perform(get(BASE + "/documents").param("storeId", store.toString())
