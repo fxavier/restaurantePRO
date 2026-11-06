@@ -2,6 +2,8 @@ package com.xavier.backend.promotions.loyalty.model;
 
 import com.xavier.backend.promotions.EarnLine;
 import com.xavier.backend.promotions.loyalty.exception.LoyaltyConflictException;
+import com.xavier.backend.promotions.loyalty.model.dto.ProgramVersionView;
+import com.xavier.backend.promotions.loyalty.model.dto.RewardView;
 import com.xavier.backend.shared.Money;
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
@@ -160,6 +162,12 @@ public class LoyaltyProgramVersion {
         familyIds.stream().map(ProgramScope::family).forEach(next::add);
         scope.retainAll(next);
         scope.addAll(next);
+    }
+
+    public ProgramVersionView toView(List<RewardView> rewards) {
+        return new ProgramVersionView(id, versionNo, status.name(), spendUnit(), pointsPerUnit,
+                itemIds().stream().sorted().toList(), familyIds().stream().sorted().toList(), rewards, createdAt,
+                publishedAt, publishedByAccountId, retiredAt, getVersion());
     }
 
     public Money spendUnit() {

@@ -1,5 +1,6 @@
 package com.xavier.backend.promotions.loyalty.model;
 
+import com.xavier.backend.promotions.loyalty.model.dto.RewardView;
 import com.xavier.backend.shared.Money;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -106,6 +107,10 @@ public class LoyaltyReward {
         }
         Money after = unitPrice.minus(amount().orElseThrow());
         return after.amount().signum() < 0 ? Money.of(BigDecimal.ZERO, unitPrice.currency()) : after;
+    }
+
+    public RewardView toView() {
+        return new RewardView(id, code, name, pointsCost, effect.name(), amount().orElse(null), itemId, familyId);
     }
 
     public Optional<Money> amount() {
