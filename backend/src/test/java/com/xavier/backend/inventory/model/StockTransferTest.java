@@ -56,13 +56,22 @@ class StockTransferTest {
         StockTransfer transfer = draft(List.of(TransferLine.of(item, new BigDecimal("10")),
                 TransferLine.of(other, new BigDecimal("2"))));
 
-        transfer.ship(Map.of(item, new BigDecimal("3.500000"), other, new BigDecimal("1.000000")), null, NOW);
+        transfer.ship(null, NOW);
+        transfer.recordShippingCosts(Map.of(item, new BigDecimal("3.500000"), other, new BigDecimal("1.000000")));
         transfer.receive(Map.of(item, new BigDecimal("8"), other, new BigDecimal("2")), null, NOW);
 
         assertThat(transfer.getStatus()).isEqualTo(TransferStatus.RECEIVED);
         assertThat(transfer.getLines()).extracting(TransferLine::shortfall)
                 .containsExactly(new BigDecimal("2.000000"), new BigDecimal("0.000000"));
         assertThat(transfer.getLines().getFirst().getUnitCost()).isEqualByComparingTo("3.5");
+    }
+
+    @Test
+    void shippingCostsAreRecordedOnlyOnceShipped() {
+        StockTransfer transfer = draft(List.of(TransferLine.of(item, BigDecimal.TEN)));
+
+        assertThatThrownBy(() -> transfer.recordShippingCosts(Map.of(item, BigDecimal.ONE)))
+                .isInstanceOf(InventoryConflictException.class);
     }
 
     @Test
@@ -92,7 +101,7 @@ class StockTransferTest {
     @EnumSource(TransferStatus.class)
     void onlyTheMachineTransitionsAreAllowed(TransferStatus status) {
         assertAllowed(status, TransferStatus.DRAFT, t -> t.edit(List.of(TransferLine.of(item, BigDecimal.ONE)), "n"));
-        assertAllowed(status, TransferStatus.DRAFT, t -> t.ship(Map.of(item, BigDecimal.ONE), null, NOW));
+        assertAllowed(status, TransferStatus.DRAFT, t -> t.ship(null, NOW));
         assertAllowed(status, TransferStatus.DRAFT, t -> t.cancel(NOW));
         assertAllowed(status, TransferStatus.SHIPPED, t -> t.receive(Map.of(item, BigDecimal.ONE), null, NOW));
     }
@@ -114,9 +123,9 @@ class StockTransferTest {
         switch (status) {
             case DRAFT -> {
             }
-            case SHIPPED -> transfer.ship(Map.of(item, BigDecimal.ONE), null, NOW);
+            case SHIPPED -> transfer.ship(null, NOW);
             case RECEIVED -> {
-                transfer.ship(Map.of(item, BigDecimal.ONE), null, NOW);
+                transfer.ship(null, NOW);
                 transfer.receive(Map.of(item, BigDecimal.TEN), null, NOW);
             }
             case CANCELLED -> transfer.cancel(NOW);
@@ -126,7 +135,7 @@ class StockTransferTest {
 
     private StockTransfer shipped() {
         StockTransfer transfer = draft(List.of(TransferLine.of(item, BigDecimal.TEN)));
-        transfer.ship(Map.of(item, BigDecimal.ONE), null, NOW);
+        transfer.ship(null, NOW);
         return transfer;
     }
 
