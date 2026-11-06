@@ -64,6 +64,15 @@ public class InventoryFixtures {
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
     }
 
+    /** A warehouse (ALLOW) of a new store, for callers that cannot throw. */
+    public UUID newWarehouseQuietly() {
+        try {
+            return newWarehouse(newStore(), "ALLOW");
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     public static String code(String prefix) {
         return prefix + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
     }

@@ -70,6 +70,15 @@ public class InventoryRuleException extends BusinessRuleException {
                 Map.of("stockItemId", stockItemId, "shipped", shipped));
     }
 
+    public static InventoryRuleException invalidPeriod(Object from, Object to) {
+        return new InventoryRuleException(InventoryRule.INVALID_PERIOD, "The period starts (" + from
+                + ") after it ends (" + to + ").");
+    }
+
+    public static InventoryRuleException periodRequired() {
+        return new InventoryRuleException(InventoryRule.INVALID_PERIOD, "This report needs a period (from, to).");
+    }
+
     public InventoryRule rule() {
         return rule;
     }
