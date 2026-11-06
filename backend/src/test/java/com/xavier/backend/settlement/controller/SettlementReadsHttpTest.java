@@ -88,6 +88,24 @@ class SettlementReadsHttpTest {
     }
 
     @Test
+    void aPartitionDocumentThatFailedIsAPendingDraft() throws Exception {
+        Sale sale = fixtures.sale("2");
+        UUID line = fixtures.lineIds(sale.cashier(), sale.order()).getFirst();
+        UUID partition = SettlementFixtures.id(fixtures.partitionItems(sale.cashier(), sale.order(),
+                fixtures.orderVersion(sale.cashier(), sale.order()), UUID.randomUUID().toString(), line, "1"));
+        Mockito.doThrow(new IllegalStateException("adapter offline")).when(fiscalAdapter).issue(any());
+        fixtures.partitionDocument(sale.cashier(), partition, UUID.randomUUID().toString())
+                .andExpect(status().isUnprocessableContent());
+
+        mvc.perform(get(PENDING).param("storeId", sale.store().toString())
+                        .with(CashFixtures.account(sale.store(), Permission.PAYMENT_RESOLVE)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.fiscalDrafts[0].orderId").value(sale.order().toString()))
+                .andExpect(jsonPath("$.fiscalDrafts[0].sourceType").value("PARTITION"))
+                .andExpect(jsonPath("$.fiscalDrafts[0].sourceId").value(partition.toString()));
+    }
+
+    @Test
     void anAttemptInDoubtIsPendingAndCounted() throws Exception {
         String method = SettlementFixtures.freshCode("PAY");
         fixtures.method(method, "INTEGRATED", FakePaymentProvider.CODE);

@@ -81,6 +81,20 @@ public class FiscalApi {
     }
 
     /**
+     * In the caller's transaction: a DRAFT that a cancelled credit sale had put on account (D74) becomes a paid sale
+     * again: {@code onAccount = false}, no customer. Its buyer and lines stay. {@code createDraft}'s sticky rule is
+     * unchanged otherwise.
+     *
+     * @throws com.xavier.backend.shared.exception.NotFoundException (404) for an unknown document
+     * @throws com.xavier.backend.shared.exception.ConflictException (409) for an ISSUED document (never changed)
+     * @throws org.springframework.transaction.IllegalTransactionStateException without a transaction
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public DocumentView clearOnAccount(UUID documentId) {
+        return drafts.clearOnAccount(documentId);
+    }
+
+    /**
      * tx-B (D50 §7.6) in its own transaction. Commit the draft first, then call issue with no transaction bound:
      * called inside one it throws {@link IllegalStateException} before doing anything. It numbers the draft from
      * its store's active series without gaps, issues it through the adapter and publishes

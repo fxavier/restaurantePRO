@@ -6,13 +6,13 @@
  * transaction during the socket I/O.
  *
  * <p>Production consumes the {@code orders} and {@code fiscal} events (rounds, voids, subtotals, documents and
- * their copies) through idempotent listeners and tells orders that a round was received through
+ * their copies) and settlement's debt-payment slips (D65, D75) through idempotent listeners and tells orders that a round was received through
  * {@link com.xavier.backend.orders.OrdersProductionApi}. Nothing depends on production. Allowed dependencies follow
  * D35.
  */
 @ApplicationModule(displayName = "Production", allowedDependencies = {
         "shared", "audit", "access", "organization", "organization :: dto", "orders", "orders :: event",
-        "fiscal :: event"})
+        "fiscal :: event", "settlement :: event"})
 package com.xavier.backend.production;
 
 import org.springframework.modulith.ApplicationModule;

@@ -4,6 +4,7 @@ import com.xavier.backend.customers.service.CreditLedgerService;
 import com.xavier.backend.shared.Money;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -104,6 +105,16 @@ public class CustomersApi {
     public LedgerEntryView reverseCredit(UUID refundId, UUID paymentId, Money amount, UUID storeId,
                                          LocalDate businessDate) {
         return ledger.reverseCredit(refundId, paymentId, amount, storeId, businessDate);
+    }
+
+    /**
+     * The open amount of each of {@code debitEntryIds} that is a sale debit of this customer (zero once fully
+     * settled); an unknown id, or a debit of another customer, is absent. For a debt payment to check the debits it
+     * names before any money is taken (D75).
+     */
+    @Transactional(readOnly = true)
+    public Map<UUID, Money> openDebits(UUID customerId, List<UUID> debitEntryIds) {
+        return ledger.openDebits(customerId, debitEntryIds);
     }
 
     /** The open debt (balance), zero without an account. */

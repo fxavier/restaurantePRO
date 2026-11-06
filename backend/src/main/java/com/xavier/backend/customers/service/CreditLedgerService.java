@@ -106,6 +106,18 @@ public class CreditLedgerService {
     }
 
     @Transactional(readOnly = true)
+    public Map<UUID, Money> openDebits(UUID customerId, List<UUID> debitEntryIds) {
+        requireCustomer(customerId);
+        if (debitEntryIds.isEmpty()) {
+            return Map.of();
+        }
+        java.util.Currency currency = accounts.findById(customerId).map(CreditAccount::currency)
+                .orElseGet(() -> organization.companyProfile().currency());
+        return entries.openAmountsOf(customerId, debitEntryIds).stream().collect(Collectors.toMap(
+                EntryAmount::getEntryId, open -> Money.of(open.getAmount(), currency)));
+    }
+
+    @Transactional(readOnly = true)
     public Money debtOf(UUID customerId) {
         requireCustomer(customerId);
         return balances.balance(customerId, accounts.findById(customerId).map(CreditAccount::currency)

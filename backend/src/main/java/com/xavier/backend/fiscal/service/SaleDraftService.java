@@ -12,7 +12,9 @@ import com.xavier.backend.fiscal.repository.FiscalDocumentRepository;
 import com.xavier.backend.organization.OrganizationApi;
 import com.xavier.backend.organization.model.dto.StoreSummary;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
+import com.xavier.backend.fiscal.exception.DocumentNotFoundException;
 import java.time.Clock;
+import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -50,6 +52,15 @@ public class SaleDraftService {
         return documents.findBySource(SourceType.ORDER, command.orderId(), DocumentType.SALE)
                 .map(FiscalDocument::toView)
                 .orElseGet(() -> draft(command.toDraftCommand()));
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public DocumentView clearOnAccount(UUID documentId) {
+        FiscalDocument document = documents.findById(documentId)
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        document.clearOnAccount(clock.instant());
+        documents.flush();
+        return document.toView();
     }
 
     private DocumentView amend(FiscalDocument document, DraftCommand command) {

@@ -51,13 +51,19 @@ public class PaymentAllocation {
     protected PaymentAllocation() {
     }
 
-    /** The whole payment to its target: the order, or the partition it paid. */
+    /**
+     * The whole payment to its target: the order, the partition it paid, or the customer's credit account (whose
+     * split over the debits is the customers ledger's, D73).
+     */
     public static PaymentAllocation toTarget(Payment payment, Instant now) {
         PaymentAllocation allocation = new PaymentAllocation();
         allocation.paymentId = payment.getId();
         allocation.targetType = payment.getTargetType();
-        allocation.targetId = payment.getTargetType() == TargetType.PARTITION ? payment.getPartitionId()
-                : payment.getOrderId();
+        allocation.targetId = switch (payment.getTargetType()) {
+            case PARTITION -> payment.getPartitionId();
+            case ORDER -> payment.getOrderId();
+            case CREDIT_ACCOUNT -> payment.getCreditAccountId();
+        };
         allocation.amount = payment.amount().amount();
         allocation.currency = payment.amount().currency().getCurrencyCode();
         allocation.createdAt = now;
