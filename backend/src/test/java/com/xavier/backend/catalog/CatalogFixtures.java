@@ -3,7 +3,9 @@ package com.xavier.backend.catalog;
 import static com.xavier.backend.catalog.Actors.admin;
 import static com.xavier.backend.catalog.Actors.inStore;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.xavier.backend.access.Permission;
@@ -64,6 +66,37 @@ public final class CatalogFixtures {
         return created(post(CATALOG + "/items").with(admin(Permission.CATALOG_MANAGE)), """
                 {"code": "%s", "name": "Coca-Cola 33cl", "familyId": "%s", "unitId": "%s", "taxCategoryId": "%s",
                  "productionDestination": "BAR", "soldByWeight": false}""".formatted(code("I"), family, unit, taxCategory));
+    }
+
+    /** An active item of {@code kind} (STANDARD, MENU, FEE) with its own family, unit and a 16% tax category. */
+    public JsonNode item(String kind, String productionDestination) throws Exception {
+        return created(post(CATALOG + "/items").with(admin(Permission.CATALOG_MANAGE)), """
+                {"code": "%s", "name": "%s item", "familyId": "%s", "unitId": "%s", "taxCategoryId": "%s",
+                 "productionDestination": %s, "soldByWeight": false, "kind": "%s"}""".formatted(code("I"), kind,
+                family(), unit(), taxCategory("16"),
+                productionDestination == null ? "null" : "\"" + productionDestination + "\"", kind));
+    }
+
+    /** Changes an item's availability and kind, at its current version (read from the API). */
+    public void updateItem(JsonNode item, String availability, String kind) throws Exception {
+        String current = mvc.perform(get(CATALOG + "/items/" + id(item)).with(admin(Permission.CATALOG_MANAGE)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        mvc.perform(put(CATALOG + "/items/" + id(item)).with(admin(Permission.CATALOG_MANAGE)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"code": "%s", "name": "%s", "familyId": "%s", "unitId": "%s", "taxCategoryId": "%s",
+                                 "availability": "%s", "soldByWeight": false, "kind": "%s", "version": %d}"""
+                                .formatted(item.get("code").asString(), item.get("name").asString(),
+                                        item.get("familyId").asString(), item.get("unitId").asString(),
+                                        item.get("taxCategoryId").asString(), availability, kind,
+                                        json(current).get("version").asLong())))
+                .andExpect(status().isOk());
+    }
+
+    /** Takes {@code item} out of every later release (company-wide), e.g. a test's menu once it is done. */
+    public void deactivate(JsonNode item) throws Exception {
+        String current = mvc.perform(get(CATALOG + "/items/" + id(item)).with(admin(Permission.CATALOG_MANAGE)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        updateItem(item, "INACTIVE", json(current).get("kind").asString());
     }
 
     /** An active item with its own family, unit and a 16% tax category. */

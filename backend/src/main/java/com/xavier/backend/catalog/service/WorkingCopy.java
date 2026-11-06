@@ -1,23 +1,34 @@
 package com.xavier.backend.catalog.service;
 
+import com.xavier.backend.catalog.model.AutomaticItem;
 import com.xavier.backend.catalog.model.Barcode;
 import com.xavier.backend.catalog.model.Family;
 import com.xavier.backend.catalog.model.Item;
 import com.xavier.backend.catalog.model.ItemAvailability;
 import com.xavier.backend.catalog.model.ItemPrice;
+import com.xavier.backend.catalog.model.ItemLine;
 import com.xavier.backend.catalog.model.ItemVariant;
+import com.xavier.backend.catalog.model.Macro;
+import com.xavier.backend.catalog.model.MenuGroup;
 import com.xavier.backend.catalog.model.PriceList;
+import com.xavier.backend.catalog.model.QuickPage;
+import com.xavier.backend.catalog.model.QuickPageEntry;
 import com.xavier.backend.catalog.model.TaxCategory;
 import com.xavier.backend.catalog.model.TaxRate;
 import com.xavier.backend.catalog.model.Unit;
 import com.xavier.backend.catalog.model.dto.CatalogSnapshot;
+import com.xavier.backend.catalog.model.dto.ItemKind;
 import com.xavier.backend.catalog.model.dto.ReleaseValidationError;
+import com.xavier.backend.catalog.repository.AutomaticItemRepository;
 import com.xavier.backend.catalog.repository.BarcodeRepository;
 import com.xavier.backend.catalog.repository.FamilyRepository;
 import com.xavier.backend.catalog.repository.ItemPriceRepository;
 import com.xavier.backend.catalog.repository.ItemRepository;
 import com.xavier.backend.catalog.repository.ItemVariantRepository;
+import com.xavier.backend.catalog.repository.MacroRepository;
+import com.xavier.backend.catalog.repository.MenuGroupRepository;
 import com.xavier.backend.catalog.repository.PriceListRepository;
+import com.xavier.backend.catalog.repository.QuickPageRepository;
 import com.xavier.backend.catalog.repository.TaxCategoryRepository;
 import com.xavier.backend.catalog.repository.TaxRateRepository;
 import com.xavier.backend.catalog.repository.UnitRepository;
@@ -26,17 +37,22 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Component;
 
 /**
  * Reads the working copy as one store sees it at an instant: what validation checks and what publication
  * freezes. Keeping both in one place means a validated catalog is exactly the catalog that gets published.
+ *
+ * <p>R4 (D108, D109): the release also freezes the menu groups of its MENU items, every macro, and the quick pages and
+ * ACTIVE automatic items of the store and of every store. Whatever they name must be in the release.
  */
 @Component
 class WorkingCopy {
@@ -50,10 +66,16 @@ class WorkingCopy {
     private final TaxRateRepository taxRates;
     private final PriceListRepository priceLists;
     private final ItemPriceRepository prices;
+    private final MenuGroupRepository menuGroups;
+    private final MacroRepository macros;
+    private final QuickPageRepository quickPages;
+    private final AutomaticItemRepository automaticItems;
 
     WorkingCopy(ItemRepository items, ItemVariantRepository variants, BarcodeRepository barcodes,
                 FamilyRepository families, UnitRepository units, TaxCategoryRepository taxCategories,
-                TaxRateRepository taxRates, PriceListRepository priceLists, ItemPriceRepository prices) {
+                TaxRateRepository taxRates, PriceListRepository priceLists, ItemPriceRepository prices,
+                MenuGroupRepository menuGroups, MacroRepository macros, QuickPageRepository quickPages,
+                AutomaticItemRepository automaticItems) {
         this.items = items;
         this.variants = variants;
         this.barcodes = barcodes;
@@ -63,6 +85,10 @@ class WorkingCopy {
         this.taxRates = taxRates;
         this.priceLists = priceLists;
         this.prices = prices;
+        this.menuGroups = menuGroups;
+        this.macros = macros;
+        this.quickPages = quickPages;
+        this.automaticItems = automaticItems;
     }
 
     /** The store's view of the working copy at {@code at}. */
@@ -78,7 +104,20 @@ class WorkingCopy {
         Map<PriceKey, ItemPrice> pricesByKey = priceList.map(list -> prices.findAllByPriceListId(list.getId())).orElse(List.of())
                 .stream().collect(Collectors.toMap(price -> new PriceKey(price.getItemId(), price.getVariantId()),
                         Function.identity()));
-        return new View(storeId, at, priceList, active, ratesByCategory, rateInEffect, pricesByKey);
+        Map<UUID, List<MenuGroup>> groupsByItem = menuGroups.findAllByItemIdIn(
+                        active.stream().map(Item::getId).toList()).stream()
+                .sorted(Comparator.comparing(MenuGroup::getPosition).thenComparing(MenuGroup::getCode))
+                .collect(Collectors.groupingBy(MenuGroup::getItemId));
+        List<AutomaticItem> automatic = automaticItems.findAllForStore(storeId).stream()
+                .filter(AutomaticItem::isActive).toList();
+        return new View(storeId, at, priceList, active, ratesByCategory, rateInEffect, pricesByKey,
+                new Composition(groupsByItem, macros.findAllByOrderByCode(), quickPages.findAllForStore(storeId),
+                        automatic));
+    }
+
+    /** The R4 configuration that composes lines: menu groups of the active items, macros, quick pages, automatic items. */
+    private record Composition(Map<UUID, List<MenuGroup>> groupsByItem, List<Macro> macros, List<QuickPage> quickPages,
+                               List<AutomaticItem> automaticItems) {
     }
 
     private record PriceKey(UUID itemId, UUID variantId) {
@@ -93,10 +132,12 @@ class WorkingCopy {
         private final Map<UUID, List<TaxRate>> ratesByCategory;
         private final Map<UUID, TaxRate> rateInEffect;
         private final Map<PriceKey, ItemPrice> prices;
+        private final Composition composition;
+        private final Map<UUID, Item> activeById;
 
         private View(UUID storeId, Instant at, Optional<PriceList> priceList, List<Item> activeItems,
                      Map<UUID, List<TaxRate>> ratesByCategory, Map<UUID, TaxRate> rateInEffect,
-                     Map<PriceKey, ItemPrice> prices) {
+                     Map<PriceKey, ItemPrice> prices, Composition composition) {
             this.storeId = storeId;
             this.at = at;
             this.priceList = priceList;
@@ -104,9 +145,15 @@ class WorkingCopy {
             this.ratesByCategory = ratesByCategory;
             this.rateInEffect = rateInEffect;
             this.prices = prices;
+            this.composition = composition;
+            this.activeById = activeItems.stream().collect(Collectors.toMap(Item::getId, Function.identity()));
         }
 
-        /** Every active item needs a price in the store's price list and a tax rate in effect. */
+        /**
+         * Every active item needs a price in the store's price list and a tax rate in effect. Only a MENU has menu
+         * groups, and its options are active items of the release that are not menus; macro entries, quick page
+         * entries and automatic items name items of the release.
+         */
         List<ReleaseValidationError> errors() {
             if (priceList.isEmpty()) {
                 return List.of(new ReleaseValidationError("STORE_WITHOUT_PRICE_LIST", null, null,
@@ -122,8 +169,59 @@ class WorkingCopy {
                     errors.add(new ReleaseValidationError("ITEM_WITHOUT_TAX_RATE", item.getId(), item.getCode(),
                             "Item " + item.getCode() + " has a tax category without a rate in effect at " + at));
                 }
+                menuErrors(item, errors);
             }
+            compositionErrors(errors);
             return errors;
+        }
+
+        private void menuErrors(Item item, List<ReleaseValidationError> errors) {
+            List<MenuGroup> groups = composition.groupsByItem().getOrDefault(item.getId(), List.of());
+            if (groups.isEmpty()) {
+                return;
+            }
+            if (item.getKind() != ItemKind.MENU) {
+                errors.add(new ReleaseValidationError("MENU_GROUPS_ON_NON_MENU", item.getId(), item.getCode(),
+                        "Item " + item.getCode() + " is " + item.getKind() + " but has menu groups"));
+                return;
+            }
+            for (MenuGroup group : groups) {
+                for (ItemLine option : group.getOptions()) {
+                    Item chosen = activeById.get(option.getItemId());
+                    if (chosen == null) {
+                        errors.add(new ReleaseValidationError("MENU_OPTION_NOT_IN_RELEASE", item.getId(),
+                                item.getCode(), "Option " + option.getItemId() + " of menu group " + group.getCode()
+                                + " is not an active item"));
+                    } else if (chosen.getKind() == ItemKind.MENU) {
+                        errors.add(new ReleaseValidationError("MENU_OPTION_IS_MENU", item.getId(), item.getCode(),
+                                "Option " + chosen.getCode() + " of menu group " + group.getCode() + " is a MENU"));
+                    }
+                }
+            }
+        }
+
+        private void compositionErrors(List<ReleaseValidationError> errors) {
+            for (Macro macro : composition.macros()) {
+                macro.getEntries().stream().map(ItemLine::getItemId).filter(id -> !activeById.containsKey(id))
+                        .forEach(id -> errors.add(new ReleaseValidationError("MACRO_ENTRY_NOT_IN_RELEASE", id, null,
+                                "Macro " + macro.getCode() + " names item " + id + ", which is not active")));
+            }
+            Map<UUID, UUID> itemOfVariant = variants.findAllById(composition.quickPages().stream()
+                            .flatMap(page -> page.getEntries().stream()).map(QuickPageEntry::getVariantId)
+                            .filter(Objects::nonNull).collect(Collectors.toSet())).stream()
+                    .collect(Collectors.toMap(ItemVariant::getId, ItemVariant::getItemId));
+            for (QuickPage page : composition.quickPages()) {
+                page.getEntries().stream()
+                        .flatMap(entry -> Stream.ofNullable(entry.getVariantId() == null ? entry.getItemId()
+                                : itemOfVariant.get(entry.getVariantId())))
+                        .filter(id -> !activeById.containsKey(id))
+                        .forEach(id -> errors.add(new ReleaseValidationError("QUICK_PAGE_ENTRY_NOT_IN_RELEASE", id,
+                                null, "Quick page " + page.getCode() + " names item " + id + ", which is not active")));
+            }
+            composition.automaticItems().stream().map(automatic -> automatic.getLine().getItemId())
+                    .filter(id -> !activeById.containsKey(id))
+                    .forEach(id -> errors.add(new ReleaseValidationError("AUTOMATIC_ITEM_NOT_IN_RELEASE", id, null,
+                            "An automatic item names item " + id + ", which is not active")));
         }
 
         /** The complete store catalog to freeze. Call only when {@link #errors()} is empty. */
@@ -143,7 +241,40 @@ class WorkingCopy {
             return new CatalogSnapshot(CatalogSnapshot.SCHEMA_VERSION, storeId, releaseId, version, at,
                     list.getCurrency().getCurrencyCode(), families(), units(), taxCategories(),
                     activeItems.stream().map(item -> item(item, variantsByItem.getOrDefault(item.getId(), List.of()),
-                            barcodesByItem.getOrDefault(item.getId(), List.of()))).toList());
+                            barcodesByItem.getOrDefault(item.getId(), List.of()))).toList(),
+                    composition.quickPages().stream().map(View::quickPage).toList(),
+                    composition.macros().stream().map(View::macro).toList(),
+                    composition.automaticItems().stream().map(View::automaticItem).toList());
+        }
+
+        private static CatalogSnapshot.QuickPage quickPage(QuickPage page) {
+            return new CatalogSnapshot.QuickPage(page.getId(), page.getCode(), page.getName(), page.getPosition(),
+                    page.getEntries().stream().map(entry -> new CatalogSnapshot.QuickPageEntry(entry.getItemId(),
+                            entry.getVariantId(), entry.getMacroId())).toList());
+        }
+
+        private static CatalogSnapshot.Macro macro(Macro macro) {
+            return new CatalogSnapshot.Macro(macro.getId(), macro.getCode(), macro.getName(), macro.getEntries().stream()
+                    .map(entry -> new CatalogSnapshot.MacroEntry(entry.getItemId(), entry.getVariantId(),
+                            entry.getQuantity())).toList());
+        }
+
+        private static CatalogSnapshot.AutomaticItem automaticItem(AutomaticItem automatic) {
+            ItemLine line = automatic.getLine();
+            return new CatalogSnapshot.AutomaticItem(automatic.getId(), automatic.getTrigger().name(),
+                    automatic.getMode(), line.getItemId(), line.getVariantId(), line.getQuantity());
+        }
+
+        private List<CatalogSnapshot.MenuGroup> menuGroups(Item item) {
+            if (item.getKind() != ItemKind.MENU) {
+                return List.of();
+            }
+            return composition.groupsByItem().getOrDefault(item.getId(), List.of()).stream()
+                    .map(group -> new CatalogSnapshot.MenuGroup(group.getCode(), group.getName(), group.getMinChoices(),
+                            group.getMaxChoices(), group.getOptions().stream()
+                            .map(option -> new CatalogSnapshot.MenuOption(option.getItemId(), option.getVariantId(),
+                                    option.getQuantity())).toList()))
+                    .toList();
         }
 
         private CatalogSnapshot.Item item(Item item, List<ItemVariant> itemVariants, List<Barcode> itemBarcodes) {
@@ -152,7 +283,7 @@ class WorkingCopy {
                     itemVariants.stream().map(variant -> new CatalogSnapshot.Variant(variant.getId(), variant.getCode(),
                             variant.getName(), price(item.getId(), variant.getId()))).toList(),
                     itemBarcodes.stream().map(barcode -> new CatalogSnapshot.Barcode(barcode.getCode(),
-                            barcode.getVariantId())).toList());
+                            barcode.getVariantId())).toList(), item.getKind(), menuGroups(item));
         }
 
         private CatalogSnapshot.Price price(UUID itemId, UUID variantId) {
