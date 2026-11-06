@@ -17,5 +17,5 @@ A settled void that empties a split line's pool leaves δ = the pool's tax, at m
 ## Consequences
 
 - Σ document tax per rate = the order's tax per rate, except open pending corrections.
-- Review backlog not done in S33 (production code): structured `amount`/`adjustmentId` properties on the `TAX_CORRECTION_PENDING` exception (today the amount is in `detail`).
+- Review backlog done in S33b (f8f53e7): the `TAX_CORRECTION_PENDING` exception carries structured `amount` and `adjustmentId` (the detail text is unchanged).
 - Proofs: `TaxRoundingPlacementTest`, `TaxRoundingResidualTest`, `TaxCorrectionResolutionTest`, `TaxRoundingAdjustmentImmutableTest`, `DocumentsControlTest`, `SplitWithCancelsAndTwoRatesPropertyTest` (both outcomes, two rates, cancels); end to end, `R3AcceptanceTest` (M1 absorbed on the 23 % MOLHO line, Σ 23 % tax 0.56 = the order's; M2 pending on its partition document until resolved), `RestartMatrixTest` (g: the same row and draft after a crash).
