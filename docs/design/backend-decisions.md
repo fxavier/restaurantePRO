@@ -134,7 +134,7 @@ Every module depends on `access` for one reason: it holds `AccessPolicy.require(
 - Item availability ACTIVE/INACTIVE is separate from release state (§8.3).
 
 ### Operations (§11)
-- **D32 — R1 ships** `deploy/compose.yaml` (backend + PostgreSQL + Caddy reverse proxy with internal TLS for LAN HTTPS), healthchecks, persistent volumes, and `deploy/backup.sh` / `deploy/restore.sh` (`pg_dump -Fc` + files, optional encryption with `age`). A test restores into a fresh container and checks the data. WAL/PITR (the RPO 15 min target) is a later ops slice.
+- **D32 — R1 ships** `deploy/compose.yaml` (backend + PostgreSQL + Caddy reverse proxy with internal TLS for LAN HTTPS), healthchecks, persistent volumes, and `deploy/backup.sh` / `deploy/restore.sh` (`pg_dump -Fc` + files, optional encryption with `age`). A test restores into a fresh container and checks the data. WAL/PITR (the RPO 15 min target) is a later ops slice. **⟶ Superseded in part by [D98](r3-decisions.md#d98) (R3 amendment):** encryption is mandatory in production, with recipient-only keys on the server and restore drills that include key recovery.
 - **D33 — Observability:** Spring Boot structured JSON logs, a correlation-id filter (`X-Correlation-Id` → MDC), and Actuator `health`/`info`/`metrics`/`prometheus` on the management port, admin-only. No `order_id` in metric labels.
 
 ---

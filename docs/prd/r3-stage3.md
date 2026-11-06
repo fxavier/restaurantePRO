@@ -1,6 +1,6 @@
 # PRD R3 — Stage 3 "Controlo avançado" (backend)
 
-Status: **APPROVED** 2026-11-05, together with [r3-decisions.md](../design/r3-decisions.md) (cited as Dn and Pn). Earlier decisions: [backend-decisions.md](../design/backend-decisions.md), [r2-decisions.md](../design/r2-decisions.md). Glossary: [CONTEXT.md](../../CONTEXT.md). Spec: [product_description.md](../product_description.md). Conventions: [backend-conventions.md](../architecture/backend-conventions.md).
+Status: **APPROVED** 2026-11-05, together with [r3-decisions.md](../design/r3-decisions.md) (cited as Dn and Pn). **Amended 2026-11-06:** slices S34–S36 for D96–D98 ([group 6](#group-6-amendments-s34--s36-then-s35)), and S33 covers them. Earlier decisions: [backend-decisions.md](../design/backend-decisions.md), [r2-decisions.md](../design/r2-decisions.md). Glossary: [CONTEXT.md](../../CONTEXT.md). Spec: [product_description.md](../product_description.md). Conventions: [backend-conventions.md](../architecture/backend-conventions.md).
 
 Base package `com.xavier.backend`, per-module layout D12, Flyway blocks D93. Every slice is built with TDD: no `@Disabled`, and `cd backend && rtk mvn clean test` must be green at exit with **0 skipped**.
 
@@ -170,7 +170,7 @@ Conventions for every endpoint below, as in R2:
 - `List<DocumentView> documentsOfOrder(UUID orderId)` (readOnly).
 - `DocumentFacts documentFacts(UUID documentId)` (readOnly, for reporting): header (store, business date or its fallback, `issued_at`, terminal, issuer, customer, on-account, series and number, non-fiscal, totals), lines with `sourceLineId`, and the tax summary.
 - `Page<UUID> issuedDocumentIds(UUID storeId, LocalDate fromBusinessDate, LocalDate toBusinessDate, Pageable page)` (readOnly, for backfill).
-- `IssueRequest` gains `boolean onAccount`. The internal adapter prints "A CRÉDITO" on an on-account document.
+- `IssueRequest` gains `boolean onAccount`. The internal adapter prints "A CRÉDITO" on an on-account document. **⟶ Superseded by D97 / S35:** "A CRÉDITO" labels the whole document only when its credit equals its total, and every document carries its payment breakdown.
 
 **Endpoint changes:** `GET /api/v1/backoffice/fiscal/documents` gains the filters `orderId` and `customerId`.
 
@@ -469,6 +469,148 @@ Conventions for every endpoint below, as in R2:
 
 **Acceptance:** the reconciliation half of A25.
 
+## Group 6 (amendments): S34 ∥ S36, then S35
+
+S34 and S35 both write `settlement/service/` (`ResidualDocuments`, `OrderSettlementSteps`, `CreditSaleSteps`, `SettlementViews`) and `settlement/reconciliation/model/DocumentsControl.java`, so they are **serial: S35 branches from `main` after S34 merges.** S36 writes only `deploy/`, so it runs in parallel with both. S33 runs after all three.
+
+### S34 — Settlement: tax rounding absorption and pending fiscal corrections (D96)
+**Write scope:** `settlement/` including `reconciliation/`, `db/migration/settlement/V9050–V9059`. Fiscal is **not** touched: placements stay within fiscal's existing bound.
+
+**Migrations:**
+- `V9050__settlement_create_tax_rounding_adjustment.sql`:
+  - `tax_rounding_adjustment(id, order_id, store_id, business_date, source_line_id, rate_percent NUMERIC(7,4), amount NUMERIC(19,4) CHECK amount <> 0, currency, kind CHECK IN ('ABSORBED','PENDING_CORRECTION'), document_id NOT NULL, target_line_id, target_partition_id, actor_kind, actor_id, created_at)`
+  - `UNIQUE(order_id, source_line_id)`, CHECK `kind <> 'ABSORBED' OR target_line_id IS NOT NULL`
+  - index `(order_id)`, partial index `(store_id, created_at) WHERE kind = 'PENDING_CORRECTION'`
+  - append-only trigger (UPDATE, DELETE and TRUNCATE refused), as in the R2 money facts
+- `V9051__settlement_create_tax_correction_resolution.sql`: `tax_correction_resolution(id, adjustment_id FK UNIQUE, action CHECK IN ('CORRECTED'), correction_reference NOT NULL CHECK btrim <> '', reason NOT NULL, actor_kind, actor_id, at)`. A trigger refuses an adjustment whose kind is not PENDING_CORRECTION. Append-only.
+
+**Contracts:**
+- `settlement.model.TaxRoundingPlacement` (pure, D96 rule 2):
+  - `record Drift(UUID sourceLineId, BigDecimal ratePercent, Money amount)`
+  - `record Candidate(int draftLineIndex, UUID sourceLineId, UUID partitionId, BigDecimal quantity, Money unitPrice, BigDecimal ratePercent, Money gross, Money tax)`, where `partitionId` is `null` for a pool line
+  - `record Placement(Drift drift, Integer draftLineIndex)`, where `null` means nothing can absorb it
+  - `static List<Placement> place(List<Drift> drifts, List<Candidate> candidates)`: drifts in the given order, candidates of the same rate (the drift's own source line first, then draft order), the first that passes `PartitionAmounts.withinFiscalBound` with `tax + δ`; a candidate's running tax carries forward
+- `ResidualDocuments.residual(...)` returns a `ResidualDraft(DraftCommand command, List<Candidate> candidates)` and applies the placements. A new `TaxRoundingAdjustments` component (MANDATORY, under `order_settlement`) runs `place` the first time, then **loads the stored rows** and re-applies them on every later draft.
+- `LineSplit.taxDrift()` is unchanged. `TaxRoundingDifference(BigDecimal ratePercent, Money difference, Money absorbed, Money pendingCorrection, Money corrected)` gains `Money unassigned()`. `OrderSettlementView` gains `List<TaxRoundingAdjustmentView> taxRoundingAdjustments` as its last component. `OrderTaxDrift.of` returns the new items.
+- Close s3 (`OrderSettlementSteps.close`): after `requireInvoiced`, it records `PENDING_CORRECTION` for every drift still unplaced (the no-residual case), then calls `OrdersApi.close`.
+- Audit (`SettlementAudit`): `TAX_ROUNDING_ABSORBED`, `FISCAL_CORRECTION_PENDING`, `TAX_CORRECTION_RESOLVED` (entity ORDER, or TAX_CORRECTION for the resolution).
+- `DocumentsControl` (D96 rule 8): new kinds `TAX_CORRECTION_PENDING` and `TAX_DRIFT_UNASSIGNED`. `TAX_MISMATCH` now means a difference that no recorded pending row explains. `ExplainedRoundingDifference` gains `UUID adjustmentId, String correctionReference`. `OrderFacts.expectedTaxDrift` is replaced by the per-rate `pendingCorrection + corrected` and `unassigned`.
+
+**Endpoints:**
+
+| method & path | permission | idem | notes / errors |
+|---|---|---|---|
+| `GET /api/v1/pos/orders/{id}/settlement` | unchanged | — | `taxRoundingDifference[]` in the new shape, plus `taxRoundingAdjustments[]` |
+| `POST /api/v1/pos/orders/{id}/settlement/voids` | unchanged | unchanged | Unchanged rules (D71, `SPLIT_ROUNDING_LIMIT`). The view after the void shows `unassigned` |
+| `POST /api/v1/pos/orders/{id}/close`, `/documents`, `/credit-charges` (ORDER target) | unchanged | unchanged | The residual draft carries the placements. Close s3 records the no-residual pending rows |
+| `GET /api/v1/backoffice/reconciliation/tax-corrections?storeId&open&page` | `RECONCILIATION_VIEW@store` | — | Pending rows with document, order, rate, amount and resolution |
+| `POST /api/v1/backoffice/reconciliation/tax-corrections/{id}/resolutions {correctionReference, reason}` → 201 | `RECONCILIATION_MANAGE@store` | yes | 409 `TAX_CORRECTION_RESOLVED`; 422 `NOT_A_PENDING_CORRECTION` (an ABSORBED row); 400 for a blank reference or reason. Audited. |
+| `GET /api/v1/backoffice/reconciliation/documents` | unchanged | — | The new kinds (D96 rule 8) |
+
+New codes `TAX_CORRECTION_RESOLVED` and `NOT_A_PENDING_CORRECTION` go into `CodedErrorContractTest`.
+
+**Tests (red first; the first two fail on `main` today):**
+- `TaxRoundingPlacementTest` (unit): the D96 example (2 × 1.00 at 23 %, δ = +0.01 lands on the line of A's share, giving tax 0.19 and net 0.81); own line before other lines; a candidate out of bound → the next one; none → unplaced; negative δ; two drifts on one candidate; determinism (the same input in shuffled collection order gives the same output).
+- `TaxRoundingResidualTest` (PostgreSQL IT), one case per row of A35:
+  - (a) A not invoiced → absorbed into the residual, Σ document tax per rate = order tax per rate, one row, audited;
+  - (b) A invoiced and another 23 % line in the residual → absorbed by that line;
+  - (c) A invoiced and nothing else at 23 % → the close succeeds, A's document row is byte-identical before and after, and one PENDING row names A's document;
+  - (d) a crash after s1 (a second context, the `EventRepublicationTest` pattern) → the retried close yields the same rows, the same draft and no `DRAFT_MISMATCH`;
+  - (e) an unpartitioned order → no row, and strict D59 holds.
+- `TaxCorrectionResolutionTest`: resolve → the control lists it as explained with the reference; a second resolution → 409; resolving an ABSORBED row → 422; Waiter → 403; another store → 403.
+- `TaxRoundingAdjustmentImmutableTest`: UPDATE, DELETE and TRUNCATE are refused on both tables.
+- `SplitPreservesTotalsTest` (property) is extended with random settled voids: Σ document tax per rate = order tax per rate − Σ pending, and Σ gross = due, always.
+- `DocumentsControlTest` is updated: the "explained by split" case becomes absorbed (no exception) or `TAX_CORRECTION_PENDING`; a forced unassigned drift → `TAX_DRIFT_UNASSIGNED`.
+
+**Acceptance:** A35.
+
+### S35 — Fiscal and settlement: payment breakdown snapshot (D97) (after S34)
+**Write scope:**
+- `fiscal/` (model, dto, service, `adapter/internal`, the document-detail controller), `db/migration/fiscal/V10009+`
+- `settlement/` (new `service/SettlementIssuer`, `service/DocumentPayments`, the views, the `issue` call sites, `reconciliation/model/DocumentsControl`), `db/migration/settlement/V9060–V9069` (reserved; none is expected)
+- the architecture test that pins `SettlementIssuer` as the single caller of `FiscalApi.issue`
+
+**Migration `V10009__fiscal_document_payment_snapshot.sql`:**
+- `fiscal_document` gains nullable `payment_status VARCHAR(20) CHECK IN ('UNPAID','PARTIALLY_PAID','PAID','ON_ACCOUNT','MIXED')`, `paid_total`, `credit_total` and `outstanding_total` (`NUMERIC(19,4)`, ≥ 0). No DEFAULT is needed and no row is updated (D93). R2/R3 rows keep NULL.
+- CHECK (all-or-nothing): either `payment_status` is NULL with every total NULL, or none is NULL and `paid_total + credit_total + outstanding_total = total_gross`.
+- CHECK `payment_status IS NULL OR on_account = (credit_total > 0)`.
+- CHECK of the status against the totals, per the D97 table.
+- `fiscal_document_payment(document_id FK, position SMALLINT, method_code NOT NULL, label NOT NULL, amount > 0, PK(document_id, position))`. Its trigger is `fiscal.reject_issued_document_part_change()` (V10005), so no insert, update or delete is allowed once the document is ISSUED. The truncate guard as for the other document tables.
+
+**Contracts:**
+- `fiscal.model.dto.PaymentSnapshot(PaymentStatus status, List<PaidAmount> methods, Money credit, Money outstanding)`, with `PaidAmount(String methodCode, String label, Money amount)`.
+- `fiscal.model.dto.PaymentStatus { UNPAID, PARTIALLY_PAID, PAID, ON_ACCOUNT, MIXED; static PaymentStatus of(Money gross, Money paid, Money credit) }`, the one function of D97 rule 3, which settlement also uses for its live views.
+- `FiscalApi.recordPayments(UUID documentId, PaymentSnapshot snapshot)` (MANDATORY). On a DRAFT it replaces the header totals and the rows. On an ISSUED document it is a no-op that returns the stored snapshot. 422 `PAYMENT_SNAPSHOT_MISMATCH` when Σ ≠ the draft's gross or credit > 0 contradicts `on_account`.
+- `Optional<PaymentSnapshot> FiscalApi.paymentSnapshot(UUID documentId)` (readOnly).
+- `FiscalApi.issue`: a DRAFT without a snapshot → 422 `FISCAL_PENDING`, with `lastError = PAYMENT_SNAPSHOT_MISSING` and no number used. `clearOnAccount` also nulls the snapshot and deletes its rows (the document is still a DRAFT).
+- `IssueRequest` and `IssuedDocument` gain `PaymentSnapshot payments` as their **last** component. The internal adapter prints per the D97 rule-6 table, and "A CRÉDITO" is printed only for ON_ACCOUNT.
+- `settlement.service.DocumentPayments` (MANDATORY, under `order_settlement`): `PaymentSnapshot of(Bill bill, DocumentView document)`, using D97 rules 1–2. Method labels come from `payment_method.name`.
+- `settlement.service.SettlementIssuer.issue(PosContext pos, UUID orderId, UUID documentId)`: tx{lock → `DocumentPayments.of` → `recordPayments`} then `FiscalApi.issue` with no tx. `PartitionDocumentService`, `OrderSettlementSteps.issue` and `CreditSaleSteps.issue` delegate to it.
+- `OrderSettlementView` gains `String paymentStatus` and `PartitionView` gains `String paymentStatus`, both live, from `PaymentStatus.of`.
+- `DocumentsControl`: new kind `SNAPSHOT_CREDIT_MISMATCH` (`OrderFacts.Document` gains `Money snapshotCredit`).
+- `GET /api/v1/backoffice/fiscal/documents/{id}` gains a `payments` block: status, methods, credit, outstanding.
+
+**Endpoints:** no new route. Every issuing route (partition `/documents`, `/orders/{id}/documents`, `/close`, `/credit-charges`) now refreshes the snapshot before it issues. The error codes are unchanged apart from the new `PAYMENT_SNAPSHOT_MISMATCH`, which goes into `CodedErrorContractTest`, and the `PAYMENT_SNAPSHOT_MISSING` `lastError` value.
+
+**Tests (red first):**
+- `InternalPrintoutPaymentsTest` (unit; it fails today): exact strings for every row of the D97 table, including `Pagamento misto — Numerário: 20.00; A crédito: 30.00` and `Saldo em aberto: 20.00`; ON_ACCOUNT keeps the `A CRÉDITO` header and MIXED never prints it; a COPY prints the same block; a null snapshot (an R2 document) prints as before.
+- `PaymentStatusTest` (unit): the full truth table of `of`, including the G = P + C boundaries.
+- `PaymentSnapshotTest` (fiscal IT): record and replace on a DRAFT; issue freezes it; an UPDATE of the ISSUED header or rows is refused by the trigger; the CHECKs; issue without a snapshot → FISCAL_PENDING with no number gap (`GaplessNumberingTest` stays green); `clearOnAccount` clears it.
+- `DocumentPaymentBreakdownTest` (settlement IT):
+  - cash 20 then credit 30 on 50 → MIXED, outstanding 0, `on_account`;
+  - credit 30 first → MIXED, outstanding 20; then cash 20 → the document is unchanged and the view says SETTLED / MIXED;
+  - full credit → ON_ACCOUNT;
+  - a partition document before payment → UNPAID;
+  - cash + card at close → PAID with two methods;
+  - a residual covering an AMOUNT partition's payments;
+  - a refund before issue is netted;
+  - the refresh-to-issue window is documented by a test that confirms a payment after the refresh: the document does not show it.
+- `SettlementIssuerRuleTest` (ArchUnit): no settlement class except `SettlementIssuer` calls `FiscalApi.issue`, with an `ArchitectureRulesFireTest` fixture.
+- `OnAccountPrintoutTest` (S22) is updated; `CreditSaleTest`, `CreditSaleFiscalFailureTest` and `DocumentsControlTest` (+ `SNAPSHOT_CREDIT_MISMATCH`) stay green.
+
+**Acceptance:** A36.
+
+### S36 — Deploy: production backup encryption, key separation and restore drills (D98)
+**Write scope:** `deploy/` only (scripts, `postgres/`, `lib/`, `compose.yaml`, `.env.example`, `.gitignore`, README). No backend change, no migration.
+
+**Deliverables:**
+- `deploy/postgres/Dockerfile`: `FROM postgres:18.6-alpine` + `apk add --no-cache age=<pinned>`, image `restaurantpro-postgres:18.6-r1`. `compose.yaml` builds it for the `postgres` service, passes `RESTAURANTPRO_ENVIRONMENT=${RESTAURANTPRO_ENVIRONMENT:-production}`, and mounts `backup-recipients.txt` read-only at `/etc/restaurantpro/backup-recipients.txt`.
+- `deploy/postgres/preflight.sh`, run by the entrypoint wrapper before `docker-entrypoint.sh`. In production it requires a valid recipients file (at least 2 distinct `age1…` keys, safe owner and mode) or it exits 1 with the reason.
+- `deploy/postgres/archive-wal.sh`: writes `<f>.age` and `<f>.sha256` (D98 rule 3a). The "already archived" check uses the sidecar. Plaintext is used only in test mode with no recipients.
+- `deploy/lib/common.sh`, sourced by every script:
+  - `env_mode` (D98 rule 1);
+  - `require_private_dir`, `require_private_file` and `require_safe_recipients` (rule 5);
+  - `refuse_identity_on_server` (rule 2);
+  - `is_age_file`, which checks the header `age-encryption.org/v1`.
+- `deploy/lib/age.sh`, the wrapper of D98 rule 6.
+- **Script changes:**
+  - `backup.sh` and `basebackup.sh`: `--recipients-file` replaces `--age-recipient`. In production a missing file → exit 1 having written nothing. `BACKUP_AGE_RECIPIENT` is accepted in test mode only.
+  - `basebackup.sh --wal-only` copies `.age` and `.sha256` unchanged.
+  - New `basebackup.sh --encrypt-legacy` (rule 3e).
+- `pitr-restore.sh` and `restore.sh`: identity rules (rule 2). They decrypt `.age` WAL from the volume or `--wal-dir` through the wrapper into the restore volume only.
+- New scripts:
+  - `deploy/offbox-sync.sh [--check-append-only]` (rule 4);
+  - `deploy/verify-backups.sh [--accept-recipients-change]` (rule 6a);
+  - `deploy/verify-restore.sh --from DIR --identity FILE [--key-recovery]` (rules 6b and 6c), which writes `drill-<UTC>.json`.
+- `.env.example`: `RESTAURANTPRO_ENVIRONMENT=production`, `BACKUP_AGE_RECIPIENTS_FILE`, `OFFBOX_TARGET`. `.gitignore`: `backup-recipients.txt`, `offbox_known_hosts`.
+- README: a new section "Backup encryption (production)". It covers the custody table (operational and recovery keys, who holds each, where the escrow is), the cron and systemd entries for `--wal-only` + `offbox-sync` every 5 min, `verify-backups` every 15 min, weekly `verify-restore` on the restore host and the quarterly key-recovery drill, the `rrsync -wo -no-del` setup, key rotation, the upgrade path from S27 (`--encrypt-legacy`, then a new base backup), and the drill log template. The "optional encryption" and "volume is plaintext" sentences are removed.
+
+**Tests (red first: `test-backup-encryption.sh` fails on `main` because production without recipients only warns):**
+- `deploy/test-backup-encryption.sh`: Docker only, deterministic, and it leaves nothing behind. Throwaway identities come from `age-keygen` in the image, in a `mktemp` dir outside `deploy/`. The WAL switch is forced (no waiting on `archive_timeout`). It checks:
+  1. production with no recipients file → postgres does not start, and `backup.sh` / `basebackup.sh` exit non-zero with nothing written;
+  2. one recipient only → refused;
+  3. two recipients → every file in the volume, in `<dir>` and at the off-box target is age ciphertext with its sidecar, and no file starts with a WAL page magic or `PGDMP`;
+  4. an identity file under `deploy/` or `BACKUP_AGE_IDENTITY` set → the backup scripts refuse; a 0644 backup dir, a 0644 identity, or a group-writable recipients file → refused;
+  5. `pitr-restore.sh` to T with the operational key, then again with the recovery key alone → the same fingerprint at T;
+  6. a wrong key → it fails, and leaves no container or volume behind;
+  7. a recipients file swapped → `verify-backups.sh` fails until `--accept-recipients-change`;
+  8. `offbox-sync.sh` to an sshd container (built from the same pinned alpine base) with an unknown host key → refused; with the pinned key → it copies; with `rrsync -wo -no-del` → `--check-append-only` passes; without it → it fails;
+  9. `--encrypt-legacy` on an S27-style plaintext archive → no plaintext is left and a restore works;
+  10. `verify-restore.sh --key-recovery` on the copied directory → success and a JSON report.
+- `test-pitr.sh` and `test-backup-restore.sh` run in production mode with throwaway keys (both recipients) and stay green. `test/real-schema-drill.sh` likewise.
+
+**Acceptance:** A37.
+
 ---
 
 ## S33 — Integrate (alone, after every slice has merged)
@@ -477,22 +619,25 @@ Conventions for every endpoint below, as in R2:
 - `src/test/.../e2e`
 - `docs/architecture/modules/` (`-Dmodulith.docs=true`)
 - `CONTEXT.md`, `docs/architecture/backend-conventions.md`
-- `docs/adr/0019…0024` and the ADR README (plus the ADR 0018 status per P39)
-- `deploy/` (`.env.example` for the new properties)
+- `docs/adr/0019…0027` and the ADR README (0025–0027 are D96, D97 and D98; plus the ADR 0018 status per P39)
+- `deploy/` (`.env.example` for the new properties; no other change, since S36 owns the backup scripts)
 
 **Deliverables:**
 - **End-to-end journey** over HTTP with real security and `TcpFakePrinter`:
   1. R2 setup, plus a customer with a limit.
   2. A table with two rounds; split by items (2 diners) plus equal parts of the rest.
   3. Diner A pays by card and gets their partition document; diner B is put on account; a new dessert round; the rest is paid in cash.
-  4. Close (residual document); refund an overpayment after a void within headroom.
+  4. Before the close, a settled void empties a split line's pool (D96): the residual absorbs the cent, and Σ document tax per rate = the order's. Close (residual document); refund an overpayment after a void within headroom. Diner B's credit covers only part of their partition, the rest is paid in cash first, and `TcpFakePrinter` receives `Pagamento misto — Numerário: …; A crédito: …` (D97).
+  4b. A second table hits the D96 pending case (the drifting line's share is invoiced on its own, with no other line at that rate): the close succeeds, and the documents control lists `TAX_CORRECTION_PENDING` until a resolution is recorded.
   5. Debt payment the next day.
   6. Import a card statement (match plus one mismatch, resolved).
   7. Close the session and day, approve, close financially, reopen financially, adjust, approve round 1.
   8. Reports equal the documents, receipts and credit; audit query and export; a support grant.
-- **`RestartMatrixTest`** (D90 a–f).
+- **`RestartMatrixTest`** (D90 a–f), plus (g): a crash between the residual draft with a D96 placement and the issue → the same rows, the same draft and one number; (h): a crash between the D97 refresh and the issue → the retry issues with a fresh snapshot and one number.
 - **Report benchmark** (D86): seed one store-year and measure p95. A miss triggers a rollup follow-up slice, not a silent pass.
-- **A32** (verify and rules); `deploy/test-backup-restore.sh` and `test-pitr.sh` re-run against the R3 schema.
+- **A32** (verify and rules, including `SettlementIssuer` as the single caller of `FiscalApi.issue`). `deploy/test-backup-encryption.sh`, `test-backup-restore.sh`, `test-pitr.sh` and `verify-restore.sh --key-recovery` re-run against the R3 schema in production mode with throwaway keys (A37).
+- `CONTEXT.md` adds: tax rounding adjustment ("ajuste de arredondamento"), pending fiscal correction ("correção fiscal pendente"), payment breakdown / snapshot ("discriminação do pagamento"), payment status, operational and recovery key. `backend-conventions.md` adds: residual-only tax placement, the single issue path, and recipient-only keys on the server.
+- **Acceptance:** A35–A37 end to end.
 
 ---
 
@@ -507,8 +652,12 @@ S19 Platform prefactor (alone)
  ├─► S24 Production R3                           │   (needs S20, S24)                                                │
  ├─► S25 Support access                          └─► S32 Reporting (needs S21, S22, S23) ───┼─► S33 Integrate
  ├─► S26 Audit query                                                                         │
- └─► S27 Deploy PITR ─────────────────────────────────────────────────────────────────────────┘
- (S30 also needs S21; S32 also needs S21; every group-1 slice must merge before S33)
+ └─► S27 Deploy PITR ─────────────────────────────────────────────────────────────────────────┤
+ (S30 also needs S21; S32 also needs S21; every group-1 slice must merge before S33)        │
+                                                                                             │
+ Amendments (all of S19–S32 merged):                                                         │
+ S34 Tax rounding absorption (D96) ──► S35 Payment breakdown (D97) ──────────────────────────┤
+ S36 Backup encryption (D98, deploy only, ∥ S34 and S35) ──────────────────────────────────────┴─► S33 Integrate
 ```
 
 | group | slices (parallel) | why the write sets are disjoint |
@@ -519,7 +668,9 @@ S19 Platform prefactor (alone)
 | 3 | S29 ∥ S32 | `settlement/` (no `reconciliation/`)+9020–9029 plus the single production slip-listener file; `reporting/`+14xxx |
 | 4 | S30 (∥ S32 if still running) | `settlement/` (no `reconciliation/`)+9030–9039 |
 | 5 | S31 (∥ S32 if still running) | `settlement/reconciliation/**`+9040–9049, with its own rule enum |
-| 6 | S33 alone | tests, docs, `deploy/` |
+| 6 | S34 ∥ S36 | `settlement/` (with `reconciliation/`)+9050–9059; `deploy/` |
+| 7 | S35 (∥ S36 if still running) | `fiscal/`+10009+, `settlement/`+9060–9069 (reserved). Serial after S34 because both write `ResidualDocuments`, `OrderSettlementSteps`, `CreditSaleSteps`, `SettlementViews` and `DocumentsControl` |
+| 8 | S33 alone | tests, docs, `deploy/.env.example` |
 
 Rules, as in R1 and R2:
 - No `pom.xml` edits.
@@ -547,3 +698,6 @@ Rules, as in R1 and R2:
 | A32 | S19, S33 |
 | A33 | S27, S33 |
 | A34 | S25 |
+| A35 | S34, S33 |
+| A36 | S35, S33 |
+| A37 | S36, S33 |
