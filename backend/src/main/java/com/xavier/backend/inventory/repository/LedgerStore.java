@@ -38,19 +38,30 @@ public class LedgerStore {
         this.jdbc = jdbc;
     }
 
-    /** Creates the missing balance rows (zero), in the order given, which callers keep to the lock order. */
+    /**
+     * Creates the missing balance rows (zero), in the order given, which callers keep to the lock order. Only keys
+     * with no row are inserted: an existing row is never touched here (an insert that conflicts with a row another
+     * transaction has updated would wait for it), so existing rows are reached only by {@link #lock}, in order.
+     */
     public void ensureBalances(List<BalanceKey> keys, Instant now) {
-        String rows = keys.stream().map(key -> "(?, ?, 0, 0, 0, 0, ?)").collect(Collectors.joining(", "));
+        String values = keys.stream().map(key -> "(?::uuid, ?::uuid, ?::int)").collect(Collectors.joining(", "));
         List<Object> params = new ArrayList<>();
-        keys.forEach(key -> {
-            params.add(key.warehouseId());
-            params.add(key.stockItemId());
-            params.add(Timestamp.from(now));
-        });
+        for (int i = 0; i < keys.size(); i++) {
+            params.add(keys.get(i).warehouseId());
+            params.add(keys.get(i).stockItemId());
+            params.add(i);
+        }
+        params.add(Timestamp.from(now));
         jdbc.sql("""
                         INSERT INTO inventory.stock_balance (warehouse_id, stock_item_id, quantity, value, average_cost,
                             last_posting_seq, updated_at)
-                        VALUES %s ON CONFLICT DO NOTHING""".formatted(rows))
+                        SELECT k.warehouse_id, k.stock_item_id, 0, 0, 0, 0, t.now
+                        FROM (VALUES %s) k (warehouse_id, stock_item_id, ord)
+                        CROSS JOIN (SELECT ?::timestamptz AS now) t
+                        WHERE NOT EXISTS (SELECT 1 FROM inventory.stock_balance b
+                                          WHERE b.warehouse_id = k.warehouse_id AND b.stock_item_id = k.stock_item_id)
+                        ORDER BY k.ord
+                        ON CONFLICT DO NOTHING""".formatted(values))
                 .params(params).update();
     }
 
