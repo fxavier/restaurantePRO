@@ -52,12 +52,12 @@ Canonical terms from spec §8.1. Code uses the English name; the Portuguese term
 | CashDayReopening | Reabertura do dia | cash | A fact (with approver): an OPERATIONALLY_CLOSED day back to OPEN. An event, not a state. |
 | CashSession | Sessão de caixa | cash | One operator on one register: OPEN → CLOSED, with an opening float. At most one OPEN per register and per operator in a store. |
 | Blind count | Contagem cega | cash | The operator's count per method at session close, recorded without seeing the expected amount. Immutable. |
-| CashMovement | Movimento de caixa | cash | A fact: OPENING_FLOAT, PAYMENT_RECEIPT, CASH_IN, CASH_OUT or EXPENSE. One receipt per payment (unique source). Immutable. |
+| CashMovement | Movimento de caixa | cash | A fact: OPENING_FLOAT, PAYMENT_RECEIPT, CASH_IN, CASH_OUT, EXPENSE, REFUND or ADJUSTMENT. One receipt per payment (unique source). Immutable. |
 | CashClosing | Fecho de caixa | cash | Per register × day: DRAFT → SUBMITTED → APPROVED or REJECTED; expected vs counted per method, justification when they differ. A resubmission is a new row. |
 | PaymentMethod | Meio de pagamento | settlement | Company-wide data: code, name, kind CASH, EXTERNAL_TERMINAL (operator confirms) or INTEGRATED (provider port). |
 | PaymentAttempt | Tentativa de pagamento | settlement | CREATED → PENDING → SUCCEEDED, FAILED, CANCELLED or UNKNOWN. Persisted before any provider call. An open or UNKNOWN attempt blocks new attempts and closes. |
 | Payment | Pagamento | settlement | A confirmed, immutable fact: one per succeeded attempt. |
-| PaymentAllocation | Imputação | settlement | Where a payment goes. R2: the full amount to its order. |
+| PaymentAllocation | Imputação | settlement | Where a payment goes: its target (R2: the full amount to its order; R3: several debits of a debt payment, Σ = the payment). |
 | OrderSettlement | Liquidação do pedido | settlement | The per-order lock row (no balance) that serializes payments, document issue and close. |
 | FinancialState | Estado financeiro | settlement | UNSETTLED, PARTIALLY_SETTLED or SETTLED, derived from due vs paid. Never stored. |
 | Reclassification | Reclassificação | settlement | Resolving an UNKNOWN attempt by hand (`PAYMENT_RESOLVE` + approver + reason), audited, instead of a provider query. |
@@ -72,6 +72,26 @@ Canonical terms from spec §8.1. Code uses the English name; the Portuguese term
 | Step lease | Concessão de passo | shared | The time-limited claim on an Idempotency-Key used by a multi-step command (`executeSteps`). Live → 409; expired → may be taken over. |
 | Login throttle | Limitação de login | identity | BackOffice attempts per username + address (10, reset on success) and failures per address (30): 15 min block, 429 with `Retry-After`. |
 | mustChangePin | PIN a alterar | identity | Set by a manager's PIN reset: the next POS login must choose a new PIN before it gets any authority. |
+| Customer | Cliente | customers | Company-wide (P38): name, phones, addresses, tax id. Searched by phone suffix; several matches are always offered as candidates, never guessed. |
+| CreditAccount | Conta corrente | customers | A customer's limit, block flag and ledger. Balance = Σ DEBIT − Σ CREDIT, never stored; available = limit − balance − Σ ACTIVE reservations. |
+| CreditReservation | Reserva de crédito | customers | Credit held for one charge under `credit_account FOR UPDATE`: ACTIVE → CONSUMED (debit posted) or RELEASED. The defence against two terminals passing the limit. |
+| CreditLedgerEntry | Movimento de conta corrente | customers | A fact: DEBIT (a credit sale, naming its document) or CREDIT (a debt payment, or the reversal of a refunded one). Append-only. |
+| CreditSettlement | Liquidação de dívida | customers | Which debits a CREDIT pays: FIFO by `occurred_at`, or the debits the client names. |
+| CreditCharge | Venda a crédito | settlement | Putting (part of) an order or partition on a customer's account: RESERVED → POSTED (debit) or RELEASED. Final once its target's document is ISSUED. Never a Payment, never a cash movement. |
+| BillPartition | Divisão da conta | settlement | A part of one order's bill: ITEMS (quantities of lines, 3 decimals) or AMOUNT (an equal part or a sum). LIVE → CANCELLED (only unpaid and uninvoiced). A payment target of its own. |
+| Payment target | Alvo do pagamento | settlement | What an attempt pays: ORDER (its residual once partitioned), PARTITION or CREDIT_ACCOUNT (a debt payment). One open attempt per target. |
+| Residual document | Documento residual | settlement, fiscal | The ORDER document drafted at close (or `/documents`): every quantity not on a partition's own document, covering the ORDER target and the LIVE partitions without a document. Drafted with the order frozen. |
+| Headroom | Margem para anular | settlement | What a settled void may still remove: the ORDER residual after the void must stay at or above what its target was paid, put on account or has in flight (else 422 `VOID_EXCEEDS_UNPAID`; refund first). |
+| Settled void | Anulação com pagamentos | settlement, orders | A void after part of the bill is paid, within headroom, with an approver, never of an invoiced or partitioned quantity (P32). |
+| Tax rounding adjustment | Ajuste de arredondamento | settlement | The tax cent a settled void leaves on a split line (D96), placed once on a residual draft line of the same rate (ABSORBED: tax/net change, gross never). Append-only, audited. |
+| Pending fiscal correction | Correção fiscal pendente | settlement, reconciliation | A tax rounding adjustment no unissued line could absorb: it names the issued document to correct, which is never changed, and is listed as `TAX_CORRECTION_PENDING` until a correction resolution (the corrective document's reference) is recorded. |
+| Payment breakdown / snapshot | Discriminação do pagamento | fiscal, settlement | The payments, credit and outstanding on the targets a document covers, recorded just before issue by `SettlementIssuer` and immutable after: "Pagamento misto — Numerário: X; A crédito: Y", "Saldo em aberto: Z". |
+| Payment status | Estado do pagamento | fiscal, settlement | UNPAID, PARTIALLY_PAID, PAID, ON_ACCOUNT (all on credit) or MIXED (part on credit), from gross, paid and credit (`PaymentStatus.of`). Fixed on a document; live on the settlement views. Distinct from FinancialState. |
+| Refund | Devolução | settlement | A fact referencing a Payment: its own method, a REFUND OUT movement in the refunder's session, an approver. Only of what no issued document covers, or of an overpayment; refunding a debt payment reopens the debt. |
+| ReconciliationBatch / ReconciliationEntry | Lote / linha de reconciliação | settlement (reconciliation) | One imported provider statement (store, method, period, file digest), and one entry per line or missing payment: MATCHED, AMOUNT_MISMATCH, MISSING_INTERNAL, MISSING_PROVIDER, DUPLICATE_LINE. Never changes a money fact. |
+| SalesRecord | Registo de venda | reporting | The projection of one issued document (lines, taxes) for reports, with payment, credit and void records; rebuilt from the facts, never a source of money or stock. |
+| Support grant | Acesso de suporte | identity | A time-limited (≤ 24 h), reasoned authorization for a support account to log in; it expires by itself, ends its sessions, and every step is audited. |
+| Operational key / recovery key | Chave operacional / de recuperação | deploy | The two age identities whose public recipients encrypt every production backup: the operational one restores weekly on a restore host; the recovery one, held by a second custodian, proves quarterly that it alone restores. Neither is ever on the server. |
 | AuditEvent | Evento de auditoria | audit | Append-only record: actor, approver, action, entity, store, terminal, instant, reason. |
 | Money | Valor monetário | shared | BigDecimal + Currency, HALF_UP at line level, largest-remainder allocation. |
 | IdempotencyRecord | Chave de idempotência | shared | Stored (scope, key, request hash, response) for repeatable commands. |

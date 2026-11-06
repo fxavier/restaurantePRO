@@ -6,6 +6,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.xavier.backend.TestcontainersConfiguration;
+import com.xavier.backend.audit.exception.AuditQueryException;
+import com.xavier.backend.customers.exception.CustomerRuleException;
+import com.xavier.backend.customers.exception.CustomersConflictException;
+import com.xavier.backend.identity.exception.IllegalSupportGrantStateException;
+import com.xavier.backend.identity.exception.SupportAccountLinkedException;
+import com.xavier.backend.identity.exception.SupportAccountRequiredException;
+import com.xavier.backend.identity.exception.SupportGrantActiveException;
+import com.xavier.backend.identity.exception.SupportGrantTooLongException;
+import com.xavier.backend.production.exception.ProductionConflictException;
 import com.xavier.backend.cash.exception.CashRule;
 import com.xavier.backend.cash.exception.CashRuleViolationException;
 import com.xavier.backend.cash.exception.ClosingStaleException;
@@ -207,7 +216,40 @@ class CodedErrorContractTest {
                     LocalDate.of(2026, 11, 4))),
             Map.entry("range-too-large", () -> ReportRangeException.tooLarge(366)),
             Map.entry("rebuild-running", () -> new RebuildRunningException(ID)),
-            Map.entry("invalid-export-params", () -> new ExportParamsException("groupBy")));
+            Map.entry("invalid-export-params", () -> new ExportParamsException("groupBy")),
+            // R3 production (S24): routing a ticket later
+            Map.entry("still-unrouted", () -> new ProductionRuleViolationException(ProductionRule.STILL_UNROUTED,
+                    "Production ticket " + ID + " still has no printer to go to: add its route or its terminal's "
+                            + "printer first")),
+            Map.entry("ticket-already-routed", () -> ProductionConflictException.ticketAlreadyRouted(ID)),
+            // R3 audit (S26): the query and export guards
+            Map.entry("audit-range-too-large", () -> AuditQueryException.rangeTooLarge(92)),
+            Map.entry("audit-export-too-large", () -> AuditQueryException.exportTooLarge(150_001, 150_000)),
+            // R3 identity (S25): support access
+            Map.entry("support-account-required", SupportAccountRequiredException::new),
+            Map.entry("support-grant-active", SupportGrantActiveException::new),
+            Map.entry("support-grant-duration", () -> new SupportGrantTooLongException(1440)),
+            Map.entry("support-grant-ended", IllegalSupportGrantStateException::new),
+            Map.entry("support-account-linked", SupportAccountLinkedException::new),
+            // R3 customers (S20), moved here from CustomersErrorContractTest
+            Map.entry("customer-inactive", () -> CustomerRuleException.inactive(ID)),
+            Map.entry("credit-account-missing", () -> CustomerRuleException.accountMissing(ID)),
+            Map.entry("credit-blocked", () -> CustomerRuleException.blocked(ID)),
+            Map.entry("credit-limit-exceeded", () -> CustomerRuleException.limitExceeded(Money.of("60.00", MZN),
+                    Money.of("40.00", MZN))),
+            Map.entry("customer-exceeds-debt", () -> CustomerRuleException.exceedsDebt(Money.of("50.01", MZN),
+                    Money.of("50.00", MZN))),
+            Map.entry("customer-exceeds-credit", () -> CustomerRuleException.exceedsCredit(Money.of("20.01", MZN),
+                    Money.of("20.00", MZN))),
+            Map.entry("customer-invalid-amount", () -> CustomerRuleException.invalidAmount(
+                    "The amount 1.001 has more decimals than MZN allows.")),
+            Map.entry("customer-invalid-period", () -> CustomerRuleException.invalidPeriod(
+                    java.time.Instant.parse("2026-11-05T00:00:00Z"), java.time.Instant.parse("2026-11-04T00:00:00Z"))),
+            Map.entry("reservation-not-active", () -> CustomersConflictException.reservationClosed(ID, "CONSUMED",
+                    "be released")),
+            Map.entry("phone-exists", () -> CustomersConflictException.phoneExists(ID, "258841234567")),
+            Map.entry("credit-account-exists", () -> CustomersConflictException.accountExists(ID)),
+            Map.entry("credit-source-mismatch", () -> CustomersConflictException.sourceMismatch("debt payment", ID)));
 
     @Autowired
     MockMvc mvc;
@@ -481,6 +523,69 @@ class CodedErrorContractTest {
         expect("rebuild-running", 409, "REBUILD_RUNNING", "A rebuild of store " + ID + " is already running.", "");
         expect("invalid-export-params", 422, "INVALID_EXPORT_PARAMS",
                 "The export parameter 'groupBy' is missing or not valid for the report.", ",\"param\":\"groupBy\"");
+    }
+
+    @Test
+    void productionRoutingLater() throws Exception {
+        expect("still-unrouted", 422, "STILL_UNROUTED", "Production ticket " + ID + " still has no printer to go "
+                + "to: add its route or its terminal's printer first", "");
+        expect("ticket-already-routed", 409, "TICKET_ALREADY_ROUTED", "Production ticket " + ID
+                + " is already routed", "");
+    }
+
+    @Test
+    void auditQueryGuards() throws Exception {
+        expect("audit-range-too-large", 422, "RANGE_TOO_LARGE", "The range is longer than 92 days: narrow it.",
+                ",\"maxDays\":92");
+        expect("audit-export-too-large", 422, "EXPORT_TOO_LARGE", "The export would have 150001 rows, more than "
+                + "150000: narrow the filters.", ",\"rows\":150001,\"maxRows\":150000");
+    }
+
+    @Test
+    void supportAccessCodes() throws Exception {
+        expect("support-account-required", 422, "SUPPORT_ACCOUNT_REQUIRED",
+                "Support access is granted only to a support account.", "");
+        expect("support-grant-active", 409, "SUPPORT_GRANT_ACTIVE",
+                "The account already holds an active support grant.", "");
+        expect("support-grant-duration", 422, "SUPPORT_GRANT_DURATION",
+                "A support grant lasts between 1 minute and 24 hours.", ",\"maxMinutes\":1440");
+        expect("support-grant-ended", 409, "SUPPORT_GRANT_ENDED", "The support grant has already ended.", "");
+        expect("support-account-linked", 422, "SUPPORT_ACCOUNT_LINKED",
+                "A support account cannot be linked to an employee.", "");
+    }
+
+    @Test
+    void customerAndCreditRules() throws Exception {
+        expect("customer-inactive", 422, "CUSTOMER_INACTIVE", "Customer " + ID + " is inactive.", "");
+        expect("credit-account-missing", 422, "CREDIT_ACCOUNT_MISSING", "Customer " + ID
+                + " has no credit account.", "");
+        expect("credit-blocked", 422, "CREDIT_BLOCKED", "The credit of customer " + ID + " is blocked.", "");
+        expect("customer-invalid-amount", 422, "INVALID_AMOUNT", "The amount 1.001 has more decimals than MZN "
+                + "allows.", "");
+        expect("customer-invalid-period", 422, "INVALID_PERIOD",
+                "The period starts (2026-11-05T00:00:00Z) after it ends (2026-11-04T00:00:00Z).", "");
+    }
+
+    @Test
+    void customerAmountRulesCarryTheAmountThatWasAvailable() throws Exception {
+        expect("credit-limit-exceeded", 422, "CREDIT_LIMIT_EXCEEDED",
+                "The amount 60.00 is more than the available credit 40.00.", ",\"available\":40.00");
+        expect("customer-exceeds-debt", 422, "AMOUNT_EXCEEDS_DEBT",
+                "The amount 50.01 is more than the open debt 50.00.", ",\"debt\":50.00");
+        expect("customer-exceeds-credit", 422, "AMOUNT_EXCEEDS_CREDIT",
+                "The amount 20.01 is more than the 20.00 of the debt payment still to reverse.",
+                ",\"refundable\":20.00");
+    }
+
+    @Test
+    void customerConflicts() throws Exception {
+        expect("reservation-not-active", 409, "RESERVATION_NOT_ACTIVE",
+                "The credit reservation of charge " + ID + " is CONSUMED and cannot be released.", "");
+        expect("phone-exists", 409, "PHONE_EXISTS", "Customer " + ID + " already has the phone 258841234567.", "");
+        expect("credit-account-exists", 409, "CREDIT_ACCOUNT_EXISTS",
+                "The credit account of customer " + ID + " was opened at the same time; retry.", "");
+        expect("credit-source-mismatch", 409, "CREDIT_SOURCE_MISMATCH",
+                "The debt payment " + ID + " is already recorded with other values.", "");
     }
 
     private void expect(String name, int status, String code, String detail, String extra) throws Exception {

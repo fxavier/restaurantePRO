@@ -11,13 +11,18 @@
 #      method; a cash session, two orders, rounds, a transfer that cancels the emptied order, a void with an
 #      approver, a subtotal, cash with change, a confirmed card payment, the document and a reprint, the order
 #      closed, the session counted, the closing approved, the day closed, reopened with an approver, closed
-#      again and closed financially), so every module's tables hold rows; keeps GET /backoffice/stores, the
-#      store's release list and its fiscal document list;
+#      again and closed financially); and the R3 paths (a customer with a phone, an address and a credit limit;
+#      an ITEMS partition invoiced on its own and a settled void, whose tax cent becomes a pending correction
+#      that is then resolved; a sale on account; a debt payment and a refund of part of it; a card statement
+#      imported and a mismatch resolved; a support account and grant; a report rebuild), so every module's
+#      tables hold rows (the drill fails listing every table left empty); keeps GET /backoffice/stores, the
+#      store's release list, its fiscal document list, the tax report and the customer's statement;
 #   3. stops the backend, fingerprints every table (rows + md5) and the schema, runs backup.sh;
 #   4. restores into a second fresh container with restore.sh and compares: identical data and schema,
 #      except that the Spring Session tables come back empty;
 #   5. runs the backend against the restored database: the old session is gone, the admin logs in again
-#      with the changed password, and GET /backoffice/stores answers the same.
+#      with the changed password, and GET /backoffice/stores, the releases, the documents, the tax report and
+#      the customer statement answer the same.
 #
 # Usage: deploy/test/real-schema-drill.sh [BACKEND_JAR]
 #   BACKEND_JAR defaults to backend/target/backend-*.jar; build it first with
@@ -292,8 +297,71 @@ document="$(json_field id <<<"$document_json")"
 expect 201 POST "/api/v1/pos/documents/$document/reprints" >/dev/null
 close_version="$(expect 200 GET "/api/v1/pos/orders/$order_a/settlement" | json_field orderVersion)"
 expect 200 POST "/api/v1/pos/orders/$order_a/close" "{\"orderVersion\":$close_version}" >/dev/null
-session_version="$(expect 200 GET "/api/v1/pos/cash/sessions/$session_id" | json_field version)"
-expect 200 POST "/api/v1/pos/cash/sessions/$session_id/close" "{\"version\":$session_version,\"counts\":[{\"methodCode\":\"CASH\",\"amount\":50.00},{\"methodCode\":\"CARD\",\"amount\":40.00}]}" >/dev/null
+step "API (R3): a customer on credit, a split with a settled void (D96 pending correction, resolved), a debt payment"
+step "         and its refund, a card statement reconciled, a support grant and a report rebuild"
+POS2="$JAR"; JAR="$POS"
+customer="$(expect 201 POST /api/v1/backoffice/customers '{"name":"Rui Tembe","phone":"842345678","taxId":"100200300"}' | json_field id)"
+expect 201 POST "/api/v1/backoffice/customers/$customer/phones" '{"number":"823456789","label":"trabalho","primary":false}' >/dev/null
+expect 201 POST "/api/v1/backoffice/customers/$customer/addresses" '{"kind":"BILLING","line1":"Av. 25 de Setembro 100","city":"Chimoio","country":"MZ"}' >/dev/null
+expect 200 POST "/api/v1/backoffice/customers/$customer/credit-limit-changes" '{"newLimit":200.00,"reason":"drill: a regular customer"}' >/dev/null
+JAR="$POS2"
+# D96: 2 x 45.00 at 16 %, one unit in a partition invoiced on its own (share tax 6.20), the other voided after a
+# payment (the line's tax is now 6.21): nothing on the order can absorb the cent, so the close records a pending
+# correction naming the partition's document, which stays unchanged.
+order_c="$(expect 201 POST "/api/v1/pos/tables/$table2/open" '{"guests":2}' | json_field id)"
+line_c="$(expect 201 POST "/api/v1/pos/orders/$order_c/lines" "{\"itemId\":\"$item\",\"quantity\":2}" | json_field id)"
+expect 201 POST "/api/v1/pos/orders/$order_c/batches" "{\"orderVersion\":$(order_version "$order_c"),\"catalogVersion\":$catalog_version,\"lineIds\":[\"$line_c\"]}" >/dev/null
+partition="$(expect 201 POST "/api/v1/pos/orders/$order_c/partitions" "{\"orderVersion\":$(order_version "$order_c"),\"kind\":\"ITEMS\",\"lines\":[{\"lineId\":\"$line_c\",\"quantity\":1}]}" | json_field id)"
+expect 201 POST /api/v1/pos/payment-attempts "{\"orderId\":\"$order_c\",\"partitionId\":\"$partition\",\"methodCode\":\"CASH\",\"amount\":45.00,\"tendered\":50.00}" >/dev/null
+expect 201 POST "/api/v1/pos/partitions/$partition/documents" '{}' >/dev/null
+expect 201 POST "/api/v1/pos/orders/$order_c/settlement/voids" "{\"orderVersion\":$(order_version "$order_c"),\"lineId\":\"$line_c\",\"quantity\":1,\"reason\":\"drill: one too many\",\"wasted\":false}" "${APPROVER[@]}" >/dev/null
+close_c="$(expect 200 GET "/api/v1/pos/orders/$order_c/settlement" | json_field orderVersion)"
+expect 200 POST "/api/v1/pos/orders/$order_c/close" "{\"orderVersion\":$close_c}" >/dev/null
+# A sale on account (reserve, document, debit), then part of the debt paid in cash and 5.00 of it refunded.
+order_d="$(expect 201 POST "/api/v1/pos/tables/$table1/open" '{"guests":1}' | json_field id)"
+line_d="$(expect 201 POST "/api/v1/pos/orders/$order_d/lines" "{\"itemId\":\"$item\",\"quantity\":1}" | json_field id)"
+expect 201 POST "/api/v1/pos/orders/$order_d/batches" "{\"orderVersion\":$(order_version "$order_d"),\"catalogVersion\":$catalog_version,\"lineIds\":[\"$line_d\"]}" >/dev/null
+expect 201 POST "/api/v1/pos/orders/$order_d/credit-charges" "{\"customerId\":\"$customer\",\"amount\":45.00}" >/dev/null
+close_d="$(expect 200 GET "/api/v1/pos/orders/$order_d/settlement" | json_field orderVersion)"
+expect 200 POST "/api/v1/pos/orders/$order_d/close" "{\"orderVersion\":$close_d}" >/dev/null
+debt_attempt="$(expect 201 POST "/api/v1/pos/customers/$customer/credit-payments" '{"methodCode":"CASH","amount":20.00,"tendered":20.00}' | json_field id)"
+debt_payment="$(psql_in "$SRC" -At -c "SELECT id FROM settlement.payment WHERE attempt_id = '$debt_attempt'")"
+expect 201 POST "/api/v1/pos/payments/$debt_payment/refunds" '{"amount":5.00,"reason":"drill: overcharged"}' "${APPROVER[@]}" >/dev/null
+JAR="$POS"
+correction="$(expect 200 GET "/api/v1/backoffice/reconciliation/tax-corrections?storeId=$store&open=true" | json_path content.0.id)"
+expect 201 POST "/api/v1/backoffice/reconciliation/tax-corrections/$correction/resolutions" '{"correctionReference":"NC-DRILL-1","reason":"drill: corrective document issued"}' >/dev/null
+# The card statement: the R2 card payment (MATCHED, auto-resolved) and a line nobody here took (resolved by hand).
+card_at="$(psql_in "$SRC" -At -c "SELECT to_char(confirmed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') FROM settlement.payment WHERE method_code = 'CARD'")"
+printf 'occurred_at,amount,fee,reference,authorization_code,line_ref\n%s,40.00,0.60,,DRILL-1,L1\n%s,12.00,0.18,,UNKNOWN-9,L2\n' "$card_at" "$card_at" >"$WORK/statement.csv"
+today="$(TZ=Africa/Maputo date +%F)"
+from_day="$(python3 -c 'import datetime,sys; d=datetime.date.fromisoformat(sys.argv[1]); print(d - datetime.timedelta(days=1))' "$today")"
+to_day="$(python3 -c 'import datetime,sys; d=datetime.date.fromisoformat(sys.argv[1]); print(d + datetime.timedelta(days=1))' "$today")"
+xsrf="$(awk '$6 == "XSRF-TOKEN" {print $7}' "$JAR" | tail -1)"
+batch_status="$(curl -sS -o "$WORK/body" -w '%{http_code}' -b "$JAR" -c "$JAR" -H "X-XSRF-TOKEN: $xsrf" \
+  -H "Idempotency-Key: $(openssl rand -hex 16)" -F "file=@$WORK/statement.csv;type=text/csv" \
+  "http://localhost:$APP_PORT/api/v1/backoffice/reconciliation/batches?storeId=$store&methodCode=CARD&periodFrom=$from_day&periodTo=$to_day")"
+echo "    POST /api/v1/backoffice/reconciliation/batches -> $batch_status" >&2
+[[ "$batch_status" == 201 ]] || fail "statement import: expected 201, got $batch_status: $(cat "$WORK/body")"
+batch="$(json_field id <"$WORK/body")"
+missing="$(expect 200 GET "/api/v1/backoffice/reconciliation/batches/$batch/entries?kind=MISSING_INTERNAL" | json_path content.0.id)"
+expect 201 POST "/api/v1/backoffice/reconciliation/entries/$missing/resolutions" '{"action":"ESCALATED","reason":"drill: not ours"}' >/dev/null
+support="$(expect 201 POST /api/v1/backoffice/users "{\"username\":\"drill.support\",\"initialPassword\":\"support-$(openssl rand -hex 12)\",\"roleIds\":[],\"support\":true}" | json_field id)"
+expect 201 POST /api/v1/backoffice/support-grants "{\"accountId\":\"$support\",\"durationMinutes\":60,\"reason\":\"drill: support\"}" >/dev/null
+expect 202 POST /api/v1/backoffice/reports/rebuild "{\"storeId\":\"$store\",\"from\":\"$from_day\",\"to\":\"$to_day\"}" >/dev/null
+for i in $(seq 1 60); do # the rebuild runs off the request; wait for it to finish before the backup
+  rebuild_status="$(expect 200 GET "/api/v1/backoffice/reports/status?storeId=$store" | json_path lastRebuild.status)"
+  [[ "$rebuild_status" != RUNNING ]] && break
+  sleep 1
+done
+[[ "$rebuild_status" == COMPLETED ]] || fail "the report rebuild ended $rebuild_status"
+taxes_before="$(expect 200 GET "/api/v1/backoffice/reports/taxes?storeId=$store&from=$from_day&to=$to_day" | python3 -c 'import json,sys; d=json.load(sys.stdin); d.pop("asOf"); print(json.dumps(d, sort_keys=True))')"
+statement_before="$(expect 200 GET "/api/v1/backoffice/customers/$customer/statement" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["lines"], sort_keys=True))')"
+JAR="$POS2"
+# The session is counted as expected: the R2 sale, the partition, the debt payment less its refund.
+session_json="$(expect 200 GET "/api/v1/pos/cash/sessions/$session_id")"
+session_version="$(json_field version <<<"$session_json")"
+counts="$(python3 -c 'import json,sys; print(json.dumps([{"methodCode": e["methodCode"], "amount": e["amount"]["amount"]} for e in json.load(sys.stdin)["expected"]]))' <<<"$session_json")"
+expect 200 POST "/api/v1/pos/cash/sessions/$session_id/close" "{\"version\":$session_version,\"counts\":$counts}" >/dev/null
 closing="$(expect 201 POST /api/v1/pos/cash/closings "{\"registerId\":\"$register\",\"cashDayId\":\"$cash_day\"}" | json_field id)"
 expect 200 POST "/api/v1/pos/cash/closings/$closing/submit" >/dev/null
 POS2="$JAR"; JAR="$POS"
@@ -323,10 +391,12 @@ before="$(fingerprint "$SRC")"
 source_schema="$(schema_of "$SRC")"
 # Every table must hold rows, so the comparison covers each module; these few stay empty by design.
 empty_ok='^public\.event_publication_archive$'
+empty=()
 while IFS='|' read -r t rows _; do
   [[ "$t" == sequence* || "$rows" != 0 ]] && continue
-  [[ "$t" =~ $empty_ok ]] || fail "source table $t is empty: the drill journey did not write it"
+  [[ "$t" =~ $empty_ok ]] || empty+=("$t")
 done <<<"$before"
+((${#empty[@]} == 0)) || fail "source tables are empty, the drill journey did not write them: ${empty[*]}"
 expected_fp="$(sed -E 's/^(shared\.spring_session(_attributes)?)\|[0-9]+\|[0-9a-f]+$/\1|0|d41d8cd98f00b204e9800998ecf8427e/' <<<"$before")"
 archive="$("$DEPLOY_DIR/backup.sh" --container "$SRC" --dir "$WORK/backups" --keep 1)"
 [[ -f "$archive" && "$archive" == *.tar.age ]] || fail "backup.sh did not report an encrypted archive (got '$archive')"
@@ -382,6 +452,12 @@ echo "    GET /backoffice/catalog/releases identical (published release, version
 documents_after="$(expect 200 GET "/api/v1/backoffice/fiscal/documents?storeId=$store" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["content"], sort_keys=True))')"
 [[ "$documents_after" == "$documents_before" ]] || fail "the fiscal document list differs after the restore"
 echo "    GET /backoffice/fiscal/documents identical (the issued document, its number and totals)" >&2
+taxes_after="$(expect 200 GET "/api/v1/backoffice/reports/taxes?storeId=$store&from=$from_day&to=$to_day" | python3 -c 'import json,sys; d=json.load(sys.stdin); d.pop("asOf"); print(json.dumps(d, sort_keys=True))')"
+[[ "$taxes_after" == "$taxes_before" ]] || fail "the tax report differs after the restore"
+echo "    GET /backoffice/reports/taxes identical (R3 projection)" >&2
+statement_after="$(expect 200 GET "/api/v1/backoffice/customers/$customer/statement" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["lines"], sort_keys=True))')"
+[[ "$statement_after" == "$statement_before" ]] || fail "the customer statement differs after the restore"
+echo "    GET /backoffice/customers/{id}/statement identical (R3 credit ledger, FIFO settlement, refund reversal)" >&2
 if [[ "$stores_after" != "$stores_before" ]]; then
   diff <(echo "$stores_before") <(echo "$stores_after") >&2 || true
   fail "GET /backoffice/stores differs after the restore"

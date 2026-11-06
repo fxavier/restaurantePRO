@@ -4,4 +4,7 @@
 |`com.xavier.backend.access`
 |Spring components
 |* `c.x.b.a.AccessPolicy`
+* `c.x.b.a.IdempotentRequests`
+|Bean references
+|* `c.x.b.s.idempotency.IdempotencyService` (in Shared kernel)
 |===

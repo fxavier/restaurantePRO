@@ -53,6 +53,13 @@ final class Browser {
         return new Browser(siblingName, port, journey);
     }
 
+    /** The same tab (cookies and all) against another server: the client of a restarted instance. */
+    Browser movedTo(int otherPort) {
+        Browser moved = new Browser(name, otherPort, journey);
+        moved.cookies.putAll(cookies);
+        return moved;
+    }
+
     String name() {
         return name;
     }
@@ -146,6 +153,45 @@ final class Browser {
             }
         }
         return response;
+    }
+
+    /**
+     * A {@code multipart/form-data} POST with one file part named {@code file} and the given form fields as query
+     * parameters (as the BackOffice upload form sends a provider statement), with the CSRF token and {@code headers}.
+     */
+    JsonNode upload(String path, Map<String, String> fields, String filename, byte[] content, int expected,
+                    Map<String, String> headers, String step) throws Exception {
+        String boundary = "----r3" + UUID.randomUUID().toString().replace("-", "");
+        java.io.ByteArrayOutputStream body = new java.io.ByteArrayOutputStream();
+        body.writeBytes(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"" + filename
+                + "\"\r\nContent-Type: text/csv\r\n\r\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        body.writeBytes(content);
+        body.writeBytes(("\r\n--" + boundary + "--\r\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        String query = String.join("&", fields.entrySet().stream().map(f -> f.getKey() + "="
+                + java.net.URLEncoder.encode(f.getValue(), java.nio.charset.StandardCharsets.UTF_8)).toList());
+        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path
+                        + (query.isEmpty() ? "" : "?" + query)))
+                .timeout(Duration.ofSeconds(30))
+                .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                .POST(HttpRequest.BodyPublishers.ofByteArray(body.toByteArray()));
+        if (!cookies.isEmpty()) {
+            request.header("Cookie", cookieHeader());
+        }
+        if (cookies.containsKey("XSRF-TOKEN")) {
+            request.header("X-XSRF-TOKEN", cookies.get("XSRF-TOKEN"));
+        }
+        headers.forEach(request::header);
+        HttpResponse<String> response = http.send(request.build(), HttpResponse.BodyHandlers.ofString());
+        return expect(response, expected, step == null ? null : step);
+    }
+
+    /** The raw body of a POST that answers {@code expected} (e.g. a CSV export), with a fresh Idempotency-Key. */
+    String postForText(String path, Object body, int expected, String step) throws Exception {
+        HttpResponse<String> response = send("POST", path, body, Csrf.SEND, idem());
+        record(name + ": " + step, response);
+        assertThat(response.statusCode()).as("POST %s (%s) answered %s", path, name, response.body())
+                .isEqualTo(expected);
+        return response.body();
     }
 
     void record(String step, HttpResponse<?> response) {

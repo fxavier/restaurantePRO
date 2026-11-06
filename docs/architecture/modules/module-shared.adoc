@@ -5,6 +5,8 @@
 |Spring components
 |_Services_
 
+* `c.x.b.s.events.EventPublicationRecovery`
+* `c.x.b.s.events.EventPublicationStats`
 * `c.x.b.s.idempotency.IdempotencyService`
 * `c.x.b.s.notify.ChangeNotifier`
 

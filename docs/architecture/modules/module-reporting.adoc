@@ -1,0 +1,25 @@
+[%autowidth.stretch, cols="h,a"]
+|===
+|Base package
+|`com.xavier.backend.reporting`
+|Bean references
+|* `c.x.b.a.IdempotentRequests` (in Access)
+* `c.x.b.s.events.EventPublicationStats` (in Shared kernel)
+* `c.x.b.c.CashApi` (in Cash)
+* `c.x.b.i.EmployeeDirectory` (in Identity)
+* `c.x.b.o.OrganizationApi` (in Organization)
+* `c.x.b.f.FiscalApi` (in Fiscal)
+* `c.x.b.o.OrdersApi` (in Orders)
+* `c.x.b.d.DiningApi` (in Dining)
+* `c.x.b.s.SettlementFacts` (in Settlement)
+* `c.x.b.a.AccessPolicy` (in Access)
+* `c.x.b.a.AuditLog` (in Audit)
+* `c.x.b.c.CatalogApi` (in Catalog)
+|Events listened to
+|* `c.x.b.s.model.event.RefundRecorded` (async) 
+* `c.x.b.s.model.event.PaymentRecorded` (async) 
+* `c.x.b.f.model.event.FiscalDocumentIssued` (async) 
+* `c.x.b.s.model.event.CreditChargePosted` (async) 
+* `c.x.b.o.model.event.OrderLinesVoided` (async) 
+* `org.springframework.boot.context.event.ApplicationReadyEvent` 
+|===
