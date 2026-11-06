@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Restore a backup.sh archive into a PostgreSQL database (D32, spec §11).
 #
-# Steps: decrypt (.age), check SHA256SUMS, check the dump with pg_restore --list, refuse a
+# Steps: check the ciphertext against its .sha256 sidecar (required in production), decrypt (.age, through
+# lib/age.sh into a private temporary directory), check the plaintext against the sidecar, check SHA256SUMS, check the dump with pg_restore --list, refuse a
 # target database that already holds user objects unless --force, then pg_restore in a single
 # transaction (all or nothing). With --force the archive is restored into a staging database
 # which then replaces the target, so nothing created after the backup survives (rollback after
@@ -16,7 +17,9 @@
 #   --force      replace a non-empty target database entirely (drops it, open connections included)
 #   --container  postgres container (default: the compose service "postgres" of deploy/compose.yaml)
 #   --db         target database (default: restaurantpro)
-#   --identity   age identity file, needed for .age archives (default: $BACKUP_AGE_IDENTITY)
+#   --identity   age identity file, needed for .age archives (default: $BACKUP_AGE_IDENTITY). It must be
+#                yours, mode 0600 or 0400, and outside deploy/ and the archive's directory (D98 rule 2):
+#                restores of encrypted backups belong on the restore host, never on the server
 # Exits non-zero on any failure; on failure before the swap the target is left as it was.
 set -euo pipefail
 umask 077
@@ -32,6 +35,10 @@ archive=""
 die() { echo "restore: $*" >&2; exit 1; }
 log() { echo "restore: $*" >&2; }
 sha256_check() { if command -v sha256sum >/dev/null; then sha256sum -c --quiet "$@"; else shasum -a 256 -c --quiet "$@"; fi; }
+# shellcheck source=lib/common.sh
+. "$DEPLOY_DIR/lib/common.sh"
+# shellcheck source=lib/age.sh
+. "$DEPLOY_DIR/lib/age.sh"
 
 while (($#)); do
   case "$1" in
@@ -46,6 +53,20 @@ while (($#)); do
 done
 [[ -n "$archive" ]] || die "usage: restore.sh [--force] [--container NAME] [--db NAME] [--identity FILE] ARCHIVE"
 [[ -f "$archive" ]] || die "archive not found: $archive"
+env_mode
+sidecar="${archive%.age}"
+sidecar="${sidecar%.tar}.tar.sha256"
+if [[ "$archive" == *.age ]]; then
+  [[ -n "$identity" ]] || die "encrypted archive: pass --identity or set BACKUP_AGE_IDENTITY"
+  require_identity "$identity" "$(dirname "$archive")"
+  if [[ -e "$sidecar" ]]; then
+    is_sidecar "$sidecar" || die "$sidecar is not a well-formed sidecar"
+    # Key-free first: damaged or swapped ciphertext is caught before anything is decrypted.
+    [[ "$(sha256_hex "$archive")" == "$(sidecar_cipher "$sidecar")" ]] || die "checksum mismatch: $archive does not match the ciphertext SHA-256 in $sidecar"
+  elif production; then
+    die "no sidecar $sidecar next to $archive: copy it too (production restores check it)"
+  fi
+fi
 if [[ -z "$container" ]]; then
   container="$(docker compose -f "$DEPLOY_DIR/compose.yaml" ps -q postgres)"
   [[ -n "$container" ]] || die "postgres service is not running (start it or pass --container)"
@@ -84,9 +105,10 @@ trap cleanup EXIT
 trap 'exit 130' INT TERM
 
 if [[ "$archive" == *.age ]]; then
-  command -v age >/dev/null || die "age is not installed"
-  [[ -n "$identity" ]] || die "encrypted archive: pass --identity or set BACKUP_AGE_IDENTITY"
-  age -d -i "$identity" -o "$work/payload.tar" "$archive" || die "cannot decrypt $archive"
+  age_decrypt "$identity" <"$archive" >"$work/payload.tar" || die "cannot decrypt $archive (wrong key?)"
+  if [[ -f "$sidecar" ]]; then
+    [[ "$(sha256_hex "$work/payload.tar")" == "$(sidecar_plain "$sidecar")" ]] || die "checksum mismatch against $sidecar: archive is corrupted"
+  fi
 else
   cp "$archive" "$work/payload.tar"
 fi

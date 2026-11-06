@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
 # Physical backup for point-in-time recovery (D90, spec §11: RPO 15 min). Pairs with pitr-restore.sh.
 #
-# PostgreSQL archives every finished WAL segment into the pg-wal-archive volume (compose.yaml,
-# postgres/archive-wal.sh). This script copies that off the database volume:
+# PostgreSQL archives every finished WAL segment into the pg-wal-archive volume, age-encrypted to every
+# recipient as <segment>.age plus its <segment>.sha256 sidecar (compose.yaml, postgres/archive-wal.sh, D98).
+# This script copies that off the database volume:
 #   default        a base backup (pg_basebackup -Ft -X stream, checked with pg_verifybackup), written to
-#                    <dir>/base/restaurantpro-base-<UTC timestamp>-<system id>-<start WAL segment>.tar[.age]
-#                  holding base.tar.gz, pg_wal.tar.gz, backup_manifest and SHA256SUMS; then the WAL sync
-#                  below; then retention: keeps the newest --keep base backups and deletes the WAL older
-#                  than the oldest kept one, both in <dir>/wal and in the pg-wal-archive volume.
-#   --wal-only     only the WAL sync: copies each archived file not yet in <dir>/wal there
-#                  (one <segment>[.age] file each). Run it every 5 minutes, then copy <dir> off the box.
+#                    <dir>/base/restaurantpro-base-<UTC timestamp>-<system id>-<start WAL segment>.tar.age
+#                  (and its .tar.sha256 sidecar), holding base.tar.gz, pg_wal.tar.gz, backup_manifest and
+#                  SHA256SUMS; then the WAL sync below; then retention: keeps the newest --keep base backups
+#                  and deletes the WAL older than the oldest kept one, in <dir>/wal and in the volume.
+#   --wal-only     only the WAL sync: copies each archived <segment>.age and its sidecar not yet in <dir>/wal
+#                  there, as they are (never re-encrypted). Run it every 5 minutes, then offbox-sync.sh.
+#   --encrypt-legacy  upgrade from S27 (D98 rule 3e): encrypts the plaintext WAL in the volume, the plaintext
+#                  base backups and WAL in <dir>, and the plaintext logical archives in $BACKUP_DIR (default
+#                  deploy/backups), in place, removing each plaintext once its .age is on disk; then runs
+#                  as default (a new base backup). In production a default run refuses plaintext and says so.
 #   --new-cluster  start a new archive chain for the running cluster: the first run of a new installation,
 #                  and after the database volume was recreated (a new cluster, whose WAL names start again).
 #                  Moves aside whatever is not this cluster's healthy archive (another cluster's marker, files
@@ -22,14 +27,19 @@
 # A run also fails, after doing its work, while PostgreSQL's archiving is failing.
 # Lock: one run per <dir>. --wal-only skips (exit 0) while another run holds it, but fails once the lock
 # is older than an hour; a base backup waits up to an hour.
+# Production (RESTAURANTPRO_ENVIRONMENT, default production) refuses, writing nothing, without a recipients
+# file of at least two keys, with recipients other than the ones recorded in <dir>/RECIPIENTS_SHA256 (until
+# verify-backups.sh --accept-recipients-change), with an age identity on the server, or with loose modes or
+# owners (D98). Test
+# mode accepts a single BACKUP_AGE_RECIPIENT, and without any recipient writes plaintext with a WARNING.
 #
-# Usage: deploy/basebackup.sh [--wal-only | --new-cluster] [--dir DIR] [--keep N] [--container NAME]
-#                             [--age-recipient RECIPIENT]
-#   --dir            where backups go (default: $PITR_DIR or deploy/backups/pitr)
-#   --keep           base backups to keep, newest first (default: $PITR_KEEP or 7)
-#   --container      postgres container (default: the compose service "postgres" of deploy/compose.yaml)
-#   --age-recipient  encrypt with age to this public key, as backup.sh (default: $BACKUP_AGE_RECIPIENT;
-#                    unset = no encryption)
+# Usage: deploy/basebackup.sh [--wal-only | --new-cluster | --encrypt-legacy] [--dir DIR] [--keep N]
+#                             [--container NAME] [--recipients-file FILE]
+#   --dir              where backups go (default: $PITR_DIR or deploy/backups/pitr)
+#   --keep             base backups to keep, newest first (default: $PITR_KEEP or 7)
+#   --container        postgres container (default: the compose service "postgres" of deploy/compose.yaml)
+#   --recipients-file  age recipients, as backup.sh (default: $BACKUP_AGE_RECIPIENTS_FILE or
+#                      deploy/backup-recipients.txt)
 # Prints the base backup path on stdout (nothing with --wal-only). Exits non-zero on any failure.
 set -euo pipefail
 umask 077
@@ -39,32 +49,81 @@ DB_USER=restaurantpro
 ARCHIVE_IN_CONTAINER=/wal-archive
 MARKER=SYSTEM_IDENTIFIER
 LOCK_WAIT=3600 # seconds a base backup waits for a running --wal-only (or other) run
-WAL_NAME='^([0-9A-F]{24}(\.partial|\.[0-9A-F]{8}\.backup)?|[0-9A-F]{8}\.history)$'
+WAL_PLAIN='([0-9A-F]{24}(\.partial|\.[0-9A-F]{8}\.backup)?|[0-9A-F]{8}\.history)'
+WAL_NAME="^$WAL_PLAIN\$"                       # a plaintext WAL file (S27, or test mode)
+WAL_ANY="^$WAL_PLAIN(\.age|\.sha256)?\$"         # any file of the archive
 dir="${PITR_DIR:-$DEPLOY_DIR/backups/pitr}"
 keep="${PITR_KEEP:-7}"
 container=""
-recipient="${BACKUP_AGE_RECIPIENT:-}"
+recipients=""
 mode=base
 moved_aside=false
+encrypt_legacy=false
 
 die() { echo "basebackup: $*" >&2; exit 1; }
 log() { echo "basebackup: $*" >&2; }
 sha256() { if command -v sha256sum >/dev/null; then sha256sum "$@"; else shasum -a 256 "$@"; fi; }
+# shellcheck source=lib/common.sh
+. "$DEPLOY_DIR/lib/common.sh"
+# shellcheck source=lib/age.sh
+. "$DEPLOY_DIR/lib/age.sh"
 
 while (($#)); do
   case "$1" in
     --wal-only) mode="wal-only"; shift ;;
     --new-cluster) mode="new-cluster"; shift ;;
+    --encrypt-legacy) encrypt_legacy=true; shift ;;
     --dir) dir="${2:?--dir needs a value}"; shift 2 ;;
     --keep) keep="${2:?--keep needs a value}"; shift 2 ;;
     --container) container="${2:?--container needs a value}"; shift 2 ;;
-    --age-recipient) recipient="${2:?--age-recipient needs a value}"; shift 2 ;;
+    --recipients-file) recipients="${2:?--recipients-file needs a value}"; shift 2 ;;
     -h | --help) awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0" >&2; exit 0 ;;
     *) die "unknown argument: $1" ;;
   esac
 done
 [[ "$keep" =~ ^[1-9][0-9]*$ ]] || die "--keep must be a positive integer"
-if [[ -n "$recipient" ]]; then command -v age >/dev/null || die "age is not installed but a recipient is configured"; fi
+[[ "$mode" == base ]] || ! $encrypt_legacy || die "--encrypt-legacy is a run of its own: not with --$mode"
+env_mode
+recipients="${recipients:-$(recipients_file)}"
+legacy_dir="${BACKUP_DIR:-$DEPLOY_DIR/backups}" # backup.sh's archives, for --encrypt-legacy
+# Plaintext staging stays outside <dir>, which is copied off the box.
+work="$(mktemp -d "${TMPDIR:-/tmp}/rp-basebackup.XXXXXX")"
+remote="" # base backup directory inside the container, while it exists
+locked=false
+cleanup() {
+  rm -rf "$work"
+  remove_partials
+  if [[ -n "$remote" ]]; then docker exec "$container" rm -rf "$remote" >/dev/null 2>&1 || true; fi
+  if $locked; then rm -rf "$lock"; fi
+}
+trap cleanup EXIT
+# D98: every check before anything is written.
+if production; then
+  [[ -z "${BACKUP_AGE_RECIPIENT:-}" ]] || die "BACKUP_AGE_RECIPIENT (a single key) is for test mode only; production encrypts to the --recipients-file (operational + recovery key)"
+  require_safe_recipients "$recipients" 2
+  refuse_identity_on_server "$dir"
+  require_safe_scripts
+  record=record
+  if [[ -e "$dir" ]]; then
+    require_private_dir "$dir"
+    record="$(require_recorded_recipients "$dir" "$recipients")"
+  fi
+  legacy_record=""
+  if $encrypt_legacy && [[ -e "$legacy_dir" ]]; then
+    require_private_dir "$legacy_dir"
+    legacy_record="$(require_recorded_recipients "$legacy_dir" "$recipients")"
+  fi
+elif [[ -n "$(recipient_keys "$recipients" 2>/dev/null)" ]]; then
+  require_safe_recipients "$recipients" 1
+elif [[ -n "${BACKUP_AGE_RECIPIENT:-}" ]]; then
+  echo "$BACKUP_AGE_RECIPIENT" >"$work/recipient.txt"
+  recipients="$work/recipient.txt"
+  require_safe_recipients "$recipients" 1
+else
+  recipients=""
+  ! $encrypt_legacy || die "--encrypt-legacy needs recipients"
+  log "WARNING: test mode without recipients: backups are NOT encrypted (developer stacks only)"
+fi
 if [[ -z "$container" ]]; then
   container="$(docker compose -f "$DEPLOY_DIR/compose.yaml" ps -q postgres)"
   [[ -n "$container" ]] || die "postgres service is not running (start the stack or pass --container)"
@@ -74,10 +133,10 @@ in_archive() { docker exec "$container" sh -c 'cd "$0" && exec "$@"' "$ARCHIVE_I
 [[ "$(sql 'SHOW archive_mode')" == on ]] || die "archive_mode is not on in $container: WAL archiving is not configured (compose.yaml)"
 
 mkdir -p "$dir"
+if production && [[ "$record" == record ]]; then record_recipients "$dir" "$recipients"; fi
 # One run at a time per <dir>: a lock directory (mkdir is atomic; no flock on macOS) whose "owner" file
 # holds the owner's pid and that process's start time, so a reused pid is not mistaken for the owner.
 lock="$dir/.lock"
-locked=false
 proc_start() { ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//; s/ *$//'; } # empty when the pid is gone
 lock_owner() { cat "$1/owner" 2>/dev/null | paste -sd '|' -; }             # "pid|start time"
 lock_is_stale() { # $1 lock dir; a lock without an owner file is stale once it is a minute old
@@ -105,14 +164,6 @@ take_lock() {
   rm -rf "$aside"
   take_lock
 }
-work=""
-remote="" # base backup directory inside the container, while it exists
-cleanup() {
-  if [[ -n "$work" ]]; then rm -rf "$work"; fi
-  if [[ -n "$remote" ]]; then docker exec "$container" rm -rf "$remote" >/dev/null 2>&1 || true; fi
-  if $locked; then rm -rf "$lock"; fi
-}
-trap cleanup EXIT
 if [[ "$mode" == wal-only ]]; then
   if ! take_lock; then
     # Skipping is right while a base backup runs; a lock held longer than any run should take is not.
@@ -130,12 +181,16 @@ else
   done
 fi
 
+# Base backup copies of killed runs inside the container (plaintext, outside any volume): older than an hour.
+docker exec "$container" find /tmp -maxdepth 1 -type d -name 'rp-basebackup-*' -mmin +60 -exec rm -rf {} + \
+  || log "WARNING: could not sweep old /tmp/rp-basebackup-* in $container"
+
 # The cluster the archive and <dir> must belong to.
 sysid="$(sql 'SELECT system_identifier FROM pg_control_system()')"
 [[ "$sysid" =~ ^[0-9]+$ ]] || die "cannot read the system identifier of $container"
 archive_owner="$(in_archive cat "$MARKER" 2>/dev/null || true)"
 dir_owner="$(cat "$dir/$MARKER" 2>/dev/null || true)"
-archive_has_files() { [[ -n "$(in_archive ls -1 | grep -E "$WAL_NAME|\.tmp$" || true)" ]]; }
+archive_has_files() { [[ -n "$(in_archive ls -1 | grep -E "$WAL_ANY|\.tmp$" || true)" ]]; }
 dir_has_files() { [[ -n "$(find "$dir/base" "$dir/wal" -type f 2>/dev/null | head -1)" ]]; }
 archive_failing() {
   sql "SELECT last_failed_wal FROM pg_stat_archiver WHERE last_failed_time > coalesce(last_archived_time, '-infinity'::timestamptz)"
@@ -199,21 +254,54 @@ if [[ "$(cat "$dir/$MARKER" 2>/dev/null || true)" != "$sysid" ]]; then
 fi
 
 mkdir -p "$dir/base" "$dir/wal"
-# Leftovers of killed runs: partial copies in <dir> (encrypted, or as plain as the backups themselves).
+# Leftovers of killed runs: partial copies in <dir> (ciphertext, or test mode plaintext).
 find "$dir/base" "$dir/wal" -maxdepth 1 -type f -name '*.tmp.*' -mmin +60 -exec rm -f {} +
-[[ -n "$recipient" ]] || log "WARNING: backups are NOT encrypted (spec §10 asks for encrypted backups); set BACKUP_AGE_RECIPIENT"
-# Plaintext staging stays outside <dir>, which is copied off the box.
-work="$(mktemp -d "${TMPDIR:-/tmp}/rp-basebackup.XXXXXX")"
 
-# Writes $1 to $2 (age-encrypted when a recipient is set), flushed to disk, appearing complete or not at all.
-seal() {
-  local tmp
-  tmp="$(mktemp "$2.tmp.XXXXXX")"
-  if [[ -n "$recipient" ]]; then age -r "$recipient" -o "$tmp" "$1"; else cp "$1" "$tmp"; fi
-  sync "$tmp" # coreutils/busybox: fsync of the file; macOS: a global sync
-  mv "$tmp" "$2"
-  sync "$(dirname "$2")"
+# S27 plaintext (D98 rule 3e): WAL in the volume, base backups and WAL in <dir> (also in old-*/ set aside),
+# and backup.sh archives in $legacy_dir. Production refuses to work next to it; --encrypt-legacy encrypts it.
+volume_plaintext() { in_archive find . -type f | sed 's|^\./||' | while IFS= read -r f; do
+  if [[ "$(basename "$f")" =~ $WAL_NAME ]]; then echo "$f"; fi; done; }
+dir_plaintext() {
+  find "$dir" -path "$dir/.lock" -prune -o -type f \( -name 'restaurantpro-base-*.tar' -o -path '*/wal/*' \) -print \
+    | while IFS= read -r f; do if [[ "$f" == *.tar || "$(basename "$f")" =~ $WAL_NAME ]]; then echo "$f"; fi; done
 }
+logical_plaintext() {
+  if [[ -d "$legacy_dir" ]]; then find "$legacy_dir" -maxdepth 1 -type f -name '*.tar'; fi
+}
+encrypt_in_place() { # $1 plaintext file on this host: $1.age and its sidecar, then the plaintext goes
+  local f=$1
+  if [[ -e "$f.age" ]]; then
+    [[ "$(sidecar_plain "$f.sha256" 2>/dev/null)" == "$(sha256_hex "$f")" ]] \
+      || die "$f and $f.age both exist but the sidecar does not match: check them by hand"
+  else
+    is_age_file "$f" && die "$f is already age ciphertext but lacks the .age suffix: rename it to $f.age"
+    seal "$f" "$f" "$recipients"
+  fi
+  rm -f -- "$f"
+  sync "$(dirname "$f")"
+}
+if $encrypt_legacy; then
+  n=0
+  while IFS= read -r f; do
+    # shellcheck disable=SC2016 # expanded by the container shell
+    in_archive sh -ec 'umask 077; sh /etc/restaurantpro/archive-wal.sh "/wal-archive/$0" "$0"; chown postgres:postgres "$0.age" "$0.sha256"; rm -f -- "$0"; sync "$(dirname "$0")"' "$f" \
+      || die "could not encrypt $f in the pg-wal-archive volume (is the recipients file mounted? docker compose up -d)"
+    n=$((n + 1))
+  done < <(volume_plaintext)
+  log "--encrypt-legacy: encrypted $n plaintext WAL file(s) in the pg-wal-archive volume"
+  n=0
+  while IFS= read -r f; do encrypt_in_place "$f"; n=$((n + 1)); done < <(dir_plaintext)
+  log "--encrypt-legacy: encrypted $n plaintext file(s) in $dir"
+  n=0
+  if production && [[ "$legacy_record" == record ]]; then record_recipients "$legacy_dir" "$recipients"; fi
+  while IFS= read -r f; do encrypt_in_place "$f"; n=$((n + 1)); done < <(logical_plaintext)
+  log "--encrypt-legacy: encrypted $n plaintext logical archive(s) in $legacy_dir; now a new base backup"
+elif production; then
+  legacy="$( (volume_plaintext | sed 's|^|pg-wal-archive volume: |'; dir_plaintext) | head -3 || true)"
+  [[ -z "$legacy" ]] || die "plaintext backups from before D98 found, e.g.:
+$legacy
+  Production never writes next to plaintext. Run: ./basebackup.sh --encrypt-legacy (deploy/README.md, \"Upgrade from S27\")"
+fi
 
 base_archive=""
 if [[ "$mode" == base ]]; then
@@ -231,39 +319,46 @@ if [[ "$mode" == base ]]; then
   remote=""
   (cd "$work/base" && sha256 backup_manifest base.tar.gz pg_wal.tar.gz >SHA256SUMS)
   (cd "$work/base" && COPYFILE_DISABLE=1 tar -cf ../payload.tar SHA256SUMS backup_manifest base.tar.gz pg_wal.tar.gz)
-  name="restaurantpro-base-$stamp-$sysid-$start_wal.tar"
-  [[ -n "$recipient" ]] && name="$name.age"
-  base_archive="$dir/base/$name"
-  [[ ! -e "$base_archive" ]] || die "$base_archive already exists"
-  seal "$work/payload.tar" "$base_archive"
+  base_archive="$dir/base/restaurantpro-base-$stamp-$sysid-$start_wal.tar"
+  [[ ! -e "$base_archive" && ! -e "$base_archive.age" ]] || die "$base_archive already exists"
+  seal "$work/payload.tar" "$base_archive" "$recipients"
+  [[ -z "$recipients" ]] || base_archive="$base_archive.age"
   rm -rf "$work/base" "$work/payload.tar"
   log "wrote $base_archive ($(wc -c <"$base_archive" | tr -d ' ') bytes, starts at WAL $start_wal)"
 fi
 
 # WAL sync: segments, timeline history and backup history files; never the .tmp of a copy in progress.
-new=()
+# Encrypted files are copied as they are, sidecar first (a <f>.age in the volume always has its sidecar);
+# plaintext ones (test mode only, by now) are sealed like a base backup.
+new=()   # <f>.age files to copy with their sidecars
+plain=() # plaintext <f> files
 while IFS= read -r f; do
-  [[ "$f" =~ $WAL_NAME ]] || continue
-  [[ -e "$dir/wal/$f" || -e "$dir/wal/$f.age" ]] || new+=("$f")
+  if [[ "$f" == *.age && "${f%.age}" =~ $WAL_NAME ]]; then
+    [[ -e "$dir/wal/$f" ]] || new+=("$f")
+  elif [[ "$f" =~ $WAL_NAME ]]; then
+    [[ -e "$dir/wal/$f" || -e "$dir/wal/$f.age" ]] || plain+=("$f")
+  fi
 done < <(in_archive ls -1)
-if ((${#new[@]})); then
+if ((${#new[@]} + ${#plain[@]})); then
   mkdir "$work/wal"
-  docker exec "$container" tar -C "$ARCHIVE_IN_CONTAINER" -cf - "${new[@]}" | tar -xf - -C "$work/wal"
-  for f in "${new[@]}"; do
-    target="$dir/wal/$f"
-    [[ -n "$recipient" ]] && target="$target.age"
-    seal "$work/wal/$f" "$target"
+  for f in ${new[@]+"${new[@]}"}; do echo "${f%.age}.sha256"; echo "$f"; done >"$work/list"
+  for f in ${plain[@]+"${plain[@]}"}; do echo "$f"; done >>"$work/list"
+  docker exec -i "$container" tar -C "$ARCHIVE_IN_CONTAINER" -cf - -T - <"$work/list" | tar -xf - -C "$work/wal"
+  for f in ${new[@]+"${new[@]}"}; do
+    put_file "$work/wal/${f%.age}.sha256" "$dir/wal/${f%.age}.sha256"
+    put_file "$work/wal/$f" "$dir/wal/$f"
   done
-  rm -rf "$work/wal"
+  for f in ${plain[@]+"${plain[@]}"}; do seal "$work/wal/$f" "$dir/wal/$f" "$recipients"; done
+  rm -rf "$work/wal" "$work/list"
 fi
-log "WAL sync: ${#new[@]} new file(s) in $dir/wal"
+log "WAL sync: $((${#new[@]} + ${#plain[@]})) new file(s) in $dir/wal"
 
 if [[ "$mode" == base ]]; then
   bases=()
   while IFS= read -r f; do bases+=("$f"); done < <(cd "$dir/base" && find . -maxdepth 1 -type f \
     \( -name "restaurantpro-base-*Z-$sysid-*.tar" -o -name "restaurantpro-base-*Z-$sysid-*.tar.age" \) | sed 's|^\./||' | sort)
   for ((i = 0; i < ${#bases[@]} - keep; i++)); do
-    rm -f -- "${dir:?}/base/${bases[i]}"
+    rm -f -- "${dir:?}/base/${bases[i]}" "${dir:?}/base/${bases[i]%.tar*}.tar.sha256"
     log "retention: deleted base ${bases[i]}"
   done
   oldest="${bases[$((${#bases[@]} > keep ? ${#bases[@]} - keep : 0))]}"

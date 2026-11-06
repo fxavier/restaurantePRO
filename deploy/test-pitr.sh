@@ -2,7 +2,8 @@
 # Point-in-time recovery drill (PRD S27, acceptance A33; D90).
 #
 # Starts the postgres service of deploy/compose.yaml itself (throwaway project, secrets and volumes),
-# so the WAL settings under test are the ones that ship. Then:
+# so the WAL settings under test are the ones that ship. Production mode (D98) with throwaway age keys
+# (operational + recovery) outside deploy/: WAL is encrypted by the archive_command. Then:
 #   1. checks wal_level / archive_mode / archive_timeout on the running server
 #   2. loads deploy/test/sample.sql and writes W1
 #   3. the first default basebackup.sh run refuses the unmarked, non-empty archive; the documented first
@@ -26,7 +27,8 @@
 #      --new-cluster moves them aside; a second --new-cluster is refused (markers match, archiving
 #      healthy); a restore of the new base to T3 works
 # Also: base backup names carry the cluster's system identifier, no plaintext staging or partial
-# files are left in the backup directory, --wal-only skips behind a live lock, clears a stale one
+# files are left in the backup directory, every file in it and in the pg-wal-archive volume is age
+# ciphertext with its sidecar (or a marker), --wal-only skips behind a live lock, clears a stale one
 # (dead or reused pid) and fails behind a 2-hour-old one, and --force never replaces an object
 # pitr-restore.sh did not create.
 # Exits non-zero on any mismatch.
@@ -68,8 +70,20 @@ cleanup() {
 trap cleanup EXIT
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
+die() { fail "$@"; }
 ok() { echo "ok: $*" >&2; }
 step() { echo "--- $*" >&2; }
+# shellcheck source=lib/common.sh
+. "$DEPLOY_DIR/lib/common.sh"
+# shellcheck source=lib/age.sh
+. "$DEPLOY_DIR/lib/age.sh"
+# shellcheck source=test/keys.sh
+. "$DEPLOY_DIR/test/keys.sh"
+KEYS="$WORK/keys"
+mkdir -m 700 "$KEYS"
+age_image_ready
+make_throwaway_keys "$KEYS"
+pitr_restore() { "$DEPLOY_DIR/pitr-restore.sh" --identity "$KEYS/operational.key" "$@"; }
 
 # Throwaway secrets and the variables compose.yaml requires; the backend and Caddy are never started.
 mkdir "$WORK/secrets"
@@ -132,15 +146,21 @@ start_service() { # starts the compose postgres service and sets SRC
   fail "postgres did not become ready"
 }
 sysid_of() { q "$1" 'SELECT system_identifier FROM pg_control_system()'; }
-no_staging_left() { # no plaintext work dirs or partial copies in the backup directory
-  local left
+no_staging_left() { # no plaintext work dirs, partial copies or plaintext files in the backup directory or the volume
+  local left volume_copy
   left="$(find "$WORK/pitr" \( -name '.work.*' -o -name '*.tmp*' \) -print)"
   [[ -z "$left" ]] || fail "left in the backup directory: $left"
+  assert_no_plaintext "$WORK/pitr" || fail "plaintext in the backup directory"
+  volume_copy="$(copy_out "$SRC" /wal-archive)"
+  assert_no_plaintext "$volume_copy" || { rm -rf "$volume_copy"; fail "plaintext in the pg-wal-archive volume"; }
+  rm -rf "$volume_copy"
 }
 
 step "starting the postgres service of compose.yaml as project $RUN_ID"
 SRC=""
 start_service
+WAL_MAGIC="$(docker exec "$SRC" sh -c 'f=$(ls "$PGDATA/pg_wal" | grep -E "^[0-9A-F]{24}$" | head -1); head -c 2 "$PGDATA/pg_wal/$f"' | od -An -tx1 | tr -d ' \n')"
+export WAL_MAGIC
 
 step "1. WAL archiving settings"
 [[ "$(q "$SRC" 'SHOW wal_level')" == replica ]] || fail "wal_level is $(q "$SRC" 'SHOW wal_level'), expected replica"
@@ -166,11 +186,11 @@ grep -q 'unmarked archive' "$WORK/first.err" || fail "unexpected: $(cat "$WORK/f
 base="$("$DEPLOY_DIR/basebackup.sh" --new-cluster --container "$SRC" --dir "$WORK/pitr" --keep 2)"
 [[ -f "$base" ]] || fail "basebackup.sh did not report an existing archive (got '$base')"
 sysid="$(sysid_of "$SRC")"
-[[ "$(basename "$base")" == restaurantpro-base-*Z-"$sysid"-[0-9A-F]*.tar ]] || fail "base backup name lacks the system identifier $sysid"
+[[ "$(basename "$base")" == restaurantpro-base-*Z-"$sysid"-[0-9A-F]*.tar.age ]] || fail "base backup name lacks the system identifier $sysid, or is not .tar.age"
 [[ "$(cat "$WORK/pitr/SYSTEM_IDENTIFIER")" == "$sysid" ]] || fail "backup directory not marked with cluster $sysid"
 [[ "$(docker exec "$SRC" cat /wal-archive/SYSTEM_IDENTIFIER)" == "$sysid" ]] || fail "WAL archive not marked with cluster $sysid"
 no_staging_left
-ok "first default run refused (unmarked archive); --new-cluster wrote base backup $(basename "$base"); archive and backup directory marked with cluster $sysid; no staging left"
+ok "first default run refused (unmarked archive); --new-cluster wrote base backup $(basename "$base"); archive and backup directory marked with cluster $sysid; no staging or plaintext left"
 
 step "4. W2, target time T, W3"
 w2="$(write "$SRC" 2 'W2 after the base backup, before T')"
@@ -185,9 +205,10 @@ w3_wal="$(q "$SRC" 'SELECT pg_walfile_name(pg_current_wal_insert_lsn())')"
 q "$SRC" 'SELECT pg_switch_wal()' >/dev/null
 wait_archived "$SRC" "$w3_wal" 60
 "$DEPLOY_DIR/basebackup.sh" --wal-only --container "$SRC" --dir "$WORK/pitr" 2>/dev/null
-[[ -f "$WORK/pitr/wal/$w3_wal" ]] || fail "basebackup.sh --wal-only did not copy $w3_wal"
+[[ -f "$WORK/pitr/wal/$w3_wal.age" && -f "$WORK/pitr/wal/$w3_wal.sha256" ]] || fail "basebackup.sh --wal-only did not copy $w3_wal.age and its sidecar"
+docker exec -i "$SRC" sh -c "cmp -s /wal-archive/$w3_wal.age /dev/stdin" <"$WORK/pitr/wal/$w3_wal.age" || fail "--wal-only re-encrypted $w3_wal instead of copying it"
 no_staging_left
-ok "$w3_wal archived to the pg-wal-archive volume and copied to $(basename "$WORK")/pitr/wal"
+ok "$w3_wal archived encrypted to the pg-wal-archive volume and copied as is (byte-identical) to $(basename "$WORK")/pitr/wal"
 
 step "5b. one run at a time per backup directory"
 sleep 600 &
@@ -195,7 +216,7 @@ HOLDER=$!
 proc_start() { ps -o lstart= -p "$1" | sed 's/^ *//; s/ *$//'; } # as basebackup.sh records it
 holder_start="$(proc_start "$HOLDER")"
 lock="$WORK/pitr/.lock"
-hold_lock() { rm -rf "$lock"; mkdir "$lock"; printf '%s\n%s\n' "$1" "$2" >"$lock/owner"; }
+hold_lock() { rm -rf "$lock"; (umask 077 && mkdir "$lock" && printf '%s\n%s\n' "$1" "$2" >"$lock/owner"); }
 wal_only() { "$DEPLOY_DIR/basebackup.sh" --wal-only --container "$SRC" --dir "$WORK/pitr" 2>"$WORK/$1.err"; }
 hold_lock "$HOLDER" "$holder_start"
 wal_only live || fail "--wal-only failed while a live run holds the lock: $(cat "$WORK/live.err")"
@@ -219,7 +240,7 @@ ok "--wal-only: skips behind a live owner, clears a reused-pid or dead owner's l
 
 step "6. restore to T from the copied WAL into an isolated container"
 t0=$SECONDS
-restored="$("$DEPLOY_DIR/pitr-restore.sh" --target-time "$target" --name "$PITR_NAME" --wal-dir "$WORK/pitr/wal" "$base")"
+restored="$(pitr_restore --target-time "$target" --name "$PITR_NAME" --wal-dir "$WORK/pitr/wal" "$base")"
 rto=$((SECONDS - t0))
 [[ "$restored" == "$PITR_NAME" ]] || fail "pitr-restore.sh printed '$restored'"
 [[ "$(rows "$PITR_NAME")" == "1,2" ]] || fail "rows after restore to T: $(rows "$PITR_NAME"), expected 1,2"
@@ -244,26 +265,26 @@ for _ in $(seq 1 60); do
   docker exec "$LIVE" pg_isready -q -h 127.0.0.1 -U "$DB_USER" -d "$DB" && break
   sleep 1
 done
-"$DEPLOY_DIR/restore.sh" --container "$LIVE" "$export_archive" 2>/dev/null
+"$DEPLOY_DIR/restore.sh" --container "$LIVE" --identity "$KEYS/operational.key" "$export_archive" 2>/dev/null
 [[ "$(rows "$LIVE")" == "1,2" ]] || fail "rows after backup.sh + restore.sh of the restored data: $(rows "$LIVE")"
 ok "exported with backup.sh and loaded with restore.sh: rows $(rows "$LIVE")"
 docker rm -f -v "$LIVE" >/dev/null
 
 step "7. a second restore on the same name is refused without --force"
-if "$DEPLOY_DIR/pitr-restore.sh" --target-time latest --name "$PITR_NAME" --wal-dir "$WORK/pitr/wal" "$base" 2>"$WORK/refused.err" >/dev/null; then
+if pitr_restore --target-time latest --name "$PITR_NAME" --wal-dir "$WORK/pitr/wal" "$base" 2>"$WORK/refused.err" >/dev/null; then
   fail "pitr-restore.sh replaced an existing restore without --force"
 fi
 grep -q 'already exists' "$WORK/refused.err" || fail "not refused by the existing-target guard: $(cat "$WORK/refused.err")"
 [[ "$(rows "$PITR_NAME")" == "1,2" ]] || fail "refused restore changed the existing one"
 ok "refused ($(head -1 "$WORK/refused.err")); existing restore unchanged"
 docker volume create "$OTHER-data" >/dev/null # same naming, but not made by pitr-restore.sh
-if "$DEPLOY_DIR/pitr-restore.sh" --force --target-time latest --name "$OTHER" --wal-dir "$WORK/pitr/wal" "$base" 2>"$WORK/foreign.err" >/dev/null; then
+if pitr_restore --force --target-time latest --name "$OTHER" --wal-dir "$WORK/pitr/wal" "$base" 2>"$WORK/foreign.err" >/dev/null; then
   fail "pitr-restore.sh --force replaced a volume it did not create"
 fi
 grep -q 'was not created by pitr-restore.sh' "$WORK/foreign.err" || fail "unexpected: $(cat "$WORK/foreign.err")"
 docker volume rm "$OTHER-data" >/dev/null || fail "the foreign volume is gone"
 src_name="$(docker container inspect -f '{{.Name}}' "$SRC" | sed 's|^/||')"
-if "$DEPLOY_DIR/pitr-restore.sh" --force --target-time latest --name "$src_name" --wal-dir "$WORK/pitr/wal" "$base" 2>"$WORK/live.err" >/dev/null; then
+if pitr_restore --force --target-time latest --name "$src_name" --wal-dir "$WORK/pitr/wal" "$base" 2>"$WORK/live.err" >/dev/null; then
   fail "pitr-restore.sh --force replaced the compose postgres container"
 fi
 grep -q 'belongs to a Docker Compose project' "$WORK/live.err" || fail "unexpected: $(cat "$WORK/live.err")"
@@ -274,7 +295,7 @@ step "8. a target time beyond the archived WAL fails and leaves nothing behind"
 docker rm -f -v "$PITR_NAME" >/dev/null
 docker volume rm "$PITR_NAME-data" >/dev/null
 future="$(date -u -v+1d +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '+1 day' +%Y-%m-%dT%H:%M:%SZ)"
-if "$DEPLOY_DIR/pitr-restore.sh" --target-time "$future" --name "$PITR_NAME" --wal-dir "$WORK/pitr/wal" "$base" 2>"$WORK/future.err" >/dev/null; then
+if pitr_restore --target-time "$future" --name "$PITR_NAME" --wal-dir "$WORK/pitr/wal" "$base" 2>"$WORK/future.err" >/dev/null; then
   fail "pitr-restore.sh succeeded with a target the WAL does not reach"
 fi
 grep -q 'recovery ended before configured recovery target was reached' "$WORK/future.err" \
@@ -300,7 +321,7 @@ fi
 compose rm -s -f postgres >/dev/null 2>&1
 docker volume rm "${RUN_ID}_db-data" >/dev/null || fail "could not delete the database volume"
 t0=$SECONDS
-"$DEPLOY_DIR/pitr-restore.sh" --target-time latest --name "$PITR_NAME" --wal-volume "${RUN_ID}_pg-wal-archive" "$base" >/dev/null
+pitr_restore --target-time latest --name "$PITR_NAME" --wal-volume "${RUN_ID}_pg-wal-archive" "$base" >/dev/null
 rto=$((SECONDS - t0))
 [[ "$(rows "$PITR_NAME")" == "1,2,3,4" ]] || fail "rows after restore to latest: $(rows "$PITR_NAME"), expected 1,2,3,4"
 ok "database container and volume deleted; restore to latest from the pg-wal-archive volume has W1-W4"
@@ -331,7 +352,7 @@ done
 ok "the new cluster cannot archive $clash: the old cluster's file of that name is in the archive"
 new_base="$("$DEPLOY_DIR/basebackup.sh" --new-cluster --container "$SRC" --dir "$WORK/pitr" 2>"$WORK/new.err")" \
   || fail "basebackup.sh --new-cluster failed: $(cat "$WORK/new.err")"
-compgen -G "$WORK/pitr/old-$sysid-*/base/*.tar" >/dev/null || fail "old base backups not moved aside"
+compgen -G "$WORK/pitr/old-$sysid-*/base/*.tar.age" >/dev/null || fail "old base backups not moved aside"
 [[ -n "$(docker exec "$SRC" sh -c "ls -d /wal-archive/old-$sysid-*")" ]] || fail "old WAL not moved aside in the volume"
 [[ "$(cat "$WORK/pitr/SYSTEM_IDENTIFIER")" == "$new_sysid" ]] || fail "backup directory not re-marked"
 wait_archived "$SRC" "$clash" 120
@@ -345,7 +366,7 @@ n2_wal="$(q "$SRC" 'SELECT pg_walfile_name(pg_current_wal_insert_lsn())')"
 q "$SRC" 'SELECT pg_switch_wal()' >/dev/null
 wait_archived "$SRC" "$n2_wal" 60
 "$DEPLOY_DIR/basebackup.sh" --wal-only --container "$SRC" --dir "$WORK/pitr" 2>/dev/null
-"$DEPLOY_DIR/pitr-restore.sh" --force --target-time "$target2" --name "$PITR_NAME" --wal-dir "$WORK/pitr/wal" "$new_base" >/dev/null 2>&1 \
+pitr_restore --force --target-time "$target2" --name "$PITR_NAME" --wal-dir "$WORK/pitr/wal" "$new_base" >/dev/null 2>&1 \
   || fail "restore of the new cluster to T2 failed"
 [[ "$(rows "$PITR_NAME")" == "11" ]] || fail "rows after restore to T2: $(rows "$PITR_NAME"), expected 11"
 no_staging_left
@@ -369,7 +390,7 @@ grep -q 'unmarked archive' "$WORK/unmarked.err" || fail "unexpected: $(cat "$WOR
 ok "refused: $(grep -m1 'unmarked archive' "$WORK/unmarked.err" | sed 's/^basebackup: //'); nothing changed"
 base3="$("$DEPLOY_DIR/basebackup.sh" --new-cluster --container "$SRC" --dir "$WORK/pitr" 2>"$WORK/new3.err")" \
   || fail "basebackup.sh --new-cluster failed on an unmarked archive: $(cat "$WORK/new3.err")"
-compgen -G "$WORK/pitr/old-unmarked-*/base/*.tar" >/dev/null || fail "unmarked backups not moved aside"
+compgen -G "$WORK/pitr/old-unmarked-*/base/*.tar.age" >/dev/null || fail "unmarked backups not moved aside"
 (("$(unmarked_asides)" == asides_before + 1)) || fail "unmarked WAL not moved aside in the volume"
 [[ "$(cat "$WORK/pitr/SYSTEM_IDENTIFIER")" == "$third_sysid" ]] || fail "backup directory not marked with $third_sysid"
 ok "--new-cluster moved the unmarked files aside; new base $(basename "$base3")"
@@ -387,7 +408,7 @@ m2_wal="$(q "$SRC" 'SELECT pg_walfile_name(pg_current_wal_insert_lsn())')"
 q "$SRC" 'SELECT pg_switch_wal()' >/dev/null
 wait_archived "$SRC" "$m2_wal" 60
 "$DEPLOY_DIR/basebackup.sh" --wal-only --container "$SRC" --dir "$WORK/pitr" 2>/dev/null
-"$DEPLOY_DIR/pitr-restore.sh" --force --target-time "$target3" --name "$PITR_NAME" --wal-dir "$WORK/pitr/wal" "$base3" >/dev/null 2>&1 \
+pitr_restore --force --target-time "$target3" --name "$PITR_NAME" --wal-dir "$WORK/pitr/wal" "$base3" >/dev/null 2>&1 \
   || fail "restore of the third cluster to T3 failed"
 [[ "$(rows "$PITR_NAME")" == "21" ]] || fail "rows after restore to T3: $(rows "$PITR_NAME"), expected 21"
 no_staging_left
