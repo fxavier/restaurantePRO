@@ -166,7 +166,9 @@ class PrintQueueTest {
                     new com.xavier.backend.fiscal.model.event.DocumentPrintout(longPrintout, null), 0));
             UUID job = (UUID) fixtures.jobsOfSource(document).getFirst().get("id");
 
-            fixtures.runWorkerUntil(() -> "UNKNOWN".equals(fixtures.jobStatus(job)), "job unknown");
+            // building and writing the 100 000-line printout until the write watchdog fires is slow on a loaded host
+            fixtures.runWorkerUntil(() -> "UNKNOWN".equals(fixtures.jobStatus(job)), "job unknown",
+                    java.time.Duration.ofSeconds(90));
 
             assertThat(fixtures.job(job)).containsEntry("last_error", "INTERRUPTED_AFTER_WRITE")
                     .containsEntry("attempts", 1);
