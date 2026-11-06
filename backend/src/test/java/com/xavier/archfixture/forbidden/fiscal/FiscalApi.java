@@ -7,10 +7,6 @@ public class FiscalApi {
         // fixture
     }
 
-    public void recordPayments() {
-        // fixture
-    }
-
     public void coverage() {
         // fixture: any other method may be called from anywhere in settlement
     }

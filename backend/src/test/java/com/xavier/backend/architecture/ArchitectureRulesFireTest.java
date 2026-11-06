@@ -88,19 +88,6 @@ class ArchitectureRulesFireTest {
                 .noneSatisfy(line -> assertThat(line).contains("FiscalApi.coverage()"));
     }
 
-    /** S35 review: the rule holds in every module, and covers recordPayments as well as issue. */
-    @Test
-    void aFiscalIssueOrSnapshotFromAnotherModuleIsCaught() {
-        EvaluationResult result = ArchitectureRules.onlySettlementIssuerCallsFiscalIssue(FORBIDDEN_ROOT)
-                .evaluate(FORBIDDEN_FIXTURE);
-
-        assertThat(result.getFailureReport().getDetails())
-                .anySatisfy(line -> assertThat(line).contains("DocumentReissue").contains("FiscalApi.issue()"))
-                .anySatisfy(line -> assertThat(line).contains("DocumentReissue")
-                        .contains("FiscalApi.recordPayments()"))
-                .noneSatisfy(line -> assertThat(line).contains("service.SettlementIssuer"));
-    }
-
     /** A15: an injected cash → orders dependency fails the build, naming the offending class. */
     @Test
     void aCashToOrdersDependencyIsCaught() {

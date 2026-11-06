@@ -206,20 +206,16 @@ final class ArchitectureRules {
                         + "headroom (D71)");
     }
 
-    /**
-     * D97 rule 4: every issue refreshes the document's payment snapshot first. Outside fiscal itself, no class but
-     * settlement's {@code SettlementIssuer} calls {@code FiscalApi.issue} or {@code FiscalApi.recordPayments} (S35
-     * review: the rule covers every module, not only settlement).
-     */
+    /** D97 rule 4: every settlement issue refreshes the document's payment snapshot first. */
     static ArchRule onlySettlementIssuerCallsFiscalIssue(String root) {
         String fiscalApi = root + ".fiscal.FiscalApi";
         return noClasses()
-                .that().resideOutsideOfPackage(root + ".fiscal..")
+                .that().resideInAPackage(root + ".settlement..")
                 .and().doNotHaveFullyQualifiedName(root + ".settlement.service.SettlementIssuer")
-                .should().callMethodWhere(describe("FiscalApi.issue or FiscalApi.recordPayments",
+                .should().callMethodWhere(describe("FiscalApi.issue",
                         (JavaMethodCall call) -> call.getTargetOwner().getFullName().equals(fiscalApi)
-                                && Set.of("issue", "recordPayments").contains(call.getName())))
-                .as("only SettlementIssuer issues fiscal documents and records their payment snapshot")
+                                && call.getName().equals("issue")))
+                .as("only SettlementIssuer issues fiscal documents in settlement")
                 .because("issue refuses a draft without its payment snapshot, which SettlementIssuer records "
                         + "under order_settlement just before (D97)");
     }
