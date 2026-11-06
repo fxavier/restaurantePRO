@@ -63,7 +63,7 @@ class GaplessNumberingTest {
         UUID series = fixtures.newSeries(store, "A", 1);
         List<UUID> drafts = new ArrayList<>();
         for (int i = 0; i < ISSUES; i++) {
-            drafts.add(fixtures.newDraft(store));
+            drafts.add(fixtures.newPaidDraft(store));
         }
 
         CountDownLatch start = new CountDownLatch(1);
@@ -89,8 +89,8 @@ class GaplessNumberingTest {
     void aFailedIssueRecordsTheErrorApartAndGivesItsNumberBack() throws Exception {
         UUID store = fixtures.newStore();
         UUID series = fixtures.newSeries(store, "A", 41);
-        UUID first = fixtures.newDraft(store);
-        UUID second = fixtures.newDraft(store);
+        UUID first = fixtures.newPaidDraft(store);
+        UUID second = fixtures.newPaidDraft(store);
         doThrow(new IllegalStateException("fiscal adapter offline")).doCallRealMethod().when(adapter).issue(any());
 
         assertThatThrownBy(() -> issueAsEmployee(store, first))
@@ -117,7 +117,7 @@ class GaplessNumberingTest {
     void aTechnicalFailureIsRecordedWithoutItsSqlDetail() throws Exception {
         UUID store = fixtures.newStore();
         fixtures.newSeries(store, "A", 1);
-        UUID draft = fixtures.newDraft(store);
+        UUID draft = fixtures.newPaidDraft(store);
         doThrow(new DataIntegrityViolationException(
                 "ERROR: duplicate key value violates unique constraint \"fiscal_document_number_uk\""))
                 .when(adapter).issue(any());
@@ -133,7 +133,7 @@ class GaplessNumberingTest {
     void issuingInsideTheCallersTransactionIsRefusedBeforeAnythingHappens() throws Exception {
         UUID store = fixtures.newStore();
         UUID series = fixtures.newSeries(store, "A", 1);
-        UUID draft = fixtures.newDraft(store);
+        UUID draft = fixtures.newPaidDraft(store);
         UUID employee = UUID.randomUUID();
 
         assertThatThrownBy(() -> asEmployee(store, employee, UUID.randomUUID(),
@@ -151,7 +151,7 @@ class GaplessNumberingTest {
     void issuingAnIssuedDocumentAgainReturnsItWithoutTakingANumber() throws Exception {
         UUID store = fixtures.newStore();
         UUID series = fixtures.newSeries(store, "A", 1);
-        UUID draft = fixtures.newDraft(store);
+        UUID draft = fixtures.newPaidDraft(store);
         DocumentView issued = issueAsEmployee(store, draft);
 
         DocumentView again = issueAsEmployee(store, draft);
@@ -164,7 +164,7 @@ class GaplessNumberingTest {
     @Test
     void withoutAnActiveSeriesTheDraftStaysPending() throws Exception {
         UUID store = fixtures.newStore();
-        UUID draft = fixtures.newDraft(store);
+        UUID draft = fixtures.newPaidDraft(store);
 
         assertThatThrownBy(() -> issueAsEmployee(store, draft)).isInstanceOf(FiscalIssueFailedException.class);
 
@@ -176,9 +176,9 @@ class GaplessNumberingTest {
         UUID store = fixtures.newStore();
         fixtures.newSeries(store, "B", 1);
         UUID employee = UUID.randomUUID();
-        DocumentView one = issueAsEmployee(store, fixtures.newDraft(store));
+        DocumentView one = issueAsEmployee(store, fixtures.newPaidDraft(store));
         DocumentView two = asEmployee(store, employee, UUID.randomUUID(),
-                () -> fiscal.issue(fixtures.newDraft(store), employee));
+                () -> fiscal.issue(fixtures.newPaidDraft(store), employee));
 
         assertThat(two.status()).isEqualTo("ISSUED");
         assertThat(two.seriesCode()).isEqualTo("B");
@@ -193,8 +193,8 @@ class GaplessNumberingTest {
     void theStoredChainLinkCanBeRecomputedFromTheStoredRowsAlone() throws Exception {
         UUID store = fixtures.newStore();
         fixtures.newSeries(store, "C", 1);
-        UUID first = issueAsEmployee(store, fixtures.newDraft(store)).id();
-        UUID second = issueAsEmployee(store, fixtures.newDraft(store)).id();
+        UUID first = issueAsEmployee(store, fixtures.newPaidDraft(store)).id();
+        UUID second = issueAsEmployee(store, fixtures.newPaidDraft(store)).id();
 
         IssueRequest fromStoredRow = jdbc.sql("""
                         SELECT document_type, series_code, number, issued_at, total_gross, currency
@@ -203,7 +203,7 @@ class GaplessNumberingTest {
                         rs.getString("series_code"), rs.getLong("number"),
                         rs.getObject("issued_at", OffsetDateTime.class).toInstant(),
                         Money.of(rs.getBigDecimal("total_gross"), Currency.getInstance(rs.getString("currency"))),
-                        null, fixtures.adapterData(first), false))
+                        null, fixtures.adapterData(first), false, null))
                 .single();
 
         assertThat(new InternalFiscalAdapter().issue(fromStoredRow).adapterData())

@@ -62,7 +62,7 @@ class CreditChargeCancelRaceTest {
             issuing.countDown();
             release.await(30, TimeUnit.SECONDS);
             return call.callRealMethod();
-        }).when(steps).issue(any(), any());
+        }).when(steps).issue(any(), any(), any());
 
         try (var pool = Executors.newSingleThreadExecutor()) {
             var sold = pool.submit(() -> fixtures.creditCharge(sale.cashier(), sale.order(), customer, "25.00", null,

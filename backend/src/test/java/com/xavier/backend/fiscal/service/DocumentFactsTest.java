@@ -71,6 +71,7 @@ class DocumentFactsTest {
         UUID terminal = UUID.randomUUID();
         UUID draftId = create(withDay(draft(store, SourceType.PARTITION, partition, order, null, customer, true),
                 DAY));
+        fixtures.recordPaid(draftId);
         DocumentView issued = asEmployee(store, employee, terminal, () -> fiscal.issue(draftId, employee));
 
         DocumentFacts facts = fiscal.documentFacts(issued.id());
@@ -188,6 +189,7 @@ class DocumentFactsTest {
     }
 
     private DocumentView issue(UUID store, UUID draft) {
+        fixtures.recordPaid(draft);
         UUID employee = UUID.randomUUID();
         return asEmployee(store, employee, UUID.randomUUID(), () -> fiscal.issue(draft, employee));
     }

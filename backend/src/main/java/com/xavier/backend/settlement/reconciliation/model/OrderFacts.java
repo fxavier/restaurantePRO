@@ -35,9 +35,13 @@ public record OrderFacts(UUID orderId, String lifecycle, Currency currency, List
     public record Line(UUID lineId, BigDecimal netQty, BigDecimal ratePercent, Money tax) {
     }
 
-    /** {@code taxByRate} is the document's tax summary; {@code lastErrorAt} its last failed issue, if any. */
+    /**
+     * {@code taxByRate} is the document's tax summary; {@code lastErrorAt} its last failed issue, if any;
+     * {@code snapshotCredit} the credit of its D97 payment snapshot, {@code null} when it has none (yet).
+     */
     public record Document(UUID documentId, String status, String sourceType, UUID sourceId, boolean onAccount,
-                           Money totalGross, Map<BigDecimal, Money> taxByRate, Instant lastErrorAt) {
+                           Money totalGross, Map<BigDecimal, Money> taxByRate, Instant lastErrorAt,
+                           Money snapshotCredit) {
     }
 
     /** A credit charge (RESERVED, POSTED or RELEASED); {@code debitPosted}: its ledger debit exists. */

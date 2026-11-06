@@ -43,7 +43,7 @@ public class OrderSettlementService {
     public DocumentView issueDocument(UUID orderId, IssueDocumentRequest request) {
         PosContext pos = accessPolicy.requirePos(Permission.PAYMENT_COLLECT);
         DocumentView draft = steps.prepareDocument(pos, orderId, request.buyer(), null);
-        return steps.issue(pos, draft.id());
+        return steps.issue(pos, orderId, draft.id());
     }
 
     /**
@@ -58,7 +58,7 @@ public class OrderSettlementService {
         accessPolicy.requireSessionStore(pos, orders.storeOf(orderId), PaymentAttemptService.ORDER, orderId);
         if (steps.needsResidualDocument(pos, orderId)) {
             DocumentView draft = steps.prepareDocument(pos, orderId, null, request.orderVersion());
-            steps.issue(pos, draft.id());
+            steps.issue(pos, orderId, draft.id());
         }
         return steps.close(pos, orderId);
     }

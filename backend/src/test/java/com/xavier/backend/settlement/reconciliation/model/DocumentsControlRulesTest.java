@@ -61,7 +61,38 @@ class DocumentsControlRulesTest {
     }
 
     static Document issued(UUID id, String gross, String tax, boolean onAccount) {
-        return new Document(id, "ISSUED", "ORDER", ORDER, onAccount, m(gross), Map.of(VAT, m(tax)), null);
+        return new Document(id, "ISSUED", "ORDER", ORDER, onAccount, m(gross), Map.of(VAT, m(tax)), null, null);
+    }
+
+    /** An ISSUED document with its D97 payment snapshot, whose credit share is {@code credit}. */
+    static Document withSnapshot(String credit) {
+        return new Document(DOC, "ISSUED", "ORDER", ORDER, true, m("25.00"), Map.of(VAT, m("3.45")), null,
+                m(credit));
+    }
+
+    @Test
+    void aClosedOrdersDocumentWhoseSnapshotCreditIsNotItsPostedChargesIsAnException() {
+        Builder order = settled();
+        order.paid = m("15.00");
+        order.charges = List.of(new Charge(CHARGE, "POSTED", DOC, m("10.00"), NOW.minus(Duration.ofDays(1)), true));
+        order.documents = List.of(withSnapshot("10.00"));
+        assertThat(order.kinds()).isEmpty();
+
+        order.documents = List.of(withSnapshot("12.00"));
+        assertThat(order.kinds()).containsExactly("SNAPSHOT_CREDIT_MISMATCH");
+
+        order.lifecycle = "OPEN"; // a charge may still be posting: only a closed order is checked
+        assertThat(order.kinds()).isEmpty();
+    }
+
+    @Test
+    void aDocumentWithoutSnapshotIsNotCheckedForItsCredit() {
+        Builder order = settled();
+        order.paid = m("15.00");
+        order.charges = List.of(new Charge(CHARGE, "POSTED", DOC, m("10.00"), NOW.minus(Duration.ofDays(1)), true));
+        order.documents = List.of(issued(DOC, "25.00", "3.45", true)); // issued before D97
+
+        assertThat(order.kinds()).isEmpty();
     }
 
     @Test
@@ -127,16 +158,17 @@ class DocumentsControlRulesTest {
         Builder order = settled();
         order.lifecycle = "OPEN";
         order.documents = List.of(new Document(DOC, "DRAFT", "ORDER", ORDER, false, m("25.00"), Map.of(),
-                NOW.minus(Duration.ofMinutes(61))));
+                NOW.minus(Duration.ofMinutes(61)), null));
         assertThat(order.kinds()).containsExactly("DRAFT_STALE");
 
         order.documents = List.of(new Document(DOC, "DRAFT", "ORDER", ORDER, false, m("25.00"), Map.of(),
-                NOW.minus(Duration.ofMinutes(30))));
+                NOW.minus(Duration.ofMinutes(30)), null));
         assertThat(order.kinds()).isEmpty();
 
         order.lifecycle = "CLOSED";
         order.documents = new ArrayList<>(List.of(issued(UUID.randomUUID(), "25.00", "3.45", false),
-                new Document(DOC, "DRAFT", "PARTITION", UUID.randomUUID(), false, m("0.00"), Map.of(), null)));
+                new Document(DOC, "DRAFT", "PARTITION", UUID.randomUUID(), false, m("0.00"), Map.of(), null,
+                        null)));
         assertThat(order.kinds()).containsExactly("DRAFT_STALE");
     }
 

@@ -43,13 +43,15 @@ public class OrderSettlementSteps {
     private final OrdersApi orders;
     private final FiscalApi fiscal;
     private final TaxRoundingAdjustments taxRounding;
+    private final SettlementIssuer issuer;
     private final TransactionTemplate inTransaction;
     private final TransactionTemplate readOnly;
 
     OrderSettlementSteps(AccessPolicy accessPolicy, SettlementLocks locks, Bills bills, SettlementViews views,
                          OrdersApi orders, FiscalApi fiscal, TaxRoundingAdjustments taxRounding,
-                         PlatformTransactionManager transactionManager) {
+                         SettlementIssuer issuer, PlatformTransactionManager transactionManager) {
         this.taxRounding = taxRounding;
+        this.issuer = issuer;
         this.accessPolicy = accessPolicy;
         this.locks = locks;
         this.bills = bills;
@@ -114,9 +116,12 @@ public class OrderSettlementSteps {
         }));
     }
 
-    /** s2, no transaction (D55, D63): issues the draft; an ISSUED document comes back unchanged. */
-    public DocumentView issue(PosContext pos, UUID documentId) {
-        return fiscal.issue(documentId, pos.employeeId());
+    /**
+     * s2, no transaction (D55, D63): the payment snapshot refreshed, then the draft issued ({@link SettlementIssuer},
+     * D97); an ISSUED document comes back unchanged.
+     */
+    public DocumentView issue(PosContext pos, UUID orderId, UUID documentId) {
+        return issuer.issue(pos, orderId, documentId);
     }
 
     /**

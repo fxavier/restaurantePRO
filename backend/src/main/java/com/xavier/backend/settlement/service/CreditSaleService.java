@@ -70,7 +70,7 @@ public class CreditSaleService {
         if (CreditChargeStatus.POSTED.name().equals(reserved.status())) {
             return reserved;
         }
-        steps.issue(pos, reserved.documentId());
+        steps.issue(pos, orderId, reserved.documentId());
         return steps.post(pos, reserved.id());
     }
 

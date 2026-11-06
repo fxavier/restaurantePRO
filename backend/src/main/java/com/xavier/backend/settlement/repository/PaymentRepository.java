@@ -21,6 +21,9 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID> {
 
     boolean existsByPartitionId(UUID partitionId);
 
+    /** Every payment of the order, on any target, in confirmation order (D97: the order methods are printed in). */
+    List<Payment> findByOrderIdOrderByConfirmedAtAscIdAsc(UUID orderId);
+
     /** Σ of the order's payments per target (D69): the ORDER target and each partition that was paid. */
     @Query("""
             select new com.xavier.backend.settlement.repository.TargetPaid(p.targetType, p.partitionId, sum(p.amount))

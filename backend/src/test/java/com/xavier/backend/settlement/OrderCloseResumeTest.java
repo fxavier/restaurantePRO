@@ -64,7 +64,7 @@ class OrderCloseResumeTest {
 
     @Test
     void aFailureAfterTheIssueStepIsResumedByTheRetry() throws Exception {
-        Mockito.doAnswer(thenFail("s2")).when(steps).issue(any(), any());
+        Mockito.doAnswer(thenFail("s2")).when(steps).issue(any(), any(), any());
 
         fixtures.close(sale.cashier(), sale.order(), version, key).andExpect(status().isInternalServerError());
         assertThat(fixtures.issuedNumber(sale.order())).as("s2 committed").isEqualTo(1);

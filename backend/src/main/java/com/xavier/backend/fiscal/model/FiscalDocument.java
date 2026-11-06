@@ -5,19 +5,25 @@ import com.xavier.backend.fiscal.IssuedDocument;
 import com.xavier.backend.fiscal.exception.DraftMismatchException;
 import com.xavier.backend.fiscal.exception.IllegalDocumentStateException;
 import com.xavier.backend.fiscal.exception.InvalidSaleDraftException;
+import com.xavier.backend.fiscal.exception.PaymentSnapshotMismatchException;
+import com.xavier.backend.fiscal.exception.PaymentSnapshotMissingException;
 import com.xavier.backend.fiscal.model.dto.Buyer;
 import com.xavier.backend.fiscal.model.dto.DocumentFacts;
 import com.xavier.backend.fiscal.model.dto.DocumentSummary;
 import com.xavier.backend.fiscal.model.dto.DocumentView;
 import com.xavier.backend.fiscal.model.dto.DraftCommand;
 import com.xavier.backend.fiscal.model.dto.DraftLine;
+import com.xavier.backend.fiscal.model.dto.PaymentSnapshot;
+import com.xavier.backend.fiscal.model.dto.PaymentStatus;
 import com.xavier.backend.fiscal.model.dto.SourceType;
 import com.xavier.backend.organization.BusinessDays;
 import com.xavier.backend.organization.model.dto.CompanyProfileView;
 import com.xavier.backend.organization.model.dto.StoreSummary;
 import com.xavier.backend.shared.Money;
 import jakarta.persistence.CascadeType;
+import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -37,6 +43,7 @@ import java.util.Currency;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.TreeMap;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -186,6 +193,26 @@ public class FiscalDocument {
     @OrderBy("taxRate")
     private List<FiscalDocumentTax> taxes = new ArrayList<>();
 
+    /** D97: the payment snapshot, recorded on the DRAFT by settlement just before its issue; null until then. */
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+    private PaymentStatus paymentStatus;
+
+    @Column(precision = 19, scale = 4)
+    private BigDecimal paidTotal;
+
+    @Column(precision = 19, scale = 4)
+    private BigDecimal creditTotal;
+
+    @Column(precision = 19, scale = 4)
+    private BigDecimal outstandingTotal;
+
+    @ElementCollection
+    @CollectionTable(schema = "fiscal", name = "fiscal_document_payment",
+            joinColumns = @JoinColumn(name = "document_id"))
+    @OrderBy("position")
+    private List<FiscalDocumentPayment> payments = new ArrayList<>();
+
     protected FiscalDocument() {
         // JPA
     }
@@ -274,6 +301,9 @@ public class FiscalDocument {
         // on account needs the command's own customer (422 otherwise); a paid sale keeps its customer unless given
         chargeTo(command.onAccount() || command.customerId() != null ? command.customerId() : customerId,
                 command.onAccount());
+        if (onAccountBefore != onAccount) {
+            clearPayments(); // D97 rule 5: a snapshot taken before the credit sale no longer fits; issue refreshes it
+        }
         if (!Objects.equals(before, buyer()) || !Objects.equals(customerBefore, customerId)
                 || onAccountBefore != onAccount) {
             updatedAt = now; // a retry with the same choice changes nothing, not even the version
@@ -286,10 +316,91 @@ public class FiscalDocument {
      */
     public void clearOnAccount(Instant now) {
         requireDraft("clear the on-account mark of");
-        if (onAccount || customerId != null) {
+        if (onAccount || customerId != null || paymentStatus != null) {
             onAccount = false;
             customerId = null;
+            clearPayments(); // D97: the cancelled credit was in it; issue refuses until settlement refreshes it
             updatedAt = now;
+        }
+    }
+
+    /**
+     * DRAFT only (D97 rule 4): replaces the payment snapshot. It must account for the whole gross ({@code paid + credit
+     * + outstanding = gross}, none negative, every method positive), carry the status {@link PaymentStatus#of} gives,
+     * and have credit exactly when the draft is on account (rule 5). Recording the same snapshot again changes
+     * nothing, not even the version.
+     *
+     * @throws PaymentSnapshotMismatchException otherwise
+     */
+    public void recordPayments(PaymentSnapshot snapshot, Instant now) {
+        requireDraft("record the payments of");
+        Currency c = Currency.getInstance(currency);
+        Money gross = Money.of(totalGross, c);
+        requireCurrency(snapshot, c);
+        Money paid = snapshot.paid();
+        if (snapshot.methods().stream().anyMatch(m -> m.amount().amount().signum() <= 0)) {
+            throw new PaymentSnapshotMismatchException(id, "every paid method must be positive");
+        }
+        if (snapshot.credit().amount().signum() < 0 || snapshot.outstanding().amount().signum() < 0) {
+            throw new PaymentSnapshotMismatchException(id, "credit and outstanding cannot be negative");
+        }
+        if (!paid.plus(snapshot.credit()).plus(snapshot.outstanding()).equals(gross)) {
+            throw new PaymentSnapshotMismatchException(id, "paid " + paid.amount() + " + credit "
+                    + snapshot.credit().amount() + " + outstanding " + snapshot.outstanding().amount()
+                    + " is not the gross " + gross.amount());
+        }
+        if ((snapshot.credit().amount().signum() > 0) != onAccount) {
+            throw new PaymentSnapshotMismatchException(id, onAccount ? "the document is on account but has no credit"
+                    : "the document is not on account but has credit " + snapshot.credit().amount());
+        }
+        if (snapshot.status() != PaymentStatus.of(gross, paid, snapshot.credit())) {
+            throw new PaymentSnapshotMismatchException(id, "its status " + snapshot.status() + " is not "
+                    + PaymentStatus.of(gross, paid, snapshot.credit()));
+        }
+        if (paymentSnapshot().filter(snapshot::equals).isPresent()) {
+            return;
+        }
+        paymentStatus = snapshot.status();
+        paidTotal = paid.amount();
+        creditTotal = snapshot.credit().amount();
+        outstandingTotal = snapshot.outstanding().amount();
+        payments.clear();
+        for (PaymentSnapshot.PaidAmount method : snapshot.methods()) {
+            payments.add(new FiscalDocumentPayment(payments.size() + 1, method));
+        }
+        updatedAt = now;
+    }
+
+    /** The payment snapshot, if recorded (a document issued before D97 has none). */
+    public Optional<PaymentSnapshot> paymentSnapshot() {
+        if (paymentStatus == null) {
+            return Optional.empty();
+        }
+        Currency c = Currency.getInstance(currency);
+        return Optional.of(new PaymentSnapshot(paymentStatus, payments.stream().map(p -> p.toView(c)).toList(),
+                Money.of(creditTotal, c), Money.of(outstandingTotal, c)));
+    }
+
+    /** @throws PaymentSnapshotMissingException for a DRAFT settlement has not recorded the payments of (D97). */
+    public void requirePaymentSnapshot() {
+        if (paymentStatus == null) {
+            throw new PaymentSnapshotMissingException();
+        }
+    }
+
+    private void clearPayments() {
+        paymentStatus = null;
+        paidTotal = null;
+        creditTotal = null;
+        outstandingTotal = null;
+        payments.clear();
+    }
+
+    private void requireCurrency(PaymentSnapshot snapshot, Currency c) {
+        boolean other = !snapshot.credit().currency().equals(c) || !snapshot.outstanding().currency().equals(c)
+                || snapshot.methods().stream().anyMatch(m -> !m.amount().currency().equals(c));
+        if (other) {
+            throw new PaymentSnapshotMismatchException(id, "every amount must be in " + c);
         }
     }
 
@@ -317,6 +428,7 @@ public class FiscalDocument {
     public void issue(FiscalSeries series, long number, Instant now, UUID employeeId, UUID terminalId,
                       String adapterCode, boolean nonFiscal, IssueResult result) {
         requireDraft("issue");
+        requirePaymentSnapshot();
         this.status = DocumentStatus.ISSUED;
         this.seriesId = series.getId();
         this.seriesCode = series.getCode();
@@ -353,7 +465,7 @@ public class FiscalDocument {
                 storeCode, storeName, buyer(), lines.stream().map(l -> l.toView(c)).toList(),
                 taxes.stream().map(t -> t.toView(c)).toList(), Money.of(totalGross, c), Money.of(totalNet, c),
                 Money.of(totalTax, c), adapterCode, nonFiscal, lastError, lastErrorAt, version, orderRef, businessDate,
-                customerId, onAccount);
+                customerId, onAccount, paymentSnapshot().orElse(null));
     }
 
     public DocumentSummary toSummary() {
@@ -387,7 +499,8 @@ public class FiscalDocument {
         DocumentView view = toView();
         return new IssuedDocument(id, documentType.name(), seriesCode, number, issuedAt, ZoneId.of(storeTimezone),
                 companyName, companyTaxId, companyCountry, storeCode, storeName, buyer(), view.lines(), view.taxes(),
-                view.totalGross(), view.totalNet(), view.totalTax(), adapterData, qrPayload, onAccount);
+                view.totalGross(), view.totalNet(), view.totalTax(), adapterData, qrPayload, onAccount,
+                view.payments());
     }
 
     private Buyer buyer() {

@@ -151,7 +151,8 @@ public class DocumentsControlService {
         Map<BigDecimal, Money> taxes = document.taxes().stream()
                 .collect(Collectors.toMap(DocumentView.TaxSummary::rate, DocumentView.TaxSummary::tax, Money::plus));
         return new OrderFacts.Document(document.id(), document.status(), document.sourceType(), document.sourceId(),
-                document.onAccount(), document.totalGross(), taxes, document.lastErrorAt());
+                document.onAccount(), document.totalGross(), taxes, document.lastErrorAt(),
+                document.payments() == null ? null : document.payments().credit());
     }
 
     /** A posted charge's debit is checked in the customer's ledger (D74: the sweeper may still have to post it). */

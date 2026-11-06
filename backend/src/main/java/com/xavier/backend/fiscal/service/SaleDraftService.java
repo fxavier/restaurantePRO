@@ -5,6 +5,7 @@ import com.xavier.backend.fiscal.exception.UnknownStoreException;
 import com.xavier.backend.fiscal.model.DocumentType;
 import com.xavier.backend.fiscal.model.FiscalDocument;
 import com.xavier.backend.fiscal.model.dto.DocumentView;
+import com.xavier.backend.fiscal.model.dto.PaymentSnapshot;
 import com.xavier.backend.fiscal.model.dto.DraftCommand;
 import com.xavier.backend.fiscal.model.dto.SaleDraftCommand;
 import com.xavier.backend.fiscal.model.dto.SourceType;
@@ -14,6 +15,7 @@ import com.xavier.backend.organization.model.dto.StoreSummary;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
 import com.xavier.backend.fiscal.exception.DocumentNotFoundException;
 import java.time.Clock;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -61,6 +63,24 @@ public class SaleDraftService {
         document.clearOnAccount(clock.instant());
         documents.flush();
         return document.toView();
+    }
+
+    /** D97 rule 4: under the document's lock; an ISSUED document keeps its snapshot ({@code null} before D97). */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public PaymentSnapshot recordPayments(UUID documentId, PaymentSnapshot snapshot) {
+        FiscalDocument document = documents.lockById(documentId)
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        if (!document.isIssued()) {
+            document.recordPayments(java.util.Objects.requireNonNull(snapshot, "snapshot"), clock.instant());
+            documents.flush();
+        }
+        return document.paymentSnapshot().orElse(null);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<PaymentSnapshot> paymentSnapshot(UUID documentId) {
+        return documents.findById(documentId).orElseThrow(() -> new DocumentNotFoundException(documentId))
+                .paymentSnapshot();
     }
 
     private DocumentView amend(FiscalDocument document, DraftCommand command) {

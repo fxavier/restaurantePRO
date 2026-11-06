@@ -9,6 +9,8 @@ import com.xavier.backend.access.Permission;
 import com.xavier.backend.fiscal.model.dto.Buyer;
 import com.xavier.backend.fiscal.model.dto.DraftCommand;
 import com.xavier.backend.fiscal.model.dto.DraftLine;
+import com.xavier.backend.fiscal.model.dto.PaymentSnapshot;
+import com.xavier.backend.fiscal.model.dto.PaymentStatus;
 import com.xavier.backend.fiscal.model.dto.SourceType;
 import com.xavier.backend.fiscal.model.dto.SaleDraftCommand;
 import com.xavier.backend.shared.Money;
@@ -57,6 +59,34 @@ public class FiscalFixtures {
     /** A SALE draft for a new order, committed (tx-A). */
     public UUID newDraft(UUID store) {
         return tx.execute(s -> fiscal.createSaleDraft(saleDraft(store, UUID.randomUUID(), null))).id();
+    }
+
+    /**
+     * D97: what settlement's refresh records before an issue, for a fiscal test: the whole gross paid in cash, or,
+     * for an on-account draft, wholly on account.
+     */
+    public void recordPaid(UUID draft) {
+        tx.executeWithoutResult(s -> {
+            var row = jdbc.sql("SELECT total_gross, on_account FROM fiscal.fiscal_document WHERE id = :id")
+                    .param("id", draft).query((rs, n) -> new Object[]{rs.getBigDecimal("total_gross"),
+                            rs.getBoolean("on_account")}).single();
+            Money gross = Money.of((BigDecimal) row[0], MZN);
+            Money zero = mzn("0.00");
+            fiscal.recordPayments(draft, (Boolean) row[1]
+                    ? new PaymentSnapshot(PaymentStatus.ON_ACCOUNT, List.of(), gross, zero)
+                    : new PaymentSnapshot(PaymentStatus.PAID, List.of(cash(gross)), zero, zero));
+        });
+    }
+
+    public static PaymentSnapshot.PaidAmount cash(Money amount) {
+        return new PaymentSnapshot.PaidAmount("CASH", "Numerário", amount);
+    }
+
+    /** A SALE draft for a new order, paid in cash (D97 snapshot recorded), committed. */
+    public UUID newPaidDraft(UUID store) {
+        UUID draft = newDraft(store);
+        recordPaid(draft);
+        return draft;
     }
 
     /** {@code action} as a POS employee on {@code terminal}, on the current thread (issue reads the terminal). */

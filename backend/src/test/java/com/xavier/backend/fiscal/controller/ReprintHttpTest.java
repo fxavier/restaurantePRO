@@ -142,6 +142,7 @@ class ReprintHttpTest {
     }
 
     private DocumentView issue(UUID store, UUID draft) {
+        fixtures.recordPaid(draft);
         return asEmployee(store, employee, terminal, () -> fiscal.issue(draft, employee));
     }
 

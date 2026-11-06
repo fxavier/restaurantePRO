@@ -195,6 +195,7 @@ class PartitionDraftTest {
         assertThatThrownBy(() -> fiscal.clearOnAccount(draftId))
                 .isInstanceOf(IllegalTransactionStateException.class);
         UUID employee = UUID.randomUUID();
+        fixtures.recordPaid(draftId);
         asEmployee(store, employee, UUID.randomUUID(), () -> fiscal.issue(draftId, employee));
 
         assertThatThrownBy(() -> tx.execute(s -> fiscal.clearOnAccount(draftId)))
@@ -232,6 +233,7 @@ class PartitionDraftTest {
         UUID order = UUID.randomUUID();
         UUID draftId = create(draft(store, SourceType.PARTITION, partition, order, null, null, false)).id();
         UUID employee = UUID.randomUUID();
+        fixtures.recordPaid(draftId);
         DocumentView issued = asEmployee(store, employee, UUID.randomUUID(), () -> fiscal.issue(draftId, employee));
 
         DocumentView again = create(draft(store, SourceType.PARTITION, partition, order,

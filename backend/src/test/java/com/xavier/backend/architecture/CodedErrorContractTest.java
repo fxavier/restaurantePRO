@@ -18,6 +18,7 @@ import com.xavier.backend.dining.exception.TableOccupiedException;
 import com.xavier.backend.dining.exception.TableUnavailableException;
 import com.xavier.backend.fiscal.FiscalIssueFailedException;
 import com.xavier.backend.fiscal.exception.DraftMismatchException;
+import com.xavier.backend.fiscal.exception.PaymentSnapshotMismatchException;
 import com.xavier.backend.identity.exception.LoginThrottledException;
 import com.xavier.backend.identity.exception.PinChangeNotRequiredException;
 import com.xavier.backend.identity.exception.PinUnchangedException;
@@ -94,6 +95,8 @@ class CodedErrorContractTest {
                     new IllegalStateException("adapter offline"))),
             Map.entry("draft-mismatch-lines", () -> DraftMismatchException.lines(ID)),
             Map.entry("draft-mismatch-on-account", () -> DraftMismatchException.onAccount(ID)),
+            Map.entry("payment-snapshot-mismatch", () -> new PaymentSnapshotMismatchException(ID,
+                    "the document is on account but has no credit")),
             Map.entry("order-not-open", () -> OrderConflictException.notOpen(ID)),
             Map.entry("line-not-draft", () -> OrderConflictException.lineNotDraft(ID)),
             Map.entry("catalog-changed", () -> OrderConflictException.catalogChanged(3, 4)),
@@ -458,6 +461,14 @@ class CodedErrorContractTest {
                 ",\"documentId\":\"" + ID + "\"");
         expect("draft-mismatch-on-account", 409, "DRAFT_MISMATCH",
                 "The draft document " + ID + " is on account: it stays on account for the same customer.",
+                ",\"documentId\":\"" + ID + "\"");
+    }
+
+    @Test
+    void fiscalPaymentSnapshotMismatch() throws Exception {
+        expect("payment-snapshot-mismatch", 422, "PAYMENT_SNAPSHOT_MISMATCH",
+                "The payment snapshot does not fit the draft document " + ID
+                        + ": the document is on account but has no credit.",
                 ",\"documentId\":\"" + ID + "\"");
     }
 

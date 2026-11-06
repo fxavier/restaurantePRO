@@ -113,6 +113,11 @@ public class PaymentMethod {
         return code;
     }
 
+    /** The display name, printed on documents (D97: the seeded CASH method is "Numerário"). */
+    public String getName() {
+        return name;
+    }
+
     public PaymentMethodKind getKind() {
         return kind;
     }

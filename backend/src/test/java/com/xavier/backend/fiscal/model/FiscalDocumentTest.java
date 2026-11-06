@@ -6,6 +6,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.xavier.backend.fiscal.IssueResult;
 import com.xavier.backend.fiscal.exception.IllegalDocumentStateException;
 import com.xavier.backend.fiscal.exception.InvalidSaleDraftException;
+import com.xavier.backend.fiscal.exception.PaymentSnapshotMissingException;
+import com.xavier.backend.fiscal.model.dto.PaymentSnapshot;
+import com.xavier.backend.fiscal.model.dto.PaymentStatus;
 import com.xavier.backend.fiscal.model.dto.Buyer;
 import com.xavier.backend.fiscal.model.dto.DocumentView;
 import com.xavier.backend.fiscal.model.dto.DraftLine;
@@ -129,6 +132,10 @@ class FiscalDocumentTest {
         FiscalSeries series = FiscalSeries.create(STORE, DocumentType.SALE, "A", 1, NOW);
         UUID employee = UUID.randomUUID();
         document.recordIssueFailure("printer on fire", NOW);
+        assertThatThrownBy(() -> document.issue(series, 1, NOW, employee, null, "internal", true,
+                new IssueResult("hash", null))).isInstanceOf(PaymentSnapshotMissingException.class);
+        document.recordPayments(new PaymentSnapshot(PaymentStatus.UNPAID, List.of(), mzn("0.00"), mzn("116.00")),
+                NOW);
 
         document.issue(series, series.takeNextNumber(NOW), NOW, employee, UUID.randomUUID(), "internal", true,
                 new IssueResult("hash", null));
