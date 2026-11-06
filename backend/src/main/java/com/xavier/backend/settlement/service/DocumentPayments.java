@@ -24,6 +24,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,6 +39,8 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Component
 public class DocumentPayments {
+
+    private static final Logger log = LoggerFactory.getLogger(DocumentPayments.class);
 
     private final PaymentRepository payments;
     private final PaymentMethodRepository methods;
@@ -84,9 +88,12 @@ public class DocumentPayments {
                 .map(CreditCharge::amount).reduce(zero, Money::plus);
         Money outstanding = gross.minus(paidTotal).minus(credit);
         if (outstanding.amount().signum() < 0) {
-            throw new IllegalStateException("Document " + document.id() + " of order " + bill.view().orderId()
-                    + ": its targets hold " + paidTotal.amount() + " paid and " + credit.amount()
-                    + " on account, more than its gross " + gross.amount());
+            String alarm = "Document " + document.id() + " of order " + bill.view().orderId() + ": its targets hold "
+                    + paidTotal.amount() + " paid and " + credit.amount() + " on account, more than its gross "
+                    + gross.amount();
+            log.error("Payment snapshot refused (a bug, D71/D74): orderId={} documentId={}. {}",
+                    bill.view().orderId(), document.id(), alarm);
+            throw new IllegalStateException(alarm);
         }
         return new PaymentSnapshot(PaymentStatus.of(gross, paidTotal, credit), paid, credit, outstanding);
     }
