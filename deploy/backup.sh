@@ -9,7 +9,8 @@
 #   SHA256SUMS       checksums of the above, verified by restore.sh
 # then deletes the oldest archives beyond --keep (only names this script writes count).
 # Production (RESTAURANTPRO_ENVIRONMENT, default production) refuses, writing nothing, without a recipients
-# file of at least two keys, with an age identity on the server, or with loose modes or owners (D98).
+# file of at least two keys, with recipients other than the ones recorded in <dir>/RECIPIENTS_SHA256 (until
+# verify-backups.sh --accept-recipients-change), with an age identity on the server, or with loose modes (D98).
 # Test mode (developer stacks): a single BACKUP_AGE_RECIPIENT is accepted, and no recipients at all writes
 # a plaintext restaurantpro-<UTC timestamp>.tar with a WARNING.
 #
@@ -54,14 +55,18 @@ env_mode
 recipients="${recipients:-$(recipients_file)}"
 # Plaintext staging (the dump, and secrets/ when encrypting) stays outside <dir>, which is copied off the box.
 work="$(mktemp -d "${TMPDIR:-/tmp}/rp-backup.XXXXXX")"
-trap 'rm -rf "$work"; if [[ -n "$RP_PARTIAL" ]]; then rm -f "$RP_PARTIAL"; fi' EXIT
+trap 'rm -rf "$work"; remove_partials' EXIT
 # D98: every check before anything is written.
 if production; then
   [[ -z "${BACKUP_AGE_RECIPIENT:-}" ]] || die "BACKUP_AGE_RECIPIENT (a single key) is for test mode only; production encrypts to the --recipients-file (operational + recovery key)"
   require_safe_recipients "$recipients" 2
   refuse_identity_on_server "$dir"
   require_safe_scripts
-  if [[ -e "$dir" ]]; then require_private_dir "$dir"; fi
+  record=record
+  if [[ -e "$dir" ]]; then
+    require_private_dir "$dir"
+    record="$(require_recorded_recipients "$dir" "$recipients")"
+  fi
 elif [[ -n "$(recipient_keys "$recipients" 2>/dev/null)" ]]; then
   require_safe_recipients "$recipients" 1
 elif [[ -n "${BACKUP_AGE_RECIPIENT:-}" ]]; then
@@ -78,6 +83,7 @@ if [[ -z "$container" ]]; then
 fi
 
 mkdir -p "$dir"
+if production && [[ "$record" == record ]]; then record_recipients "$dir" "$recipients"; fi
 # Leftovers of killed runs: .work.* dirs of older versions of this script (may hold a plaintext dump)
 # and partial copies of a final archive.
 find "$dir" -maxdepth 1 -type d -name '.work.*' -mmin +60 -exec rm -rf {} +

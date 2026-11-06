@@ -5,15 +5,34 @@
 RP_X25519_RECIPIENT='^age1[02-9ac-hj-np-z]{58}$'
 # A whole age identity, so that a mention of the prefix in a comment or the README is not a hit.
 RP_AGE_SECRET_KEY='AGE-SECRET-KEY-1[02-9AC-HJ-NP-Z]{58}'
-# The only plaintext files allowed among the backups, apart from the .sha256 sidecars.
-RP_MARKERS=" SYSTEM_IDENTIFIER RECIPIENTS RECIPIENTS_SHA256 LAST_OFFBOX_SYNC ARCHIVER_FAILED_COUNT "
-RP_PARTIAL="" # a temporary file of put_file/seal in progress; the caller's EXIT trap removes it
+# The only plaintext files allowed among the backups, apart from well-formed .sha256 sidecars and the
+# write-once RECIPIENTS-<UTC>-<fingerprint> copies. RECIPIENTS_SHA256, LAST_OFFBOX_SYNC and ARCHIVER_FAILED_COUNT
+# change in place, so they never leave the server (offbox-sync.sh; the destination is write-once).
+RP_MARKERS=" SYSTEM_IDENTIFIER RECIPIENTS_SHA256 LAST_OFFBOX_SYNC ARCHIVER_FAILED_COUNT "
+# shellcheck disable=SC2034 # used by offbox-sync.sh
+RP_LOCAL_MARKERS="RECIPIENTS_SHA256 LAST_OFFBOX_SYNC ARCHIVER_FAILED_COUNT"
+RP_PARTIAL="" # temporary files of put_file/seal in progress; the caller's EXIT trap runs remove_partials
+RP_CIPHER=""
+remove_partials() { rm -f ${RP_PARTIAL:+"$RP_PARTIAL"} ${RP_CIPHER:+"$RP_CIPHER"}; }
+
+# deploy/.env decides the mode: it must not be writable by group or others, nor owned by anyone but root or
+# the effective uid (checked always, before anything in it is trusted).
+require_safe_dotenv() {
+  local f="$DEPLOY_DIR/.env"
+  [[ -e "$f" ]] || return 0
+  [[ -f "$f" && ! -L "$f" ]] || die "$f is not a regular file"
+  ((8#$(file_mode "$f") & 8#022)) && die "$f is writable by group or others (mode $(file_mode "$f")): it sets RESTAURANTPRO_ENVIRONMENT. Fix: chmod 600 '$f'"
+  [[ "$(file_uid "$f")" == 0 || "$(file_uid "$f")" == "$(id -u)" ]] \
+    || die "$f is owned by uid $(file_uid "$f"), not by root or uid $(id -u): it sets RESTAURANTPRO_ENVIRONMENT. Fix: chown $(id -u) '$f'"
+  return 0
+}
 
 # $1 name: the process environment, else deploy/.env (read with grep, never sourced), else empty.
 setting() {
   local name=$1
   if [[ -n "${!name:-}" ]]; then printf '%s' "${!name}"; return 0; fi
   [[ -f "$DEPLOY_DIR/.env" ]] || return 0
+  require_safe_dotenv
   grep -E "^[[:space:]]*$name=" "$DEPLOY_DIR/.env" | tail -1 \
     | sed -E "s/^[[:space:]]*$name=//; s/^[\"']//; s/[\"'][[:space:]]*$//" || true
 }
@@ -30,6 +49,7 @@ recipients_file() {
 
 # D98 rule 1: production unless RESTAURANTPRO_ENVIRONMENT says test. Sets RP_ENV.
 env_mode() {
+  require_safe_dotenv # here too: a die inside setting's command substitution would only end the subshell
   RP_ENV="$(setting RESTAURANTPRO_ENVIRONMENT)"
   RP_ENV="${RP_ENV:-production}"
   case "$RP_ENV" in
@@ -44,8 +64,38 @@ file_uid() { stat -c %u "$1" 2>/dev/null || stat -f %u "$1"; }
 abs_path() { (cd "$(dirname "$1")" && printf '%s/%s\n' "$(pwd -P)" "$(basename "$1")"); }
 abs_dir() { (cd "$1" && pwd -P); }
 sha256_hex() { if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
-is_marker() { [[ "$RP_MARKERS" == *" $(basename "$1") "* || "$1" == *.sha256 ]]; }
 is_age_file() { [[ "$(head -c 22 "$1" 2>/dev/null | tr -d '\000' | tr '\n' '|')" == "age-encryption.org/v1|" ]]; }
+
+# Sidecar <x>.sha256 of <x>.age: exactly two lines, "<plaintext sha256>  <x>" and "<ciphertext sha256>  <x>.age".
+# The ciphertext line lets key-free checks catch bit rot or a swapped file.
+is_sidecar() {
+  local f=$1 name
+  [[ "$f" == *.sha256 && -f "$f" && ! -L "$f" ]] || return 1
+  (($(wc -c <"$f") <= 1024)) || return 1
+  name="$(basename "${f%.sha256}")"
+  [[ "$(wc -l <"$f" | tr -d ' ')" == 2 ]] || return 1
+  [[ "$(sed -n 1p "$f")" =~ ^[0-9a-f]{64}\ \ (.*)$ && "${BASH_REMATCH[1]}" == "$name" ]] || return 1
+  [[ "$(sed -n 2p "$f")" =~ ^[0-9a-f]{64}\ \ (.*)$ && "${BASH_REMATCH[1]}" == "$name.age" ]]
+}
+sidecar_plain() { sed -n 1p "$1" | cut -d' ' -f1; }
+sidecar_cipher() { sed -n 2p "$1" | cut -d' ' -f1; }
+is_marker() {
+  local b
+  b="$(basename "$1")"
+  [[ "$RP_MARKERS" == *" $b "* || "$b" =~ ^RECIPIENTS-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{64}$ ]] || is_sidecar "$1"
+}
+# Prints what is wrong with $1 as a file among the backups (nothing when it is fine): it must be a marker, a
+# sidecar, or age ciphertext whose sidecar exists and holds its SHA-256. Key-free.
+backup_file_problem() {
+  local f=$1 sidecar
+  if is_marker "$f"; then return 0; fi
+  if [[ "$f" == *.sha256 ]]; then echo "malformed sidecar: $f"; return 0; fi
+  if ! is_age_file "$f"; then echo "not age ciphertext: $f"; return 0; fi
+  sidecar="${f%.age}.sha256"
+  if ! is_sidecar "$sidecar"; then echo "$f has no well-formed ${sidecar##*/} sidecar"; return 0; fi
+  [[ "$(sha256_hex "$f")" == "$(sidecar_cipher "$sidecar")" ]] \
+    || echo "$f does not match the ciphertext SHA-256 in its sidecar (bit rot, or a swapped file)"
+}
 
 # D98 rule 5: $1 and everything under it owned by the effective uid, directories 0700, files 0600.
 # Refuses rather than fixes; the message says what to run.
@@ -115,6 +165,42 @@ require_safe_recipients() { # $1 file, $2 minimum
   [[ -z "$problem" ]] || die "$problem"
 }
 
+# The recipients' fingerprint: SHA-256 of their sorted distinct keys (comments do not count).
+recipients_fingerprint() { recipient_keys "$1" | sha256_hex /dev/stdin; }
+# Records the recipients of $2 as the accepted ones for backup directory $1: RECIPIENTS_SHA256 (stays on the
+# server) and RECIPIENTS-<UTC>-<fingerprint>, a write-once copy the off-box copy carries to the restore host,
+# where the newest name holds the current recipients (a rotation back to older keys gets a new name).
+recipients_copy() { find "$1" -maxdepth 1 -type f -name "RECIPIENTS-*-$2" 2>/dev/null | head -1 || true; }
+record_recipients() {
+  local dir=$1 fp old keep
+  fp="$(recipients_fingerprint "$2")"
+  keep="$(recipients_copy "$dir" "$fp")"
+  for old in "$dir"/RECIPIENTS-*; do [[ ! -f "$old" || "$old" == "$keep" ]] || rm -f -- "$old"; done
+  [[ -n "$keep" ]] || put_file "$2" "$dir/RECIPIENTS-$(date -u +%Y%m%dT%H%M%SZ)-$fp"
+  printf '%s\n' "$fp" | put_file /dev/stdin "$dir/RECIPIENTS_SHA256"
+}
+# A .age file under $1 that no record covers: subdirectories with their own RECIPIENTS_SHA256 (basebackup.sh's
+# <dir>/pitr inside backup.sh's <dir>) answer for themselves.
+unrecorded_ciphertext() {
+  find "$1" -mindepth 1 -type d -exec test -e '{}/RECIPIENTS_SHA256' \; -prune -o -type f -name '*.age' -print 2>/dev/null \
+    | head -1 || true
+}
+# D98 rule 2, production backups: refuses when the recipients of $2 are not the ones recorded for $1, or when
+# $1 holds ciphertext but no record (only an empty installation records silently). Prints "record" when the
+# caller should record them once it writes.
+require_recorded_recipients() {
+  local dir=$1 fp known
+  fp="$(recipients_fingerprint "$2")"
+  known="$(cat "$dir/RECIPIENTS_SHA256" 2>/dev/null || true)"
+  if [[ -z "$known" ]]; then
+    [[ -z "$(unrecorded_ciphertext "$dir")" ]] \
+      || die "$dir holds encrypted backups but no RECIPIENTS_SHA256: the recipients cannot be checked. If $2 holds the right keys, run ./verify-backups.sh --accept-recipients-change"
+    echo record
+  elif [[ "$known" != "$fp" ]]; then
+    die "the recipients changed since they were recorded for $dir ($known -> $fp). If you rotated a key on purpose, run ./verify-backups.sh --accept-recipients-change; otherwise someone may have swapped in their own key. Nothing was written"
+  fi
+}
+
 # D98 rule 2: no age identity on the server. $@ = further directories to scan (the backup directories).
 refuse_identity_on_server() {
   local hit d
@@ -152,14 +238,18 @@ put_file() {
   commit_partial "$2"
 }
 
-# D98 rule 3: writes plaintext $1 as $2.age encrypted to recipients file $3, after its sidecar $2.sha256 (the
-# plaintext's SHA-256), so a complete .age always has its sidecar. Without $3 (test mode only) writes $2 as is.
-# $1 may be $2 itself (basebackup.sh --encrypt-legacy): nothing here is written under either name directly.
+# D98 rule 3: writes plaintext $1 as $2.age encrypted to recipients file $3, with its sidecar $2.sha256
+# (is_sidecar) renamed into place first, so a complete .age always has its sidecar. Without $3 (test mode only)
+# writes $2 as is. $1 may be $2 itself (--encrypt-legacy): nothing is written under either name directly.
 seal() {
-  local plain=$1 final=$2 recipients=${3:-}
+  local plain=$1 final=$2 recipients=${3:-} name
   if [[ -z "$recipients" ]]; then put_file "$plain" "$final"; return; fi
-  printf '%s  %s\n' "$(sha256_hex "$plain")" "$(basename "$final")" | put_file /dev/stdin "$final.sha256"
-  RP_PARTIAL="$(mktemp "$final.age.tmp.XXXXXX")"
-  age_encrypt "$recipients" <"$plain" >"$RP_PARTIAL" || die "age could not encrypt $final"
+  name="$(basename "$final")"
+  RP_CIPHER="$(mktemp "$final.age.tmp.XXXXXX")"
+  age_encrypt "$recipients" <"$plain" >"$RP_CIPHER" || die "age could not encrypt $final"
+  sync "$RP_CIPHER"
+  printf '%s  %s\n%s  %s\n' "$(sha256_hex "$plain")" "$name" "$(sha256_hex "$RP_CIPHER")" "$name.age" | put_file /dev/stdin "$final.sha256"
+  RP_PARTIAL="$RP_CIPHER"
+  RP_CIPHER=""
   commit_partial "$final.age"
 }

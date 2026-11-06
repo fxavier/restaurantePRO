@@ -85,8 +85,20 @@ if [[ -n "$wal_dir" ]]; then
 else
   docker volume inspect "$wal_volume" >/dev/null 2>&1 || die "WAL volume not found: $wal_volume"
 fi
+env_mode
+sidecar="${archive%.age}"
+sidecar="${sidecar%.tar}.tar.sha256"
+allow_plain_wal=1 # plaintext WAL only next to a plaintext base, or in test mode
 if [[ "$archive" == *.age ]]; then
   [[ -n "$identity" ]] || die "encrypted base archive: pass --identity or set BACKUP_AGE_IDENTITY"
+  ! production || allow_plain_wal=""
+  if [[ -e "$sidecar" ]]; then
+    is_sidecar "$sidecar" || die "$sidecar is not a well-formed sidecar"
+    # Key-free, before anything is created: damaged or swapped ciphertext.
+    [[ "$(sha256_hex "$archive")" == "$(sidecar_cipher "$sidecar")" ]] || die "checksum mismatch: $archive does not match the ciphertext SHA-256 in $sidecar"
+  elif production; then
+    die "no sidecar $sidecar next to $archive: copy it too (production restores check it)"
+  fi
 fi
 if [[ -n "$identity" ]]; then
   backup_dir="$(dirname "$archive")"
@@ -137,8 +149,6 @@ trap 'exit 130' INT TERM
 
 # Read-only inputs of the preparing container; the identity is mounted into it alone.
 mounts=(-v "$(abs_path "$archive"):/backup/payload:ro")
-sidecar="${archive%.age}"
-sidecar="${sidecar%.tar}.tar.sha256"
 if [[ -f "$sidecar" ]]; then mounts+=(-v "$(abs_path "$sidecar"):/backup/payload.sha256:ro"); fi
 if [[ -n "$identity" ]]; then mounts+=(-v "$(abs_path "$identity"):/run/rp/identity:ro"); fi
 if [[ -n "$wal_dir" ]]; then
@@ -160,20 +170,20 @@ recovery_target=""
 # The values are validated above and passed through the environment, never spliced into the script.
 docker run --rm --network none -v "$volume:/var/lib/postgresql" "${mounts[@]}" \
   -e RECOVERY_TARGET="$recovery_target" -e WAL_COPY="$WAL_COPY" -e WAL_NAME="$WAL_NAME" -e STAGING="$STAGING" \
-  -e ENCRYPTED="$([[ "$archive" == *.age ]] && echo 1 || true)" \
+  -e ENCRYPTED="$([[ "$archive" == *.age ]] && echo 1 || true)" -e ALLOW_PLAIN_WAL="$allow_plain_wal" \
   --entrypoint sh "$PG_IMAGE" -euc '
     say() { echo "pitr-restore: $*" >&2; }
     decrypt() { # $1 ciphertext, $2 plaintext output
       [ -f /run/rp/identity ] || { say "$1 is encrypted: pass --identity"; exit 1; }
       age -d -i /run/rp/identity -o "$2" "$1" 2>/dev/null || { say "cannot decrypt $1 with this identity (wrong key?)"; exit 1; }
     }
-    matches() { # $1 plaintext, $2 sidecar
-      [ "$(sha256sum "$1" | cut -d" " -f1)" = "$(cut -d" " -f1 "$2")" ] || { say "checksum mismatch against $2: corrupted"; exit 1; }
+    matches() { # $1 file, $2 sidecar, $3 line: 1 = plaintext, 2 = ciphertext SHA-256
+      [ "$(sha256sum "$1" | cut -d" " -f1)" = "$(sed -n "$3p" "$2" | cut -d" " -f1)" ] || { say "checksum mismatch against ${2##*/}: corrupted"; exit 1; }
     }
     d='"$PGDATA_IN_IMAGE"'
     mkdir -p "$d" "$WAL_COPY" "$STAGING"
     if [ -n "$ENCRYPTED" ]; then decrypt /backup/payload "$STAGING/payload.tar"; else cp /backup/payload "$STAGING/payload.tar"; fi
-    if [ -f /backup/payload.sha256 ]; then matches "$STAGING/payload.tar" /backup/payload.sha256; fi
+    if [ -f /backup/payload.sha256 ]; then matches "$STAGING/payload.tar" /backup/payload.sha256 1; fi
     tar -xf "$STAGING/payload.tar" -C "$STAGING" SHA256SUMS backup_manifest base.tar.gz pg_wal.tar.gz       || { say "not a basebackup.sh archive"; exit 1; }
     rm "$STAGING/payload.tar"
     (cd "$STAGING" && sha256sum -c SHA256SUMS >/dev/null) || { say "checksum mismatch: archive is corrupted"; exit 1; }
@@ -188,9 +198,11 @@ docker run --rm --network none -v "$volume:/var/lib/postgresql" "${mounts[@]}" \
       f="${p##*/}"
       if [ "${f%.age}" != "$f" ] && echo "${f%.age}" | grep -qE "$WAL_NAME"; then
         [ -f "/wal-source/${f%.age}.sha256" ] || { say "$f has no ${f%.age}.sha256 sidecar"; exit 1; }
+        matches "$p" "/wal-source/${f%.age}.sha256" 2
         decrypt "$p" "$WAL_COPY/${f%.age}"
-        matches "$WAL_COPY/${f%.age}" "/wal-source/${f%.age}.sha256"
+        matches "$WAL_COPY/${f%.age}" "/wal-source/${f%.age}.sha256" 1
       elif echo "$f" | grep -qE "$WAL_NAME" && [ ! -e "$p.age" ]; then
+        [ -n "$ALLOW_PLAIN_WAL" ] || { say "plaintext WAL $f next to an encrypted base in production: refusing it (basebackup.sh --encrypt-legacy)"; exit 1; }
         cp "$p" "$WAL_COPY/$f"
       else
         continue

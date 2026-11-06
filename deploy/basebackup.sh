@@ -28,7 +28,9 @@
 # Lock: one run per <dir>. --wal-only skips (exit 0) while another run holds it, but fails once the lock
 # is older than an hour; a base backup waits up to an hour.
 # Production (RESTAURANTPRO_ENVIRONMENT, default production) refuses, writing nothing, without a recipients
-# file of at least two keys, with an age identity on the server, or with loose modes or owners (D98). Test
+# file of at least two keys, with recipients other than the ones recorded in <dir>/RECIPIENTS_SHA256 (until
+# verify-backups.sh --accept-recipients-change), with an age identity on the server, or with loose modes or
+# owners (D98). Test
 # mode accepts a single BACKUP_AGE_RECIPIENT, and without any recipient writes plaintext with a WARNING.
 #
 # Usage: deploy/basebackup.sh [--wal-only | --new-cluster | --encrypt-legacy] [--dir DIR] [--keep N]
@@ -90,7 +92,7 @@ remote="" # base backup directory inside the container, while it exists
 locked=false
 cleanup() {
   rm -rf "$work"
-  if [[ -n "$RP_PARTIAL" ]]; then rm -f "$RP_PARTIAL"; fi
+  remove_partials
   if [[ -n "$remote" ]]; then docker exec "$container" rm -rf "$remote" >/dev/null 2>&1 || true; fi
   if $locked; then rm -rf "$lock"; fi
 }
@@ -101,8 +103,16 @@ if production; then
   require_safe_recipients "$recipients" 2
   refuse_identity_on_server "$dir"
   require_safe_scripts
-  if [[ -e "$dir" ]]; then require_private_dir "$dir"; fi
-  if $encrypt_legacy && [[ -e "$legacy_dir" ]]; then require_private_dir "$legacy_dir"; fi
+  record=record
+  if [[ -e "$dir" ]]; then
+    require_private_dir "$dir"
+    record="$(require_recorded_recipients "$dir" "$recipients")"
+  fi
+  legacy_record=""
+  if $encrypt_legacy && [[ -e "$legacy_dir" ]]; then
+    require_private_dir "$legacy_dir"
+    legacy_record="$(require_recorded_recipients "$legacy_dir" "$recipients")"
+  fi
 elif [[ -n "$(recipient_keys "$recipients" 2>/dev/null)" ]]; then
   require_safe_recipients "$recipients" 1
 elif [[ -n "${BACKUP_AGE_RECIPIENT:-}" ]]; then
@@ -123,6 +133,7 @@ in_archive() { docker exec "$container" sh -c 'cd "$0" && exec "$@"' "$ARCHIVE_I
 [[ "$(sql 'SHOW archive_mode')" == on ]] || die "archive_mode is not on in $container: WAL archiving is not configured (compose.yaml)"
 
 mkdir -p "$dir"
+if production && [[ "$record" == record ]]; then record_recipients "$dir" "$recipients"; fi
 # One run at a time per <dir>: a lock directory (mkdir is atomic; no flock on macOS) whose "owner" file
 # holds the owner's pid and that process's start time, so a reused pid is not mistaken for the owner.
 lock="$dir/.lock"
@@ -169,6 +180,10 @@ else
     waited=$((waited + 5))
   done
 fi
+
+# Base backup copies of killed runs inside the container (plaintext, outside any volume): older than an hour.
+docker exec "$container" find /tmp -maxdepth 1 -type d -name 'rp-basebackup-*' -mmin +60 -exec rm -rf {} + \
+  || log "WARNING: could not sweep old /tmp/rp-basebackup-* in $container"
 
 # The cluster the archive and <dir> must belong to.
 sysid="$(sql 'SELECT system_identifier FROM pg_control_system()')"
@@ -256,7 +271,7 @@ logical_plaintext() {
 encrypt_in_place() { # $1 plaintext file on this host: $1.age and its sidecar, then the plaintext goes
   local f=$1
   if [[ -e "$f.age" ]]; then
-    [[ "$(cut -d' ' -f1 "${f}.sha256" 2>/dev/null)" == "$(sha256_hex "$f")" ]] \
+    [[ "$(sidecar_plain "$f.sha256" 2>/dev/null)" == "$(sha256_hex "$f")" ]] \
       || die "$f and $f.age both exist but the sidecar does not match: check them by hand"
   else
     is_age_file "$f" && die "$f is already age ciphertext but lacks the .age suffix: rename it to $f.age"
@@ -278,6 +293,7 @@ if $encrypt_legacy; then
   while IFS= read -r f; do encrypt_in_place "$f"; n=$((n + 1)); done < <(dir_plaintext)
   log "--encrypt-legacy: encrypted $n plaintext file(s) in $dir"
   n=0
+  if production && [[ "$legacy_record" == record ]]; then record_recipients "$legacy_dir" "$recipients"; fi
   while IFS= read -r f; do encrypt_in_place "$f"; n=$((n + 1)); done < <(logical_plaintext)
   log "--encrypt-legacy: encrypted $n plaintext logical archive(s) in $legacy_dir; now a new base backup"
 elif production; then

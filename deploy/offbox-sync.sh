@@ -19,8 +19,9 @@
 #   --port               ssh port (default: $OFFBOX_SSH_PORT or 22)
 #   --ssh-key            ssh private key for the destination (default: $OFFBOX_SSH_KEY, else ssh's default)
 #   --known-hosts        the pinned host key (default: deploy/offbox_known_hosts)
-#   --check-append-only  also prove the destination is append-only: a canary is written, then reading it
-#                        back and deleting it must both be refused. Skipped for a local disk.
+#   --check-append-only  also prove the destination is write-once: a canary is written under a new name, then
+#                        reading it back, deleting it and overwriting it must all be refused. Skipped for a
+#                        local disk.
 # Exits non-zero on any failure.
 set -euo pipefail
 umask 077
@@ -90,21 +91,34 @@ elif ! $local_target; then
   [[ -f "$known_hosts" ]] || die "no pinned host key: $known_hosts"
 fi
 
-ssh_cmd=(ssh -p "$port" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts"
+ssh_cmd=(ssh -F /dev/null -p "$port" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts"
   -o GlobalKnownHostsFile=/dev/null -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no
-  -o PubkeyAuthentication=yes -o ConnectTimeout=20)
+  -o PubkeyAuthentication=yes -o ForwardAgent=no -o ClearAllForwardings=yes -o ConnectTimeout=20)
 if [[ -n "$key" ]]; then ssh_cmd+=(-i "$key" -o IdentitiesOnly=yes); fi
 rsync_to() { # rsync arguments; the destination is the last one
   if $local_target; then rsync "$@"; else rsync -e "${ssh_cmd[*]}" "$@"; fi
 }
 dest="${target%/}/"
 [[ "$target" != *: ]] || dest="$target" # host: (the rrsync root)
-excludes=(--exclude=.lock --exclude='*.tmp.*' --exclude='*.tmp' --exclude='.work.*')
+# Write-once: never replace a file already at the destination (the destination enforces it too, with
+# rrsync -no-overwrite), and never send the markers that change in place.
+excludes=(--ignore-existing --exclude=.lock --exclude='*.tmp.*' --exclude='*.tmp' --exclude='.work.*')
+for m in $RP_LOCAL_MARKERS; do excludes+=(--exclude="$m"); done
+push() { # $1 local directory, $2 destination directory, $3... more rsync options: sidecars and markers first
+  rsync_to -rt "${excludes[@]}" "${@:3}" --include='*/' --include='*.sha256' --include='SYSTEM_IDENTIFIER' \
+    --include='RECIPIENTS-*' --exclude='*' "$1/" "$2" || die "could not copy the sidecars of $1 to $target"
+  rsync_to -rt "${excludes[@]}" "${@:3}" "$1/" "$2" || die "could not copy $1 to $target"
+}
 
 log "copying $dir to $target"
-rsync_to -rt "${excludes[@]}" --include='*/' --include='*.sha256' --exclude='*' "$dir/" "$dest" \
-  || die "could not copy the sidecars to $target"
-rsync_to -rt "${excludes[@]}" "$dir/" "$dest" || die "could not copy $dir to $target"
+# basebackup.sh's directory goes to pitr-<system identifier>/: a new cluster restarts the WAL names, and the
+# write-once destination would otherwise keep the old cluster's files under the new cluster's names.
+push "$dir" "$dest" --exclude=/pitr
+if [[ -d "$dir/pitr" ]]; then
+  sysid="$(cat "$dir/pitr/SYSTEM_IDENTIFIER" 2>/dev/null || true)"
+  [[ "$sysid" =~ ^[0-9]+$ ]] || die "$dir/pitr has no SYSTEM_IDENTIFIER: run ./basebackup.sh first"
+  push "$dir/pitr" "${dest}pitr-$sysid/"
+fi
 
 if $check; then
   if $local_target; then
@@ -112,16 +126,26 @@ if $check; then
   else
     work="$(mktemp -d "${TMPDIR:-/tmp}/rp-offbox.XXXXXX")"
     trap 'rm -rf "$work"' EXIT
-    mkdir "$work/canary" "$work/empty"
-    date -u +%Y-%m-%dT%H:%M:%SZ >"$work/canary/canary"
+    mkdir "$work/canary" "$work/other" "$work/empty"
+    canary="canary-$(date -u +%Y%m%dT%H%M%SZ)-$$-$RANDOM" # a new name: the destination never overwrites
+    date -u +%Y-%m-%dT%H:%M:%SZ >"$work/canary/$canary"
+    printf 'a different, longer content for the overwrite attempt %s\n' "$RANDOM" >"$work/other/$canary"
+    touch -t 200001010000 "$work/other/$canary"
+    needs='authorized_keys needs command="rrsync -wo -no-del -no-overwrite <dir>"'
     rsync_to -rt "$work/canary/" "${dest}.offbox-canary/" || die "could not write the canary to $target"
-    if rsync_to "${dest}.offbox-canary/canary" "$work/read-back" 2>/dev/null; then
-      die "the destination is not append-only: this server could read the canary back (authorized_keys needs command=\"rrsync -wo -no-del <dir>\")"
+    if rsync_to "${dest}.offbox-canary/$canary" "$work/read-back" 2>/dev/null; then
+      die "the destination is not write-once: this server could read the canary back ($needs)"
     fi
     if rsync_to -r --delete "$work/empty/" "${dest}.offbox-canary/" 2>/dev/null; then
-      die "the destination is not append-only: this server could delete the canary (authorized_keys needs command=\"rrsync -wo -no-del <dir>\")"
+      die "the destination is not write-once: this server could delete the canary ($needs)"
     fi
-    log "the destination is append-only: the canary was written, and reading and deleting it were refused"
+    # Without --ignore-existing here: the destination itself must skip the file (-no-overwrite), which a
+    # write-only client can only see in the itemized changes.
+    changes="$(rsync_to -rti "$work/other/" "${dest}.offbox-canary/" 2>/dev/null || true)"
+    if [[ "$changes" == *"$canary"* ]]; then
+      die "the destination is not write-once: this server could overwrite the canary ($needs)"
+    fi
+    log "the destination is write-once: the canary was written, and reading, deleting and overwriting it were refused"
   fi
 fi
 

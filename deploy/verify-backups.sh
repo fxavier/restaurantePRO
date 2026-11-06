@@ -5,12 +5,14 @@
 #     failed_count has not grown since the last run, and no WAL segment has waited more than 15 minutes
 #   - the copy: every segment archived more than 15 minutes ago is in <pitr dir>/wal
 #   - the newest base backup is at most 26 hours old, and the WAL chain is continuous from the oldest kept one
-#   - every file in the pg-wal-archive volume and in <dir> is age ciphertext with its .sha256 sidecar, apart
-#     from the markers and the sidecars (test mode: plaintext is only a WARNING)
+#   - every file in the pg-wal-archive volume and in <dir> is age ciphertext whose well-formed .sha256 sidecar
+#     holds its SHA-256 (bit rot or a swapped file is caught without a key), apart from the markers and the
+#     sidecars (test mode: plaintext is only a WARNING). This reads every backup file once per run.
 #   - modes and owners, the recipients file, no age identity on the server, the volume is postgres 0700
-#   - the recipients: their fingerprint is kept in <dir>/RECIPIENTS_SHA256 (and the file in <dir>/RECIPIENTS,
-#     which the off-box copy carries for verify-restore.sh); a change fails every run until it is accepted
-#     with --accept-recipients-change, which is logged. The first run records them.
+#   - the recipients: their fingerprint is kept in RECIPIENTS_SHA256 of <dir> and of <pitr dir> (and the file
+#     as RECIPIENTS-<UTC>-<fingerprint>, which the off-box copy carries for verify-restore.sh); a change, or a
+#     directory with ciphertext but no record, fails every run (and backup.sh / basebackup.sh refuse) until
+#     --accept-recipients-change, which is logged. Only an empty installation is recorded silently.
 #   - <dir>/LAST_OFFBOX_SYNC (offbox-sync.sh) is at most 30 minutes old
 #
 # Usage: deploy/verify-backups.sh [--accept-recipients-change] [--dir DIR] [--pitr-dir DIR]
@@ -73,60 +75,55 @@ if production; then
   check refuse_identity_on_server "$dir" "$pitr"
   check require_safe_scripts
 fi
+# The recipients, per backup directory: <dir> (backup.sh) and <pitr dir> (basebackup.sh) each record theirs.
 if [[ -f "$recipients" ]]; then
-  fingerprint="$(recipient_keys "$recipients" | sha256_hex /dev/stdin)"
-  known="$(cat "$dir/RECIPIENTS_SHA256" 2>/dev/null || true)"
-  record() {
-    printf '%s\n' "$fingerprint" >"$dir/.RECIPIENTS_SHA256.new"
-    put_file "$recipients" "$dir/RECIPIENTS"
-    put_file "$dir/.RECIPIENTS_SHA256.new" "$dir/RECIPIENTS_SHA256"
-    rm -f "$dir/.RECIPIENTS_SHA256.new"
-  }
-  if [[ -z "$known" ]]; then
-    record
-    log "recorded the recipients (fingerprint $fingerprint) in $dir/RECIPIENTS_SHA256"
-  elif [[ "$known" != "$fingerprint" ]]; then
-    if $accept; then
-      record
-      log "AUDIT: recipients change accepted by uid $(id -u) ($(id -un)) at $(date -u +%Y-%m-%dT%H:%M:%SZ): $known -> $fingerprint"
+  fingerprint="$(recipients_fingerprint "$recipients")"
+  for d in "$dir" "$pitr"; do
+    [[ -d "$d" ]] || continue
+    known="$(cat "$d/RECIPIENTS_SHA256" 2>/dev/null || true)"
+    if [[ "$known" == "$fingerprint" ]]; then
+      [[ -n "$(recipients_copy "$d" "$fingerprint")" ]] || record_recipients "$d" "$recipients"
+    elif $accept; then
+      record_recipients "$d" "$recipients"
+      log "AUDIT: recipients for $d accepted by uid $(id -u) ($(id -un)) at $(date -u +%Y-%m-%dT%H:%M:%SZ): ${known:-none recorded} -> $fingerprint"
+    elif [[ -n "$known" ]]; then
+      problem "the recipients changed since they were recorded for $d ($known -> $fingerprint): if you rotated a key on purpose, run ./verify-backups.sh --accept-recipients-change; otherwise someone may have swapped in their own key"
+    elif [[ -n "$(unrecorded_ciphertext "$d")" ]]; then
+      problem "$d holds encrypted backups but no RECIPIENTS_SHA256: if $recipients holds the right keys, run ./verify-backups.sh --accept-recipients-change"
     else
-      problem "the recipients changed since they were recorded ($known -> $fingerprint): if you rotated a key on purpose, run ./verify-backups.sh --accept-recipients-change; otherwise someone may have swapped in their own key"
+      record_recipients "$d" "$recipients" # an empty installation
+      log "recorded the recipients (fingerprint $fingerprint) for $d"
     fi
-  elif ! cmp -s "$recipients" "$dir/RECIPIENTS"; then
-    record # comments only: the keys are the same
-  fi
+  done
 fi
 
-# Every file is ciphertext with its sidecar, apart from markers and sidecars.
-scanned=0
-scan_listing() { # $1 where, $2 lines "<A|P> <path>" (A = age header); counts the ciphertext in $scanned
-  local kind f sidecars
-  scanned=0
-  sidecars=" $(grep '\.sha256$' <<<"$2" | cut -d' ' -f2 | tr '\n' ' ' || true) "
-  while read -r kind f; do
-    [[ -n "$f" ]] || continue
-    if is_marker "$f"; then continue; fi
-    if [[ "$kind" != A ]]; then plaintext "$1: not age ciphertext: $f"; continue; fi
-    scanned=$((scanned + 1))
-    [[ "$sidecars" == *" ${f%.age}.sha256 "* ]] || problem "$1: $f has no ${f%.age}.sha256 sidecar"
-  done <<<"$2"
+# Every file is a marker, a well-formed sidecar, or ciphertext matching the ciphertext SHA-256 in its sidecar.
+scan() { # $1 where; stdin: backup_file_problem lines; counts them in $found
+  local line
+  found=0
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    found=$((found + 1))
+    if [[ "$line" == "not age ciphertext: "* ]]; then plaintext "$1: $line"; else problem "$1: $line"; fi
+  done
 }
-local_listing() {
+local_problems() {
   find "$dir" "$pitr" -path "$dir/.lock" -prune -o -path "$pitr/.lock" -prune -o -type f ! -name '*.tmp.*' ! -name '*.tmp' -print 2>/dev/null \
-    | sort -u | while IFS= read -r f; do if is_age_file "$f"; then echo "A $f"; else echo "P $f"; fi; done
+    | sort -u | while IFS= read -r f; do backup_file_problem "$f"; done
 }
-scan_listing "$dir" "$(local_listing)"
-dir_count=$scanned
+scan "$dir" < <(local_problems)
+dir_count="$(find "$dir" "$pitr" -type f -name '*.age' 2>/dev/null | sort -u | wc -l | tr -d ' ')"
 
 if [[ -z "$container" ]]; then
   problem "the postgres service is not running (or pass --container): the archiver and the WAL volume are unchecked"
 else
   sql() { docker exec "$container" psql -X -At -v ON_ERROR_STOP=1 -U "$DB_USER" -d postgres -c "$1"; }
+  # The same rules, run in the container with the same lib/common.sh (mounted there by compose.yaml).
   # shellcheck disable=SC2016 # expanded by the container shell
-  vlisting="$(docker exec "$container" sh -c 'cd /wal-archive && find . -type f ! -name "*.tmp" | sed "s|^\./||" | while IFS= read -r f; do
-    if [ "$(head -c 21 "$f" | tr -d "\000")" = "age-encryption.org/v1" ]; then echo "A $f"; else echo "P $f"; fi; done')"
-  scan_listing "the pg-wal-archive volume" "$vlisting"
-  volume_count=$scanned
+  scan "the pg-wal-archive volume" < <(docker exec "$container" bash -c 'die() { echo "$*"; exit 1; }; . /etc/restaurantpro/common.sh
+    find /wal-archive -type f ! -name "*.tmp" | sort | while IFS= read -r f; do backup_file_problem "$f"; done' \
+    || echo "cannot scan the volume (is lib/common.sh mounted at /etc/restaurantpro/common.sh? docker compose up -d)")
+  volume_count="$(docker exec "$container" find /wal-archive -type f -name '*.age' | wc -l | tr -d ' ')"
   [[ "$(docker exec "$container" stat -c '%a %U' /wal-archive)" == "700 postgres" ]] \
     || problem "the pg-wal-archive volume is not postgres 0700: $(docker exec "$container" stat -c '%a %U' /wal-archive)"
 
@@ -139,9 +136,7 @@ else
   last_count="$(cat "$pitr/ARCHIVER_FAILED_COUNT" 2>/dev/null || echo "$failed_count")"
   ((failed_count <= last_count)) || problem "the archiver failed $((failed_count - last_count)) time(s) since the last check (pg_stat_archiver.failed_count $last_count -> $failed_count)"
   if [[ -d "$pitr" ]]; then
-    echo "$failed_count" >"$pitr/.ARCHIVER_FAILED_COUNT.new"
-    put_file "$pitr/.ARCHIVER_FAILED_COUNT.new" "$pitr/ARCHIVER_FAILED_COUNT"
-    rm -f "$pitr/.ARCHIVER_FAILED_COUNT.new"
+    printf '%s\n' "$failed_count" | put_file /dev/stdin "$pitr/ARCHIVER_FAILED_COUNT"
   fi
   waiting="$(sql "SELECT count(*) FROM pg_ls_archive_statusdir() WHERE name LIKE '%.ready' AND modification < now() - interval '$MAX_WAIT_MIN minutes'")"
   ((waiting == 0)) || problem "$waiting WAL segment(s) have waited more than $MAX_WAIT_MIN min to be archived: the last archive is too old"

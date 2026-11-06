@@ -2,8 +2,9 @@
 # PostgreSQL archive_command (D90, D98 rule 3a): store one finished WAL file in the pg-wal-archive volume,
 # encrypted with age to every recipient of /etc/restaurantpro/backup-recipients.txt.
 #   archive_command = 'sh /etc/restaurantpro/archive-wal.sh %p %f'
-# Writes <f>.sha256 (the plaintext's SHA-256) and then <f>.age, each flushed and renamed into place, so a
-# complete <f>.age always has its sidecar. Exits 0 only once both are on disk: PostgreSQL may recycle the
+# Encrypts to <f>.age.tmp, then writes the sidecar <f>.sha256 (two lines: the plaintext's and the ciphertext's
+# SHA-256) and renames it into place, then renames <f>.age, all flushed, so a complete <f>.age always has its
+# sidecar. Exits 0 only once both are on disk: PostgreSQL may recycle the
 # segment as soon as this returns. A non-zero exit makes PostgreSQL keep the segment and retry.
 # Plaintext <f> (S27 behaviour) only in test mode without recipients; production without recipients fails.
 # basebackup.sh --encrypt-legacy also calls this, with %p = the plaintext copy already in the volume.
@@ -22,16 +23,17 @@ if [ -f "$recipients" ] && grep -q '^age1' "$recipients"; then
     # byte-stable, so compare the sidecar. A different file means the archive holds another cluster's WAL
     # (the database volume was recreated): archiving stops, loudly, until basebackup.sh --new-cluster.
     # Flush again: the earlier run may have died before its own sync.
-    [ "$(cut -d' ' -f1 "$dst.sha256" 2>/dev/null)" = "$sum" ] || exit 1
+    [ "$(head -1 "$dst.sha256" 2>/dev/null | cut -d' ' -f1)" = "$sum" ] || exit 1
     sync "$dst.sha256" "$dst.age"
     sync "$dir"
     exit 0
   fi
-  printf '%s  %s\n' "$sum" "$(basename "$dst")" >"$dst.sha256.tmp"
-  sync "$dst.sha256.tmp"
-  mv "$dst.sha256.tmp" "$dst.sha256"
   age -R "$recipients" -o "$dst.age.tmp" "$src"
   sync "$dst.age.tmp"
+  name="$(basename "$dst")"
+  printf '%s  %s\n%s  %s\n' "$sum" "$name" "$(sha256sum "$dst.age.tmp" | cut -d' ' -f1)" "$name.age" >"$dst.sha256.tmp"
+  sync "$dst.sha256.tmp"
+  mv "$dst.sha256.tmp" "$dst.sha256"
   mv "$dst.age.tmp" "$dst.age" # the .age marks the copy complete
   sync "$dir"
   exit 0

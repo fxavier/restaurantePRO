@@ -5,8 +5,8 @@
 #   --key-recovery  quarterly, on a clean machine, with the RECOVERY identity alone, retrieved from escrow by
 #                   the second custodian (deploy/README.md, "Key-recovery drill"); the identity file must hold
 #                   exactly one key, and --retrieval-started times the retrieval against the 2 h RTO (§11)
-# Steps: the identity's public key must be one of the copied recipients (<from>/RECIPIENTS, matching
-# <from>/RECIPIENTS_SHA256); pitr-restore.sh --target-time latest of the newest base backup with all copied WAL
+# Steps: the identity's public key must be one of the copied recipients (the newest RECIPIENTS-<UTC>-<sha256>,
+# whose keys must match its name); pitr-restore.sh --target-time latest of the newest base backup with all copied WAL
 # into an isolated container (it runs pg_verifybackup before the start); recovery must reach the newest copied
 # WAL segment; pg_amcheck --all must be clean; the Flyway history must have no failed row. Then restore.sh of
 # the newest backup.sh archive into a scratch container, with the same checks. Writes
@@ -14,7 +14,7 @@
 #
 # Usage: deploy/verify-restore.sh --from DIR --identity FILE [--key-recovery] [--retrieval-started TIME]
 #                                 [--name PREFIX] [--report-dir DIR] [--timeout SECONDS]
-#   --from               the copied backups: backup.sh archives, RECIPIENTS*, and pitr/base, pitr/wal
+#   --from               the copied backups: backup.sh archives, RECIPIENTS-*, and pitr-<system id>/{base,wal}
 #   --identity           the age identity: yours, 0600 or 0400, outside deploy/ and --from (e.g. on a tmpfs)
 #   --retrieval-started  when the custodian started retrieving the recovery key, UTC: 2026-11-05T14:30:00Z
 #   --name               prefix of the containers it creates (default: restaurantpro-verify)
@@ -88,23 +88,28 @@ fi
 # The key: one of the copied recipients, which match their recorded fingerprint.
 key="$(age_public_key "$identity")" || die "cannot read the public key of $identity"
 key_label=""
-if [[ ! -f "$from/RECIPIENTS" ]]; then
-  problem "no $from/RECIPIENTS: run verify-backups.sh on the server (it records them) and copy the backups again"
+# The current recipients: the newest write-once RECIPIENTS-<UTC>-<fingerprint>; its name must match its keys.
+recipients_copy="$(find "$from" -maxdepth 2 -type f -name 'RECIPIENTS-*' 2>/dev/null | awk -F/ '{ print $NF "\t" $0 }' \
+  | sort | tail -1 | cut -f2 || true)"
+if [[ -z "$recipients_copy" ]]; then
+  problem "no RECIPIENTS-<UTC>-<fingerprint> in $from: run verify-backups.sh on the server (it records them), then copy the backups again"
+elif [[ "$(recipients_fingerprint "$recipients_copy")" != "${recipients_copy##*-}" ]]; then
+  problem "$recipients_copy does not match the fingerprint in its name"
+elif recipient_keys "$recipients_copy" | grep -qxF "$key"; then
+  key_label="$(grep -B1 -xF "$key" "$recipients_copy" | sed -n 's/^#[[:space:]]*//p' | head -1)"
+  log "key $key ($key_label) is a current recipient"
 else
-  if [[ -f "$from/RECIPIENTS_SHA256" && "$(recipient_keys "$from/RECIPIENTS" | sha256_hex /dev/stdin)" != "$(cat "$from/RECIPIENTS_SHA256")" ]]; then
-    problem "$from/RECIPIENTS does not match RECIPIENTS_SHA256"
-  fi
-  if recipient_keys "$from/RECIPIENTS" | grep -qxF "$key"; then
-    key_label="$(grep -B1 -xF "$key" "$from/RECIPIENTS" | sed -n 's/^#[[:space:]]*//p' | head -1)"
-    log "key $key ($key_label) is a current recipient"
-  else
-    problem "the identity's key $key is not one of the current recipients in $from/RECIPIENTS"
-  fi
+  problem "the identity's key $key is not one of the current recipients in $recipients_copy"
 fi
 
-base="$(find "$from/pitr/base" -maxdepth 1 -type f -name 'restaurantpro-base-*.tar.age' 2>/dev/null | sort | tail -1)"
+# offbox-sync.sh copies <dir>/pitr to pitr-<system identifier>/: take the tree with the newest base backup.
+pitr_dir="$(find "$from" -mindepth 3 -maxdepth 3 -type f -path "$from/pitr*/base/restaurantpro-base-*.tar.age" 2>/dev/null \
+  | awk -F/ '{ print $NF "\t" $0 }' | sort | tail -1 | cut -f2 || true)"
+pitr_dir="${pitr_dir%/base/*}"
+pitr_dir="${pitr_dir:-$from/pitr}"
+base="$(find "$pitr_dir/base" -maxdepth 1 -type f -name 'restaurantpro-base-*.tar.age' 2>/dev/null | sort | tail -1)"
 logical="$(find "$from" -maxdepth 1 -type f -name 'restaurantpro-*.tar.age' 2>/dev/null | sort | tail -1)"
-newest_wal="$(find "$from/pitr/wal" -maxdepth 1 -type f -name '*.age' 2>/dev/null | sed 's|.*/||' | grep -E '^[0-9A-F]{24}\.age$' | sort | tail -1 | cut -c1-24)"
+newest_wal="$(find "$pitr_dir/wal" -maxdepth 1 -type f -name '*.age' 2>/dev/null | sed 's|.*/||' | grep -E '^[0-9A-F]{24}\.age$' | sort | tail -1 | cut -c1-24)"
 pitr_name="$prefix-pitr"
 scratch="$prefix-logical"
 cleanup() {
@@ -123,12 +128,12 @@ check_restored() { # $1 container: sets AMCHECK (clean|failed) and FLYWAY (newes
 
 rto="" wal_reached="" pitr_amcheck="" pitr_flyway="" logical_amcheck="" logical_flyway="" logical_tables=""
 if [[ -z "$base" ]]; then
-  problem "no encrypted base backup in $from/pitr/base"
+  problem "no encrypted base backup in $from/pitr*/base"
 else
   log "restoring $(basename "$base") with every copied WAL file (target latest)"
   t0=$SECONDS
   if "$DEPLOY_DIR/pitr-restore.sh" --force --target-time latest --timeout "$timeout" --name "$pitr_name" \
-    --wal-dir "$from/pitr/wal" --identity "$identity" "$base" >/dev/null; then
+    --wal-dir "$pitr_dir/wal" --identity "$identity" "$base" >/dev/null; then
     rto=$((SECONDS - t0))
     redo="$(docker logs "$pitr_name" 2>&1 | sed -n 's/.*redo done at \([0-9A-F]*\/[0-9A-F]*\).*/\1/p' | tail -1)"
     if [[ -n "$redo" && -n "$newest_wal" ]]; then
