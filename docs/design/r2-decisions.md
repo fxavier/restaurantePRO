@@ -370,7 +370,7 @@ The same gates as R1. G1 is this document. The PRD slices are G2/G3. Each slice 
 
 ## Amendment D63 — Idempotent multi-step commands (settlement)
 
-**Status:** PROPOSED for user review. It was requested by the orchestrator after the S12 review and is binding for S16 unless the user objects. It amends D47 and leaves D48, D50 §7.6, D51 and D55 unchanged.
+**Status:** ACCEPTED 2026-11-05 by the user (R3 P39, "aprovado"). It was requested by the orchestrator after the S12 review. It amends D47 and leaves D48, D50 §7.6, D51 and D55 unchanged.
 
 **Context.** Spec §9 requires an Idempotency-Key on financial and other repeatable confirmations. D47 runs the action inside the transaction that stores its response, while holding the record's row lock. Three S16 commands must run a step with no caller transaction: `POST /orders/{id}/documents` and `/close` call `FiscalApi.issue` (D55, with the S12 guard in `DocumentIssueService.issue`), and `POST /payment-attempts/{id}/resolve` without `outcome` calls `provider.status` (D48, `ExternalCalls.requireNoTransaction()`). Wrapping these in `execute` would fail on the guard. Relaxing the guard would nest a second connection (Hikari) and hold the key's row lock across the issue.
 

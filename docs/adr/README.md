@@ -21,7 +21,7 @@ Each ADR records a decision as built, with its context and consequences. The ful
 | [0015](0015-idempotency-r2-rules.md) | Idempotency in R2: typed, headers kept, only 2xx stored, retention | D47 ★ | Accepted 2026-11-04 |
 | [0016](0016-external-calls-persist-call-record.md) | External calls: persist, then call, then record | D48 ★, D53 | Accepted 2026-11-04 |
 | [0017](0017-fiscal-adapter-port.md) | Fiscal adapter port, with a non-certified guard | D54 ★ | Accepted 2026-11-04 |
-| [0018](0018-idempotent-multi-step-commands.md) | Idempotent multi-step commands (`executeSteps`) | D63 (amends D47) | Proposed — binding for the build, awaiting user review |
+| [0018](0018-idempotent-multi-step-commands.md) | Idempotent multi-step commands (`executeSteps`) | D63 (amends D47) | Accepted (2026-11-05, R3 P39) |
 
 ## Where the code deviates from a decision text
 
