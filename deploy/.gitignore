@@ -2,3 +2,7 @@
 .env
 secrets/
 backups/
+logs/
+# D98: public keys and the pinned host key of this installation.
+backup-recipients.txt
+offbox_known_hosts
