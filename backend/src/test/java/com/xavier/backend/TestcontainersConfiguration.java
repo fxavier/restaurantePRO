@@ -1,6 +1,7 @@
 package com.xavier.backend;
 
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.flyway.autoconfigure.FlywayConnectionDetails;
 import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.springframework.context.annotation.Bean;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -62,6 +63,31 @@ public class TestcontainersConfiguration {
     @Bean
     JdbcConnectionDetails sharedPostgresConnectionDetails() {
         return new JdbcConnectionDetails() {
+            @Override
+            public String getUsername() {
+                return POSTGRES.getUsername();
+            }
+
+            @Override
+            public String getPassword() {
+                return POSTGRES.getPassword();
+            }
+
+            @Override
+            public String getJdbcUrl() {
+                return POSTGRES.getJdbcUrl();
+            }
+        };
+    }
+
+    /**
+     * Flyway's own connection to the shared container, as {@code @ServiceConnection} gave it (Boot's
+     * {@code FlywayContainerConnectionDetailsFactory}): Flyway migrates outside the application's pool, which a
+     * test may size down to one connection ({@code IdempotencyStepsSingleConnectionTest}).
+     */
+    @Bean
+    FlywayConnectionDetails sharedPostgresFlywayConnectionDetails() {
+        return new FlywayConnectionDetails() {
             @Override
             public String getUsername() {
                 return POSTGRES.getUsername();
