@@ -14,20 +14,26 @@ x-logging: &logging # spec §11: log rotation
 
 services:
   postgres:
-    image: postgres:18.6-alpine # D4: same pin as backend/compose.yaml and the Testcontainers tests
+    # D98: the D4 pin (postgres:18.6-alpine, as backend/compose.yaml and the Testcontainers tests) plus a
+    # pinned age, so WAL is encrypted before it reaches the pg-wal-archive volume.
+    build: ./postgres
+    image: restaurantpro-postgres:18.6-r1
     restart: unless-stopped
     environment:
       POSTGRES_DB: restaurantpro
       POSTGRES_USER: restaurantpro
       POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+      # D98: production unless .env says test (developer stacks only). Read by the preflight and the archive_command.
+      RESTAURANTPRO_ENVIRONMENT: ${RESTAURANTPRO_ENVIRONMENT:-production}
     # D90, spec §11 (RPO 15 min): continuous WAL archiving into the pg-wal-archive volume. archive_timeout
     # forces a segment switch at least every 5 minutes when anything was written, so at most 5 minutes of
-    # commits are not yet archived. The wrapper makes the archive directory writable by the postgres user
+    # commits are not yet archived. The wrapper first runs the D98 preflight (in production: no start
+    # without two backup recipients), then makes the archive directory writable by the postgres user only
     # (a new named volume is root-owned), then runs the image's own entrypoint.
     entrypoint:
       - sh
       - -c
-      - mkdir -p /wal-archive && chown postgres:postgres /wal-archive && chmod 700 /wal-archive && exec docker-entrypoint.sh "$$@"
+      - bash /etc/restaurantpro/preflight.sh && mkdir -p /wal-archive && chown postgres:postgres /wal-archive && chmod 700 /wal-archive && exec docker-entrypoint.sh "$$@"
       - --
     command:
       - postgres
@@ -45,6 +51,16 @@ services:
       - db-data:/var/lib/postgresql
       - pg-wal-archive:/wal-archive
       - ./postgres/archive-wal.sh:/etc/restaurantpro/archive-wal.sh:ro
+      - ./postgres/preflight.sh:/etc/restaurantpro/preflight.sh:ro
+      - ./lib/common.sh:/etc/restaurantpro/common.sh:ro
+      # Public keys only (D98): the operational and the recovery recipient. A missing file is an error, never
+      # an empty directory. Developer stacks in test mode may set BACKUP_AGE_RECIPIENTS_FILE=/dev/null.
+      - type: bind
+        source: ${BACKUP_AGE_RECIPIENTS_FILE:-./backup-recipients.txt}
+        target: /etc/restaurantpro/backup-recipients.txt
+        read_only: true
+        bind:
+          create_host_path: false
     networks:
       - internal
     healthcheck:
@@ -137,6 +153,6 @@ networks:
 
 volumes:
   db-data:
-  pg-wal-archive: # WAL segments since the oldest kept base backup (basebackup.sh prunes it); copy it off-box
+  pg-wal-archive: # age-encrypted WAL since the oldest kept base backup (basebackup.sh prunes it; D98)
   caddy-data:
   caddy-config:
