@@ -5,6 +5,8 @@ import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.PosContext;
 import com.xavier.backend.identity.ApprovalDeniedException;
 import com.xavier.backend.identity.ApproverVerifier;
+import com.xavier.backend.orders.LineAmounts;
+import com.xavier.backend.orders.SettledVoidCommand;
 import com.xavier.backend.orders.exception.OrderNotFoundException;
 import com.xavier.backend.orders.exception.OrderRuleException;
 import com.xavier.backend.orders.model.LineSnapshot;
@@ -17,8 +19,11 @@ import com.xavier.backend.orders.model.event.Line;
 import com.xavier.backend.orders.model.event.OrderLinesVoided;
 import com.xavier.backend.orders.repository.OrderLineRepository;
 import com.xavier.backend.orders.repository.OrderLineVoidRepository;
+import com.xavier.backend.shared.Money;
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -28,7 +33,9 @@ import org.springframework.transaction.annotation.Transactional;
  * Voids (spec §4 "anulação após envio exige motivo, autorização e comunicação à produção", D40, D49). Phase 1
  * ({@link #authorize}) verifies the approver with no transaction open, so the BCrypt check holds no order row; phase 2
  * ({@link #voidLine}) claims the order's version, checks the net quantity under it, records the void fact and
- * publishes {@link OrderLinesVoided} for production's VOID ticket, in one transaction.
+ * publishes {@link OrderLinesVoided} for production's VOID ticket, in one transaction. {@link #voidSettled} is the
+ * same fact, event and audit for settlement's coordinated void (D71), which authorized, verified the approver and
+ * checked the headroom itself.
  */
 @Service
 public class LineVoidService {
@@ -91,22 +98,64 @@ public class LineVoidService {
         lookup.requireSessionStore(pos, orderId);
         Order order = lookup.claim(orderId, request.orderVersion());
         order.requireBillReducible();
-        OrderLine line = lines.findByIdAndOrderId(request.lineId(), orderId)
-                .orElseThrow(() -> new OrderNotFoundException("OrderLine", request.lineId()));
-        line.requireAvailable(views.deducted(line), request.quantity());
+        OrderLineVoid voided = record(order, request.lineId(), request.quantity(), request.reason(), request.wasted(),
+                pos.employeeId(), approval.approverEmployeeId(), pos.terminalId()).fact();
+        return new VoidView(voided.getId(), orderId, voided.getLineId(), voided.getQuantity(), voided.getReason(),
+                voided.isWasted(), voided.getOperatorEmployeeId(), voided.getApproverEmployeeId(),
+                voided.getVoidedAt(), views.of(order));
+    }
 
-        OrderLineVoid voided = voids.saveAndFlush(OrderLineVoid.of(line, request.quantity(), request.reason(),
-                request.wasted(), pos.employeeId(), approval.approverEmployeeId(), pos.terminalId(), clock.instant()));
+    /**
+     * The coordinated void (D71) in the caller's transaction: settlement holds {@code order_settlement} and checked the
+     * headroom, so only INVOICE refuses here, never PAYMENT. It runs in settlement's POS request: the session's
+     * terminal is the void's, and the audit records the session's actor.
+     *
+     * @throws OrderRuleException 422 {@code ORDER_FROZEN}, {@code QUANTITY_EXCEEDS_NET}, {@code SELF_APPROVAL}
+     */
+    public com.xavier.backend.orders.VoidView voidSettled(SettledVoidCommand command, UUID approverEmployeeId) {
+        Objects.requireNonNull(approverEmployeeId, "approverEmployeeId");
+        if (approverEmployeeId.equals(command.operatorEmployeeId())) {
+            throw OrderRuleException.selfApproval();
+        }
+        UUID terminalId = accessPolicy.current().terminalId();
+        if (terminalId == null) {
+            throw new IllegalStateException("A settled void runs in a POS session");
+        }
+        Order order = lookup.claim(command.orderId(), command.expectedVersion());
+        order.requireChangeable();
+        Recorded recorded = record(order, command.lineId(), command.quantity(), command.reason(), command.wasted(),
+                command.operatorEmployeeId(), approverEmployeeId, terminalId);
+        OrderLineVoid voided = recorded.fact();
+        return new com.xavier.backend.orders.VoidView(voided.getId(), order.getId(), voided.getLineId(),
+                voided.getQuantity(), recorded.gross(), voided.getReason(), voided.isWasted(),
+                voided.getOperatorEmployeeId(), voided.getApproverEmployeeId(), voided.getVoidedAt(),
+                views.billing(order));
+    }
+
+    /**
+     * Both voids, once the order is claimed and its lock allows them: the net quantity under the claimed version, the
+     * fact, production's {@link OrderLinesVoided} and the audit, all in the caller's transaction.
+     */
+    private Recorded record(Order order, UUID lineId, BigDecimal quantity, String reason, boolean wasted,
+                            UUID operatorId, UUID approverId, UUID terminalId) {
+        OrderLine line = lines.findByIdAndOrderId(lineId, order.getId())
+                .orElseThrow(() -> new OrderNotFoundException("OrderLine", lineId));
+        line.requireAvailable(views.deducted(line), quantity);
+        OrderLineVoid voided = voids.saveAndFlush(OrderLineVoid.of(line, quantity, reason, wasted, operatorId,
+                approverId, terminalId, clock.instant()));
         LineSnapshot snapshot = line.snapshot().orElseThrow();
-        events.publishEvent(new OrderLinesVoided(orderId, voided.getId(), order.getStoreId(), pos.terminalId(),
+        events.publishEvent(new OrderLinesVoided(order.getId(), voided.getId(), order.getStoreId(), terminalId,
                 order.getOrderNumber(), order.getTableCode(), new Line(line.getId(), snapshot.itemCode(),
                 snapshot.description(), snapshot.variantName(), line.getQuantity(), line.getNotes(),
                 snapshot.destination()), voided.getQuantity(), voided.getReason(), voided.getVoidedAt()));
-        changes.recordWithReason("ORDER_LINE_VOIDED", ENTITY, voided.getId(), order, approval.approverEmployeeId(),
-                voided.getReason(), Map.of("orderId", orderId.toString(), "lineId", line.getId().toString(),
+        changes.recordWithReason("ORDER_LINE_VOIDED", ENTITY, voided.getId(), order, approverId, voided.getReason(),
+                Map.of("orderId", order.getId().toString(), "lineId", line.getId().toString(),
                         "quantity", voided.getQuantity().toPlainString(), "wasted", voided.isWasted()));
-        return new VoidView(voided.getId(), orderId, line.getId(), voided.getQuantity(), voided.getReason(),
-                voided.isWasted(), voided.getOperatorEmployeeId(), voided.getApproverEmployeeId(),
-                voided.getVoidedAt(), views.of(order));
+        return new Recorded(voided, LineAmounts.of(snapshot.unitPrice(), voided.getQuantity(),
+                snapshot.taxRatePercent()).gross());
+    }
+
+    /** A recorded void and its gross at the line's snapshot price. */
+    private record Recorded(OrderLineVoid fact, Money gross) {
     }
 }
