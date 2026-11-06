@@ -38,13 +38,23 @@ class AuthorityResolver {
     }
 
     /**
+     * What a support session never holds, whatever its roles (D83): the permissions that create or widen access.
+     * With them a support user could grant itself more time, or leave behind an account, role or employee PIN that
+     * outlives the grant, such as a terminal device token.
+     */
+    static final Set<Permission> WITHHELD_FROM_SUPPORT = Set.of(Permission.SUPPORT_ACCESS_MANAGE,
+            Permission.USER_MANAGE, Permission.ROLE_MANAGE, Permission.EMPLOYEE_MANAGE, Permission.TERMINAL_MANAGE);
+
+    /**
      * BackOffice: installation-wide roles as {@code PERM_X}, plus the linked employee's assigned stores as
-     * {@code PERM_X@store} while that employee is active.
+     * {@code PERM_X@store} while that employee is active. A support account never holds
+     * {@link #WITHHELD_FROM_SUPPORT} (and is never linked to an employee).
      */
     Set<String> ofAccount(UserAccount account) {
         Set<String> authorities = new HashSet<>();
-        roles.findAllById(account.getRoleIds()).forEach(role ->
-                role.getPermissions().forEach(permission -> authorities.add(permission.authority())));
+        roles.findAllById(account.getRoleIds()).forEach(role -> role.getPermissions().stream()
+                .filter(permission -> !account.isSupport() || !WITHHELD_FROM_SUPPORT.contains(permission))
+                .forEach(permission -> authorities.add(permission.authority())));
         if (account.getEmployeeId() != null
                 && employees.findById(account.getEmployeeId()).map(Employee::isActive).orElse(false)) {
             authorities.addAll(storeScoped(assignments.findByEmployeeId(account.getEmployeeId())));

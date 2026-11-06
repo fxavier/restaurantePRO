@@ -5,6 +5,7 @@ import static com.xavier.backend.identity.IdentityFixtures.json;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -78,6 +79,20 @@ class LastAdministratorHttpTest {
                         .content(json("roleIds", Set.of(IdentityFixtures.ADMINISTRATOR), "active", false,
                                 "version", version(last))))
                 .andExpect(status().isUnprocessableContent());
+    }
+
+    /** A support account never holds USER_MANAGE (D83), so it could not appoint a new administrator. */
+    @Test
+    void aSupportAccountWithTheAdministratorRoleDoesNotCountAsAnotherAdministrator() throws Exception {
+        User last = fixtures.newUser("initial password 1", Set.of(IdentityFixtures.ADMINISTRATOR));
+        mvc.perform(post("/api/v1/backoffice/users").with(admin()).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json("username", IdentityFixtures.unique("sup"), "initialPassword",
+                                "initial password 1", "roleIds", Set.of(IdentityFixtures.ADMINISTRATOR),
+                                "support", true)))
+                .andExpect(status().isCreated());
+
+        mvc.perform(demote(last)).andExpect(status().isUnprocessableContent());
     }
 
     @Test

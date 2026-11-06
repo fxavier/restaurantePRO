@@ -7,6 +7,7 @@ import com.xavier.backend.identity.exception.EmployeeAccountTakenException;
 import com.xavier.backend.identity.exception.EmployeeNotFoundException;
 import com.xavier.backend.identity.exception.LastAdministratorException;
 import com.xavier.backend.identity.exception.RoleNotFoundException;
+import com.xavier.backend.identity.exception.SupportAccountLinkedException;
 import com.xavier.backend.identity.exception.UserNotFoundException;
 import com.xavier.backend.identity.exception.UsernameTakenException;
 import com.xavier.backend.identity.model.Role;
@@ -75,8 +76,10 @@ public class UserAccountService {
         requireLinks(request.employeeId(), request.roleIds());
         requireCanGrant(request.roleIds());
         requireCanLink(null, request.employeeId());
-        UserAccount account = save(UserAccount.open(username, encoder.encode(request.initialPassword()),
-                request.employeeId(), request.roleIds(), clock.instant()));
+        String hash = encoder.encode(request.initialPassword());
+        UserAccount account = save(request.support()
+                ? supportAccount(username, hash, request)
+                : UserAccount.open(username, hash, request.employeeId(), request.roleIds(), clock.instant()));
         audit("USER_CREATED", account);
         return account.toSummary();
     }
@@ -90,6 +93,10 @@ public class UserAccountService {
         requireCanGrant(request.roleIds().stream().filter(role -> !account.getRoleIds().contains(role))
                 .collect(Collectors.toSet()));
         requireCanLink(account.getEmployeeId(), request.employeeId());
+        if (account.isSupport() && (account.isActive() != request.active()
+                || !account.getRoleIds().equals(request.roleIds()))) {
+            accessPolicy.require(Permission.SUPPORT_ACCESS_MANAGE); // what a support account may do is D83's matter
+        }
         boolean wasAdministrator = isActiveAdministrator(account);
         boolean authoritiesMayShrink = !request.active() || !account.getRoleIds().equals(request.roleIds())
                 || !Objects.equals(account.getEmployeeId(), request.employeeId());
@@ -117,6 +124,15 @@ public class UserAccountService {
         return PageResponse.from(accounts.findAll(pageable).map(UserAccount::toSummary));
     }
 
+    /** Support accounts are an administrator's matter (D83): creating one needs {@code SUPPORT_ACCESS_MANAGE}. */
+    private UserAccount supportAccount(String username, String hash, UserCreateRequest request) {
+        accessPolicy.require(Permission.SUPPORT_ACCESS_MANAGE);
+        if (request.employeeId() != null) {
+            throw new SupportAccountLinkedException();
+        }
+        return UserAccount.openSupport(username, hash, request.roleIds(), clock.instant());
+    }
+
     /** Nobody gives an account a role with a permission they do not hold installation-wide themselves. */
     private void requireCanGrant(Set<UUID> roleIds) {
         roles.findAllById(roleIds).forEach(role -> role.getPermissions().forEach(accessPolicy::require));
@@ -132,8 +148,9 @@ public class UserAccountService {
         }
     }
 
+    /** A support account is never the installation's administrator: it cannot manage users or roles (D83). */
     private static boolean isActiveAdministrator(UserAccount account) {
-        return account.isActive() && account.getRoleIds().contains(Role.ADMINISTRATOR_ID);
+        return account.isActive() && !account.isSupport() && account.getRoleIds().contains(Role.ADMINISTRATOR_ID);
     }
 
     /**
@@ -142,7 +159,7 @@ public class UserAccountService {
      */
     private void requireAnotherActiveAdministrator(UserAccount account) {
         roles.lockRow(Role.ADMINISTRATOR_ID);
-        if (accounts.countActiveHoldersExcept(Role.ADMINISTRATOR_ID, account.getId()) == 0) {
+        if (accounts.countActiveNonSupportHoldersExcept(Role.ADMINISTRATOR_ID, account.getId()) == 0) {
             throw new LastAdministratorException();
         }
     }
@@ -180,6 +197,7 @@ public class UserAccountService {
         details.put("employeeId", account.getEmployeeId());
         details.put("roleIds", account.getRoleIds());
         details.put("active", account.isActive());
+        details.put("support", account.isSupport());
         auditLog.recordAsCurrentActor(action, "UserAccount", account.getId().toString(), null, null, null, details);
     }
 }
