@@ -79,6 +79,16 @@ public class InventoryRuleException extends BusinessRuleException {
         return new InventoryRuleException(InventoryRule.INVALID_PERIOD, "This report needs a period (from, to).");
     }
 
+    public static InventoryRuleException rangeTooLarge(long maxDays) {
+        return new InventoryRuleException(InventoryRule.RANGE_TOO_LARGE,
+                "The range is longer than " + maxDays + " days: narrow it.", Map.of("maxDays", maxDays));
+    }
+
+    public static InventoryRuleException notActive(UUID storeId) {
+        return new InventoryRuleException(InventoryRule.INVENTORY_NOT_ACTIVE,
+                "Inventory is not active in store " + storeId + ": activate it and count the opening stock first.");
+    }
+
     public InventoryRule rule() {
         return rule;
     }

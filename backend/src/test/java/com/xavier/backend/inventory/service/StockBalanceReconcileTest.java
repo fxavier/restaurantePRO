@@ -132,6 +132,30 @@ class StockBalanceReconcileTest {
                 + "AND entity_id = ?").param(warehouse.toString()).query(Long.class).single()).isEqualTo(1);
     }
 
+    /** GET /status never sums the ledger per request: it shows the count the last nightly check stored. */
+    @Test
+    void theStatusShowsTheDriftOfTheLastNightlyCheck() throws Exception {
+        job.reconcile();
+        jdbc.sql("UPDATE inventory.stock_balance SET value = value + 1 WHERE warehouse_id = ? AND stock_item_id = ?")
+                .params(warehouse, flour).update();
+
+        inventoryStatus().andExpect(jsonPath("$.driftingBalances").value(0));
+        job.reconcile();
+        inventoryStatus().andExpect(jsonPath("$.driftingBalances").value(1))
+                .andExpect(jsonPath("$.driftCheckedAt").isNotEmpty());
+
+        mvc.perform(idem(post(BO + "/balances/rebuild")).with(account(store, Permission.INVENTORY_REBUILD))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"warehouseId\": \"%s\"}".formatted(warehouse)))
+                .andExpect(status().isOk());
+        job.reconcile();
+        inventoryStatus().andExpect(jsonPath("$.driftingBalances").value(0));
+    }
+
+    private org.springframework.test.web.servlet.ResultActions inventoryStatus() throws Exception {
+        return mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(BO + "/status")
+                .param("storeId", store.toString()).with(account(store, Permission.INVENTORY_VIEW)));
+    }
+
     @Test
     void aDeletedBalanceRowIsDetectedAndRebuilt() throws Exception {
         Map<UUID, String> before = balances();

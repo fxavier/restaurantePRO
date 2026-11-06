@@ -11,7 +11,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.inventory.InventoryFixtures;
 import com.xavier.backend.inventory.InventoryModuleTest;
-import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -45,7 +44,7 @@ class StockQueryHttpTest {
 
     @BeforeEach
     void threeItems() throws Exception {
-        store = fixtures.newStore();
+        store = fixtures.newActiveStore();
         warehouse = fixtures.newWarehouse(store, "ALLOW");
         plenty = fixtures.newStockItem("un");
         scarce = fixtures.newStockItem("un");
@@ -109,7 +108,8 @@ class StockQueryHttpTest {
     void theStatusShowsActivationNegativesExceptionsAndDrift() throws Exception {
         mvc.perform(get(BO + "/status").param("storeId", store.toString()).with(viewer()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.state").value("INVENTORY_NOT_ACTIVE"))
+                .andExpect(jsonPath("$.state").value("ACTIVE"))
+                .andExpect(jsonPath("$.activeFrom").value(InventoryFixtures.ACTIVE_FROM.toString()))
                 .andExpect(jsonPath("$.negativeBalances").value(1))
                 .andExpect(jsonPath("$.openExceptions").value(0))
                 .andExpect(jsonPath("$.driftingBalances").value(0))
@@ -119,16 +119,14 @@ class StockQueryHttpTest {
                         INSERT INTO inventory.consumption_exception (id, store_id, source_type, source_id, kind, created_at)
                         VALUES (gen_random_uuid(), ?, 'ORDER_LINE', gen_random_uuid(), 'NO_RECIPE', now())""")
                 .param(store).update();
-        mvc.perform(idem(post(BO + "/activations")).with(account(store, Permission.INVENTORY_MANAGE))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"storeId\": \"%s\", \"activeFrom\": \"%s\"}".formatted(store,
-                                Instant.parse("2026-11-01T05:00:00Z"))))
-                .andExpect(status().isCreated());
-
         mvc.perform(get(BO + "/status").param("storeId", store.toString()).with(viewer()))
-                .andExpect(jsonPath("$.state").value("ACTIVE"))
-                .andExpect(jsonPath("$.activeFrom").value("2026-11-01T05:00:00Z"))
                 .andExpect(jsonPath("$.openExceptions").value(1));
+
+        UUID inactive = fixtures.newStore();
+        mvc.perform(get(BO + "/status").param("storeId", inactive.toString())
+                        .with(account(inactive, Permission.INVENTORY_VIEW)))
+                .andExpect(jsonPath("$.state").value("INVENTORY_NOT_ACTIVE"))
+                .andExpect(jsonPath("$.activeFrom").doesNotExist());
     }
 
     @Test

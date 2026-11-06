@@ -2,8 +2,11 @@ package com.xavier.backend.inventory.repository;
 
 import com.xavier.backend.inventory.model.BalanceKey;
 import java.math.BigDecimal;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Consumer;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -52,6 +55,36 @@ public class BalanceProjection {
                 .list();
     }
 
+    /**
+     * Stores the result of a nightly check: {@code drifting} per store, 0 for every other store with a warehouse.
+     */
+    public void recordCheck(Map<UUID, Integer> drifting, Instant at) {
+        List<UUID> stores = jdbc.sql("SELECT DISTINCT store_id FROM inventory.warehouse").query(UUID.class).list();
+        for (UUID store : stores) {
+            jdbc.sql("""
+                            INSERT INTO inventory.balance_check (store_id, drifting_balances, checked_at) VALUES (?, ?, ?)
+                            ON CONFLICT (store_id) DO UPDATE
+                            SET drifting_balances = EXCLUDED.drifting_balances, checked_at = EXCLUDED.checked_at""")
+                    .params(store, drifting.getOrDefault(store, 0), Timestamp.from(at)).update();
+        }
+    }
+
+    /** The last nightly check of a store; empty before the first one. */
+    public Optional<BalanceCheck> lastCheck(UUID storeId) {
+        return jdbc.sql("SELECT drifting_balances, checked_at FROM inventory.balance_check WHERE store_id = ?")
+                .param(storeId)
+                .query((rs, n) -> new BalanceCheck(rs.getInt("drifting_balances"),
+                        rs.getTimestamp("checked_at").toInstant())).optional();
+    }
+
+    /** The warehouses with a balance row or a movement, in the ledger's lock order (uuid order). */
+    public List<UUID> warehousesWithStock() {
+        return jdbc.sql("""
+                        SELECT warehouse_id FROM inventory.stock_balance
+                        UNION SELECT warehouse_id FROM inventory.stock_movement
+                        ORDER BY warehouse_id""").query(UUID.class).list();
+    }
+
     /** Negative balances per store (D118 gauge and status). */
     public Map<UUID, Long> negativeBalancesPerStore() {
         return jdbc.sql("""
@@ -88,6 +121,10 @@ public class BalanceProjection {
                             rs.getObject("stock_item_id", UUID.class)), rs.getLong("posting_seq"),
                             rs.getBigDecimal("quantity"), rs.getBigDecimal("value"), rs.getBigDecimal("unit_cost")));
                 });
+    }
+
+    /** The result of the last nightly check of a store. */
+    public record BalanceCheck(int driftingBalances, Instant checkedAt) {
     }
 
     /** A recorded movement as the rebuild replays it. */

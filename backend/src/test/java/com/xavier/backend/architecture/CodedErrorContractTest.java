@@ -268,6 +268,8 @@ class CodedErrorContractTest {
             Map.entry("inventory-invalid-period", () -> InventoryRuleException.invalidPeriod(
                     LocalDate.parse("2026-11-05"), LocalDate.parse("2026-11-04"))),
             Map.entry("inventory-period-required", InventoryRuleException::periodRequired),
+            Map.entry("inventory-range-too-large", () -> InventoryRuleException.rangeTooLarge(366)),
+            Map.entry("inventory-not-active", () -> InventoryRuleException.notActive(ID)),
             Map.entry("transfer-state", () -> InventoryConflictException.transferState(ID, "SHIPPED", "be shipped")),
             Map.entry("inventory-already-active", () -> InventoryConflictException.alreadyActive(ID)),
             Map.entry("movement-source-mismatch", () -> InventoryConflictException.sourceMismatch("ORDER_LINE", ID)),
@@ -631,6 +633,10 @@ class CodedErrorContractTest {
         expect("inventory-invalid-period", 422, "INVALID_PERIOD",
                 "The period starts (2026-11-05) after it ends (2026-11-04).", "");
         expect("inventory-period-required", 422, "INVALID_PERIOD", "This report needs a period (from, to).", "");
+        expect("inventory-range-too-large", 422, "RANGE_TOO_LARGE", "The range is longer than 366 days: narrow it.",
+                ",\"maxDays\":366");
+        expect("inventory-not-active", 422, "INVENTORY_NOT_ACTIVE", "Inventory is not active in store " + ID
+                + ": activate it and count the opening stock first.", "");
     }
 
     @Test

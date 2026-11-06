@@ -103,7 +103,7 @@ class NegativePolicyTest {
     }
 
     private Stock stockOf2(String policy) throws Exception {
-        UUID store = fixtures.newStore();
+        UUID store = fixtures.newActiveStore();
         Stock stock = new Stock(store, fixtures.newWarehouse(store, policy), fixtures.newStockItem("un"));
         mvc.perform(idem(post(BO + "/movements/manual-adjustments")).with(account(store, Permission.INVENTORY_MOVE))
                         .contentType(MediaType.APPLICATION_JSON).content("""

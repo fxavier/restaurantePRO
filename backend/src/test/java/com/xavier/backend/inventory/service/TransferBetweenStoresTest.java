@@ -51,7 +51,7 @@ class TransferBetweenStoresTest {
 
     @BeforeEach
     void tenUnitsAt3InStoreA() throws Exception {
-        storeA = fixtures.newStore();
+        storeA = fixtures.newActiveStore();
         storeB = fixtures.newStore();
         warehouseA = fixtures.newWarehouse(storeA, "ALLOW");
         warehouseB = fixtures.newWarehouse(storeB, "ALLOW");

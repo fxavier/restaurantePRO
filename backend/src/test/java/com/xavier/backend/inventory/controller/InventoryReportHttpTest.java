@@ -114,6 +114,38 @@ class InventoryReportHttpTest {
     }
 
     @Test
+    void aPeriodCoversAtMost366Days() throws Exception {
+        mvc.perform(get(BO + "/reports/waste").param("storeId", store.toString()).param("from", "2025-11-03")
+                        .param("to", "2026-11-03").with(viewer()))
+                .andExpect(status().isOk());
+        for (String report : List.of("waste", "rotation")) {
+            mvc.perform(get(BO + "/reports/" + report).param("storeId", store.toString()).param("from", "2025-11-02")
+                            .param("to", "2026-11-03").with(viewer()))
+                    .andExpect(status().isUnprocessableContent())
+                    .andExpect(jsonPath("$.code").value("RANGE_TOO_LARGE"))
+                    .andExpect(jsonPath("$.maxDays").value(366));
+        }
+    }
+
+    /** Consumption before {@code from} is history (it shapes the opening value), never the period's cost. */
+    @Test
+    void rotationCountsOnlyTheConsumptionOfItsPeriod() throws Exception {
+        UUID salt = fixtures.newStockItem("kg");
+        postMovements(in(kitchen, salt, "10", "1"));
+        postMovements(PostMovement.of(kitchen, salt, MovementType.SALE_CONSUMPTION, new BigDecimal("-3"),
+                "ORDER_LINE", UUID.randomUUID(), DAY_1, AT));
+        postMovements(PostMovement.of(kitchen, salt, MovementType.SALE_CONSUMPTION, new BigDecimal("-2"),
+                "ORDER_LINE", UUID.randomUUID(), DAY_2, AT));
+
+        // day 2: consumed 2.00; opening 7.00, closing 5.00 → average 6.00 → rotation 0.3333
+        mvc.perform(get(BO + "/reports/rotation").param("storeId", store.toString()).param("from", DAY_2.toString())
+                        .param("to", DAY_2.toString()).with(viewer()))
+                .andExpect(jsonPath("$.rows[?(@.stockItemId == '%s')].consumptionCost".formatted(salt)).value(2.0))
+                .andExpect(jsonPath("$.rows[?(@.stockItemId == '%s')].openingValue".formatted(salt)).value(7.0))
+                .andExpect(jsonPath("$.rows[?(@.stockItemId == '%s')].rotation".formatted(salt)).value(0.3333));
+    }
+
+    @Test
     void aCsvExportNeedsReportExportAndIsAudited() throws Exception {
         mvc.perform(get(BO + "/reports/valuation").param("storeId", store.toString()).param("format", "csv")
                         .with(viewer()))

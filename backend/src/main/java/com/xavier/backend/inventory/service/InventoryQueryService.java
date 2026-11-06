@@ -62,9 +62,11 @@ public class InventoryQueryService {
     public StatusView status(UUID storeId) {
         scope.requireStore(Permission.INVENTORY_VIEW, storeId);
         Optional<Instant> activeFrom = activations.activeFrom(storeId);
+        Optional<BalanceProjection.BalanceCheck> check = projection.lastCheck(storeId);
         return new StatusView(storeId, activeFrom.isPresent() ? "ACTIVE" : "INVENTORY_NOT_ACTIVE",
                 activeFrom.orElse(null), publications.pendingFor(CONSUMPTION_LISTENERS),
                 queries.openExceptions(storeId), queries.negativeBalances(storeId),
-                projection.drifts(storeId).size());
+                check.map(BalanceProjection.BalanceCheck::driftingBalances).orElse(0),
+                check.map(BalanceProjection.BalanceCheck::checkedAt).orElse(null));
     }
 }

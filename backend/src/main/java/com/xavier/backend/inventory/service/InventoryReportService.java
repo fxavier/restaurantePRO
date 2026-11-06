@@ -3,7 +3,6 @@ package com.xavier.backend.inventory.service;
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.audit.AuditLog;
-import com.xavier.backend.inventory.exception.InventoryRuleException;
 import com.xavier.backend.inventory.model.dto.BelowMinimumRow;
 import com.xavier.backend.inventory.model.dto.InventoryReport;
 import com.xavier.backend.inventory.model.dto.RotationRow;
@@ -61,14 +60,14 @@ public class InventoryReportService {
     @Transactional(readOnly = true)
     public InventoryReport<WasteRow> waste(UUID storeId, LocalDate from, LocalDate to) {
         scope.requireStore(Permission.INVENTORY_VIEW, storeId);
-        Periods.require(from, to);
+        Periods.requireReport(from, to);
         return report(storeId, from, to, queries.waste(storeId, from, to), WasteRow::value);
     }
 
     @Transactional(readOnly = true)
     public InventoryReport<RotationRow> rotation(UUID storeId, LocalDate from, LocalDate to) {
         scope.requireStore(Permission.INVENTORY_VIEW, storeId);
-        Periods.require(from, to);
+        Periods.requireReport(from, to);
         return report(storeId, from, to, queries.rotation(storeId, from, to), RotationRow::consumptionCost);
     }
 
@@ -76,9 +75,6 @@ public class InventoryReportService {
     @Transactional
     public String csv(String report, UUID storeId, LocalDate from, LocalDate to) {
         accessPolicy.require(Permission.REPORT_EXPORT, storeId);
-        if ((report.equals("waste") || report.equals("rotation")) && (from == null || to == null)) {
-            throw InventoryRuleException.periodRequired();
-        }
         List<List<String>> lines = switch (report) {
             case "valuation" -> table(List.of("warehouseCode", "code", "name", "baseUnit", "quantity",
                     "averageCost", "value"), valuation(storeId).rows(), row -> List.of(row.warehouseCode(),
@@ -105,7 +101,7 @@ public class InventoryReportService {
         }
         auditLog.recordAsCurrentActor("INVENTORY_REPORT_EXPORTED", "InventoryReport",
                 UuidVersion7Strategy.INSTANCE.generateUuid(null).toString(), storeId, null, null, details);
-        return lines.stream().map(line -> line.stream().map(InventoryReportService::field)
+        return lines.stream().map(line -> line.stream().map(Csv::field)
                 .collect(Collectors.joining(","))).collect(Collectors.joining(LINE_END, "", LINE_END));
     }
 
@@ -124,17 +120,5 @@ public class InventoryReportService {
 
     private static String plain(BigDecimal value) {
         return value == null ? "" : value.toPlainString();
-    }
-
-    /** RFC 4180: quoted when it holds a comma, a quote or a line break; a formula-looking text is defused. */
-    private static String field(String value) {
-        String text = value == null ? "" : value;
-        if (!text.isEmpty() && "=+-@".indexOf(text.charAt(0)) >= 0 && !text.matches("-?[0-9.]+")) {
-            text = "'" + text;
-        }
-        if (text.contains(",") || text.contains("\"") || text.contains("\n") || text.contains("\r")) {
-            return "\"" + text.replace("\"", "\"\"") + "\"";
-        }
-        return text;
     }
 }

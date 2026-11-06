@@ -29,7 +29,8 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Manual stock movements (D117, D118): waste (OUT), manual adjustment (IN or OUT; an IN needs a unit cost) and
  * return to stock (IN at the average). {@code INVENTORY_MOVE} in the warehouse's store, a reason always, quantities
- * converted to the item's base unit. Outgoing lines are manual for the warehouse's negative policy. Audited.
+ * converted to the item's base unit, and only once the store is live (422 INVENTORY_NOT_ACTIVE, D122). Outgoing
+ * lines are manual for the warehouse's negative policy. Audited.
  */
 @Service
 public class ManualMovementService {
@@ -41,16 +42,19 @@ public class ManualMovementService {
     private final Units units;
     private final InventoryScope scope;
     private final BusinessDates businessDates;
+    private final ActivationService activations;
     private final AuditLog auditLog;
     private final Clock clock;
 
     ManualMovementService(StockLedger ledger, StockItemRepository items, Units units, InventoryScope scope,
-                          BusinessDates businessDates, AuditLog auditLog, Clock clock) {
+                          BusinessDates businessDates, ActivationService activations, AuditLog auditLog,
+                          Clock clock) {
         this.ledger = ledger;
         this.items = items;
         this.units = units;
         this.scope = scope;
         this.businessDates = businessDates;
+        this.activations = activations;
         this.auditLog = auditLog;
         this.clock = clock;
     }
@@ -72,6 +76,9 @@ public class ManualMovementService {
 
     private MovementBatchView post(ManualMovementRequest request, Kind kind) {
         UUID storeId = scope.requireWarehouse(Permission.INVENTORY_MOVE, request.warehouseId());
+        if (activations.activeFrom(storeId).isEmpty()) {
+            throw InventoryRuleException.notActive(storeId); // D122: the opening count comes first (S49)
+        }
         if (request.reason() == null || request.reason().isBlank()) {
             throw InventoryRuleException.reasonRequired();
         }

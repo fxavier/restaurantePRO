@@ -47,6 +47,18 @@ public class InventoryFixtures {
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
     }
 
+    public static final java.time.Instant ACTIVE_FROM = java.time.Instant.parse("2026-11-01T05:00:00Z");
+
+    /** A store where inventory is live (D122) since {@link #ACTIVE_FROM}, so manual movements are allowed. */
+    public UUID newActiveStore() throws Exception {
+        UUID store = newStore();
+        mvc.perform(idem(post(BO + "/activations")).with(account(store, Permission.INVENTORY_MANAGE))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"storeId\": \"%s\", \"activeFrom\": \"%s\"}".formatted(store, ACTIVE_FROM)))
+                .andExpect(status().isCreated());
+        return store;
+    }
+
     /** A PURCHASED stock item with base unit {@code baseUnit}. */
     public UUID newStockItem(String baseUnit) throws Exception {
         return id(mvc.perform(idem(post(BO + "/stock-items")).with(account(null, Permission.INVENTORY_MANAGE))

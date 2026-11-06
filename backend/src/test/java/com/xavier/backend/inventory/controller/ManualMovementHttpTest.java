@@ -43,7 +43,7 @@ class ManualMovementHttpTest {
 
     @BeforeEach
     void tenKilosOfFlourAt2() throws Exception {
-        store = fixtures.newStore();
+        store = fixtures.newActiveStore();
         warehouse = fixtures.newWarehouse(store, "ALLOW");
         flour = fixtures.newStockItem("kg");
         move("manual-adjustments", line(flour, "10", null, "2.00"), "opening by hand").andExpect(status().isCreated());
@@ -102,6 +102,22 @@ class ManualMovementHttpTest {
         move("waste", "", "why").andExpect(status().isBadRequest());
 
         assertThat(balance()).isEqualTo("10.000000|20.0000");
+    }
+
+    /** D122: before go-live nothing is moved by hand (the opening count comes first, S49). */
+    @Test
+    void aStoreWithoutActivationRefusesManualMovements() throws Exception {
+        UUID inactive = fixtures.newStore();
+        UUID room = fixtures.newWarehouse(inactive, "ALLOW");
+        for (String path : java.util.List.of("waste", "manual-adjustments", "returns-to-stock")) {
+            mvc.perform(idem(post(BO + "/movements/" + path)).with(account(inactive, Permission.INVENTORY_MOVE))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body(room, line(flour, "1", null, "1"), "why")))
+                    .andExpect(status().isUnprocessableContent())
+                    .andExpect(jsonPath("$.code").value("INVENTORY_NOT_ACTIVE"));
+        }
+        assertThat(jdbc.sql("SELECT count(*) FROM inventory.stock_movement WHERE warehouse_id = ?").param(room)
+                .query(Long.class).single()).isZero();
     }
 
     @Test
