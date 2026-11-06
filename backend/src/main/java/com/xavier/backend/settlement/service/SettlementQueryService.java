@@ -21,6 +21,7 @@ import com.xavier.backend.settlement.model.dto.PendingView;
 import com.xavier.backend.settlement.repository.PaidTotal;
 import com.xavier.backend.settlement.repository.PaymentAttemptRepository;
 import com.xavier.backend.settlement.repository.PaymentRepository;
+import com.xavier.backend.settlement.repository.RefundRepository;
 import com.xavier.backend.shared.Money;
 import java.math.BigDecimal;
 import java.util.List;
@@ -42,10 +43,12 @@ public class SettlementQueryService {
     private final PaymentRepository payments;
     private final PaymentAttemptRepository attempts;
     private final CreditChargeRepository charges;
+    private final RefundRepository refunds;
 
     SettlementQueryService(AccessPolicy accessPolicy, Bills bills, SettlementViews views, OrdersApi orders,
                            FiscalApi fiscal, PaymentRepository payments, PaymentAttemptRepository attempts,
-                           CreditChargeRepository charges) {
+                           CreditChargeRepository charges, RefundRepository refunds) {
+        this.refunds = refunds;
         this.charges = charges;
         this.accessPolicy = accessPolicy;
         this.bills = bills;
@@ -102,7 +105,10 @@ public class SettlementQueryService {
         }
         List<UUID> ids = open.stream().map(OrderBillingView::orderId).toList();
         Map<UUID, BigDecimal> paid = payments.paidFor(ids).stream()
-                .collect(Collectors.toMap(PaidTotal::orderId, PaidTotal::paid));
+                .collect(Collectors.toMap(PaidTotal::orderId, PaidTotal::paid, BigDecimal::add,
+                        java.util.HashMap::new));
+        refunds.refundedFor(ids).forEach(refunded -> paid.merge(refunded.orderId(), refunded.paid().negate(),
+                BigDecimal::add)); // D77: paid is net of refunds
         Map<UUID, BigDecimal> credit = charges.creditFor(ids).stream()
                 .collect(Collectors.toMap(PaidTotal::orderId, PaidTotal::paid));
         return open.stream().map(order -> {

@@ -1,5 +1,7 @@
 package com.xavier.backend.settlement;
 
+import java.time.Duration;
+
 /**
  * The integrated payment provider port (D53, P10). An adapter is a Spring bean; an {@code INTEGRATED} payment method
  * names it by {@link #code()}. R2 ships no production adapter (only {@code FakePaymentProvider} in test sources).
@@ -20,6 +22,18 @@ public interface PaymentProvider {
      */
     ProviderOutcome charge(ChargeRequest request);
 
-    /** What the provider knows about the charge with this reference (D50 §7.4: query before repeating). */
+    /**
+     * What the provider knows about the charge with this reference (D50 §7.4: query before repeating). The contract
+     * (D81 (1)): {@link ProviderOutcome.Failed} is final, the provider guarantees the reference will never succeed;
+     * a reference the provider does not know is {@link ProviderOutcome.NotFound}, never {@code Failed}.
+     */
     ProviderOutcome status(String reference);
+
+    /**
+     * How long after a charge was sent the provider may still not know its reference (D81 (1)): a {@code NotFound}
+     * fails an UNKNOWN attempt only once it is older than this.
+     */
+    default Duration acceptanceWindow() {
+        return Duration.ofMinutes(15);
+    }
 }

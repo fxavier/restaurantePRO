@@ -42,6 +42,15 @@ public class CustomersApi {
         return ledger.snapshot(customerId);
     }
 
+    /**
+     * The customer as {@link #snapshot} reads them, active or not; empty for an unknown id. Never throws, so a
+     * caller's transaction is never marked for rollback by it (a debt payment's slip names an inactive customer too).
+     */
+    @Transactional(readOnly = true)
+    public java.util.Optional<CustomerSnapshot> findCustomer(UUID customerId) {
+        return ledger.findCustomer(customerId);
+    }
+
     /** Limit, balance (Σ ledger), reserved, available and block. 422 {@code CREDIT_ACCOUNT_MISSING}. */
     @Transactional(readOnly = true)
     public CreditView credit(UUID customerId) {

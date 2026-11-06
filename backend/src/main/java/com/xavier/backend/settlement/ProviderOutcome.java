@@ -18,4 +18,12 @@ public sealed interface ProviderOutcome {
     /** The outcome is not known (timeout, broken connection): query before repeating (§7.4). */
     record Unknown(String detail) implements ProviderOutcome {
     }
+
+    /**
+     * D81 (1): the provider does not know the reference. A charge may still be on its way, so it proves nothing was
+     * taken only for an UNKNOWN attempt older than {@link PaymentProvider#acceptanceWindow()}; it stays UNKNOWN
+     * otherwise.
+     */
+    record NotFound() implements ProviderOutcome {
+    }
 }

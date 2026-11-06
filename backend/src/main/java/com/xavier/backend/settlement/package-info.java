@@ -9,7 +9,11 @@
  * partition), a document per item partition plus the residual document at close, and the coordinated void within
  * headroom; the split rule is {@link com.xavier.backend.settlement.PartitionAmounts} (D68 amended). Credit (D74–D76):
  * credit sales (a {@code CreditCharge} reserved, its document issued on account, its debit posted through
- * {@code CustomersApi}; never a payment nor a cash movement) and debt payments to a customer's credit account.
+ * {@code CustomersApi}; never a payment nor a cash movement) and debt payments to a customer's credit account. Refunds
+ * (D77, P30): a {@code Refund} of a payment, to its own method, in the refunder's cash session, with an approver;
+ * paid amounts are net of refunds. Payments in doubt (D81): the {@code InDoubtResolver} polls UNKNOWN attempts with
+ * backoff, and a manual reclassification to FAILED is guarded by age. A manager's forced close of an abandoned cash
+ * session (P22).
  *
  * <p>Public API: this root package ({@link com.xavier.backend.settlement.PaymentProvider} SPI and its records,
  * {@link com.xavier.backend.settlement.PartitionAmounts}, and {@link com.xavier.backend.settlement.SettlementFacts}

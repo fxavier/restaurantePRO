@@ -16,11 +16,13 @@ import java.util.UUID;
  * order's lines, zero unless a settled void emptied a partitioned line's pool (D68 amendment). R3 (D74): {@code credit}
  * is Σ of the live (RESERVED and POSTED) credit charges, never part of {@code paid}; {@code balance = due − paid −
  * credit} and the financial state counts both; {@code creditCharges} are every charge of the order, oldest first.
+ * R3 (D77): {@code paid} is net of refunds, and {@code refunds} are every refund of the order's payments, oldest
+ * first.
  */
 public record OrderSettlementView(UUID orderId, UUID storeId, String lifecycle, long orderVersion, Money due,
                                   Money paid, Money balance, String financialState, String fiscalState,
                                   UUID documentId, List<AttemptView> openAttempts, List<PartitionView> partitions,
                                   List<LineCoverage> coverage, Money residualBalance,
                                   List<TaxRoundingDifference> taxRoundingDifference, Money credit,
-                                  List<CreditChargeView> creditCharges) {
+                                  List<CreditChargeView> creditCharges, List<RefundView> refunds) {
 }

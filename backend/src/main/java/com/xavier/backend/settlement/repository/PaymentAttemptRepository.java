@@ -49,6 +49,17 @@ public interface PaymentAttemptRepository extends JpaRepository<PaymentAttempt, 
             where a.id = :id and a.status = com.xavier.backend.settlement.model.AttemptStatus.CREATED""")
     int markSubmitted(@Param("id") UUID id, @Param("now") Instant now);
 
+    /**
+     * D81 (2): the UNKNOWN attempts due a provider status query at {@code now}, the most overdue first, at most
+     * {@code limit}'s page size.
+     */
+    @Query("""
+            select a.id from PaymentAttempt a
+            where a.status = com.xavier.backend.settlement.model.AttemptStatus.UNKNOWN
+                and (a.nextPollAt is null or a.nextPollAt <= :now)
+            order by a.nextPollAt nulls first""")
+    List<UUID> findDueForPoll(@Param("now") Instant now, org.springframework.data.domain.Pageable limit);
+
     /** D48 sweeper: attempts of {@code kind} in {@code status} not touched since {@code before}, oldest first. */
     @Query("""
             select a.id from PaymentAttempt a

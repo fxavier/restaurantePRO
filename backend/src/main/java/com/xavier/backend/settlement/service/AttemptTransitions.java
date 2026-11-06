@@ -71,6 +71,7 @@ class AttemptTransitions {
             case ProviderOutcome.Succeeded succeeded -> attempt.recordProviderSuccess(succeeded.providerRef(), now);
             case ProviderOutcome.Failed failed -> attempt.recordProviderFailure(failed.reason(), now);
             case ProviderOutcome.Unknown unknown -> attempt.markUnknown(unknown.detail(), now);
+            case ProviderOutcome.NotFound notFound -> attempt.markUnknown("the provider does not know the charge", now);
             case ProviderOutcome.Pending pending -> {
                 return; // the provider decides later: the sweeper makes it UNKNOWN past the timeout
             }
@@ -90,31 +91,62 @@ class AttemptTransitions {
     }
 
     /**
-     * Resolve, step s3 (D63, spec §7.4, D50 §7.4): the provider's answer to a status query, under the order's lock.
+     * Resolve, step s3 (D63, spec §7.4, D50 §7.4, D81): the provider's answer to a status query, under the target's
+     * lock. For an UNKNOWN attempt the query counts as a poll and schedules the next one
+     * ({@link PaymentAttempt#recordStatusQuery}).
      *
      * <ul>
      *   <li>{@code Succeeded} settles an UNKNOWN or PENDING attempt: its Payment and receipt, exactly once.</li>
      *   <li>{@code Failed} settles only an UNKNOWN attempt whose last transition is older than the provider timeout
      *       plus the pending margin, so no charge for it can still be in flight. For a PENDING attempt, or a recent
-     *       UNKNOWN one, a provider that does not know the reference yet would wrongly fail a charge that then
-     *       succeeds; the attempt stays as it is (the sweeper makes a PENDING one UNKNOWN later).</li>
-     *   <li>{@code Pending} and {@code Unknown} change nothing.</li>
+     *       UNKNOWN one, the attempt stays as it is (the sweeper makes a PENDING one UNKNOWN later).</li>
+     *   <li>{@code NotFound} settles as FAILED only an UNKNOWN attempt older than the provider's
+     *       {@code acceptanceWindow}; it stays UNKNOWN otherwise.</li>
+     *   <li>{@code Pending} and {@code Unknown} change nothing but the poll.</li>
      * </ul>
      *
      * @return the attempt as it now is
      */
     @Transactional(propagation = Propagation.MANDATORY)
-    PaymentAttempt resolve(UUID attemptId, ProviderOutcome outcome, UUID employeeId) {
-        PaymentAttempt attempt = locked(attemptId);
+    PaymentAttempt resolve(UUID attemptId, ProviderStatusQuery.Answer answer, UUID employeeId) {
+        return resolveLocked(locked(attemptId), answer, employeeId);
+    }
+
+    /**
+     * {@link #resolve} for the in-doubt resolver (D46): an order's attempt is skipped, empty, without waiting while a
+     * request holds the order's lock ({@code SKIP LOCKED}); it is polled again next run. A debt payment's attempt
+     * still waits for its customer's {@code credit_account} (customers has no skip-locked lock; held only briefly).
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    Optional<PaymentAttempt> resolveIfFree(UUID attemptId, ProviderStatusQuery.Answer answer) {
+        AttemptRef ref = attempts.findRefById(attemptId).orElseThrow();
+        if (ref.creditAccountId() == null && !locks.tryLockOrder(ref.orderId())) {
+            return Optional.empty();
+        }
+        if (ref.creditAccountId() != null) {
+            locks.lockTargetOf(ref);
+        }
+        return Optional.of(resolveLocked(attempts.findById(attemptId).orElseThrow(), answer, null));
+    }
+
+    private PaymentAttempt resolveLocked(PaymentAttempt attempt, ProviderStatusQuery.Answer answer,
+                                         UUID employeeId) {
         if (attempt.getStatus() != AttemptStatus.UNKNOWN && attempt.getStatus() != AttemptStatus.PENDING) {
             return attempt;
         }
         Instant now = clock.instant();
+        ProviderOutcome outcome = answer.outcome();
+        attempt.recordStatusQuery(outcome, now);
         if (outcome instanceof ProviderOutcome.Succeeded succeeded) {
             attempt.resolveFromProvider(true, succeeded.providerRef(), null, employeeId, now);
         } else if (outcome instanceof ProviderOutcome.Failed failed && noChargeInFlight(attempt, now)) {
             attempt.resolveFromProvider(false, null, failed.reason(), employeeId, now);
+        } else if (outcome instanceof ProviderOutcome.NotFound
+                && attempt.outlivedAcceptanceWindow(answer.acceptanceWindow(), now)) {
+            attempt.resolveFromProvider(false, null, "unknown to the provider past its acceptance window of "
+                    + answer.acceptanceWindow(), employeeId, now);
         } else {
+            attempts.saveAndFlush(attempt); // the poll only
             return attempt;
         }
         settle(attempt, "PAYMENT_ATTEMPT_RESOLVED");

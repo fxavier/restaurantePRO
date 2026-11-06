@@ -1,6 +1,12 @@
 spring:
   application:
     name: backend
+  task:
+    scheduling:
+      pool:
+        # The scheduled jobs (sweepers, in-doubt resolver, event recovery, heartbeats) share this pool: a job that
+        # waits on a payment provider must not stall the others (S30 review).
+        size: 4
   autoconfigure:
     # No in-memory user with a generated password (spec §10). Identity (S2) owns authentication.
     exclude: org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration

@@ -118,6 +118,34 @@ public class SettlementRuleException extends BusinessRuleException {
                 + " is not an open debit of this customer.", Map.of("debitEntryId", debitEntryId));
     }
 
+    // ---- R3 (D81): payments in doubt ----
+
+    public static SettlementRuleException reclassifyTooEarly(UUID attemptId, java.time.Duration minAge,
+                                                             boolean answerRequired, int answeredCount) {
+        return new SettlementRuleException(SettlementRule.RECLASSIFY_TOO_EARLY, "Payment attempt " + attemptId
+                + " may be reclassified as FAILED only once it is older than " + minAge + (answerRequired
+                ? " and the provider answered a status query about it since it became UNKNOWN." : "."),
+                Map.of("answeredCount", answeredCount));
+    }
+
+    // ---- R3 (D77): refunds ----
+
+    public static SettlementRuleException refundExceedsRefundable(UUID paymentId, Money amount, Money refundable) {
+        return new SettlementRuleException(SettlementRule.REFUND_EXCEEDS_REFUNDABLE, "The refund " + amount.amount()
+                + " is more than the " + refundable.amount() + " still refundable of payment " + paymentId + ".",
+                Map.of("refundable", refundable.amount()));
+    }
+
+    public static SettlementRuleException externalReferenceRequired(String methodCode) {
+        return new SettlementRuleException(SettlementRule.EXTERNAL_REFERENCE_REQUIRED, "A refund to " + methodCode
+                + " is made on the terminal or the provider's portal first: give its reference.");
+    }
+
+    public static SettlementRuleException refundSelfApproval() {
+        return new SettlementRuleException(SettlementRule.SELF_APPROVAL,
+                "The approver of a refund cannot be the refunder.");
+    }
+
     private static String plain(BigDecimal quantity) {
         return quantity.stripTrailingZeros().toPlainString();
     }
