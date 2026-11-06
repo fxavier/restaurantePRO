@@ -1,10 +1,13 @@
 package com.xavier.backend.customers;
 
+import com.xavier.backend.customers.model.CustomerAddress;
+import com.xavier.backend.customers.repository.CustomerAddressRepository;
 import com.xavier.backend.customers.service.CreditLedgerService;
 import com.xavier.backend.shared.Money;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -31,9 +34,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class CustomersApi {
 
     private final CreditLedgerService ledger;
+    private final CustomerAddressRepository addresses;
 
-    CustomersApi(CreditLedgerService ledger) {
+    CustomersApi(CreditLedgerService ledger, CustomerAddressRepository addresses) {
         this.ledger = ledger;
+        this.addresses = addresses;
     }
 
     /** The buyer of a document: name, tax id and first billing address. 404 when missing, 422 when inactive. */
@@ -47,8 +52,18 @@ public class CustomersApi {
      * caller's transaction is never marked for rollback by it (a debt payment's slip names an inactive customer too).
      */
     @Transactional(readOnly = true)
-    public java.util.Optional<CustomerSnapshot> findCustomer(UUID customerId) {
+    public Optional<CustomerSnapshot> findCustomer(UUID customerId) {
         return ledger.findCustomer(customerId);
+    }
+
+    /** The customer's address {@code addressId}; empty when unknown or another customer's. Never throws. */
+    @Transactional(readOnly = true)
+    public Optional<AddressSnapshot> address(UUID customerId, UUID addressId) {
+        return addresses.findById(addressId)
+                .filter(address -> address.getCustomerId().equals(customerId))
+                .map(CustomerAddress::toView)
+                .map(view -> new AddressSnapshot(view.id(), view.kind(), view.line1(), view.line2(), view.city(),
+                        view.postalCode(), view.country(), view.notes()));
     }
 
     /** Limit, balance (Σ ledger), reserved, available and block. 422 {@code CREDIT_ACCOUNT_MISSING}. */
