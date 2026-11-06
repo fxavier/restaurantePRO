@@ -154,13 +154,13 @@ public class LoyaltyLedgerService {
 
     /** A manual adjustment on the locked account; a debit never takes the balance below zero. */
     @Transactional(propagation = Propagation.MANDATORY)
-    public LoyaltyPointEntry adjust(LoyaltyAccount locked, int points, String reason) {
+    public LoyaltyPointEntry adjust(LoyaltyAccount locked, int points, String reason, UUID storeId) {
         if (points < 0) {
             requireBalance(locked.getCustomerId(), -points);
         }
         LedgerActor actor = LedgerActor.of(accessPolicy);
         LoyaltyPointEntry entry = entries.saveAndFlush(LoyaltyPointEntry.adjustment(locked.getCustomerId(),
-                UUID.randomUUID(), points, reason, actor.kind(), actor.id(), clock.instant()));
+                UUID.randomUUID(), points, reason, storeId, actor.kind(), actor.id(), clock.instant()));
         if (entry.isDebit()) {
             allocate(entry);
         }
@@ -213,7 +213,12 @@ public class LoyaltyLedgerService {
         }
     }
 
-    /** FIFO: the oldest lots first, until the debit's points are covered (the caller checked the balance). */
+    /**
+     * FIFO: the oldest lots first, until the debit's points are covered (the caller checked the balance). Only lots
+     * up to the debit's {@code occurred_at} count (the deferred trigger refuses a later lot). That is safe with one
+     * backend per installation (one clock); several instances with skewed clocks could see a committed lot stamped
+     * after the debit and leave it out, so a debit could then find too few points and fail.
+     */
     private void allocate(LoyaltyPointEntry debit) {
         int left = -debit.getPoints();
         for (PointLot lot : entries.openLots(debit.getCustomerId(), debit.getOccurredAt())) {

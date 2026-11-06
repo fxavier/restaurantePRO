@@ -103,13 +103,18 @@ public class LoyaltyAccountService {
         return view(account);
     }
 
-    /** {@code points} with a reason (§8.4); a debit beyond the balance is a 422 {@code LOYALTY_INSUFFICIENT_POINTS}. */
+    /**
+     * {@code points} with a reason (§8.4), in the name of the request's store: authorized there first (D42). A debit
+     * beyond the balance is a 422 {@code LOYALTY_INSUFFICIENT_POINTS}.
+     */
     @Transactional
     public EntryView adjust(UUID customerId, AdjustmentRequest request) {
-        accessPolicy.requireInAnyStore(Permission.LOYALTY_ADJUST);
+        accessPolicy.require(Permission.LOYALTY_ADJUST, request.storeId());
         String reason = requireReason(request.reason(), "loyalty adjustment");
-        LoyaltyPointEntry entry = ledger.adjust(lockedAccount(customerId), request.points(), reason);
-        auditLog.recordAsCurrentActor("LOYALTY_ADJUSTED", CUSTOMER, customerId.toString(), null, null, reason,
+        LoyaltyPointEntry entry = ledger.adjust(lockedAccount(customerId), request.points(), reason,
+                request.storeId());
+        auditLog.recordAsCurrentActor("LOYALTY_ADJUSTED", CUSTOMER, customerId.toString(), request.storeId(), null,
+                reason,
                 Map.of("entryId", entry.getId().toString(), "points", entry.getPoints()));
         return entry.toView();
     }

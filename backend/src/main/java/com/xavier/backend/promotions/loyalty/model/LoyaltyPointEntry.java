@@ -173,15 +173,16 @@ public class LoyaltyPointEntry {
         return reversal;
     }
 
-    /** A manual adjustment with its reason (§8.4); {@code adjustmentId} is its own source id. */
+    /** A manual adjustment with its reason (§8.4), in a store's name; {@code adjustmentId} is its own source id. */
     public static LoyaltyPointEntry adjustment(UUID customerId, UUID adjustmentId, int points, String reason,
-                                               String actorKind, UUID actorId, Instant now) {
+                                               UUID storeId, String actorKind, UUID actorId, Instant now) {
         if (points == 0 || reason == null || reason.isBlank()) {
             throw new IllegalArgumentException("An adjustment has non-zero points and a reason");
         }
         LoyaltyPointEntry entry = of(customerId, EntryKind.ADJUSTMENT, points, SourceType.ADJUSTMENT, adjustmentId,
                 actorKind, actorId, now);
         entry.reason = reason.strip();
+        entry.storeId = Objects.requireNonNull(storeId, "storeId");
         return entry;
     }
 

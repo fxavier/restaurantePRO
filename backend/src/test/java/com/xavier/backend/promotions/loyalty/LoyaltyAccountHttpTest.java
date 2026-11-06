@@ -138,7 +138,7 @@ class LoyaltyAccountHttpTest {
         mvc.perform(idem(post(ACCOUNTS + "/" + customer + "/adjustments"))
                         .with(account(null, Permission.LOYALTY_VIEW)).contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"points": 5, "reason": "no permission"}"""))
+                                {"points": 5, "reason": "no permission", "storeId": "%s"}""".formatted(cashier.storeId())))
                 .andExpect(status().isForbidden());
         assertThat(audits("LOYALTY_ADJUSTED")).isEqualTo(2);
     }
@@ -151,7 +151,7 @@ class LoyaltyAccountHttpTest {
             mvc.perform(idem(post(ACCOUNTS + "/" + customer + "/adjustments"), key)
                             .with(account(null, Permission.LOYALTY_ADJUST)).contentType(MediaType.APPLICATION_JSON)
                             .content("""
-                                    {"points": 7, "reason": "goodwill"}"""))
+                                    {"points": 7, "reason": "goodwill", "storeId": "%s"}""".formatted(cashier.storeId())))
                     .andExpect(status().isCreated());
         }
 
@@ -213,12 +213,33 @@ class LoyaltyAccountHttpTest {
                 .andExpect(status().isForbidden());
         mvc.perform(idem(post(ACCOUNTS + "/" + unknown + "/adjustments")).with(account(null, Permission.LOYALTY_VIEW))
                         .contentType(MediaType.APPLICATION_JSON).content("""
-                                {"points": 5, "reason": "why"}"""))
+                                {"points": 5, "reason": "why", "storeId": "%s"}""".formatted(cashier.storeId())))
                 .andExpect(status().isForbidden());
         mvc.perform(idem(post(POS + "/" + unknown + "/loyalty")).with(cashier.with(Permission.LOYALTY_VIEW)))
                 .andExpect(status().isForbidden());
         mvc.perform(get(POS + "/" + unknown + "/loyalty").with(cashier.with(Permission.LOYALTY_ENROLL)))
                 .andExpect(status().isForbidden());
+    }
+
+    /** D42 store first: an adjustment is made in a store's name; the grant must cover that store. */
+    @Test
+    void anAdjustmentIsAuthorizedInItsStoreAndRecordsIt() throws Exception {
+        loyalty.enroll(cashier, customer).andExpect(status().isCreated());
+        UUID store = cashier.storeId();
+        UUID other = loyalty.cashier().storeId();
+
+        adjustAs(account(store, Permission.LOYALTY_ADJUST), other, 5, "goodwill").andExpect(status().isForbidden());
+        adjustAs(account(store, Permission.LOYALTY_ADJUST), null, 5, "goodwill").andExpect(status().isBadRequest());
+        String entry = adjustAs(account(store, Permission.LOYALTY_ADJUST), store, 5, "goodwill")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.storeId").value(store.toString()))
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(jdbc.sql("SELECT store_id FROM promotions.loyalty_point_entry WHERE id = ?")
+                .param(CustomersFixtures.id(entry)).query(UUID.class).single()).isEqualTo(store);
+        assertThat(jdbc.sql("""
+                        SELECT store_id FROM audit.audit_event WHERE action = 'LOYALTY_ADJUSTED' AND entity_id = ?""")
+                .param(customer.toString()).query(UUID.class).list()).containsExactly(store);
     }
 
     private ResultActions balance() throws Exception {
@@ -238,10 +259,16 @@ class LoyaltyAccountHttpTest {
     }
 
     private ResultActions adjust(int points, String reason) throws Exception {
+        return adjustAs(account(null, Permission.LOYALTY_ADJUST), cashier.storeId(), points, reason);
+    }
+
+    private ResultActions adjustAs(org.springframework.test.web.servlet.request.RequestPostProcessor who, UUID store,
+                                   int points, String reason) throws Exception {
         return mvc.perform(idem(post(ACCOUNTS + "/" + customer + "/adjustments"))
-                .with(account(null, Permission.LOYALTY_ADJUST)).contentType(MediaType.APPLICATION_JSON)
+                .with(who).contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                        {"points": %d, "reason": "%s"}""".formatted(points, reason)));
+                        {"points": %d, "reason": "%s", "storeId": %s}""".formatted(points, reason,
+                        store == null ? "null" : "\"" + store + "\"")));
     }
 
     private long audits(String action) {
