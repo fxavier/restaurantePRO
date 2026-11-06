@@ -28,7 +28,8 @@ import org.springframework.stereotype.Repository;
 public class LedgerStore {
 
     static final String MOVEMENT_COLUMNS = """
-            id, posting_seq, warehouse_id, store_id, stock_item_id, type, quantity, unit_cost, value, currency,
+            id, posting_seq, warehouse_id, store_id, stock_item_id, type, quantity, unit_cost, reference_unit_cost, value,
+            currency,
             source_type, source_id, source_line_id, reverses_movement_id, recipe_version_id, policy_version_id,
             sale_item_id, business_date, occurred_at, posted_at, actor_kind, actor_id, reason""";
 
@@ -104,14 +105,14 @@ public class LedgerStore {
     public Optional<MovementView> insert(NewMovement m) {
         return jdbc.sql("""
                         INSERT INTO inventory.stock_movement (id, warehouse_id, store_id, stock_item_id, type, quantity,
-                            unit_cost, value, currency, source_type, source_id, source_line_id, reverses_movement_id,
-                            recipe_version_id, policy_version_id, sale_item_id, business_date, occurred_at, posted_at,
-                            actor_kind, actor_id, reason)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            unit_cost, reference_unit_cost, value, currency, source_type, source_id, source_line_id,
+                            reverses_movement_id, recipe_version_id, policy_version_id, sale_item_id, business_date,
+                            occurred_at, posted_at, actor_kind, actor_id, reason)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT (source_type, source_id, stock_item_id, type, warehouse_id) DO NOTHING
                         RETURNING %s""".formatted(MOVEMENT_COLUMNS))
                 .params(m.id(), m.warehouseId(), m.storeId(), m.stockItemId(), m.type(), m.quantity(), m.unitCost(),
-                        m.value(), m.currency(), m.sourceType(), m.sourceId(), m.sourceLineId(),
+                        m.referenceUnitCost(), m.value(), m.currency(), m.sourceType(), m.sourceId(), m.sourceLineId(),
                         m.reversesMovementId(), m.recipeVersionId(), m.policyVersionId(), m.saleItemId(),
                         m.businessDate(), Timestamp.from(m.occurredAt()), Timestamp.from(m.postedAt()), m.actorKind(),
                         m.actorId(), m.reason())
@@ -143,12 +144,14 @@ public class LedgerStore {
                 rs.getObject("recipe_version_id", UUID.class), rs.getObject("policy_version_id", UUID.class),
                 rs.getObject("sale_item_id", UUID.class), rs.getObject("business_date", LocalDate.class),
                 rs.getTimestamp("occurred_at").toInstant(), rs.getTimestamp("posted_at").toInstant(),
-                rs.getString("actor_kind"), rs.getObject("actor_id", UUID.class), rs.getString("reason"));
+                rs.getString("actor_kind"), rs.getObject("actor_id", UUID.class), rs.getString("reason"),
+                rs.getBigDecimal("reference_unit_cost"));
     }
 
     /** A movement row about to be inserted, valued and attributed. */
     public record NewMovement(UUID id, UUID warehouseId, UUID storeId, UUID stockItemId, String type,
-                              BigDecimal quantity, BigDecimal unitCost, BigDecimal value, String currency,
+                              BigDecimal quantity, BigDecimal unitCost, BigDecimal referenceUnitCost,
+                              BigDecimal value, String currency,
                               String sourceType, UUID sourceId, UUID sourceLineId, UUID reversesMovementId,
                               UUID recipeVersionId, UUID policyVersionId, UUID saleItemId, LocalDate businessDate,
                               Instant occurredAt, Instant postedAt, String actorKind, UUID actorId, String reason) {

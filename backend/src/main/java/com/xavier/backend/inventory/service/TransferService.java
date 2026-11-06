@@ -6,6 +6,7 @@ import com.xavier.backend.access.Permission;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.inventory.exception.InventoryNotFoundException;
 import com.xavier.backend.inventory.exception.InventoryRuleException;
+import com.xavier.backend.inventory.model.BalanceKey;
 import com.xavier.backend.inventory.model.MovementType;
 import com.xavier.backend.inventory.model.StockItem;
 import com.xavier.backend.inventory.model.StockTransfer;
@@ -42,7 +43,9 @@ import org.springframework.transaction.annotation.Transactional;
  * negative policy); within one store it also posts the TRANSFER_IN at the same cost and the transfer is RECEIVED at
  * once. Between stores the destination receives later: a TRANSFER_IN of the shipped quantity at the shipping cost,
  * and a TRANSFER_SHORTAGE OUT of what did not arrive, so the destination rises by what arrived and the loss is a
- * movement of its own. Commands lock the transfer row, then the balance rows (in the ledger's order).
+ * movement of its own. Commands lock the transfer row, then the balance rows (in the ledger's order). A same-store
+ * ship posts twice (the OUT, then the IN at its cost), so it locks both warehouses' rows up front
+ * ({@link StockLedger#lock}): opposite transfers between two warehouses never deadlock.
  */
 @Service
 public class TransferService {
@@ -107,6 +110,14 @@ public class TransferService {
         Instant now = clock.instant();
         LocalDate shipDate = businessDates.of(transfer.getFromStoreId(), now);
         transfer.ship(actorId(), now);
+        List<BalanceKey> keys = new ArrayList<>();
+        transfer.getLines().forEach(line -> {
+            keys.add(new BalanceKey(transfer.getFromWarehouseId(), line.getStockItemId()));
+            if (transfer.withinOneStore()) {
+                keys.add(new BalanceKey(transfer.getToWarehouseId(), line.getStockItemId()));
+            }
+        });
+        ledger.lock(keys);
         List<PostMovement> outs = transfer.getLines().stream().map(line -> PostMovement.of(
                 transfer.getFromWarehouseId(), line.getStockItemId(), MovementType.TRANSFER_OUT,
                 line.getQuantityShipped().negate(), SOURCE_TYPE, id, shipDate, now).manual("transfer")).toList();

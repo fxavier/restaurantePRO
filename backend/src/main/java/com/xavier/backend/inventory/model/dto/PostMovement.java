@@ -11,8 +11,9 @@ import java.util.UUID;
  * One movement to post through {@code StockLedger.post} (D113), the only posting path (S42, used by S47–S49).
  *
  * @param quantity  signed, in the item's base unit, with the sign its type requires (0 for a REVALUATION)
- * @param unitCost  the movement's own cost (a receipt, a transfer IN, a supplier return at the receipt's cost), or
- *                  {@code null} to value it at the current average
+ * @param unitCost  an IN's own cost (a receipt, a transfer IN, an opening), or {@code null} to value it at the current
+ *                  average. An OUT is always valued at the average (weighted-average costing, D113); a cost given
+ *                  for an OUT (a supplier return at its receipt's cost, a shortage) is stored for reference only
  * @param value     a REVALUATION's value (signed, scale 4); {@code null} for every other type
  * @param sourceType what the movement comes from ({@code ORDER_LINE}, {@code GOODS_RECEIPT}, {@code TRANSFER}…);
  *                  with {@code sourceId}, item, type and warehouse it is the idempotency key (§8.2)
@@ -42,6 +43,16 @@ public record PostMovement(UUID warehouseId, UUID stockItemId, MovementType type
         }
         if (unitCost != null && unitCost.signum() < 0) {
             throw new IllegalArgumentException("a unit cost is never negative");
+        }
+        requireScale(quantity, 6, "a quantity");
+        requireScale(unitCost, 6, "a unit cost");
+        requireScale(value, 4, "a value");
+    }
+
+    /** Callers that take amounts from a request check them first and answer with a coded 422. */
+    private static void requireScale(BigDecimal number, int decimals, String what) {
+        if (number != null && number.stripTrailingZeros().scale() > decimals) {
+            throw new IllegalArgumentException(what + " has at most " + decimals + " decimals, was " + number);
         }
     }
 

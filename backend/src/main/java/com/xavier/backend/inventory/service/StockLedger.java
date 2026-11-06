@@ -25,6 +25,7 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -59,6 +60,11 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  *     <li>publishes {@link StockMovementsPosted} once per source and transaction, when something was posted.</li>
  * </ol>
  * It never authorizes: the calling use case did.
+ *
+ * <p><b>A caller that posts more than once in one transaction</b> (a same-store transfer's OUT and IN; S47–S49 when
+ * they post in steps) <b>must first {@link #lock} every balance it will touch</b>: each {@code post} sorts only its own
+ * keys, so two posts would lock in posting order, and two such transactions in opposite orders deadlock. Locking
+ * again a row the transaction holds is a no-op, so the later posts keep the order.
  */
 @Service
 public class StockLedger {
@@ -83,6 +89,20 @@ public class StockLedger {
         this.accessPolicy = accessPolicy;
         this.events = events;
         this.clock = clock;
+    }
+
+    /**
+     * Creates the missing balance rows of {@code keys} and locks them all {@code FOR UPDATE} in
+     * {@link BalanceKey#LOCK_ORDER}, until the transaction ends. For a transaction that posts more than once.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void lock(Collection<BalanceKey> keys) {
+        List<BalanceKey> sorted = keys.stream().distinct().sorted(BalanceKey.LOCK_ORDER).toList();
+        if (sorted.isEmpty()) {
+            return;
+        }
+        store.ensureBalances(sorted, clock.instant());
+        store.lock(sorted);
     }
 
     /** @return the movements of the request (as recorded when replayed), each followed by its REVALUATION if any */
@@ -121,7 +141,7 @@ public class StockLedger {
             }
 
             Optional<MovementView> inserted = store.insert(row(movement, warehouse, movement.type(),
-                    movement.quantity(), valued.unitCost(), valued.value(), by));
+                    movement.quantity(), valued.unitCost(), valued.value(), referenceCost(movement), by));
             if (inserted.isEmpty()) {
                 result.add(recorded(movement));
                 continue;
@@ -129,7 +149,7 @@ public class StockLedger {
             result.add(inserted.get());
             if (valued.revaluation() != null) {
                 MovementView revaluation = store.insert(row(movement, warehouse, MovementType.REVALUATION,
-                                BigDecimal.ZERO, valued.unitCost(), valued.revaluation(), by))
+                                BigDecimal.ZERO, valued.unitCost(), valued.revaluation(), null, by))
                         .orElseThrow(() -> InventoryConflictException.sourceMismatch(movement.sourceType(),
                                 movement.sourceId()));
                 result.add(revaluation);
@@ -171,8 +191,10 @@ public class StockLedger {
     private MovementView recorded(PostMovement movement) {
         MovementView existing = store.findBySourceKey(movement.sourceType(), movement.sourceId(),
                 movement.stockItemId(), movement.type().name(), movement.warehouseId()).orElseThrow();
+        BigDecimal recordedCost = movement.quantity().signum() < 0 ? existing.referenceUnitCost() : existing.unitCost();
         boolean same = existing.quantity().compareTo(movement.quantity()) == 0
-                && (movement.unitCost() == null || existing.unitCost().compareTo(movement.unitCost()) == 0)
+                && (movement.unitCost() == null
+                || recordedCost != null && recordedCost.compareTo(movement.unitCost()) == 0)
                 && (movement.value() == null || existing.value().compareTo(movement.value()) == 0)
                 && Objects.equals(existing.sourceLineId(), movement.sourceLineId())
                 && Objects.equals(existing.reversesMovementId(), movement.reversesMovementId());
@@ -230,10 +252,17 @@ public class StockLedger {
         return new Attribution(current.kind().name(), id, currency, now);
     }
 
+    /** The cost an OUT names, kept for reference only (it is valued at the average). */
+    private static BigDecimal referenceCost(PostMovement movement) {
+        return movement.quantity().signum() < 0 ? movement.unitCost() : null;
+    }
+
     private static NewMovement row(PostMovement m, Warehouse warehouse, MovementType type, BigDecimal quantity,
-                                   BigDecimal unitCost, BigDecimal value, Attribution by) {
+                                   BigDecimal unitCost, BigDecimal value, BigDecimal referenceUnitCost,
+                                   Attribution by) {
         return new NewMovement(UuidVersion7Strategy.INSTANCE.generateUuid(null), m.warehouseId(),
-                warehouse.getStoreId(), m.stockItemId(), type.name(), quantity, unitCost, value, by.currency(),
+                warehouse.getStoreId(), m.stockItemId(), type.name(), quantity, unitCost, referenceUnitCost, value,
+                by.currency(),
                 m.sourceType(), m.sourceId(), m.sourceLineId(), m.reversesMovementId(), m.recipeVersionId(),
                 m.policyVersionId(), m.saleItemId(), m.businessDate(), m.occurredAt(), by.at(), by.kind(), by.id(),
                 m.reason());

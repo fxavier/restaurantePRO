@@ -28,15 +28,18 @@ public record StockPosition(BigDecimal quantity, BigDecimal value, BigDecimal av
 
     /**
      * The position once a recorded movement ({@code quantity} and {@code value} signed, {@code unitCost} as posted)
-     * is applied. With a positive quantity left the average is {@code value ÷ quantity}; an IN that leaves it at zero
-     * or below takes its own cost (the latest cost known), and an OUT leaves the average as it was. The average never
-     * goes below zero (the ledger's unit costs are never negative).
+     * is applied; the value is always Σ values. An OUT never changes the average (weighted-average costing: the
+     * rounding left by valuing it at the average must not move the cost). An IN or a REVALUATION that leaves a
+     * positive quantity sets the average to {@code value ÷ quantity}; an IN that leaves it at zero or below takes its
+     * own cost (the latest cost known). The average never goes below zero.
      */
     public StockPosition after(BigDecimal quantity, BigDecimal value, BigDecimal unitCost) {
         BigDecimal newQuantity = this.quantity.add(quantity);
         BigDecimal newValue = this.value.add(value);
         BigDecimal newAverage;
-        if (newQuantity.signum() > 0) {
+        if (quantity.signum() < 0) {
+            newAverage = averageCost;
+        } else if (newQuantity.signum() > 0) {
             newAverage = newValue.divide(newQuantity, COST_SCALE, MovingAverage.ROUNDING).max(BigDecimal.ZERO);
         } else if (quantity.signum() > 0) {
             newAverage = unitCost;

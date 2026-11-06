@@ -35,6 +35,39 @@ class MovingAverageTest {
         assertThat(out.after()).isEqualTo(position("15", "165", "11"));
     }
 
+    /** Review case: recomputing value ÷ quantity after an OUT turned a 0.012345 cost into 0.04. */
+    @Test
+    void anOutNeverChangesTheAverageEvenWhenRoundingLeavesAResidue() {
+        StockPosition stock = new StockPosition(new BigDecimal("1000.01"), new BigDecimal("12.3454"),
+                new BigDecimal("0.012345"));
+
+        Valued out = MovingAverage.post(stock, q("-1000"), null);
+
+        assertThat(out.value()).isEqualByComparingTo("-12.3450");
+        assertThat(out.after()).isEqualTo(position("0.01", "0.0004", "0.012345"));
+    }
+
+    @Test
+    void anOutThatEmptiesTheStockTakesAllItsValue() {
+        StockPosition stock = new StockPosition(new BigDecimal("0.01"), new BigDecimal("0.0004"),
+                new BigDecimal("0.012345"));
+
+        Valued out = MovingAverage.post(stock, q("-0.01"), null);
+
+        assertThat(out.value()).isEqualByComparingTo("-0.0004");
+        assertThat(out.after()).isEqualTo(position("0", "0", "0.012345"));
+    }
+
+    /** Weighted-average costing: an OUT's own cost (a supplier return, a shortage) is for reference only. */
+    @Test
+    void anOutWithItsOwnCostIsStillValuedAtTheAverage() {
+        Valued out = MovingAverage.post(position("20", "220", "11"), q("-5"), c("99"));
+
+        assertThat(out.unitCost()).isEqualByComparingTo("11");
+        assertThat(out.value()).isEqualByComparingTo("-55");
+        assertThat(out.after()).isEqualTo(position("15", "165", "11"));
+    }
+
     @Test
     void anInBringingANegativeQuantityBackAboveZeroRevaluesToTheNewCost() {
         StockPosition stock = position("4", "40", "10");
