@@ -45,7 +45,7 @@ Levels: **U** unit/model test; **M** module IT (`@ApplicationModuleTest` + Postg
 | 17 | After the cutoff with yesterday open: a session opens in the new day with `PREVIOUS_DAY_OPEN` | time | M + S | `NewDayPolicyTest`, `R3AcceptanceTest` |
 | 18 | An adjustment makes an old submission stale (409 `CLOSING_STALE`); a financial reopen keeps the approved round 0; round 1 approvable | state machine | M + S | `ClosingRoundsTest`, `FinancialReopenTest`, `R3AcceptanceTest` (reopen, adjust, round 1) |
 | 19 | A statement imported twice → one batch; matched, mismatched, missing as expected; no money fact changes | idempotency, rule | M + S | `StatementImportTest`, `ReconciliationNeverWritesMoneyTest`, `R3AcceptanceTest` |
-| 20 | A payment after midnight and before the cutoff belongs to its business day's statement | time | M | `StatementPeriodIsBusinessDaysRepro` (expected failure, BUG-0002) |
+| 20 | A payment after midnight and before the cutoff belongs to its business day's statement | time | M | `StatementPeriodIsBusinessDaysTest` (BUG-0002, fixed in 8c1bd64) |
 | 21 | Reports equal documents, receipts and credit; `final`; rebuild from empty = live; `pendingFacts` while a listener is held | reporting | M + S | `SalesReportTest`, `ReceiptsReportTest`, `RebuildEqualsLiveTest`, `ReportFreshnessTest`, `R3AcceptanceTest` |
 | 22 | 31-day report p95 < 1 s, 1-day < 300 ms on one store-year | performance | S (run by name) | `R3ReportBenchmark` |
 | 23 | A waiter → 403 on the audit API; a store-A auditor never sees store B; span > 92 days → 422; export audited; nested secret rejected | permission | M + S | `AuditQueryTest`, `AuditExportTest`, `AuditLogTest`, `R3AcceptanceTest` |
