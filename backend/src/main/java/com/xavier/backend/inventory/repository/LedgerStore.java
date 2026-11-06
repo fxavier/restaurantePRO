@@ -118,14 +118,14 @@ public class LedgerStore {
                 .query(LedgerStore::movement).optional();
     }
 
-    public MovementView findBySourceKey(String sourceType, UUID sourceId, UUID stockItemId, String type,
-                                        UUID warehouseId) {
+    public Optional<MovementView> findBySourceKey(String sourceType, UUID sourceId, UUID stockItemId, String type,
+                                                  UUID warehouseId) {
         return jdbc.sql("""
                         SELECT %s FROM inventory.stock_movement
                         WHERE source_type = ? AND source_id = ? AND stock_item_id = ? AND type = ? AND warehouse_id = ?"""
                         .formatted(MOVEMENT_COLUMNS))
                 .params(sourceType, sourceId, stockItemId, type, warehouseId)
-                .query(LedgerStore::movement).single();
+                .query(LedgerStore::movement).optional();
     }
 
     static StockPosition position(ResultSet rs) throws SQLException {

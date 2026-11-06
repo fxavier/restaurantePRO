@@ -110,7 +110,15 @@ public class StockLedger {
             Valued valued = movement.type() == MovementType.REVALUATION
                     ? MovingAverage.revalue(before, movement.value())
                     : MovingAverage.post(before, movement.quantity(), movement.unitCost());
-            refuseBelowZero(movement, warehouse, before, valued.after());
+            if (refusedBelowZero(movement, warehouse, valued.after())) {
+                if (store.findBySourceKey(movement.sourceType(), movement.sourceId(), movement.stockItemId(),
+                        movement.type().name(), movement.warehouseId()).isPresent()) {
+                    result.add(recorded(movement)); // a replay is answered as recorded, whatever the stock now
+                    continue;
+                }
+                throw InventoryRuleException.negativeStockRefused(warehouse.getId(), movement.stockItemId(),
+                        before.quantity());
+            }
 
             Optional<MovementView> inserted = store.insert(row(movement, warehouse, movement.type(),
                     movement.quantity(), valued.unitCost(), valued.value(), by));
@@ -154,19 +162,15 @@ public class StockLedger {
         }
     }
 
-    private static void refuseBelowZero(PostMovement movement, Warehouse warehouse, StockPosition before,
-                                        StockPosition after) {
-        if (movement.manual() && movement.quantity().signum() < 0
-                && warehouse.getNegativePolicy() == NegativePolicy.REFUSE_MANUAL && after.quantity().signum() < 0) {
-            throw InventoryRuleException.negativeStockRefused(warehouse.getId(), movement.stockItemId(),
-                    before.quantity());
-        }
+    private static boolean refusedBelowZero(PostMovement movement, Warehouse warehouse, StockPosition after) {
+        return movement.manual() && movement.quantity().signum() < 0
+                && warehouse.getNegativePolicy() == NegativePolicy.REFUSE_MANUAL && after.quantity().signum() < 0;
     }
 
     /** The movement already recorded for this source key, which must be the same movement. */
     private MovementView recorded(PostMovement movement) {
         MovementView existing = store.findBySourceKey(movement.sourceType(), movement.sourceId(),
-                movement.stockItemId(), movement.type().name(), movement.warehouseId());
+                movement.stockItemId(), movement.type().name(), movement.warehouseId()).orElseThrow();
         boolean same = existing.quantity().compareTo(movement.quantity()) == 0
                 && (movement.unitCost() == null || existing.unitCost().compareTo(movement.unitCost()) == 0)
                 && (movement.value() == null || existing.value().compareTo(movement.value()) == 0)
