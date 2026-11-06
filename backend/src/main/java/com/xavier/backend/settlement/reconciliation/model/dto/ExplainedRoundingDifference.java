@@ -5,8 +5,10 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 /**
- * D68 amendment: for one rate of a closed order, the tax its lines recompute minus the tax its documents carry, when
- * it is not zero and at most one minor unit per line. The documents' tax is authoritative: it is not an exception.
+ * D96 rule 8: for one rate of a closed order, the tax its lines recompute minus the tax its ISSUED documents carry,
+ * explained by the resolved pending correction {@code adjustmentId}, whose corrective document is
+ * {@code correctionReference}. Not an exception.
  */
-public record ExplainedRoundingDifference(UUID orderId, BigDecimal ratePercent, Money difference) {
+public record ExplainedRoundingDifference(UUID orderId, BigDecimal ratePercent, Money difference, UUID adjustmentId,
+                                          String correctionReference) {
 }

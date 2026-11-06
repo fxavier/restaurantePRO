@@ -29,12 +29,15 @@ import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 
 /**
  * D80, PRD S31: documents against payments of a store's business day, computed from the facts. A settled day has no
- * exception; the D68 amendment's cent of tax is an explained rounding difference, never an exception; a stuck credit
- * sale and its draft show after an hour; a closed order that lost money it was invoiced for is an alarm.
+ * exception; a settled void's cent of tax (D96) is no exception once the residual absorbed it, a pending correction
+ * while no document could, and a bug alarm when nothing records it; a stuck credit sale and its draft show after an
+ * hour; a closed order that lost money it was invoiced for is an alarm.
  */
 @SettlementModuleTest
 class DocumentsControlTest {
@@ -62,6 +65,9 @@ class DocumentsControlTest {
     @Autowired
     SettlementTestClock clock;
 
+    @Autowired
+    PlatformTransactionManager transactionManager;
+
     @BeforeEach
     void aManagerApproves() {
         when(approvers.verify(any(), any(), eq(Permission.ORDER_VOID_APPROVE), any())).thenReturn(MANAGER);
@@ -85,28 +91,68 @@ class DocumentsControlTest {
     }
 
     @Test
-    void theCentOfTaxASettledVoidLeavesIsExplainedNotAnException() throws Exception {
-        Sale sale = fixtures.sale("2"); // the line's tax 3.45; a partition of 1 takes 1.73
+    void theCentOfTaxTheResidualAbsorbedIsNoException() throws Exception {
+        Sale sale = fixtures.sale("2"); // the line's tax 3.45; a partition of 1 takes 1.73; the void leaves 1.72
+        UUID partition = partitionOneAndVoidTheOther(sale);
+        fixtures.payPartition(sale.cashier(), sale.order(), partition, "CASH", "12.50", "12.50",
+                UUID.randomUUID().toString()).andExpect(status().isCreated());
+        fixtures.close(sale.cashier(), sale.order(), fixtures.orderVersion(sale.cashier(), sale.order()),
+                UUID.randomUUID().toString()).andExpect(status().isOk()); // the residual carries A's share, 1.72
+
+        JsonNode control = control(sale);
+
+        assertThat(control.get("exceptions")).isEmpty();
+        assertThat(control.get("roundingDifferences")).isEmpty();
+    }
+
+    @Test
+    void theCentOfTaxNoDocumentCouldTakeIsAPendingCorrection() throws Exception {
+        Sale sale = fixtures.sale("2");
+        UUID document = invoicedAloneAndClosed(sale);
+
+        JsonNode control = control(sale);
+
+        assertThat(kinds(control)).containsExactly("TAX_CORRECTION_PENDING");
+        assertThat(control.get("exceptions").get(0).get("documentId").asString()).isEqualTo(document.toString());
+        assertThat(control.get("roundingDifferences")).isEmpty();
+    }
+
+    @Test
+    void aClosedOrdersCentNoAdjustmentRecordsIsABugAlarm() throws Exception {
+        Sale sale = fixtures.sale("2");
+        invoicedAloneAndClosed(sale);
+        // a bug's doing, written past the services and the fact trigger: the adjustment row is gone
+        new TransactionTemplate(transactionManager).executeWithoutResult(tx -> {
+            jdbc.sql("ALTER TABLE settlement.tax_rounding_adjustment DISABLE TRIGGER tax_rounding_adjustment_append_only")
+                    .update();
+            jdbc.sql("DELETE FROM settlement.tax_rounding_adjustment WHERE order_id = ?").param(sale.order()).update();
+            jdbc.sql("ALTER TABLE settlement.tax_rounding_adjustment ENABLE TRIGGER tax_rounding_adjustment_append_only")
+                    .update();
+        });
+
+        assertThat(kinds(control(sale))).containsExactly("TAX_DRIFT_UNASSIGNED");
+    }
+
+    private UUID partitionOneAndVoidTheOther(Sale sale) throws Exception {
         UUID line = fixtures.lineIds(sale.cashier(), sale.order()).getFirst();
         UUID partition = SettlementFixtures.id(fixtures.partitionItems(sale.cashier(), sale.order(),
                 fixtures.orderVersion(sale.cashier(), sale.order()), UUID.randomUUID().toString(), line, "1")
                 .andExpect(status().isCreated()));
         fixtures.settledVoid(sale.cashier(), sale.order(), fixtures.orderVersion(sale.cashier(), sale.order()), line,
                 "1", UUID.randomUUID().toString()).andExpect(status().isCreated());
+        return partition;
+    }
+
+    /** The partition is invoiced on its own: no residual document, so the close records a pending correction. */
+    private UUID invoicedAloneAndClosed(Sale sale) throws Exception {
+        UUID partition = partitionOneAndVoidTheOther(sale);
         fixtures.payPartition(sale.cashier(), sale.order(), partition, "CASH", "12.50", "12.50",
                 UUID.randomUUID().toString()).andExpect(status().isCreated());
-        fixtures.partitionDocument(sale.cashier(), partition, UUID.randomUUID().toString())
-                .andExpect(status().isCreated());
+        UUID document = SettlementFixtures.id(fixtures.partitionDocument(sale.cashier(), partition,
+                UUID.randomUUID().toString()).andExpect(status().isCreated()));
         fixtures.close(sale.cashier(), sale.order(), fixtures.orderVersion(sale.cashier(), sale.order()),
                 UUID.randomUUID().toString()).andExpect(status().isOk());
-
-        JsonNode control = control(sale);
-
-        assertThat(control.get("exceptions")).isEmpty();
-        JsonNode rounding = control.get("roundingDifferences").get(0);
-        assertThat(rounding.get("orderId").asString()).isEqualTo(sale.order().toString());
-        assertThat(rounding.get("ratePercent").decimalValue()).isEqualByComparingTo("16");
-        assertThat(rounding.get("difference").get("amount").decimalValue()).isEqualByComparingTo("-0.01");
+        return document;
     }
 
     @Test

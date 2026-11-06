@@ -7,6 +7,7 @@ import com.xavier.backend.fiscal.FiscalApi;
 import com.xavier.backend.fiscal.model.dto.Coverage;
 import com.xavier.backend.fiscal.model.dto.DocumentView;
 import com.xavier.backend.orders.OrderBillingView;
+import com.xavier.backend.orders.OrderLifecycle;
 import com.xavier.backend.orders.OrdersApi;
 import com.xavier.backend.settlement.model.dto.CreditChargeView;
 import com.xavier.backend.settlement.reconciliation.exception.ReconciliationNotFoundException;
@@ -123,16 +124,27 @@ public class DocumentsControlService {
                 .map(CreditCharge::toView).map(this::charge).toList();
         return new OrderFacts(order.orderId(), order.lifecycle().name(), currency, lines, documents, issued,
                 Money.of(payments.paidOf(order.orderId()).subtract(payments.refundedOf(order.orderId())), currency),
-                credit, expectedDrift(order));
+                credit, corrections(order), unassigned(order));
     }
 
-    /** D68 amendment: per rate, the tax drift settlement's split leaves on a closed order (zero without one). */
-    private Map<BigDecimal, Money> expectedDrift(OrderBillingView order) {
-        if (order.lifecycle() != com.xavier.backend.orders.OrderLifecycle.CLOSED) {
+    /** D96: a closed order's recorded pending corrections, open or resolved (none before the close matters). */
+    private List<OrderFacts.Correction> corrections(OrderBillingView order) {
+        if (order.lifecycle() != OrderLifecycle.CLOSED) {
+            return List.of();
+        }
+        return taxDrift.adjustments(order.orderId()).stream().filter(a -> "PENDING_CORRECTION".equals(a.kind()))
+                .map(a -> new OrderFacts.Correction(a.id(), a.ratePercent(), a.sourceLineId(), a.documentId(),
+                        a.amount(), a.resolution() == null ? null : a.resolution().correctionReference()))
+                .toList();
+    }
+
+    /** D96 rule 7: per rate, the settled voids' tax cent of a closed order that no adjustment records. */
+    private Map<BigDecimal, Money> unassigned(OrderBillingView order) {
+        if (order.lifecycle() != OrderLifecycle.CLOSED) {
             return Map.of();
         }
         return taxDrift.of(order.orderId()).stream().collect(Collectors.toMap(TaxRoundingDifference::ratePercent,
-                TaxRoundingDifference::difference, Money::plus));
+                TaxRoundingDifference::unassigned, Money::plus));
     }
 
     private static OrderFacts.Document document(DocumentView document) {

@@ -18,8 +18,8 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 /**
- * D80: the exceptions computed from an order's facts, each a bug alarm or a stuck pendency, and the D68 amendment's
- * tax rounding, which is explained, never an exception.
+ * D80, amended by D96: the exceptions computed from an order's facts, each a bug alarm or a stuck pendency. A tax
+ * difference is explained only by a recorded pending correction: open, it is listed; resolved, it is explained.
  */
 class DocumentsControlRulesTest {
 
@@ -47,10 +47,12 @@ class DocumentsControlRulesTest {
         Map<UUID, BigDecimal> covered = new java.util.HashMap<>(Map.of(LINE, new BigDecimal("2")));
         Money paid = m("25.00");
         List<Charge> charges = new ArrayList<>();
-        Map<BigDecimal, Money> drift = Map.of();
+        List<OrderFacts.Correction> corrections = new ArrayList<>();
+        Map<BigDecimal, Money> unassigned = Map.of();
 
         OrderFacts facts() {
-            return new OrderFacts(ORDER, lifecycle, MZN, lines, documents, covered, paid, charges, drift);
+            return new OrderFacts(ORDER, lifecycle, MZN, lines, documents, covered, paid, charges, corrections,
+                    unassigned);
         }
 
         List<String> kinds() {
@@ -160,28 +162,68 @@ class DocumentsControlRulesTest {
                 .containsExactly(gone);
     }
 
-    @Test
-    void aCentOfTaxPerLineIsAnExplainedRoundingDifferenceNotAnException() {
-        Builder order = settled(); // D68 amendment: the order recomputes 1.72, its documents carry 1.73
+    static final UUID ADJUSTMENT = UUID.fromString("0190a000-0000-7000-8000-0000000000f1");
+
+    /** D96: the order recomputes 1.72, its ISSUED document carries 1.73 and no residual could take the cent. */
+    static Builder aCentNoDocumentCouldTake(String correctionReference) {
+        Builder order = settled();
         order.lines = List.of(new Line(LINE, BigDecimal.ONE, VAT, m("1.72")));
         order.covered = Map.of(LINE, BigDecimal.ONE);
         order.documents = List.of(issued(DOC, "12.50", "1.73", false));
         order.paid = m("12.50");
-        order.drift = Map.of(VAT, m("-0.01")); // what settlement's split computes for the emptied pool
+        order.corrections.add(new OrderFacts.Correction(ADJUSTMENT, VAT, LINE, DOC, m("-0.01"),
+                correctionReference));
+        return order;
+    }
 
-        DocumentsControl.Findings findings = DocumentsControl.check(order.facts(), NOW);
+    @Test
+    void anOpenPendingCorrectionIsListedWithItsDocumentAndLine() {
+        DocumentsControl.Findings findings = DocumentsControl.check(aCentNoDocumentCouldTake(null).facts(), NOW);
+
+        assertThat(findings.roundingDifferences()).isEmpty();
+        assertThat(findings.exceptions()).singleElement().satisfies(e -> {
+            assertThat(e.kind()).isEqualTo("TAX_CORRECTION_PENDING");
+            assertThat(e.documentId()).isEqualTo(DOC);
+            assertThat(e.lineId()).isEqualTo(LINE);
+            assertThat(e.detail()).contains("-0.01");
+        });
+    }
+
+    @Test
+    void aResolvedCorrectionIsAnExplainedRoundingDifferenceWithItsReference() {
+        DocumentsControl.Findings findings = DocumentsControl.check(aCentNoDocumentCouldTake("NC 7/2026").facts(),
+                NOW);
 
         assertThat(findings.exceptions()).isEmpty();
         assertThat(findings.roundingDifferences()).singleElement().satisfies(r -> {
             assertThat(r.orderId()).isEqualTo(ORDER);
             assertThat(r.ratePercent()).isEqualByComparingTo("16");
             assertThat(r.difference()).isEqualTo(m("-0.01"));
+            assertThat(r.adjustmentId()).isEqualTo(ADJUSTMENT);
+            assertThat(r.correctionReference()).isEqualTo("NC 7/2026");
         });
     }
 
     @Test
+    void theSplitsDriftAloneNoLongerExplainsADifference() {
+        Builder order = aCentNoDocumentCouldTake(null);
+        order.corrections.clear(); // as built before D96: a drift, but no recorded adjustment
+
+        assertThat(order.kinds()).containsExactly("TAX_MISMATCH");
+    }
+
+    @Test
+    void aDriftNobodyPlacedOnAClosedOrderIsABugAlarm() {
+        Builder order = aCentNoDocumentCouldTake(null);
+        order.corrections.clear();
+        order.unassigned = Map.of(VAT, m("-0.01"));
+
+        assertThat(order.kinds()).containsExactly("TAX_DRIFT_UNASSIGNED");
+    }
+
+    @Test
     void aCentOfTaxTheSplitDoesNotExplainIsATaxMismatch() {
-        Builder order = settled(); // no partition: the expected drift is zero
+        Builder order = settled(); // no recorded correction: the expected difference is zero
         order.documents = List.of(issued(DOC, "25.00", "3.44", false));
 
         assertThat(order.kinds()).containsExactly("TAX_MISMATCH");
