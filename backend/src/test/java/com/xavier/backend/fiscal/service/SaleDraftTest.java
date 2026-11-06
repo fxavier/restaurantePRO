@@ -105,6 +105,21 @@ class SaleDraftTest {
     }
 
     @Test
+    void anR2DraftAgainIsReturnedUnchangedWhateverTheBuyer() throws Exception {
+        UUID store = fixtures.newStore();
+        UUID order = UUID.randomUUID();
+        Buyer buyer = new Buyer("Cliente Lda", "500999888", null);
+        DocumentView first = tx.execute(s -> fiscal.createSaleDraft(saleDraft(store, order, buyer)));
+
+        DocumentView withoutBuyer = tx.execute(s -> fiscal.createSaleDraft(saleDraft(store, order, null)));
+        DocumentView otherBuyer = tx.execute(s -> fiscal.createSaleDraft(saleDraft(store, order,
+                new Buyer("Outro", null, null))));
+
+        assertThat(withoutBuyer).isEqualTo(first);
+        assertThat(otherBuyer).isEqualTo(first);
+    }
+
+    @Test
     void anUnknownStoreIsNotFound() {
         assertThatThrownBy(() -> tx.execute(s -> fiscal.createSaleDraft(
                 saleDraft(UUID.randomUUID(), UUID.randomUUID(), null))))
