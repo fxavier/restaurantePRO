@@ -11,13 +11,25 @@ import java.util.UUID;
  * {@code tax = gross − net}. {@code taxRatePercent} is e.g. 16 for 16 %. Fiscal checks exactly this (422 otherwise)
  * and never re-rounds totals. {@code taxCode} is the line's catalog tax code (its snapshot), named by the document's
  * tax summary of that rate; {@code null} when not known.
+ *
+ * <p>D101/D107: {@code unitPrice} is the line's <em>effective</em> unit price, the only one the amounts check uses.
+ * {@code listUnitPrice} is the catalog price before a discount or an offer ({@code null} when the line has none), never
+ * below {@code unitPrice}; {@code discountLabel} (at most 80 characters) names the discount for the printout and
+ * needs a {@code listUnitPrice}. Both are kept for printing and for a market adapter (B4); no amount derives from them.
  */
 public record DraftLine(UUID sourceLineId, String description, BigDecimal quantity, Money unitPrice,
-                        BigDecimal taxRatePercent, Money gross, Money net, Money tax, String taxCode) {
+                        BigDecimal taxRatePercent, Money gross, Money net, Money tax, String taxCode,
+                        Money listUnitPrice, String discountLabel) {
+
+    /** A line with no discount (R3). */
+    public DraftLine(UUID sourceLineId, String description, BigDecimal quantity, Money unitPrice,
+                     BigDecimal taxRatePercent, Money gross, Money net, Money tax, String taxCode) {
+        this(sourceLineId, description, quantity, unitPrice, taxRatePercent, gross, net, tax, taxCode, null, null);
+    }
 
     /** A line whose tax code is not known. */
     public DraftLine(UUID sourceLineId, String description, BigDecimal quantity, Money unitPrice,
                      BigDecimal taxRatePercent, Money gross, Money net, Money tax) {
-        this(sourceLineId, description, quantity, unitPrice, taxRatePercent, gross, net, tax, null);
+        this(sourceLineId, description, quantity, unitPrice, taxRatePercent, gross, net, tax, null, null, null);
     }
 }

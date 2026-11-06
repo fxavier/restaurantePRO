@@ -51,12 +51,19 @@ public class FiscalDocumentLine {
     @Column(nullable = false, updatable = false, precision = 19, scale = 4)
     private BigDecimal tax;
 
+    @Column(updatable = false, precision = 19, scale = 4)
+    private BigDecimal listUnitPrice;
+
+    @Column(updatable = false, length = 80)
+    private String discountLabel;
+
     protected FiscalDocumentLine() {
         // JPA
     }
 
     FiscalDocumentLine(int lineNo, UUID sourceLineId, String description, BigDecimal quantity, Money unitPrice,
-                       BigDecimal taxRate, Money gross, Money net, Money tax) {
+                       BigDecimal taxRate, Money gross, Money net, Money tax, Money listUnitPrice,
+                       String discountLabel) {
         this.lineNo = lineNo;
         this.sourceLineId = sourceLineId;
         this.description = description;
@@ -66,19 +73,31 @@ public class FiscalDocumentLine {
         this.gross = gross.amount();
         this.net = net.amount();
         this.tax = tax.amount();
+        this.listUnitPrice = listUnitPrice == null ? null : listUnitPrice.amount();
+        this.discountLabel = discountLabel;
     }
 
-    /** The same billed content as {@code line}: source line, quantity, unit price, rate and amounts (by value). */
+    /**
+     * The same billed content as {@code line}: source line, quantity, unit price, rate, amounts, list price and
+     * discount label (by value; the label as the draft stored it, stripped).
+     */
     boolean sameAs(DraftLine line, Currency currency) {
         return Objects.equals(sourceLineId, line.sourceLineId())
                 && line.quantity() != null && quantity.compareTo(line.quantity()) == 0
                 && line.taxRatePercent() != null && taxRate.compareTo(line.taxRatePercent()) == 0
                 && Money.of(unitPrice, currency).equals(line.unitPrice()) && Money.of(gross, currency).equals(line.gross())
-                && Money.of(net, currency).equals(line.net()) && Money.of(tax, currency).equals(line.tax());
+                && Money.of(net, currency).equals(line.net()) && Money.of(tax, currency).equals(line.tax())
+                && Objects.equals(listUnitPrice(currency), line.listUnitPrice())
+                && Objects.equals(discountLabel, FiscalDocument.discountLabelOf(line.discountLabel()));
     }
 
     DocumentView.Line toView(Currency currency) {
         return new DocumentView.Line(lineNo, sourceLineId, description, quantity, Money.of(unitPrice, currency),
-                taxRate, Money.of(gross, currency), Money.of(net, currency), Money.of(tax, currency));
+                taxRate, Money.of(gross, currency), Money.of(net, currency), Money.of(tax, currency),
+                listUnitPrice(currency), discountLabel);
+    }
+
+    private Money listUnitPrice(Currency currency) {
+        return listUnitPrice == null ? null : Money.of(listUnitPrice, currency);
     }
 }
