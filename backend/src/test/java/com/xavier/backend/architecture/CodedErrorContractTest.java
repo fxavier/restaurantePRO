@@ -254,6 +254,7 @@ class CodedErrorContractTest {
             // R4 catalog (S38): menus and daily dishes
             Map.entry("menu-group-invalid", () -> CatalogRuleException.menuGroupInvalid(
                     "Item BURGER is STANDARD: only a MENU item has menu groups.")),
+            Map.entry("menu-not-allowed", () -> CatalogRuleException.menuNotAllowed("LUNCH", "a macro")),
             Map.entry("item-not-published", () -> CatalogRuleException.itemNotPublished(OTHER, List.of(ID))));
 
     @Autowired
@@ -597,6 +598,8 @@ class CodedErrorContractTest {
     void catalogR4Rules() throws Exception {
         expect("menu-group-invalid", 422, "MENU_GROUP_INVALID",
                 "Item BURGER is STANDARD: only a MENU item has menu groups.", "");
+        expect("menu-not-allowed", 422, "MENU_NOT_ALLOWED",
+                "Item LUNCH is a MENU: a macro cannot name it, because a menu needs its component choices.", "");
         expect("item-not-published", 422, "ITEM_NOT_PUBLISHED", "Item(s) [" + ID
                 + "] are not in the published catalog of store " + OTHER + ".", ",\"itemIds\":[\"" + ID + "\"]");
     }

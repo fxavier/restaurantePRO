@@ -66,7 +66,8 @@ CREATE TABLE catalog.quick_page_entry
 );
 
 -- TABLE_OPEN_PER_GUEST: quantity × guests when a table opens (a cover charge); ORDER_OPEN: when an order of the mode
--- opens (mode NULL = every mode). Only ORDER_OPEN names a mode. Order modes belong to orders: only the format is checked.
+-- opens (mode NULL = every mode). Only ORDER_OPEN names a mode. The modes mirror orders.OrderMode (catalog cannot depend
+-- on orders); DELIVERY arrives with S50.
 CREATE TABLE catalog.automatic_item
 (
     id         UUID                     NOT NULL,
@@ -85,7 +86,12 @@ CREATE TABLE catalog.automatic_item
     CONSTRAINT automatic_item_variant_of_item_fk FOREIGN KEY (variant_id, item_id)
         REFERENCES catalog.item_variant (id, item_id),
     CONSTRAINT automatic_item_trigger_ck CHECK (trigger IN ('TABLE_OPEN_PER_GUEST', 'ORDER_OPEN')),
-    CONSTRAINT automatic_item_mode_ck CHECK (mode IS NULL OR (trigger = 'ORDER_OPEN' AND mode ~ '^[A-Z][A-Z_]*$')),
+    CONSTRAINT automatic_item_mode_ck CHECK (mode IS NULL OR (trigger = 'ORDER_OPEN'
+        AND mode IN ('DINE_IN', 'COUNTER', 'TAKEAWAY', 'DELIVERY'))),
     CONSTRAINT automatic_item_quantity_ck CHECK (quantity > 0)
 );
 CREATE INDEX automatic_item_store_ix ON catalog.automatic_item (store_id);
+-- One ACTIVE automatic item per store (or every store) × trigger × mode × item/variant: a duplicate would add the
+-- same draft twice. Inactive rows may repeat.
+CREATE UNIQUE INDEX automatic_item_active_ux
+    ON catalog.automatic_item (store_id, trigger, mode, item_id, variant_id) NULLS NOT DISTINCT WHERE active;

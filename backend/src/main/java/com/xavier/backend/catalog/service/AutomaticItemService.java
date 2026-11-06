@@ -1,15 +1,20 @@
 package com.xavier.backend.catalog.service;
 
+import com.xavier.backend.catalog.exception.CatalogCodeTakenException;
 import com.xavier.backend.catalog.exception.CatalogEntryNotFoundException;
+import com.xavier.backend.catalog.exception.CatalogRuleException;
 import com.xavier.backend.catalog.exception.InvalidCatalogEntryException;
 import com.xavier.backend.catalog.model.AutomaticItem;
 import com.xavier.backend.catalog.model.AutomaticTrigger;
+import com.xavier.backend.catalog.model.Item;
 import com.xavier.backend.catalog.model.ItemLine;
 import com.xavier.backend.catalog.model.dto.AutomaticItemCreateRequest;
 import com.xavier.backend.catalog.model.dto.AutomaticItemSummary;
 import com.xavier.backend.catalog.model.dto.AutomaticItemUpdateRequest;
+import com.xavier.backend.catalog.model.dto.ItemKind;
 import com.xavier.backend.catalog.repository.AutomaticItemRepository;
 import com.xavier.backend.shared.persistence.OptimisticLocking;
+import com.xavier.backend.shared.persistence.UniqueConstraints;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.util.List;
@@ -57,7 +62,7 @@ public class AutomaticItemService {
     @Transactional
     public AutomaticItemSummary create(AutomaticItemCreateRequest request) {
         access.requireForNew(request.storeId());
-        AutomaticItem automatic = automaticItems.saveAndFlush(AutomaticItem.create(request.storeId(),
+        AutomaticItem automatic = save(AutomaticItem.create(request.storeId(),
                 details(request.trigger(), request.mode(), request.itemId(), request.variantId(), request.quantity(),
                         request.active() == null || request.active()), clock.instant()));
         audit("AUTOMATIC_ITEM_CREATED", automatic);
@@ -71,7 +76,7 @@ public class AutomaticItemService {
         OptimisticLocking.requireVersion(AutomaticItem.class, id, automatic.getVersion(), request.version());
         automatic.update(details(request.trigger(), request.mode(), request.itemId(), request.variantId(),
                 request.quantity(), request.active()), clock.instant());
-        automaticItems.saveAndFlush(automatic);
+        save(automatic);
         audit("AUTOMATIC_ITEM_UPDATED", automatic);
         return automatic.toSummary();
     }
@@ -88,9 +93,18 @@ public class AutomaticItemService {
 
     private AutomaticItem.Details details(String trigger, String mode, UUID itemId, UUID variantId,
                                           BigDecimal quantity, boolean active) {
-        itemLines.require(itemId, variantId, InvalidCatalogEntryException::new);
+        Item item = itemLines.require(itemId, variantId, InvalidCatalogEntryException::new);
+        if (item.getKind() == ItemKind.MENU) {
+            throw CatalogRuleException.menuNotAllowed(item.getCode(), "an automatic item");
+        }
         return new AutomaticItem.Details(AutomaticTrigger.valueOf(trigger), mode,
                 new ItemLine(itemId, variantId, quantity), active);
+    }
+
+    private AutomaticItem save(AutomaticItem automatic) {
+        return UniqueConstraints.saveAndFlush(automaticItems, automatic,
+                () -> new CatalogCodeTakenException("An active automatic item with this trigger, mode and item"),
+                "automatic_item_active_ux");
     }
 
     private AutomaticItem automaticItem(UUID id) {

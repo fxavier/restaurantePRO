@@ -11,6 +11,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.hibernate.annotations.UuidGenerator;
 
@@ -22,6 +23,12 @@ import org.hibernate.annotations.UuidGenerator;
 @Entity
 @Table(schema = "catalog", name = "automatic_item")
 public class AutomaticItem {
+
+    /**
+     * The order modes an ORDER_OPEN item may name. Mirrors {@code orders.OrderMode}, which catalog cannot depend on;
+     * DELIVERY arrives with S50. Keep in step with the {@code automatic_item_mode_ck} CHECK (V5004).
+     */
+    static final List<String> ORDER_MODES = List.of("DINE_IN", "COUNTER", "TAKEAWAY", "DELIVERY");
 
     /** What an editor sets on create and update. */
     public record Details(AutomaticTrigger trigger, String mode, ItemLine line, boolean active) {
@@ -73,6 +80,9 @@ public class AutomaticItem {
         AutomaticTrigger newTrigger = CatalogText.required(details.trigger(), "trigger");
         if (newTrigger != AutomaticTrigger.ORDER_OPEN && details.mode() != null) {
             throw new InvalidCatalogEntryException("Only an ORDER_OPEN automatic item names an order mode");
+        }
+        if (details.mode() != null && !ORDER_MODES.contains(details.mode())) {
+            throw new InvalidCatalogEntryException("Order mode " + details.mode() + " is not one of " + ORDER_MODES);
         }
         ItemLine newLine = CatalogText.required(details.line(), "line");
         if (newLine.getQuantity().signum() <= 0) {

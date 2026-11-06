@@ -151,8 +151,9 @@ class WorkingCopy {
 
         /**
          * Every active item needs a price in the store's price list and a tax rate in effect. Only a MENU has menu
-         * groups, and its options are active items of the release that are not menus; macro entries, quick page
-         * entries and automatic items name items of the release.
+         * groups, its groups' bounds can be met, and its options are active items of the release that are not
+         * menus; macro entries, quick page entries and automatic items name items of the release, and macro entries
+         * and automatic items do not name a MENU.
          */
         List<ReleaseValidationError> errors() {
             if (priceList.isEmpty()) {
@@ -186,6 +187,11 @@ class WorkingCopy {
                 return;
             }
             for (MenuGroup group : groups) {
+                if (!group.boundsHold()) {
+                    errors.add(new ReleaseValidationError("MENU_GROUP_BOUNDS_INVALID", item.getId(), item.getCode(),
+                            "Menu group " + group.getCode() + " asks for " + group.getMinChoices() + ".."
+                                    + group.getMaxChoices() + " of " + group.getOptions().size() + " options"));
+                }
                 for (ItemLine option : group.getOptions()) {
                     Item chosen = activeById.get(option.getItemId());
                     if (chosen == null) {
@@ -202,9 +208,8 @@ class WorkingCopy {
 
         private void compositionErrors(List<ReleaseValidationError> errors) {
             for (Macro macro : composition.macros()) {
-                macro.getEntries().stream().map(ItemLine::getItemId).filter(id -> !activeById.containsKey(id))
-                        .forEach(id -> errors.add(new ReleaseValidationError("MACRO_ENTRY_NOT_IN_RELEASE", id, null,
-                                "Macro " + macro.getCode() + " names item " + id + ", which is not active")));
+                macro.getEntries().stream().map(ItemLine::getItemId).forEach(id -> referenceError(errors, id,
+                        "MACRO_ENTRY_NOT_IN_RELEASE", "MACRO_ENTRY_IS_MENU", "Macro " + macro.getCode()));
             }
             Map<UUID, UUID> itemOfVariant = variants.findAllById(composition.quickPages().stream()
                             .flatMap(page -> page.getEntries().stream()).map(QuickPageEntry::getVariantId)
@@ -219,9 +224,21 @@ class WorkingCopy {
                                 null, "Quick page " + page.getCode() + " names item " + id + ", which is not active")));
             }
             composition.automaticItems().stream().map(automatic -> automatic.getLine().getItemId())
-                    .filter(id -> !activeById.containsKey(id))
-                    .forEach(id -> errors.add(new ReleaseValidationError("AUTOMATIC_ITEM_NOT_IN_RELEASE", id, null,
-                            "An automatic item names item " + id + ", which is not active")));
+                    .forEach(id -> referenceError(errors, id, "AUTOMATIC_ITEM_NOT_IN_RELEASE",
+                            "AUTOMATIC_ITEM_IS_MENU", "An automatic item"));
+        }
+
+        /** A macro entry or an automatic item adds a draft: its item is in the release and is not a MENU. */
+        private void referenceError(List<ReleaseValidationError> errors, UUID itemId, String notInRelease,
+                                    String isMenu, String referrer) {
+            Item item = activeById.get(itemId);
+            if (item == null) {
+                errors.add(new ReleaseValidationError(notInRelease, itemId, null,
+                        referrer + " names item " + itemId + ", which is not active"));
+            } else if (item.getKind() == ItemKind.MENU) {
+                errors.add(new ReleaseValidationError(isMenu, itemId, item.getCode(),
+                        referrer + " names MENU item " + item.getCode() + ", which needs component choices"));
+            }
         }
 
         /** The complete store catalog to freeze. Call only when {@link #errors()} is empty. */

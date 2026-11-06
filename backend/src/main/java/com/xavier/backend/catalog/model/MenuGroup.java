@@ -80,20 +80,22 @@ public class MenuGroup {
     }
 
     /**
-     * @throws CatalogRuleException (422 {@code MENU_GROUP_INVALID}) for choice bounds that cannot hold, no options, a
-     *                              non-positive quantity, or the same item and variant twice
+     * @throws CatalogRuleException (422 {@code MENU_GROUP_INVALID}) for choice bounds that cannot hold (see
+     *                              {@link #boundsHold}), no options, a non-positive quantity, or the same item and
+     *                              variant twice
      */
     public void update(Details details, Instant now) {
-        if (details.minChoices() < 0 || details.maxChoices() < details.minChoices()) {
-            throw CatalogRuleException.menuGroupInvalid("Menu group " + details.code() + " needs 0 ≤ minChoices ≤ "
-                    + "maxChoices, got " + details.minChoices() + ".." + details.maxChoices() + ".");
-        }
         if (details.position() < 0) {
             throw CatalogRuleException.menuGroupInvalid("Menu group position must be zero or more.");
         }
         List<ItemLine> lines = CatalogText.required(details.options(), "options");
         if (lines.isEmpty()) {
             throw CatalogRuleException.menuGroupInvalid("Menu group " + details.code() + " has no options.");
+        }
+        if (!boundsHold(details.minChoices(), details.maxChoices(), lines.size())) {
+            throw CatalogRuleException.menuGroupInvalid("Menu group " + details.code() + " needs 0 ≤ minChoices ≤ "
+                    + "maxChoices and 1 ≤ maxChoices ≤ " + lines.size() + " options, got " + details.minChoices()
+                    + ".." + details.maxChoices() + ".");
         }
         for (int i = 0; i < lines.size(); i++) {
             ItemLine option = lines.get(i);
@@ -118,6 +120,19 @@ public class MenuGroup {
         this.options.clear();
         this.options.addAll(lines);
         this.updatedAt = now;
+    }
+
+    /**
+     * An option is picked at most once per group, so an order can meet the bounds only when
+     * {@code 0 ≤ minChoices ≤ maxChoices} and {@code 1 ≤ maxChoices ≤ options}.
+     */
+    public static boolean boundsHold(int minChoices, int maxChoices, int options) {
+        return minChoices >= 0 && minChoices <= maxChoices && maxChoices >= 1 && maxChoices <= options;
+    }
+
+    /** {@link #boundsHold} for this group as stored (rows written before the rule are checked at release). */
+    public boolean boundsHold() {
+        return boundsHold(minChoices, maxChoices, options.size());
     }
 
     public MenuGroupSummary toSummary() {

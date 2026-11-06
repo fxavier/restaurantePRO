@@ -21,7 +21,8 @@ CREATE TABLE catalog.menu_group
     CONSTRAINT menu_group_item_fk FOREIGN KEY (item_id) REFERENCES catalog.item (id),
     CONSTRAINT menu_group_item_code_uk UNIQUE (item_id, code),
     CONSTRAINT menu_group_min_choices_ck CHECK (min_choices >= 0),
-    CONSTRAINT menu_group_max_choices_ck CHECK (max_choices >= min_choices),
+    -- an option is picked at most once per group: max_choices ≤ the number of options is checked in code
+    CONSTRAINT menu_group_max_choices_ck CHECK (max_choices >= min_choices AND max_choices >= 1),
     CONSTRAINT menu_group_position_ck CHECK (position >= 0),
     CONSTRAINT menu_group_code_not_blank_ck CHECK (btrim(code) <> ''),
     CONSTRAINT menu_group_name_not_blank_ck CHECK (btrim(name) <> '')

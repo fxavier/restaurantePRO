@@ -4,8 +4,12 @@ import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.catalog.exception.CatalogCodeTakenException;
 import com.xavier.backend.catalog.exception.CatalogEntryNotFoundException;
+import com.xavier.backend.catalog.exception.CatalogRuleException;
 import com.xavier.backend.catalog.exception.InvalidCatalogEntryException;
+import com.xavier.backend.catalog.model.ItemLine;
 import com.xavier.backend.catalog.model.Macro;
+import com.xavier.backend.catalog.model.dto.ItemKind;
+import com.xavier.backend.catalog.model.dto.ItemLineRequest;
 import com.xavier.backend.catalog.model.dto.MacroCreateRequest;
 import com.xavier.backend.catalog.model.dto.MacroSummary;
 import com.xavier.backend.catalog.model.dto.MacroUpdateRequest;
@@ -54,8 +58,7 @@ public class MacroService {
     @Transactional
     public MacroSummary create(MacroCreateRequest request) {
         accessPolicy.require(Permission.CATALOG_MANAGE);
-        Macro macro = save(Macro.create(request.code(), request.name(),
-                itemLines.resolve(request.entries(), InvalidCatalogEntryException::new).lines(), clock.instant()));
+        Macro macro = save(Macro.create(request.code(), request.name(), entries(request.entries()), clock.instant()));
         audit("MACRO_CREATED", macro);
         return macro.toSummary();
     }
@@ -65,8 +68,7 @@ public class MacroService {
         accessPolicy.require(Permission.CATALOG_MANAGE);
         Macro macro = macro(id);
         OptimisticLocking.requireVersion(Macro.class, id, macro.getVersion(), request.version());
-        macro.update(request.code(), request.name(),
-                itemLines.resolve(request.entries(), InvalidCatalogEntryException::new).lines(), clock.instant());
+        macro.update(request.code(), request.name(), entries(request.entries()), clock.instant());
         save(macro);
         audit("MACRO_UPDATED", macro);
         return macro.toSummary();
@@ -88,6 +90,15 @@ public class MacroService {
             throw e;
         }
         audit("MACRO_DELETED", macro);
+    }
+
+    /** @throws CatalogRuleException (422 {@code MENU_NOT_ALLOWED}) when an entry names a MENU item */
+    private List<ItemLine> entries(List<ItemLineRequest> requests) {
+        ItemLines.Resolved resolved = itemLines.resolve(requests, InvalidCatalogEntryException::new);
+        resolved.anyOfKind(ItemKind.MENU).ifPresent(menu -> {
+            throw CatalogRuleException.menuNotAllowed(menu.getCode(), "a macro");
+        });
+        return resolved.lines();
     }
 
     private Macro save(Macro macro) {

@@ -19,7 +19,10 @@ import com.xavier.backend.access.Permission;
 import com.xavier.backend.catalog.Publications.SellableStore;
 import com.xavier.backend.catalog.model.dto.CatalogSnapshot;
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
@@ -32,7 +35,7 @@ import tools.jackson.databind.JsonNode;
 /**
  * D109: quick pages, macros and automatic items compose lines, so they are in the release: validated against it and
  * frozen into the v2 snapshot, which later edits never change. Quick pages and automatic items are per store or for
- * every store; macros are company-wide (a test that leaves an invalid macro deletes it when done).
+ * every store; macros are company-wide, so every macro (and MENU item) a test makes is removed after it.
  */
 @CatalogModuleTest
 class MacroAndAutomaticItemReleaseTest {
@@ -50,6 +53,22 @@ class MacroAndAutomaticItemReleaseTest {
     @Autowired
     CatalogApi catalogApi;
 
+    /** Company-wide data this test made, removed after each test whatever its outcome (it would block publication). */
+    final List<UUID> macros = new ArrayList<>();
+    final List<UUID> menus = new ArrayList<>();
+
+    @AfterEach
+    void removeCompanyWideData() {
+        if (!macros.isEmpty()) {
+            jdbc.sql("DELETE FROM catalog.quick_page_entry WHERE macro_id IN (:ids)").param("ids", macros).update();
+            jdbc.sql("DELETE FROM catalog.macro WHERE id IN (:ids)").param("ids", macros).update();
+        }
+        if (!menus.isEmpty()) {
+            jdbc.sql("UPDATE catalog.item SET availability = 'INACTIVE', version = version + 1 WHERE id IN (:ids)")
+                    .param("ids", menus).update();
+        }
+    }
+
     @Test
     void aReleaseFreezesTheMacrosQuickPagesAndActiveAutomaticItemsTheStoreSees() throws Exception {
         SellableStore sellable = publications().sellableStore();
@@ -58,7 +77,7 @@ class MacroAndAutomaticItemReleaseTest {
         JsonNode drink = fixtures().item("STANDARD", "BAR");
         JsonNode large = fixtures().variant(id(drink));
         priceAll(sellable, cover, drink);
-        JsonNode macro = created(post(MACROS), admin(Permission.CATALOG_MANAGE), """
+        JsonNode macro = macro("""
                 {"code": "%s", "name": "Two drinks", "entries": [
                   {"itemId": "%s", "variantId": "%s", "quantity": 2}, {"itemId": "%s", "quantity": 1}]}"""
                 .formatted(code("M"), id(drink), id(large), id(cover)));
@@ -156,20 +175,84 @@ class MacroAndAutomaticItemReleaseTest {
     void validationRefusesAMacroNamingAnItemOutsideTheRelease() throws Exception {
         SellableStore sellable = publications().sellableStore();
         JsonNode retired = fixtures().item("STANDARD", null);
-        JsonNode macro = created(post(MACROS), admin(Permission.CATALOG_MANAGE), """
+        JsonNode macro = macro("""
                 {"code": "%s", "name": "Old", "entries": [{"itemId": "%s", "quantity": 1}]}"""
                 .formatted(code("M"), id(retired)));
-        try {
-            fixtures().deactivate(retired);
+        fixtures().deactivate(retired);
 
-            validate(sellable.store())
-                    .andExpect(status().isUnprocessableContent())
-                    .andExpect(jsonPath("$.errors[?(@.itemId == '%s')].code".formatted(id(retired)))
-                            .value("MACRO_ENTRY_NOT_IN_RELEASE"));
-        } finally {
-            mvc.perform(delete(MACROS + "/" + id(macro)).param("version", "0").with(admin(Permission.CATALOG_MANAGE))
-                    .with(csrf())).andExpect(status().isNoContent());
-        }
+        validate(sellable.store())
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[?(@.itemId == '%s')].code".formatted(id(retired)))
+                        .value("MACRO_ENTRY_NOT_IN_RELEASE"));
+        mvc.perform(delete(MACROS + "/" + id(macro)).param("version", "0").with(admin(Permission.CATALOG_MANAGE))
+                .with(csrf())).andExpect(status().isNoContent());
+    }
+
+    @Test
+    void aMacroOrAutomaticItemCannotNameAMenuButAQuickPageCan() throws Exception {
+        UUID store = new CatalogFixtures(mvc).store();
+        JsonNode menu = menu();
+
+        perform(post(MACROS), admin(Permission.CATALOG_MANAGE), """
+                {"code": "%s", "name": "X", "entries": [{"itemId": "%s", "quantity": 1}]}"""
+                .formatted(code("M"), id(menu)))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("MENU_NOT_ALLOWED"));
+        perform(post(AUTOMATIC), inStore(store, Permission.CATALOG_MANAGE), """
+                {"storeId": "%s", "trigger": "ORDER_OPEN", "itemId": "%s", "quantity": 1}""".formatted(store, id(menu)))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("MENU_NOT_ALLOWED"));
+        created(post(QUICK_PAGES), inStore(store, Permission.CATALOG_MANAGE), """
+                {"storeId": "%s", "code": "P", "name": "P", "position": 0, "entries": [{"itemId": "%s"}]}"""
+                .formatted(store, id(menu)));
+    }
+
+    @Test
+    void validationFlagsAMacroEntryOrAutomaticItemThatBecameAMenu() throws Exception {
+        SellableStore sellable = publications().sellableStore();
+        JsonNode inMacro = fixtures().item("STANDARD", null);
+        JsonNode automatic = fixtures().item("STANDARD", null);
+        priceAll(sellable, inMacro, automatic);
+        macro("""
+                {"code": "%s", "name": "X", "entries": [{"itemId": "%s", "quantity": 1}]}"""
+                .formatted(code("M"), id(inMacro)));
+        created(post(AUTOMATIC), inStore(sellable.store(), Permission.CATALOG_MANAGE), """
+                {"storeId": "%s", "trigger": "ORDER_OPEN", "itemId": "%s", "quantity": 1}"""
+                .formatted(sellable.store(), id(automatic)));
+        becomesMenu(inMacro);
+        becomesMenu(automatic);
+
+        validate(sellable.store())
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[?(@.itemId == '%s')].code".formatted(id(inMacro)))
+                        .value("MACRO_ENTRY_IS_MENU"))
+                .andExpect(jsonPath("$.errors[?(@.itemId == '%s')].code".formatted(id(automatic)))
+                        .value("AUTOMATIC_ITEM_IS_MENU"));
+    }
+
+    @Test
+    void anActiveAutomaticItemIsUniqueAndItsModeIsAnOrderMode() throws Exception {
+        UUID store = new CatalogFixtures(mvc).store();
+        JsonNode item = fixtures().item("STANDARD", null);
+        String takeaway = """
+                {"storeId": "%s", "trigger": "ORDER_OPEN", "mode": "TAKEAWAY", "itemId": "%s", "quantity": 1%s}""";
+        String perGuest = """
+                {"storeId": "%s", "trigger": "TABLE_OPEN_PER_GUEST", "itemId": "%s", "quantity": 1}"""
+                .formatted(store, id(item));
+
+        created(post(AUTOMATIC), inStore(store, Permission.CATALOG_MANAGE), takeaway.formatted(store, id(item), ""));
+        perform(post(AUTOMATIC), inStore(store, Permission.CATALOG_MANAGE), takeaway.formatted(store, id(item), ""))
+                .andExpect(status().isConflict());
+        created(post(AUTOMATIC), inStore(store, Permission.CATALOG_MANAGE),
+                takeaway.formatted(store, id(item), ", \"active\": false")); // inactive duplicates are allowed
+        created(post(AUTOMATIC), inStore(store, Permission.CATALOG_MANAGE), perGuest);
+        perform(post(AUTOMATIC), inStore(store, Permission.CATALOG_MANAGE), perGuest)
+                .andExpect(status().isConflict());
+        created(post(AUTOMATIC), inStore(store, Permission.CATALOG_MANAGE),
+                takeaway.replace("TAKEAWAY", "DELIVERY").formatted(store, id(item), ""));
+        perform(post(AUTOMATIC), inStore(store, Permission.CATALOG_MANAGE),
+                takeaway.replace("TAKEAWAY", "BRUNCH").formatted(store, id(item), ""))
+                .andExpect(status().isUnprocessableContent());
     }
 
     @Test
@@ -205,6 +288,23 @@ class MacroAndAutomaticItemReleaseTest {
         perform(post(QUICK_PAGES), inStore(store, Permission.CATALOG_MANAGE), """
                 {"storeId": "%s", "code": "P", "name": "Again", "position": 0, "entries": []}""".formatted(store))
                 .andExpect(status().isConflict());
+    }
+
+    private JsonNode macro(String body) throws Exception {
+        JsonNode macro = created(post(MACROS), admin(Permission.CATALOG_MANAGE), body);
+        macros.add(id(macro));
+        return macro;
+    }
+
+    private JsonNode menu() throws Exception {
+        JsonNode menu = fixtures().item("MENU", null);
+        menus.add(id(menu));
+        return menu;
+    }
+
+    private void becomesMenu(JsonNode item) throws Exception {
+        fixtures().updateItem(item, "ACTIVE", "MENU");
+        menus.add(id(item));
     }
 
     private JsonNode created(org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request,

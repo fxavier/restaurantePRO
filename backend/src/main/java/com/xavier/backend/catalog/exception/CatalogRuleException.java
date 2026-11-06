@@ -20,6 +20,12 @@ public class CatalogRuleException extends BusinessRuleException {
         return new CatalogRuleException(CatalogRule.MENU_GROUP_INVALID, detail, Map.of());
     }
 
+    /** {@code where}: "a macro" or "an automatic item". */
+    public static CatalogRuleException menuNotAllowed(String itemCode, String where) {
+        return new CatalogRuleException(CatalogRule.MENU_NOT_ALLOWED, "Item " + itemCode + " is a MENU: " + where
+                + " cannot name it, because a menu needs its component choices.", Map.of());
+    }
+
     /** {@code itemIds}: the requested items that the store's published release does not sell. */
     public static CatalogRuleException itemNotPublished(UUID storeId, Collection<UUID> itemIds) {
         return new CatalogRuleException(CatalogRule.ITEM_NOT_PUBLISHED, "Item(s) " + itemIds
