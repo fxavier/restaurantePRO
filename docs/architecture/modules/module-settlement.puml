@@ -1,0 +1,67 @@
+@startuml
+title <size:24>Settlement</size>
+
+set separator none
+top to bottom direction
+
+<style>
+  root {
+    BackgroundColor: #ffffff
+    FontColor: #444444
+  }
+</style>
+
+!include <C4/C4>
+!include <C4/C4_Context>
+!include <C4/C4_Component>
+
+System_Boundary("BackendApplication_boundary", "BackendApplication", $tags="") {
+  Container_Boundary("BackendApplication.BackendApplication_boundary", "BackendApplication", $tags="") {
+    Component(BackendApplication.BackendApplication.Fiscal, "Fiscal", $techn="Module", $descr="", $tags="", $link="")
+    Component(BackendApplication.BackendApplication.Identity, "Identity", $techn="Module", $descr="", $tags="", $link="")
+    Component(BackendApplication.BackendApplication.Cash, "Cash", $techn="Module", $descr="", $tags="", $link="")
+    Component(BackendApplication.BackendApplication.Orders, "Orders", $techn="Module", $descr="", $tags="", $link="")
+    Component(BackendApplication.BackendApplication.Settlement, "Settlement", $techn="Module", $descr="", $tags="", $link="")
+    Component(BackendApplication.BackendApplication.Access, "Access", $techn="Module", $descr="", $tags="", $link="")
+    Component(BackendApplication.BackendApplication.Sharedkernel, "Shared kernel", $techn="Module", $descr="", $tags="", $link="")
+    Component(BackendApplication.BackendApplication.Audit, "Audit", $techn="Module", $descr="", $tags="", $link="")
+    Component(BackendApplication.BackendApplication.Organization, "Organization", $techn="Module", $descr="", $tags="", $link="")
+  }
+
+}
+
+Rel(BackendApplication.BackendApplication.Settlement, BackendApplication.BackendApplication.Sharedkernel, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Settlement, BackendApplication.BackendApplication.Access, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Settlement, BackendApplication.BackendApplication.Identity, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Settlement, BackendApplication.BackendApplication.Orders, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Settlement, BackendApplication.BackendApplication.Cash, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Settlement, BackendApplication.BackendApplication.Fiscal, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Settlement, BackendApplication.BackendApplication.Organization, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Settlement, BackendApplication.BackendApplication.Audit, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Audit, BackendApplication.BackendApplication.Access, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Identity, BackendApplication.BackendApplication.Organization, "listens to", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Identity, BackendApplication.BackendApplication.Sharedkernel, "depends on", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Identity, BackendApplication.BackendApplication.Audit, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Identity, BackendApplication.BackendApplication.Access, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Identity, BackendApplication.BackendApplication.Organization, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Fiscal, BackendApplication.BackendApplication.Sharedkernel, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Fiscal, BackendApplication.BackendApplication.Access, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Fiscal, BackendApplication.BackendApplication.Audit, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Fiscal, BackendApplication.BackendApplication.Organization, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Organization, BackendApplication.BackendApplication.Sharedkernel, "depends on", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Organization, BackendApplication.BackendApplication.Audit, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Organization, BackendApplication.BackendApplication.Access, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Cash, BackendApplication.BackendApplication.Sharedkernel, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Cash, BackendApplication.BackendApplication.Access, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Cash, BackendApplication.BackendApplication.Audit, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Cash, BackendApplication.BackendApplication.Organization, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Cash, BackendApplication.BackendApplication.Identity, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Orders, BackendApplication.BackendApplication.Sharedkernel, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Orders, BackendApplication.BackendApplication.Access, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Orders, BackendApplication.BackendApplication.Identity, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Orders, BackendApplication.BackendApplication.Audit, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Orders, BackendApplication.BackendApplication.Organization, "uses", $techn="", $tags="", $link="")
+
+SHOW_LEGEND(true)
+hide stereotypes
+@enduml

@@ -1,0 +1,18 @@
+[%autowidth.stretch, cols="h,a"]
+|===
+|Base package
+|`com.xavier.backend.production`
+|Bean references
+|* `c.x.b.s.idempotency.IdempotencyService` (in Shared kernel)
+* `c.x.b.a.AccessPolicy` (in Access)
+* `c.x.b.a.AuditLog` (in Audit)
+* `c.x.b.s.notify.ChangeNotifier` (in Shared kernel)
+* `c.x.b.o.OrganizationApi` (in Organization)
+* `c.x.b.o.OrdersProductionApi` (in Orders)
+|Events listened to
+|* `c.x.b.o.model.event.OrderLinesVoided` (async) 
+* `c.x.b.f.model.event.FiscalDocumentIssued` (async) 
+* `c.x.b.o.model.event.OrderBatchConfirmed` (async) 
+* `c.x.b.f.model.event.FiscalDocumentReprintRequested` (async) 
+* `c.x.b.o.model.event.SubtotalRequested` (async) 
+|===

@@ -4,9 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
 import java.math.BigDecimal;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -19,6 +16,7 @@ import java.util.UUID;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.Test;
 import com.xavier.backend.TestcontainersConfiguration;
+import com.xavier.backend.e2e.Browser.Csrf;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -31,7 +29,6 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.postgresql.PostgreSQLContainer;
-import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -44,18 +41,14 @@ import tools.jackson.databind.json.JsonMapper;
  * settings (D30), and the catalog holds only what this journey creates. The container is a bean of this
  * context, and the context is closed after the class, so the container goes with it.
  *
- * <p>The clients keep their own cookie jar ({@link Browser}) because {@code java.net.CookieManager} never sends a
- * {@code Secure} cookie over plain HTTP; in production Caddy terminates TLS in front of this same server, so a
- * browser does send them. Each client behaves like the SPA: any GET hands out {@code XSRF-TOKEN}, every mutating
- * request echoes it in {@code X-XSRF-TOKEN}.
+ * <p>The clients are {@link Browser}s: each keeps its own cookie jar and behaves like the SPA (CSRF echo).
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Import(R1AcceptanceTest.FreshDatabase.class)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class R1AcceptanceTest {
 
-    private static final JsonMapper JSON =
-            JsonMapper.builder().enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS).build();
+    private static final JsonMapper JSON = Browser.JSON;
     private static final String ADMIN = "owner";
     private static final String INITIAL_PASSWORD = "initial " + UUID.randomUUID();
     private static final String NEW_PASSWORD = "changed " + UUID.randomUUID();
@@ -93,7 +86,6 @@ class R1AcceptanceTest {
     @Autowired
     JdbcClient jdbc;
 
-    private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     private final List<String> journey = new ArrayList<>();
 
     @Test
@@ -111,7 +103,7 @@ class R1AcceptanceTest {
                 .isEqualTo(1);
         assertThat(audits("COMPANY_BOOTSTRAPPED")).isEqualTo(1);
 
-        Browser office = new Browser("backoffice");
+        Browser office = new Browser("backoffice", port, journey);
         office.get("/api/v1/auth/session", 401);
         assertThat(office.cookie("XSRF-TOKEN")).isNotNull();
         office.post("/api/v1/auth/login", Map.of("username", ADMIN, "password", INITIAL_PASSWORD), 403,
@@ -153,7 +145,7 @@ class R1AcceptanceTest {
                 Map.of("storeId", storeA, "code", "POS1", "name", "Bar"), 201));
         String code = office.post("/api/v1/backoffice/terminals/" + terminal + "/enrollment-code", null, 200)
                 .get("code").asString();
-        Browser pos = new Browser("pos");
+        Browser pos = new Browser("pos", port, journey);
         pos.get("/api/v1/auth/session", 401);
         String deviceToken = pos.post("/api/v1/auth/terminals/enroll", Map.of("code", code), 200)
                 .get("deviceToken").asString();
@@ -209,11 +201,11 @@ class R1AcceptanceTest {
         Map<String, String> idempotent = Map.of("Idempotency-Key", key);
         HttpResponse<String> first = office.send("POST", releases + "/" + release + "/publish",
                 Map.of("note", "v1"), Csrf.SEND, idempotent);
-        record("publish", first);
+        office.record("publish", first);
         assertThat(first.statusCode()).isEqualTo(200);
         HttpResponse<String> replay = office.send("POST", releases + "/" + release + "/publish",
                 Map.of("note", "v1"), Csrf.SEND, idempotent);
-        record("publish replay (same key, same body)", replay);
+        office.record("publish replay (same key, same body)", replay);
         assertThat(replay.statusCode()).isEqualTo(200);
         assertThat(JSON.readTree(replay.body())).isEqualTo(JSON.readTree(first.body()));
         office.post(releases + "/" + release + "/publish", Map.of("note", "other"), 422, Csrf.SEND, idempotent,
@@ -326,106 +318,5 @@ class R1AcceptanceTest {
 
     private static UUID id(JsonNode body) {
         return UUID.fromString(body.get("id").asString());
-    }
-
-    private void record(String step, HttpResponse<?> response) {
-        journey.add(response.request().method() + " " + response.request().uri().getRawPath()
-                + (step == null ? "" : " [" + step + "]") + " -> " + response.statusCode());
-    }
-
-    private enum Csrf { SEND, OMIT }
-
-    /** One HTTP client with its own cookie jar, like one browser tab of the SPA. */
-    private final class Browser {
-
-        private final String name;
-        private final Map<String, String> cookies = new LinkedHashMap<>();
-        private final Map<String, String> lastSetCookie = new LinkedHashMap<>();
-
-        Browser(String name) {
-            this.name = name;
-        }
-
-        String cookie(String cookieName) {
-            return cookies.get(cookieName);
-        }
-
-        String setCookieHeader(String cookieName) {
-            return lastSetCookie.get(cookieName);
-        }
-
-        JsonNode get(String path, int expected) throws Exception {
-            return expect(send("GET", path, null, Csrf.OMIT, Map.of()), expected, null);
-        }
-
-        JsonNode post(String path, Object body, int expected) throws Exception {
-            return post(path, body, expected, Csrf.SEND, Map.of(), null);
-        }
-
-        JsonNode post(String path, Object body, int expected, String step) throws Exception {
-            return post(path, body, expected, Csrf.SEND, Map.of(), step);
-        }
-
-        JsonNode post(String path, Object body, int expected, Csrf csrf) throws Exception {
-            return post(path, body, expected, csrf, Map.of(), csrf == Csrf.OMIT ? "without CSRF token" : null);
-        }
-
-        JsonNode post(String path, Object body, int expected, Csrf csrf, Map<String, String> headers, String step)
-                throws Exception {
-            return expect(send("POST", path, body, csrf, headers), expected, step);
-        }
-
-        /** The body of a 200 response, {@code null} for a 401 (not there yet: keep polling); anything else fails. */
-        JsonNode tryPost(String path, Object body) throws Exception {
-            HttpResponse<String> response = send("POST", path, body, Csrf.SEND, Map.of());
-            if (response.statusCode() == 401) {
-                return null;
-            }
-            assertThat(response.statusCode()).as("POST %s (%s) answered %s", path, name, response.body())
-                    .isEqualTo(200);
-            record("login", response);
-            return JSON.readTree(response.body());
-        }
-
-        HttpResponse<String> send(String method, String path, Object body, Csrf csrf, Map<String, String> headers)
-                throws Exception {
-            HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
-                    .timeout(Duration.ofSeconds(30))
-                    .method(method, body == null ? HttpRequest.BodyPublishers.noBody()
-                            : HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(body)));
-            if (body != null) {
-                request.header("Content-Type", "application/json");
-            }
-            if (!cookies.isEmpty()) {
-                request.header("Cookie", String.join("; ",
-                        cookies.entrySet().stream().map(c -> c.getKey() + "=" + c.getValue()).toList()));
-            }
-            if (csrf == Csrf.SEND && cookies.containsKey("XSRF-TOKEN")) {
-                request.header("X-XSRF-TOKEN", cookies.get("XSRF-TOKEN"));
-            }
-            headers.forEach(request::header);
-            HttpResponse<String> response = http.send(request.build(), HttpResponse.BodyHandlers.ofString());
-            for (String header : response.headers().allValues("Set-Cookie")) {
-                String pair = header.contains(";") ? header.substring(0, header.indexOf(';')) : header;
-                String cookieName = pair.substring(0, pair.indexOf('='));
-                String value = pair.substring(pair.indexOf('=') + 1);
-                lastSetCookie.put(cookieName, header);
-                if (value.isEmpty() || header.toLowerCase().contains("max-age=0")) {
-                    cookies.remove(cookieName);
-                } else {
-                    cookies.put(cookieName, value);
-                }
-            }
-            return response;
-        }
-
-        private JsonNode expect(HttpResponse<String> response, int expected, String step) {
-            record(step == null ? null : name + ": " + step, response);
-            assertThat(response.statusCode())
-                    .as("%s %s (%s) answered %s", response.request().method(), response.request().uri(), name,
-                            response.body())
-                    .isEqualTo(expected);
-            return response.body().isBlank() ? JSON.nullNode() : JSON.readTree(response.body());
-        }
     }
 }

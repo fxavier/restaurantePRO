@@ -69,6 +69,8 @@ restaurantpro:
     # D47.4: completed Idempotency-Key records are deleted after this period (daily job, 03:30 server time).
     retention: P90D
     retention-cron: "0 30 3 * * *"
+    # D63: lease of an executeSteps claim; a duplicate gets 409 while it is live, and may take the claim over after.
+    step-lease: PT30S
   notifications:
     # D60: SSE comment heartbeat on /api/v1/pos/notifications.
     heartbeat: PT25S

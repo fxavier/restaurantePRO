@@ -3,6 +3,7 @@ package com.xavier.backend.access;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -52,6 +53,19 @@ public class AccessPolicy {
             return actor;
         }
         throw new IllegalStateException("Authenticated principal is not an Actor: " + principal.getClass().getName());
+    }
+
+    /**
+     * The authenticated actor, or empty outside a session (a listener, a job, an anonymous request): for code that
+     * runs both ways and only records who acted, never for an authorization decision.
+     */
+    public Optional<Actor> currentIfPresent() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || authentication instanceof AnonymousAuthenticationToken
+                || !authentication.isAuthenticated() || !(authentication.getPrincipal() instanceof Actor actor)) {
+            return Optional.empty();
+        }
+        return Optional.of(actor);
     }
 
     /** Requires an installation-wide grant of {@code permission}. */

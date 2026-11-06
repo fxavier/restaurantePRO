@@ -3,7 +3,10 @@ package com.xavier.backend.architecture;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
+import com.tngtech.archunit.lang.ArchRule;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /** Applies {@link ArchitectureRules} to the production code. */
 class ArchitectureTests {
@@ -55,5 +58,16 @@ class ArchitectureTests {
     @Test
     void codedErrorsUseTheSharedExceptions() {
         ArchitectureRules.CODED_ERRORS_USE_THE_SHARED_EXCEPTIONS.check(PRODUCTION);
+    }
+
+    static ArchRule[] forbiddenModuleDependencies() {
+        return ArchitectureRules.forbiddenModuleDependencies("com.xavier.backend");
+    }
+
+    /** D35: orders ↛ settlement, production; cash ↛ orders, settlement; nothing → production. */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("forbiddenModuleDependencies")
+    void forbiddenModuleDependenciesAreAbsent(ArchRule rule) {
+        rule.check(PRODUCTION);
     }
 }

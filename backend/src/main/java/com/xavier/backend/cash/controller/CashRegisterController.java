@@ -1,11 +1,10 @@
 package com.xavier.backend.cash.controller;
 
-import com.xavier.backend.access.AccessPolicy;
+import com.xavier.backend.access.IdempotentRequests;
 import com.xavier.backend.cash.model.dto.RegisterCreateRequest;
 import com.xavier.backend.cash.model.dto.RegisterSummary;
 import com.xavier.backend.cash.model.dto.RegisterUpdateRequest;
 import com.xavier.backend.cash.service.CashRegisterService;
-import com.xavier.backend.shared.idempotency.IdempotencyService;
 import com.xavier.backend.shared.web.PageResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -29,11 +28,11 @@ class CashRegisterController {
     static final String PATH = "/api/v1/backoffice/cash/registers";
 
     private final CashRegisterService registers;
-    private final Idempotent idempotent;
+    private final IdempotentRequests idempotent;
 
-    CashRegisterController(CashRegisterService registers, IdempotencyService idempotency, AccessPolicy accessPolicy) {
+    CashRegisterController(CashRegisterService registers, IdempotentRequests idempotent) {
         this.registers = registers;
-        this.idempotent = new Idempotent(idempotency, accessPolicy);
+        this.idempotent = idempotent;
     }
 
     @GetMapping(PATH)

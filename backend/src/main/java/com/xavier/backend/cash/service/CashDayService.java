@@ -28,6 +28,7 @@ import java.time.LocalDate;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -69,10 +70,20 @@ public class CashDayService {
         this.clock = clock;
     }
 
-    /** The POS store's cash day for now (the store's cutoff decides the date); 404 before its first session. */
+    /**
+     * The POS store's current cash day: the oldest one still OPEN, else the day of today's business date (the
+     * store's cutoff decides it) in whatever state; 404 when neither exists. A day worked past the cutoff stays
+     * current until it closes (spec §4: a business day may cross midnight; §8.4: a day with open sessions or orders
+     * does not close), even when a morning session has already opened the next one.
+     */
     @Transactional(readOnly = true)
     public DayView current() {
         PosContext pos = accessPolicy.requirePos(Permission.CASH_VIEW);
+        Optional<CashDay> oldestOpen = days.findFirstByStoreIdAndStatusOrderByBusinessDateAsc(pos.storeId(),
+                CashDayStatus.OPEN);
+        if (oldestOpen.isPresent()) {
+            return oldestOpen.get().toView();
+        }
         StoreSummary store = organization.findStore(pos.storeId())
                 .orElseThrow(() -> new CashNotFoundException("Store", pos.storeId()));
         LocalDate businessDate = BusinessDays.of(clock.instant(), store.timezone(), store.businessDayCutoff());
@@ -145,8 +156,12 @@ public class CashDayService {
         }
     }
 
-    /** D42: the day's store only, 404 if the day does not exist. */
     private UUID storeOf(UUID id) {
+        return storeOf(days, id);
+    }
+
+    /** D42: the day's store only, 404 if the day does not exist (also behind {@code CashApi.storeOfDay}). */
+    static UUID storeOf(CashDayRepository days, UUID id) {
         return days.findStoreIdById(id).orElseThrow(() -> new CashNotFoundException(ENTITY, id));
     }
 }

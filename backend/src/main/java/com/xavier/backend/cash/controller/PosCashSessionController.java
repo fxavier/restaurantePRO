@@ -1,10 +1,9 @@
 package com.xavier.backend.cash.controller;
 
-import com.xavier.backend.access.AccessPolicy;
+import com.xavier.backend.access.IdempotentRequests;
 import com.xavier.backend.cash.model.dto.OpenSessionRequest;
 import com.xavier.backend.cash.model.dto.SessionDetails;
 import com.xavier.backend.cash.service.CashSessionService;
-import com.xavier.backend.shared.idempotency.IdempotencyService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.net.URI;
@@ -26,12 +25,11 @@ class PosCashSessionController {
     static final String PATH = "/api/v1/pos/cash/sessions";
 
     private final CashSessionService sessions;
-    private final Idempotent idempotent;
+    private final IdempotentRequests idempotent;
 
-    PosCashSessionController(CashSessionService sessions, IdempotencyService idempotency,
-                             AccessPolicy accessPolicy) {
+    PosCashSessionController(CashSessionService sessions, IdempotentRequests idempotent) {
         this.sessions = sessions;
-        this.idempotent = new Idempotent(idempotency, accessPolicy);
+        this.idempotent = idempotent;
     }
 
     @PostMapping

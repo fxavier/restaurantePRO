@@ -5,13 +5,13 @@ plantuml::components.puml[,,format=svg]
 plantuml::module-access.puml[,,format=svg]
 include::module-access.adoc[]
 
-== Audit
-plantuml::module-audit.puml[,,format=svg]
-include::module-audit.adoc[]
-
 == Shared kernel
 plantuml::module-shared.puml[,,format=svg]
 include::module-shared.adoc[]
+
+== Audit
+plantuml::module-audit.puml[,,format=svg]
+include::module-audit.adoc[]
 
 == Configuration
 plantuml::module-config.puml[,,format=svg]
@@ -29,7 +29,27 @@ include::module-catalog.adoc[]
 plantuml::module-dining.puml[,,format=svg]
 include::module-dining.adoc[]
 
+== Fiscal
+plantuml::module-fiscal.puml[,,format=svg]
+include::module-fiscal.adoc[]
+
 == Identity
 plantuml::module-identity.puml[,,format=svg]
 include::module-identity.adoc[]
+
+== Cash
+plantuml::module-cash.puml[,,format=svg]
+include::module-cash.adoc[]
+
+== Orders
+plantuml::module-orders.puml[,,format=svg]
+include::module-orders.adoc[]
+
+== Production
+plantuml::module-production.puml[,,format=svg]
+include::module-production.adoc[]
+
+== Settlement
+plantuml::module-settlement.puml[,,format=svg]
+include::module-settlement.adoc[]
 
