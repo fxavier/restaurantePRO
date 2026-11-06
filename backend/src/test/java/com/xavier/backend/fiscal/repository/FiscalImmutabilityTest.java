@@ -114,7 +114,7 @@ class FiscalImmutabilityTest {
     private UUID issued() throws Exception {
         UUID store = fixtures.newStore();
         fixtures.newSeries(store, "A", 1);
-        UUID draft = fixtures.newDraft(store);
+        UUID draft = fixtures.newPaidDraft(store);
         UUID employee = UUID.randomUUID();
         return asEmployee(store, employee, UUID.randomUUID(), () -> fiscal.issue(draft, employee)).id();
     }

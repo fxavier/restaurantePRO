@@ -75,6 +75,19 @@ class ArchitectureRulesFireTest {
                 .noneSatisfy(line -> assertThat(line).contains("OrdersApi.billingView()"));
     }
 
+    /** D97: a settlement class other than SettlementIssuer calling FiscalApi.issue is caught; other calls are not. */
+    @Test
+    void aFiscalIssueOutsideSettlementIssuerIsCaught() {
+        EvaluationResult result = ArchitectureRules.onlySettlementIssuerCallsFiscalIssue(FORBIDDEN_ROOT)
+                .evaluate(FORBIDDEN_FIXTURE);
+
+        assertThat(result.hasViolation()).isTrue();
+        assertThat(result.getFailureReport().getDetails())
+                .anySatisfy(line -> assertThat(line).contains("IssueShortcut").contains("FiscalApi.issue()"))
+                .noneSatisfy(line -> assertThat(line).contains("SettlementIssuer"))
+                .noneSatisfy(line -> assertThat(line).contains("FiscalApi.coverage()"));
+    }
+
     /** A15: an injected cash → orders dependency fails the build, naming the offending class. */
     @Test
     void aCashToOrdersDependencyIsCaught() {

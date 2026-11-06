@@ -27,7 +27,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * An ITEMS partition invoiced on its own (D70), a D63 multi-step command with no transaction around it: s1, one
  * transaction, takes {@code order_settlement} and creates the PARTITION draft from the partition's own shares (D68,
- * {@code amountsAllocated}); s2 issues it with no transaction. It does not freeze the order: the table keeps ordering
+ * {@code amountsAllocated}); s2 refreshes its payment snapshot and issues it with no transaction
+ * ({@link SettlementIssuer}, D97). It does not freeze the order: the table keeps ordering
  * (§8.2), and new consumption lands in the residual. A retry with the same key resumes: an existing draft is drafted
  * again with the same content (only the buyer may change) and an ISSUED document comes back unchanged.
  */
@@ -40,11 +41,13 @@ public class PartitionDocumentService {
     private final Bills bills;
     private final FiscalApi fiscal;
     private final SettlementAudit audit;
+    private final SettlementIssuer issuer;
     private final TransactionTemplate inTransaction;
 
     PartitionDocumentService(AccessPolicy accessPolicy, PartitionService partitions, SettlementLocks locks,
-                             Bills bills, FiscalApi fiscal, SettlementAudit audit,
+                             Bills bills, FiscalApi fiscal, SettlementAudit audit, SettlementIssuer issuer,
                              PlatformTransactionManager transactionManager) {
+        this.issuer = issuer;
         this.accessPolicy = accessPolicy;
         this.partitions = partitions;
         this.locks = locks;
@@ -62,7 +65,7 @@ public class PartitionDocumentService {
     public DocumentView issue(UUID partitionId, IssueDocumentRequest request) {
         PosContext pos = accessPolicy.requirePos(Permission.PAYMENT_COLLECT);
         DocumentView draft = inTransaction.execute(tx -> draft(pos, partitionId, request));
-        return fiscal.issue(draft.id(), pos.employeeId());
+        return issuer.issue(pos, draft.orderId(), draft.id());
     }
 
     private DocumentView draft(PosContext pos, UUID partitionId, IssueDocumentRequest request) {

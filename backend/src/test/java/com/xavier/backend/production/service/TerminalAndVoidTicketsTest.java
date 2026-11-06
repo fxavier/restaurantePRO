@@ -215,7 +215,7 @@ class TerminalAndVoidTicketsTest {
 
     private DocumentView issue() throws Exception {
         fiscalFixtures.newSeries(shop.store(), "A", 1);
-        UUID draft = fiscalFixtures.newDraft(shop.store());
+        UUID draft = fiscalFixtures.newPaidDraft(shop.store());
         return FiscalFixtures.asEmployee(shop.store(), employee, terminal, () -> fiscal.issue(draft, employee));
     }
 

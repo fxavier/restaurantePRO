@@ -87,6 +87,7 @@ public class DocumentIssueService {
         if (document.isIssued()) {
             return document.toView();
         }
+        document.requirePaymentSnapshot(); // D97: before any number is taken
         FiscalSeries numbering = series.lockActive(document.getStoreId(), document.getDocumentType())
                 .orElseThrow(() -> new NoActiveSeriesException(document.getStoreId()));
         // PostgreSQL keeps microseconds: the hashed and returned time must be the stored one (D54 chain re-derivable)
@@ -94,7 +95,8 @@ public class DocumentIssueService {
         long number = numbering.takeNextNumber(now);
         IssueResult result = adapter.issue(new IssueRequest(document.getId(), document.getDocumentType().name(),
                 numbering.getCode(), number, now, document.getTotalGross(), document.getTotalTax(),
-                previousAdapterData(numbering, number), document.isOnAccount(), null));
+                previousAdapterData(numbering, number), document.isOnAccount(),
+                document.paymentSnapshot().orElseThrow()));
         document.issue(numbering, number, now, employeeId, terminalId, adapter.code(), !adapter.certified(), result);
         documents.flush();
         events.publishEvent(new FiscalDocumentIssued(document.getId(), document.getStoreId(), terminalId,
