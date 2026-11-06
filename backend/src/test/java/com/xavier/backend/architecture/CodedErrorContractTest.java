@@ -195,6 +195,8 @@ class CodedErrorContractTest {
             Map.entry("no-statement-source", () -> ReconciliationRuleException.noStatementSource("CARD")),
             Map.entry("statement-already-imported", () -> ReconciliationConflictException.alreadyImported(ID)),
             Map.entry("entry-resolved", () -> ReconciliationConflictException.entryResolved(ID)),
+            Map.entry("tax-correction-resolved", () -> ReconciliationConflictException.taxCorrectionResolved(ID)),
+            Map.entry("not-a-pending-correction", () -> ReconciliationRuleException.notAPendingCorrection(ID)),
             Map.entry("statement-imported-elsewhere", ReconciliationConflictException::alreadyImportedElsewhere),
             Map.entry("statement-source-timeout", () -> com.xavier.backend.settlement.reconciliation.exception
                     .ReconciliationUnavailableException.sourceTimeout("WALLET")),
@@ -426,6 +428,10 @@ class CodedErrorContractTest {
         expect("statement-already-imported", 409, "STATEMENT_ALREADY_IMPORTED", "This statement was already "
                 + "imported as batch " + ID + ".", ",\"batchId\":\"" + ID + "\"");
         expect("entry-resolved", 409, "ENTRY_RESOLVED", "Reconciliation entry " + ID + " is already resolved.", "");
+        expect("tax-correction-resolved", 409, "TAX_CORRECTION_RESOLVED", "The pending fiscal correction " + ID
+                + " is already resolved.", "");
+        expect("not-a-pending-correction", 422, "NOT_A_PENDING_CORRECTION", "Tax rounding adjustment " + ID
+                + " was absorbed by the residual document: there is nothing to correct.", "");
         expect("statement-imported-elsewhere", 409, "STATEMENT_ALREADY_IMPORTED",
                 "This statement was already imported.", "");
         expect("statement-source-timeout", 503, "STATEMENT_SOURCE_TIMEOUT", "The provider of WALLET did not send its "

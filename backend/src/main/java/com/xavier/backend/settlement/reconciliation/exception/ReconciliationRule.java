@@ -14,5 +14,9 @@ public enum ReconciliationRule {
     /** 409: the entry already has its resolution. */
     ENTRY_RESOLVED,
     /** 503: the provider did not send its statement in time; nothing was imported, retry later. */
-    STATEMENT_SOURCE_TIMEOUT
+    STATEMENT_SOURCE_TIMEOUT,
+    /** 409: the pending fiscal correction already has its resolution (D96). */
+    TAX_CORRECTION_RESOLVED,
+    /** 422: the tax rounding adjustment was ABSORBED by a residual document: there is nothing to correct (D96). */
+    NOT_A_PENDING_CORRECTION
 }

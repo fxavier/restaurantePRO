@@ -14,6 +14,9 @@ import com.xavier.backend.settlement.reconciliation.service.DocumentsControlServ
 import com.xavier.backend.settlement.reconciliation.service.ReconciliationQueryService;
 import com.xavier.backend.settlement.reconciliation.service.ResolutionService;
 import com.xavier.backend.settlement.reconciliation.service.StatementImportService;
+import com.xavier.backend.settlement.reconciliation.service.TaxCorrectionService;
+import com.xavier.backend.settlement.reconciliation.model.dto.TaxCorrectionRequest;
+import com.xavier.backend.settlement.model.dto.TaxRoundingAdjustmentView;
 import com.xavier.backend.shared.web.PageResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -38,7 +41,10 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-/** Provider statements against payments, payments in doubt, documents against payments (BackOffice, PRD S31). */
+/**
+ * Provider statements against payments, payments in doubt, documents against payments (BackOffice, PRD S31), and
+ * pending fiscal corrections (D96).
+ */
 @RestController
 @RequestMapping(ReconciliationController.PATH)
 class ReconciliationController {
@@ -49,11 +55,13 @@ class ReconciliationController {
     private final ReconciliationQueryService queries;
     private final ResolutionService resolutions;
     private final DocumentsControlService documents;
+    private final TaxCorrectionService taxCorrections;
     private final IdempotentRequests idempotent;
 
     ReconciliationController(StatementImportService imports, ReconciliationQueryService queries,
                              ResolutionService resolutions, DocumentsControlService documents,
-                             IdempotentRequests idempotent) {
+                             TaxCorrectionService taxCorrections, IdempotentRequests idempotent) {
+        this.taxCorrections = taxCorrections;
         this.imports = imports;
         this.queries = queries;
         this.resolutions = resolutions;
@@ -121,5 +129,24 @@ class ReconciliationController {
     DocumentsControlView documents(@RequestParam UUID storeId,
                                    @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate businessDate) {
         return documents.documents(storeId, businessDate);
+    }
+
+    /** D96: a store's pending fiscal corrections; {@code open} true (unresolved), false (resolved), absent (all). */
+    @GetMapping("/tax-corrections")
+    PageResponse<TaxRoundingAdjustmentView> taxCorrections(@RequestParam UUID storeId,
+                                                           @RequestParam(required = false) Boolean open,
+                                                           Pageable pageable) {
+        return taxCorrections.pending(storeId, open, pageable);
+    }
+
+    /** D96 rule 6: the corrective document that cleared a pending correction; 201 with the adjustment. */
+    @PostMapping("/tax-corrections/{id}/resolutions")
+    ResponseEntity<TaxRoundingAdjustmentView> resolveTaxCorrection(@PathVariable UUID id,
+                                                                   @RequestHeader("Idempotency-Key") String key,
+                                                                   @Valid @RequestBody TaxCorrectionRequest body,
+                                                                   HttpServletRequest request) {
+        return idempotent.execute("settlement.reconciliation.tax-correction", key, request, body,
+                TaxRoundingAdjustmentView.class,
+                () -> ResponseEntity.status(HttpStatus.CREATED).body(taxCorrections.resolve(id, body)));
     }
 }
