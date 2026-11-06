@@ -15,5 +15,5 @@ Acquirers and wallets send statements; §5 asks for "reconciliação de adquiren
 ## Consequences
 
 - The same file imported twice is one batch: 409 `STATEMENT_ALREADY_IMPORTED` with its `batchId`.
-- **Known deviation (BUG-0002, `docs/qa/bugs/0002-statement-period-ignores-business-day-cutoff.md`):** the period's instants are calendar midnights in the store's zone, not business days from the store's cutoff, so a payment made after midnight and before the cutoff falls outside its own business day's statement. Reproduced by `StatementPeriodIsBusinessDaysRepro` (expected failure).
+- **Known deviation (BUG-0002, `docs/qa/bugs/0002-statement-period-ignores-business-day-cutoff.md`):** the period's instants are calendar midnights in the store's zone, not business days from the store's cutoff, so a payment made after midnight and before the cutoff falls outside its own business day's statement. Fixed in 8c1bd64: the period is `[BusinessDays.startOf(from), BusinessDays.startOf(to + 1))` (`StatementPeriodIsBusinessDaysTest`).
 - Proofs: `StatementImportTest`, `StatementFetchTest`, `EntryResolutionTest`, `ReconciliationNeverWritesMoneyTest`; end to end, `R3AcceptanceTest` (one MATCHED, one MISSING_INTERNAL resolved, re-import 409, money facts unchanged).

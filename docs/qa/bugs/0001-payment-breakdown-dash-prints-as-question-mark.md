@@ -1,5 +1,7 @@
 # BUG-0001: the D97 payment breakdown prints "?" instead of the em dash on every printer table but WPC1252
 
+- **Status:** fixed in ef16b3d. Decision: a typographic character a printer table lacks prints as a defined ASCII fallback (U+2014 and U+2013 become "-", curly quotes become straight quotes, the ellipsis becomes "..."), never "?"; WPC1252 keeps D97's exact text. Implemented in `CodePage.encode`, used by `EscPosRenderer`. The repro is now `PaymentBreakdownCodePageTest` (all five tables) and runs in the suite.
+
 - **Severity:** Medium. The sale document (the legal paper the customer takes) reads `Pagamento misto ? Numerário: …` on the Portuguese CP860 table and on CP437, CP850 and CP858. No money, number or snapshot is wrong; the printed text is.
 - **Breaks:** r3-decisions §18 D97 rule 6: "The em dash is U+2014 with a space on each side, exactly as the user wrote it", and the user decision "Show the breakdown: 'Pagamento misto — Numerário: X; A crédito: Y'". Spec §4 (printing), §8.2 (the issued document).
 - **Environment:** branch `s33-integrate` at `511e434` (feat/backend-stage3 `6da5d81` + S33 tests), macOS 15.3 x86_64, Java 25.0.4.1, PostgreSQL 18.6 in Docker. Internal fiscal adapter, production print worker, `TcpFakePrinter`.
@@ -44,8 +46,8 @@ The module tests (`InternalPrintoutPaymentsTest`, `DocumentPaymentBreakdownTest`
 
 ## Reproducing test
 
-`backend/src/test/java/com/xavier/backend/production/adapter/PaymentBreakdownCodePageRepro.java` (`@Disabled("BUG-0001 …")`, named outside Surefire's include patterns so the gate never lists it as skipped).
+`backend/src/test/java/com/xavier/backend/production/adapter/PaymentBreakdownCodePageTest.java` (was `PaymentBreakdownCodePageRepro`, disabled; enabled and renamed with the fix).
 
-## Open question (not decided by QA)
+## Open question (resolved: hyphen fallback, see Status)
 
 What should a CP860/CP850/CP437/CP858 printer show in place of U+2014: a hyphen (`Pagamento misto - Numerário`), another separator, or should the installation require WPC1252 for document printers? D97 says "exactly as the user wrote it", which a CP860 printer cannot do.

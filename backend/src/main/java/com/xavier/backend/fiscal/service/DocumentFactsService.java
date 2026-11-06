@@ -13,11 +13,6 @@ import com.xavier.backend.organization.OrganizationApi;
 import com.xavier.backend.organization.model.dto.StoreSummary;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.LocalTime;
-import java.time.ZoneId;
-import java.time.ZonedDateTime;
-import java.time.zone.ZoneOffsetTransition;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -52,23 +47,9 @@ public class DocumentFactsService {
 
     public Page<UUID> issuedDocumentIds(UUID storeId, LocalDate from, LocalDate to, Pageable page) {
         StoreSummary store = store(storeId); // R2 rows: the store's current zone and cutoff, as documentFacts (D85)
-        Instant start = startOfBusinessDay(from, store.timezone(), store.businessDayCutoff());
-        Instant end = startOfBusinessDay(to.plusDays(1), store.timezone(), store.businessDayCutoff());
+        Instant start = BusinessDays.startOf(from, store.timezone(), store.businessDayCutoff());
+        Instant end = BusinessDays.startOf(to.plusDays(1), store.timezone(), store.businessDayCutoff());
         return documents.findIssuedIds(storeId, from, to, start, end, page);
-    }
-
-    /**
-     * The first instant of business day {@code day}: the inverse of {@link BusinessDays#of}, with its DST rule (a
-     * cutoff in a gap starts the day at the jump; in an overlap, the earlier offset). Only R2 documents, which have
-     * no business date, are matched by it.
-     */
-    static Instant startOfBusinessDay(LocalDate day, ZoneId zone, LocalTime cutoff) {
-        LocalDateTime start = day.atTime(cutoff);
-        ZoneOffsetTransition gap = zone.getRules().getTransition(start);
-        if (gap != null && gap.isGap()) {
-            return gap.getInstant();
-        }
-        return ZonedDateTime.of(start, zone).toInstant();
     }
 
     private StoreSummary store(UUID storeId) {

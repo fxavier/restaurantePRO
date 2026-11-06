@@ -22,6 +22,9 @@ public class FiscalDocumentTax {
     @UuidGenerator(style = UuidGenerator.Style.VERSION_7)
     private UUID id;
 
+    @Column(updatable = false, length = 120)
+    private String taxCode;
+
     @Column(nullable = false, updatable = false, precision = 7, scale = 4)
     private BigDecimal taxRate;
 
@@ -35,13 +38,14 @@ public class FiscalDocumentTax {
         // JPA
     }
 
-    FiscalDocumentTax(BigDecimal taxRate, Money net, Money tax) {
+    FiscalDocumentTax(String taxCode, BigDecimal taxRate, Money net, Money tax) {
+        this.taxCode = taxCode;
         this.taxRate = taxRate;
         this.net = net.amount();
         this.tax = tax.amount();
     }
 
     DocumentView.TaxSummary toView(Currency currency) {
-        return new DocumentView.TaxSummary(taxRate, Money.of(net, currency), Money.of(tax, currency));
+        return new DocumentView.TaxSummary(taxCode, taxRate, Money.of(net, currency), Money.of(tax, currency));
     }
 }

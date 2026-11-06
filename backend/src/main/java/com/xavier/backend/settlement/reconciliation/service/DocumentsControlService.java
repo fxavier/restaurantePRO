@@ -151,7 +151,7 @@ public class DocumentsControlService {
         Map<BigDecimal, Money> taxes = document.taxes().stream()
                 .collect(Collectors.toMap(DocumentView.TaxSummary::rate, DocumentView.TaxSummary::tax, Money::plus));
         return new OrderFacts.Document(document.id(), document.status(), document.sourceType(), document.sourceId(),
-                document.onAccount(), document.totalGross(), taxes, document.lastErrorAt(),
+                document.onAccount(), document.totalGross(), taxes, document.createdAt(),
                 document.payments() == null ? null : document.payments().credit());
     }
 

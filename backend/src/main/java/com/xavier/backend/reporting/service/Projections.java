@@ -43,8 +43,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class Projections {
 
-    static final String DINE_IN = "DINE_IN";
-
     private final FiscalApi fiscal;
     private final OrdersApi orders;
     private final DiningApi dining;
@@ -93,8 +91,9 @@ public class Projections {
             store.insertSalesLine(header, salesLine(doc.storeId(), line, dimensions), now);
         }
         for (DocumentView.TaxSummary tax : doc.taxes()) {
-            store.insertSalesTax(header, new SalesTax(taxCodes(doc.lines(), tax.rate(), dimensions), tax.rate(),
-                    tax.net().amount(), tax.tax().amount()), now);
+            String taxCode = tax.taxCode() != null ? tax.taxCode() : taxCodes(doc.lines(), tax.rate(), dimensions);
+            store.insertSalesTax(header, new SalesTax(taxCode, tax.rate(), tax.net().amount(), tax.tax().amount()),
+                    now);
         }
     }
 
@@ -164,10 +163,10 @@ public class Projections {
     }
 
     /**
-     * The tax code(s) of the document's lines at {@code rate}: one code in practice; several (joined with "+") when
-     * two catalog codes share a rate, and empty when the order's lines no longer say. The document's own tax summary
-     * ({@code DocumentView.TaxSummary(rate, net, tax)}) carries no code, so the code comes from the billed lines;
-     * the amounts always come from the summary.
+     * The tax code(s) at {@code rate} of a document drafted before its tax summary named them: derived from the
+     * order's billed lines (joined with "+" when two codes share a rate, as fiscal does), and empty when the order's
+     * lines no longer say. A newer document's {@code TaxSummary.taxCode} is used as it is; the amounts always come
+     * from the summary.
      */
     private static String taxCodes(List<DocumentView.Line> lines, BigDecimal rate, Dimensions dimensions) {
         return lines.stream().filter(line -> line.taxRatePercent().compareTo(rate) == 0)
@@ -178,10 +177,9 @@ public class Projections {
 
     /**
      * The order's billing lines by id, its table's area (the table's current area: a documented approximation, D84)
-     * and its mode: DINE_IN when it sits at a table; unknown otherwise (the billing view does not tell COUNTER from
-     * TAKEAWAY). The serving employee is the line's {@code servedByEmployeeId}: the round's confirmer, and for a line
-     * transferred in, the employee who made the transfer (who took the line over on this order); reporting cannot
-     * see the source order's round, and a transfer is a confirmed fact of its own.
+     * and its mode (DINE_IN, COUNTER or TAKEAWAY). The serving employee is the line's {@code servedByEmployeeId}: the
+     * round's confirmer, and for a line transferred in, the employee who made the transfer (who took the line over on
+     * this order); reporting cannot see the source order's round, and a transfer is a confirmed fact of its own.
      */
     private Dimensions dimensionsOf(UUID orderId) {
         if (orderId == null) {
@@ -190,8 +188,7 @@ public class Projections {
         OrderBillingView order = orders.billingView(orderId);
         TableInfo table = order.tableId() == null ? null : dining.tableInfo(order.tableId()).orElse(null);
         return new Dimensions(order.lines().stream()
-                .collect(Collectors.toMap(BillingLine::lineId, Function.identity())), table,
-                order.tableId() == null ? null : DINE_IN);
+                .collect(Collectors.toMap(BillingLine::lineId, Function.identity())), table, order.mode().name());
     }
 
     /** The store's zone now: a fact's local date and hour are computed once, when it is projected (D85). */

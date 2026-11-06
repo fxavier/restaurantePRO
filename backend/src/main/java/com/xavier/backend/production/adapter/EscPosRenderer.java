@@ -8,8 +8,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * Turns a printout into ESC/POS bytes (D57): initialise, select the printer's character table, an optional copy
- * mark, one line per entry, an optional QR code (model 2), feed and a partial cut. CPU only. Characters the table
- * lacks print as {@code ?}.
+ * mark, one line per entry, an optional QR code (model 2), feed and a partial cut. CPU only. Text is encoded by
+ * {@link CodePage#encode}, which prints an ASCII fallback for typographic characters the table lacks.
  */
 @Component
 public class EscPosRenderer {
@@ -38,7 +38,7 @@ public class EscPosRenderer {
     }
 
     private static void text(ByteArrayOutputStream out, String line, CodePage codePage) {
-        out.writeBytes(line.getBytes(codePage.charset()));
+        out.writeBytes(codePage.encode(line));
         out.write(LF);
     }
 

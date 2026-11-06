@@ -95,6 +95,18 @@ public class SettlementFixtures {
         return new Sale(shop, cashier, register, session, series, order);
     }
 
+    /** {@link #sale(String)} as a walk-in order of {@code mode} (COUNTER or TAKEAWAY), with no table. */
+    public Sale walkInSale(String quantity, String mode) throws Exception {
+        Sale seated = sale(quantity);
+        Pos cashier = seated.cashier();
+        UUID order = OrdersFixtures.id(OrdersFixtures.json(mvc.perform(idem(post(ORDERS), UUID.randomUUID()
+                        .toString()).with(cashier.with(CASHIER)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"mode\": \"%s\"}".formatted(mode)))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()));
+        confirmRound(seated.shop(), cashier, order, quantity, 0);
+        return new Sale(seated.shop(), cashier, seated.register(), seated.session(), seated.series(), order);
+    }
+
     /**
      * Confirms a round of {@code quantity} of a new item of the sale's store, priced {@code price} with a
      * {@code ratePercent} tax rate (the catalog is republished for it). @return the new line's id
