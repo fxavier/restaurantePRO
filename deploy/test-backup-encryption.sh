@@ -14,8 +14,12 @@
 #      fingerprint at T; restore.sh of the logical archive with the recovery key alone
 #   6. a wrong key: pitr-restore.sh fails and leaves no container or volume behind
 #   7. a swapped recipients file: verify-backups.sh fails until --accept-recipients-change
-#   8. offbox-sync.sh: an unknown host key is refused; the pinned key copies; a plaintext file is refused;
-#      --check-append-only passes behind rrsync -wo -no-del and fails without it
+#   8. offbox-sync.sh: an unknown host key is refused; the pinned key copies; a plaintext file is refused; a
+#      rewritten (ransomware) archive and sidecar never replace the off-box copy; --check-append-only passes
+#      behind rrsync -wo -no-del -no-overwrite, and fails without -no-overwrite or without rrsync
+#   also: a group-writable deploy/.env, a recipients file postgres cannot read, missing or malformed sidecars,
+#      plaintext WAL next to an encrypted base, tampered ciphertext (caught key-free), a recipients swap that
+#      blocks the backup scripts, and ciphertext without a recorded recipients fingerprint
 #   9. an S27-style plaintext installation (dev mode, which still works): after the switch to production,
 #      basebackup.sh refuses until --encrypt-legacy, which leaves no plaintext; restores still work
 #  10. verify-restore.sh --key-recovery on the off-box copy, with the recovery key alone: success, JSON report
@@ -162,6 +166,19 @@ step "2. one recipient only: refused"
 why="$(refused_to_start "$KEYS/one-recipient.txt" 'holds 1 distinct recipient')"
 ok "one recipient: $why"
 
+step "2b. a recipients file the postgres user cannot read: refused"
+# Docker Desktop's file sharing ignores modes, so the file is made root-only inside the container.
+preflight_with() { # $1 mode for a root-owned copy of the recipients file inside the container
+  docker run --rm --network none -e RESTAURANTPRO_ENVIRONMENT=production \
+    -v "$DEPLOY_DIR/postgres/preflight.sh:/etc/restaurantpro/preflight.sh:ro" -v "$DEPLOY_DIR/lib/common.sh:/etc/restaurantpro/common.sh:ro" \
+    -v "$KEYS/recipients.txt:/tmp/recipients:ro" --entrypoint bash "$RP_AGE_IMAGE" \
+    -c "install -m $1 -o root -g root /tmp/recipients /etc/restaurantpro/backup-recipients.txt && bash /etc/restaurantpro/preflight.sh" 2>&1
+}
+if out="$(preflight_with 600)"; then fail "the preflight accepted a recipients file postgres cannot read"; fi
+[[ "$out" == *"postgres user"*"cannot read"* ]] || fail "unexpected: $out"
+out="$(preflight_with 644)" || fail "the preflight refused a readable 0644 recipients file: $out"
+ok "root-only 0600 recipients file: $(grep -m1 'REFUSING' <<<"$(preflight_with 600 || true)" | cut -c1-120); 0644: accepted"
+
 step "starting the postgres service in production with both recipients"
 compose up -d --no-build postgres >/dev/null 2>&1 || fail "compose up failed: $(compose up -d --no-build postgres 2>&1 | tail -3)"
 SRC="$(compose ps -q postgres)"
@@ -219,6 +236,11 @@ for script in backup.sh basebackup.sh; do
     env BACKUP_AGE_IDENTITY="$KEYS/operational.key" "$DEPLOY_DIR/$script" --container "$SRC" --dir "$NOTHING"
 done
 rm "$WORK/deploy-copy/forgotten-key.txt"
+echo RESTAURANTPRO_ENVIRONMENT=test >"$WORK/deploy-copy/.env"
+chmod 666 "$WORK/deploy-copy/.env"
+writes_nothing "backup.sh, a world-writable deploy/.env" 'env is writable by group or others' \
+  env -u RESTAURANTPRO_ENVIRONMENT "$WORK/deploy-copy/backup.sh" --container "$SRC" --dir "$NOTHING"
+rm "$WORK/deploy-copy/.env"
 chmod g+w "$WORK/deploy-copy/lib/age.sh"
 writes_nothing "backup.sh, a group-writable script" 'writable by group or others' \
   "$WORK/deploy-copy/backup.sh" --container "$SRC" --dir "$NOTHING"
@@ -292,13 +314,34 @@ ok "wrong key: $(grep -m1 'cannot decrypt' "$WORK/wrong.err" | cut -c1-100); no 
 mkdir -m 700 "$WORK/tampered"
 cp -p "$BACKUPS/pitr/wal/"* "$WORK/tampered/"
 victim="$(find "$WORK/tampered" -name '*.sha256' | sort | tail -1)"
-printf '%064d  %s\n' 0 "$(basename "${victim%.sha256}")" >"$victim"
+{ printf '%064d  %s\n' 0 "$(basename "${victim%.sha256}")"; sed -n 2p "$victim"; } >"$victim.new" && mv "$victim.new" "$victim"
 if "$DEPLOY_DIR/pitr-restore.sh" --target-time latest --name "$PITR_NAME" --wal-dir "$WORK/tampered" \
   --identity "$KEYS/operational.key" "$base" >/dev/null 2>"$WORK/tampered.err"; then fail "pitr-restore.sh accepted WAL whose sidecar does not match"; fi
 grep -q 'checksum mismatch' "$WORK/tampered.err" || fail "unexpected: $(tail -5 "$WORK/tampered.err")"
 docker volume inspect "$PITR_NAME-data" >/dev/null 2>&1 && fail "the failed restore left volume $PITR_NAME-data"
 rm -rf "$WORK/tampered"
 ok "a WAL file that does not match its sidecar: refused ($(grep -m1 'checksum mismatch' "$WORK/tampered.err" | sed 's|/wal-source/||' | cut -c1-90))"
+mkdir -m 700 "$WORK/plainwal"
+cp -p "$BACKUPS/pitr/wal/"* "$WORK/plainwal/"
+(umask 077 && head -c 8192 /dev/urandom >"$WORK/plainwal/000000010000000000000099")
+if "$DEPLOY_DIR/pitr-restore.sh" --target-time latest --name "$PITR_NAME" --wal-dir "$WORK/plainwal" \
+  --identity "$KEYS/operational.key" "$base" >/dev/null 2>"$WORK/plainwal.err"; then fail "pitr-restore.sh accepted plaintext WAL in production"; fi
+grep -q 'plaintext WAL' "$WORK/plainwal.err" || fail "unexpected: $(tail -5 "$WORK/plainwal.err")"
+rm -rf "$WORK/plainwal"
+ok "plaintext WAL next to an encrypted base in production: refused"
+mkdir -m 700 "$WORK/nosidecar" "$WORK/nosidecar/base"
+cp -p "$logical" "$WORK/nosidecar/"
+cp -p "$base" "$WORK/nosidecar/base/"
+if "$DEPLOY_DIR/restore.sh" --container "$SRC" --identity "$KEYS/operational.key" "$WORK/nosidecar/$(basename "$logical")" 2>"$WORK/nosidecar.err"; then
+  fail "restore.sh accepted an archive without its sidecar in production"
+fi
+grep -q 'no sidecar' "$WORK/nosidecar.err" || fail "unexpected: $(cat "$WORK/nosidecar.err")"
+if "$DEPLOY_DIR/pitr-restore.sh" --target-time latest --name "$PITR_NAME" --wal-dir "$BACKUPS/pitr/wal" --identity "$KEYS/operational.key" \
+  "$WORK/nosidecar/base/$(basename "$base")" >/dev/null 2>"$WORK/nosidecar.err"; then fail "pitr-restore.sh accepted a base without its sidecar"; fi
+grep -q 'no sidecar' "$WORK/nosidecar.err" || fail "unexpected: $(cat "$WORK/nosidecar.err")"
+docker volume inspect "$PITR_NAME-data" >/dev/null 2>&1 && fail "the refused restore left volume $PITR_NAME-data"
+rm -rf "$WORK/nosidecar"
+ok "a base or logical archive without its sidecar: refused by pitr-restore.sh and restore.sh"
 
 step "8. offbox-sync.sh over ssh to an rrsync destination"
 mkdir "$WORK/sshd"
@@ -318,7 +361,7 @@ authorize() { # $1 options in front of the key ("" = an unrestricted login)
   docker exec -i "$SSHD" sh -c 'cat >/home/offbox/.ssh/authorized_keys && chown offbox /home/offbox/.ssh/authorized_keys && chmod 600 /home/offbox/.ssh/authorized_keys' \
     <<<"$1$(cat "$WORK/ssh/id_ed25519.pub")"
 }
-authorize 'command="rrsync -wo -no-del /srv/offbox",restrict '
+authorize 'command="rrsync -wo -no-del -no-overwrite /srv/offbox",restrict '
 echo "[127.0.0.1]:$port $(docker exec "$SSHD" cat /etc/ssh/ssh_host_ed25519_key.pub | cut -d' ' -f1-2)" >"$WORK/ssh/known_hosts"
 echo "[127.0.0.1]:$port $(cut -d' ' -f1-2 "$WORK/ssh/impostor_host_key.pub")" >"$WORK/ssh/impostor_known_hosts"
 chmod 644 "$WORK/ssh/known_hosts" "$WORK/ssh/impostor_known_hosts"
@@ -332,7 +375,10 @@ ok "unknown host key: refused ($(grep -m1 -iE 'host key' "$WORK/impostor.err" | 
 offbox --known-hosts "$WORK/ssh/known_hosts" 2>"$WORK/offbox.err" || fail "offbox-sync.sh with the pinned host key: $(tail -5 "$WORK/offbox.err")"
 [[ -f "$BACKUPS/LAST_OFFBOX_SYNC" ]] || fail "LAST_OFFBOX_SYNC not written"
 remote_copy="$(copy_out "$SSHD" /srv/offbox)"
-[[ -f "$remote_copy/$(basename "$logical")" && -f "$remote_copy/pitr/base/$(basename "$base")" ]] || fail "the off-box copy lacks the backups"
+sysid="$(cat "$BACKUPS/pitr/SYSTEM_IDENTIFIER")"
+[[ -f "$remote_copy/$(basename "$logical")" && -f "$remote_copy/pitr-$sysid/base/$(basename "$base")" ]] || fail "the off-box copy lacks the backups"
+[[ -z "$(find "$remote_copy" -name LAST_OFFBOX_SYNC -o -name RECIPIENTS_SHA256 -o -name ARCHIVER_FAILED_COUNT)" ]] \
+  || fail "markers that change in place reached the write-once destination"
 assert_no_plaintext "$remote_copy" || fail "plaintext at the off-box destination"
 ok "pinned host key: $(remote_files) files copied, all ciphertext, sidecars or markers (3: volume, backups, off-box all clean)"
 rm -rf "$remote_copy"
@@ -342,13 +388,30 @@ if offbox --known-hosts "$WORK/ssh/known_hosts" 2>"$WORK/plain.err"; then fail "
 grep -q 'not age ciphertext' "$WORK/plain.err" || fail "unexpected: $(tail -3 "$WORK/plain.err")"
 rm "$BACKUPS/notes.txt"
 ok "a plaintext file in the backup directory: refused"
+# Ransomware on the server: the logical archive is replaced by other ciphertext with a forged sidecar.
+remote_sum() { docker exec "$SSHD" sha256sum "/srv/offbox/$1" | cut -d' ' -f1; }
+good_sum="$(remote_sum "$(basename "$logical")")"
+cp -p "$logical" "$WORK/logical.keep"
+cp -p "${logical%.age}.sha256" "$WORK/sidecar.keep"
+head -c 4096 /dev/urandom >"$WORK/ransom.bin"
+seal "$WORK/ransom.bin" "${logical%.age}" "$KEYS/recipients.txt"
+offbox --known-hosts "$WORK/ssh/known_hosts" 2>"$WORK/ransom.err" || fail "offbox-sync.sh after the rewrite: $(tail -3 "$WORK/ransom.err")"
+[[ "$(remote_sum "$(basename "$logical")")" == "$good_sum" ]] || fail "the rewritten archive replaced the off-box copy"
+[[ "$(remote_sum "$(basename "${logical%.age}.sha256")")" == "$(sha256_hex "$WORK/sidecar.keep")" ]] || fail "the forged sidecar replaced the off-box copy"
+mv "$WORK/logical.keep" "$logical"
+mv "$WORK/sidecar.keep" "${logical%.age}.sha256"
+ok "a rewritten archive and its forged sidecar never replace the off-box copy (write-once)"
 offbox --known-hosts "$WORK/ssh/known_hosts" --check-append-only 2>"$WORK/ao.err" || fail "--check-append-only behind rrsync: $(tail -5 "$WORK/ao.err")"
-ok "--check-append-only behind rrsync -wo -no-del: $(grep -m1 'append-only' "$WORK/ao.err")"
+ok "--check-append-only behind rrsync -wo -no-del -no-overwrite: $(grep -m1 'write-once' "$WORK/ao.err")"
+authorize 'command="rrsync -wo -no-del /srv/offbox",restrict '
+if offbox --known-hosts "$WORK/ssh/known_hosts" --check-append-only 2>"$WORK/ao.err"; then fail "--check-append-only passed without -no-overwrite"; fi
+grep -q 'could overwrite the canary' "$WORK/ao.err" || fail "unexpected: $(tail -3 "$WORK/ao.err")"
+ok "--check-append-only without -no-overwrite: $(grep -m1 'could overwrite' "$WORK/ao.err" | cut -c1-110)"
 authorize ''
 if offbox --known-hosts "$WORK/ssh/known_hosts" --check-append-only 2>"$WORK/ao.err"; then fail "--check-append-only passed on an unrestricted login"; fi
-grep -q 'not append-only' "$WORK/ao.err" || fail "unexpected: $(tail -3 "$WORK/ao.err")"
-ok "--check-append-only without rrsync: $(grep -m1 'not append-only' "$WORK/ao.err" | cut -c1-110)"
-authorize 'command="rrsync -wo -no-del /srv/offbox",restrict '
+grep -q 'not write-once' "$WORK/ao.err" || fail "unexpected: $(tail -3 "$WORK/ao.err")"
+ok "--check-append-only without rrsync: $(grep -m1 'not write-once' "$WORK/ao.err" | cut -c1-110)"
+authorize 'command="rrsync -wo -no-del -no-overwrite /srv/offbox",restrict '
 
 step "7. verify-backups.sh catches a swapped recipients file"
 verify() { "$DEPLOY_DIR/verify-backups.sh" --container "$SRC" --dir "$BACKUPS" "$@"; }
@@ -361,9 +424,15 @@ if verify 2>"$WORK/verify.err"; then fail "verify-backups.sh accepted a swapped 
 grep -q 'recipients changed' "$WORK/verify.err" || fail "unexpected: $(cat "$WORK/verify.err")"
 ok "swapped: $(grep -m1 'recipients changed' "$WORK/verify.err" | cut -c1-120)"
 if verify 2>/dev/null; then fail "verify-backups.sh forgot the change on the second run"; fi
+if "$DEPLOY_DIR/backup.sh" --container "$SRC" --dir "$BACKUPS" 2>"$WORK/swap.err" >/dev/null; then fail "backup.sh ran with swapped recipients"; fi
+grep -q 'recipients changed' "$WORK/swap.err" || fail "unexpected: $(cat "$WORK/swap.err")"
+if "$DEPLOY_DIR/basebackup.sh" --wal-only --container "$SRC" --dir "$BACKUPS/pitr" 2>"$WORK/swap.err"; then fail "basebackup.sh ran with swapped recipients"; fi
+grep -q 'recipients changed' "$WORK/swap.err" || fail "unexpected: $(cat "$WORK/swap.err")"
+ok "backup.sh and basebackup.sh refuse the swapped recipients ($(grep -m1 'recipients changed' "$WORK/swap.err" | cut -c1-90))"
 verify --accept-recipients-change 2>"$WORK/verify.err" || fail "--accept-recipients-change: $(cat "$WORK/verify.err")"
 grep -q 'accepted' "$WORK/verify.err" || fail "the accepted change is not logged"
 verify 2>/dev/null || fail "verify-backups.sh still fails after the change was accepted"
+"$DEPLOY_DIR/basebackup.sh" --wal-only --container "$SRC" --dir "$BACKUPS/pitr" 2>/dev/null || fail "basebackup.sh still refuses after the change was accepted"
 cp "$WORK/recipients.orig" "$KEYS/recipients.txt"
 verify --accept-recipients-change 2>/dev/null || fail "could not accept the original recipients again"
 ok "fails until --accept-recipients-change ($(grep -m1 accepted "$WORK/verify.err" | cut -c1-100))"
@@ -390,6 +459,12 @@ broken "a plaintext file" 'not age ciphertext: .*notes.txt' '(umask 077; echo x 
 # shellcheck disable=SC2016 # evaluated by broken() in the copy
 broken "a gap in the WAL chain" 'WAL chain .* is broken' \
   'f=$(ls pitr/wal | grep -E "^[0-9A-F]{24}\.age$" | sort | sed -n 2p); rm "pitr/wal/$f" "pitr/wal/${f%.age}.sha256"'
+# shellcheck disable=SC2016 # evaluated by broken() in the copy
+broken "tampered ciphertext (key-free)" 'does not match the ciphertext SHA-256' \
+  'f=$(ls pitr/wal/*.age | head -1); printf garbage | dd of="$f" bs=1 seek=200 conv=notrunc status=none'
+# shellcheck disable=SC2016 # evaluated by broken() in the copy
+broken "a malformed sidecar" 'malformed sidecar|no well-formed' 'f=$(ls pitr/wal/*.sha256 | head -1); echo extra >>"$f"'
+broken "ciphertext without a recorded recipients fingerprint" 'holds encrypted backups but no RECIPIENTS_SHA256' 'rm RECIPIENTS_SHA256'
 broken "a base backup older than 26 h" 'newest base backup is older than 26 h' \
   "touch -t $(date -v-27H +%Y%m%d%H%M 2>/dev/null || date -d '-27 hours' +%Y%m%d%H%M) pitr/base/*"
 
@@ -470,6 +545,12 @@ if "$DEPLOY_DIR/verify-restore.sh" --from "$from" --identity "$KEYS/wrong.key" -
 grep -q 'is not one of the current recipients' "$WORK/drill-wrong.err" || fail "unexpected: $(tail -5 "$WORK/drill-wrong.err")"
 grep -q '"result": "FAIL"' "$WORK/reports-wrong"/drill-*.json || fail "the failed drill wrote no FAIL report"
 ok "verify-restore.sh with a key that is not a recipient: FAIL report ($(grep -m1 'not one of' "$WORK/drill-wrong.err" | cut -c1-90))"
+find "$from" -name 'RECIPIENTS-*' -exec mv {} "$WORK/" \;
+if "$DEPLOY_DIR/verify-restore.sh" --from "$from" --identity "$KEYS/operational.key" --name "$RUN_ID-verify" \
+  --report-dir "$WORK/reports-wrong" 2>"$WORK/drill-norec.err"; then fail "verify-restore.sh passed without the recipients copy"; fi
+grep -q 'no RECIPIENTS-' "$WORK/drill-norec.err" || fail "unexpected: $(tail -5 "$WORK/drill-norec.err")"
+mv "$WORK"/RECIPIENTS-* "$from/"
+ok "verify-restore.sh without the copied recipients: FAIL ($(grep -m1 'no RECIPIENTS-' "$WORK/drill-norec.err" | cut -c1-80))"
 [[ -f "$report" ]] || fail "no drill-<UTC>.json report"
 grep -q '"result": "PASS"' "$report" || fail "report does not say PASS: $(cat "$report")"
 grep -q "\"key\": \"$(age_public_key "$KEYS/recovery.key")\"" "$report" || fail "report does not name the recovery key"

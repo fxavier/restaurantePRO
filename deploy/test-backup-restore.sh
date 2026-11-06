@@ -9,8 +9,8 @@
 # Also checks:
 #   - the archive is age ciphertext with its sidecar, the directory 0700 and the files 0600
 #   - retention keeps the newest N timestamped archives (and their sidecars) and ignores hand-named files
-#   - a corrupted archive is rejected: by age for damaged ciphertext, by the checksums for a damaged
-#     payload that was re-encrypted; target untouched
+#   - a corrupted archive is rejected: key-free by the ciphertext SHA-256 in its sidecar, by age when the
+#     sidecar was forged to match, by the checksums for a damaged payload that was re-encrypted; target untouched
 #   - a non-empty target is refused without --force, target untouched
 #   - --force replaces the target while a client holds a session on it, and removes objects
 #     created after the backup (rollback after an upgrade)
@@ -134,6 +134,7 @@ for f in restaurantpro-20000101T000000Z.tar.age restaurantpro-20000101T000000Z.t
   restaurantpro-20000102T000000Z.tar.age restaurantpro-20000102T000000Z.tar.sha256 restaurantpro-before-upgrade.tar.age; do
   (umask 077 && touch "$WORK/backups/$f")
 done
+record_recipients "$WORK/backups" "$KEYS/recipients.txt" # as an installation that already ran backups
 archive="$("$DEPLOY_DIR/backup.sh" --container "$SRC" --dir "$WORK/backups" --keep 2)"
 [[ -f "$archive" && "$archive" == *.tar.age ]] || fail "backup.sh did not report an encrypted archive (got '$archive')"
 is_age_file "$archive" || fail "$archive is not age ciphertext"
@@ -142,20 +143,27 @@ assert_no_plaintext "$archive" || fail "the archive is not ciphertext with its s
   || fail "the backup directory or files are not 0700/0600"
 kept="$(cd "$WORK/backups" && ls)"
 expected="$(printf '%s\n' restaurantpro-20000102T000000Z.tar.age restaurantpro-20000102T000000Z.tar.sha256 "$(basename "$archive")" \
-  "$(basename "${archive%.age}.sha256")" restaurantpro-before-upgrade.tar.age | sort)"
+  "$(basename "${archive%.age}.sha256")" restaurantpro-before-upgrade.tar.age RECIPIENTS_SHA256 \
+  "$(cd "$WORK/backups" && ls RECIPIENTS-*)" | sort)"
 [[ "$kept" == "$expected" ]] || fail "retention kept: $(tr '\n' ' ' <<<"$kept"); expected: $(tr '\n' ' ' <<<"$expected")"
 
 step "corrupted archive is rejected before touching the target"
 mkdir -m 700 "$WORK/corrupt"
 cp "$archive" "$WORK/corrupt/restaurantpro-corrupt.tar.age"
-# Flip bytes in the middle of the ciphertext: age's authentication rejects it.
+sed 's/restaurantpro-[0-9TZ]*\.tar/restaurantpro-corrupt.tar/' "${archive%.age}.sha256" >"$WORK/corrupt/restaurantpro-corrupt.tar.sha256"
+# Flip bytes in the middle of the ciphertext: the ciphertext SHA-256 in the sidecar rejects it, key-free.
 printf 'garbage' | dd of="$WORK/corrupt/restaurantpro-corrupt.tar.age" bs=1 seek=$(($(wc -c <"$archive") / 2)) conv=notrunc status=none
+if restore --container "$DST" "$WORK/corrupt/restaurantpro-corrupt.tar.age" 2>"$WORK/corrupt.err"; then fail "restore.sh accepted a corrupted archive"; fi
+grep -q 'checksum mismatch: .*ciphertext' "$WORK/corrupt.err" || fail "corrupted ciphertext not caught by its sidecar: $(cat "$WORK/corrupt.err")"
+# Without the sidecar's help (a matching one is forged), age's authentication still rejects it.
+seal_cipher_only() { printf '%s  %s\n%s  %s\n' "$(sidecar_plain "$1")" "$2" "$(sha256_hex "$3")" "$2.age"; }
+seal_cipher_only "${archive%.age}.sha256" restaurantpro-corrupt.tar "$WORK/corrupt/restaurantpro-corrupt.tar.age" >"$WORK/corrupt/restaurantpro-corrupt.tar.sha256"
 if restore --container "$DST" "$WORK/corrupt/restaurantpro-corrupt.tar.age" 2>"$WORK/corrupt.err"; then fail "restore.sh accepted a corrupted archive"; fi
 grep -q 'cannot decrypt' "$WORK/corrupt.err" || fail "corrupted ciphertext not caught by age: $(cat "$WORK/corrupt.err")"
 # A payload damaged before encryption (inside db.dump, nearly all of it) decrypts, but fails the checksums.
 age_decrypt "$KEYS/operational.key" <"$archive" >"$WORK/corrupt/payload.tar"
 printf 'garbage' | dd of="$WORK/corrupt/payload.tar" bs=1 seek=$(($(wc -c <"$WORK/corrupt/payload.tar") / 2)) conv=notrunc status=none
-age_encrypt "$KEYS/recipients.txt" <"$WORK/corrupt/payload.tar" >"$WORK/corrupt/restaurantpro-damaged.tar.age"
+seal "$WORK/corrupt/payload.tar" "$WORK/corrupt/restaurantpro-damaged.tar" "$KEYS/recipients.txt"
 rm "$WORK/corrupt/payload.tar"
 if restore --container "$DST" "$WORK/corrupt/restaurantpro-damaged.tar.age" 2>"$WORK/corrupt.err"; then fail "restore.sh accepted a damaged payload"; fi
 grep -q 'checksum mismatch' "$WORK/corrupt.err" || fail "damaged payload not caught by the checksum check: $(cat "$WORK/corrupt.err")"
