@@ -1,5 +1,6 @@
 package com.xavier.backend.promotions;
 
+import static com.xavier.backend.catalog.Actors.admin;
 import static com.xavier.backend.catalog.Actors.inStore;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -53,8 +54,9 @@ public class PromotionsFixtures {
                 .contentType(MediaType.APPLICATION_JSON).content(body));
     }
 
+    /** Creates a promotion as an administrator (D134); {@code store} only names the test's store for readability. */
     public ResultActions create(UUID store, String body) throws Exception {
-        return perform(post(PROMOTIONS).with(inStore(store, Permission.PROMOTION_MANAGE)), body);
+        return perform(post(PROMOTIONS).with(admin(Permission.PROMOTION_MANAGE)), body);
     }
 
     /** A 20 % off promotion with priority {@code priority}, scoped by {@code scopeJson}, assigned to {@code store}. */
@@ -63,10 +65,10 @@ public class PromotionsFixtures {
                 {"code": "%s", "name": "Promo %s", "kind": "PERCENT_OFF", "percent": 20, "priority": 1}"""
                 .formatted(code, code)), 201));
         JsonNode scoped = json(expect(perform(put(PROMOTIONS + "/" + id(created) + "/scope")
-                .with(inStore(store, Permission.PROMOTION_MANAGE)), scopeJson.replace("}", ", \"version\": "
+                .with(admin(Permission.PROMOTION_MANAGE)), scopeJson.replace("}", ", \"version\": "
                 + created.get("version").asLong() + "}")), 200));
         return json(expect(perform(put(PROMOTIONS + "/" + id(created) + "/stores")
-                .with(inStore(store, Permission.PROMOTION_MANAGE)), """
+                .with(admin(Permission.PROMOTION_MANAGE)), """
                 {"storeIds": ["%s"], "version": %d}""".formatted(store, scoped.get("version").asLong())), 200));
     }
 

@@ -1,6 +1,6 @@
 package com.xavier.backend.promotions;
 
-import static com.xavier.backend.catalog.Actors.inStore;
+import static com.xavier.backend.catalog.Actors.admin;
 import static com.xavier.backend.catalog.Actors.pos;
 import static com.xavier.backend.promotions.PromotionsFixtures.PROMOTIONS;
 import static com.xavier.backend.promotions.PromotionsFixtures.code;
@@ -70,7 +70,7 @@ class PromotionsApiTest {
         JsonNode promotion = fixtures.promotion(shop.store(), code("HH"), """
                 {"familyIds": ["%s"]}""".formatted(shop.family()));
         expect(fixtures.perform(put(PROMOTIONS + "/" + id(promotion) + "/windows")
-                .with(inStore(shop.store(), Permission.PROMOTION_MANAGE)), """
+                .with(admin(Permission.PROMOTION_MANAGE)), """
                 {"windows": [{"daysOfWeek": [1, 2, 3, 4, 5, 6, 7], "start": "18:00", "end": "20:00"}], "version": %d}"""
                 .formatted(promotion.get("version").asLong())), 200);
         fixtures.published(shop.store());

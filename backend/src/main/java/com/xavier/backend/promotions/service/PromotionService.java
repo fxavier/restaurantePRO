@@ -23,7 +23,6 @@ import com.xavier.backend.shared.web.PageResponse;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -35,9 +34,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * The promotions working copy (D102). Promotions are company-wide: editing needs {@code PROMOTION_MANAGE} in some
- * store, reading {@code PROMOTION_VIEW}; assigning or removing a store also needs {@code PROMOTION_MANAGE} in that
- * store. Nothing here changes a price until the store publishes a promotion release.
+ * The promotions working copy (D102). Promotions are company-wide: editing them (terms, scope, windows, stores,
+ * deletion) needs {@code PROMOTION_MANAGE} installation-wide (D134: administrator only), because one promotion may be
+ * assigned to several stores; reading needs {@code PROMOTION_VIEW} in some store. Nothing here changes a price until a
+ * store publishes a promotion release.
  */
 @Service
 public class PromotionService {
@@ -59,7 +59,7 @@ public class PromotionService {
 
     @Transactional
     public PromotionView create(PromotionCreateRequest request) {
-        accessPolicy.requireInAnyStore(Permission.PROMOTION_MANAGE);
+        accessPolicy.require(Permission.PROMOTION_MANAGE);
         Promotion promotion = Promotion.create(request.code(), new Promotion.Terms(request.name(),
                 PromotionKind.valueOf(request.kind()), request.percent(), money(request.amount()), request.priority(),
                 request.validFrom(), request.validTo(), Boolean.TRUE.equals(request.membersOnly()), request.modes(),
@@ -72,7 +72,7 @@ public class PromotionService {
 
     @Transactional
     public PromotionView update(UUID id, PromotionUpdateRequest request) {
-        accessPolicy.requireInAnyStore(Permission.PROMOTION_MANAGE);
+        accessPolicy.require(Permission.PROMOTION_MANAGE);
         Promotion promotion = editable(id, request.version());
         promotion.change(new Promotion.Terms(request.name(), PromotionKind.valueOf(request.kind()), request.percent(),
                 money(request.amount()), request.priority(), request.validFrom(), request.validTo(),
@@ -82,7 +82,7 @@ public class PromotionService {
 
     @Transactional
     public PromotionView replaceScope(UUID id, ScopeRequest request) {
-        accessPolicy.requireInAnyStore(Permission.PROMOTION_MANAGE);
+        accessPolicy.require(Permission.PROMOTION_MANAGE);
         Promotion promotion = editable(id, request.version());
         promotion.replaceScope(orEmpty(request.itemIds()), orEmpty(request.variantIds()),
                 orEmpty(request.familyIds()), clock.instant());
@@ -91,7 +91,7 @@ public class PromotionService {
 
     @Transactional
     public PromotionView replaceWindows(UUID id, WindowsRequest request) {
-        accessPolicy.requireInAnyStore(Permission.PROMOTION_MANAGE);
+        accessPolicy.require(Permission.PROMOTION_MANAGE);
         Promotion promotion = editable(id, request.version());
         promotion.replaceWindows(request.windows().stream()
                 .map(window -> new PromotionSnapshot.Window(window.daysOfWeek(), window.start(), window.end()))
@@ -99,16 +99,12 @@ public class PromotionService {
         return saved(promotion, "PROMOTION_WINDOWS_CHANGED");
     }
 
-    /** Every store added or removed needs {@code PROMOTION_MANAGE} there; an added store must exist. */
+    /** Replaces the stores the promotion is published to; every one must exist. */
     @Transactional
     public PromotionView replaceStores(UUID id, StoresRequest request) {
-        accessPolicy.requireInAnyStore(Permission.PROMOTION_MANAGE);
+        accessPolicy.require(Permission.PROMOTION_MANAGE);
         Set<UUID> requested = new LinkedHashSet<>(request.storeIds());
         Promotion promotion = editable(id, request.version());
-        Set<UUID> changed = new HashSet<>(requested);
-        changed.addAll(promotion.getStoreIds());
-        changed.removeIf(store -> requested.contains(store) && promotion.getStoreIds().contains(store));
-        changed.stream().sorted().forEach(store -> accessPolicy.require(Permission.PROMOTION_MANAGE, store));
         requested.stream().filter(store -> !organization.storeExists(store)).findFirst().ifPresent(store -> {
             throw PromotionRuleException.invalid("Store " + store + " does not exist.");
         });
@@ -119,7 +115,7 @@ public class PromotionService {
     /** Removes a working-copy promotion; releases already published keep their frozen copy of it. */
     @Transactional
     public void delete(UUID id, long version) {
-        accessPolicy.requireInAnyStore(Permission.PROMOTION_MANAGE);
+        accessPolicy.require(Permission.PROMOTION_MANAGE);
         Promotion promotion = editable(id, version);
         promotions.delete(promotion);
         promotions.flush();

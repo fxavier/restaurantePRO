@@ -94,14 +94,14 @@ class PromotionHttpTest {
         JsonNode promotion = percentOff(store);
         String path = PROMOTIONS + "/" + id(promotion);
 
-        invalid(fixtures.perform(put(path + "/scope").with(inStore(store, Permission.PROMOTION_MANAGE)),
+        invalid(fixtures.perform(put(path + "/scope").with(admin(Permission.PROMOTION_MANAGE)),
                 "{\"itemIds\": [], \"version\": 0}"));
-        invalid(fixtures.perform(put(path + "/windows").with(inStore(store, Permission.PROMOTION_MANAGE)), """
+        invalid(fixtures.perform(put(path + "/windows").with(admin(Permission.PROMOTION_MANAGE)), """
                 {"windows": [{"daysOfWeek": [8], "start": "18:00", "end": "20:00"}], "version": 0}"""));
-        invalid(fixtures.perform(put(path + "/windows").with(inStore(store, Permission.PROMOTION_MANAGE)), """
+        invalid(fixtures.perform(put(path + "/windows").with(admin(Permission.PROMOTION_MANAGE)), """
                 {"windows": [{"daysOfWeek": [1], "start": "18:00", "end": "18:00"}], "version": 0}"""));
 
-        expect(fixtures.perform(put(path + "/windows").with(inStore(store, Permission.PROMOTION_MANAGE)), """
+        expect(fixtures.perform(put(path + "/windows").with(admin(Permission.PROMOTION_MANAGE)), """
                 {"windows": [{"daysOfWeek": [5, 6], "start": "22:00", "end": "02:00"}], "version": 0}"""), 200)
                 .andExpect(jsonPath("$.windows[0].daysOfWeek[1]").value(6))
                 .andExpect(jsonPath("$.windows[0].end").value("02:00:00"))
@@ -122,19 +122,43 @@ class PromotionHttpTest {
     }
 
     @Test
-    void assigningOrRemovingAStoreNeedsThePermissionThere() throws Exception {
+    void aPromotionIsAssignedOnlyToStoresThatExist() throws Exception {
         UUID store = fixtures.storeWithoutCatalog();
-        UUID other = fixtures.storeWithoutCatalog();
         JsonNode promotion = percentOff(store);
         String stores = PROMOTIONS + "/" + id(promotion) + "/stores";
 
-        fixtures.perform(put(stores).with(inStore(store, Permission.PROMOTION_MANAGE)), """
-                {"storeIds": ["%s"], "version": 0}""".formatted(other)).andExpect(status().isForbidden());
         invalid(fixtures.perform(put(stores).with(admin(Permission.PROMOTION_MANAGE)), """
                 {"storeIds": ["%s", "%s"], "version": 0}""".formatted(store, UUID.randomUUID())));
-        expect(fixtures.perform(put(stores).with(inStore(store, Permission.PROMOTION_MANAGE)), """
+        expect(fixtures.perform(put(stores).with(admin(Permission.PROMOTION_MANAGE)), """
                 {"storeIds": ["%s"], "version": 0}""".formatted(store)), 200)
                 .andExpect(jsonPath("$.storeIds[0]").value(store.toString()));
+    }
+
+    /** D134: PROMOTION_MANAGE for the company-wide working copy is installation-wide (administrator only). */
+    @Test
+    void aStoreScopedGrantCannotCreateEditOrDeleteAPromotion() throws Exception {
+        UUID store = fixtures.storeWithoutCatalog();
+        JsonNode promotion = percentOff(store);
+        String path = PROMOTIONS + "/" + id(promotion);
+
+        fixtures.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(PROMOTIONS)
+                .with(inStore(store, Permission.PROMOTION_MANAGE)), """
+                {"code": "%s", "name": "X", "kind": "PERCENT_OFF", "percent": 5, "priority": 0}"""
+                .formatted(code("S"))).andExpect(status().isForbidden());
+        fixtures.perform(put(path).with(inStore(store, Permission.PROMOTION_MANAGE)), """
+                {"name": "Ten", "kind": "PERCENT_OFF", "percent": 10, "priority": 9, "membersOnly": false,
+                 "active": true, "version": 0}""").andExpect(status().isForbidden());
+        fixtures.perform(put(path + "/scope").with(inStore(store, Permission.PROMOTION_MANAGE)),
+                "{\"itemIds\": [\"%s\"], \"version\": 0}".formatted(UUID.randomUUID()))
+                .andExpect(status().isForbidden());
+        fixtures.perform(put(path + "/windows").with(inStore(store, Permission.PROMOTION_MANAGE)),
+                "{\"windows\": [], \"version\": 0}").andExpect(status().isForbidden());
+        fixtures.perform(put(path + "/stores").with(inStore(store, Permission.PROMOTION_MANAGE)), """
+                {"storeIds": ["%s"], "version": 0}""".formatted(store)).andExpect(status().isForbidden());
+        mvc.perform(delete(path).param("version", "0").with(inStore(store, Permission.PROMOTION_MANAGE)).with(csrf()))
+                .andExpect(status().isForbidden());
+        mvc.perform(get(path).with(inStore(store, Permission.PROMOTION_VIEW))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(0));
     }
 
     @Test
@@ -143,9 +167,9 @@ class PromotionHttpTest {
         JsonNode promotion = percentOff(store);
         String path = PROMOTIONS + "/" + id(promotion);
 
-        mvc.perform(delete(path).param("version", "5").with(inStore(store, Permission.PROMOTION_MANAGE)).with(csrf()))
+        mvc.perform(delete(path).param("version", "5").with(admin(Permission.PROMOTION_MANAGE)).with(csrf()))
                 .andExpect(status().isConflict());
-        mvc.perform(delete(path).param("version", "0").with(inStore(store, Permission.PROMOTION_MANAGE)).with(csrf()))
+        mvc.perform(delete(path).param("version", "0").with(admin(Permission.PROMOTION_MANAGE)).with(csrf()))
                 .andExpect(status().isNoContent());
         mvc.perform(get(path).with(inStore(store, Permission.PROMOTION_VIEW))).andExpect(status().isNotFound());
     }
@@ -157,7 +181,7 @@ class PromotionHttpTest {
     }
 
     private ResultActions update(UUID store, JsonNode promotion, long version) throws Exception {
-        return fixtures.perform(put(PROMOTIONS + "/" + id(promotion)).with(inStore(store, Permission.PROMOTION_MANAGE)),
+        return fixtures.perform(put(PROMOTIONS + "/" + id(promotion)).with(admin(Permission.PROMOTION_MANAGE)),
                 """
                 {"name": "Ten", "kind": "PERCENT_OFF", "percent": 10, "priority": 9, "membersOnly": false,
                  "active": true, "version": %d}""".formatted(version));
