@@ -15,6 +15,10 @@ import com.xavier.backend.identity.exception.SupportAccountRequiredException;
 import com.xavier.backend.identity.exception.SupportGrantActiveException;
 import com.xavier.backend.identity.exception.SupportGrantTooLongException;
 import com.xavier.backend.production.exception.ProductionConflictException;
+import com.xavier.backend.promotions.exception.PromotionConflictException;
+import com.xavier.backend.promotions.exception.PromotionRuleException;
+import com.xavier.backend.promotions.exception.PromotionsNotFoundException;
+import com.xavier.backend.promotions.model.dto.PromotionReleaseError;
 import com.xavier.backend.cash.exception.CashRule;
 import com.xavier.backend.cash.exception.CashRuleViolationException;
 import com.xavier.backend.cash.exception.ClosingStaleException;
@@ -255,6 +259,18 @@ class CodedErrorContractTest {
             Map.entry("phone-exists", () -> CustomersConflictException.phoneExists(ID, "258841234567")),
             Map.entry("credit-account-exists", () -> CustomersConflictException.accountExists(ID)),
             Map.entry("credit-source-mismatch", () -> CustomersConflictException.sourceMismatch("debt payment", ID)),
+            // R4 promotions (S39)
+            Map.entry("promotion-invalid", () -> PromotionRuleException.invalid(
+                    "A promotion's scope names at least one item, variant or family.")),
+            Map.entry("discount-limits-invalid", () -> PromotionRuleException.limitsInvalid(new BigDecimal("20"),
+                    new BigDecimal("10"))),
+            Map.entry("promotion-release-invalid", () -> PromotionRuleException.releaseInvalid(List.of(
+                    new PromotionReleaseError("SCOPE_NOT_IN_CATALOG", ID, "HH", "Promotion HH names what the "
+                            + "published catalog of the store does not sell: [" + OTHER + "].")))),
+            Map.entry("promotion-code-taken", () -> PromotionConflictException.codeTaken("HH")),
+            Map.entry("promotion-release-state", () -> PromotionConflictException.releaseState(ID,
+                    "cannot publish a DRAFT release, needs [VALIDATED]")),
+            Map.entry("no-published-promotions", () -> PromotionsNotFoundException.noPublished(ID)),
             Map.entry("unit-dimension-mismatch", () -> InventoryRuleException.dimensionMismatch("kg", "l")),
             Map.entry("unknown-unit", () -> InventoryRuleException.unknownUnit("lb")),
             Map.entry("warehouse-store-mismatch", () -> InventoryRuleException.warehouseStoreMismatch(ID, OTHER)),
@@ -645,6 +661,28 @@ class CodedErrorContractTest {
     }
 
     @Test
+    void promotionsRules() throws Exception {
+        expect("promotion-invalid", 422, "PROMOTION_INVALID",
+                "A promotion's scope names at least one item, variant or family.", "");
+        expect("discount-limits-invalid", 422, "DISCOUNT_LIMITS_INVALID",
+                "The discount limits 20 % free and 10 % maximum need 0 <= free <= maximum <= 100.", "");
+        expect("promotion-release-invalid", 422, "PROMOTION_RELEASE_INVALID",
+                "The promotions cannot be published: 1 problem(s).",
+                ",\"errors\":[{\"code\":\"SCOPE_NOT_IN_CATALOG\",\"promotionId\":\"" + ID
+                        + "\",\"promotionCode\":\"HH\",\"message\":\"Promotion HH names what the published "
+                        + "catalog of the store does not sell: [" + OTHER + "].\"}]");
+    }
+
+    @Test
+    void promotionsConflictsAndAbsence() throws Exception {
+        expect("promotion-code-taken", 409, "PROMOTION_CODE_TAKEN", "The promotion code HH is taken.", "");
+        expect("promotion-release-state", 409, "PROMOTION_RELEASE_STATE", "Promotion release " + ID
+                + ": cannot publish a DRAFT release, needs [VALIDATED]", "");
+        expect("no-published-promotions", 404, "NO_PUBLISHED_PROMOTIONS",
+                "Store " + ID + " has no published promotions.", "");
+    }
+
+    @Test
     void inventoryRules() throws Exception {
         expect("unit-dimension-mismatch", 422, "UNIT_DIMENSION_MISMATCH", "The unit kg cannot be converted to l.", "");
         expect("unknown-unit", 422, "UNKNOWN_UNIT", "There is no stock unit lb.", "");
@@ -738,6 +776,7 @@ class CodedErrorContractTest {
 
     private void expect(String name, int status, String code, String detail, String extra) throws Exception {
         String title = switch (status) {
+            case 404 -> "Not Found";
             case 409 -> "Conflict";
             case 422 -> "Unprocessable Content";
             case 429 -> "Too Many Requests";
