@@ -111,10 +111,26 @@ public class StockCount {
         return count;
     }
 
-    public void start(Instant now) {
+    /**
+     * @param onHand the items with a non-zero balance in the warehouse and their base unit: a REGULAR ALL count
+     *               gets a line for each, so none is left uncounted (COUNT_INCOMPLETE until counted)
+     */
+    public void start(Instant now, Map<UUID, String> onHand) {
         require(CountStatus.DRAFT, "start");
         status = CountStatus.IN_PROGRESS;
         startedAt = now;
+        if (listsOnHandAtStart()) {
+            onHand.forEach((item, unit) -> {
+                if (line(item).isEmpty()) {
+                    lines.add(StockCountLine.of(item, unit));
+                }
+            });
+        }
+    }
+
+    /** A REGULAR ALL count starts with a line for every item on hand; a LIST names its items, an opening has none. */
+    public boolean listsOnHandAtStart() {
+        return kind == CountKind.REGULAR && scope == CountScope.ALL;
     }
 
     /**
@@ -123,12 +139,13 @@ public class StockCount {
      * @param unitCost an opening's cost per base unit: required when something was counted, refused on a regular
      *                 count
      * @throws InventoryNotFoundException when a LIST count does not name the item
+     * @throws CountRuleException COUNTED_AT_OUT_OF_RANGE before the count started or in the future
      */
     public StockCountLine record(UUID stockItemId, String baseUnit, BigDecimal quantity, Instant countedAt,
                                  BigDecimal unitCost, String actorKind, UUID actorId, Instant now) {
         require(CountStatus.IN_PROGRESS, "record a line");
-        if (countedAt.isAfter(now)) {
-            throw CountRuleException.countedAtInFuture(countedAt);
+        if (countedAt.isBefore(startedAt) || countedAt.isAfter(now)) {
+            throw CountRuleException.countedAtOutOfRange(countedAt, startedAt, now);
         }
         if (kind == CountKind.REGULAR && unitCost != null) {
             throw CountRuleException.unitCostOpeningOnly();
@@ -200,6 +217,11 @@ public class StockCount {
         }
         status = CountStatus.CANCELLED;
         cancelledAt = now;
+    }
+
+    /** Whether the actor ({@code kind}, id as recorded on lines) counted any line of this count. */
+    public boolean recordedBy(String actorKind, UUID actorId) {
+        return lines.stream().anyMatch(line -> line.wasCountedBy(actorKind, actorId));
     }
 
     /** The latest cut-off of the count's lines. */

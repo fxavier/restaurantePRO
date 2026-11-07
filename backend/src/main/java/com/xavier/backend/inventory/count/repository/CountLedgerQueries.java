@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -50,12 +51,63 @@ public class CountLedgerQueries {
         return quantities;
     }
 
-    /** Whether {@code warehouseId} has any movement that occurred at or before {@code instant}. */
-    public boolean hasMovementAtOrBefore(UUID warehouseId, Instant instant) {
+    /**
+     * Whether {@code warehouseId} has a movement at or before {@code instant} that is not consumption: sales
+     * ({@code ORDER_LINE}, {@code ORDER_LINE_COMPONENT}) and their voids ({@code VOID}: reversals, waste and the
+     * revaluations they bring) happen live once the store is active and are absorbed by the opening (D122
+     * amendment); a receipt, transfer, preparation, manual movement or count is a fact the opening must precede.
+     */
+    public boolean hasNonConsumptionMovementAtOrBefore(UUID warehouseId, Instant instant) {
         return jdbc.sql("""
                         SELECT EXISTS (SELECT 1 FROM inventory.stock_movement
-                                       WHERE warehouse_id = ? AND occurred_at <= ?)""")
+                                       WHERE warehouse_id = ? AND occurred_at <= ?
+                                         AND source_type NOT IN ('ORDER_LINE', 'ORDER_LINE_COMPONENT', 'VOID'))""")
                 .params(warehouseId, Timestamp.from(instant)).query(Boolean.class).single();
+    }
+
+    /** The items with a non-zero balance in {@code warehouseId}, with their base unit, by item code. */
+    public Map<UUID, String> onHand(UUID warehouseId) {
+        Map<UUID, String> items = new LinkedHashMap<>();
+        jdbc.sql("""
+                        SELECT b.stock_item_id, i.base_unit FROM inventory.stock_balance b
+                        JOIN inventory.stock_item i ON i.id = b.stock_item_id
+                        WHERE b.warehouse_id = ? AND b.quantity <> 0
+                        ORDER BY i.code""")
+                .param(warehouseId)
+                .query(rs -> {
+                    items.put(rs.getObject("stock_item_id", UUID.class), rs.getString("base_unit"));
+                });
+        return items;
+    }
+
+    /**
+     * How many consumption publications of {@code storeId} are not completed yet for a round confirmed (or a void
+     * made) at or before {@code cutOff}: those could still move the expected quantity. The prefix is served by the
+     * partial index of V1006 ({@code completion_date IS NULL}, {@code listener_id text_pattern_ops}); the JSON
+     * filter only reads the few pending rows. A publication without the fields counts (conservative).
+     */
+    public long pendingConsumption(String listenerPrefix, UUID storeId, Instant cutOff) {
+        return jdbc.sql("""
+                        SELECT count(*) FROM (
+                            SELECT serialized_event::jsonb AS event FROM event_publication
+                            WHERE completion_date IS NULL AND listener_id LIKE :prefix) p
+                        WHERE coalesce(p.event ->> 'storeId', :store) = :store
+                          AND coalesce((coalesce(p.event ->> 'confirmedAt', p.event ->> 'at'))::timestamptz,
+                                       :cutOff) <= :cutOff""")
+                .param("prefix", listenerPrefix + "%").param("store", storeId.toString())
+                .param("cutOff", Timestamp.from(cutOff))
+                .query(Long.class).single();
+    }
+
+    /**
+     * The open consumption exceptions of {@code storeId} raised for a sale at or before {@code cutOff}. The table
+     * records when the exception was raised ({@code created_at}), at or after the confirmation it is about.
+     */
+    public long openExceptions(UUID storeId, Instant cutOff) {
+        return jdbc.sql("""
+                        SELECT count(*) FROM inventory.consumption_exception
+                        WHERE store_id = ? AND resolved_at IS NULL AND created_at <= ?""")
+                .params(storeId, Timestamp.from(cutOff)).query(Long.class).single();
     }
 
     /**

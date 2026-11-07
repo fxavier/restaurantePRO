@@ -14,7 +14,7 @@ import com.xavier.backend.inventory.InventoryFixtures;
 import com.xavier.backend.inventory.InventoryModuleTest;
 import com.xavier.backend.inventory.count.CountFixtures;
 import com.xavier.backend.inventory.service.StockLedger;
-import java.time.Clock;
+import com.xavier.backend.organization.MutableClock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
@@ -50,7 +50,7 @@ class RejectedCountKeptTest {
     JdbcClient jdbc;
 
     @Autowired
-    Clock clock;
+    MutableClock clock;
 
     CountFixtures counts;
     UUID store;
@@ -60,14 +60,14 @@ class RejectedCountKeptTest {
 
     @BeforeEach
     void submittedCount() throws Exception {
-        counts = new CountFixtures(mvc, ledger, tx, jdbc);
+        counts = new CountFixtures(mvc, ledger, tx, jdbc, clock);
         store = fixtures.newActiveStore();
         warehouse = fixtures.newWarehouse(store, "ALLOW");
         item = fixtures.newStockItem("un");
         Instant now = clock.instant().truncatedTo(ChronoUnit.SECONDS);
         counts.receipt(warehouse, item, "10", "2", now.minusSeconds(3600));
         count = counts.startedCount(store, warehouse, "REGULAR");
-        counts.line(store, count, item, "6", now, null).andExpect(status().isOk());
+        counts.line(store, count, item, "6", counts.at(1), null).andExpect(status().isOk());
         counts.command(store, count, "submit", Permission.INVENTORY_COUNT).andExpect(status().isOk());
     }
 
@@ -94,6 +94,12 @@ class RejectedCountKeptTest {
     void theDatabaseKeepsADecidedCountAndSubmittedLinesAsTheyAre() throws Exception {
         assertThatThrownBy(() -> jdbc.sql("UPDATE inventory.stock_count_line SET counted_quantity = 9 WHERE count_id = ?")
                 .param(count).update()).hasMessageContaining("immutable");
+        assertThatThrownBy(() -> jdbc.sql("""
+                        UPDATE inventory.stock_count SET status = 'CANCELLED', cancelled_at = now() WHERE id = ?""")
+                .param(count).update()).hasMessageContaining("approved or rejected");
+        assertThatThrownBy(() -> jdbc.sql("""
+                        UPDATE inventory.stock_count SET status = 'IN_PROGRESS', submitted_at = NULL WHERE id = ?""")
+                .param(count).update()).hasMessageContaining("approved or rejected");
         reject("{\"reason\": \"recount\"}", Permission.INVENTORY_COUNT_APPROVE).andExpect(status().isOk());
 
         assertThatThrownBy(() -> jdbc.sql("UPDATE inventory.stock_count SET reject_reason = 'other' WHERE id = ?")

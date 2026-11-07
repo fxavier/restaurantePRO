@@ -14,7 +14,7 @@ import com.xavier.backend.inventory.InventoryFixtures;
 import com.xavier.backend.inventory.InventoryModuleTest;
 import com.xavier.backend.inventory.count.CountFixtures;
 import com.xavier.backend.inventory.service.StockLedger;
-import java.time.Clock;
+import com.xavier.backend.organization.MutableClock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -52,7 +52,7 @@ class StockCountHttpTest {
     JdbcClient jdbc;
 
     @Autowired
-    Clock clock;
+    MutableClock clock;
 
     CountFixtures counts;
     UUID store;
@@ -62,7 +62,7 @@ class StockCountHttpTest {
 
     @BeforeEach
     void liveStore() throws Exception {
-        counts = new CountFixtures(mvc, ledger, tx, jdbc);
+        counts = new CountFixtures(mvc, ledger, tx, jdbc, clock);
         store = fixtures.newActiveStore();
         warehouse = fixtures.newWarehouse(store, "ALLOW");
         flour = fixtures.newStockItem("g");
@@ -96,13 +96,17 @@ class StockCountHttpTest {
                 .andExpect(jsonPath("$.lines[0].countedQuantity").value(1500.0))
                 .andExpect(jsonPath("$.lines[0].unit").value("g"))
                 .andExpect(jsonPath("$.lines[0].countedAt").value(clock.instant().toString()));
-        counts.line(store, count, flour, "1", now.plusSeconds(3600), null).andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.code").value("COUNTED_AT_IN_FUTURE"));
-        counts.line(store, count, flour, "1", now, "2").andExpect(status().isUnprocessableContent())
+        counts.line(store, count, flour, "1", clock.instant().plusSeconds(1), null)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("COUNTED_AT_OUT_OF_RANGE"));
+        counts.line(store, count, flour, "1", counts.startedAt().minusSeconds(1), null)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("COUNTED_AT_OUT_OF_RANGE"));
+        counts.line(store, count, flour, "1", counts.at(1), "2").andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("UNIT_COST_OPENING_ONLY"));
         counts.command(store, count, "submit", Permission.INVENTORY_COUNT).andExpect(status().isOk());
 
-        counts.line(store, count, flour, "2", now, null).andExpect(status().isConflict())
+        counts.line(store, count, flour, "2", counts.at(1), null).andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("COUNT_STATE"));
         counts.command(store, count, "cancel", Permission.INVENTORY_COUNT).andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("COUNT_STATE"));
@@ -111,16 +115,41 @@ class StockCountHttpTest {
     @Test
     void approvingNeedsInventoryCountApproveAndAnUnknownCountIsNotFoundFirst() throws Exception {
         UUID count = counts.startedCount(store, warehouse, "REGULAR");
-        counts.line(store, count, flour, "1", now, null).andExpect(status().isOk());
+        counts.line(store, count, flour, "1", counts.at(1), null).andExpect(status().isOk());
         counts.command(store, count, "submit", Permission.INVENTORY_COUNT).andExpect(status().isOk());
 
         counts.command(store, count, "approve", Permission.INVENTORY_COUNT).andExpect(status().isForbidden());
         counts.command(UUID.randomUUID(), count, "approve", Permission.INVENTORY_COUNT_APPROVE)
                 .andExpect(status().isForbidden());
+        counts.command(store, count, "approve", Permission.INVENTORY_COUNT_APPROVE)
+                .andExpect(status().isUnprocessableContent()).andExpect(jsonPath("$.code").value("SELF_APPROVAL"));
+        counts.approve(store, count).andExpect(status().isOk());
         counts.command(UUID.randomUUID(), UUID.randomUUID(), "approve", Permission.INVENTORY_COUNT_APPROVE)
                 .andExpect(status().isNotFound());
         mvc.perform(get(CountFixtures.COUNTS + "/" + count).with(account(UUID.randomUUID(), Permission.INVENTORY_VIEW)))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void aRegularAllCountStartsWithALineForEveryItemOnHandAndEachMustBeCounted() throws Exception {
+        UUID oil = fixtures.newStockItem("ml");
+        UUID gone = fixtures.newStockItem("un");
+        counts.receipt(warehouse, flour, "500", "1", clock.instant().minusSeconds(60));
+        counts.receipt(warehouse, oil, "3", "1", clock.instant().minusSeconds(60));
+        counts.receipt(warehouse, gone, "1", "1", clock.instant().minusSeconds(60));
+        counts.sale(warehouse, gone, "1", clock.instant().minusSeconds(30)); // balance row at zero: not listed
+
+        UUID count = counts.startedCount(store, warehouse, "REGULAR");
+
+        mvc.perform(get(CountFixtures.COUNTS + "/" + count).with(account(store, Permission.INVENTORY_VIEW)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.lines.length()").value(2))
+                .andExpect(jsonPath("$.lines[?(@.stockItemId == '%s')].countedQuantity".formatted(oil))
+                        .value(org.hamcrest.Matchers.contains(org.hamcrest.Matchers.nullValue())));
+        counts.line(store, count, flour, "500", counts.at(1), null).andExpect(status().isOk());
+        counts.command(store, count, "submit", Permission.INVENTORY_COUNT).andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("COUNT_INCOMPLETE"));
+        counts.line(store, count, oil, "3", counts.at(2), null).andExpect(status().isOk());
+        counts.command(store, count, "submit", Permission.INVENTORY_COUNT).andExpect(status().isOk());
     }
 
     @Test
@@ -134,10 +163,10 @@ class StockCountHttpTest {
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.lines.length()").value(2))
                 .andReturn().getResponse().getContentAsString();
         UUID count = InventoryFixtures.id(body);
-        counts.command(store, count, "start", Permission.INVENTORY_COUNT).andExpect(status().isOk());
+        counts.start(store, count);
 
-        counts.line(store, count, other, "1", now, null).andExpect(status().isNotFound());
-        counts.line(store, count, flour, "1", now, null).andExpect(status().isOk());
+        counts.line(store, count, other, "1", counts.at(1), null).andExpect(status().isNotFound());
+        counts.line(store, count, flour, "1", counts.at(1), null).andExpect(status().isOk());
         counts.command(store, count, "submit", Permission.INVENTORY_COUNT).andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("COUNT_INCOMPLETE"));
     }
@@ -146,10 +175,10 @@ class StockCountHttpTest {
     void theDivergencesReportListsTheAdjustmentsOfApprovedCounts() throws Exception {
         counts.receipt(warehouse, flour, "10", "2", now.minusSeconds(3600));
         UUID count = counts.startedCount(store, warehouse, "REGULAR");
-        counts.line(store, count, flour, "9", now, null).andExpect(status().isOk());
+        counts.line(store, count, flour, "9", counts.at(1), null).andExpect(status().isOk());
         counts.command(store, count, "submit", Permission.INVENTORY_COUNT).andExpect(status().isOk());
         counts.approve(store, count).andExpect(status().isOk());
-        LocalDate day = LocalDate.ofInstant(now.minusSeconds(5 * 3600), ZoneId.of("Africa/Maputo"));
+        LocalDate day = LocalDate.ofInstant(counts.at(1).minusSeconds(5 * 3600), ZoneId.of("Africa/Maputo"));
 
         mvc.perform(get("/api/v1/backoffice/inventory/reports/count-divergences")
                         .param("storeId", store.toString()).param("from", day.minusDays(1).toString())

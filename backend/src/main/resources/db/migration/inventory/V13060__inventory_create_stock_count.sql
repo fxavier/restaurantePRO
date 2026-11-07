@@ -109,13 +109,17 @@ CREATE TRIGGER stock_count_line_guard
     FOR EACH ROW
 EXECUTE FUNCTION inventory.guard_stock_count_line();
 
--- A decided or cancelled count is final; counts are never deleted.
+-- A decided or cancelled count is final, a SUBMITTED one is only decided; counts are never deleted.
 CREATE FUNCTION inventory.guard_stock_count() RETURNS trigger
     LANGUAGE plpgsql AS
 $$
 BEGIN
     IF TG_OP = 'DELETE' OR OLD.status IN ('APPROVED', 'REJECTED', 'CANCELLED') THEN
         RAISE EXCEPTION 'inventory.stock_count: a % count is final (%)', OLD.status, TG_OP
+            USING ERRCODE = 'restrict_violation';
+    END IF;
+    IF OLD.status = 'SUBMITTED' AND NEW.status NOT IN ('SUBMITTED', 'APPROVED', 'REJECTED') THEN
+        RAISE EXCEPTION 'inventory.stock_count: a SUBMITTED count is approved or rejected, not %', NEW.status
             USING ERRCODE = 'restrict_violation';
     END IF;
     RETURN NEW;

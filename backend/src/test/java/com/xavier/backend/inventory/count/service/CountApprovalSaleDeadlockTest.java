@@ -10,8 +10,8 @@ import com.xavier.backend.inventory.model.BalanceKey;
 import com.xavier.backend.inventory.model.MovementType;
 import com.xavier.backend.inventory.model.dto.PostMovement;
 import com.xavier.backend.inventory.service.StockLedger;
+import com.xavier.backend.organization.MutableClock;
 import java.math.BigDecimal;
-import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -61,7 +61,7 @@ class CountApprovalSaleDeadlockTest {
     JdbcClient jdbc;
 
     @Autowired
-    Clock clock;
+    MutableClock clock;
 
     CountFixtures counts;
     UUID store;
@@ -72,7 +72,7 @@ class CountApprovalSaleDeadlockTest {
 
     @BeforeEach
     void tenOfEachInLockOrder() throws Exception {
-        counts = new CountFixtures(mvc, ledger, tx, jdbc);
+        counts = new CountFixtures(mvc, ledger, tx, jdbc, clock);
         store = fixtures.newActiveStore();
         warehouse = fixtures.newWarehouse(store, "ALLOW");
         List<BalanceKey> keys = new ArrayList<>(List.of(new BalanceKey(warehouse, fixtures.newStockItem("un")),
@@ -92,7 +92,7 @@ class CountApprovalSaleDeadlockTest {
      */
     @Test
     void anApprovalWaitingForASaleHoldsNothingTheSaleNeedsNext() throws Exception {
-        UUID count = submittedCount(now.minus(Duration.ofMinutes(10)));
+        UUID count = submittedCount();
         CountDownLatch saleHoldsFirst = new CountDownLatch(1);
         CountDownLatch saleMayContinue = new CountDownLatch(1);
         AtomicInteger salePid = new AtomicInteger();
@@ -128,7 +128,7 @@ class CountApprovalSaleDeadlockTest {
         int rounds = 5;
         try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
             for (int i = 0; i < rounds; i++) {
-                UUID count = submittedCount(now.minus(Duration.ofMinutes(10)));
+                UUID count = submittedCount();
                 CountDownLatch start = new CountDownLatch(1);
                 Future<Integer> approval = pool.submit(() -> {
                     await(start);
@@ -143,13 +143,16 @@ class CountApprovalSaleDeadlockTest {
                 sale.get(60, TimeUnit.SECONDS);
             }
         }
-        // the first round adjusts 10 to 8 at the cut-off, the later ones find 8 there; every sale is after it
-        assertThat(counts.balance(warehouse, first)).isEqualTo("3.000000|3.0000");
-        assertThat(counts.balance(warehouse, second)).isEqualTo("3.000000|3.0000");
+        // every round sets the stock at its cut-off to the 8 counted (the earlier rounds' sales are before it);
+        // the last round's sale is after it
+        assertThat(counts.balance(warehouse, first)).isEqualTo("7.000000|7.0000");
+        assertThat(counts.balance(warehouse, second)).isEqualTo("7.000000|7.0000");
     }
 
-    private UUID submittedCount(Instant countedAt) throws Exception {
+    /** Counted 10 minutes after its start; every sale below is at the clock, hours later. */
+    private UUID submittedCount() throws Exception {
         UUID count = counts.startedCount(store, warehouse, "REGULAR");
+        Instant countedAt = counts.at(10);
         counts.line(store, count, first, "8", countedAt, null);
         counts.line(store, count, second, "8", countedAt, null);
         counts.command(store, count, "submit", Permission.INVENTORY_COUNT);

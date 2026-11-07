@@ -25,9 +25,16 @@ public class CountRuleException extends BusinessRuleException {
                 "Count " + countId + " has no line, or a line not counted yet.");
     }
 
-    public static CountRuleException countedAtInFuture(Instant countedAt) {
-        return new CountRuleException(CountRule.COUNTED_AT_IN_FUTURE,
-                "A line cannot be counted in the future (" + countedAt + ").");
+    /** A line's cut-off lies between the count's start and now (D119 amendment). */
+    public static CountRuleException countedAtOutOfRange(Instant countedAt, Instant startedAt, Instant now) {
+        return new CountRuleException(CountRule.COUNTED_AT_OUT_OF_RANGE, "A line is counted between the count's "
+                + "start (" + startedAt + ") and now (" + now + "), not at " + countedAt + ".");
+    }
+
+    /** The approver counted a line of this count: approval is someone else's (§8.5 segregation, shared code). */
+    public static CountRuleException selfApproval(UUID countId) {
+        return new CountRuleException(CountRule.SELF_APPROVAL,
+                "Count " + countId + " was counted (in part) by its approver: another person approves it.");
     }
 
     public static CountRuleException unitCostOpeningOnly() {

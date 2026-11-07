@@ -315,13 +315,16 @@ class CodedErrorContractTest {
             Map.entry("stock-level-exists", () -> InventoryConflictException.levelExists(ID, OTHER)),
             Map.entry("opening-not-first", () -> CountRuleException.openingNotFirst(ID)),
             Map.entry("count-incomplete", () -> CountRuleException.incomplete(ID)),
-            Map.entry("counted-at-in-future", () -> CountRuleException.countedAtInFuture(
+            Map.entry("counted-at-out-of-range", () -> CountRuleException.countedAtOutOfRange(
+                    Instant.parse("2026-11-07T09:00:00Z"), Instant.parse("2026-11-07T10:00:00Z"),
                     Instant.parse("2026-11-07T12:00:00Z"))),
+            Map.entry("count-self-approval", () -> CountRuleException.selfApproval(ID)),
             Map.entry("unit-cost-opening-only", CountRuleException::unitCostOpeningOnly),
             Map.entry("count-scope-invalid", () -> CountRuleException.scopeInvalid(
                     "A LIST count names the stock items to count.")),
             Map.entry("count-state", () -> CountConflictException.state(ID, "SUBMITTED", "be cancelled")),
-            Map.entry("consumption-backlog", () -> CountConflictException.consumptionBacklog(3)),
+            Map.entry("consumption-backlog", () -> CountConflictException.consumptionBacklog(ID, 3)),
+            Map.entry("consumption-exceptions-open", () -> CountConflictException.consumptionExceptionsOpen(ID, 2)),
             Map.entry("live-count-exists", () -> CountConflictException.liveCountExists(ID)),
             Map.entry("loyalty-not-member", () -> LoyaltyRuleException.notMember(ID)),
             Map.entry("loyalty-suspended", () -> LoyaltyRuleException.suspended(ID)),
@@ -779,8 +782,10 @@ class CodedErrorContractTest {
                 + " already has stock movements or an opening count before this opening's cut-off.", "");
         expect("count-incomplete", 422, "COUNT_INCOMPLETE",
                 "Count " + ID + " has no line, or a line not counted yet.", "");
-        expect("counted-at-in-future", 422, "COUNTED_AT_IN_FUTURE",
-                "A line cannot be counted in the future (2026-11-07T12:00:00Z).", "");
+        expect("counted-at-out-of-range", 422, "COUNTED_AT_OUT_OF_RANGE", "A line is counted between the count's "
+                + "start (2026-11-07T10:00:00Z) and now (2026-11-07T12:00:00Z), not at 2026-11-07T09:00:00Z.", "");
+        expect("count-self-approval", 422, "SELF_APPROVAL", "Count " + ID
+                + " was counted (in part) by its approver: another person approves it.", "");
         expect("unit-cost-opening-only", 422, "UNIT_COST_OPENING_ONLY",
                 "A unit cost is entered on an opening count only: a regular count is valued at the average.", "");
         expect("count-scope-invalid", 422, "COUNT_SCOPE_INVALID", "A LIST count names the stock items to count.", "");
@@ -789,8 +794,11 @@ class CodedErrorContractTest {
     @Test
     void inventoryCountConflicts() throws Exception {
         expect("count-state", 409, "COUNT_STATE", "Count " + ID + " is SUBMITTED and cannot be cancelled.", "");
-        expect("consumption-backlog", 409, "CONSUMPTION_BACKLOG", "Stock consumption has 3 publication(s) still "
-                + "pending: approve the count once they are processed.", "");
+        expect("consumption-backlog", 409, "CONSUMPTION_BACKLOG", "Stock consumption of store " + ID + " has 3 "
+                + "publication(s) still pending up to the count's cut-off: approve the count once they are processed.",
+                "");
+        expect("consumption-exceptions-open", 409, "CONSUMPTION_EXCEPTIONS_OPEN", "Store " + ID + " has 2 open "
+                + "consumption exception(s) up to the count's cut-off: resolve them, then approve.", "");
         expect("live-count-exists", 409, "LIVE_COUNT_EXISTS", "Warehouse " + ID
                 + " already has a count that is not decided or cancelled.", "");
     }

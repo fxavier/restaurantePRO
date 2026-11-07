@@ -68,6 +68,10 @@ public class StockCountLine {
         return difference;
     }
 
+    boolean wasCountedBy(String actorKind, UUID actorId) {
+        return actorKind.equals(countedByActorKind) && actorId.equals(countedByActorId);
+    }
+
     public boolean isCounted() {
         return countedQuantity != null;
     }

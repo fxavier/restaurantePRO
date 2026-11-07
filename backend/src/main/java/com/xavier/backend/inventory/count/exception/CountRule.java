@@ -4,7 +4,8 @@ package com.xavier.backend.inventory.count.exception;
 public enum CountRule {
     OPENING_NOT_FIRST,
     COUNT_INCOMPLETE,
-    COUNTED_AT_IN_FUTURE,
+    COUNTED_AT_OUT_OF_RANGE,
     UNIT_COST_OPENING_ONLY,
-    COUNT_SCOPE_INVALID
+    COUNT_SCOPE_INVALID,
+    SELF_APPROVAL
 }

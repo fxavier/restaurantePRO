@@ -17,9 +17,16 @@ public class CountConflictException extends ConflictException {
     }
 
     /** D119: a round confirmed before a cut-off may not be consumed yet, so the expected quantity is not known. */
-    public static CountConflictException consumptionBacklog(long pending) {
-        return new CountConflictException("CONSUMPTION_BACKLOG", "Stock consumption has " + pending
-                + " publication(s) still pending: approve the count once they are processed.");
+    public static CountConflictException consumptionBacklog(UUID storeId, long pending) {
+        return new CountConflictException("CONSUMPTION_BACKLOG", "Stock consumption of store " + storeId + " has "
+                + pending + " publication(s) still pending up to the count's cut-off: approve the count once they "
+                + "are processed.");
+    }
+
+    /** D119 amendment: a sale before a cut-off could not be consumed, so the expected quantity is not known. */
+    public static CountConflictException consumptionExceptionsOpen(UUID storeId, long open) {
+        return new CountConflictException("CONSUMPTION_EXCEPTIONS_OPEN", "Store " + storeId + " has " + open
+                + " open consumption exception(s) up to the count's cut-off: resolve them, then approve.");
     }
 
     public static CountConflictException liveCountExists(UUID warehouseId) {

@@ -1,6 +1,5 @@
 package com.xavier.backend.inventory.count.service;
 
-import static com.xavier.backend.inventory.InventoryFixtures.ACCOUNT_ID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -12,8 +11,8 @@ import com.xavier.backend.inventory.count.CountFixtures;
 import com.xavier.backend.inventory.model.MovementType;
 import com.xavier.backend.inventory.model.dto.PostMovement;
 import com.xavier.backend.inventory.service.StockLedger;
+import com.xavier.backend.organization.MutableClock;
 import java.math.BigDecimal;
-import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -51,7 +50,7 @@ class CountApprovalOnceTest {
     JdbcClient jdbc;
 
     @Autowired
-    Clock clock;
+    MutableClock clock;
 
     CountFixtures counts;
     UUID store;
@@ -61,26 +60,26 @@ class CountApprovalOnceTest {
 
     @BeforeEach
     void submittedCountOneShort() throws Exception {
-        counts = new CountFixtures(mvc, ledger, tx, jdbc);
+        counts = new CountFixtures(mvc, ledger, tx, jdbc, clock);
         store = fixtures.newActiveStore();
         warehouse = fixtures.newWarehouse(store, "ALLOW");
         item = fixtures.newStockItem("un");
         Instant now = clock.instant().truncatedTo(ChronoUnit.SECONDS);
         counts.receipt(warehouse, item, "10", "2", now.minusSeconds(3600));
         count = counts.startedCount(store, warehouse, "REGULAR");
-        counts.line(store, count, item, "9", now, null).andExpect(status().isOk());
+        counts.line(store, count, item, "9", counts.at(1), null).andExpect(status().isOk());
         counts.command(store, count, "submit", Permission.INVENTORY_COUNT).andExpect(status().isOk());
     }
 
     @Test
     void aReplayedApprovalPostsOnce() throws Exception {
         String key = UUID.randomUUID().toString();
-        String first = counts.command(store, count, "approve", Permission.INVENTORY_COUNT_APPROVE, key)
+        String first = counts.approve(store, count, key)
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("APPROVED"))
-                .andExpect(jsonPath("$.decidedByAccountId").value(ACCOUNT_ID.toString()))
+                .andExpect(jsonPath("$.decidedByAccountId").value(CountFixtures.APPROVER_ID.toString()))
                 .andReturn().getResponse().getContentAsString();
 
-        String replay = counts.command(store, count, "approve", Permission.INVENTORY_COUNT_APPROVE, key)
+        String replay = counts.approve(store, count, key)
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
 
         assertThat(replay).isEqualTo(first);
@@ -94,7 +93,8 @@ class CountApprovalOnceTest {
 
         counts.approve(store, count).andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("COUNT_STATE"));
-        counts.command(store, count, "reject", Permission.INVENTORY_COUNT_APPROVE).andExpect(status().isBadRequest());
+        counts.decide(store, count, "reject", UUID.randomUUID().toString(), "{\"reason\": \"late\"}")
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("COUNT_STATE"));
 
         assertThat(counts.movementsOf(count)).hasSize(1);
         assertThat(counts.balance(warehouse, item)).isEqualTo("9.000000|18.0000");

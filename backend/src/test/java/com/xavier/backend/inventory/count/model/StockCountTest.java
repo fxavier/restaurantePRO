@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 class StockCountTest {
 
     static final Instant NOW = Instant.parse("2026-11-07T12:00:00Z");
+    static final Instant START = NOW.minusSeconds(3600);
     static final UUID STORE = UUID.randomUUID();
     static final UUID WAREHOUSE = UUID.randomUUID();
     static final UUID FLOUR = UUID.randomUUID();
@@ -56,10 +57,39 @@ class StockCountTest {
     }
 
     @Test
-    void aLineIsNeverCountedInTheFuture() {
+    void aLineIsCountedBetweenTheStartOfTheCountAndNow() {
         StockCount count = started(CountKind.REGULAR, CountScope.ALL, Map.of());
         assertCode(() -> count.record(FLOUR, "g", BigDecimal.ONE, NOW.plusSeconds(1), null, "ACCOUNT", null, NOW),
-                "COUNTED_AT_IN_FUTURE");
+                "COUNTED_AT_OUT_OF_RANGE");
+        assertCode(() -> count.record(FLOUR, "g", BigDecimal.ONE, START.minusSeconds(1), null, "ACCOUNT", null, NOW),
+                "COUNTED_AT_OUT_OF_RANGE");
+        count.record(FLOUR, "g", BigDecimal.ONE, START, null, "ACCOUNT", null, NOW);
+    }
+
+    @Test
+    void aRegularAllCountStartsWithALineForEveryItemOnHandAndAnOpeningWithNone() {
+        StockCount regular = StockCount.create(STORE, WAREHOUSE, CountKind.REGULAR, CountScope.ALL, Map.of(), null,
+                START);
+        regular.start(START, Map.of(FLOUR, "g", OIL, "ml"));
+        assertThat(regular.getLines()).extracting(StockCountLine::getStockItemId).containsExactlyInAnyOrder(FLOUR,
+                OIL);
+        regular.record(FLOUR, "g", BigDecimal.ONE, NOW, null, "ACCOUNT", null, NOW);
+        assertCode(() -> regular.submit(NOW), "COUNT_INCOMPLETE");
+
+        StockCount opening = StockCount.create(STORE, WAREHOUSE, CountKind.OPENING, CountScope.ALL, Map.of(), null,
+                START);
+        opening.start(START, Map.of(FLOUR, "g"));
+        assertThat(opening.getLines()).isEmpty();
+    }
+
+    @Test
+    void aCountKnowsWhoCountedItsLines() {
+        UUID counter = UUID.randomUUID();
+        StockCount count = started(CountKind.REGULAR, CountScope.ALL, Map.of());
+        count.record(FLOUR, "g", BigDecimal.ONE, NOW, null, "ACCOUNT", counter, NOW);
+        assertThat(count.recordedBy("ACCOUNT", counter)).isTrue();
+        assertThat(count.recordedBy("ACCOUNT", UUID.randomUUID())).isFalse();
+        assertThat(count.recordedBy("EMPLOYEE", counter)).isFalse();
     }
 
     @Test
@@ -121,15 +151,15 @@ class StockCountTest {
     @Test
     void aLiveCountMayBeCancelledButNotStartedTwice() {
         StockCount count = started(CountKind.REGULAR, CountScope.ALL, Map.of());
-        assertCode(() -> count.start(NOW), "COUNT_STATE");
+        assertCode(() -> count.start(NOW, Map.of()), "COUNT_STATE");
         count.cancel(NOW);
         assertThat(count.getStatus()).isEqualTo(CountStatus.CANCELLED);
-        assertCode(() -> count.start(NOW), "COUNT_STATE");
+        assertCode(() -> count.start(NOW, Map.of()), "COUNT_STATE");
     }
 
     private static StockCount started(CountKind kind, CountScope scope, Map<UUID, String> listed) {
-        StockCount count = StockCount.create(STORE, WAREHOUSE, kind, scope, listed, null, NOW);
-        count.start(NOW);
+        StockCount count = StockCount.create(STORE, WAREHOUSE, kind, scope, listed, null, START);
+        count.start(START, Map.of());
         return count;
     }
 

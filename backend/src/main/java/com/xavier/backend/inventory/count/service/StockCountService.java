@@ -13,6 +13,7 @@ import com.xavier.backend.inventory.count.model.dto.CountLineRequest;
 import com.xavier.backend.inventory.count.model.dto.CountRequest;
 import com.xavier.backend.inventory.count.model.dto.CountView;
 import com.xavier.backend.inventory.count.model.dto.RejectCountRequest;
+import com.xavier.backend.inventory.count.repository.CountLedgerQueries;
 import com.xavier.backend.inventory.count.repository.StockCountRepository;
 import com.xavier.backend.inventory.exception.InventoryNotFoundException;
 import com.xavier.backend.inventory.exception.InventoryRuleException;
@@ -35,7 +36,7 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Counting (D119): create, start, record lines, submit, reject and cancel, with {@code INVENTORY_COUNT} in the
  * warehouse's store ({@code INVENTORY_COUNT_APPROVE} to reject). A regular count needs a live store (422
- * INVENTORY_NOT_ACTIVE); an opening count is how a store goes live. Commands authorize on the count's store first,
+ * INVENTORY_NOT_ACTIVE); starting an opening count is how a store goes live. Commands authorize on the count's store first,
  * then lock its row, so lines and status changes serialize. Approval is {@link CountApprovalService}.
  */
 @Service
@@ -44,6 +45,7 @@ public class StockCountService {
     static final String ENTITY = "StockCount";
 
     private final StockCountRepository counts;
+    private final CountLedgerQueries ledgerQueries;
     private final StockItemRepository items;
     private final Units units;
     private final InventoryScope scope;
@@ -52,10 +54,11 @@ public class StockCountService {
     private final AuditLog auditLog;
     private final Clock clock;
 
-    StockCountService(StockCountRepository counts, StockItemRepository items, Units units, InventoryScope scope,
+    StockCountService(StockCountRepository counts, CountLedgerQueries ledgerQueries, StockItemRepository items, Units units, InventoryScope scope,
                       ActivationService activations, AccessPolicy accessPolicy, AuditLog auditLog,
                       Clock clock) {
         this.counts = counts;
+        this.ledgerQueries = ledgerQueries;
         this.items = items;
         this.units = units;
         this.scope = scope;
@@ -85,11 +88,25 @@ public class StockCountService {
         return view(count);
     }
 
+    /**
+     * Starts counting. A REGULAR ALL count gets a line for every item on hand. Starting an OPENING count makes the
+     * store live from that instant if it is not yet (D122 amendment): sales are consumed from then on, and the
+     * opening absorbs those before each line's cut-off.
+     */
     @Transactional
     public CountView start(UUID id) {
         StockCount count = lockAuthorized(id, Permission.INVENTORY_COUNT);
-        count.start(clock.instant());
-        return saved("STOCK_COUNT_STARTED", count);
+        Instant now = clock.instant();
+        count.start(now, count.listsOnHandAtStart() ? ledgerQueries.onHand(count.getWarehouseId()) : Map.of());
+        CountView view = saved("STOCK_COUNT_STARTED", count);
+        UUID accountId = accessPolicy.current().userId();
+        if (count.getKind() == CountKind.OPENING
+                && ledgerQueries.activateIfAbsent(count.getStoreId(), now, accountId, now)) {
+            auditLog.recordAsCurrentActor("INVENTORY_ACTIVATED", "InventoryActivation",
+                    count.getStoreId().toString(), count.getStoreId(), null, null,
+                    Map.of("activeFrom", now.toString(), "openingCountId", id.toString()));
+        }
+        return view;
     }
 
     /** Records what was counted of one item (again, while IN_PROGRESS). Quantities are converted to the base unit. */
@@ -101,9 +118,8 @@ public class StockCountService {
         Instant now = clock.instant();
         Instant countedAt = request.countedAt() == null ? now : request.countedAt();
         Actor actor = accessPolicy.current();
-        UUID actorId = actor.kind() == ActorKind.EMPLOYEE ? actor.employeeId() : actor.userId();
         StockCountLine line = count.record(item.getId(), item.getBaseUnit(), quantity, countedAt, request.unitCost(),
-                actor.kind().name(), actorId, now);
+                actor.kind().name(), recordedId(actor), now);
         StockCount saved = counts.saveAndFlush(count);
         Map<String, Object> details = new HashMap<>();
         details.put("stockItemId", item.getId().toString());
@@ -144,6 +160,14 @@ public class StockCountService {
     public CountView get(UUID id) {
         accessPolicy.require(Permission.INVENTORY_VIEW, storeOf(id));
         return view(counts.findById(id).orElseThrow(() -> new InventoryNotFoundException(ENTITY, id)));
+    }
+
+    /**
+     * The id a line records for its counter: the account for a BackOffice session, the employee for a POS one
+     * ({@link Actor#userId()} equals the employee id then), so the approver is compared on the same key.
+     */
+    static UUID recordedId(Actor actor) {
+        return actor.kind() == ActorKind.EMPLOYEE ? actor.employeeId() : actor.userId();
     }
 
     private CountView saved(String action, StockCount count) {

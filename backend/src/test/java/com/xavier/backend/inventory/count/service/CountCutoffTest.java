@@ -9,7 +9,7 @@ import com.xavier.backend.inventory.InventoryFixtures;
 import com.xavier.backend.inventory.InventoryModuleTest;
 import com.xavier.backend.inventory.count.CountFixtures;
 import com.xavier.backend.inventory.service.StockLedger;
-import java.time.Clock;
+import com.xavier.backend.organization.MutableClock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -44,7 +44,7 @@ class CountCutoffTest {
     JdbcClient jdbc;
 
     @Autowired
-    Clock clock;
+    MutableClock clock;
 
     CountFixtures counts;
     UUID store;
@@ -55,7 +55,7 @@ class CountCutoffTest {
 
     @BeforeEach
     void stock() throws Exception {
-        counts = new CountFixtures(mvc, ledger, tx, jdbc);
+        counts = new CountFixtures(mvc, ledger, tx, jdbc, clock);
         store = fixtures.newActiveStore();
         warehouse = fixtures.newWarehouse(store, "ALLOW");
         flour = fixtures.newStockItem("un");
@@ -69,10 +69,10 @@ class CountCutoffTest {
     void eachLineIsSettledAtItsOwnCutOffAndALaterSaleIsNotCountedAgainstIt() throws Exception {
         counts.sale(warehouse, flour, "1", ago(120));
         UUID count = counts.startedCount(store, warehouse, "REGULAR");
-        counts.line(store, count, flour, "7", ago(90), null).andExpect(status().isOk());
-        counts.line(store, count, oil, "4", ago(30), null).andExpect(status().isOk());
-        counts.sale(warehouse, flour, "2", ago(60)); // after flour's cut-off, before oil's
-        counts.sale(warehouse, oil, "1", ago(60));   // before oil's cut-off: the 4 counted already miss it
+        counts.line(store, count, flour, "7", counts.at(30), null).andExpect(status().isOk());
+        counts.line(store, count, oil, "4", counts.at(90), null).andExpect(status().isOk());
+        counts.sale(warehouse, flour, "2", counts.at(60)); // after flour's cut-off, before oil's
+        counts.sale(warehouse, oil, "1", counts.at(60));   // before oil's cut-off: the 4 counted already miss it
         counts.command(store, count, "submit", Permission.INVENTORY_COUNT).andExpect(status().isOk());
 
         counts.approve(store, count).andExpect(status().isOk())
@@ -83,7 +83,7 @@ class CountCutoffTest {
                 .andExpect(jsonPath("$.lines[?(@.stockItemId == '%s')].difference".formatted(oil)).value(0.0));
 
         assertThat(counts.movementsOf(count)).containsExactly(
-                flour + " COUNT_ADJUSTMENT -2.000000 2.000000 " + ago(90).toString().replace("Z", ""));
+                flour + " COUNT_ADJUSTMENT -2.000000 2.000000 " + counts.at(30).toString().replace("Z", ""));
         assertThat(counts.balance(warehouse, flour)).isEqualTo("5.000000|10.0000");
         assertThat(counts.balance(warehouse, oil)).isEqualTo("4.000000|16.0000");
     }
