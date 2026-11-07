@@ -37,6 +37,7 @@ After the spec, read `CLAUDE.md`, then use Glob and Read to check what code actu
   - Frontends: two React apps (POS and BackOffice) in one workspace, sharing a UI library.
   - Messaging: no Kafka in the initial scope.
 - **Modules (§6).** `organization`, `identity`, `dining`, `catalog`, `promotions`, `customers`, `orders`, `production`, `settlement`, `fiscal`, `cash`, `inventory`, `reporting`, `audit`.
+  - Plus, by decision: `access` (authorization primitives: `Permission`, `Actor`, `AccessPolicy`, `IdempotentRequests`; depends on `shared` only; usable by every module; `identity` only builds the `Actor`), `shared` (OPEN infrastructure) and `config` (cross-cutting wiring). See docs/adr and docs/architecture/backend-conventions.md.
   - Ownership follows §8.1 exactly. Do not create duplicate entities per interface: "Finance", "Devices" and "Payments & Billing" are UI groupings, not modules.
   - Dependency direction: `settlement` coordinates closing by calling the public interfaces of `orders`, `cash` and `fiscal`. `orders` must not depend on `settlement`, and `cash` must not depend on `orders`. `production`, `inventory` and `reporting` consume facts through persisted mechanisms.
   - Use API/application/domain/infrastructure layering only where the complexity is real. `shared` holds stable technical types only.

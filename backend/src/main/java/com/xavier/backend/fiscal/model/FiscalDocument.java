@@ -65,6 +65,7 @@ public class FiscalDocument {
     static final int MAX_ERROR_LENGTH = 1000;
     private static final int RATE_SCALE = 4;
     private static final int QUANTITY_SCALE = 3;
+    private static final int DISCOUNT_LABEL_LENGTH = 80;
     /** The D68-amendment bound of an allocated line, in minor units (settlement's guard keeps every share inside). */
     private static final int ALLOCATED_GROSS_UNITS = 1;
     private static final int ALLOCATED_NET_UNITS = 2;
@@ -582,12 +583,13 @@ public class FiscalDocument {
             throw new InvalidSaleDraftException(where + "net + tax must equal gross");
         }
         BigDecimal rate = rate(line.taxRatePercent());
+        String label = discount(where, line, currency);
         Money expectedGross = line.unitPrice().times(quantity);
         Money expectedNet = netOf(line.gross(), rate);
         if (allocated) {
             requireAllocated(where, line, expectedGross, expectedNet, currency);
             return new FiscalDocumentLine(lineNo, line.sourceLineId(), description, quantity, line.unitPrice(),
-                    rate, line.gross(), line.net(), line.tax());
+                    rate, line.gross(), line.net(), line.tax(), line.listUnitPrice(), label);
         }
         if (!expectedGross.equals(line.gross())) {
             throw new InvalidSaleDraftException(where + "gross must be unit price × quantity");
@@ -597,7 +599,34 @@ public class FiscalDocument {
                     + expectedNet.amount() + " at rate " + rate.stripTrailingZeros().toPlainString() + " %");
         }
         return new FiscalDocumentLine(lineNo, line.sourceLineId(), description, quantity, line.unitPrice(),
-                rate, line.gross(), line.net(), line.tax());
+                rate, line.gross(), line.net(), line.tax(), line.listUnitPrice(), label);
+    }
+
+    /**
+     * D101: the list price is the price before the discount, so never below the effective unit price; the label names
+     * a discount, so it needs one. Returns the stored (stripped) label.
+     */
+    private static String discount(String where, DraftLine line, Currency currency) {
+        String label = optionalText(line.discountLabel(), where + "discount label", DISCOUNT_LABEL_LENGTH);
+        Money list = line.listUnitPrice();
+        if (list == null) {
+            if (label != null) {
+                throw new InvalidSaleDraftException(where + "a discount label needs a list unit price");
+            }
+            return null;
+        }
+        if (!list.currency().equals(currency)) {
+            throw new InvalidSaleDraftException(where + "every amount must be in " + currency);
+        }
+        if (list.amount().compareTo(line.unitPrice().amount()) < 0) {
+            throw new InvalidSaleDraftException(where + "the list unit price cannot be below the unit price");
+        }
+        return label;
+    }
+
+    /** The label as a line stores it: stripped, {@code null} when blank. */
+    static String discountLabelOf(String label) {
+        return label == null || label.isBlank() ? null : label.strip();
     }
 
     private static void requireAllocated(String where, DraftLine line, Money expectedGross, Money expectedNet,

@@ -25,8 +25,20 @@ public record DocumentView(UUID id, UUID storeId, String documentType, String st
                            LocalDate businessDate, UUID customerId, boolean onAccount,
                            PaymentSnapshot payments, Instant createdAt) {
 
+    /**
+     * One document line. {@code unitPrice} is the effective unit price its amounts follow (D101); {@code listUnitPrice}
+     * and {@code discountLabel} are the price before the discount and its label, {@code null} when the line has none
+     * (and on every document drafted before R4).
+     */
     public record Line(int lineNo, UUID sourceLineId, String description, BigDecimal quantity, Money unitPrice,
-                       BigDecimal taxRatePercent, Money gross, Money net, Money tax) {
+                       BigDecimal taxRatePercent, Money gross, Money net, Money tax, Money listUnitPrice,
+                       String discountLabel) {
+
+        /** A line with no discount. */
+        public Line(int lineNo, UUID sourceLineId, String description, BigDecimal quantity, Money unitPrice,
+                    BigDecimal taxRatePercent, Money gross, Money net, Money tax) {
+            this(lineNo, sourceLineId, description, quantity, unitPrice, taxRatePercent, gross, net, tax, null, null);
+        }
     }
 
     /**
