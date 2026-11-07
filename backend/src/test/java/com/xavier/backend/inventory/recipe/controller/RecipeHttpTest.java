@@ -185,6 +185,25 @@ class RecipeHttpTest {
     }
 
     @Test
+    void aRecipeIsDeletedOnlyWhileNoVersionWasActivated() throws Exception {
+        UUID draftOnly = id(create("""
+                {"itemId": "%s", "name": "Pizza"}""".formatted(item)).andReturn().getResponse().getContentAsString());
+        version(draftOnly, "250", "g").andExpect(status().isCreated());
+
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(RECIPES + "/" + draftOnly)
+                        .with(manager()).with(org.springframework.security.test.web.servlet.request
+                                .SecurityMockMvcRequestPostProcessors.csrf()))
+                .andExpect(status().isNoContent());
+        mvc.perform(get(RECIPES + "/" + draftOnly).with(manager())).andExpect(status().isNotFound());
+
+        UUID used = activeRecipe();
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(RECIPES + "/" + used)
+                        .with(manager()).with(org.springframework.security.test.web.servlet.request
+                                .SecurityMockMvcRequestPostProcessors.csrf()))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("RECIPE_VERSION_IMMUTABLE"));
+    }
+
+    @Test
     void recipesNeedRecipeManage() throws Exception {
         mvc.perform(idem(post(RECIPES)).with(account(null, Permission.INVENTORY_MANAGE))
                         .contentType(MediaType.APPLICATION_JSON).content("""

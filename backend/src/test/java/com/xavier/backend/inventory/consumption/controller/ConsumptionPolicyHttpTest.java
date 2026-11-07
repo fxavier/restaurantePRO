@@ -60,7 +60,7 @@ class ConsumptionPolicyHttpTest {
                         .content("{\"rules\": [{\"tracked\": true}, {\"familyId\": \"%s\", \"tracked\": false}],"
                                 .formatted(family) + " \"version\": 0}"))
                 .andExpect(status().isOk());
-        Instant from = clock.instant().plus(Duration.ofDays(1));
+        Instant from = afterTheVersionInForce();
 
         activate(versionNo, from).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("ACTIVE"))
                 .andExpect(jsonPath("$.effectiveFrom").value(from.toString()));
@@ -87,6 +87,18 @@ class ConsumptionPolicyHttpTest {
     @Test
     void policiesNeedRecipeManage() throws Exception {
         mvc.perform(get(POLICIES).with(account(null, Permission.INVENTORY_VIEW))).andExpect(status().isForbidden());
+    }
+
+    /** An instant after now and after the start of the version in force (other tests activate versions too). */
+    private Instant afterTheVersionInForce() throws Exception {
+        Instant activeFrom = Instant.EPOCH;
+        for (JsonNode version : json(mvc.perform(get(POLICIES).with(manager())).andReturn().getResponse()
+                .getContentAsString())) {
+            if ("ACTIVE".equals(version.get("status").asString())) {
+                activeFrom = Instant.parse(version.get("effectiveFrom").asString());
+            }
+        }
+        return (activeFrom.isAfter(clock.instant()) ? activeFrom : clock.instant()).plus(Duration.ofDays(1));
     }
 
     private ResultActions draft(String rules) throws Exception {

@@ -118,6 +118,25 @@ public class RecipeService {
         return view(recipe);
     }
 
+    /**
+     * Deletes a recipe that was never used: every version still DRAFT (409 RECIPE_VERSION_IMMUTABLE otherwise, a
+     * used recipe is a fact; it is superseded instead).
+     */
+    @Transactional
+    public void delete(UUID id) {
+        accessPolicy.requireInAnyStore(Permission.RECIPE_MANAGE);
+        Recipe recipe = recipes.lockById(id).orElseThrow(() -> new InventoryNotFoundException(ENTITY, id));
+        List<RecipeVersion> all = versions.findByRecipeIdOrderByVersionNo(id);
+        all.stream().filter(v -> v.getStatus() != VersionStatus.DRAFT).findFirst().ifPresent(used -> {
+            throw RecipeConflictException.immutable(used.getId(), used.getStatus(), "be deleted");
+        });
+        versions.deleteAll(all);
+        recipes.delete(recipe);
+        recipes.flush();
+        auditLog.recordAsCurrentActor("RECIPE_DELETED", ENTITY, id.toString(), null, null, null,
+                Map.of("name", recipe.getName()));
+    }
+
     /** A new DRAFT version, numbered after the last one (under the recipe's lock). */
     @Transactional
     public RecipeVersionView addVersion(UUID recipeId, RecipeVersionRequest request) {
