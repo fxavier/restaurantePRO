@@ -23,13 +23,20 @@ final class ChangeStream implements AutoCloseable {
 
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     private final List<String> lines = new CopyOnWriteArrayList<>();
+    private final List<Received> received = new CopyOnWriteArrayList<>();
     private final CompletableFuture<HttpResponse<Stream<String>>> response;
 
     private ChangeStream(Browser tab) {
         HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + tab.port() + PATH))
                 .header("Accept", "text/event-stream").header("Cookie", tab.cookieHeader()).GET().build();
         response = http.sendAsync(request, HttpResponse.BodyHandlers.ofLines());
-        response.thenAcceptAsync(r -> r.body().forEach(lines::add),
+        response.thenAcceptAsync(r -> r.body().forEach(line -> {
+            long at = System.nanoTime();
+            lines.add(line);
+            if (line.startsWith("data:")) {
+                received.add(new Received(at, Browser.JSON.readTree(line.substring("data:".length()))));
+            }
+        }),
                 command -> Thread.ofVirtual().start(command));
     }
 
@@ -82,6 +89,15 @@ final class ChangeStream implements AutoCloseable {
     List<JsonNode> notices() {
         return lines.stream().filter(line -> line.startsWith("data:"))
                 .map(line -> Browser.JSON.readTree(line.substring("data:".length()))).toList();
+    }
+
+    /** A {@code data:} payload and the {@link System#nanoTime()} at which its line was read. */
+    record Received(long atNanos, JsonNode notice) {
+    }
+
+    /** Every {@code data:} payload received so far, with its arrival time (for fan-out latency). */
+    List<Received> received() {
+        return List.copyOf(received);
     }
 
     @Override
