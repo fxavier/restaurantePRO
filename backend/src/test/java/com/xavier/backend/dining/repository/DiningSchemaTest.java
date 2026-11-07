@@ -38,6 +38,40 @@ class DiningSchemaTest {
         assertThatCode(() -> insertTable(store, area, 1)).doesNotThrowAnyException();
     }
 
+    @Test
+    void theDatabaseRejectsASeatedReservationWithoutItsOccupation() {
+        assertThatThrownBy(() -> insertReservation("SEATED", "'841234567'", null))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("reservation_seated_ck");
+    }
+
+    @Test
+    void theDatabaseRejectsACancelledReservationWithoutAReason() {
+        assertThatThrownBy(() -> insertReservation("CANCELLED", "NULL", null))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("reservation_cancelled_ck");
+        assertThatCode(() -> insertReservation("CANCELLED", "NULL", "guest called")).doesNotThrowAnyException();
+    }
+
+    @Test
+    void theDatabaseKeepsOnlyDigitsAsTheContactPhone() {
+        assertThatThrownBy(() -> insertReservation("BOOKED", "'+258 84'", null))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("reservation_contact_phone_digits_ck");
+    }
+
+    void insertReservation(String status, String phoneSql, String cancelReason) {
+        jdbc.sql("""
+                        INSERT INTO dining.reservation (id, store_id, starts_at, party_size, contact_name,
+                            contact_phone_digits, status, cancelled_at, cancel_reason, created_by_actor_kind,
+                            created_at, updated_at, version)
+                        VALUES (:id, :store, now(), 2, 'Ana', %s, :status,
+                            CASE WHEN :status = 'CANCELLED' THEN now() END, :reason, 'EMPLOYEE', now(), now(), 0)"""
+                        .formatted(phoneSql))
+                .param("id", UUID.randomUUID()).param("store", UUID.randomUUID()).param("status", status)
+                .param("reason", cancelReason).update();
+    }
+
     UUID insertArea(UUID store) {
         UUID id = UUID.randomUUID();
         jdbc.sql("""
