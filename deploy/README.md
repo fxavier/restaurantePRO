@@ -371,7 +371,7 @@ Spec §14 #1: each company is its own installation, with its own processes, data
 5. **tooling:** A's operator environment reaches only A. `restore.sh`, `backup.sh` and `pitr-restore.sh` refuse B's container from A's environment unless `--other-installation rp-b` is given, A's key cannot decrypt B's backup, and B is unchanged.
 6. **teardown:** both stacks are removed with their volumes, and nothing of either is left.
 
-It writes `drills/isolation/drill-isolation-<UTC>.json` and exits non-zero on any violation. It needs Docker, curl and openssl, and ports 18443, 18080, 28443 and 28080 free, and takes about 3–5 minutes. `ISOLATION_FAULT=<step> ./test-two-installations.sh` injects a real violation at that step, and the drill must fail there. `./test-two-installations.sh --self-test` runs shellcheck, the clean drill and then every fault in turn. Run the drill after an upgrade that touches `compose.yaml` or the backup scripts, and before putting a second company on a host.
+It writes `drills/isolation/drill-isolation-<UTC>.json` and exits non-zero on any violation. It needs Docker, curl and openssl, and ports 18443, 18080, 28443 and 28080 free, and takes about 3–5 minutes. `ISOLATION_FAULT=<step> ./test-two-installations.sh` injects a real violation at that step, and the drill must fail there. `./test-two-installations.sh --self-test` runs shellcheck, the clean drill and then every fault in turn. Run the drill after an upgrade that touches `compose.yaml` or the backup scripts, and before putting a second company on a host. S54 ran it on the R4 schema (backend image built from the integration branch, 155 tables per installation): PASS, 26 checks, exit 0, nothing left behind.
 
 ## Load smoke (A56)
 
