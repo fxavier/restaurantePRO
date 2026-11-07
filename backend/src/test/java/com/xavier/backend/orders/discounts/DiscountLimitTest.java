@@ -124,6 +124,16 @@ class DiscountLimitTest {
     }
 
     @Test
+    void theMaximumIsAHardCeilingOnTheRealizedPercentToo() throws Exception {
+        aConfirmedLineOfOneAt("1.99", "10", "40");
+
+        // 40 % of 1.99 is 1.194, 1.19 HALF_UP: 40.20 % realized, above the 40 % maximum
+        discount(1, "\"kind\": \"DISCOUNT\", \"percent\": 40", Permission.ORDER_DISCOUNT, manager)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("DISCOUNT_LIMIT_EXCEEDED"));
+    }
+
+    @Test
     void aGivenUnitPriceIsLimitedByTheRealizedPercent() throws Exception {
         aConfirmedLineOfOneAt("10.09");
 
@@ -204,10 +214,14 @@ class DiscountLimitTest {
                 null).andExpect(status().isBadRequest());
     }
 
-    /** Replaces the order under test by one with a single confirmed unit of a shop's item at {@code price}. */
+    /** Replaces the order under test by one with a single confirmed unit of a shop's item at {@code price} (10/50). */
     private void aConfirmedLineOfOneAt(String price) throws Exception {
+        aConfirmedLineOfOneAt(price, "10", "50");
+    }
+
+    private void aConfirmedLineOfOneAt(String price, String freeLimit, String max) throws Exception {
         shop = fixtures.shop();
-        promotions.limits(shop.store(), "10", "50");
+        promotions.limits(shop.store(), freeLimit, max);
         long promotionVersion = promotions.publish(shop.store());
         fixtures.reprice(shop, price);
         long catalogVersion = fixtures.republish(shop.store());

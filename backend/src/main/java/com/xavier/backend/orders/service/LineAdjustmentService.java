@@ -287,14 +287,18 @@ public class LineAdjustmentService {
             case OFFER -> null;
             case REVERSAL -> newPrice;
             default -> {
-                BigDecimal off = adjustment.percent() != null
+                // D106 amended: the free limit takes the percent asked (before rounding); the maximum is a hard
+                // ceiling on the greater of asked and realized
+                BigDecimal realized = EffectivePrice.percentOff(price.listUnitPrice(), newPrice);
+                BigDecimal asked = adjustment.percent() != null
                         ? EffectivePrice.percentOffAsked(price.listUnitPrice(), price.unitPrice(), adjustment.percent())
-                        : EffectivePrice.percentOff(price.listUnitPrice(), newPrice);
-                if (off.compareTo(limits.maxPercent()) > 0) {
-                    throw OrderRuleException.discountLimitExceeded(line.getId(), off.setScale(2,
+                        : realized;
+                BigDecimal ceiling = asked.max(realized);
+                if (ceiling.compareTo(limits.maxPercent()) > 0) {
+                    throw OrderRuleException.discountLimitExceeded(line.getId(), ceiling.setScale(2,
                             java.math.RoundingMode.HALF_UP), limits.maxPercent());
                 }
-                yield off.compareTo(limits.freeLimitPercent()) > 0 ? null : newPrice;
+                yield asked.compareTo(limits.freeLimitPercent()) > 0 ? null : newPrice;
             }
         };
     }
