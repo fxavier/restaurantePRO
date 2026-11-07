@@ -26,8 +26,9 @@
 #                  0600 or 0400, outside deploy/ and the backup directories (D98 rule 2), e.g. on a tmpfs
 #   --timeout      seconds to wait for recovery (default: 1800)
 #   --force        replace the container <name> and volume <name>-data of an earlier pitr-restore.sh run
-#                  (label restaurantpro.pitr=<name>); anything else, Compose-managed objects above all,
-#                  is refused even with --force
+#                  (label restaurantpro.pitr=<name>); anything else, Compose-managed objects above all
+#                  (Compose's config-hash label on containers, its volume label on volumes), is refused even
+#                  with --force
 # Prints the container name on stdout. Exits non-zero on any failure.
 set -euo pipefail
 umask 077
@@ -109,13 +110,18 @@ age_image_ready
 volume="$name-data"
 
 # --force replaces only what an earlier pitr-restore.sh --name "$name" created (label restaurantpro.pitr),
-# never a Compose-managed object such as the live database container or volume.
+# never a Compose-managed object such as the live database container or volume. Compose-managed means a
+# label Compose puts on what it creates and nothing inherits: com.docker.compose.config-hash on containers
+# (a container started from a Compose-built image, as a restored one is, inherits the image's project and
+# service labels), com.docker.compose.volume on volumes (images never reach volumes; every Compose v2 version
+# stamps it, config-hash on volumes only recent ones). Same rule as lib/common.sh require_own_installation.
 replaceable() { # $1 container|volume, $2 object name; "absent", "ours" or a reason to refuse
-  local labels
+  local labels managed='"com.docker.compose.config-hash"'
+  [[ $1 == container ]] || managed='"com.docker.compose.volume"'
   if ! labels="$(docker "$1" inspect -f '{{json .'"$([[ $1 == container ]] && echo Config.)"'Labels}}' "$2" 2>/dev/null)"; then
     echo absent; return
   fi
-  if [[ "$labels" == *'"com.docker.compose.project"'* ]]; then
+  if [[ "$labels" == *"$managed"* ]]; then
     echo "$1 $2 belongs to a Docker Compose project (the live installation?)"
   elif [[ "$labels" == *"\"restaurantpro.pitr\":\"$name\""* ]]; then
     echo ours

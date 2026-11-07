@@ -14,10 +14,14 @@
 # Test mode (developer stacks): a single BACKUP_AGE_RECIPIENT is accepted, and no recipients at all writes
 # a plaintext restaurantpro-<UTC timestamp>.tar with a WARNING.
 #
-# Usage: deploy/backup.sh [--dir DIR] [--keep N] [--container NAME] [--recipients-file FILE]
+# Usage: deploy/backup.sh [--dir DIR] [--keep N] [--container NAME] [--other-installation PROJECT]
+#                         [--recipients-file FILE]
 #   --dir              where archives go (default: $BACKUP_DIR or deploy/backups)
 #   --keep             how many archives to keep, newest first (default: $BACKUP_KEEP or 14)
 #   --container        postgres container (default: the compose service "postgres" of deploy/compose.yaml)
+#   --other-installation  the container belongs to Compose project PROJECT, another installation than this one;
+#                      without it such a container is refused (restore.sh, same rule), with it only that exact
+#                      project is accepted, with a WARNING
 #   --recipients-file  age recipients, one public key per line (default: $BACKUP_AGE_RECIPIENTS_FILE or
 #                      deploy/backup-recipients.txt)
 # Prints the archive path on stdout. Exits non-zero on any failure. Never prints credentials.
@@ -30,6 +34,7 @@ DB_USER=restaurantpro
 dir="${BACKUP_DIR:-$DEPLOY_DIR/backups}"
 keep="${BACKUP_KEEP:-14}"
 container=""
+other_installation=""
 recipients=""
 
 die() { echo "backup: $*" >&2; exit 1; }
@@ -45,6 +50,7 @@ while (($#)); do
     --dir) dir="${2:?--dir needs a value}"; shift 2 ;;
     --keep) keep="${2:?--keep needs a value}"; shift 2 ;;
     --container) container="${2:?--container needs a value}"; shift 2 ;;
+    --other-installation) other_installation="${2:?--other-installation needs a value}"; shift 2 ;;
     --recipients-file) recipients="${2:?--recipients-file needs a value}"; shift 2 ;;
     -h | --help) awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0" >&2; exit 0 ;;
     *) die "unknown argument: $1" ;;
@@ -81,6 +87,7 @@ if [[ -z "$container" ]]; then
   container="$(docker compose -f "$DEPLOY_DIR/compose.yaml" ps -q postgres)"
   [[ -n "$container" ]] || die "postgres service is not running (start the stack or pass --container)"
 fi
+require_own_installation "$container" "$other_installation"
 
 mkdir -p "$dir"
 if production && [[ "$record" == record ]]; then record_recipients "$dir" "$recipients"; fi
