@@ -36,6 +36,8 @@ import com.xavier.backend.fiscal.FiscalIssueFailedException;
 import com.xavier.backend.fiscal.exception.DraftMismatchException;
 import com.xavier.backend.fiscal.exception.PaymentSnapshotMismatchException;
 import com.xavier.backend.identity.exception.LoginThrottledException;
+import com.xavier.backend.inventory.count.exception.CountConflictException;
+import com.xavier.backend.inventory.count.exception.CountRuleException;
 import com.xavier.backend.inventory.exception.InventoryConflictException;
 import com.xavier.backend.inventory.exception.InventoryRuleException;
 import com.xavier.backend.identity.exception.PinChangeNotRequiredException;
@@ -60,6 +62,7 @@ import com.xavier.backend.settlement.reconciliation.model.dto.StatementError;
 import com.xavier.backend.shared.Money;
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -310,6 +313,16 @@ class CodedErrorContractTest {
             Map.entry("route-exists", () -> InventoryConflictException.routeExists(ID, "BAR")),
             Map.entry("default-route-exists", () -> InventoryConflictException.routeExists(ID, null)),
             Map.entry("stock-level-exists", () -> InventoryConflictException.levelExists(ID, OTHER)),
+            Map.entry("opening-not-first", () -> CountRuleException.openingNotFirst(ID)),
+            Map.entry("count-incomplete", () -> CountRuleException.incomplete(ID)),
+            Map.entry("counted-at-in-future", () -> CountRuleException.countedAtInFuture(
+                    Instant.parse("2026-11-07T12:00:00Z"))),
+            Map.entry("unit-cost-opening-only", CountRuleException::unitCostOpeningOnly),
+            Map.entry("count-scope-invalid", () -> CountRuleException.scopeInvalid(
+                    "A LIST count names the stock items to count.")),
+            Map.entry("count-state", () -> CountConflictException.state(ID, "SUBMITTED", "be cancelled")),
+            Map.entry("consumption-backlog", () -> CountConflictException.consumptionBacklog(3)),
+            Map.entry("live-count-exists", () -> CountConflictException.liveCountExists(ID)),
             Map.entry("loyalty-not-member", () -> LoyaltyRuleException.notMember(ID)),
             Map.entry("loyalty-suspended", () -> LoyaltyRuleException.suspended(ID)),
             Map.entry("loyalty-insufficient-points", () -> LoyaltyRuleException.insufficientPoints(10, 40)),
@@ -758,6 +771,28 @@ class CodedErrorContractTest {
         expect("default-route-exists", 409, "ROUTE_EXISTS", "Store " + ID + " already has a default route.", "");
         expect("stock-level-exists", 409, "STOCK_LEVEL_EXISTS", "Warehouse " + ID
                 + " already has a minimum for stock item " + OTHER + ".", "");
+    }
+
+    @Test
+    void inventoryCountRules() throws Exception {
+        expect("opening-not-first", 422, "OPENING_NOT_FIRST", "Warehouse " + ID
+                + " already has stock movements or an opening count before this opening's cut-off.", "");
+        expect("count-incomplete", 422, "COUNT_INCOMPLETE",
+                "Count " + ID + " has no line, or a line not counted yet.", "");
+        expect("counted-at-in-future", 422, "COUNTED_AT_IN_FUTURE",
+                "A line cannot be counted in the future (2026-11-07T12:00:00Z).", "");
+        expect("unit-cost-opening-only", 422, "UNIT_COST_OPENING_ONLY",
+                "A unit cost is entered on an opening count only: a regular count is valued at the average.", "");
+        expect("count-scope-invalid", 422, "COUNT_SCOPE_INVALID", "A LIST count names the stock items to count.", "");
+    }
+
+    @Test
+    void inventoryCountConflicts() throws Exception {
+        expect("count-state", 409, "COUNT_STATE", "Count " + ID + " is SUBMITTED and cannot be cancelled.", "");
+        expect("consumption-backlog", 409, "CONSUMPTION_BACKLOG", "Stock consumption has 3 publication(s) still "
+                + "pending: approve the count once they are processed.", "");
+        expect("live-count-exists", 409, "LIVE_COUNT_EXISTS", "Warehouse " + ID
+                + " already has a count that is not decided or cancelled.", "");
     }
 
     @Test
