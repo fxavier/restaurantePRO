@@ -31,6 +31,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -55,7 +56,12 @@ public class ReservationService {
     private final DiningChanges changes;
     private final Clock clock;
 
-    ReservationService(ReservationRepository reservations, RestaurantTableRepository tables, CustomersApi customers,
+    /**
+     * @param customers {@code @Lazy}: resolved on the first booking that names a customer, so the module tests that
+     *                  boot dining without customers (orders, production) still start. The installation always has it.
+     */
+    ReservationService(ReservationRepository reservations, RestaurantTableRepository tables,
+                       @Lazy CustomersApi customers,
                        OrganizationApi organization, AccessPolicy accessPolicy, DiningRows rows,
                        DiningChanges changes, Clock clock) {
         this.reservations = reservations;
