@@ -287,7 +287,9 @@ public class LineAdjustmentService {
             case OFFER -> null;
             case REVERSAL -> newPrice;
             default -> {
-                BigDecimal off = EffectivePrice.percentOff(price.listUnitPrice(), newPrice);
+                BigDecimal off = adjustment.percent() != null
+                        ? EffectivePrice.percentOffAsked(price.listUnitPrice(), price.unitPrice(), adjustment.percent())
+                        : EffectivePrice.percentOff(price.listUnitPrice(), newPrice);
                 if (off.compareTo(limits.maxPercent()) > 0) {
                     throw OrderRuleException.discountLimitExceeded(line.getId(), off.setScale(2,
                             java.math.RoundingMode.HALF_UP), limits.maxPercent());
