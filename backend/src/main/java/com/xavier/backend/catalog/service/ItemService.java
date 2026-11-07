@@ -9,6 +9,7 @@ import com.xavier.backend.catalog.model.Item;
 import com.xavier.backend.catalog.model.ItemAvailability;
 import com.xavier.backend.catalog.model.ItemVariant;
 import com.xavier.backend.catalog.model.dto.ItemCreateRequest;
+import com.xavier.backend.catalog.model.dto.ItemKind;
 import com.xavier.backend.catalog.model.dto.ItemSummary;
 import com.xavier.backend.catalog.model.dto.ItemUpdateRequest;
 import com.xavier.backend.catalog.model.dto.ItemVariantCreateRequest;
@@ -62,7 +63,7 @@ public class ItemService {
         Item.Details details = new Item.Details(request.code(), request.name(), request.familyId(), request.unitId(),
                 request.taxCategoryId(), request.productionDestination(), request.soldByWeight());
         requireReferences(details);
-        Item item = save(Item.create(details, clock.instant()));
+        Item item = save(Item.create(details, kind(request.kind()), clock.instant()));
         audit("ITEM_CREATED", item);
         return item.toSummary();
     }
@@ -75,7 +76,7 @@ public class ItemService {
         Item.Details details = new Item.Details(request.code(), request.name(), request.familyId(), request.unitId(),
                 request.taxCategoryId(), request.productionDestination(), request.soldByWeight());
         requireReferences(details);
-        item.update(details, ItemAvailability.valueOf(request.availability()), clock.instant());
+        item.update(details, ItemAvailability.valueOf(request.availability()), kind(request.kind()), clock.instant());
         save(item);
         audit("ITEM_UPDATED", item);
         return item.toSummary();
@@ -126,6 +127,10 @@ public class ItemService {
         return variants.findAllByItemIdOrderByCode(itemId).stream().map(ItemVariant::toSummary).toList();
     }
 
+    private static ItemKind kind(String kind) {
+        return kind == null ? null : ItemKind.valueOf(kind);
+    }
+
     private void requireReferences(Item.Details details) {
         if (!families.existsById(details.familyId())) {
             throw new InvalidCatalogEntryException("Family " + details.familyId() + " does not exist");
@@ -160,7 +165,7 @@ public class ItemService {
 
     private void audit(String action, Item item) {
         audit.record(action, "Item", item.getId(), null, Map.of("code", item.getCode(), "availability",
-                item.getAvailability().name()));
+                item.getAvailability().name(), "kind", item.getKind().name()));
     }
 
     private void auditVariant(String action, ItemVariant variant) {

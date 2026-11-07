@@ -23,6 +23,7 @@ import com.xavier.backend.cash.exception.CashRule;
 import com.xavier.backend.cash.exception.CashRuleViolationException;
 import com.xavier.backend.cash.exception.ClosingStaleException;
 import com.xavier.backend.cash.exception.RefundMismatchException;
+import com.xavier.backend.catalog.exception.CatalogRuleException;
 import com.xavier.backend.catalog.exception.ReleaseValidationFailedException;
 import com.xavier.backend.catalog.model.dto.ReleaseValidationError;
 import com.xavier.backend.dining.exception.IllegalOccupationStateException;
@@ -315,7 +316,12 @@ class CodedErrorContractTest {
             Map.entry("loyalty-account-state", () -> LoyaltyConflictException.accountState(ID, "SUSPENDED",
                     "be suspended")),
             Map.entry("loyalty-source-mismatch", () -> LoyaltyConflictException.sourceMismatch("order line", ID)),
-            Map.entry("loyalty-source-concurrent", () -> LoyaltyConflictException.sourceConcurrent("order", ID)));
+            Map.entry("loyalty-source-concurrent", () -> LoyaltyConflictException.sourceConcurrent("order", ID)),
+            // R4 catalog (S38): menus and daily dishes
+            Map.entry("menu-group-invalid", () -> CatalogRuleException.menuGroupInvalid(
+                    "Item BURGER is STANDARD: only a MENU item has menu groups.")),
+            Map.entry("menu-not-allowed", () -> CatalogRuleException.menuNotAllowed("LUNCH", "a macro")),
+            Map.entry("item-not-published", () -> CatalogRuleException.itemNotPublished(OTHER, List.of(ID))));
 
     @Autowired
     MockMvc mvc;
@@ -756,6 +762,16 @@ class CodedErrorContractTest {
                 "The order line " + ID + " is already recorded in the loyalty ledger with other values.", "");
         expect("loyalty-source-concurrent", 409, "LOYALTY_SOURCE_CONCURRENT",
                 "The order " + ID + " was recorded in the loyalty ledger at the same time; retry.", "");
+    }
+
+    @Test
+    void catalogR4Rules() throws Exception {
+        expect("menu-group-invalid", 422, "MENU_GROUP_INVALID",
+                "Item BURGER is STANDARD: only a MENU item has menu groups.", "");
+        expect("menu-not-allowed", 422, "MENU_NOT_ALLOWED",
+                "Item LUNCH is a MENU: a macro cannot name it, because a menu needs its component choices.", "");
+        expect("item-not-published", 422, "ITEM_NOT_PUBLISHED", "Item(s) [" + ID
+                + "] are not in the published catalog of store " + OTHER + ".", ",\"itemIds\":[\"" + ID + "\"]");
     }
 
     private void expect(String name, int status, String code, String detail, String extra) throws Exception {

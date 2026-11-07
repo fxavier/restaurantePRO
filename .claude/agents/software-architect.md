@@ -27,6 +27,7 @@ You are the software architect for restaurantPRO. You own how the code is struct
 ## Backend structure (Spring Boot 4.1.2, Java 25, `backend/`)
 
 - **Modules.** Each of the 14 modules in §6 is a direct subpackage of `com.xavier.backend`: `organization`, `identity`, `dining`, `catalog`, `promotions`, `customers`, `orders`, `production`, `settlement`, `fiscal`, `cash`, `inventory`, `reporting`, `audit`.
+  - Three more packages exist by decision (D13 amendment, D12). `access` holds the authorization primitives (`Permission`, `Actor`, `AccessPolicy`, `IdempotentRequests`), depends on `shared` only, and every module may use it; `identity` builds the `Actor` but owns no authorization rule. `shared` is the OPEN infrastructure module (money, coded errors, idempotency, change notices, events). `config` holds cross-cutting wiring (security, system endpoints).
   - Declare explicit `allowedDependencies` in `package-info.java` with `@ApplicationModule` wherever §6 constrains the direction. For example, `orders` must not depend on `settlement`, and `cash` must not depend on `orders`.
 - **Inside a module.** Every module uses the same structure. The `developer` agent follows it, so keep the two agents in sync.
   - `model/` holds entities, value objects and state enums.

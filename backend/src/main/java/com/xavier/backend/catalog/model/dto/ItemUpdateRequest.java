@@ -6,7 +6,10 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.util.UUID;
 
-/** @param availability ACTIVE or INACTIVE */
+/**
+ * @param availability ACTIVE or INACTIVE
+ * @param kind         STANDARD, MENU or FEE; {@code null} keeps the current kind
+ */
 public record ItemUpdateRequest(
         @NotBlank @Size(max = 30) String code,
         @NotBlank @Size(max = 120) String name,
@@ -16,5 +19,6 @@ public record ItemUpdateRequest(
         @Size(max = 30) @Pattern(regexp = ItemCreateRequest.DESTINATION_CODE) String productionDestination,
         @NotNull @Pattern(regexp = "ACTIVE|INACTIVE") String availability,
         boolean soldByWeight,
+        @Pattern(regexp = "STANDARD|MENU|FEE") String kind,
         @NotNull Long version) {
 }

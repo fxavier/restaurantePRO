@@ -1,5 +1,6 @@
 package com.xavier.backend.catalog.model;
 
+import com.xavier.backend.catalog.model.dto.ItemKind;
 import com.xavier.backend.catalog.model.dto.ItemSummary;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -15,7 +16,7 @@ import org.hibernate.annotations.UuidGenerator;
 /**
  * A commercial product (spec §5, §8.2). Company-wide; its price is per store (price lists). The production
  * destination is a code such as {@code KITCHEN} or {@code BAR} (production routing arrives in R2); none means
- * nothing to prepare.
+ * nothing to prepare. Its kind (D108) says whether it is a plain product, a MENU with component groups, or a FEE.
  */
 @Entity
 @Table(schema = "catalog", name = "item")
@@ -55,6 +56,10 @@ public class Item {
     @Column(nullable = false)
     private boolean soldByWeight;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 10)
+    private ItemKind kind;
+
     @Version
     private Long version;
 
@@ -68,15 +73,24 @@ public class Item {
         // JPA
     }
 
-    /** A new item is ACTIVE. */
-    public static Item create(Details details, Instant now) {
+    /** A new item is ACTIVE; {@code kind} {@code null} means STANDARD. */
+    public static Item create(Details details, ItemKind kind, Instant now) {
         Item item = new Item();
         item.createdAt = now;
+        item.kind = kind == null ? ItemKind.STANDARD : kind;
         item.update(details, ItemAvailability.ACTIVE, now);
         return item;
     }
 
-    public void update(Details details, ItemAvailability availability, Instant now) {
+    /** {@code kind} {@code null} keeps the current kind (R1–R3 clients do not send one). */
+    public void update(Details details, ItemAvailability availability, ItemKind kind, Instant now) {
+        if (kind != null) {
+            this.kind = kind;
+        }
+        update(details, availability, now);
+    }
+
+    private void update(Details details, ItemAvailability availability, Instant now) {
         this.code = CatalogText.required(details.code(), "code");
         this.name = CatalogText.required(details.name(), "name");
         this.familyId = CatalogText.required(details.familyId(), "familyId");
@@ -95,7 +109,7 @@ public class Item {
 
     public ItemSummary toSummary() {
         return new ItemSummary(id, code, name, familyId, unitId, taxCategoryId, productionDestination,
-                availability.name(), soldByWeight, version);
+                availability.name(), soldByWeight, kind.name(), version);
     }
 
     public UUID getId() {
@@ -128,6 +142,10 @@ public class Item {
 
     public ItemAvailability getAvailability() {
         return availability;
+    }
+
+    public ItemKind getKind() {
+        return kind;
     }
 
     public boolean isSoldByWeight() {
