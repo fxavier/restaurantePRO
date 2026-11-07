@@ -16,8 +16,10 @@ import com.xavier.backend.dining.repository.RoomAreaRepository;
 import com.xavier.backend.dining.repository.TableOccupationRepository;
 import com.xavier.backend.dining.service.DiningChanges;
 import com.xavier.backend.dining.service.DiningRows;
+import com.xavier.backend.dining.service.ReservationIndicator;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -49,10 +51,13 @@ public class DiningApi {
     private final AccessPolicy accessPolicy;
     private final DiningChanges changes;
     private final DiningRows rows;
+    private final ReservationIndicator reservationIndicator;
     private final Clock clock;
 
     DiningApi(TableOccupationRepository occupations, RestaurantTableRepository tables, RoomAreaRepository areas,
-              AccessPolicy accessPolicy, DiningChanges changes, DiningRows rows, Clock clock) {
+              AccessPolicy accessPolicy, DiningChanges changes, DiningRows rows,
+              ReservationIndicator reservationIndicator, Clock clock) {
+        this.reservationIndicator = reservationIndicator;
         this.occupations = occupations;
         this.tables = tables;
         this.areas = areas;
@@ -133,8 +138,9 @@ public class DiningApi {
         RestaurantTable table = table(tableId);
         UUID openOrderId = occupations.findByTableIdAndClosedAtIsNull(tableId)
                 .map(TableOccupation::getOrderId).orElse(null);
+        Instant nextReservationAt = reservationIndicator.nextFor(table.getStoreId(), tableId);
         return new TableState(tableId, table.getStoreId(), table.isActive(), area(table).isActive(), table.isLocked(),
-                openOrderId);
+                openOrderId, nextReservationAt != null, nextReservationAt);
     }
 
     /** The table's code and its current area, for labels; empty for an unknown table. Needs no session. */

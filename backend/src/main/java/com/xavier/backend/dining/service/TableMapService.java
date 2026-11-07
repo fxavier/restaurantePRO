@@ -11,6 +11,7 @@ import com.xavier.backend.dining.model.dto.TableStatus;
 import com.xavier.backend.dining.repository.RestaurantTableRepository;
 import com.xavier.backend.dining.repository.RoomAreaRepository;
 import com.xavier.backend.dining.repository.TableOccupationRepository;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -30,13 +31,15 @@ public class TableMapService {
     private final RestaurantTableRepository tables;
     private final TableOccupationRepository occupations;
     private final AccessPolicy accessPolicy;
+    private final ReservationIndicator reservations;
 
     TableMapService(RoomAreaRepository areas, RestaurantTableRepository tables, TableOccupationRepository occupations,
-                    AccessPolicy accessPolicy) {
+                    AccessPolicy accessPolicy, ReservationIndicator reservations) {
         this.areas = areas;
         this.tables = tables;
         this.occupations = occupations;
         this.accessPolicy = accessPolicy;
+        this.reservations = reservations;
     }
 
     /**
@@ -47,9 +50,11 @@ public class TableMapService {
         UUID storeId = accessPolicy.requirePos(Permission.DINING_VIEW, requestedStoreId).storeId();
         Map<UUID, TableOccupation> openByTable = occupations.findByStoreIdAndClosedAtIsNull(storeId).stream()
                 .collect(Collectors.toMap(TableOccupation::getTableId, Function.identity()));
+        Map<UUID, Instant> nextReservations = reservations.nextByTable(storeId);
         Map<UUID, List<TableMap.Table>> tablesByArea = tables.findByStoreIdAndActiveTrueOrderByCode(storeId).stream()
                 .collect(Collectors.groupingBy(RestaurantTable::getAreaId,
-                        Collectors.mapping(table -> statusOf(table, openByTable.get(table.getId())),
+                        Collectors.mapping(table -> statusOf(table, openByTable.get(table.getId()),
+                                        nextReservations.get(table.getId())),
                                 Collectors.toList())));
         List<TableMap.Area> mapAreas = areas.findByStoreIdAndActiveTrueOrderByCode(storeId).stream()
                 .map(area -> toMapArea(area, tablesByArea.getOrDefault(area.getId(), List.of())))
@@ -63,16 +68,20 @@ public class TableMapService {
 
     /**
      * The one place a table's state is decided (r2-decisions §4 dining): OCCUPIED from its open occupation (or
-     * {@code null}), plus the independent locked and subtotal-printed indicators.
+     * {@code null}), plus the independent locked, subtotal-printed and reserved indicators (§8.4, D126).
+     *
+     * @param nextReservationAt the start of the table's indicated reservation ({@link ReservationIndicator}), or
+     *                          {@code null}
      */
-    static TableMap.Table statusOf(RestaurantTable table, TableOccupation open) {
+    static TableMap.Table statusOf(RestaurantTable table, TableOccupation open, Instant nextReservationAt) {
+        boolean reserved = nextReservationAt != null;
         if (open == null) {
             return new TableMap.Table(table.getId(), table.getCode(), table.getSeats(), TableStatus.FREE,
-                    table.isLocked(), false, null, null, null);
+                    table.isLocked(), false, null, null, null, reserved, nextReservationAt);
         }
         OccupationView occupation = open.toView(table.getCode());
         return new TableMap.Table(table.getId(), table.getCode(), table.getSeats(), TableStatus.OCCUPIED,
                 table.isLocked(), occupation.subtotalPrintedAt() != null, occupation.openedAt(), occupation.guests(),
-                occupation.openedByEmployeeId());
+                occupation.openedByEmployeeId(), reserved, nextReservationAt);
     }
 }
