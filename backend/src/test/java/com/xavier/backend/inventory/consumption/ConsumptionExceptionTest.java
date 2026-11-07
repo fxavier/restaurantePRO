@@ -147,6 +147,26 @@ class ConsumptionExceptionTest extends ConsumptionTestBase {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.openExceptions").value(1));
     }
 
+    /**
+     * A void waits only for a line that may still be consumed: one held by an exception counts as a pending void on
+     * the status; one consumed for nothing (packaging of another mode only) resolves at once.
+     */
+    @Test
+    void onlyAVoidOfALineHeldByAnExceptionWaits() throws Exception {
+        UUID burger = kitchen.catalogItem(null);
+        kitchen.saleRecipe(burger, null, "1", Kitchen.packaging(kitchen.stockItem("un"), "1", "un", "TAKEAWAY"));
+        BatchFacts round = kitchen.round(clock.instant(), OrderMode.DINE_IN, line(burger, "1", "KITCHEN"),
+                line(kitchen.catalogItem(null), "1", "KITCHEN"));
+        consumption.consume(round.batchId());
+
+        voids.reverse(kitchen.voided(round.lines().get(0).lineId(), "1", false, clock.instant()).voidId());
+        voids.reverse(kitchen.voided(round.lines().get(1).lineId(), "1", false, clock.instant()).voidId());
+
+        mvc.perform(get(InventoryFixtures.BO + "/status").param("storeId", kitchen.store.toString())
+                        .with(account(kitchen.store, Permission.INVENTORY_VIEW)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.pendingVoids").value(1));
+    }
+
     private JsonNode list(boolean open) throws Exception {
         return json(mvc.perform(get(EXCEPTIONS).param("storeId", kitchen.store.toString())
                         .param("open", String.valueOf(open)).with(account(kitchen.store, Permission.INVENTORY_VIEW)))

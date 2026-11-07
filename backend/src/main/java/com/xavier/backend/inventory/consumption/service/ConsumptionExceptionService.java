@@ -89,8 +89,9 @@ public class ConsumptionExceptionService {
         if (plan.unresolved() != null) {
             throw ConsumptionRuleException.unresolved(id, plan.unresolved());
         }
-        List<MovementView> posted = plan.movements().isEmpty() ? List.of()
-                : consumption.post(round, Map.of(line.lineId(), line.quantity()), plan.movements());
+        // the line is settled now (also when it consumes nothing), and every void of it applies to this part too
+        List<MovementView> posted = consumption.post(round, Map.of(line.lineId(), line.quantity()),
+                plan.movements());
         exception.resolve(plan.movements().isEmpty() ? "NOT_TRACKED" : "REPROCESSED", plan.lateRecipe(),
                 clock.instant());
         exceptions.flush();

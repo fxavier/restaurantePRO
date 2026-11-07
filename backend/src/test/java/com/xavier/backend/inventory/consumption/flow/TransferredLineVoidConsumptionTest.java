@@ -32,7 +32,7 @@ import org.springframework.test.web.servlet.MockMvc;
  * D117, A45, D133 "a split line voided later reverses the wrong consumption" (with a transfer until S46 adds splits):
  * a transfer posts no stock (the target line has no round); voiding the transferred line at its target reverses the
  * source round line's consumption, through {@code VoidFacts.consumedLineId}, once and in proportion; voiding the rest
- * at the source reverses what is left and no more.
+ * at the source (wasted) records the rest as waste and moves no stock (D117 as amended).
  */
 @ConsumptionFlowTest
 class TransferredLineVoidConsumptionTest {
@@ -93,10 +93,12 @@ class TransferredLineVoidConsumptionTest {
 
         voidLine(sale, sale.order(), line, "1", true);
 
-        waitUntil(() -> live.movements(jdbc, "WASTE") == 1, "the source's void reversed and wasted");
-        assertThat(reversals(line)).extracting(r -> (BigDecimal) r.get("quantity"))
-                .usingComparatorForType(BigDecimal::compareTo, BigDecimal.class)
-                .containsExactly(new BigDecimal("0.25"), new BigDecimal("0.25"));
+        waitUntil(() -> jdbc.sql("SELECT count(*) FROM inventory.waste_record WHERE store_id = ?")
+                .param(live.store()).query(Long.class).single() == 1, "the source's wasted void recorded");
+        assertThat(jdbc.sql("SELECT quantity FROM inventory.waste_record WHERE store_id = ?").param(live.store())
+                .query(BigDecimal.class).single()).isEqualByComparingTo("0.25");
+        assertThat(reversals(line)).hasSize(1);
+        assertThat(live.movements(jdbc, "WASTE")).isZero();
         assertThat(live.flourInStock(jdbc)).isEqualByComparingTo("99.75");
     }
 

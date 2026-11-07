@@ -29,10 +29,10 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Consumes a confirmed round (D116, D122): pulls its facts from orders, and — when inventory is live in the store and
  * the round was confirmed at or after go-live — posts the SALE_CONSUMPTION movements of every sold unit in one ledger
- * call, records each unresolved unit as a consumption exception (the rest of the round still posts), and remembers
- * the consumed lines for their voids. Idempotent: a redelivered round replays the same movements (the ledger's source
- * key) and records nothing new. It never blocks a sale: it runs in the listener's own transaction, after the round
- * committed.
+ * call, records each unresolved unit as a consumption exception (the rest of the round still posts), and marks each
+ * settled line (consumed, or consumed for nothing) so its voids apply. Idempotent: a settled line is never planned
+ * again, and the ledger's source key catches the rest. It never blocks a sale: it runs in the listener's own
+ * transaction, after the round committed.
  */
 @Service
 public class RoundConsumption {
@@ -58,47 +58,68 @@ public class RoundConsumption {
         this.clock = clock;
     }
 
-    /** @return the movements of the round, as posted or as recorded by an earlier delivery */
+    /**
+     * @return the movements this delivery posted: a redelivery posts nothing, because a line consumption already
+     *         settled is never planned again (its route, policy or recipe may have changed since)
+     */
     @Transactional
     public List<MovementView> consume(UUID batchId) {
         BatchFacts round = orders.batchFacts(batchId);
         Optional<Instant> live = activations.activeFrom(round.storeId());
-        if (live.isEmpty() || round.confirmedAt().isBefore(live.get())) {
-            return List.of(); // D122: history before go-live is never consumed
+        if (live.isEmpty()) {
+            return List.of(); // D122: a store not live consumes nothing
+        }
+        List<UUID> lines = round.lines().stream().map(BatchLineFact::lineId).toList();
+        book.lockLines(lines);
+        Map<UUID, BigDecimal> settled = new LinkedHashMap<>();
+        if (round.confirmedAt().isBefore(live.get())) {
+            // D122: history before go-live is never consumed; its lines are settled for nothing, so voids resolve
+            round.lines().forEach(line -> settled.put(line.lineId(), line.quantity()));
+            return post(round, settled, List.of());
         }
         Context context = planner.context(round);
-        Map<UUID, BigDecimal> consumedLines = new LinkedHashMap<>();
         List<PostMovement> movements = new ArrayList<>();
         Instant now = clock.instant();
         for (BatchLineFact line : round.lines()) {
+            if (book.consumedQuantity(line.lineId()).isPresent()) {
+                continue; // settled by an earlier delivery; what it left in exception goes through reprocess
+            }
+            boolean posted = false;
+            boolean unresolved = false;
             for (SoldUnit unit : SoldUnit.of(line)) {
                 Plan plan = planner.plan(context, unit, false);
                 if (plan.unresolved() != null) {
                     recordException(round, unit, plan.unresolved(), now);
+                    unresolved = true;
                     continue;
                 }
                 movements.addAll(plan.movements());
-                if (!plan.movements().isEmpty()) {
-                    consumedLines.put(line.lineId(), line.quantity());
-                }
+                posted |= !plan.movements().isEmpty();
+            }
+            if (posted || !unresolved) {
+                settled.put(line.lineId(), line.quantity());
             }
         }
-        return post(round, consumedLines, movements);
+        return post(round, settled, movements);
     }
 
     /**
-     * Posts {@code movements} of {@code round} and records {@code consumedLines} (line → confirmed quantity), then
-     * reverses the voids that were waiting for those lines. Lines first, then every balance, both in a fixed order.
+     * Posts {@code movements} of {@code round}, marks {@code settledLines} (line → confirmed quantity) as settled,
+     * then applies every void of those lines. Locks: the lines first, then every balance of the new movements and
+     * of the lines' earlier sale movements, in the ledger's order (D132).
      */
     @Transactional(propagation = Propagation.MANDATORY)
-    public List<MovementView> post(BatchFacts round, Map<UUID, BigDecimal> consumedLines,
+    public List<MovementView> post(BatchFacts round, Map<UUID, BigDecimal> settledLines,
                                    List<PostMovement> movements) {
-        book.lockLines(consumedLines.keySet());
-        ledger.lock(movements.stream().map(m -> new BalanceKey(m.warehouseId(), m.stockItemId())).toList());
+        book.lockLines(settledLines.keySet());
+        List<BalanceKey> keys = new ArrayList<>(movements.stream()
+                .map(m -> new BalanceKey(m.warehouseId(), m.stockItemId())).toList());
+        settledLines.keySet().forEach(line -> book.saleMovementsOf(line).forEach(m -> keys.add(VoidReversal.keyOf(m))));
+        ledger.lock(keys);
         List<MovementView> posted = new ArrayList<>(ledger.post(movements));
-        consumedLines.forEach((line, quantity) -> {
+        settledLines.forEach((line, quantity) -> {
             book.recordConsumedLine(line, round.batchId(), round.storeId(), quantity, round.confirmedAt());
-            posted.addAll(voids.reversePending(line, book.consumedQuantity(line).orElse(quantity)));
+            posted.addAll(voids.settle(line, book.consumedQuantity(line).orElse(quantity)));
         });
         return posted;
     }

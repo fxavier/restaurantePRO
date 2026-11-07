@@ -59,59 +59,91 @@ public class ConsumptionBook {
                         kind.name(), batchId, lineId, java.sql.Timestamp.from(now)).update() == 1;
     }
 
-    public void recordPendingVoid(UUID voidId, UUID lineId, UUID storeId, Instant now) {
+    /** Remembers a void of a round line, for good: every part of the line consumed later applies it too. */
+    public void recordLineVoid(UUID voidId, UUID lineId, UUID storeId, Instant now) {
         jdbc.sql("""
-                        INSERT INTO inventory.pending_void (void_id, consumed_line_id, store_id, created_at)
+                        INSERT INTO inventory.line_void (void_id, consumed_line_id, store_id, created_at)
                         VALUES (?, ?, ?, ?) ON CONFLICT (void_id) DO NOTHING""")
                 .params(voidId, lineId, storeId, java.sql.Timestamp.from(now)).update();
     }
 
-    public List<UUID> pendingVoids(UUID lineId) {
-        return jdbc.sql("SELECT void_id FROM inventory.pending_void WHERE consumed_line_id = ? ORDER BY created_at")
+    /** Every void of a round line, the first first. */
+    public List<UUID> lineVoids(UUID lineId) {
+        return jdbc.sql("""
+                        SELECT void_id FROM inventory.line_void WHERE consumed_line_id = ?
+                        ORDER BY created_at, void_id""")
                 .param(lineId).query(UUID.class).list();
     }
 
-    public void removePendingVoid(UUID voidId) {
-        jdbc.sql("DELETE FROM inventory.pending_void WHERE void_id = ?").param(voidId).update();
+    /** The voids of the store whose line consumption has not settled yet (held by an exception or late). */
+    public long pendingVoids(UUID storeId) {
+        return jdbc.sql("""
+                        SELECT count(*) FROM inventory.line_void v
+                        WHERE v.store_id = ?
+                          AND NOT EXISTS (SELECT 1 FROM inventory.consumed_line c WHERE c.line_id = v.consumed_line_id)""")
+                .param(storeId).query(Long.class).single();
     }
 
     /** The SALE_CONSUMPTION movements of an order line (its own, or its menu components'), in posting order. */
     public List<SaleMovement> saleMovementsOf(UUID lineId) {
         return jdbc.sql("""
-                        SELECT id, warehouse_id, stock_item_id, -quantity AS consumed, unit_cost, source_type,
-                               source_id, recipe_version_id, policy_version_id, sale_item_id
+                        SELECT id, store_id, warehouse_id, stock_item_id, -quantity AS consumed, unit_cost, currency,
+                               source_type, source_id, recipe_version_id, policy_version_id, sale_item_id
                         FROM inventory.stock_movement
                         WHERE source_line_id = ? AND type = 'SALE_CONSUMPTION' ORDER BY posting_seq""")
                 .param(lineId)
-                .query((rs, n) -> new SaleMovement(rs.getObject("id", UUID.class),
+                .query((rs, n) -> new SaleMovement(rs.getObject("id", UUID.class), rs.getObject("store_id", UUID.class),
                         rs.getObject("warehouse_id", UUID.class), rs.getObject("stock_item_id", UUID.class),
-                        rs.getBigDecimal("consumed"), rs.getBigDecimal("unit_cost"), rs.getString("source_type"),
+                        rs.getBigDecimal("consumed"), rs.getBigDecimal("unit_cost"), rs.getString("currency"),
+                        rs.getString("source_type"),
                         rs.getObject("source_id", UUID.class), rs.getObject("recipe_version_id", UUID.class),
                         rs.getObject("policy_version_id", UUID.class), rs.getObject("sale_item_id", UUID.class)))
                 .list();
     }
 
-    /** How much of a sale movement the reversals already put back (positive). */
-    public BigDecimal reversedQuantity(UUID movementId) {
+    /** How much of a sale movement voids already settled (put back, or reclassified as waste); positive. */
+    public BigDecimal settledQuantity(UUID movementId) {
         return jdbc.sql("""
-                        SELECT coalesce(sum(quantity), 0) FROM inventory.stock_movement
-                        WHERE reverses_movement_id = ? AND type = 'CONSUMPTION_REVERSAL'""")
-                .param(movementId).query(BigDecimal.class).single();
+                        SELECT coalesce((SELECT sum(quantity) FROM inventory.stock_movement
+                                         WHERE reverses_movement_id = :id AND type = 'CONSUMPTION_REVERSAL'), 0)
+                             + coalesce((SELECT sum(quantity) FROM inventory.waste_record
+                                         WHERE original_movement_id = :id), 0)""")
+                .param("id", movementId).query(BigDecimal.class).single();
     }
 
-    /** Whether any of these sources already posted a movement. */
-    public boolean anyMovementOf(String sourceType, Collection<UUID> sourceIds) {
-        return !sourceIds.isEmpty() && jdbc.sql("""
-                        SELECT count(*) FROM inventory.stock_movement
-                        WHERE source_type = :type AND source_id IN (:ids)""")
-                .param("type", sourceType).param("ids", sourceIds).query(Long.class).single() > 0;
+    /** Whether {@code voidId} already settled sale movement {@code movementId} (its reversal or its waste). */
+    public boolean settledBy(UUID movementId, UUID voidId, String reversalSourceType, UUID reversalSourceId) {
+        return jdbc.sql("""
+                        SELECT EXISTS (SELECT 1 FROM inventory.stock_movement
+                                       WHERE reverses_movement_id = :id AND source_type = :type
+                                         AND source_id = :source)
+                            OR EXISTS (SELECT 1 FROM inventory.waste_record
+                                       WHERE original_movement_id = :id AND void_id = :void)""")
+                .param("id", movementId).param("type", reversalSourceType).param("source", reversalSourceId)
+                .param("void", voidId).query(Boolean.class).single();
+    }
+
+    /** A wasted void's share of a sale movement, at its unit cost (D117 as amended): no stock moves. */
+    public void recordWaste(UUID voidId, SaleMovement original, UUID lineId, BigDecimal quantity, BigDecimal value,
+                            java.time.LocalDate businessDate, Instant occurredAt, String reason, Instant now) {
+        jdbc.sql("""
+                        INSERT INTO inventory.waste_record
+                            (id, void_id, original_movement_id, store_id, warehouse_id, stock_item_id, sale_item_id,
+                             source_line_id, quantity, unit_cost, value, currency, business_date, occurred_at, reason,
+                             created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT (void_id, original_movement_id) DO NOTHING""")
+                .params(UuidVersion7Strategy.INSTANCE.generateUuid(null), voidId, original.id(), original.storeId(),
+                        original.warehouseId(), original.stockItemId(), original.saleItemId(), lineId, quantity,
+                        original.unitCost(), value, original.currency(), businessDate,
+                        java.sql.Timestamp.from(occurredAt), reason, java.sql.Timestamp.from(now)).update();
     }
 
     /**
      * A sale movement as a void reverses it: {@code consumed} is its quantity, positive, at {@code unitCost}.
      */
-    public record SaleMovement(UUID id, UUID warehouseId, UUID stockItemId, BigDecimal consumed, BigDecimal unitCost,
-                               String sourceType, UUID sourceId, UUID recipeVersionId, UUID policyVersionId,
-                               UUID saleItemId) {
+    public record SaleMovement(UUID id, UUID storeId, UUID warehouseId, UUID stockItemId, BigDecimal consumed,
+                               BigDecimal unitCost, String currency, String sourceType, UUID sourceId,
+                               UUID recipeVersionId, UUID policyVersionId, UUID saleItemId) {
     }
 }

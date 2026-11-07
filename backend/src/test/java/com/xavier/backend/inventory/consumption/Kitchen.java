@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.catalog.CatalogApi;
 import com.xavier.backend.catalog.ItemRef;
+import com.xavier.backend.catalog.model.dto.CatalogSnapshot;
 import com.xavier.backend.inventory.InventoryFixtures;
 import com.xavier.backend.inventory.model.MovementType;
 import com.xavier.backend.inventory.model.dto.PostMovement;
@@ -52,10 +53,12 @@ public final class Kitchen {
     private final JdbcClient jdbc;
     private final OrdersApi orders;
     private final Map<UUID, ItemRef> catalogItems = new ConcurrentHashMap<>();
+    private final Map<UUID, Map<UUID, ItemRef>> releases = new ConcurrentHashMap<>();
 
     public final UUID store;
     public final UUID kitchen;
     public final UUID bar;
+    public final UUID defaultRoute;
 
     private Kitchen(MockMvc mvc, InventoryFixtures fixtures, StockLedger ledger, TransactionTemplate tx,
                     JdbcClient jdbc, OrdersApi orders, CatalogApi catalog, Instant liveFrom) throws Exception {
@@ -69,6 +72,14 @@ public final class Kitchen {
             Collection<UUID> ids = call.getArgument(0);
             return ids.stream().map(catalogItems::get).filter(java.util.Objects::nonNull).toList();
         }).when(catalog).items(any());
+        org.mockito.Mockito.doAnswer(call -> {
+            UUID release = call.getArgument(1);
+            Map<UUID, ItemRef> items = releases.getOrDefault(release, catalogItems);
+            return new CatalogSnapshot(CatalogSnapshot.SCHEMA_VERSION, call.getArgument(0), release, 1,
+                    Instant.EPOCH, "MZN", List.of(), List.of(), List.of(), items.values().stream()
+                    .map(ref -> new CatalogSnapshot.Item(ref.id(), ref.code(), ref.name(), ref.familyId(), null,
+                            null, null, false, null, List.of(), List.of())).toList());
+        }).when(catalog).snapshot(any(), any());
         store = liveFrom == null ? fixtures.newActiveStore() : fixtures.newStore();
         if (liveFrom != null) {
             mvc.perform(idem(post(InventoryFixtures.BO + "/activations"))
@@ -78,7 +89,7 @@ public final class Kitchen {
         }
         kitchen = fixtures.newWarehouse(store, "ALLOW");
         bar = fixtures.newWarehouse(store, "ALLOW");
-        route(null, kitchen);
+        defaultRoute = route(null, kitchen);
         route("BAR", bar);
     }
 
@@ -94,13 +105,26 @@ public final class Kitchen {
         return new Kitchen(mvc, fixtures, ledger, tx, jdbc, orders, catalog, liveFrom);
     }
 
-    public void route(String destination, UUID warehouse) throws Exception {
-        mvc.perform(idem(post(InventoryFixtures.BO + "/consumption-routes"))
+    public UUID route(String destination, UUID warehouse) throws Exception {
+        return id(mvc.perform(idem(post(InventoryFixtures.BO + "/consumption-routes"))
                         .with(account(null, Permission.INVENTORY_MANAGE)).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"storeId\": \"%s\", %s \"warehouseId\": \"%s\"}".formatted(store,
                                 destination == null ? "" : "\"destinationCode\": \"" + destination + "\",",
                                 warehouse)))
-                .andExpect(status().isCreated());
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+    }
+
+    /** Freezes the catalog as it is now into a release (as publishing would); its id. */
+    public UUID publish() {
+        UUID release = UUID.randomUUID();
+        releases.put(release, Map.copyOf(catalogItems));
+        return release;
+    }
+
+    /** Moves {@code item} to {@code family} in the working copy (published releases keep their family). */
+    public void moveToFamily(UUID item, UUID family) {
+        ItemRef ref = catalogItems.get(item);
+        catalogItems.put(item, new ItemRef(ref.id(), ref.code(), ref.name(), family, ref.active(), ref.variantIds()));
     }
 
     /** A catalog item of {@code family} (random when null), with {@code variants}. */
@@ -171,6 +195,11 @@ public final class Kitchen {
                 destination, List.of());
     }
 
+    public static BatchLineFact line(UUID item, String quantity, String destination, UUID release) {
+        return new BatchLineFact(UUID.randomUUID(), item, null, release, new BigDecimal(quantity), destination,
+                List.of());
+    }
+
     public static BatchLineFact variantLine(UUID item, UUID variant, String quantity) {
         return new BatchLineFact(UUID.randomUUID(), item, variant, UUID.randomUUID(), new BigDecimal(quantity),
                 "KITCHEN", List.of());
@@ -219,6 +248,14 @@ public final class Kitchen {
     public BigDecimal value(UUID warehouse, UUID item) {
         return jdbc.sql("SELECT value FROM inventory.stock_balance WHERE warehouse_id = ? AND stock_item_id = ?")
                 .params(warehouse, item).query(BigDecimal.class).optional().orElse(BigDecimal.ZERO);
+    }
+
+    /** The waste reclassified from sale by wasted voids (D117 amended): quantity and value per record. */
+    public List<Map<String, Object>> wasteRecords(UUID voidId) {
+        return jdbc.sql("""
+                        SELECT stock_item_id, warehouse_id, quantity, unit_cost, value, business_date, reason
+                        FROM inventory.waste_record WHERE void_id = ? ORDER BY created_at, id""")
+                .param(voidId).query().listOfRows();
     }
 
     public List<Map<String, Object>> exceptions() {

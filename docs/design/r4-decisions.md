@@ -183,6 +183,8 @@ As before, every transition is a method on the aggregate, and an illegal transit
 | **D121 — Preparation** | A `Preparation` confirms a preparation recipe for an output quantity: ingredient OUTs at average, and one `PREPARATION_IN` of the PREPARED stock item valued at the Σ of those outs, in one transaction (§8.4 "a política distingue preparação…"). A sale recipe may then consume the prepared item. | Prepared items consumed down to raw ingredients at sale time: batch cooking (5 l of soup) would never appear in stock. |
 | **D122 — Go-live and history** | `InventoryActivation(store, active_from)`: only lines confirmed at or after `active_from` are consumed, and R1–R3 history is never backfilled. The store starts with an opening count (D119). A store without activation consumes nothing and shows `INVENTORY_NOT_ACTIVE` on its status. | Backfilling past sales: there is no opening balance to consume them from. |
 
+**D117 amendment (S47 review, 2026-11-07):** a void with waste posts no stock movement, because the ingredients really were used; its share of the sale's cost (quantity × original unit cost) is reclassified from sale to waste in an append-only `inventory.waste_record`, audited and included in the waste report. A void without waste still posts the `CONSUMPTION_REVERSAL` IN at the original cost.
+
 ---
 
 ## 8. Purchasing (§5, §8.4 "apenas a receção confirmada altera stock")

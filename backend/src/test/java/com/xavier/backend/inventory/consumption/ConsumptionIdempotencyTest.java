@@ -38,8 +38,9 @@ class ConsumptionIdempotencyTest extends ConsumptionTestBase {
         long movements = kitchen.movementsOfStore();
         List<MovementView> second = consumption.consume(round.batchId());
 
+        assertThat(first).hasSize(2);
+        assertThat(second).isEmpty();
         assertThat(kitchen.movementsOfStore()).isEqualTo(movements);
-        assertThat(second).extracting(MovementView::id).isEqualTo(first.stream().map(MovementView::id).toList());
         assertThat(kitchen.quantity(kitchen.kitchen, flourOf(round))).isEqualByComparingTo("500");
     }
 
@@ -58,6 +59,30 @@ class ConsumptionIdempotencyTest extends ConsumptionTestBase {
         assertThat(movements).isEqualTo(3); // the receipt, flour and salt
         assertThat(kitchen.movementsOfStore()).isEqualTo(movements);
         assertThat(kitchen.quantity(kitchen.kitchen, flourOf(round))).isEqualByComparingTo("500");
+    }
+
+    /** A redelivery never re-plans a consumed line: a route changed since does not move its stock. */
+    @Test
+    void aRedeliveryAfterARouteChangePostsNothingNew() throws Exception {
+        BatchFacts round = pizzaRound();
+        consumption.consume(round.batchId());
+        UUID other = fixtures.newWarehouse(kitchen.store, "ALLOW");
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .put(com.xavier.backend.inventory.InventoryFixtures.BO + "/consumption-routes/"
+                                + kitchen.defaultRoute)
+                        .with(com.xavier.backend.inventory.InventoryFixtures.account(null,
+                                com.xavier.backend.access.Permission.INVENTORY_MANAGE))
+                        .with(org.springframework.security.test.web.servlet.request
+                                .SecurityMockMvcRequestPostProcessors.csrf())
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"warehouseId\": \"%s\", \"version\": 0}".formatted(other)))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk());
+        long movements = kitchen.movementsOfStore();
+
+        consumption.consume(round.batchId());
+
+        assertThat(kitchen.movementsOfStore()).isEqualTo(movements);
+        assertThat(kitchen.quantity(other, flour)).isEqualByComparingTo("0");
     }
 
     private UUID flour;
