@@ -18,6 +18,7 @@ import com.xavier.backend.reporting.repository.ReportQueries;
 import com.xavier.backend.reporting.repository.ReportQueries.CostAggregate;
 import com.xavier.backend.reporting.repository.ReportQueries.CreditAggregate;
 import com.xavier.backend.reporting.repository.ReportQueries.DiscountAggregate;
+import com.xavier.backend.reporting.repository.ReportQueries.OfferCostAggregate;
 import com.xavier.backend.reporting.repository.ReportQueries.ReceiptsAggregate;
 import com.xavier.backend.reporting.repository.ReportQueries.SalesAggregate;
 import com.xavier.backend.reporting.repository.ReportQueries.TaxAggregate;
@@ -195,18 +196,23 @@ public class ReportService {
         ReportRange range = new ReportRange(storeId, from, to);
         DiscountGrouping grouping = DiscountGrouping.valueOf(groupBy.toUpperCase(Locale.ROOT));
         Currency currency = currencyOf(storeId);
-        List<DiscountAggregate> groups = queries.discounts(grouping.key, storeId, from, to);
-        List<String> keys = groups.stream().map(DiscountAggregate::key).toList();
+        Map<String, DiscountAggregate> discounts = byKey(queries.discounts(grouping.key, storeId, from, to),
+                DiscountAggregate::key);
+        Map<String, OfferCostAggregate> offers = byKey(queries.offerCosts(grouping.offerKey, storeId, from, to),
+                OfferCostAggregate::key);
+        List<String> keys = Stream.concat(discounts.keySet().stream(), offers.keySet().stream()).distinct()
+                .sorted(Comparator.nullsLast(Comparator.naturalOrder())).toList();
         Map<String, String> names = switch (grouping) {
             case EMPLOYEE, APPROVER -> labels.employees(keys);
             case ITEM -> labels.items(keys);
             default -> Map.of();
         };
-        List<DiscountRow> rows = groups.stream().map(group -> discountRow(group,
-                grouping == DiscountGrouping.ORIGIN || grouping == DiscountGrouping.PROMOTION ? group.key()
-                        : label(names, group.key()), currency)).toList();
-        return costView(range, grouping.name(), rows, discountTotals(rows, currency),
-                latest(groups.stream().map(DiscountAggregate::asOf).toArray(Instant[]::new)));
+        List<DiscountRow> rows = keys.stream().map(key -> discountRow(key,
+                grouping == DiscountGrouping.ORIGIN || grouping == DiscountGrouping.PROMOTION ? key
+                        : label(names, key), discounts.get(key), offers.get(key), currency)).toList();
+        Instant asOf = latest(Stream.concat(discounts.values().stream().map(DiscountAggregate::asOf),
+                offers.values().stream().map(OfferCostAggregate::asOf)).toArray(Instant[]::new));
+        return costView(range, grouping.name(), rows, discountTotals(rows, currency), asOf);
     }
 
     /** The totals are the sum of the rows as shown, so an export's rows always add up to its TOTAL (S53 review). */
@@ -242,10 +248,12 @@ public class ReportService {
         });
     }
 
-    private static DiscountRow discountRow(DiscountAggregate group, String label, Currency currency) {
-        return new DiscountRow(group.key(), label, group.lines(), group.quantity(),
-                money(rounded(group.discount(), currency), currency),
-                money(rounded(group.offerCost(), currency), currency));
+    private static DiscountRow discountRow(String key, String label, DiscountAggregate discount,
+                                           OfferCostAggregate offer, Currency currency) {
+        return new DiscountRow(key, label, discount == null ? 0 : discount.lines(),
+                discount == null ? BigDecimal.ZERO : discount.quantity(),
+                money(discount == null ? null : rounded(discount.discount(), currency), currency),
+                money(offer == null ? null : rounded(offer.offerCost(), currency), currency));
     }
 
     /** The margin sums of one group, at the projections' scale until they are shown. */

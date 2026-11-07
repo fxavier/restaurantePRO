@@ -53,9 +53,12 @@ class ReportingR4RebuildTest {
             FROM reporting.cost_variance_record WHERE store_id = ? ORDER BY variance_id""",
             """
             SELECT source_type, source_id, line_id, business_date, item_id, family_code, origin, kind, promotion_code,
-                   operator_employee_id, approver_employee_id, quantity, discount_gross, consumed_line_id,
-                   consumed_line_quantity, at
-            FROM reporting.discount_record WHERE store_id = ? ORDER BY source_id, line_id""");
+                   operator_employee_id, approver_employee_id, quantity, discount_gross
+            FROM reporting.discount_record WHERE store_id = ? ORDER BY source_id, line_id""",
+            """
+            SELECT order_id, line_id, business_date, item_id, family_code, promotion_code, operator_employee_id,
+                   approver_employee_id, net_quantity, consumed_line_id, consumed_line_quantity
+            FROM reporting.offer_cost_record WHERE store_id = ? ORDER BY order_id, line_id""");
 
     @Autowired
     CostKitchen kitchen;
@@ -97,17 +100,24 @@ class ReportingR4RebuildTest {
                                  "unitPrice": 11.50, "reason": "regular"}"""
                                 .formatted(sales.orderVersion(cashier, live.sale().order()), line)))
                 .andExpect(status().isOk());
-        sales.payCash(live.sale(), "23.00", "23.00").andExpect(status().isCreated());
+        // a round of 2 offered, then 1 of them reversed: one coffee offered at close (0.50)
+        sales.confirmRound(live.sale().shop(), cashier, live.sale().order(), "2",
+                sales.orderVersion(cashier, live.sale().order()));
+        UUID offered = sales.lineIds(cashier, live.sale().order()).getLast();
+        adjust(cashier, offered, null, "\"kind\": \"OFFER\"", Permission.ORDER_OFFER);
+        adjust(cashier, offered, "1", "\"kind\": \"REVERSAL\"", Permission.ORDER_DISCOUNT);
+        sales.payCash(live.sale(), "35.50", "35.50").andExpect(status().isCreated());
         sales.close(cashier, live.sale().order(), sales.orderVersion(cashier, live.sale().order()),
                 UUID.randomUUID().toString()).andExpect(status().isOk());
         kitchen.wasteFlour(live, "1");
         kitchen.linkedReturnWithVariance(live);
         kitchen.correctionWithNothingOnHand(live);
         reporting.issuedDocuments(live.sale().order()).forEach(reporting::awaitSalesRecord);
-        kitchen.awaitRows("consumption_record", store, 4); // the sale, the reversal, the flour and the salt waste
+        kitchen.awaitRows("consumption_record", store, 5); // 2 rounds, the reversal, the flour and the salt waste
         kitchen.awaitRows("consumption_waste_record", store, 1);
         kitchen.awaitRows("cost_variance_record", store, 2);
-        kitchen.awaitRows("discount_record", store, 1);
+        kitchen.awaitRows("discount_record", store, 3);
+        kitchen.awaitRows("offer_cost_record", store, 1);
         reporting.awaitNothingPendingFor(store);
         day = reporting.businessDayOf(live.sale().order());
     }
@@ -151,8 +161,8 @@ class ReportingR4RebuildTest {
                 stray, stray, this.live.store(), day, this.live.warehouse(), this.live.flour());
         reporting.rows("""
                 INSERT INTO reporting.discount_record (source_type, source_id, line_id, store_id, business_date,
-                    origin, kind, quantity, discount_gross, at, projected_at)
-                VALUES ('ADJUSTMENT', ?, ?, ?, ?, 'MANUAL', 'DISCOUNT', 1, 1, now(), now()) RETURNING line_id""",
+                    origin, kind, quantity, discount_gross, projected_at)
+                VALUES ('ADJUSTMENT', ?, ?, ?, ?, 'MANUAL', 'DISCOUNT', 1, 1, now()) RETURNING line_id""",
                 stray, stray, this.live.store(), day);
 
         reporting.rebuild(this.live.store(), day, day, UUID.randomUUID().toString()).andExpect(status().isAccepted());
@@ -160,6 +170,21 @@ class ReportingR4RebuildTest {
         assertThat(reporting.awaitRebuildFinished(this.live.store()).get("status").asString())
                 .isEqualTo("COMPLETED");
         assertThat(projections()).isEqualTo(live);
+    }
+
+    private void adjust(Pos cashier, UUID line, String quantity, String values, Permission permission)
+            throws Exception {
+        String target = quantity == null ? "{\"lineId\": \"%s\"}".formatted(line)
+                : "{\"lineId\": \"%s\", \"quantity\": %s}".formatted(line, quantity);
+        mvc.perform(post(OrdersFixtures.POS + "/orders/" + this.live.sale().order() + "/discounts")
+                        .with(OrdersActors.pos(this.live.store(), cashier.employeeId(), cashier.terminalId(),
+                                permission)).with(csrf())
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
+                        .header("X-Approver-Code", "MGR").header("X-Approver-Pin", "1234")
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"orderVersion": %d, "lines": [%s], %s, "reason": "regular"}"""
+                                .formatted(sales.orderVersion(cashier, this.live.sale().order()), target, values)))
+                .andExpect(status().isOk());
     }
 
     private List<List<Map<String, Object>>> projections() {

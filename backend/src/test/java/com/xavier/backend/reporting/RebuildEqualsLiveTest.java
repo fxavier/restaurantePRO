@@ -69,7 +69,7 @@ class RebuildEqualsLiveTest {
                     + "WHERE store_id = ? ORDER BY charge_id",
             """
             SELECT void_id, business_date, local_hour, item_code, description, quantity, gross, reason, wasted,
-                   after_dispatch, employee_id, approver_id, line_id, voided_at
+                   after_dispatch, employee_id, approver_id
             FROM reporting.void_record WHERE store_id = ? ORDER BY void_id""");
 
     @Autowired
@@ -134,7 +134,8 @@ class RebuildEqualsLiveTest {
         JsonNode run = reporting.awaitRebuildFinished(sale.store());
 
         assertThat(run.get("status").asString()).isEqualTo("COMPLETED");
-        assertThat(run.get("projected").asLong()).isEqualTo(4); // the document, the void, the payment, the charge
+        // the document, the void, the payment, the charge, and the closed order (its offers, S53)
+        assertThat(run.get("projected").asLong()).isEqualTo(5);
         assertThat(projections()).isEqualTo(live);
         assertThat(reports()).isEqualTo(liveReports);
     }

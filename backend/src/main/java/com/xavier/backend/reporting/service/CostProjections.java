@@ -7,10 +7,12 @@ import com.xavier.backend.inventory.WasteFact;
 import com.xavier.backend.orders.BatchFacts.BatchLineFact;
 import com.xavier.backend.orders.DiscountFacts;
 import com.xavier.backend.orders.DiscountFacts.DiscountLine;
+import com.xavier.backend.orders.OfferFacts;
 import com.xavier.backend.orders.OrdersApi;
 import com.xavier.backend.reporting.repository.ProjectionStore;
 import com.xavier.backend.reporting.repository.ProjectionStore.ConsumptionRecord;
 import com.xavier.backend.reporting.repository.ProjectionStore.DiscountRecord;
+import com.xavier.backend.reporting.repository.ProjectionStore.OfferCostRecord;
 import com.xavier.backend.reporting.repository.ProjectionStore.VarianceRecord;
 import com.xavier.backend.reporting.repository.ProjectionStore.WasteRecord;
 import java.time.Clock;
@@ -93,17 +95,29 @@ public class CostProjections {
                     facts.storeId(), facts.businessDay(), line.itemId(),
                     families.familyOf(facts.storeId(), line.releaseId(), line.itemId()), originOf(line), kindOf(line),
                     line.promotionCode(), line.operatorEmployeeId(), line.approverEmployeeId(), line.quantity(),
-                    line.discountGross().amount(), line.consumedLineId(), line.consumedLineQuantity(), line.at()),
-                    now);
+                    line.discountGross().amount()), now);
+        }
+    }
+
+    /** The offered billing lines of a closed order, for the cost of offers (S53: measured at close). */
+    @Transactional
+    public void projectOfferCosts(UUID orderId) {
+        OfferFacts facts = orders.offerFacts(orderId);
+        Instant now = clock.instant();
+        for (OfferFacts.OfferLine line : facts.lines()) {
+            store.insertOfferCost(new OfferCostRecord(facts.orderId(), line.lineId(), facts.storeId(),
+                    facts.businessDay(), line.itemId(), families.familyOf(facts.storeId(), line.releaseId(),
+                    line.itemId()), line.promotionCode(), line.operatorEmployeeId(), line.approverEmployeeId(),
+                    line.netQuantity(), line.consumedLineId(), line.consumedLineQuantity()), now);
         }
     }
 
     /**
-     * A REVERSAL (it gives money back: a negative discount) is the kind of a reversal whatever it takes back;
-     * otherwise PROMOTION, OFFER and LOYALTY (a REWARD) name their kind and a MANUAL change is a DISCOUNT.
+     * A REVERSAL is what orders says takes something back ({@code reversesOrigin}), whatever it reverses; otherwise
+     * PROMOTION, OFFER and LOYALTY (a REWARD) name their kind and a MANUAL change is a DISCOUNT.
      */
     static String kindOf(DiscountLine line) {
-        if (line.discountGross().amount().signum() < 0) {
+        if (line.reversesOrigin() != null) {
             return "REVERSAL";
         }
         return switch (line.origin()) {

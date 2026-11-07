@@ -20,7 +20,7 @@ public class ProjectionStore {
     /** Every projection table with its own store and business date (the line and tax tables cascade). */
     public static final List<String> PROJECTIONS = List.of("sales_record", "payment_record", "credit_record",
             "void_record", "consumption_record", "consumption_waste_record", "cost_variance_record",
-            "discount_record");
+            "discount_record", "offer_cost_record");
 
     private final JdbcClient jdbc;
 
@@ -54,8 +54,7 @@ public class ProjectionStore {
 
     public record VoidRecord(UUID voidId, UUID storeId, LocalDate businessDate, int localHour, String itemCode,
                              String description, BigDecimal quantity, BigDecimal gross, String reason,
-                             boolean wasted, boolean afterDispatch, UUID employeeId, UUID approverId, UUID lineId,
-                             Instant voidedAt) {
+                             boolean wasted, boolean afterDispatch, UUID employeeId, UUID approverId) {
     }
 
     /** A stock movement that is cost of goods (D131): a sale's consumption, its reversal, or a manual waste. */
@@ -80,8 +79,27 @@ public class ProjectionStore {
     public record DiscountRecord(String sourceType, UUID sourceId, UUID lineId, UUID storeId, LocalDate businessDate,
                                  UUID itemId, String familyCode, String origin, String kind, String promotionCode,
                                  UUID operatorEmployeeId, UUID approverEmployeeId, BigDecimal quantity,
-                                 BigDecimal discountGross, UUID consumedLineId, BigDecimal consumedLineQuantity,
-                                 Instant at) {
+                                 BigDecimal discountGross) {
+    }
+
+    /** A closed order's billing line priced as an OFFER (S53): its net billed quantity and its round line. */
+    public record OfferCostRecord(UUID orderId, UUID lineId, UUID storeId, LocalDate businessDate, UUID itemId,
+                                  String familyCode, String promotionCode, UUID operatorEmployeeId,
+                                  UUID approverEmployeeId, BigDecimal netQuantity, UUID consumedLineId,
+                                  BigDecimal consumedLineQuantity) {
+    }
+
+    public void insertOfferCost(OfferCostRecord o, Instant projectedAt) {
+        jdbc.sql("""
+                        INSERT INTO reporting.offer_cost_record (order_id, line_id, store_id, business_date, item_id,
+                            family_code, promotion_code, operator_employee_id, approver_employee_id, net_quantity,
+                            consumed_line_id, consumed_line_quantity, projected_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT (order_id, line_id) DO NOTHING""")
+                .params(o.orderId(), o.lineId(), o.storeId(), o.businessDate(), o.itemId(), o.familyCode(),
+                        o.promotionCode(), o.operatorEmployeeId(), o.approverEmployeeId(), o.netQuantity(),
+                        o.consumedLineId(), o.consumedLineQuantity(), Timestamp.from(projectedAt))
+                .update();
     }
 
     /** @return whether the header was inserted (false: the document was already projected) */
@@ -157,12 +175,12 @@ public class ProjectionStore {
         return jdbc.sql("""
                         INSERT INTO reporting.void_record (void_id, store_id, business_date, local_hour, item_code,
                             description, quantity, gross, reason, wasted, after_dispatch, employee_id, approver_id,
-                            line_id, voided_at, projected_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            projected_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT (void_id) DO NOTHING""")
                 .params(v.voidId(), v.storeId(), v.businessDate(), v.localHour(), v.itemCode(), v.description(),
                         v.quantity(), v.gross(), v.reason(), v.wasted(), v.afterDispatch(), v.employeeId(),
-                        v.approverId(), v.lineId(), Timestamp.from(v.voidedAt()), Timestamp.from(projectedAt))
+                        v.approverId(), Timestamp.from(projectedAt))
                 .update() == 1;
     }
 
@@ -207,14 +225,12 @@ public class ProjectionStore {
         jdbc.sql("""
                         INSERT INTO reporting.discount_record (source_type, source_id, line_id, store_id,
                             business_date, item_id, family_code, origin, kind, promotion_code, operator_employee_id,
-                            approver_employee_id, quantity, discount_gross, consumed_line_id,
-                            consumed_line_quantity, at, projected_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            approver_employee_id, quantity, discount_gross, projected_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT (source_type, source_id, line_id) DO NOTHING""")
                 .params(d.sourceType(), d.sourceId(), d.lineId(), d.storeId(), d.businessDate(), d.itemId(),
                         d.familyCode(), d.origin(), d.kind(), d.promotionCode(), d.operatorEmployeeId(),
-                        d.approverEmployeeId(), d.quantity(), d.discountGross(), d.consumedLineId(),
-                        d.consumedLineQuantity(), Timestamp.from(d.at()), Timestamp.from(projectedAt))
+                        d.approverEmployeeId(), d.quantity(), d.discountGross(), Timestamp.from(projectedAt))
                 .update();
     }
 

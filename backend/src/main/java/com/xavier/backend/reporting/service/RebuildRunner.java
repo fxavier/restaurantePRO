@@ -73,6 +73,8 @@ class RebuildRunner {
                     costs::projectWaste);
             pull(runId, projected, page -> orders.discountSourceIds(run.storeId(), run.from(), run.to(), page),
                     source -> costs.projectDiscounts(source.sourceType(), source.sourceId()));
+            pull(runId, projected, page -> orders.closedOrderIds(run.storeId(), run.from(), run.to(), page),
+                    costs::projectOfferCosts);
             runs.finish(runId, projected[0], null, clock.instant());
         } catch (RuntimeException e) {
             log.error("Rebuild {} of store {} failed after {} facts", runId, run.storeId(), projected[0], e);

@@ -42,10 +42,9 @@ class ReportTotalsTest {
         consumption(round, UUID.randomUUID(), "-1.0000"); // the round line of 3 consumed 1.00
         for (int i = 0; i < 3; i++) {
             jdbc.sql("""
-                    INSERT INTO reporting.discount_record (source_type, source_id, line_id, store_id, business_date,
-                        origin, kind, operator_employee_id, quantity, discount_gross, consumed_line_id,
-                        consumed_line_quantity, at, projected_at)
-                    VALUES ('ADJUSTMENT', ?, ?, ?, ?, 'OFFER', 'OFFER', ?, 1, 12.50, ?, 3, now(), now())""")
+                    INSERT INTO reporting.offer_cost_record (order_id, line_id, store_id, business_date,
+                        operator_employee_id, net_quantity, consumed_line_id, consumed_line_quantity, projected_at)
+                    VALUES (?, ?, ?, ?, ?, 1, ?, 3, now())""")
                     .params(UUID.randomUUID(), UUID.randomUUID(), store, DAY, UUID.randomUUID(), round).update();
         }
 

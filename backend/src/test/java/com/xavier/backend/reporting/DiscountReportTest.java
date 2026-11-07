@@ -61,11 +61,15 @@ class DiscountReportTest {
     @Autowired
     CostProjections projections;
 
+    @Autowired
+    com.xavier.backend.orders.OrdersApi ordersApi;
+
     final UUID manager = UUID.randomUUID();
     LiveSale live;
     Pos cashier;
     String promotion;
     UUID promoted;
+    long promotionVersion;
     LocalDate day;
 
     @BeforeEach
@@ -79,7 +83,7 @@ class DiscountReportTest {
         promotion = OrdersPromotions.code("R");
         promotions.promotion(live.store(), live.sale().shop().item(), promotion,
                 "\"kind\": \"AMOUNT_OFF_UNIT\", \"amount\": 0.50", null);
-        long promotionVersion = promotions.publish(live.store());
+        promotionVersion = promotions.publish(live.store());
         promoted = OrdersFixtures.id(orders.draft(live.sale().shop(), order, "2", cashier.employeeId(),
                 cashier.terminalId()));
         orders.confirm(live.sale().shop(), order, """
@@ -98,6 +102,7 @@ class DiscountReportTest {
 
     @Test
     void byOriginTheOfferCarriesTheCostOfWhatWasGivenAway() throws Exception {
+        closeTheOrder(1);
         JsonNode report = reporting.report("discounts", live.store(), day, day, "groupBy", "origin");
 
         assertThat(rows(report)).containsExactly(
@@ -114,6 +119,7 @@ class DiscountReportTest {
                 .andExpect(status().isOk());
         kitchen.awaitRows("discount_record", live.store(), 4);
         reporting.awaitNothingPendingFor(live.store());
+        closeTheOrder(2);
 
         JsonNode report = reporting.report("discounts", live.store(), day, day, "groupBy", "origin");
 
@@ -127,6 +133,7 @@ class DiscountReportTest {
         discount(offered, "\"kind\": \"REVERSAL\"", Permission.ORDER_DISCOUNT, false).andExpect(status().isOk());
         kitchen.awaitRows("discount_record", live.store(), 4);
         reporting.awaitNothingPendingFor(live.store());
+        closeTheOrder(0);
 
         JsonNode report = reporting.report("discounts", live.store(), day, day, "groupBy", "origin");
 
@@ -145,6 +152,7 @@ class DiscountReportTest {
         kitchen.awaitRows("discount_record", live.store(), 4);
         kitchen.awaitRows("void_record", live.store(), 1);
         reporting.awaitNothingPendingFor(live.store());
+        closeTheOrder(1);
 
         assertThat(rows(reporting.report("discounts", live.store(), day, day, "groupBy", "origin")))
                 .as("only the first offer's 0.50 is left").contains("OFFER|OFFER|2|2|24.00|0.50");
@@ -158,6 +166,7 @@ class DiscountReportTest {
         kitchen.awaitRows("discount_record", live.store(), 4);
         kitchen.awaitRows("consumption_record", live.store(), 3); // its consumption reversed
         reporting.awaitNothingPendingFor(live.store());
+        closeTheOrder(2);
 
         assertThat(rows(reporting.report("discounts", live.store(), day, day, "groupBy", "origin")))
                 .as("the offered unit still cost 0.50").contains("OFFER|OFFER|2|2|24.00|1.00");
@@ -170,9 +179,91 @@ class DiscountReportTest {
         kitchen.awaitRows("discount_record", live.store(), 4);
         kitchen.awaitRows("void_record", live.store(), 1);
         reporting.awaitNothingPendingFor(live.store());
+        closeTheOrder(2);
 
         assertThat(rows(reporting.report("discounts", live.store(), day, day, "groupBy", "origin")))
                 .as("the one unit left was offered: 0.50").contains("OFFER|OFFER|2|2|24.00|1.00");
+    }
+
+    @Test
+    void aPartialReversalOfAnOfferLeavesTheRestOfferedAndNothingUnderPromotion() throws Exception {
+        discount(promoted, "\"kind\": \"OFFER\"", Permission.ORDER_OFFER, true).andExpect(status().isOk());
+        discount(promoted, "\"quantity\": 1}], \"kind\": \"REVERSAL\"", Permission.ORDER_DISCOUNT, false,
+                false).andExpect(status().isOk());
+        kitchen.awaitRows("discount_record", live.store(), 5);
+        closeTheOrder(2);
+
+        assertThat(rows(reporting.report("discounts", live.store(), day, day, "groupBy", "origin")))
+                .as("offered 1 + 2, 1 reversed: the cost of 2 offered coffees (0.50 each)").containsExactly(
+                        "MANUAL|MANUAL|1|2|1.00|0.00",
+                        "OFFER|OFFER|1|2|23.00|1.00",
+                        "PROMOTION|PROMOTION|1|2|1.00|0.00");
+    }
+
+    @Test
+    void anOfferedUnitTransferredAndVoidedOnTheTargetCostsNothing() throws Exception {
+        UUID order = live.sale().order();
+        UUID three = OrdersFixtures.id(orders.draft(live.sale().shop(), order, "3", cashier.employeeId(),
+                cashier.terminalId()));
+        orders.confirm(live.sale().shop(), order, """
+                        {"orderVersion": %d, "catalogVersion": %d, "lineIds": ["%s"], "promotionVersion": %d}"""
+                        .formatted(sales.orderVersion(cashier, order), live.sale().shop().catalogVersion(), three,
+                                promotionVersion), cashier.employeeId(), cashier.terminalId())
+                .andExpect(status().isCreated());
+        kitchen.awaitRows("consumption_record", live.store(), 3);
+        discount(three, "\"kind\": \"OFFER\"", Permission.ORDER_OFFER, true).andExpect(status().isOk());
+        UUID target = orders.openedAt(live.sale().shop(), orders.newTable(live.sale().shop(), "T"
+                + UUID.randomUUID().toString().substring(0, 5)), cashier.employeeId(), cashier.terminalId());
+        orders.transfer(live.sale().shop(), order, sales.orderVersion(cashier, order), target,
+                sales.orderVersion(cashier, target), java.util.Map.of(three, "1"), false, cashier.employeeId(),
+                cashier.terminalId(), UUID.randomUUID().toString()).andExpect(status().isCreated());
+        UUID copy = ordersApi.billingView(target).lines().getFirst().lineId();
+        sales.settledVoid(cashier, target, sales.orderVersion(cashier, target), copy, "1",
+                UUID.randomUUID().toString()).andExpect(status().isCreated());
+        closeTheOrder(2);
+
+        assertThat(rows(reporting.report("discounts", live.store(), day, day, "groupBy", "origin")))
+                .as("the first offer's 0.50 and 2 of the 3 (2c = 1.00)").contains("OFFER|OFFER|2|4|48.50|1.50");
+    }
+
+    @Test
+    void anOfferReversedThenVoidedCostsNothingAndNeverLess() throws Exception {
+        UUID offered = sales.lineIds(cashier, live.sale().order()).getFirst();
+        discount(offered, "\"kind\": \"REVERSAL\"", Permission.ORDER_DISCOUNT, false).andExpect(status().isOk());
+        kitchen.voidLine(live.sale(), offered, "1", false).andExpect(status().isCreated());
+        kitchen.awaitRows("discount_record", live.store(), 4);
+        closeTheOrder(0);
+
+        assertThat(rows(reporting.report("discounts", live.store(), day, day, "groupBy", "origin")))
+                .contains("OFFER|OFFER|0|0|0.00|0.00");
+    }
+
+    @Test
+    void anOfferReversedReOfferedAndPartlyVoidedIsCostedOnce() throws Exception {
+        discount(promoted, "\"kind\": \"OFFER\"", Permission.ORDER_OFFER, true).andExpect(status().isOk());
+        discount(promoted, "\"kind\": \"REVERSAL\"", Permission.ORDER_DISCOUNT, false).andExpect(status().isOk());
+        discount(promoted, "\"kind\": \"OFFER\"", Permission.ORDER_OFFER, true).andExpect(status().isOk());
+        kitchen.voidLine(live.sale(), promoted, "1", false).andExpect(status().isCreated());
+        kitchen.awaitRows("discount_record", live.store(), 6);
+        closeTheOrder(2);
+
+        assertThat(rows(reporting.report("discounts", live.store(), day, day, "groupBy", "origin")))
+                .as("the first offer's 0.50 and the one coffee still offered").contains(
+                        "OFFER|OFFER|2|3|35.50|1.00");
+    }
+
+    /** Pays what is due in cash and closes the order; waits until the cost of its offers is projected. */
+    private void closeTheOrder(int offeredLines) throws Exception {
+        UUID order = live.sale().order();
+        java.math.BigDecimal due = ordersApi.billingView(order).due().amount();
+        if (due.signum() > 0) {
+            sales.pay(cashier, order, "CASH", due.toPlainString(), due.toPlainString(), UUID.randomUUID().toString())
+                    .andExpect(status().isCreated());
+        }
+        sales.close(cashier, order, sales.orderVersion(cashier, order), UUID.randomUUID().toString())
+                .andExpect(status().isOk());
+        reporting.awaitNothingPendingFor(live.store());
+        kitchen.awaitRows("offer_cost_record", live.store(), offeredLines);
     }
 
     private UUID splitOf(UUID line) {
@@ -182,6 +273,7 @@ class DiscountReportTest {
 
     @Test
     void byPromotionApproverEmployeeAndItem() throws Exception {
+        closeTheOrder(1);
         assertThat(rows(reporting.report("discounts", live.store(), day, day, "groupBy", "promotion")))
                 .containsExactly(promotion + "|" + promotion + "|1|2|1.00|0.00", "||2|3|13.50|0.50");
         assertThat(rows(reporting.report("discounts", live.store(), day, day, "groupBy", "approver")))
@@ -211,6 +303,7 @@ class DiscountReportTest {
 
     @Test
     void theDiscountsAreExportedAsCsvAndAudited() throws Exception {
+        closeTheOrder(1);
         String csv = mvc.perform(post(ReportingFixtures.REPORTS + "/exports")
                         .with(com.xavier.backend.cash.CashFixtures.account(live.store(), Permission.REPORT_VIEW,
                                 Permission.REPORT_EXPORT)).with(csrf())

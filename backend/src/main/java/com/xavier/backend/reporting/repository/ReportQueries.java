@@ -88,42 +88,30 @@ public class ReportQueries {
             GROUP BY 1""";
 
     /**
-     * Discounted lines, a REVERSAL netting what it takes back (negative lines, quantity and discount, under the
-     * origin it reverses). An OFFER's cost is its signed offered quantity × the unit cost of the round line it
-     * descends from (that line's sale consumption ÷ its confirmed quantity: a partial offer is a split line with no
-     * consumption of its own, and a void of other units of the round line does not change it). Units of the offered
-     * line voided after the offer carry none: up to what is still offered, they come off the line's latest offer.
-     * Each record's cost is rounded to the projections' scale (4).
+     * Discounted lines, as operators recorded them: a REVERSAL nets what it takes back (negative lines, quantity and
+     * discount, under the origin it reverses).
      */
     public static final String DISCOUNTS = """
-            WITH d AS (
-                SELECT d.*, CASE WHEN d.kind = 'REVERSAL' THEN -1 ELSE 1 END AS sign,
-                       d.origin = 'OFFER' AND d.kind <> 'REVERSAL' AND d.at = max(d.at) FILTER (
-                           WHERE d.origin = 'OFFER' AND d.kind <> 'REVERSAL') OVER (PARTITION BY d.line_id)
-                           AS latest_offer
-                FROM reporting.discount_record d
-                WHERE d.store_id = :store AND d.business_date BETWEEN :from AND :to),
-            offered AS (
-                SELECT line_id, sum(sign * quantity) AS quantity,
-                       min(at) FILTER (WHERE kind <> 'REVERSAL') AS since
-                FROM d WHERE origin = 'OFFER' GROUP BY line_id),
-            voided AS (
-                SELECT o.line_id, least(greatest(o.quantity, 0), coalesce(sum(v.quantity), 0)) AS quantity
-                FROM offered o
-                LEFT JOIN reporting.void_record v ON v.line_id = o.line_id AND v.voided_at >= o.since
-                GROUP BY o.line_id, o.quantity)
-            SELECT %s AS key, sum(d.sign) AS lines, sum(d.sign * d.quantity) AS quantity,
-                   sum(d.discount_gross) AS discount,
-                   coalesce(sum(round(u.unit_cost * (d.sign * d.quantity
-                       - CASE WHEN d.latest_offer THEN x.quantity ELSE 0 END), 4)) FILTER (WHERE d.origin = 'OFFER'),
-                       0) AS offer_cost,
-                   max(d.projected_at) AS as_of
-            FROM d
-            LEFT JOIN voided x ON x.line_id = d.line_id
-            LEFT JOIN LATERAL (
-                SELECT -sum(c.value) / d.consumed_line_quantity AS unit_cost
-                FROM reporting.consumption_record c
-                WHERE c.line_id = d.consumed_line_id AND c.type = 'SALE_CONSUMPTION') u ON d.origin = 'OFFER'
+            SELECT %s AS key, sum(CASE WHEN d.kind = 'REVERSAL' THEN -1 ELSE 1 END) AS lines,
+                   sum(CASE WHEN d.kind = 'REVERSAL' THEN -d.quantity ELSE d.quantity END) AS quantity,
+                   sum(d.discount_gross) AS discount, max(d.projected_at) AS as_of
+            FROM reporting.discount_record d
+            WHERE d.store_id = :store AND d.business_date BETWEEN :from AND :to
+            GROUP BY 1 ORDER BY 1 NULLS LAST""";
+
+    /**
+     * The cost of offers, measured at close: each offered billing line's net quantity × the unit cost of the round
+     * line it descends from (its sale consumption ÷ its confirmed quantity, so a void of other units of that line
+     * does not change it), rounded per line to the projections' scale (4).
+     */
+    public static final String OFFER_COSTS = """
+            SELECT %s AS key, coalesce(sum(round(o.net_quantity * u.cost / o.consumed_line_quantity, 4)), 0)
+                       AS offer_cost, max(o.projected_at) AS as_of
+            FROM reporting.offer_cost_record o
+            CROSS JOIN LATERAL (
+                SELECT coalesce(-sum(c.value), 0) AS cost FROM reporting.consumption_record c
+                WHERE c.line_id = o.consumed_line_id AND c.type = 'SALE_CONSUMPTION') u
+            WHERE o.store_id = :store AND o.business_date BETWEEN :from AND :to
             GROUP BY 1 ORDER BY 1 NULLS LAST""";
 
     private final JdbcClient jdbc;
@@ -153,8 +141,10 @@ public class ReportQueries {
     public record CostAggregate(String key, BigDecimal amount, BigDecimal waste, Instant asOf) {
     }
 
-    public record DiscountAggregate(String key, long lines, BigDecimal quantity, BigDecimal discount,
-                                    BigDecimal offerCost, Instant asOf) {
+    public record DiscountAggregate(String key, long lines, BigDecimal quantity, BigDecimal discount, Instant asOf) {
+    }
+
+    public record OfferCostAggregate(String key, BigDecimal offerCost, Instant asOf) {
     }
 
     /** {@code sql} is one of the {@code MARGIN_*} queries, {@code keyExpression} a margin grouping's key over it. */
@@ -165,11 +155,18 @@ public class ReportQueries {
                 .list();
     }
 
-    /** Discounted lines grouped by {@code keyExpression}, or {@link #TOTAL}. */
+    /** Discounted lines grouped by {@code keyExpression}. */
     public List<DiscountAggregate> discounts(String keyExpression, UUID store, LocalDate from, LocalDate to) {
         return query(DISCOUNTS.formatted(keyExpression), store, from, to)
                 .query((rs, n) -> new DiscountAggregate(rs.getString("key"), rs.getLong("lines"),
-                        rs.getBigDecimal("quantity"), rs.getBigDecimal("discount"), rs.getBigDecimal("offer_cost"),
+                        rs.getBigDecimal("quantity"), rs.getBigDecimal("discount"), instant(rs, "as_of")))
+                .list();
+    }
+
+    /** The cost of offers grouped by {@code keyExpression} over {@code offer_cost_record o}. */
+    public List<OfferCostAggregate> offerCosts(String keyExpression, UUID store, LocalDate from, LocalDate to) {
+        return query(OFFER_COSTS.formatted(keyExpression), store, from, to)
+                .query((rs, n) -> new OfferCostAggregate(rs.getString("key"), rs.getBigDecimal("offer_cost"),
                         instant(rs, "as_of")))
                 .list();
     }

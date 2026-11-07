@@ -3,6 +3,7 @@ package com.xavier.backend.reporting.inventory;
 import com.xavier.backend.inventory.model.event.ConsumptionWasteRecorded;
 import com.xavier.backend.inventory.model.event.StockMovementsPosted;
 import com.xavier.backend.orders.model.event.LineDiscountsRecorded;
+import com.xavier.backend.orders.model.event.OrderClosed;
 import com.xavier.backend.reporting.service.CostProjections;
 import org.springframework.modulith.events.ApplicationModuleListener;
 import org.springframework.stereotype.Service;
@@ -37,5 +38,11 @@ public class CostOfGoodsListeners {
     @ApplicationModuleListener
     public void on(LineDiscountsRecorded event) {
         projections.projectDiscounts(event.sourceType(), event.sourceId());
+    }
+
+    /** The cost of an order's offers is measured once it is closed, from its billed lines. */
+    @ApplicationModuleListener
+    public void on(OrderClosed event) {
+        projections.projectOfferCosts(event.orderId());
     }
 }
