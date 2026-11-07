@@ -72,7 +72,7 @@ CREATE TABLE inventory.stock_count_line
 );
 
 -- Lines change only while the count is DRAFT or IN_PROGRESS; afterwards approval writes expected and difference
--- once, and nothing else. A unit cost belongs to an opening count only.
+-- once (SUBMITTED or APPROVED counts only), and nothing else. A unit cost belongs to an opening count only.
 CREATE FUNCTION inventory.guard_stock_count_line() RETURNS trigger
     LANGUAGE plpgsql AS
 $$
@@ -90,7 +90,7 @@ BEGIN
     IF count_status IN ('DRAFT', 'IN_PROGRESS') THEN
         RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
     END IF;
-    IF TG_OP = 'UPDATE' AND OLD.expected_quantity IS NULL
+    IF TG_OP = 'UPDATE' AND count_status IN ('SUBMITTED', 'APPROVED') AND OLD.expected_quantity IS NULL
         AND ROW (NEW.id, NEW.count_id, NEW.stock_item_id, NEW.counted_quantity, NEW.unit, NEW.counted_at,
                  NEW.counted_by_actor_kind, NEW.counted_by_actor_id, NEW.unit_cost)
             IS NOT DISTINCT FROM

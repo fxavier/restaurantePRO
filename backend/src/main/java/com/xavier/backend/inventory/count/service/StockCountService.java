@@ -82,7 +82,7 @@ public class StockCountService {
                         request.kind(), request.scope(), listed, accessPolicy.current().userId(), clock.instant()),
                 () -> CountConflictException.liveCountExists(request.warehouseId()), "stock_count_live_ux");
         audit("STOCK_COUNT_CREATED", count, null, Map.of());
-        return CountView.from(count);
+        return view(count);
     }
 
     @Transactional
@@ -113,7 +113,7 @@ public class StockCountService {
             details.put("unitCost", line.getUnitCost().toPlainString());
         }
         audit("STOCK_COUNT_LINE_RECORDED", saved, null, details);
-        return CountView.from(saved);
+        return view(saved);
     }
 
     @Transactional
@@ -130,7 +130,7 @@ public class StockCountService {
         count.reject(request.reason(), accessPolicy.current().userId(), clock.instant());
         StockCount saved = counts.saveAndFlush(count);
         audit("STOCK_COUNT_REJECTED", saved, saved.getRejectReason(), Map.of());
-        return CountView.from(saved);
+        return view(saved);
     }
 
     @Transactional
@@ -143,13 +143,13 @@ public class StockCountService {
     @Transactional(readOnly = true)
     public CountView get(UUID id) {
         accessPolicy.require(Permission.INVENTORY_VIEW, storeOf(id));
-        return CountView.from(counts.findById(id).orElseThrow(() -> new InventoryNotFoundException(ENTITY, id)));
+        return view(counts.findById(id).orElseThrow(() -> new InventoryNotFoundException(ENTITY, id)));
     }
 
     private CountView saved(String action, StockCount count) {
         StockCount saved = counts.saveAndFlush(count);
         audit(action, saved, null, Map.of());
-        return CountView.from(saved);
+        return view(saved);
     }
 
     /** D42: the count's store alone (404), then {@code permission} there (403), then the row FOR UPDATE. */
@@ -175,5 +175,15 @@ public class StockCountService {
         details.put("status", count.getStatus().name());
         auditLog.recordAsCurrentActor(action, ENTITY, count.getId().toString(), count.getStoreId(), null, reason,
                 details);
+    }
+
+    static CountView view(StockCount count) {
+        return new CountView(count.getId(), count.getStoreId(), count.getWarehouseId(), count.getKind().name(),
+                count.getScope().name(), count.getStatus().name(), count.getCreatedAt(), count.getStartedAt(),
+                count.getSubmittedAt(), count.getDecidedAt(), count.getDecidedByAccountId(), count.getRejectReason(),
+                count.getCancelledAt(), count.getLines().stream().map(line -> new CountView.Line(line.getId(),
+                        line.getStockItemId(), line.getCountedQuantity(), line.getUnit(), line.getCountedAt(),
+                        line.getUnitCost(), line.getExpectedQuantity(), line.getDifference())).toList(),
+                count.getVersion());
     }
 }
