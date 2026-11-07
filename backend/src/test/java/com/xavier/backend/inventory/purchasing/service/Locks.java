@@ -14,10 +14,6 @@ final class Locks {
     private Locks() {
     }
 
-    static int backendPid(JdbcClient jdbc) {
-        return jdbc.sql("SELECT pg_backend_pid()").query(Integer.class).single();
-    }
-
     /**
      * How many sessions wait, directly or queued behind another waiter, for a lock while running a statement on
      * {@code table}. Row-lock waiters queue: only the first waits on the holder, the next ones on the first.

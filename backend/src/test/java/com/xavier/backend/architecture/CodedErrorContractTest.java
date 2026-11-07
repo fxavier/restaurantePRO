@@ -38,6 +38,8 @@ import com.xavier.backend.fiscal.exception.PaymentSnapshotMismatchException;
 import com.xavier.backend.identity.exception.LoginThrottledException;
 import com.xavier.backend.inventory.exception.InventoryConflictException;
 import com.xavier.backend.inventory.exception.InventoryRuleException;
+import com.xavier.backend.inventory.purchasing.exception.PurchasingConflictException;
+import com.xavier.backend.inventory.purchasing.exception.PurchasingRuleException;
 import com.xavier.backend.identity.exception.PinChangeNotRequiredException;
 import com.xavier.backend.identity.exception.PinUnchangedException;
 import com.xavier.backend.orders.exception.OrderConflictException;
@@ -333,7 +335,25 @@ class CodedErrorContractTest {
             Map.entry("menu-group-invalid", () -> CatalogRuleException.menuGroupInvalid(
                     "Item BURGER is STANDARD: only a MENU item has menu groups.")),
             Map.entry("menu-not-allowed", () -> CatalogRuleException.menuNotAllowed("LUNCH", "a macro")),
-            Map.entry("item-not-published", () -> CatalogRuleException.itemNotPublished(OTHER, List.of(ID))));
+            Map.entry("item-not-published", () -> CatalogRuleException.itemNotPublished(OTHER, List.of(ID))),
+            // R4 inventory purchasing (S48)
+            Map.entry("po-has-receipts", () -> PurchasingRuleException.hasReceipts(ID)),
+            Map.entry("po-not-submitted", () -> PurchasingRuleException.notSubmitted(ID, "CLOSED")),
+            Map.entry("return-exceeds-received", () -> PurchasingRuleException.returnExceedsReceived(ID,
+                    new BigDecimal("4.000000"))),
+            Map.entry("receipt-not-confirmed", () -> PurchasingRuleException.receiptNotConfirmed(ID, "DRAFT")),
+            Map.entry("purchase-reference-mismatch", () -> PurchasingRuleException.referenceMismatch(
+                    "Pack " + ID + " is not a pack of stock item " + OTHER + ".")),
+            Map.entry("purchase-unit-cost-required", () -> PurchasingRuleException.unitCostRequired(ID)),
+            Map.entry("purchase-reason-required", () -> PurchasingRuleException.reasonRequired("cost correction")),
+            Map.entry("po-state", () -> PurchasingConflictException.orderState(ID, "SUBMITTED", "be edited")),
+            Map.entry("receipt-state", () -> PurchasingConflictException.receiptState(ID, "CONFIRMED",
+                    "be confirmed")),
+            Map.entry("return-state", () -> PurchasingConflictException.returnState(ID, "CANCELLED", "be confirmed")),
+            Map.entry("po-number-taken", () -> PurchasingConflictException.orderNumberTaken(ID, "PO-7")),
+            Map.entry("supplier-item-exists", () -> PurchasingConflictException.supplierItemExists(ID, OTHER)),
+            Map.entry("cost-correction-concurrent", () -> PurchasingConflictException.correctionConcurrent(ID)),
+            Map.entry("supplier-code-taken", () -> InventoryConflictException.codeTaken("SUPPLIER", "MOAGEM")));
 
     @Autowired
     MockMvc mvc;
@@ -802,6 +822,38 @@ class CodedErrorContractTest {
                 "Item LUNCH is a MENU: a macro cannot name it, because a menu needs its component choices.", "");
         expect("item-not-published", 422, "ITEM_NOT_PUBLISHED", "Item(s) [" + ID
                 + "] are not in the published catalog of store " + OTHER + ".", ",\"itemIds\":[\"" + ID + "\"]");
+    }
+
+    @Test
+    void inventoryPurchasingRules() throws Exception {
+        expect("po-has-receipts", 422, "PO_HAS_RECEIPTS", "Purchase order " + ID
+                + " has confirmed receipts: close it instead of cancelling it.", "");
+        expect("po-not-submitted", 422, "PO_NOT_SUBMITTED", "Purchase order " + ID
+                + " is CLOSED: goods are received only against a submitted order.", "");
+        expect("return-exceeds-received", 422, "RETURN_EXCEEDS_RECEIVED", "Only 4.000000 of receipt line " + ID
+                + " can still be returned.", ",\"receiptLineId\":\"" + ID + "\",\"available\":4.000000");
+        expect("receipt-not-confirmed", 422, "RECEIPT_NOT_CONFIRMED", "Goods receipt " + ID
+                + " is DRAFT: only a confirmed receipt has costs to correct or goods to return.", "");
+        expect("purchase-reference-mismatch", 422, "PURCHASE_REFERENCE_MISMATCH",
+                "Pack " + ID + " is not a pack of stock item " + OTHER + ".", "");
+        expect("purchase-unit-cost-required", 422, "UNIT_COST_REQUIRED", "Stock item " + ID
+                + " needs a unit cost: this supplier has no last cost for it.", "");
+        expect("purchase-reason-required", 422, "REASON_REQUIRED", "A cost correction needs a reason.", "");
+    }
+
+    @Test
+    void inventoryPurchasingConflicts() throws Exception {
+        expect("po-state", 409, "PO_STATE", "Purchase order " + ID + " is SUBMITTED and cannot be edited.", "");
+        expect("receipt-state", 409, "RECEIPT_STATE", "Goods receipt " + ID
+                + " is CONFIRMED and cannot be confirmed.", "");
+        expect("return-state", 409, "RETURN_STATE", "Supplier return " + ID + " is CANCELLED and cannot be confirmed.",
+                "");
+        expect("po-number-taken", 409, "PO_NUMBER_TAKEN", "Store " + ID + " already has a purchase order PO-7.", "");
+        expect("supplier-item-exists", 409, "SUPPLIER_ITEM_EXISTS", "Supplier " + ID + " already has stock item "
+                + OTHER + " in that pack.", "");
+        expect("cost-correction-concurrent", 409, "COST_CORRECTION_CONCURRENT", "Receipt line " + ID
+                + " was corrected at the same time; retry on its new cost.", "");
+        expect("supplier-code-taken", 409, "SUPPLIER_CODE_TAKEN", "The supplier code MOAGEM is taken.", "");
     }
 
     private void expect(String name, int status, String code, String detail, String extra) throws Exception {
