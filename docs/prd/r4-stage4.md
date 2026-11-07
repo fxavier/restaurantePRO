@@ -15,7 +15,7 @@ Conventions for every endpoint below, as in R2 and R3:
 - **Idem:** `Idempotency-Key` through `access.IdempotentRequests` (`execute`, or `steps` for D63).
 - **Approver:** the `X-Approver-Code` and `X-Approver-Pin` headers, verified before the transaction (D40); missing or invalid → 403.
 - **Errors:** a stale version gives 409. Business rules give 422 `ProblemDetail` with a stable `code`, and every new code is added to `CodedErrorContractTest`.
-- **Store scope:** D42 order. Company-wide resources (suppliers, stock items, recipes, loyalty program) use `requireInAnyStore`.
+- **Store scope:** D42 order. Company-wide resources (suppliers, stock items, recipes, loyalty program) are read with `requireInAnyStore`; supplier and stock-item writes need the permission installation-wide (`accessPolicy.require(X)`, D125 amendment).
 - **Audit:** every write calls `AuditLog.recordAsCurrentActor` (D41) or `recordAsSystem` (jobs, listeners).
 
 ---
@@ -304,7 +304,7 @@ S46 needs S38, S39, S40 merged. S47, S48 and S49 need S42 merged.
 
 **Contracts:**
 - Receipt confirm (one transaction, CAS DRAFT → CONFIRMED): `RECEIPT` movements (source `GOODS_RECEIPT`, line id) through `StockLedger.post`; `supplier_item.last_unit_cost` updated; receipt progress of the purchase order derived from Σ confirmed lines per order line.
-- Return confirm: `SUPPLIER_RETURN` at the receipt line's unit cost when linked (≤ received − returned, 422 `RETURN_EXCEEDS_RECEIVED`), else at average; `manual = true` for the negative policy.
+- Return confirm: `SUPPLIER_RETURN` at the average (D113); when linked, the receipt line's cost is kept for reference, `(average − receipt cost) × q` is booked as that line's `cost_variance`, and the quantity is ≤ received − returned (422 `RETURN_EXCEEDS_RECEIVED`); `manual = true` for the negative policy (D125 amendment).
 - Cost correction: D125 (REVALUATION for the on-hand share; the rest to `cost_variance`), publishes `StockMovementsPosted` with source `COST_CORRECTION`.
 
 **Endpoints** (`/api/v1/backoffice/inventory`):
