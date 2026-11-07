@@ -4,11 +4,9 @@ import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.PosContext;
 import com.xavier.backend.customers.CustomersApi;
-import com.xavier.backend.orders.AdjustmentKind;
 import com.xavier.backend.orders.model.Order;
 import com.xavier.backend.orders.model.dto.CustomerRequest;
 import com.xavier.backend.orders.model.dto.OrderView;
-import com.xavier.backend.orders.repository.OrderLinePriceAdjustmentRepository;
 import com.xavier.backend.orders.repository.OrderRepository;
 import com.xavier.backend.shared.persistence.OptimisticLocking;
 import java.util.Map;
@@ -25,17 +23,17 @@ import org.springframework.transaction.annotation.Transactional;
 public class OrderCustomerService {
 
     private final OrderRepository orders;
-    private final OrderLinePriceAdjustmentRepository adjustments;
+    private final RewardLineage rewards;
     private final OrderLookup lookup;
     private final CustomersApi customers;
     private final AccessPolicy accessPolicy;
     private final OrderChanges changes;
     private final OrderViews views;
 
-    OrderCustomerService(OrderRepository orders, OrderLinePriceAdjustmentRepository adjustments, OrderLookup lookup,
+    OrderCustomerService(OrderRepository orders, RewardLineage rewards, OrderLookup lookup,
                          CustomersApi customers, AccessPolicy accessPolicy, OrderChanges changes, OrderViews views) {
         this.orders = orders;
-        this.adjustments = adjustments;
+        this.rewards = rewards;
         this.lookup = lookup;
         this.customers = customers;
         this.accessPolicy = accessPolicy;
@@ -49,7 +47,7 @@ public class OrderCustomerService {
         Order order = lookup.inSessionStore(pos, orderId);
         OptimisticLocking.requireVersion(Order.class, orderId, order.getVersion(), request.orderVersion());
         customers.snapshot(request.customerId());
-        order.assignCustomer(request.customerId(), adjustments.existsByOrderIdAndKind(orderId, AdjustmentKind.REWARD));
+        order.assignCustomer(request.customerId(), rewards.redeemedOn(orderId));
         orders.saveAndFlush(order);
         changes.record("ORDER_CUSTOMER_SET", order, Map.of("customerId", request.customerId().toString()));
         return views.of(order);

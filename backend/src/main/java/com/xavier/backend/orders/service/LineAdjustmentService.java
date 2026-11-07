@@ -69,6 +69,7 @@ public class LineAdjustmentService {
     private final PromotionsApi promotions;
     private final LoyaltyApi loyalty;
     private final LineFamilies families;
+    private final RewardLineage rewards;
     private final ApproverVerifier approvers;
     private final AccessPolicy accessPolicy;
     private final ApplicationEventPublisher events;
@@ -77,7 +78,7 @@ public class LineAdjustmentService {
 
     LineAdjustmentService(OrderLineRepository lines, OrderLinePriceAdjustmentRepository adjustments,
                           OrderLineSplitRepository splits, OrderLookup lookup, OrderViews views,
-                          PromotionsApi promotions, LoyaltyApi loyalty, LineFamilies families,
+                          PromotionsApi promotions, LoyaltyApi loyalty, LineFamilies families, RewardLineage rewards,
                           ApproverVerifier approvers, AccessPolicy accessPolicy, ApplicationEventPublisher events,
                           OrderChanges changes, Clock clock) {
         this.lines = lines;
@@ -88,6 +89,7 @@ public class LineAdjustmentService {
         this.promotions = promotions;
         this.loyalty = loyalty;
         this.families = families;
+        this.rewards = rewards;
         this.approvers = approvers;
         this.accessPolicy = accessPolicy;
         this.events = events;
@@ -138,7 +140,8 @@ public class LineAdjustmentService {
      * @throws OrderRuleException 422 {@code ORDER_IN_SETTLEMENT}, {@code ORDER_FROZEN},
      *                            {@code DISCOUNT_LIMIT_EXCEEDED},
      *                            {@code PRICE_INCREASE_NOT_ALLOWED}, {@code LOYALTY_CUSTOMER_REQUIRED},
-     *                            {@code REWARD_NEEDS_SINGLE_UNIT}, {@code QUANTITY_EXCEEDS_NET}
+     *                            {@code REWARD_NEEDS_SINGLE_UNIT}, {@code REWARD_ALREADY_REDEEMED},
+     *                            {@code QUANTITY_EXCEEDS_NET}
      */
     @Transactional
     public OrderView adjust(UUID orderId, DiscountRequest request, UUID approverId) {
@@ -200,14 +203,15 @@ public class LineAdjustmentService {
             throw OrderRuleException.quantityExceedsNet(lineId, net);
         }
         line.requireAvailable(deducted, quantity);
+        boolean rewarded = rewards.isRewarded(lineId);
         if (adjustment.kind() == AdjustmentKind.REWARD) {
-            requireRewardable(order, lineId, quantity);
+            requireRewardable(order, lineId, quantity, rewarded);
         }
         List<OrderLinePriceAdjustment> history = adjustments.findByLineIdOrderBySeq(lineId);
         EffectivePrice price = EffectivePrice.of(line, history);
         Money current = price.unitPrice();
         boolean approverNeeded = adjustment.kind() != AdjustmentKind.REWARD
-                && checkedPrice(adjustment, line, history, price, limits) == null;
+                && checkedPrice(adjustment, line, rewarded, price, limits) == null;
         if (approverNeeded && adjustment.approverId() == null) {
             throw new ApprovalDeniedException();
         }
@@ -235,7 +239,7 @@ public class LineAdjustmentService {
                 throw OrderRuleException.priceIncreaseNotAllowed(lineId);
             }
         } else {
-            newPrice = newPrice(adjustment, line, history, price);
+            newPrice = newPrice(adjustment, line, rewarded, price);
         }
         OrderLinePriceAdjustment fact = adjustments.saveAndFlush(OrderLinePriceAdjustment.of(adjustmentId, target,
                 seq, new OrderLinePriceAdjustment.Change(adjustment.kind(), quantity, adjustment.percent(), current,
@@ -257,8 +261,11 @@ public class LineAdjustmentService {
                 fact.getReason(), details);
     }
 
-    /** D112: a reward needs the order's customer and exactly one unit. */
-    private static void requireRewardable(Order order, UUID lineId, BigDecimal quantity) {
+    /** D112, D112a: a reward needs the order's customer, exactly one unit, and a line that carries none yet. */
+    private static void requireRewardable(Order order, UUID lineId, BigDecimal quantity, boolean rewarded) {
+        if (rewarded) {
+            throw OrderRuleException.rewardAlreadyRedeemed(lineId);
+        }
         if (order.getCustomerId() == null) {
             throw OrderRuleException.loyaltyCustomerRequired(order.getId());
         }
@@ -273,9 +280,9 @@ public class LineAdjustmentService {
      *
      * @throws OrderRuleException 422 {@code PRICE_INCREASE_NOT_ALLOWED}, {@code DISCOUNT_LIMIT_EXCEEDED}
      */
-    private static Money checkedPrice(Adjustment adjustment, OrderLine line, List<OrderLinePriceAdjustment> history,
+    private static Money checkedPrice(Adjustment adjustment, OrderLine line, boolean rewarded,
                                       EffectivePrice price, DiscountLimits limits) {
-        Money newPrice = newPrice(adjustment, line, history, price);
+        Money newPrice = newPrice(adjustment, line, rewarded, price);
         return switch (adjustment.kind()) {
             case OFFER -> null;
             case REVERSAL -> newPrice;
@@ -295,8 +302,7 @@ public class LineAdjustmentService {
      * price or the list price. A discount or offer must lower the price; a reversal must raise it, at most to the
      * list price, and never on a rewarded line.
      */
-    private static Money newPrice(Adjustment adjustment, OrderLine line, List<OrderLinePriceAdjustment> history,
-                                  EffectivePrice price) {
+    private static Money newPrice(Adjustment adjustment, OrderLine line, boolean rewarded, EffectivePrice price) {
         Money current = price.unitPrice();
         Money list = price.listUnitPrice();
         Money next = switch (adjustment.kind()) {
@@ -309,7 +315,6 @@ public class LineAdjustmentService {
         };
         boolean lowers = next.amount().compareTo(current.amount()) < 0;
         if (adjustment.kind() == AdjustmentKind.REVERSAL) {
-            boolean rewarded = history.stream().anyMatch(fact -> fact.getKind() == AdjustmentKind.REWARD);
             if (lowers || next.amount().compareTo(current.amount()) == 0
                     || next.amount().compareTo(list.amount()) > 0 || rewarded) {
                 throw OrderRuleException.priceIncreaseNotAllowed(line.getId());

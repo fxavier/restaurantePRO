@@ -48,10 +48,13 @@ public class OrderViews {
     private final OrderLinePriceAdjustmentRepository adjustments;
     private final CatalogApi catalog;
     private final LinePricer pricer;
+    private final RewardLineage rewards;
     private final Clock clock;
 
     OrderViews(OrderLineRepository lines, OrderBatchRepository batches, OrderLineComponentRepository components,
-               OrderLinePriceAdjustmentRepository adjustments, CatalogApi catalog, LinePricer pricer, Clock clock) {
+               OrderLinePriceAdjustmentRepository adjustments, CatalogApi catalog, LinePricer pricer,
+               RewardLineage rewards, Clock clock) {
+        this.rewards = rewards;
         this.lines = lines;
         this.batches = batches;
         this.components = components;
@@ -75,9 +78,10 @@ public class OrderViews {
         List<LineView> lineViews = new ArrayList<>();
         drafts.forEach(line -> lineViews.add(draftView(line, priced.of(line.getId()),
                 chosen.getOrDefault(line.getId(), List.of()))));
+        Map<UUID, String> inherited = inheritedRewards(all, adjusted);
         all.stream().filter(line -> !line.isDraft()).forEach(line -> lineViews.add(confirmedView(line,
                 deducted.getOrDefault(line.getId(), BigDecimal.ZERO), adjusted.getOrDefault(line.getId(), List.of()),
-                chosen.getOrDefault(line.getId(), List.of()))));
+                inherited.get(line.getId()), chosen.getOrDefault(line.getId(), List.of()))));
         List<BatchView> batchViews = batches.findByOrderIdOrderByBatchNo(order.getId()).stream()
                 .map(batch -> batchView(batch, order.getVersion(), lineViews)).toList();
         Long promotionVersion = priced == null ? pricer.currentVersion(order.getStoreId()) : priced.promotionVersion();
@@ -85,7 +89,7 @@ public class OrderViews {
                 order.getMode(), order.getTableId(), order.getTableCode(), order.getGuests(), order.getLifecycle(),
                 order.getBillingLock(), order.getBusinessDay(), order.getOpenedAt(), order.getOpenedByEmployeeId(),
                 order.getVersion(), current.map(CatalogSnapshot::version).orElse(null), lineViews, batchViews,
-                due(order, billingLines(all, deducted, adjusted)), promotionVersion, order.getCustomerId());
+                due(order, billingLines(all, deducted, adjusted, inherited)), promotionVersion, order.getCustomerId());
     }
 
     /** One draft as the POS shows it right after a change: priced alone, as confirmation would price it now. */
@@ -129,9 +133,11 @@ public class OrderViews {
                 .stream().collect(Collectors.groupingBy(OrderLine::getOrderId));
         Map<UUID, BigDecimal> deducted = deductions(ids);
         Map<UUID, List<OrderLinePriceAdjustment>> adjusted = adjustments(ids);
+        Map<UUID, String> inherited = inheritedRewards(confirmed.values().stream().flatMap(List::stream).toList(),
+                adjusted);
         return orders.stream().map(order -> {
             List<BillingLine> billable = billingLines(confirmed.getOrDefault(order.getId(), List.of()), deducted,
-                    adjusted);
+                    adjusted, inherited);
             return new OrderBillingView(order.getId(), order.getStoreId(), order.getVersion(), order.getLifecycle(),
                     order.getBillingLock(), order.getBusinessDay(), billable, due(order, billable), order.getMode(),
                     order.getTableId(), order.getTableCode(), order.getCustomerId());
@@ -139,9 +145,10 @@ public class OrderViews {
     }
 
     private static LineView confirmedView(OrderLine line, BigDecimal deducted,
-                                          List<OrderLinePriceAdjustment> adjusted, List<OrderLineComponent> chosen) {
+                                          List<OrderLinePriceAdjustment> adjusted, String inheritedReward,
+                                          List<OrderLineComponent> chosen) {
         LineSnapshot snapshot = line.snapshot().orElseThrow();
-        EffectivePrice price = EffectivePrice.of(line, adjusted);
+        EffectivePrice price = EffectivePrice.of(line, adjusted, inheritedReward);
         BigDecimal net = line.getQuantity().subtract(deducted);
         Money gross = LineAmounts.of(price.unitPrice(), net, snapshot.taxRatePercent()).gross();
         Money discount = LineAmounts.of(price.listUnitPrice(), net, snapshot.taxRatePercent()).gross().minus(gross);
@@ -169,10 +176,12 @@ public class OrderViews {
     }
 
     private static List<BillingLine> billingLines(Collection<OrderLine> candidates, Map<UUID, BigDecimal> deducted,
-                                                  Map<UUID, List<OrderLinePriceAdjustment>> adjusted) {
+                                                  Map<UUID, List<OrderLinePriceAdjustment>> adjusted,
+                                                  Map<UUID, String> inherited) {
         return candidates.stream().filter(line -> !line.isDraft()).map(line -> {
             LineSnapshot snapshot = line.snapshot().orElseThrow();
-            EffectivePrice price = EffectivePrice.of(line, adjusted.getOrDefault(line.getId(), List.of()));
+            EffectivePrice price = EffectivePrice.of(line, adjusted.getOrDefault(line.getId(), List.of()),
+                    inherited.get(line.getId()));
             BigDecimal net = line.getQuantity().subtract(deducted.getOrDefault(line.getId(), BigDecimal.ZERO));
             LineAmounts amounts = LineAmounts.of(price.unitPrice(), net, snapshot.taxRatePercent());
             return new BillingLine(line.getId(), snapshot.billedDescription(), net, price.unitPrice(),
@@ -201,6 +210,20 @@ public class OrderViews {
     public Map<UUID, BigDecimal> deductions(List<UUID> orderIds) {
         return lines.deductions(orderIds).stream().collect(Collectors.toMap(
                 OrderLineRepository.LineDeduction::getLineId, OrderLineRepository.LineDeduction::getDeducted));
+    }
+
+    /**
+     * D112a: the reward code of each copy of a rewarded line, for its label. Only lines that sell below list with no
+     * adjustment and no promotion of their own can carry one, so the lineage is read for those alone.
+     */
+    private Map<UUID, String> inheritedRewards(Collection<OrderLine> candidates,
+                                               Map<UUID, List<OrderLinePriceAdjustment>> adjusted) {
+        List<UUID> copies = candidates.stream().filter(line -> !line.isDraft()
+                        && (line.getOriginTransferId() != null || line.getOriginSplitId() != null)
+                        && !adjusted.containsKey(line.getId()) && line.promotion().isEmpty()
+                        && !line.snapshot().orElseThrow().unitPrice().equals(line.listUnitPrice()))
+                .map(OrderLine::getId).toList();
+        return rewards.rewardCodes(copies);
     }
 
     private Map<UUID, List<OrderLinePriceAdjustment>> adjustments(List<UUID> orderIds) {

@@ -6,8 +6,6 @@ import com.xavier.backend.access.PosContext;
 import com.xavier.backend.identity.ApprovalDeniedException;
 import com.xavier.backend.identity.ApproverVerifier;
 import com.xavier.backend.orders.LineAmounts;
-import com.xavier.backend.orders.repository.OrderLinePriceAdjustmentRepository;
-import com.xavier.backend.promotions.LoyaltyApi;
 import com.xavier.backend.orders.SettledVoidCommand;
 import com.xavier.backend.orders.exception.OrderNotFoundException;
 import com.xavier.backend.orders.exception.OrderRuleException;
@@ -24,7 +22,6 @@ import com.xavier.backend.orders.repository.OrderLineVoidRepository;
 import com.xavier.backend.shared.Money;
 import java.math.BigDecimal;
 import java.time.Clock;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -48,8 +45,7 @@ public class LineVoidService {
 
     private final OrderLineRepository lines;
     private final OrderLineVoidRepository voids;
-    private final OrderLinePriceAdjustmentRepository adjustments;
-    private final LoyaltyApi loyalty;
+    private final RewardLineage rewards;
     private final OrderLookup lookup;
     private final OrderViews views;
     private final ApproverVerifier approvers;
@@ -59,11 +55,10 @@ public class LineVoidService {
     private final Clock clock;
 
     LineVoidService(OrderLineRepository lines, OrderLineVoidRepository voids,
-                    OrderLinePriceAdjustmentRepository adjustments, LoyaltyApi loyalty, OrderLookup lookup,
+                    RewardLineage rewards, OrderLookup lookup,
                     OrderViews views, ApproverVerifier approvers, AccessPolicy accessPolicy,
                     ApplicationEventPublisher events, OrderChanges changes, Clock clock) {
-        this.adjustments = adjustments;
-        this.loyalty = loyalty;
+        this.rewards = rewards;
         this.lines = lines;
         this.voids = voids;
         this.lookup = lookup;
@@ -155,10 +150,7 @@ public class LineVoidService {
         // D112a: the points come back once, with the void that leaves the reward's lineage (the line holding it and
         // its transferred and split copies) at net 0, to the customer the REDEEM entry names; earlier partial voids
         // return nothing, because units still carry the reward
-        adjustments.findRewardOrigins(List.of(line.getId())).stream()
-                .map(OrderLinePriceAdjustmentRepository.RewardOrigin::getRewardedLineId)
-                .filter(rewarded -> adjustments.rewardLineageNet(rewarded).signum() == 0)
-                .forEach(rewarded -> loyalty.reverseRedemption(rewarded, voided.getId()));
+        rewards.reverseIfSpent(line.getId(), voided.getId());
         LineSnapshot snapshot = line.snapshot().orElseThrow();
         events.publishEvent(new OrderLinesVoided(order.getId(), voided.getId(), order.getStoreId(), terminalId,
                 order.getOrderNumber(), order.getTableCode(), new Line(line.getId(), snapshot.itemCode(),

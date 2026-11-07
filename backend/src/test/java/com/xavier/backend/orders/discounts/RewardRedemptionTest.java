@@ -271,8 +271,123 @@ class RewardRedemptionTest {
                 operator, terminal, Permission.LOYALTY_REDEEM, null);
     }
 
+    // S46 review round 3: lineage defects (D112a, D133)
+
+    @Test
+    void concurrentVoidsOfTheTwoCopiesOfARewardedUnitInTwoOrdersGiveThePointsBackOnce() throws Exception {
+        customer(1, member).andExpect(status().isOk());
+        redeem(2, "1").andExpect(status().isOk());
+        UUID rewarded = rewardedLine();
+        UUID second = fixtures.openedAt(shop, fixtures.newTable(shop, "M2"), operator, terminal);
+        UUID third = fixtures.openedAt(shop, fixtures.newTable(shop, "M3"), operator, terminal);
+        fixtures.transfer(shop, order, 3, second, 0, java.util.Map.of(rewarded, "0.5"), false, operator, terminal,
+                UUID.randomUUID().toString()).andExpect(status().isCreated());
+        fixtures.transfer(shop, order, 4, third, 0, java.util.Map.of(rewarded, "0.5"), false, operator, terminal,
+                UUID.randomUUID().toString()).andExpect(status().isCreated());
+        UUID inSecond = copyOf(second, rewarded);
+        UUID inThird = copyOf(third, rewarded);
+
+        OrdersFixtures.race(() -> {
+            voidOn(second, inSecond, "0.5");
+            return true;
+        }, () -> {
+            voidOn(third, inThird, "0.5");
+            return true;
+        });
+
+        assertThat(loyalty.balance(member)).as("both halves voided: points back").isEqualTo(50);
+        assertThat(redeemReversals(rewarded)).isOne();
+    }
+
+    @Test
+    void aTransferredCopyOfARewardedUnitCannotBeRewardedAgain() throws Exception {
+        customer(1, member).andExpect(status().isOk());
+        redeemCode(2, amountOff).andExpect(status().isOk());
+        UUID rewarded = rewardedLine();
+        UUID target = fixtures.openedAt(shop, fixtures.newTable(shop, "M2"), operator, terminal);
+        fixtures.transfer(shop, order, 3, target, 0, java.util.Map.of(rewarded, "1"), false, operator, terminal,
+                UUID.randomUUID().toString()).andExpect(status().isCreated());
+        customerOn(target, 1, member).andExpect(status().isOk());
+
+        fixtures.discount(shop, target, """
+                        {"orderVersion": 2, "lines": [{"lineId": "%s", "quantity": 1}], "kind": "REWARD",
+                         "rewardCode": "%s", "reason": "loyalty"}""".formatted(copyOf(target, rewarded), amountOff),
+                        operator, terminal, Permission.LOYALTY_REDEEM, null)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("REWARD_ALREADY_REDEEMED"));
+        assertThat(loyalty.balance(member)).isEqualTo(40);
+    }
+
+    @Test
+    void aTransferredCopyOfARewardedUnitCannotBeRaisedBackAndBillsAsTheReward() throws Exception {
+        customer(1, member).andExpect(status().isOk());
+        redeemCode(2, amountOff).andExpect(status().isOk());
+        UUID rewarded = rewardedLine();
+        UUID target = fixtures.openedAt(shop, fixtures.newTable(shop, "M2"), operator, terminal);
+        fixtures.transfer(shop, order, 3, target, 0, java.util.Map.of(rewarded, "1"), false, operator, terminal,
+                UUID.randomUUID().toString()).andExpect(status().isCreated());
+        UUID copy = copyOf(target, rewarded);
+        promotions.publish(shop.store());
+
+        fixtures.discount(shop, target, """
+                        {"orderVersion": 1, "lines": [{"lineId": "%s"}], "kind": "REVERSAL", "reason": "oops"}"""
+                        .formatted(copy), operator, terminal, Permission.ORDER_DISCOUNT, null)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("PRICE_INCREASE_NOT_ALLOWED"));
+        assertThat(ordersApi.billingView(target).lines()).singleElement().satisfies(billed -> {
+            assertThat(billed.unitPrice().amount()).isEqualByComparingTo("10.50");
+            assertThat(billed.discountLabel()).isEqualTo("Recompensa " + amountOff);
+        });
+    }
+
+    /**
+     * A split made before the reward never carries it, even when the reward is on the line it was split from: the
+     * clock moves on between the split and the reward, so their instants differ. (An equal instant counts as "reward
+     * first": the ancestry compares {@code at} with {@code <=}; the clock is microsecond precise, so in practice two
+     * facts of one line never share an instant.)
+     */
+    @Test
+    void aSplitMadeBeforeARewardDoesNotInheritIt() throws Exception {
+        UUID pair = fixtures.confirmedLine(shop, order, "2", 1, operator, terminal);
+        customer(2, member).andExpect(status().isOk());
+        promotions.publish(shop.store());
+        fixtures.discount(shop, order, """
+                        {"orderVersion": 3, "lines": [{"lineId": "%s", "quantity": 1}], "kind": "DISCOUNT",
+                         "unitPrice": 12.00, "reason": "regular"}""".formatted(pair), operator, terminal,
+                        Permission.ORDER_DISCOUNT, null)
+                .andExpect(status().isOk());
+        UUID splitBefore = jdbc.sql("SELECT target_line_id FROM orders.order_line_split WHERE source_line_id = ?")
+                .param(pair).query(UUID.class).single();
+        clock.pin(clock.instant().plusSeconds(1));
+        fixtures.discount(shop, order, """
+                        {"orderVersion": 4, "lines": [{"lineId": "%s", "quantity": 1}], "kind": "REWARD",
+                         "rewardCode": "%s", "reason": "loyalty"}""".formatted(pair, amountOff), operator, terminal,
+                        Permission.LOYALTY_REDEEM, null)
+                .andExpect(status().isOk()); // the pair's remaining unit holds the reward: 10.50
+
+        fixtures.discount(shop, order, """
+                        {"orderVersion": 5, "lines": [{"lineId": "%s"}], "kind": "REVERSAL", "reason": "regular"}"""
+                        .formatted(splitBefore), operator, terminal, Permission.ORDER_DISCOUNT, null)
+                .andExpect(status().isOk()); // not rewarded: it may go back to its list price
+        voidOn(order, pair, "1");
+
+        assertThat(loyalty.balance(member)).as("the reward's own unit voided: points back").isEqualTo(50);
+        assertThat(redeemReversals(pair)).isOne();
+    }
+
+    ResultActions redeemCode(long orderVersion, String code) throws Exception {
+        return fixtures.discount(shop, order, """
+                        {"orderVersion": %d, "lines": [{"lineId": "%s", "quantity": 1}], "kind": "REWARD",
+                         "rewardCode": "%s", "reason": "loyalty"}""".formatted(orderVersion, line, code),
+                operator, terminal, Permission.LOYALTY_REDEEM, null);
+    }
+
     ResultActions customer(long orderVersion, UUID customer) throws Exception {
-        return mvc.perform(post(OrdersFixtures.POS + "/orders/" + order + "/customer")
+        return customerOn(order, orderVersion, customer);
+    }
+
+    ResultActions customerOn(UUID orderId, long orderVersion, UUID customer) throws Exception {
+        return mvc.perform(post(OrdersFixtures.POS + "/orders/" + orderId + "/customer")
                 .with(OrdersActors.pos(shop.store(), operator, terminal, Permission.ORDER_EDIT)).with(csrf())
                 .header("Idempotency-Key", UUID.randomUUID().toString()).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"orderVersion\": %d, \"customerId\": \"%s\"}".formatted(orderVersion, customer)));

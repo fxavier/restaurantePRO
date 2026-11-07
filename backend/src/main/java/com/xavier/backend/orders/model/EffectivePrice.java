@@ -15,6 +15,15 @@ public record EffectivePrice(Money listUnitPrice, Money unitPrice, String origin
 
     /** @param adjustments the line's adjustments in {@code seq} order */
     public static EffectivePrice of(OrderLine line, List<OrderLinePriceAdjustment> adjustments) {
+        return of(line, adjustments, null);
+    }
+
+    /**
+     * @param inheritedRewardCode the reward a copy carries from the line that holds it (D112a); it labels a line that
+     *                            has no adjustment of its own, {@code null} otherwise
+     */
+    public static EffectivePrice of(OrderLine line, List<OrderLinePriceAdjustment> adjustments,
+                                    String inheritedRewardCode) {
         Money list = line.listUnitPrice();
         Optional<OrderLinePriceAdjustment> latest = adjustments.isEmpty() ? Optional.empty()
                 : Optional.of(adjustments.getLast());
@@ -22,6 +31,9 @@ public record EffectivePrice(Money listUnitPrice, Money unitPrice, String origin
                 .orElseGet(() -> line.snapshot().orElseThrow().unitPrice());
         if (unit.equals(list)) {
             return new EffectivePrice(list, unit, null, null);
+        }
+        if (latest.isEmpty() && inheritedRewardCode != null) {
+            return new EffectivePrice(list, unit, "LOYALTY", "Recompensa " + inheritedRewardCode);
         }
         if (latest.isEmpty()) {
             return line.promotion().map(promotion -> new EffectivePrice(list, unit, "PROMOTION", promotion.name()))

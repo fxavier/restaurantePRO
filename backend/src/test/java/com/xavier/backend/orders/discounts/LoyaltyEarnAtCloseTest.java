@@ -153,6 +153,43 @@ class LoyaltyEarnAtCloseTest {
                 + "AND source_id = ? AND kind = 'EARN'").param(order).query(Long.class).single()).isOne();
     }
 
+    /**
+     * D111, D112a: a rewarded unit (12.50 − 2.00 = 10.50) is transferred in part to a second table of the same member;
+     * neither the copy nor the original's remainder earns. Table 1 earns on its 2 other coffees (25.00), table 2 on
+     * its own coffee (12.50).
+     */
+    @Test
+    void aTransferredCopyAndTheRemainderOfARewardedUnitEarnNothing() throws Exception {
+        String reward = "OFF" + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
+        loyalty.publishProgram("1.00", 1, LoyaltyFixtures.reward(reward, 10, "AMOUNT_OFF_UNIT", "2.00", null, null));
+        UUID member = loyalty.member();
+        Shop shop = fixtures.shop();
+        inPos(shop, () -> loyaltyApi.earnForOrder(new EarnCommand(UUID.randomUUID(), shop.store(), member,
+                LocalDate.now(), clock.instant(), List.of(new EarnLine(shop.item(), null,
+                Money.of("10.00", Currency.getInstance("MZN")), false)))));
+        UUID first = id(fixtures.openedOrder(shop, operator, terminal));
+        UUID line = fixtures.confirmedLine(shop, first, "3", 0, operator, terminal);
+        customer(shop, first, 1, member);
+        fixtures.discount(shop, first, """
+                        {"orderVersion": 2, "lines": [{"lineId": "%s", "quantity": 1}], "kind": "REWARD",
+                         "rewardCode": "%s", "reason": "loyalty"}""".formatted(line, reward), operator, terminal,
+                        Permission.LOYALTY_REDEEM, null)
+                .andExpect(status().isOk());
+        UUID rewarded = jdbc.sql("SELECT target_line_id FROM orders.order_line_split WHERE source_line_id = ?")
+                .param(line).query(UUID.class).single();
+        UUID second = fixtures.openedAt(shop, fixtures.newTable(shop, "M2"), operator, terminal);
+        fixtures.confirmedLine(shop, second, "1", 0, operator, terminal);
+        customer(shop, second, 1, member);
+        fixtures.transfer(shop, first, 3, second, 2, java.util.Map.of(rewarded, "0.5"), false, operator, terminal,
+                UUID.randomUUID().toString()).andExpect(status().isCreated());
+
+        close(shop, second, 3);
+        assertThat(loyalty.balance(member)).isEqualTo(12);
+        close(shop, first, 4);
+
+        assertThat(loyalty.balance(member)).isEqualTo(37);
+    }
+
     @Test
     void anOrderWithoutAMemberEarnsNothing() throws Exception {
         loyalty.publishProgram("1.00", 1);

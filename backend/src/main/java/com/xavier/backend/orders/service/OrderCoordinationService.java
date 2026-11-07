@@ -2,13 +2,11 @@ package com.xavier.backend.orders.service;
 
 import com.xavier.backend.dining.DiningApi;
 import com.xavier.backend.orders.BillingLine;
-import com.xavier.backend.orders.repository.OrderLinePriceAdjustmentRepository;
 import com.xavier.backend.promotions.EarnCommand;
 import com.xavier.backend.promotions.EarnLine;
 import com.xavier.backend.promotions.LoyaltyApi;
 import java.time.Instant;
 import java.util.Set;
-import java.util.stream.Collectors;
 import com.xavier.backend.dining.model.dto.CloseReason;
 import com.xavier.backend.orders.OrderBillingView;
 import com.xavier.backend.orders.OrderLifecycle;
@@ -40,16 +38,16 @@ public class OrderCoordinationService {
     private final OrderViews views;
     private final OrderChanges changes;
     private final DiningApi dining;
-    private final OrderLinePriceAdjustmentRepository adjustments;
+    private final RewardLineage rewards;
     private final LineFamilies families;
     private final LoyaltyApi loyalty;
     private final Clock clock;
 
     OrderCoordinationService(OrderRepository orders, OrderBatchRepository batches, OrderLookup lookup,
                              OrderViews views, OrderChanges changes, DiningApi dining,
-                             OrderLinePriceAdjustmentRepository adjustments, LineFamilies families, LoyaltyApi loyalty,
+                             RewardLineage rewards, LineFamilies families, LoyaltyApi loyalty,
                              Clock clock) {
-        this.adjustments = adjustments;
+        this.rewards = rewards;
         this.families = families;
         this.loyalty = loyalty;
         this.orders = orders;
@@ -105,6 +103,8 @@ public class OrderCoordinationService {
      * only the FOR KEY SHARE its foreign key takes on {@code loyalty_account} (D132); idempotent per order.
      */
     private void earn(Order order, Instant now) {
+        // a performance guard, not a rule: earnForOrder ignores non-members, but this skips reading the catalog
+        // releases (family) and the reward lineage while the close holds its locks
         if (order.getCustomerId() == null || !loyalty.isMember(order.getCustomerId())) {
             return;
         }
@@ -112,8 +112,7 @@ public class OrderCoordinationService {
         if (billed.isEmpty()) {
             return;
         }
-        Set<UUID> rewarded = adjustments.findRewardOrigins(billed.stream().map(BillingLine::lineId).toList())
-                .stream().map(OrderLinePriceAdjustmentRepository.RewardOrigin::getLineId).collect(Collectors.toSet());
+        Set<UUID> rewarded = rewards.rewarded(billed.stream().map(BillingLine::lineId).toList());
         LineFamilies.Resolver familyOf = families.resolver(order.getStoreId());
         List<EarnLine> lines = billed.stream().map(line -> new EarnLine(line.itemId(),
                 familyOf.familyOf(line.releaseId(), line.itemId()), line.gross(), rewarded.contains(line.lineId())))

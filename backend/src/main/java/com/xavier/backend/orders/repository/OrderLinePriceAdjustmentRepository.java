@@ -23,6 +23,8 @@ public interface OrderLinePriceAdjustmentRepository extends JpaRepository<OrderL
 
     boolean existsByLineIdAndKind(UUID lineId, AdjustmentKind kind);
 
+    List<OrderLinePriceAdjustment> findByLineIdInAndKind(Collection<UUID> lineIds, AdjustmentKind kind);
+
     /**
      * D112a: for each of {@code lineIds}, the line that holds its loyalty reward: the line itself, or the nearest
      * ancestor through transfer and split facts whose REWARD was recorded before the fact that moved the quantity
@@ -43,7 +45,7 @@ public interface OrderLinePriceAdjustmentRepository extends JpaRepository<OrderL
             SELECT DISTINCT ON (o.start_id) o.start_id AS lineId, o.line_id AS rewardedLineId
             FROM origin o
             JOIN orders.order_line_price_adjustment a ON a.line_id = o.line_id AND a.kind = 'REWARD'
-                AND (o.bound IS NULL OR a.at <= o.bound)
+                AND (o.bound IS NULL OR a.at <= o.bound) -- an equal instant counts as reward first (µs clock)
             ORDER BY o.start_id, o.depth""", nativeQuery = true)
     List<RewardOrigin> findRewardOrigins(@Param("lineIds") Collection<UUID> lineIds);
 

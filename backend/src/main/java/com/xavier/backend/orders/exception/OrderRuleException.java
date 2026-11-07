@@ -127,6 +127,11 @@ public class OrderRuleException extends BusinessRuleException {
                 "Order " + orderId + " has a redeemed reward: its customer cannot change.");
     }
 
+    public static OrderRuleException rewardAlreadyRedeemed(UUID lineId) {
+        return new OrderRuleException(OrderRule.REWARD_ALREADY_REDEEMED,
+                "Line " + lineId + " already carries a loyalty reward.");
+    }
+
     public OrderRule rule() {
         return rule;
     }

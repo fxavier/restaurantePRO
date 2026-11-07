@@ -42,6 +42,13 @@ public interface OrderLineRepository extends JpaRepository<OrderLine, UUID> {
             WHERE l.order_id IN (:orderIds) AND l.status = 'CONFIRMED'""", nativeQuery = true)
     List<LineDeduction> deductions(@Param("orderIds") Collection<UUID> orderIds);
 
+    /**
+     * Locks a confirmed line's row without changing it (the row trigger fires on UPDATE only), so the voids of one
+     * reward's lineage queue (D112a). {@code NO KEY UPDATE} leaves the foreign-key share locks of new voids alone.
+     */
+    @Query(value = "SELECT id FROM orders.order_line WHERE id = :id FOR NO KEY UPDATE", nativeQuery = true)
+    UUID lockForRewardLineage(@Param("id") UUID id);
+
     interface LineDeduction {
         UUID getLineId();
 
