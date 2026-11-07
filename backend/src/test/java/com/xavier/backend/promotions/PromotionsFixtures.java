@@ -45,6 +45,26 @@ public class PromotionsFixtures {
                 UUID.fromString(sellable.item().get("familyId").asString()));
     }
 
+    /** A shop whose catalog also sells {@code beer} in {@code beers}, a subfamily of the shop's {@code family}. */
+    public record ShopWithSubfamily(Shop shop, UUID beers, UUID beer) {
+    }
+
+    public ShopWithSubfamily shopWithSubfamily() throws Exception {
+        Publications publications = new Publications(mvc, jdbc);
+        Publications.SellableStore sellable = publications.sellableStore();
+        CatalogFixtures catalog = new CatalogFixtures(mvc);
+        UUID family = UUID.fromString(sellable.item().get("familyId").asString());
+        UUID beers = CatalogFixtures.id(catalog.created(post(CatalogFixtures.CATALOG + "/families")
+                .with(admin(Permission.CATALOG_MANAGE)), """
+                {"code": "%s", "name": "Beers", "parentId": "%s"}""".formatted(code("SF"), family)));
+        UUID beer = CatalogFixtures.id(catalog.item(beers, UUID.fromString(sellable.item().get("unitId").asString()),
+                UUID.fromString(sellable.item().get("taxCategoryId").asString())));
+        catalog.price(sellable.store(), sellable.priceList(), beer, null, "12.50");
+        publications.publishNew(sellable.store());
+        return new ShopWithSubfamily(new Shop(sellable.store(), CatalogFixtures.id(sellable.item()), family), beers,
+                beer);
+    }
+
     public UUID storeWithoutCatalog() throws Exception {
         return new CatalogFixtures(mvc).store();
     }

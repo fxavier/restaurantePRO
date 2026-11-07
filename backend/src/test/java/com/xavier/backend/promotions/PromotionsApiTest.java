@@ -18,6 +18,8 @@ import com.xavier.backend.promotions.model.dto.PricedLine;
 import com.xavier.backend.promotions.model.dto.PricingLine;
 import com.xavier.backend.promotions.model.dto.PricingRequest;
 import com.xavier.backend.promotions.model.dto.PricingResult;
+import com.xavier.backend.promotions.model.dto.PromotionSnapshot;
+import com.xavier.backend.promotions.service.PublishedPromotions;
 import com.xavier.backend.shared.Money;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -46,6 +48,9 @@ class PromotionsApiTest {
 
     @Autowired
     PromotionsApi promotionsApi;
+
+    @Autowired
+    PublishedPromotions published;
 
     @Test
     void withoutAPublishedReleaseEveryLineKeepsItsListPrice() throws Exception {
@@ -82,6 +87,25 @@ class PromotionsApiTest {
         assertThat(at1959.promotion().code()).isEqualTo(promotion.get("code").asString());
         assertThat(at2000.unitPrice()).isEqualTo(LIST);
         assertThat(at2000.promotion()).isNull();
+    }
+
+    /** A promotion on a family covers its subfamilies: the release freezes the family and its descendants. */
+    @Test
+    void aPromotionOnAFamilyAppliesToItsSubfamilies() throws Exception {
+        PromotionsFixtures.ShopWithSubfamily drinks = fixtures.shopWithSubfamily();
+        Shop shop = drinks.shop();
+        fixtures.promotion(shop.store(), code("DR"), """
+                {"familyIds": ["%s"]}""".formatted(shop.family()));
+
+        fixtures.published(shop.store());
+
+        PromotionSnapshot frozen = published.current(shop.store()).orElseThrow();
+        assertThat(frozen.promotions().getFirst().scope().familyIds())
+                .containsExactlyInAnyOrder(shop.family(), drinks.beers());
+        PricedLine beer = promotionsApi.price(new PricingRequest(shop.store(), Instant.parse("2026-11-06T12:00:00Z"),
+                "DINE_IN", false, List.of(new PricingLine(UUID.randomUUID(), drinks.beer(), null, drinks.beers(), LIST,
+                BigDecimal.ONE)))).lines().getFirst();
+        assertThat(beer.unitPrice()).isEqualTo(Money.of("10.00", LIST.currency()));
     }
 
     private PricedLine priceAt(Shop shop, LocalDateTime storeTime) {

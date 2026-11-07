@@ -34,7 +34,10 @@ public record PromotionSnapshot(int schemaVersion, UUID storeId, UUID releaseId,
                             Scope scope, List<Window> windows) {
     }
 
-    /** A line matches when its item, its variant or its family is listed. */
+    /**
+     * A line matches when its item, its variant or its own family is listed. {@code familyIds} is frozen expanded: each
+     * family the promotion names plus all its subfamilies in the store's published catalog at publication.
+     */
     public record Scope(List<UUID> itemIds, List<UUID> variantIds, List<UUID> familyIds) {
     }
 

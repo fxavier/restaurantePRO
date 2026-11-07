@@ -10,8 +10,12 @@ import com.xavier.backend.promotions.model.dto.PromotionSnapshot;
 import com.xavier.backend.promotions.repository.PromotionRepository;
 import com.xavier.backend.promotions.repository.StoreDiscountLimitsRepository;
 import com.xavier.backend.shared.exception.NotFoundException;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -21,7 +25,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * What a store's next promotion release would freeze, and every problem that blocks it (D102): its ACTIVE promotions
- * with their scope, and its discount limits (the P44 defaults when it has none). Each scope entry must name an item,
+ * with their scope (a family stands for itself and its subfamilies), and its discount limits (the P44 defaults when it
+ * has none). Each scope entry must name an item,
  * variant or family of the store's published catalog, and amounts must be in the catalog's currency.
  */
 @Component
@@ -41,12 +46,34 @@ class PromotionWorkingCopy {
         this.catalog = catalog;
     }
 
+    /**
+     * @param subfamilies each family of the published catalog to its direct subfamilies
+     */
     record View(UUID storeId, String currency, DiscountLimits discountLimits, List<Promotion> promotions,
-                List<PromotionReleaseError> errors) {
+                Map<UUID, List<UUID>> subfamilies, List<PromotionReleaseError> errors) {
 
+        /**
+         * The frozen promotions, each family in a scope expanded to that family and all its descendants in the
+         * published catalog, so the engine matches a line's own family exactly.
+         */
         PromotionSnapshot snapshot(UUID releaseId, long version) {
             return new PromotionSnapshot(PromotionSnapshot.SCHEMA_VERSION, storeId, releaseId, version, currency,
-                    discountLimits, promotions.stream().map(Promotion::toSnapshot).toList());
+                    discountLimits, promotions.stream().map(Promotion::toSnapshot).map(this::withSubfamilies).toList());
+        }
+
+        private PromotionSnapshot.Promotion withSubfamilies(PromotionSnapshot.Promotion p) {
+            Set<UUID> families = new LinkedHashSet<>();
+            Deque<UUID> pending = new ArrayDeque<>(p.scope().familyIds());
+            while (!pending.isEmpty()) {
+                UUID family = pending.removeFirst();
+                if (families.add(family)) {
+                    pending.addAll(subfamilies.getOrDefault(family, List.of()));
+                }
+            }
+            PromotionSnapshot.Scope scope = new PromotionSnapshot.Scope(p.scope().itemIds(), p.scope().variantIds(),
+                    List.copyOf(families));
+            return new PromotionSnapshot.Promotion(p.id(), p.code(), p.name(), p.kind(), p.percent(), p.amount(),
+                    p.priority(), p.validFrom(), p.validTo(), p.membersOnly(), p.modes(), scope, p.windows());
         }
     }
 
@@ -56,7 +83,7 @@ class PromotionWorkingCopy {
                 .orElse(StoreDiscountLimits.DEFAULTS);
         Optional<CatalogSnapshot> published = publishedCatalog(storeId);
         if (published.isEmpty()) {
-            return new View(storeId, null, discountLimits, active, List.of(new PromotionReleaseError(
+            return new View(storeId, null, discountLimits, active, Map.of(), List.of(new PromotionReleaseError(
                     NO_PUBLISHED_CATALOG, null, null, "Store " + storeId + " has no published catalog.")));
         }
         CatalogSnapshot sold = published.get();
@@ -87,7 +114,10 @@ class PromotionWorkingCopy {
                         + " names what the published catalog of the store does not sell: " + missing + "."));
             }
         }
-        return new View(storeId, sold.currency(), discountLimits, active, errors);
+        Map<UUID, List<UUID>> subfamilies = sold.families().stream().filter(family -> family.parentId() != null)
+                .collect(Collectors.groupingBy(CatalogSnapshot.Family::parentId,
+                        Collectors.mapping(CatalogSnapshot.Family::id, Collectors.toList())));
+        return new View(storeId, sold.currency(), discountLimits, active, subfamilies, errors);
     }
 
     private Optional<CatalogSnapshot> publishedCatalog(UUID storeId) {
