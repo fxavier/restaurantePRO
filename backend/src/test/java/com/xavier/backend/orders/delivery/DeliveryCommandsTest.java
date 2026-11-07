@@ -128,6 +128,13 @@ class DeliveryCommandsTest {
                         .contentType(MediaType.APPLICATION_JSON).content("{\"version\": 0}"))
                 .andExpect(status().isForbidden());
         deliveries.delivered(d, UUID.randomUUID(), 0).andExpect(status().isNotFound());
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post(DeliveryFixtures.POS + "/deliveries/" + order + "/dispatch")
+                        .with(OrdersActors.pos(d.shop().store(), employee, terminal, Permission.ORDER_EDIT))
+                        .with(csrf()).header("Idempotency-Key", UUID.randomUUID().toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"version\": 0, \"courierEmployeeId\": \"%s\"}".formatted(d.courier())))
+                .andExpect(status().isForbidden());
         assertThat(deliveries.version(order)).isZero();
     }
 

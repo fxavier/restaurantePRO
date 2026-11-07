@@ -47,6 +47,9 @@ import com.xavier.backend.inventory.purchasing.exception.PurchasingConflictExcep
 import com.xavier.backend.inventory.purchasing.exception.PurchasingRuleException;
 import com.xavier.backend.identity.exception.PinChangeNotRequiredException;
 import com.xavier.backend.identity.exception.PinUnchangedException;
+import com.xavier.backend.orders.DeliveryStatus;
+import com.xavier.backend.orders.delivery.exception.DeliveryConflictException;
+import com.xavier.backend.orders.delivery.exception.DeliveryRuleException;
 import com.xavier.backend.orders.exception.OrderConflictException;
 import com.xavier.backend.orders.exception.OrderRuleException;
 import com.xavier.backend.production.exception.ProductionRule;
@@ -393,7 +396,21 @@ class CodedErrorContractTest {
             Map.entry("loyalty-customer-required", () -> OrderRuleException.loyaltyCustomerRequired(ID)),
             Map.entry("reward-needs-single-unit", () -> OrderRuleException.rewardNeedsSingleUnit(ID)),
             Map.entry("loyalty-redeemed", () -> OrderRuleException.loyaltyRedeemed(ID)),
-            Map.entry("reward-already-redeemed", () -> OrderRuleException.rewardAlreadyRedeemed(ID)));
+            Map.entry("reward-already-redeemed", () -> OrderRuleException.rewardAlreadyRedeemed(ID)),
+            // R4 orders (S50): delivery
+            Map.entry("delivery-state", () -> DeliveryConflictException.state(ID, DeliveryStatus.PENDING,
+                    "delivered")),
+            Map.entry("delivery-zone-code-taken", () -> DeliveryConflictException.zoneCodeTaken("CENTRO")),
+            Map.entry("fee-item-not-published", () -> DeliveryRuleException.feeItemNotPublished("CENTRO")),
+            Map.entry("zone-inactive", () -> DeliveryRuleException.zoneInactive("CENTRO")),
+            Map.entry("zone-other-store", () -> DeliveryRuleException.zoneOtherStore(ID)),
+            Map.entry("customer-required", DeliveryRuleException::customerRequired),
+            Map.entry("delivery-has-drafts", () -> DeliveryRuleException.hasDrafts(ID)),
+            Map.entry("delivery-nothing-confirmed", () -> DeliveryRuleException.nothingConfirmed(ID)),
+            Map.entry("courier-not-in-store", () -> DeliveryRuleException.courierNotInStore(ID)),
+            Map.entry("delivery-not-delivered", () -> DeliveryRuleException.notDelivered(ID)),
+            Map.entry("delivery-in-progress", () -> DeliveryRuleException.inProgress(ID)),
+            Map.entry("address-frozen", () -> DeliveryRuleException.addressFrozen(ID)));
 
     @Autowired
     MockMvc mvc;
@@ -964,6 +981,32 @@ class CodedErrorContractTest {
                 "Order " + ID + " has a redeemed reward: its customer cannot change.", "");
         expect("reward-already-redeemed", 422, "REWARD_ALREADY_REDEEMED",
                 "Line " + ID + " already carries a loyalty reward.", "");
+    }
+
+    @Test
+    void ordersDeliveryCodes() throws Exception {
+        expect("delivery-state", 409, "DELIVERY_STATE",
+                "The delivery of order " + ID + " is PENDING: it cannot be delivered.", "");
+        expect("delivery-zone-code-taken", 409, "DELIVERY_ZONE_CODE_TAKEN",
+                "The store already has a delivery zone CENTRO.", "");
+        expect("fee-item-not-published", 422, "FEE_ITEM_NOT_PUBLISHED",
+                "The fee item of delivery zone CENTRO is not a fee in the published catalog.", "");
+        expect("zone-inactive", 422, "ZONE_INACTIVE", "Delivery zone CENTRO is inactive.", "");
+        expect("zone-other-store", 422, "ZONE_OTHER_STORE", "Delivery zone " + ID + " is not in this store.", "");
+        expect("customer-required", 422, "CUSTOMER_REQUIRED",
+                "A DELIVERY order is opened with its customer, address and zone.", "");
+        expect("delivery-has-drafts", 422, "DELIVERY_HAS_DRAFTS",
+                "Order " + ID + " has draft lines: confirm or delete them before the dispatch.", "");
+        expect("delivery-nothing-confirmed", 422, "DELIVERY_NOTHING_CONFIRMED",
+                "Order " + ID + " has no confirmed round to deliver.", "");
+        expect("courier-not-in-store", 422, "COURIER_NOT_IN_STORE",
+                "Employee " + ID + " is not an active employee of this store.", "");
+        expect("delivery-not-delivered", 422, "DELIVERY_NOT_DELIVERED",
+                "Order " + ID + " is closed only once its delivery is DELIVERED.", "");
+        expect("delivery-in-progress", 422, "DELIVERY_IN_PROGRESS",
+                "The delivery of order " + ID + " is out or delivered: it cannot be cancelled.", "");
+        expect("address-frozen", 422, "ADDRESS_FROZEN",
+                "The delivery of order " + ID + " was dispatched: its address, zone and promise are frozen.", "");
     }
 
     private void expect(String name, int status, String code, String detail, String extra) throws Exception {
