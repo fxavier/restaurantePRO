@@ -60,8 +60,7 @@ public class ConsumptionPolicyService {
         accessPolicy.requireInAnyStore(Permission.RECIPE_MANAGE);
         ConsumptionPolicyVersion version = UniqueConstraints.saveAndFlush(policies,
                 ConsumptionPolicyVersion.draft(policies.maxVersionNo() + 1, rules(request), clock.instant()),
-                () -> new RecipeConflictException("POLICY_VERSION_TAKEN",
-                        "Another consumption policy version was created at the same time: retry."),
+                RecipeConflictException::policyVersionTaken,
                 "consumption_policy_version_no_uk");
         audit("CONSUMPTION_POLICY_CREATED", version, Map.of());
         return version.toView();
@@ -103,8 +102,7 @@ public class ConsumptionPolicyService {
             policies.flush();
         });
         version.activate(from, now);
-        UniqueConstraints.saveAndFlush(policies, version, () -> new RecipeConflictException("POLICY_VERSION_TAKEN",
-                "Another consumption policy version was activated at the same time: retry."),
+        UniqueConstraints.saveAndFlush(policies, version, RecipeConflictException::policyVersionTaken,
                 "consumption_policy_one_active_uk");
         audit("CONSUMPTION_POLICY_ACTIVATED", version, Map.of("effectiveFrom", from.toString()));
         return version.toView();
@@ -117,8 +115,7 @@ public class ConsumptionPolicyService {
             boolean duplicate = rule.familyId() == null ? defaultSeen[0] : !families.add(rule.familyId());
             defaultSeen[0] |= rule.familyId() == null;
             if (duplicate) {
-                throw new RecipeRuleException("POLICY_RULE_DUPLICATE", "The consumption policy has two rules for "
-                        + (rule.familyId() == null ? "the default" : "family " + rule.familyId()) + ".");
+                throw RecipeRuleException.policyRuleDuplicate(rule.familyId());
             }
             return new PolicyRuleLine(rule.familyId(), rule.tracked());
         }).toList();

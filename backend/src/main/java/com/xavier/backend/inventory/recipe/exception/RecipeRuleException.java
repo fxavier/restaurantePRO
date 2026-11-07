@@ -58,4 +58,10 @@ public class RecipeRuleException extends BusinessRuleException {
         return new RecipeRuleException("NO_ACTIVE_RECIPE",
                 "Stock item " + outputStockItemId + " has no active preparation recipe.");
     }
+
+    /** A consumption policy version has one rule per family and one default rule. */
+    public static RecipeRuleException policyRuleDuplicate(UUID familyId) {
+        return new RecipeRuleException("POLICY_RULE_DUPLICATE", "The consumption policy has two rules for "
+                + (familyId == null ? "the default" : "family " + familyId) + ".");
+    }
 }

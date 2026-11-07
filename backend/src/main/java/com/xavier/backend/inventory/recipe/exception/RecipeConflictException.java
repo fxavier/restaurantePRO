@@ -19,4 +19,10 @@ public class RecipeConflictException extends ConflictException {
     public static RecipeConflictException exists(String target) {
         return new RecipeConflictException("RECIPE_EXISTS", "There is already a recipe for " + target + ".");
     }
+
+    /** Two consumption policy versions created or activated at the same time: one wins, the other retries. */
+    public static RecipeConflictException policyVersionTaken() {
+        return new RecipeConflictException("POLICY_VERSION_TAKEN",
+                "Another consumption policy version was created or activated at the same time: retry.");
+    }
 }
