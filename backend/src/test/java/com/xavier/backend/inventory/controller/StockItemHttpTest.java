@@ -43,9 +43,9 @@ class StockItemHttpTest {
     JdbcClient jdbc;
 
     @Test
-    void aStockManagerOfAnyStoreCreatesAnItemAndItIsAudited() throws Exception {
+    void anInstallationWideStockManagerCreatesAnItemAndItIsAudited() throws Exception {
         String code = code("FLOUR");
-        String body = create(code, "kg", account(UUID.randomUUID(), Permission.INVENTORY_MANAGE))
+        String body = create(code, "kg", manager())
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.code").value(code))
                 .andExpect(jsonPath("$.baseUnit").value("kg"))
@@ -80,6 +80,27 @@ class StockItemHttpTest {
                 .andExpect(status().isForbidden());
         mvc.perform(get(BO + "/stock-items/" + UUID.randomUUID()).with(account(null, Permission.INVENTORY_VIEW)))
                 .andExpect(status().isNotFound());
+    }
+
+    /** Stock items are company-wide data: writing them needs the installation-wide grant (as S20, S39, S40). */
+    @Test
+    void aStoreScopedStockManagerReadsButNeverWritesStockItems() throws Exception {
+        RequestPostProcessor storeManager = account(UUID.randomUUID(), Permission.INVENTORY_MANAGE,
+                Permission.INVENTORY_VIEW);
+        UUID item = fixtures.newStockItem("g");
+
+        create(code("NO"), "un", storeManager).andExpect(status().isForbidden());
+        mvc.perform(put(BO + "/stock-items/" + item).with(storeManager).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"code\": \"X\", \"name\": \"Rice\", \"active\": false, \"version\": 0}"))
+                .andExpect(status().isForbidden());
+        mvc.perform(idem(post(BO + "/stock-items/" + item + "/packs")).with(storeManager)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"code\": \"BAG\", \"name\": \"Pack\", \"quantity\": 1}"))
+                .andExpect(status().isForbidden());
+
+        mvc.perform(get(BO + "/stock-items/" + item).with(storeManager)).andExpect(status().isOk());
+        mvc.perform(get(BO + "/stock-items/" + item + "/packs").with(storeManager)).andExpect(status().isOk());
     }
 
     @Test
