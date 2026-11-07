@@ -1,6 +1,7 @@
 package com.xavier.backend.dining.service;
 
 import com.xavier.backend.dining.exception.DiningNotFoundException;
+import com.xavier.backend.dining.model.Reservation;
 import com.xavier.backend.dining.model.RestaurantTable;
 import com.xavier.backend.dining.model.RoomArea;
 import jakarta.persistence.EntityManager;
@@ -33,6 +34,11 @@ public class DiningRows {
     /** {@code SELECT ... FOR UPDATE}: a deactivation waits for running openings in the area, then sees them. */
     public RoomArea lockArea(UUID id) {
         return locked(RoomArea.class, "RoomArea", id, LockModeType.PESSIMISTIC_WRITE);
+    }
+
+    /** {@code SELECT ... FOR UPDATE}: serializes the commands on one reservation, the seating included. */
+    public Reservation lockReservation(UUID id) {
+        return locked(Reservation.class, "Reservation", id, LockModeType.PESSIMISTIC_WRITE);
     }
 
     /** {@code SELECT ... FOR SHARE}: an opening keeps its area from being deactivated until it commits. */
