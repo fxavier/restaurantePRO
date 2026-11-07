@@ -63,6 +63,25 @@ public class DiningFixtures {
         return order;
     }
 
+    /** Seats a walk-in or, with {@code reservation}, a reservation's party at {@code table}; returns the order id. */
+    public UUID seatReservation(UUID store, UUID table, UUID reservation) {
+        UUID order = UUID.randomUUID();
+        UUID employee = UUID.randomUUID();
+        DiningActors.runAsPos(store, employee,
+                () -> tx.execute(status -> dining.openOccupation(table, order, 2, employee, reservation)));
+        return order;
+    }
+
+    public UUID occupationOf(UUID order) {
+        return jdbc.sql("SELECT id FROM dining.table_occupation WHERE order_id = :order AND closed_at IS NULL")
+                .param("order", order).query(UUID.class).single();
+    }
+
+    public UUID reservationOccupation(UUID reservation) {
+        return jdbc.sql("SELECT occupation_id FROM dining.reservation WHERE id = :id").param("id", reservation)
+                .query(UUID.class).optional().orElse(null);
+    }
+
     public void markSubtotalPrinted(UUID store, UUID order) {
         DiningActors.runAsPos(store, UUID.randomUUID(), () -> tx.execute(status -> {
             dining.markSubtotalPrinted(order);
