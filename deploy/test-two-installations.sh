@@ -18,9 +18,10 @@
 #                environment: COMPOSE_PROJECT_NAME and COMPOSE_ENV_FILES, no --container): A matches its backup;
 #                B's pg_dump checksum and per-table fingerprint are unchanged
 #   tooling      A's operator environment resolves to A's database only; pitr-restore.sh --force refuses B's
-#                container and volume by their Compose label; restore.sh refuses B's non-empty database without
-#                --force; A's key cannot decrypt B's backup; backup.sh with A's recipients refuses B's backup
-#                directory; B unchanged
+#                container and volume by their Compose label; restore.sh (with and without --force) and backup.sh
+#                refuse B's container from A's environment, unless --other-installation names exactly rp-b
+#                (then with a WARNING; restore.sh without --force still stops at B's non-empty database); A's key
+#                cannot decrypt B's backup; backup.sh with A's recipients refuses B's backup directory; B unchanged
 #   teardown     both stacks down with their volumes; no container, volume or network of either is left; the
 #                secret, key and backup directories are removed
 # Writes drills/isolation/drill-isolation-<UTC>.json (result, failed step, one line per check) and prints its
@@ -34,7 +35,7 @@
 #                                                      the drill with a real violation injected at <step>
 #                                                      (B gets A's secret directory, B gets A's credentials,
 #                                                      B's backend joins A's network, A's archive is restored
-#                                                      into B, A's operator environment names B, A's volumes
+#                                                      into B with --other-installation, A's operator environment names B, A's volumes
 #                                                      are kept): it must fail at that step
 #        deploy/test-two-installations.sh --self-test  shellcheck, the drill, then each fault in turn: every
 #                                                      fault must fail at its own step and leave nothing behind
@@ -451,8 +452,8 @@ INSERT INTO public.isolation_drill_after_backup VALUES (1);
 SQL
 [[ "$(fingerprint a)" != "$a_before" ]] || fail "the change to rp-a is not visible"
 if faulted; then
-  note "fault: A's archive restored into rp-b's database"
-  as_operator a "$DEPLOY_DIR/restore.sh" --force --container "$b_pg" --identity "$WORK/a/keys/operational.key" "$archive" 2>>"$WORK/fault.err" || true
+  note "fault: A's archive restored into rp-b's database (the installation guard bypassed with --other-installation rp-b)"
+  as_operator a "$DEPLOY_DIR/restore.sh" --force --other-installation rp-b --container "$b_pg" --identity "$WORK/a/keys/operational.key" "$archive" 2>>"$WORK/fault.err" || true
 fi
 as_operator a "$DEPLOY_DIR/restore.sh" --force --identity "$WORK/a/keys/operational.key" "$archive" 2>"$WORK/a-restore.err" \
   || { cat "$WORK/a-restore.err" >&2; fail "restore.sh --force of rp-a failed"; }
@@ -493,11 +494,33 @@ if [[ "$(docker inspect -f '{{.State.Running}}' "$b_pg" 2>/dev/null)" != true ]]
   fail "rp-b's database container or volume is gone after pitr-restore.sh was refused"
 fi
 pass "pitr-restore.sh --force refuses container $b_pg_name and volume $b_volume (Compose label com.docker.compose.project=rp-b)"
-if as_operator a "$DEPLOY_DIR/restore.sh" --container "$b_pg" --identity "$WORK/a/keys/operational.key" "$archive" 2>"$WORK/r.err"; then
-  fail "restore.sh wrote A's archive into rp-b without --force"
-fi
-grep -q 'is not empty' "$WORK/r.err" || fail "restore.sh into rp-b was not refused by the non-empty guard: $(tail -2 "$WORK/r.err")"
-pass "restore.sh without --force refuses rp-b's non-empty database"
+restore_a() { as_operator a "$DEPLOY_DIR/restore.sh" --identity "$WORK/a/keys/operational.key" "$@" 2>"$WORK/r.err"; }
+backup_a() { as_operator a "$DEPLOY_DIR/backup.sh" "$@" 2>"$WORK/r.err"; }
+refused_as_other() { grep -q "belongs to installation rp-b" "$WORK/r.err"; }
+for force in --force ""; do
+  if restore_a ${force:+"$force"} --container "$b_pg" "$archive"; then fail "restore.sh ${force:-without --force} wrote A's archive into rp-b"; fi
+  refused_as_other || fail "restore.sh ${force:-without --force} into rp-b was not refused by the installation guard: $(tail -2 "$WORK/r.err")"
+done
+if restore_a --force --other-installation rp-c --container "$b_pg" "$archive"; then fail "restore.sh --other-installation rp-c wrote into rp-b"; fi
+refused_as_other || fail "restore.sh --other-installation rp-c into rp-b was not refused: $(tail -2 "$WORK/r.err")"
+[[ "$(dump_sum b)" == "$b_sum_before" ]] || fail "a refused restore.sh changed rp-b"
+pass "restore.sh, with and without --force, refuses $b_pg_name from A's environment (Compose project rp-b, not rp-a), also with --other-installation rp-c"
+# The override names exactly rp-b: past the installation guard, loudly, then stopped by the non-empty guard.
+if restore_a --other-installation rp-b --container "$b_pg" "$archive"; then fail "restore.sh wrote A's archive into rp-b without --force"; fi
+grep -q 'WARNING: --other-installation rp-b' "$WORK/r.err" || fail "restore.sh --other-installation rp-b did not log the override: $(tail -2 "$WORK/r.err")"
+grep -q 'is not empty' "$WORK/r.err" || fail "restore.sh --other-installation rp-b was not stopped by the non-empty guard: $(tail -2 "$WORK/r.err")"
+[[ "$(dump_sum b)" == "$b_sum_before" ]] || fail "restore.sh --other-installation rp-b without --force changed rp-b"
+pass "restore.sh --other-installation rp-b passes the installation guard with a WARNING, and without --force still refuses rp-b's non-empty database"
+if backup_a --container "$b_pg" --dir "$WORK/a/other" >/dev/null; then fail "backup.sh in A's environment dumped rp-b's database"; fi
+refused_as_other || fail "backup.sh of rp-b from A's environment was not refused by the installation guard: $(tail -2 "$WORK/r.err")"
+if backup_a --other-installation rp-c --container "$b_pg" --dir "$WORK/a/other" >/dev/null; then fail "backup.sh --other-installation rp-c dumped rp-b"; fi
+refused_as_other || fail "backup.sh --other-installation rp-c was not refused: $(tail -2 "$WORK/r.err")"
+[[ ! -e "$WORK/a/other" ]] || fail "a refused backup.sh created $WORK/a/other"
+other_archive="$(backup_a --other-installation rp-b --container "$b_pg" --dir "$WORK/a/other")" \
+  || fail "backup.sh --other-installation rp-b failed: $(tail -2 "$WORK/r.err")"
+grep -q 'WARNING: --other-installation rp-b' "$WORK/r.err" || fail "backup.sh --other-installation rp-b did not log the override"
+is_age_file "$other_archive" || fail "backup.sh --other-installation rp-b did not write an encrypted archive"
+pass "backup.sh refuses $b_pg_name from A's environment (also with --other-installation rp-c); --other-installation rp-b dumps it, with a WARNING"
 if as_operator a "$DEPLOY_DIR/restore.sh" --force --identity "$WORK/a/keys/operational.key" "$b_backup" 2>"$WORK/r.err"; then
   fail "A's key decrypted and restored B's backup"
 fi
