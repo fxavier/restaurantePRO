@@ -43,8 +43,10 @@ class MovingAverageTest {
 
         Valued out = MovingAverage.post(stock, q("-1000"), null);
 
-        assertThat(out.value()).isEqualByComparingTo("-12.3450");
-        assertThat(out.after()).isEqualTo(position("0.01", "0.0004", "0.012345"));
+        // D113 as amended (S47): the OUT takes its share, 12.3454 × 1000 ÷ 1000.01 = 12.3453 (was round(q × avg) =
+        // 12.3450); the average still does not change
+        assertThat(out.value()).isEqualByComparingTo("-12.3453");
+        assertThat(out.after()).isEqualTo(position("0.01", "0.0001", "0.012345"));
     }
 
     @Test
@@ -58,25 +60,42 @@ class MovingAverageTest {
         assertThat(out.after()).isEqualTo(position("0", "0", "0.012345"));
     }
 
-    /** Weighted-average costing: an OUT's own cost (a supplier return, a shortage) is for reference only. */
     /**
-     * S47 review: while the quantity stays at or above zero, an OUT never takes more value than the stock holds (a
-     * 300 g bag at 0.012355 sold gram by gram rounds each sale up to 0.0124); the value never goes below zero and
-     * an OUT's value is never positive.
+     * D113 as amended (S47 review round 4): an OUT that leaves the quantity at or above zero takes its share of the
+     * value, {@code −round(V × q ÷ Q, 4)}, never more than the stock holds and with no drift bias; the unit cost
+     * recorded is still the average. A 2 g bag worth 0.0100 with an average of 0.012355: each gram takes 0.0050.
      */
     @Test
-    void anOutNeverTakesMoreValueThanTheStockHolds() {
+    void anOutTakesItsProportionalShareOfTheValue() {
         StockPosition bag = position("2", "0.0100", "0.012355");
 
         Valued out = MovingAverage.post(bag, q("-1"), null);
 
-        assertThat(out.value()).isEqualByComparingTo("-0.0100");
-        assertThat(out.after().value()).isEqualByComparingTo("0");
+        assertThat(out.value()).isEqualByComparingTo("-0.0050");
+        assertThat(out.unitCost()).isEqualByComparingTo("0.012355");
+        assertThat(out.after()).isEqualTo(position("1", "0.0050", "0.012355"));
         Valued last = MovingAverage.post(out.after(), q("-1"), null);
-        assertThat(last.value()).isEqualByComparingTo("0");
+        assertThat(last.value()).isEqualByComparingTo("-0.0050");
         assertThat(last.after()).isEqualTo(position("0", "0", "0.012355"));
     }
 
+    /** The reviewer's case: 1 g sales from 1000 g at 0.00015 cost 0.0002 each by q × avg; proportionally they share. */
+    @Test
+    void manySmallOutsShareTheValueWithoutDrift() {
+        StockPosition stock = position("1000", "0.1500", "0.000150");
+        BigDecimal taken = BigDecimal.ZERO;
+        for (int i = 0; i < 750; i++) {
+            Valued out = MovingAverage.post(stock, q("-1"), null);
+            assertThat(out.value().signum()).isLessThanOrEqualTo(0);
+            taken = taken.add(out.value());
+            stock = out.after();
+        }
+
+        assertThat(stock.value()).isPositive();
+        assertThat(stock.value().subtract(taken)).isEqualByComparingTo("0.1500");
+    }
+
+    /** Weighted-average costing: an OUT's own cost (a supplier return, a shortage) is for reference only. */
     @Test
     void anOutWithItsOwnCostIsStillValuedAtTheAverage() {
         Valued out = MovingAverage.post(position("20", "220", "11"), q("-5"), c("99"));

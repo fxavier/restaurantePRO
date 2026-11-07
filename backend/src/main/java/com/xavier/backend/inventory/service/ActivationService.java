@@ -27,6 +27,12 @@ public class ActivationService {
 
     static final String ENTITY = "InventoryActivation";
 
+    /**
+     * ponytail: grace ceiling. An {@code activeFrom} at most this far in the past is a client's "now" that took a
+     * moment to arrive, and is taken as now; anything older is refused (422 ACTIVATION_IN_PAST).
+     */
+    static final java.time.Duration ACTIVATION_GRACE = java.time.Duration.ofSeconds(60);
+
     private final InventoryActivationRepository activations;
     private final InventoryScope scope;
     private final AccessPolicy accessPolicy;
@@ -44,7 +50,8 @@ public class ActivationService {
 
     /**
      * @throws InventoryConflictException INVENTORY_ALREADY_ACTIVE (409), also when two activations race
-     * @throws InventoryRuleException     ACTIVATION_IN_PAST (422) for an {@code activeFrom} before now
+     * @throws InventoryRuleException     ACTIVATION_IN_PAST (422) for an {@code activeFrom} more than
+     *                                    {@link #ACTIVATION_GRACE} before now (within it, it is now)
      */
     @Transactional
     public ActivationView activate(ActivationRequest request) {
@@ -54,8 +61,11 @@ public class ActivationService {
         }
         Instant now = clock.instant();
         Instant from = request.activeFrom() == null ? now : request.activeFrom();
+        if (from.isBefore(now.minus(ACTIVATION_GRACE))) {
+            throw InventoryRuleException.activationInPast(now.minus(ACTIVATION_GRACE));
+        }
         if (from.isBefore(now)) {
-            throw InventoryRuleException.activationInPast(now);
+            from = now; // a client's "now" that arrived late
         }
         UUID accountId = accessPolicy.current().userId();
         InventoryActivation activation = UniqueConstraints.saveAndFlush(activations,

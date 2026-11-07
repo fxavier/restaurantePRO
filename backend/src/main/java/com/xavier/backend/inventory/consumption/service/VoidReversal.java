@@ -142,12 +142,13 @@ public class VoidReversal {
                     continue;
                 }
                 open.put(original.id(), left.subtract(quantity));
-                // a share never gives back more than is left of the sale's value, nor less than nothing; the share that
-                // settles the movement's last quantity carries exactly what is left
-                BigDecimal valueLeft = openValue.get(original.id()).max(BigDecimal.ZERO);
+                // a share never gives back more than is left of the sale's value (an OUT's value is never positive,
+                // D113, so what is left is never negative); the share that settles the movement's last quantity
+                // carries exactly what is left
+                BigDecimal valueLeft = openValue.get(original.id());
                 BigDecimal value = quantity.compareTo(left) == 0 ? valueLeft
                         : quantity.multiply(original.unitCost()).setScale(StockPosition.VALUE_SCALE,
-                        RoundingMode.HALF_UP).min(valueLeft).max(BigDecimal.ZERO);
+                        RoundingMode.HALF_UP).min(valueLeft);
                 openValue.put(original.id(), openValue.get(original.id()).subtract(value));
                 if (facts.wasted()) {
                     if (book.recordWaste(facts.voidId(), original, lineId, quantity, value, facts.businessDay(),

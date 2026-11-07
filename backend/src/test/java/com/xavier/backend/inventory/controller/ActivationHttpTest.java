@@ -59,19 +59,25 @@ class ActivationHttpTest {
         assertThat(activations.activeFrom(store)).contains(from);
     }
 
-    /** Without a start it goes live now; a start in the past is refused (S47 review). */
+    /** Without a start it goes live now; a start a few seconds old is now; an older one is refused (S47 review). */
     @Test
     void aStoreGoesLiveNowOrLaterNeverInThePast() throws Exception {
-        UUID store = fixtures.newStore();
-        mvc.perform(idem(post(BO + "/activations")).with(account(store, Permission.INVENTORY_MANAGE))
+        UUID late = fixtures.newStore();
+        UUID backdated = fixtures.newStore();
+
+        mvc.perform(idem(post(BO + "/activations")).with(account(backdated, Permission.INVENTORY_MANAGE))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"storeId\": \"%s\", \"activeFrom\": \"%s\"}".formatted(store,
-                                clock.instant().minusSeconds(1))))
+                        .content("{\"storeId\": \"%s\", \"activeFrom\": \"%s\"}".formatted(backdated,
+                                clock.instant().minusSeconds(120))))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("ACTIVATION_IN_PAST"));
-
-        mvc.perform(idem(post(BO + "/activations")).with(account(store, Permission.INVENTORY_MANAGE))
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"storeId\": \"%s\"}".formatted(store)))
+        mvc.perform(idem(post(BO + "/activations")).with(account(late, Permission.INVENTORY_MANAGE))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"storeId\": \"%s\", \"activeFrom\": \"%s\"}".formatted(late,
+                                clock.instant().minusSeconds(5))))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.activeFrom").value(clock.instant().toString()));
+        mvc.perform(idem(post(BO + "/activations")).with(account(backdated, Permission.INVENTORY_MANAGE))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"storeId\": \"%s\"}".formatted(backdated)))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.activeFrom").value(clock.instant().toString()));
     }
 
