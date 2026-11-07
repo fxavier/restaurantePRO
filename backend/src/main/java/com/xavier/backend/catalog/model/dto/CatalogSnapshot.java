@@ -26,12 +26,33 @@ import java.util.UUID;
  * @param units           all units
  * @param taxCategories   categories used by the items, with their rate schedule
  * @param items           ACTIVE items only
+ * @param quickPages      the POS quick pages of this store and of every store (v2, D109)
+ * @param macros          every macro (v2, D109)
+ * @param automaticItems  the ACTIVE automatic items of this store and of every store (v2, D109)
+ *
+ * <p>Schema version 2 (R4) added item kinds and menu groups (D108) and the three lists above. A version-1 document
+ * reads with every item {@code STANDARD}, no menu groups and empty lists.
  */
 public record CatalogSnapshot(int schemaVersion, UUID storeId, UUID releaseId, long version, Instant effectiveAt,
                               String currency, List<Family> families, List<Unit> units,
-                              List<TaxCategory> taxCategories, List<Item> items) {
+                              List<TaxCategory> taxCategories, List<Item> items, List<QuickPage> quickPages,
+                              List<Macro> macros, List<AutomaticItem> automaticItems) {
 
-    public static final int SCHEMA_VERSION = 1;
+    public static final int SCHEMA_VERSION = 2;
+
+    public CatalogSnapshot {
+        quickPages = quickPages == null ? List.of() : quickPages;
+        macros = macros == null ? List.of() : macros;
+        automaticItems = automaticItems == null ? List.of() : automaticItems;
+    }
+
+    /** A catalog without the R4 configuration (the shape of schema version 1). */
+    public CatalogSnapshot(int schemaVersion, UUID storeId, UUID releaseId, long version, Instant effectiveAt,
+                           String currency, List<Family> families, List<Unit> units,
+                           List<TaxCategory> taxCategories, List<Item> items) {
+        this(schemaVersion, storeId, releaseId, version, effectiveAt, currency, families, units, taxCategories, items,
+                List.of(), List.of(), List.of());
+    }
 
     /** {@code parentId} is set for a subfamily. */
     public record Family(UUID id, String code, String name, UUID parentId) {
@@ -73,10 +94,25 @@ public record CatalogSnapshot(int schemaVersion, UUID storeId, UUID releaseId, l
      * @param taxCategoryId         its rate at confirmation comes from that category's schedule
      * @param productionDestination KITCHEN, BAR… or {@code null} when nothing is prepared
      * @param price                 the item's price in the store's price list
+     * @param kind                  STANDARD, MENU or FEE (v2; a v1 item is STANDARD)
+     * @param menuGroups            the component groups of a MENU, ordered by position; empty otherwise (v2)
      */
     public record Item(UUID id, String code, String name, UUID familyId, UUID unitId, UUID taxCategoryId,
                        String productionDestination, boolean soldByWeight, Price price,
-                       List<Variant> variants, List<Barcode> barcodes) {
+                       List<Variant> variants, List<Barcode> barcodes, ItemKind kind, List<MenuGroup> menuGroups) {
+
+        public Item {
+            kind = kind == null ? ItemKind.STANDARD : kind;
+            menuGroups = menuGroups == null ? List.of() : menuGroups;
+        }
+
+        /** A STANDARD item without menu groups (the shape of schema version 1). */
+        public Item(UUID id, String code, String name, UUID familyId, UUID unitId, UUID taxCategoryId,
+                    String productionDestination, boolean soldByWeight, Price price, List<Variant> variants,
+                    List<Barcode> barcodes) {
+            this(id, code, name, familyId, unitId, taxCategoryId, productionDestination, soldByWeight, price, variants,
+                    barcodes, ItemKind.STANDARD, List.of());
+        }
 
         /**
          * The selling price of this item, or of one of its variants (D58): the variant's own price, falling back
@@ -94,6 +130,46 @@ public record CatalogSnapshot(int schemaVersion, UUID storeId, UUID releaseId, l
                             "Variant " + variantId + " is not a variant of item " + id));
             return variant.price() == null ? price.toMoney() : variant.price().toMoney();
         }
+    }
+
+    /**
+     * A component group of a MENU (D108): the order chooses between {@code minChoices} and {@code maxChoices} of its
+     * options. Options are ordered by position.
+     */
+    public record MenuGroup(String code, String name, int minChoices, int maxChoices, List<MenuOption> options) {
+    }
+
+    /** {@code variantId} is {@code null} for the item itself; {@code quantity} of it per menu sold. */
+    public record MenuOption(UUID itemId, UUID variantId, BigDecimal quantity) {
+    }
+
+    /**
+     * A POS quick page: ordered entries, each exactly one of an item, a variant or a macro.
+     *
+     * @param position the page's place among the pages
+     */
+    public record QuickPage(UUID id, String code, String name, int position, List<QuickPageEntry> entries) {
+    }
+
+    /** Exactly one of the three ids is set. */
+    public record QuickPageEntry(UUID itemId, UUID variantId, UUID macroId) {
+    }
+
+    /** A named list of lines added together as drafts (D109); entries in order. */
+    public record Macro(UUID id, String code, String name, List<MacroEntry> entries) {
+    }
+
+    public record MacroEntry(UUID itemId, UUID variantId, BigDecimal quantity) {
+    }
+
+    /**
+     * A line added as a draft when an order opens (D109).
+     *
+     * @param trigger  {@code TABLE_OPEN_PER_GUEST} (quantity × guests when a table opens) or {@code ORDER_OPEN}
+     * @param mode     for {@code ORDER_OPEN}: the order mode it applies to, {@code null} = every mode
+     */
+    public record AutomaticItem(UUID id, String trigger, String mode, UUID itemId, UUID variantId,
+                                BigDecimal quantity) {
     }
 
     /** {@code price} is {@code null} when the variant has no own price: it sells at the item price. */
