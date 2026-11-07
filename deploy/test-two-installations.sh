@@ -287,7 +287,11 @@ done
 unset BACKUP_AGE_RECIPIENTS_FILE # per installation from here on (compose, as_operator)
 if [[ "$fault" == credentials ]]; then cp -p "$WORK/a/secrets/"* "$WORK/b/secrets/"; fi # B gets A's passwords
 note "building the images (cached after the first run) and starting rp-a"
-compose a up -d --build >"$WORK/up-a.log" 2>&1 || { tail -30 "$WORK/up-a.log" >&2; fail "rp-a did not start"; }
+# The postgres image as lib/age.sh builds it: a Compose build would stamp rp-a's project label on the image that
+# every installation and pitr-restore.sh container on this host runs.
+age_image_ready
+compose a build backend >"$WORK/up-a.log" 2>&1 || { tail -30 "$WORK/up-a.log" >&2; fail "the backend image did not build"; }
+compose a up -d >>"$WORK/up-a.log" 2>&1 || { tail -30 "$WORK/up-a.log" >&2; fail "rp-a did not start"; }
 note "starting rp-b"
 compose b up -d >"$WORK/up-b.log" 2>&1 || { tail -30 "$WORK/up-b.log" >&2; fail "rp-b did not start"; }
 for i in $INSTALLATIONS; do
@@ -521,6 +525,17 @@ other_archive="$(backup_a --other-installation rp-b --container "$b_pg" --dir "$
 grep -q 'WARNING: --other-installation rp-b' "$WORK/r.err" || fail "backup.sh --other-installation rp-b did not log the override"
 is_age_file "$other_archive" || fail "backup.sh --other-installation rp-b did not write an encrypted archive"
 pass "backup.sh refuses $b_pg_name from A's environment (also with --other-installation rp-c); --other-installation rp-b dumps it, with a WARNING"
+# A container Compose did not create but that carries rp-b's project label, as one started from a Compose-built
+# image inherits it (a pitr-restore.sh container): not another installation's database, so backup.sh may dump it.
+inherited="$RUN_ID-inherited"
+POSTGRES_PASSWORD="$(openssl rand -hex 16)" docker run -d --name "$inherited" -e POSTGRES_PASSWORD -e POSTGRES_USER="$DB_USER" \
+  -e POSTGRES_DB="$DB" --label restaurantpro.drill="$RUN_ID" --label com.docker.compose.project=rp-b --entrypoint docker-entrypoint.sh \
+  "$PG_IMAGE" postgres >/dev/null
+for _ in $(seq 1 60); do docker exec "$inherited" pg_isready -q -h 127.0.0.1 -U "$DB_USER" -d "$DB" 2>/dev/null && break; sleep 1; done
+backup_a --container "$inherited" --dir "$WORK/a/inherited" >/dev/null \
+  || fail "backup.sh refused a container Compose did not create (only an inherited rp-b label): $(tail -2 "$WORK/r.err")"
+docker rm -f -v "$inherited" >/dev/null
+pass "a container Compose did not create, with an inherited com.docker.compose.project=rp-b label (as from a Compose-built image), is not taken for rp-b"
 if as_operator a "$DEPLOY_DIR/restore.sh" --force --identity "$WORK/a/keys/operational.key" "$b_backup" 2>"$WORK/r.err"; then
   fail "A's key decrypted and restored B's backup"
 fi

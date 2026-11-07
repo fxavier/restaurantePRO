@@ -69,12 +69,16 @@ installation_project() {
 # Refuses database container $1 when Docker Compose manages it for another installation than this one
 # (installation_project): a restore or a backup must never reach another company's database by a mistyped
 # --container. $2 = the project named by --other-installation, the only way past this guard, and only for
-# exactly that project (logged as a WARNING). A container without a Compose label (a throwaway or a
-# pitr-restore.sh container) is allowed.
+# exactly that project (logged as a WARNING). A container Compose did not create (a throwaway or a
+# pitr-restore.sh container) is allowed. Compose also stamps com.docker.compose.project on the images it builds,
+# so a container started from such an image inherits it: only the config-hash label, which Compose puts on the
+# containers it creates and never on images, marks a container as Compose-managed.
 require_own_installation() {
-  local container=$1 other=${2:-} project own
-  project="$(docker container inspect -f '{{index .Config.Labels "com.docker.compose.project"}}' "$container" 2>/dev/null)" \
+  local container=$1 other=${2:-} labels project own
+  labels="$(docker container inspect -f '{{index .Config.Labels "com.docker.compose.config-hash"}}|{{index .Config.Labels "com.docker.compose.project"}}' "$container" 2>/dev/null)" \
     || die "container $container not found"
+  project=""
+  [[ "$labels" == "|"* ]] || project="${labels#*|}"
   own="$(installation_project)"
   if [[ -n "$other" ]]; then
     [[ "$project" == "$other" && "$project" != "$own" ]] \
