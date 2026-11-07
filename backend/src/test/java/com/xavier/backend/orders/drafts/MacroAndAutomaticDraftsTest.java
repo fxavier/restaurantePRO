@@ -105,6 +105,18 @@ class MacroAndAutomaticDraftsTest {
                 .satisfies(line -> assertThat(line.get("itemId").asString()).isEqualTo(bag.toString()));
     }
 
+    @Test
+    void anOrderOpensInAStoreWithoutAPublishedCatalog() throws Exception {
+        UUID store = new com.xavier.backend.catalog.CatalogFixtures(mvc).store();
+
+        mvc.perform(post(OrdersFixtures.POS + "/orders")
+                        .with(OrdersActors.pos(store, employee, terminal, Permission.ORDER_EDIT)).with(csrf())
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"mode\": \"COUNTER\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.lines.length()").value(0));
+    }
+
     ResultActions macro(UUID order, long version, String code) throws Exception {
         return mvc.perform(post(OrdersFixtures.POS + "/orders/" + order + "/lines/macro")
                 .with(OrdersActors.pos(shop.store(), employee, terminal, Permission.ORDER_EDIT)).with(csrf())
