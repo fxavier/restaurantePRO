@@ -1,0 +1,56 @@
+package com.xavier.backend.settlement;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.xavier.backend.customers.CustomersFixtures;
+import com.xavier.backend.settlement.SettlementFixtures.DeliverySale;
+import com.xavier.backend.settlement.SettlementFixtures.Sale;
+import java.util.UUID;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+
+/**
+ * D127, P48 (S50 review, binding): settlement's close of a DELIVERY order that is not DELIVERED is refused with 422
+ * {@code DELIVERY_NOT_DELIVERED} before s1, so no document is drafted or issued and the order is not frozen: the
+ * close is not left half done. Paying in advance stays allowed; once DELIVERED the same close succeeds.
+ */
+@SettlementModuleTest
+class DeliveryCloseBeforeDocumentTest {
+
+    @Autowired
+    SettlementFixtures fixtures;
+
+    @Autowired
+    CustomersFixtures customers;
+
+    @Test
+    void aPaidOrderOutForDeliveryIsNotClosedNorInvoicedUntilItIsDelivered() throws Exception {
+        DeliverySale delivery = fixtures.deliverySale(customers);
+        Sale sale = delivery.sale();
+        fixtures.payCash(sale, "15.50", "15.50").andExpect(status().isCreated()); // paid in advance
+        delivery.deliveries().dispatch(delivery.shop(), sale.order(), 0, delivery.shop().courier())
+                .andExpect(status().isOk());
+        long version = fixtures.orderVersion(sale.cashier(), sale.order());
+
+        fixtures.close(sale.cashier(), sale.order(), version, UUID.randomUUID().toString())
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("DELIVERY_NOT_DELIVERED"));
+
+        assertThat(fixtures.documents(sale.order())).as("no document drafted or issued").isZero();
+        assertThat(fixtures.count("SELECT count(*) FROM orders.order_header WHERE id = ? AND billing_lock = "
+                + "'INVOICE'", sale.order())).as("the order is not frozen").isZero();
+        fixtures.settlement(sale.cashier(), sale.order()).andExpect(jsonPath("$.lifecycle").value("OPEN"))
+                .andExpect(jsonPath("$.orderVersion").value(version))
+                .andExpect(jsonPath("$.fiscalState").value("NONE"))
+                .andExpect(jsonPath("$.financialState").value("SETTLED"));
+
+        delivery.deliveries().delivered(delivery.shop(), sale.order(), 1).andExpect(status().isOk());
+        fixtures.close(sale.cashier(), sale.order(), version, UUID.randomUUID().toString())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.lifecycle").value("CLOSED"))
+                .andExpect(jsonPath("$.fiscalState").value("ISSUED"));
+        assertThat(fixtures.documents(sale.order())).isOne();
+    }
+}

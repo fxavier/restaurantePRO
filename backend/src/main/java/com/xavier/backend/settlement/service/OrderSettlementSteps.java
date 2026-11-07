@@ -7,7 +7,9 @@ import com.xavier.backend.fiscal.model.dto.Buyer;
 import com.xavier.backend.fiscal.model.dto.Coverage;
 import com.xavier.backend.fiscal.model.dto.DocumentView;
 import com.xavier.backend.fiscal.model.dto.DraftCommand;
+import com.xavier.backend.orders.DeliveryStatus;
 import com.xavier.backend.orders.OrderBillingView;
+import com.xavier.backend.orders.OrderMode;
 import com.xavier.backend.orders.OrderLifecycle;
 import com.xavier.backend.orders.OrdersApi;
 import com.xavier.backend.settlement.exception.SettlementConflictException;
@@ -66,8 +68,8 @@ public class OrderSettlementSteps {
     /**
      * s1, one transaction: the order's lock → {@code freezeForInvoice} → the residual ORDER draft (fiscal returns the
      * existing document, DRAFT or ISSUED), with the tax cent of settled voids placed on it, or the placement recorded
-     * before re-applied (D96). A close ({@code expectedVersion} given) first checks that the order is
-     * settled (nothing in doubt on any target, paid = due), frozen or not, so a close that cannot succeed never
+     * before re-applied (D96). A close ({@code expectedVersion} given) first checks that a DELIVERY order is
+     * DELIVERED (D127) and that the order is settled (nothing in doubt on any target, paid = due), frozen or not, so a close that cannot succeed never
      * freezes the order, drafts or issues its document. Until the order is frozen it also checks the client's
      * version; once frozen nothing of the order can change, so a retry (whose client version predates the freeze)
      * skips it.
@@ -80,8 +82,9 @@ public class OrderSettlementSteps {
             Bill bill = lockedBill(pos, orderId);
             OrderBillingView view = bill.view();
             boolean closing = expectedVersion != null;
-            if (closing) {
-                requireSettled(bill); // frozen or not: a close that cannot succeed issues nothing
+            if (closing) { // frozen or not: a close that cannot succeed issues nothing
+                requireDelivered(view);
+                requireSettled(bill);
             }
             List<DocumentView> documents = fiscal.documentsOfOrder(orderId);
             TaxRoundingAdjustments.Placed placed = taxRounding.residual(bill, buyer, documents);
@@ -171,6 +174,18 @@ public class OrderSettlementSteps {
         accessPolicy.requireSessionStore(pos, orders.storeOf(orderId), PaymentAttemptService.ORDER, orderId);
         locks.lockOrder(orderId);
         return bills.of(orderId);
+    }
+
+    /**
+     * D127, P48: a DELIVERY order's document is issued at its close, and it closes only once DELIVERED. Checked in s1,
+     * before the freeze and the draft, so the refusal leaves nothing half done; {@code OrdersApi.close} checks it
+     * again in s3 for a close that needs no residual document.
+     */
+    private static void requireDelivered(OrderBillingView view) {
+        if (view.mode() == OrderMode.DELIVERY
+                && (view.delivery() == null || view.delivery().status() != DeliveryStatus.DELIVERED)) {
+            throw SettlementRuleException.deliveryNotDelivered(view.orderId());
+        }
     }
 
     private void requireSettled(Bill bill) {

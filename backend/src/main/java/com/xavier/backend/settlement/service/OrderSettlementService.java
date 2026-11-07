@@ -50,7 +50,7 @@ public class OrderSettlementService {
      * D42 (b) first: the order's store only (404, 403), before its sale document is looked up.
      *
      * @throws com.xavier.backend.settlement.exception.SettlementRuleException 422 {@code NOT_SETTLED},
-     *         {@code FISCAL_PENDING}, {@code ORDER_NOT_OPEN}, {@code NOTHING_TO_BILL}
+     *         {@code FISCAL_PENDING}, {@code ORDER_NOT_OPEN}, {@code NOTHING_TO_BILL}, {@code DELIVERY_NOT_DELIVERED}
      * @throws com.xavier.backend.settlement.exception.SettlementConflictException 409 {@code PAYMENT_IN_DOUBT}
      */
     public OrderSettlementView close(UUID orderId, CloseOrderRequest request) {

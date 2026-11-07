@@ -116,7 +116,8 @@ public class SettlementQueryService {
             Money onAccount = Money.of(credit.getOrDefault(order.orderId(), BigDecimal.ZERO), order.due().currency());
             Money covered = paidSoFar.plus(onAccount);
             return new OpenOrderBalance(order.orderId(), order.due(), paidSoFar, order.due().minus(covered),
-                    FinancialState.of(order.due(), covered).name(), order.tableId(), order.tableCode(), onAccount);
+                    FinancialState.of(order.due(), covered).name(), order.tableId(), order.tableCode(), onAccount,
+                    order.mode().name(), order.customerId(), order.delivery());
         }).toList();
     }
 }

@@ -4,7 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.xavier.backend.orders.BillingLine;
 import com.xavier.backend.orders.LineAmounts;
+import com.xavier.backend.orders.OrderBillingView;
+import com.xavier.backend.orders.OrdersApi;
 import com.xavier.backend.settlement.SettlementFixtures.Sale;
 import com.xavier.backend.shared.Money;
 import java.math.BigDecimal;
@@ -35,11 +38,18 @@ class SplitPreservesTotalsTest {
     @Autowired
     com.xavier.backend.identity.ApproverVerifier approvers;
 
+    @Autowired
+    OrdersApi orders;
+
     @org.junit.jupiter.api.BeforeEach
     void aManagerApprovesVoids() {
         org.mockito.Mockito.when(approvers.verify(org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.eq(com.xavier.backend.access.Permission.ORDER_VOID_APPROVE),
+                org.mockito.ArgumentMatchers.any())).thenReturn(UUID.randomUUID());
+        org.mockito.Mockito.when(approvers.verify(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq(com.xavier.backend.access.Permission.ORDER_DISCOUNT_APPROVE),
                 org.mockito.ArgumentMatchers.any())).thenReturn(UUID.randomUUID());
     }
 
@@ -97,6 +107,89 @@ class SplitPreservesTotalsTest {
                 sale.order())).isEqualByComparingTo(LineAmounts.of(UNIT, new BigDecimal("3"), VAT).gross()
                 .plus(LineAmounts.of(Money.of("3.33", UNIT.currency()), new BigDecimal("2.500"),
                         new BigDecimal("5")).gross()).amount());
+    }
+
+    /**
+     * A41 (D101, D107): discounted, offered and split-off lines (two rates) under random ITEMS partitions, each
+     * invoiced and paid, then the residual and the close. The documents carry the effective amounts: Σ document gross =
+     * due, Σ document tax per rate = Σ line tax at that rate, Σ document quantity per line = its net quantity.
+     */
+    @Test
+    void randomSplitsOfDiscountedAndOfferedLinesKeepTotalsTaxesAndQuantities() throws Exception {
+        Random random = new Random(20261107);
+        for (int scenario = 0; scenario < 4; scenario++) {
+            discountSplitAndClose(random);
+        }
+    }
+
+    private void discountSplitAndClose(Random random) throws Exception {
+        Sale sale = fixtures.sale("3"); // 3 × 12.50 at 16 %
+        UUID whole = fixtures.lineIds(sale.cashier(), sale.order()).getFirst();
+        fixtures.confirmRound(sale.shop(), sale.cashier(), sale.order(), quantity(random),
+                fixtures.orderVersion(sale.cashier(), sale.order()));
+        UUID other = fixtures.confirmOtherRate(sale, "3.33", "5", "2.500");
+        fixtures.offer(sale, whole, "1").andExpect(status().isOk()); // one unit offered, split off
+        UUID fractional = fixtures.lineIds(sale.cashier(), sale.order()).stream()
+                .filter(id -> !id.equals(whole) && !id.equals(other)).findFirst().orElseThrow();
+        fixtures.percentOff(sale, fractional, null, String.valueOf(1 + random.nextInt(60)))
+                .andExpect(status().isOk());
+        fixtures.percentOff(sale, other, "1.250", String.valueOf(1 + random.nextInt(60))) // splits it
+                .andExpect(status().isOk());
+        fixtures.percentOff(sale, whole, null, "10").andExpect(status().isOk()); // a second discount of a line
+
+        List<UUID> lines = fixtures.lineIds(sale.cashier(), sale.order());
+        assertThat(lines).hasSize(5);
+        for (int p = 0; p < 1 + random.nextInt(3); p++) {
+            UUID line = lines.get(random.nextInt(lines.size()));
+            BigDecimal pool = poolOf(coverage(sale), line);
+            if (pool.signum() == 0) {
+                continue;
+            }
+            BigDecimal quantity = BigDecimal.valueOf(1 + random.nextInt(pool.movePointRight(3).intValueExact()), 3);
+            var created = fixtures.partitionItems(sale.cashier(), sale.order(),
+                    fixtures.orderVersion(sale.cashier(), sale.order()), UUID.randomUUID().toString(), line,
+                    quantity.toPlainString()).andReturn().getResponse();
+            assertThat(created.getStatus()).as("a partition is created or refused by the rounding guard")
+                    .isIn(201, 422);
+            if (created.getStatus() != 201) {
+                continue;
+            }
+            JsonNode partition = SettlementFixtures.json(created.getContentAsString());
+            UUID id = UUID.fromString(partition.get("id").asString());
+            fixtures.partitionDocument(sale.cashier(), id, UUID.randomUUID().toString())
+                    .andExpect(status().isCreated());
+            String due = partition.get("due").get("amount").asString();
+            if (new BigDecimal(due).signum() > 0) {
+                fixtures.payPartition(sale.cashier(), sale.order(), id, "CASH", due, due,
+                        UUID.randomUUID().toString()).andExpect(status().isCreated());
+            }
+        }
+        String residual = SettlementFixtures.json(fixtures.settlement(sale.cashier(), sale.order()))
+                .get("residualBalance").get("amount").asString();
+        if (new BigDecimal(residual).signum() > 0) {
+            fixtures.payCash(sale, residual, residual).andExpect(status().isCreated());
+        }
+        OrderBillingView billed = orders.billingView(sale.order());
+
+        fixtures.close(sale.cashier(), sale.order(), fixtures.orderVersion(sale.cashier(), sale.order()),
+                UUID.randomUUID().toString()).andExpect(status().isOk())
+                .andExpect(jsonPath("$.lifecycle").value("CLOSED"));
+
+        assertThat(billed.lines().stream().filter(line -> line.unitPrice().amount().signum() == 0)).hasSize(1);
+        assertThat(fixtures.decimal("SELECT sum(total_gross) FROM fiscal.fiscal_document WHERE order_ref = ?",
+                sale.order())).isEqualByComparingTo(billed.due().amount());
+        for (String rate : List.of("16", "5")) {
+            BigDecimal tax = billed.lines().stream().filter(line -> line.ratePercent().compareTo(new BigDecimal(rate))
+                    == 0).map(line -> line.tax().amount()).reduce(BigDecimal.ZERO, BigDecimal::add);
+            assertThat(taxAt(sale, rate)).as("tax at %s %%", rate).isEqualByComparingTo(tax);
+        }
+        for (BillingLine line : billed.lines()) {
+            assertThat(fixtures.decimal("""
+                    SELECT sum(l.quantity) FROM fiscal.fiscal_document_line l
+                    JOIN fiscal.fiscal_document d ON d.id = l.document_id
+                    WHERE d.order_ref = ? AND l.source_line_id = ? AND d.status = 'ISSUED'""", sale.order(),
+                    line.lineId())).isEqualByComparingTo(line.netQty());
+        }
     }
 
     private BigDecimal taxAt(Sale sale, String rate) {

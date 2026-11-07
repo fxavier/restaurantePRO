@@ -221,6 +221,11 @@ class CodedErrorContractTest {
                     "AMOUNT")),
             Map.entry("void-exceeds-unpaid", () -> SettlementRuleException.voidExceedsUnpaid(ID,
                     Money.of("12.50", MZN), Money.of("20.00", MZN), Money.of("5.00", MZN))),
+            Map.entry("discount-exceeds-unpaid", () -> SettlementRuleException.discountExceedsUnpaid(ID,
+                    Money.of("12.50", MZN), Money.of("20.00", MZN), Money.of("5.00", MZN))),
+            Map.entry("discounted-line-partitioned", () -> SettlementRuleException.discountedLinePartitioned(ID,
+                    new BigDecimal("1.000"))),
+            Map.entry("settlement-delivery-not-delivered", () -> SettlementRuleException.deliveryNotDelivered(ID)),
             Map.entry("correction-requires-fiscal-adapter", () -> SettlementRuleException
                     .correctionRequiresFiscalAdapter("Order " + ID + " has its document")),
             Map.entry("void-self-approval", SettlementRuleException::voidSelfApproval),
@@ -621,6 +626,13 @@ class CodedErrorContractTest {
                 "Only a LIVE ITEMS partition is invoiced on its own; " + ID + " is LIVE AMOUNT.", "");
         expect("void-exceeds-unpaid", 422, "VOID_EXCEEDS_UNPAID", "The void would leave 12.50 due on order " + ID
                 + ", less than the 20.00 paid or being paid: refund first.", ",\"unpaid\":5.00");
+        expect("discount-exceeds-unpaid", 422, "DISCOUNT_EXCEEDS_UNPAID", "The discount would leave 12.50 due on "
+                + "order " + ID + ", less than the 20.00 paid or being paid: refund first.", ",\"unpaid\":5.00");
+        expect("discounted-line-partitioned", 422, "QUANTITY_PARTITIONED", "Only 1 of line " + ID
+                + " is in no partition: cancel the partition before discounting it.",
+                ",\"lineId\":\"" + ID + "\",\"available\":1.000");
+        expect("settlement-delivery-not-delivered", 422, "DELIVERY_NOT_DELIVERED",
+                "Order " + ID + " is closed only once its delivery is DELIVERED.", "");
         expect("correction-requires-fiscal-adapter", 422, "CORRECTION_REQUIRES_FISCAL_ADAPTER", "Order " + ID
                 + " has its document: correcting invoiced quantities needs the market's fiscal adapter.", "");
         expect("void-self-approval", 422, "SELF_APPROVAL", "The approver of a void cannot be the operator.", "");
