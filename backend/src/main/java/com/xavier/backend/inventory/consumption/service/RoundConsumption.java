@@ -126,7 +126,7 @@ public class RoundConsumption {
 
     private void recordException(BatchFacts round, SoldUnit unit, ExceptionKind kind, Instant now) {
         if (book.recordException(round.storeId(), unit.sourceType(), unit.sourceId(), unit.itemId(), kind,
-                round.batchId(), unit.lineId(), now)) {
+                round.batchId(), unit.lineId(), round.confirmedAt(), now)) {
             auditLog.recordAsSystem("CONSUMPTION_EXCEPTION_RAISED", "ConsumptionException",
                     unit.sourceId().toString(), round.storeId(), null, kind.name(),
                     Map.of("sourceType", unit.sourceType(), "batchId", round.batchId().toString(),

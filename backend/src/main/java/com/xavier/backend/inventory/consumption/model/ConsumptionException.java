@@ -46,6 +46,9 @@ public class ConsumptionException {
     private UUID lineId;
 
     @Column(nullable = false, updatable = false)
+    private Instant confirmedAt;
+
+    @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
     private Instant resolvedAt;
@@ -70,7 +73,8 @@ public class ConsumptionException {
     }
 
     public ExceptionView toView() {
-        return new ExceptionView(id, storeId, sourceType, sourceId, itemId, kind.name(), batchId, lineId, createdAt,
+        return new ExceptionView(id, storeId, sourceType, sourceId, itemId, kind.name(), batchId, lineId, confirmedAt,
+                createdAt,
                 resolvedAt, resolution, lateRecipe);
     }
 

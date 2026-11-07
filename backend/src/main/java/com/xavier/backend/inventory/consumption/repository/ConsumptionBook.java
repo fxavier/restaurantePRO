@@ -47,16 +47,21 @@ public class ConsumptionBook {
                 .query(BigDecimal.class).optional();
     }
 
-    /** @return whether it was recorded now (false: the same source already has an exception of this kind) */
+    /**
+     * @param confirmedAt the confirmation instant of the line that raised it (a count's cut-off filters on it, S49)
+     * @return whether it was recorded now (false: the same source already has an exception of this kind)
+     */
     public boolean recordException(UUID storeId, String sourceType, UUID sourceId, UUID itemId, ExceptionKind kind,
-                                   UUID batchId, UUID lineId, Instant now) {
+                                   UUID batchId, UUID lineId, Instant confirmedAt, Instant now) {
         return jdbc.sql("""
                         INSERT INTO inventory.consumption_exception
-                            (id, store_id, source_type, source_id, item_id, kind, batch_id, line_id, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            (id, store_id, source_type, source_id, item_id, kind, batch_id, line_id, confirmed_at,
+                             created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT (source_type, source_id, kind) DO NOTHING""")
                 .params(UuidVersion7Strategy.INSTANCE.generateUuid(null), storeId, sourceType, sourceId, itemId,
-                        kind.name(), batchId, lineId, java.sql.Timestamp.from(now)).update() == 1;
+                        kind.name(), batchId, lineId, java.sql.Timestamp.from(confirmedAt),
+                        java.sql.Timestamp.from(now)).update() == 1;
     }
 
     /** Remembers a void of a round line, for good: every part of the line consumed later applies it too. */

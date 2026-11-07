@@ -32,8 +32,8 @@ import org.springframework.transaction.annotation.Transactional;
  * {@code VoidFacts.consumedLineId}, the round line it descends from (through transfers and splits). Every void of a
  * line is kept ({@code line_void}) and applied to each SALE_CONSUMPTION movement of the line once, so a line consumed
  * in parts (menu components reprocessed one by one) applies all its voids to every part. A void's share of a movement
- * is {@code consumed × voided ÷ line quantity}, capped at what earlier voids left; the void that brings the voided
- * total to the line quantity takes the whole remainder.
+ * is {@code consumed × voided ÷ line quantity}, capped at what earlier voids left; once the voids add up to the line
+ * quantity, the last one still to apply to a movement takes its whole remainder (no rounding residue).
  * <ul>
  *     <li>Not wasted (an error, nothing prepared): a CONSUMPTION_REVERSAL IN at the original movement's unit
  *     cost.</li>
@@ -102,30 +102,39 @@ public class VoidReversal {
         }
         Map<UUID, BigDecimal> open = new HashMap<>();
         originals.forEach(m -> open.put(m.id(), m.consumed().subtract(book.settledQuantity(m.id()))));
+        List<VoidFacts> all = voids.stream().map(orders::voidFacts).toList();
+        boolean lineFullyVoided = all.stream().map(VoidFacts::quantity).reduce(BigDecimal.ZERO, BigDecimal::add)
+                .compareTo(lineQuantity) >= 0;
+        Map<UUID, List<Source>> unsettled = new HashMap<>();
+        for (SaleMovement original : originals) {
+            unsettled.put(original.id(), all.stream().map(facts -> sourceOf(facts.voidId(), original))
+                    .filter(source -> !book.settledBy(original.id(), source.voidId(), source.type(), source.id()))
+                    .toList());
+        }
         List<PostMovement> reversals = new ArrayList<>();
-        BigDecimal voided = BigDecimal.ZERO;
         Instant now = clock.instant();
-        for (UUID voidId : voids) {
-            VoidFacts facts = orders.voidFacts(voidId);
-            voided = voided.add(facts.quantity());
-            boolean completesTheLine = voided.compareTo(lineQuantity) >= 0;
+        for (VoidFacts facts : all) {
             int wasted = 0;
             for (SaleMovement original : originals) {
+                List<Source> pending = unsettled.get(original.id());
                 Source source = sourceOf(facts.voidId(), original);
-                if (book.settledBy(original.id(), voidId, source.type(), source.id())) {
+                if (!pending.contains(source)) {
                     continue;
                 }
+                // the last void still to apply to a fully voided line takes whatever rounding left
+                boolean takesTheRest = lineFullyVoided && pending.getLast().equals(source);
                 BigDecimal left = open.get(original.id());
-                BigDecimal quantity = completesTheLine ? left : original.consumed().multiply(facts.quantity())
+                BigDecimal quantity = takesTheRest ? left : original.consumed().multiply(facts.quantity())
                         .divide(lineQuantity, StockPosition.QUANTITY_SCALE, RoundingMode.HALF_UP).min(left);
                 if (quantity.signum() <= 0) {
                     continue;
                 }
                 open.put(original.id(), left.subtract(quantity));
                 if (facts.wasted()) {
-                    book.recordWaste(voidId, original, lineId, quantity, quantity.multiply(original.unitCost())
-                                    .setScale(StockPosition.VALUE_SCALE, RoundingMode.HALF_UP), facts.businessDay(),
-                            facts.at(), facts.reason(), now);
+                    book.recordWaste(facts.voidId(), original, lineId, quantity, quantity
+                                    .multiply(original.unitCost()).setScale(StockPosition.VALUE_SCALE,
+                                            RoundingMode.HALF_UP), facts.businessDay(), facts.at(), facts.reason(),
+                            now);
                     wasted++;
                 } else {
                     reversals.add(new PostMovement(original.warehouseId(), original.stockItemId(),
@@ -136,7 +145,7 @@ public class VoidReversal {
                 }
             }
             if (wasted > 0) {
-                auditLog.recordAsSystem("CONSUMPTION_WASTE_RECORDED", "OrderLineVoid", voidId.toString(),
+                auditLog.recordAsSystem("CONSUMPTION_WASTE_RECORDED", "OrderLineVoid", facts.voidId().toString(),
                         facts.storeId(), null, facts.reason(),
                         Map.of("lineId", lineId.toString(), "records", wasted));
             }
@@ -151,8 +160,8 @@ public class VoidReversal {
 
     private static Source sourceOf(UUID voidId, SaleMovement original) {
         return SoldUnit.COMPONENT.equals(original.sourceType())
-                ? new Source(VOID_COMPONENT, componentSource(voidId, original.sourceId()))
-                : new Source(VOID, voidId);
+                ? new Source(voidId, VOID_COMPONENT, componentSource(voidId, original.sourceId()))
+                : new Source(voidId, VOID, voidId);
     }
 
     /** The reversal source of one menu component in one void: stable, so a redelivery finds it. */
@@ -164,6 +173,6 @@ public class VoidReversal {
         return new BalanceKey(movement.warehouseId(), movement.stockItemId());
     }
 
-    private record Source(String type, UUID id) {
+    private record Source(UUID voidId, String type, UUID id) {
     }
 }

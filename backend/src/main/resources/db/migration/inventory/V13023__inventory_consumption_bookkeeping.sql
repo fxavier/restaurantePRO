@@ -22,10 +22,15 @@ EXECUTE FUNCTION inventory.reject_fact_change();
 
 -- An exception names the round and the order line it comes from (a component's exception, its menu line), so it
 -- can be reprocessed; late_recipe marks one resolved with a recipe version activated after the confirmation.
+-- confirmed_at is the confirmation instant of the line that raised it, so a count (S49) can tell which open
+-- exceptions fall before its cut-off, however late they were raised.
 ALTER TABLE inventory.consumption_exception
     ADD COLUMN batch_id UUID,
     ADD COLUMN line_id UUID,
-    ADD COLUMN late_recipe BOOLEAN NOT NULL DEFAULT false;
+    ADD COLUMN late_recipe BOOLEAN NOT NULL DEFAULT false,
+    ADD COLUMN confirmed_at TIMESTAMP WITH TIME ZONE NOT NULL;
+CREATE INDEX consumption_exception_open_confirmed_ix ON inventory.consumption_exception (store_id, confirmed_at)
+    WHERE resolved_at IS NULL;
 ALTER TABLE inventory.consumption_exception
     ADD CONSTRAINT consumption_exception_resolved_ck CHECK ((resolved_at IS NULL) = (resolution IS NULL));
 CREATE INDEX consumption_exception_store_ix ON inventory.consumption_exception (store_id, created_at);

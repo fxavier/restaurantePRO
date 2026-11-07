@@ -18,6 +18,7 @@ import com.xavier.backend.inventory.InventoryModuleTest;
 import com.xavier.backend.orders.BatchFacts;
 import com.xavier.backend.orders.OrderMode;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -54,6 +55,7 @@ class ConsumptionExceptionTest extends ConsumptionTestBase {
         assertThat(exception.get("sourceId").asString()).isEqualTo(round.lines().get(1).lineId().toString());
         assertThat(exception.get("itemId").asString()).isEqualTo(ghost.toString());
         assertThat(exception.get("batchId").asString()).isEqualTo(round.batchId().toString());
+        assertThat(Instant.parse(exception.get("confirmedAt").asString())).isEqualTo(round.confirmedAt());
     }
 
     @Test
