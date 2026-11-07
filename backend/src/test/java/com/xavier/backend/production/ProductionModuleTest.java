@@ -30,7 +30,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
 @ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization", "dining", "catalog", "orders",
-        "fiscal", "identity"})
+        "fiscal", "identity", "customers"})
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, DiningFixtures.class, OrdersFixtures.class, FiscalFixtures.class,
         ProductionFixtures.class})
