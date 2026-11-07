@@ -53,7 +53,7 @@ public class RecipeRuleException extends BusinessRuleException {
                 + " would need itself through stock item " + through + ".", Map.of("stockItemId", through));
     }
 
-    /** A preparation needs the ACTIVE version of the output item's preparation recipe (D121). */
+    /** A preparation needs a version of the output item's preparation recipe in force now (D121). */
     public static RecipeRuleException noActiveRecipe(UUID outputStockItemId) {
         return new RecipeRuleException("NO_ACTIVE_RECIPE",
                 "Stock item " + outputStockItemId + " has no active preparation recipe.");

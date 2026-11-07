@@ -114,6 +114,29 @@ class PreparationCostTest {
         assertThat(balance(dough, "quantity")).isEqualByComparingTo("3000");
     }
 
+    /** A version activated for later does not apply yet: the preparation uses the one in force now (D115). */
+    @Test
+    void aPreparationUsesTheRecipeVersionInForceNow() throws Exception {
+        UUID recipe = jdbc.sql("SELECT id FROM inventory.recipe WHERE output_stock_item_id = ?").param(sauce)
+                .query(UUID.class).single();
+        mvc.perform(idem(post(BO + "/recipes/" + recipe + "/versions")).with(account(null, Permission.RECIPE_MANAGE))
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"yieldQuantity": 5, "yieldUnit": "l", "ingredients": [
+                                 {"stockItemId": "%s", "quantity": 1, "unit": "kg", "kind": "INGREDIENT"}]}"""
+                                .formatted(onion)))
+                .andExpect(status().isCreated());
+        mvc.perform(idem(post(BO + "/recipes/" + recipe + "/versions/2/activate"))
+                        .with(account(null, Permission.RECIPE_MANAGE)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"effectiveFrom\": \"%s\"}".formatted(Instant.now(java.time.Clock.systemUTC())
+                                .plus(java.time.Duration.ofDays(3650)))))
+                .andExpect(status().isOk());
+
+        UUID preparation = id(create(sauce, "2.5").andReturn().getResponse().getContentAsString());
+        confirm(preparation).andExpect(status().isOk());
+
+        assertThat(movements(preparation)).extracting(m -> m.get("stock_item_id")).contains(tomato);
+    }
+
     @Test
     void aWarehouseThatRefusesNegativeStockRefusesThePreparation() throws Exception {
         UUID preparation = id(create(sauce, "20").andReturn().getResponse().getContentAsString());

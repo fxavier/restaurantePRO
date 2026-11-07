@@ -53,6 +53,23 @@ class ConsumptionPolicyTrackingTest extends ConsumptionTestBase {
         assertThat(kitchen.exceptions()).isEmpty();
     }
 
+    /** The family is the one the line was sold under (its release), not the item's family today. */
+    @Test
+    void theFamilyComesFromTheLinesRelease() throws Exception {
+        UUID drinks = UUID.randomUUID();
+        UUID water = kitchen.catalogItem(drinks);
+        UUID bottle = kitchen.stockItem("un");
+        kitchen.saleRecipe(water, null, "1", ingredient(bottle, "1", "un"));
+        Instant from = activateUntracking(drinks);
+        UUID release = kitchen.publish();
+        kitchen.moveToFamily(water, UUID.randomUUID());
+        BatchFacts round = kitchen.round(from, OrderMode.DINE_IN, line(water, "1", "KITCHEN", release));
+
+        consumption.consume(round.batchId());
+
+        assertThat(kitchen.movements("ORDER_LINE", round.lines().getFirst().lineId())).isEmpty();
+    }
+
     /** A new policy version, after the one in force, that stops tracking {@code family}; when it takes effect. */
     private Instant activateUntracking(UUID family) throws Exception {
         String policies = BO + "/consumption-policies";

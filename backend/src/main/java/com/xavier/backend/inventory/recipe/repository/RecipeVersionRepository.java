@@ -28,6 +28,14 @@ public interface RecipeVersionRepository extends JpaRepository<RecipeVersion, UU
               AND v.period.effectiveFrom <= :at AND (v.period.effectiveTo IS NULL OR v.period.effectiveTo > :at)""")
     Optional<RecipeVersion> effectiveAt(UUID recipeId, Instant at);
 
+    /** The versions in force at {@code at} or later: what a preparation of the output may use from now on. */
+    @Query("""
+            SELECT v FROM RecipeVersion v
+            WHERE v.recipeId = :recipeId
+              AND v.period.status <> com.xavier.backend.inventory.recipe.model.VersionStatus.DRAFT
+              AND (v.period.effectiveTo IS NULL OR v.period.effectiveTo > :at)""")
+    List<RecipeVersion> inForceFrom(UUID recipeId, Instant at);
+
     /** The versions that took effect after {@code at}, the first first (a late recipe, for reprocessing). */
     @Query("""
             SELECT v FROM RecipeVersion v

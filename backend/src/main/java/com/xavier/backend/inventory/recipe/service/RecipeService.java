@@ -265,8 +265,8 @@ public class RecipeService {
     }
 
     /**
-     * Walks the ingredients through the ACTIVE preparation recipes of prepared ingredients: reaching
-     * {@code output} is a cycle (422 RECIPE_CYCLE).
+     * Walks the ingredients through the preparation recipe versions of prepared ingredients that are in force now or
+     * later: reaching {@code output} is a cycle (422 RECIPE_CYCLE).
      */
     private void requireNoCycle(UUID output, Set<UUID> ingredients) {
         Deque<UUID> pending = new ArrayDeque<>(ingredients);
@@ -279,9 +279,10 @@ public class RecipeService {
             if (!seen.add(next)) {
                 continue;
             }
-            recipes.findByOutputStockItemId(next)
-                    .flatMap(r -> versions.findByRecipeIdAndPeriodStatus(r.getId(), VersionStatus.ACTIVE))
-                    .ifPresent(active -> active.getIngredients().forEach(i -> pending.push(i.getStockItemId())));
+            Instant now = clock.instant();
+            recipes.findByOutputStockItemId(next).stream()
+                    .flatMap(r -> versions.inForceFrom(r.getId(), now).stream())
+                    .forEach(used -> used.getIngredients().forEach(i -> pending.push(i.getStockItemId())));
         }
     }
 

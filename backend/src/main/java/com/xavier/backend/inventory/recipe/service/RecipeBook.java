@@ -2,7 +2,6 @@ package com.xavier.backend.inventory.recipe.service;
 
 import com.xavier.backend.inventory.recipe.model.Recipe;
 import com.xavier.backend.inventory.recipe.model.RecipeVersion;
-import com.xavier.backend.inventory.recipe.model.VersionStatus;
 import com.xavier.backend.inventory.recipe.repository.RecipeRepository;
 import com.xavier.backend.inventory.recipe.repository.RecipeVersionRepository;
 import java.time.Instant;
@@ -41,11 +40,14 @@ public class RecipeBook {
                 recipe -> versions.effectiveAfter(recipe.getId(), at).stream().findFirst());
     }
 
-    /** The ACTIVE version of the preparation recipe of {@code outputStockItemId}. */
+    /**
+     * The version of the preparation recipe of {@code outputStockItemId} in force at {@code at}: a version
+     * activated for later (ACTIVE already) does not apply before its start.
+     */
     @Transactional(propagation = Propagation.MANDATORY)
-    public Optional<RecipeVersion> activePreparation(UUID outputStockItemId) {
+    public Optional<RecipeVersion> preparationVersionAt(UUID outputStockItemId, Instant at) {
         return recipes.findByOutputStockItemId(outputStockItemId)
-                .flatMap(recipe -> versions.findByRecipeIdAndPeriodStatus(recipe.getId(), VersionStatus.ACTIVE));
+                .flatMap(recipe -> versions.effectiveAt(recipe.getId(), at));
     }
 
     private Optional<RecipeVersion> saleVersion(UUID itemId, UUID variantId,

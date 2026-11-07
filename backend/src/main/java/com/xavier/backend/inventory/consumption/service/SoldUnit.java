@@ -8,10 +8,11 @@ import java.util.UUID;
 
 /**
  * What one consumption source sold (D116): a round line, or a component of a menu line (a menu line consumes only
- * its components). {@code quantity} is in sold units: the line's, times the component's for a component.
+ * its components). {@code quantity} is in sold units: the line's, times the component's for a component;
+ * {@code releaseId} is the catalog release the line was sold under (a component's is its line's).
  */
 record SoldUnit(String sourceType, UUID sourceId, UUID lineId, UUID itemId, UUID variantId, BigDecimal quantity,
-                String destination) {
+                String destination, UUID releaseId) {
 
     static final String LINE = "ORDER_LINE";
     static final String COMPONENT = "ORDER_LINE_COMPONENT";
@@ -19,10 +20,11 @@ record SoldUnit(String sourceType, UUID sourceId, UUID lineId, UUID itemId, UUID
     static List<SoldUnit> of(BatchLineFact line) {
         if (line.components() == null || line.components().isEmpty()) {
             return List.of(new SoldUnit(LINE, line.lineId(), line.lineId(), line.itemId(), line.variantId(),
-                    line.quantity(), line.destination()));
+                    line.quantity(), line.destination(), line.releaseId()));
         }
         return line.components().stream().map(c -> new SoldUnit(COMPONENT, c.componentId(), line.lineId(),
-                c.itemId(), c.variantId(), line.quantity().multiply(c.quantity()), c.destination())).toList();
+                c.itemId(), c.variantId(), line.quantity().multiply(c.quantity()), c.destination(), line.releaseId()))
+                .toList();
     }
 
     static List<SoldUnit> of(BatchFacts round) {

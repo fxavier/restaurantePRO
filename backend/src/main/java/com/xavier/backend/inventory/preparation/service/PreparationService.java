@@ -42,8 +42,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Preparations (D121), {@code INVENTORY_MOVE} in the warehouse's store. A draft takes the ACTIVE version of the
- * prepared item's preparation recipe. Confirming it posts, in one transaction: each ingredient's PREPARATION_OUT
+ * Preparations (D121), {@code INVENTORY_MOVE} in the warehouse's store. A draft takes the version of the prepared
+ * item's preparation recipe in force when it is created (D115). Confirming it posts, in one transaction: each ingredient's PREPARATION_OUT
  * (output ÷ yield × ingredient, in its base unit, HALF_UP scale 6), valued at the average and manual, so a
  * {@code REFUSE_MANUAL} warehouse refuses it below zero (422 NEGATIVE_STOCK_REFUSED); then one PREPARATION_IN of the
  * output at Σ of those values ÷ quantity; when that unit cost rounds (scale 6), a REVALUATION of the difference keeps
@@ -97,7 +97,7 @@ public class PreparationService {
     public PreparationResult create(PreparationRequest request) {
         UUID storeId = scope.requireWarehouse(Permission.INVENTORY_MOVE, request.warehouseId());
         StockItem output = stockItem(request.outputStockItemId());
-        RecipeVersion recipe = recipes.activePreparation(output.getId())
+        RecipeVersion recipe = recipes.preparationVersionAt(output.getId(), clock.instant())
                 .orElseThrow(() -> RecipeRuleException.noActiveRecipe(output.getId()));
         BigDecimal quantity = units.toBase(request.outputQuantity(), request.unit(), output.getBaseUnit());
         if (quantity.signum() <= 0) {

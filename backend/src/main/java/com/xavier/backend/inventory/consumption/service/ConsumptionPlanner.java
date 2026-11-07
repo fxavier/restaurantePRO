@@ -1,7 +1,7 @@
 package com.xavier.backend.inventory.consumption.service;
 
 import com.xavier.backend.catalog.CatalogApi;
-import com.xavier.backend.catalog.ItemRef;
+import com.xavier.backend.catalog.model.dto.CatalogSnapshot;
 import com.xavier.backend.inventory.consumption.model.ConsumptionPolicyVersion;
 import com.xavier.backend.inventory.consumption.model.ExceptionKind;
 import com.xavier.backend.inventory.consumption.repository.ConsumptionPolicyRepository;
@@ -18,7 +18,6 @@ import com.xavier.backend.inventory.service.Units;
 import com.xavier.backend.orders.BatchFacts;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -34,7 +33,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Turns what a round sold into SALE_CONSUMPTION movements (D116), in the caller's transaction. Per sold unit: the
- * consumption policy in force at the confirmation (by the item's family) says whether it is tracked; the recipe
+ * consumption policy in force at the confirmation (by the item's family in the line's release) says whether it is tracked; the recipe
  * version in force at the confirmation (the variant's, then the item's) says what it consumes, packaging limited to
  * the order's mode; the route of its destination (else the store's default route) says from which warehouse. Per
  * ingredient: sold quantity × ingredient quantity ÷ yield, in the stock item's base unit, HALF_UP at scale 6; the
@@ -66,17 +65,17 @@ public class ConsumptionPlanner {
         this.catalog = catalog;
     }
 
-    /** What every unit of {@code round} needs looked up once: the policy, the families, the store's routes. */
+    /**
+     * What every unit of {@code round} needs looked up once: the policy, the families of its items in the releases
+     * its lines were sold under (not the working copy, which may have moved an item since), the store's routes.
+     */
     @Transactional(propagation = Propagation.MANDATORY)
     public Context context(BatchFacts round) {
-        Collection<UUID> items = SoldUnit.of(round).stream().map(SoldUnit::itemId).filter(Objects::nonNull)
-                .collect(Collectors.toSet());
-        Map<UUID, UUID> families = new HashMap<>();
-        catalog.items(items).forEach((ItemRef ref) -> {
-            if (ref.familyId() != null) {
-                families.put(ref.id(), ref.familyId());
-            }
-        });
+        Map<UUID, Map<UUID, UUID>> families = new HashMap<>();
+        round.lines().stream().map(BatchFacts.BatchLineFact::releaseId).filter(Objects::nonNull).distinct()
+                .forEach(release -> families.put(release, catalog.snapshot(round.storeId(), release).items().stream()
+                        .filter(item -> item.familyId() != null)
+                        .collect(Collectors.toMap(CatalogSnapshot.Item::id, CatalogSnapshot.Item::familyId))));
         Map<String, UUID> warehouses = new HashMap<>();
         routes.findByStoreIdOrderByDestinationCode(round.storeId()).forEach((ConsumptionRoute route) ->
                 warehouses.put(route.getDestinationCode() == null ? "" : route.getDestinationCode(),
@@ -92,7 +91,7 @@ public class ConsumptionPlanner {
     public Plan plan(Context context, SoldUnit unit, boolean late) {
         BatchFacts round = context.round();
         Optional<ConsumptionPolicyVersion> policy = context.policy();
-        if (policy.isPresent() && !policy.get().tracks(context.families().get(unit.itemId()))) {
+        if (policy.isPresent() && !policy.get().tracks(context.familyOf(unit))) {
             return Plan.untracked();
         }
         Optional<RecipeVersion> inForce = recipes.saleVersionAt(unit.itemId(), unit.variantId(), round.confirmedAt());
@@ -137,9 +136,17 @@ public class ConsumptionPlanner {
         return new Plan(movements, null, usedLate);
     }
 
-    /** The round and what its units share. {@code warehouses} maps a destination ("" = default) to its warehouse. */
-    public record Context(BatchFacts round, Optional<ConsumptionPolicyVersion> policy, Map<UUID, UUID> families,
-                          Map<String, UUID> warehouses) {
+    /**
+     * The round and what its units share: {@code families} maps a release to its items' families,
+     * {@code warehouses} a destination ("" = default) to its warehouse.
+     */
+    public record Context(BatchFacts round, Optional<ConsumptionPolicyVersion> policy,
+                          Map<UUID, Map<UUID, UUID>> families, Map<String, UUID> warehouses) {
+
+        UUID familyOf(SoldUnit unit) {
+            return unit.releaseId() == null ? null
+                    : families.getOrDefault(unit.releaseId(), Map.of()).get(unit.itemId());
+        }
     }
 
     /**
