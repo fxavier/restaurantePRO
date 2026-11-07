@@ -31,7 +31,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -50,23 +49,21 @@ public class ReservationService {
     private final ReservationRepository reservations;
     private final RestaurantTableRepository tables;
     private final CustomersApi customers;
+    private final DiningSettingsService settings;
     private final OrganizationApi organization;
     private final AccessPolicy accessPolicy;
     private final DiningRows rows;
     private final DiningChanges changes;
     private final Clock clock;
 
-    /**
-     * @param customers {@code @Lazy}: resolved on the first booking that names a customer, so the module tests that
-     *                  boot dining without customers (orders, production) still start. The installation always has it.
-     */
-    ReservationService(ReservationRepository reservations, RestaurantTableRepository tables,
-                       @Lazy CustomersApi customers,
+    ReservationService(ReservationRepository reservations, RestaurantTableRepository tables, CustomersApi customers,
+                       DiningSettingsService settings,
                        OrganizationApi organization, AccessPolicy accessPolicy, DiningRows rows,
                        DiningChanges changes, Clock clock) {
         this.reservations = reservations;
         this.tables = tables;
         this.customers = customers;
+        this.settings = settings;
         this.organization = organization;
         this.accessPolicy = accessPolicy;
         this.rows = rows;
@@ -163,6 +160,9 @@ public class ReservationService {
     private ReservationDetails details(UUID storeId, Instant startsAt, Integer durationMinutes, Integer partySize,
                                        String contactName, String contactPhone, UUID customerId, String notes,
                                        List<UUID> tableIds) {
+        if (settings.windowOf(storeId).noShowDue(startsAt, clock.instant())) {
+            throw ReservationRuleException.inThePast(startsAt); // the job would mark it a no-show at once
+        }
         Set<UUID> tableSet = tableIds == null ? Set.of() : new LinkedHashSet<>(tableIds);
         requireTablesOf(storeId, tableSet);
         if (customerId != null && customers.findCustomer(customerId).isEmpty()) {

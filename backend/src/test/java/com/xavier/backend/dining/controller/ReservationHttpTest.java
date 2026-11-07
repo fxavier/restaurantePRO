@@ -97,6 +97,45 @@ class ReservationHttpTest {
     }
 
     @Test
+    void aBookingAlreadyPastItsNoShowGraceIsRefused() throws Exception {
+        Instant lapsed = Instant.now().minus(Duration.ofMinutes(31));
+
+        mvc.perform(create(reservation(lapsed, null, table)))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("RESERVATION_IN_THE_PAST"));
+        mvc.perform(create(reservation(Instant.now().minus(Duration.ofMinutes(10)), null, table)))
+                .andExpect(status().isCreated()); // started, still within the grace: a late walk-in booking
+    }
+
+    @Test
+    void anEditCannotMoveABookingPastItsNoShowGrace() throws Exception {
+        UUID reservation = fixtures.book(store, tomorrow, table);
+
+        mvc.perform(edit(reservation, 0, Instant.now().minus(Duration.ofHours(2))))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("RESERVATION_IN_THE_PAST"));
+    }
+
+    @Test
+    void theSettingsNeedDiningManageInTheStore() throws Exception {
+        String path = "/api/v1/backoffice/dining/settings/" + store;
+        String body = """
+                {"reservationWindowMinutes": 60, "noShowGraceMinutes": 15}""";
+
+        mvc.perform(get(path).with(inStore(store, Permission.RESERVATION_MANAGE)))
+                .andExpect(status().isForbidden());
+        mvc.perform(put(path).with(inStore(store, Permission.RESERVATION_MANAGE)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isForbidden());
+        UUID other = fixtures.newStore();
+        mvc.perform(get(path).with(inStore(other, Permission.DINING_MANAGE)))
+                .andExpect(status().isForbidden());
+        mvc.perform(put(path).with(inStore(other, Permission.DINING_MANAGE)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void twoReservationsMayOverlapOnOneTable() throws Exception {
         mvc.perform(create(reservation(tomorrow, null, table))).andExpect(status().isCreated());
         mvc.perform(create(reservation(tomorrow, null, table))).andExpect(status().isCreated());

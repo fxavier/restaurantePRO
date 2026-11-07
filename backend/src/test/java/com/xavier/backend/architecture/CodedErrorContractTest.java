@@ -104,6 +104,8 @@ class CodedErrorContractTest {
             Map.entry("still-occupied", () -> new StillOccupiedException("Table", ID)),
             Map.entry("reservation-not-booked", () -> IllegalReservationStateException.notBooked(ID)),
             Map.entry("reservation-not-started", () -> ReservationRuleException.notStarted(ID)),
+            Map.entry("reservation-in-the-past", () -> ReservationRuleException.inThePast(
+                    java.time.Instant.parse("2027-01-01T12:00:00Z"))),
             Map.entry("reservation-other-store", () -> ReservationRuleException.otherStore(ID)),
             Map.entry("reservation-table-other-store", () -> ReservationRuleException.tableOtherStore(ID)),
             Map.entry("reservation-customer-not-found", () -> ReservationRuleException.customerNotFound(ID)),
@@ -350,6 +352,8 @@ class CodedErrorContractTest {
         expect("reservation-not-booked", 409, "RESERVATION_NOT_BOOKED", "Reservation " + ID + " is not booked.", "");
         expect("reservation-not-started", 422, "RESERVATION_NOT_STARTED",
                 "Reservation " + ID + " has not started: it cannot be a no-show yet.", "");
+        expect("reservation-in-the-past", 422, "RESERVATION_IN_THE_PAST",
+                "A reservation starting at 2027-01-01T12:00:00Z is already past its no-show grace.", "");
         expect("reservation-other-store", 422, "RESERVATION_OTHER_STORE",
                 "Reservation " + ID + " is not in this store.", "");
         expect("reservation-table-other-store", 422, "TABLE_OTHER_STORE", "Table " + ID + " is not in this store.",

@@ -1,12 +1,14 @@
 package com.xavier.backend.dining.exception;
 
 import com.xavier.backend.shared.exception.BusinessRuleException;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Map;
 import java.util.UUID;
 
 /**
- * A reservation request breaks a business rule (D126, P47): a no-show before the start, a reservation or table of
+ * A reservation request breaks a business rule (D126, P47): a start already past the no-show grace, a no-show
+ * before the start, a reservation or table of
  * another store, an unknown customer, or a calendar range that is reversed or too long. 422.
  */
 public class ReservationRuleException extends BusinessRuleException {
@@ -18,6 +20,11 @@ public class ReservationRuleException extends BusinessRuleException {
     public static ReservationRuleException notStarted(UUID reservationId) {
         return new ReservationRuleException("RESERVATION_NOT_STARTED",
                 "Reservation " + reservationId + " has not started: it cannot be a no-show yet.", Map.of());
+    }
+
+    public static ReservationRuleException inThePast(Instant startsAt) {
+        return new ReservationRuleException("RESERVATION_IN_THE_PAST",
+                "A reservation starting at " + startsAt + " is already past its no-show grace.", Map.of());
     }
 
     public static ReservationRuleException otherStore(UUID reservationId) {

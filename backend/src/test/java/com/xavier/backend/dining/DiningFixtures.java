@@ -121,6 +121,12 @@ public class DiningFixtures {
                 .formatted(startsAt, customer == null ? "null" : "\"" + customer + "\"", tableIds);
     }
 
+    /** Moves a booked reservation's start, as if time had passed since it was booked (the API refuses a past start). */
+    public void moveStart(UUID reservation, Instant startsAt) {
+        jdbc.sql("UPDATE dining.reservation SET starts_at = :startsAt WHERE id = :id")
+                .param("startsAt", java.sql.Timestamp.from(startsAt)).param("id", reservation).update();
+    }
+
     public String reservationStatus(UUID reservation) {
         return jdbc.sql("SELECT status FROM dining.reservation WHERE id = :id").param("id", reservation)
                 .query(String.class).single();

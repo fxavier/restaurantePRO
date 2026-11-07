@@ -70,7 +70,8 @@ class ReservationIndicatorTest {
         UUID later = fixtures.createTable(store, area, "M1");
         UUID lapsed = fixtures.createTable(store, area, "M2");
         fixtures.book(store, now.plus(Duration.ofMinutes(180)), later);
-        fixtures.book(store, now.minus(Duration.ofMinutes(45)), lapsed);
+        fixtures.moveStart(fixtures.book(store, now.plus(Duration.ofMinutes(5)), lapsed),
+                now.minus(Duration.ofMinutes(45)));
 
         map(store).andExpect(jsonPath(at(later, "reserved"), contains(false)))
                 .andExpect(jsonPath(at(later, "nextReservationAt"), contains(nullValue())))
