@@ -80,6 +80,18 @@ class PromotionHttpTest {
     }
 
     @Test
+    void modesAreOrderModes() throws Exception {
+        UUID store = fixtures.storeWithoutCatalog();
+
+        invalid(fixtures.create(store, """
+                {"code": "%s", "name": "X", "kind": "PERCENT_OFF", "percent": 10, "priority": 0,
+                 "modes": ["DINE_IN", "BRUNCH"]}""".formatted(code("M"))));
+        expect(fixtures.create(store, """
+                {"code": "%s", "name": "X", "kind": "PERCENT_OFF", "percent": 10, "priority": 0,
+                 "modes": ["DINE_IN", "COUNTER", "TAKEAWAY", "DELIVERY"]}""".formatted(code("M"))), 201);
+    }
+
+    @Test
     void aValidityMustStartBeforeItEnds() throws Exception {
         UUID store = fixtures.storeWithoutCatalog();
 

@@ -40,6 +40,12 @@ public class Promotion {
 
     private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
 
+    /**
+     * The order modes a promotion may name. Mirrors {@code orders.OrderMode} plus DELIVERY (S50); promotions may not
+     * import orders (D99), so a new mode is added here too.
+     */
+    public static final Set<String> ORDER_MODES = Set.of("DINE_IN", "COUNTER", "TAKEAWAY", "DELIVERY");
+
     @Id
     @UuidGenerator(style = UuidGenerator.Style.VERSION_7)
     private UUID id;
@@ -134,6 +140,10 @@ public class Promotion {
         }
         if (terms.modes() != null && terms.modes().isEmpty()) {
             throw PromotionRuleException.invalid("List at least one order mode, or none for every mode.");
+        }
+        if (terms.modes() != null && !ORDER_MODES.containsAll(terms.modes())) {
+            throw PromotionRuleException.invalid("The order modes " + terms.modes() + " are not all among "
+                    + ORDER_MODES.stream().sorted().toList() + ".");
         }
         name = terms.name().strip();
         kind = terms.kind();
