@@ -9,6 +9,7 @@ import com.xavier.backend.fiscal.model.dto.DocumentView;
 import com.xavier.backend.fiscal.model.dto.PaymentSnapshot;
 import com.xavier.backend.fiscal.model.dto.PaymentStatus;
 import com.xavier.backend.fiscal.model.event.DocumentPrintout;
+import com.xavier.backend.shared.Money;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -30,6 +31,9 @@ public class InternalFiscalAdapter implements FiscalAdapter {
     public static final String CODE = "internal";
     public static final String ON_ACCOUNT = "A CRÉDITO";
     static final String CREDIT_LABEL = "A crédito";
+    static final String OFFER = "Oferta";
+    /** U+2212, as the PRD writes it; a printer table without it prints "-" (BUG-0001, {@code CodePage}). */
+    static final String MINUS = "\u2212";
 
     private static final DateTimeFormatter PRINTED_DATE = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
@@ -73,10 +77,7 @@ public class InternalFiscalAdapter implements FiscalAdapter {
             addIfPresent(lines, "Morada: ", buyer.address());
         }
         lines.add("--------------------------------");
-        for (DocumentView.Line line : document.lines()) {
-            lines.add(plain(line.quantity()) + " x " + line.description() + " "
-                    + line.unitPrice().amount().toPlainString() + " = " + line.gross().amount().toPlainString());
-        }
+        document.lines().forEach(line -> addLine(lines, line));
         lines.add("--------------------------------");
         for (DocumentView.TaxSummary tax : document.taxes()) {
             lines.add("Taxa " + plain(tax.rate()) + "%: base " + tax.net().amount().toPlainString() + " imposto "
@@ -88,6 +89,33 @@ public class InternalFiscalAdapter implements FiscalAdapter {
             addPayments(lines, document.payments());
         }
         return new DocumentPrintout(lines, document.qrPayload());
+    }
+
+    /**
+     * D101/D107: a discounted line prints at its list price, then its discount (list gross − gross) and its value; an
+     * offered line (0.00) says "Oferta" instead. A line without a list price, or at it, prints as before R4.
+     */
+    private static void addLine(List<String> lines, DocumentView.Line line) {
+        Money list = line.listUnitPrice();
+        boolean offered = list != null && list.amount().signum() > 0 && line.gross().amount().signum() == 0;
+        Money discount = list == null ? null : list.times(line.quantity()).minus(line.gross());
+        if (!offered && (discount == null || discount.amount().signum() <= 0)) {
+            lines.add(item(line, line.unitPrice(), line.gross()));
+            return;
+        }
+        lines.add(item(line, list, list.times(line.quantity())));
+        if (offered) {
+            lines.add("  " + OFFER);
+        } else {
+            String label = line.discountLabel() == null ? "" : " (" + line.discountLabel() + ")";
+            lines.add("  Desconto" + label + ": " + MINUS + discount.amount().toPlainString());
+        }
+        lines.add("  Valor da linha: " + line.gross().amount().toPlainString());
+    }
+
+    private static String item(DocumentView.Line line, Money unitPrice, Money gross) {
+        return plain(line.quantity()) + " x " + line.description() + " " + unitPrice.amount().toPlainString() + " = "
+                + gross.amount().toPlainString();
     }
 
     /** A document issued before D97 has no snapshot: its on-account mark alone decides, as it did. */
