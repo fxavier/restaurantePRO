@@ -156,7 +156,8 @@ class PromotionEngineTest {
     /**
      * Property (seeded): over random promotion sets and lines, every price is within [0, list], a line with no
      * promotion keeps the list price, the result is independent of the order the snapshot lists the promotions in,
-     * and a priced line carries a promotion that matches its scope.
+     * a priced line carries a promotion that matches its scope, and each line gets exactly what a brute-force oracle
+     * picks (highest priority, then lowest resulting price, then lowest code).
      */
     @Test
     void randomPromotionSetsStayWithinBoundsAndDoNotDependOnTheirOrder() {
@@ -180,6 +181,11 @@ class PromotionEngineTest {
             assertThat(again).as("scenario %d: order of promotions", scenario).isEqualTo(result);
             for (int i = 0; i < lines.size(); i++) {
                 PricedLine priced = result.lines().get(i);
+                Oracle expected = oracle(promotions, lines.get(i));
+                assertThat(priced.unitPrice()).as("scenario %d line %d: oracle price", scenario, i)
+                        .isEqualTo(expected.price());
+                assertThat(priced.promotion() == null ? null : priced.promotion().code())
+                        .as("scenario %d line %d: oracle promotion", scenario, i).isEqualTo(expected.code());
                 Money list = lines.get(i).listUnitPrice();
                 assertThat(priced.unitPrice().amount()).as("scenario %d", scenario)
                         .isBetween(BigDecimal.ZERO.setScale(2), list.amount());
@@ -193,6 +199,42 @@ class PromotionEngineTest {
                 }
             }
         }
+    }
+
+    private record Oracle(Money price, String code) {
+    }
+
+    /** Every candidate priced independently, then the D103 order by hand: no comparator shared with the engine. */
+    private static Oracle oracle(List<Promotion> promotions, PricingLine line) {
+        BigDecimal list = line.listUnitPrice().amount();
+        Promotion best = null;
+        BigDecimal bestPrice = null;
+        for (Promotion promotion : promotions) {
+            if (!promotion.scope().itemIds().contains(line.itemId())) {
+                continue;
+            }
+            BigDecimal price = switch (promotion.kind()) {
+                case "PERCENT_OFF" -> list.multiply(BigDecimal.valueOf(100).subtract(new BigDecimal(promotion.percent())))
+                        .divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP);
+                case "AMOUNT_OFF_UNIT" -> list.subtract(new BigDecimal(promotion.amount())).max(BigDecimal.ZERO)
+                        .setScale(2);
+                default -> new BigDecimal(promotion.amount()).setScale(2);
+            };
+            if (price.compareTo(list) > 0) {
+                continue;
+            }
+            boolean better = best == null
+                    || promotion.priority() > best.priority()
+                    || (promotion.priority() == best.priority() && price.compareTo(bestPrice) < 0)
+                    || (promotion.priority() == best.priority() && price.compareTo(bestPrice) == 0
+                    && promotion.code().compareTo(best.code()) < 0);
+            if (better) {
+                best = promotion;
+                bestPrice = price;
+            }
+        }
+        return best == null ? new Oracle(line.listUnitPrice(), null)
+                : new Oracle(Money.of(bestPrice, line.listUnitPrice().currency()), best.code());
     }
 
     private static List<Promotion> randomPromotions(Random random, List<UUID> itemPool) {

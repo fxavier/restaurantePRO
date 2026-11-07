@@ -75,7 +75,7 @@ public class DiscountLimitsService {
         return view;
     }
 
-    /** The store's working-copy limits, or the P44 defaults with a null version. */
+    /** The limits the store's next release will freeze, or the P44 defaults with a null version. */
     @Transactional(readOnly = true)
     public DiscountLimitsView get(UUID storeId) {
         accessPolicy.require(Permission.PROMOTION_VIEW, storeId);
