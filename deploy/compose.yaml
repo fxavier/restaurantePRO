@@ -101,6 +101,10 @@ services:
       # B4/D54: false by default, so a real install refuses to start with the non-certified fiscal adapter
       # until the operator opts in through .env (pilot only).
       RESTAURANTPRO_FISCAL_ALLOW_NON_CERTIFIED: ${RESTAURANTPRO_FISCAL_ALLOW_NON_CERTIFIED:-false}
+      # R4 scheduled jobs; the defaults are the code's (restaurantpro.dining.no-show-interval, P47, and
+      # restaurantpro.inventory.reconcile-cron, D113).
+      RESTAURANTPRO_DINING_NO_SHOW_INTERVAL: ${RESTAURANTPRO_DINING_NO_SHOW_INTERVAL:-PT1M}
+      RESTAURANTPRO_INVENTORY_RECONCILE_CRON: "${RESTAURANTPRO_INVENTORY_RECONCILE_CRON:-0 20 4 * * *}"
     secrets:
       - db_password
       - admin_initial_password
