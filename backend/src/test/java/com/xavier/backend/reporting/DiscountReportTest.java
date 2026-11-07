@@ -252,6 +252,49 @@ class DiscountReportTest {
                         "OFFER|OFFER|2|3|35.50|1.00");
     }
 
+    @Test
+    void anOfferReversedToAPositivePriceIsADiscountedLineWithNoOfferCost() throws Exception {
+        UUID offered = sales.lineIds(cashier, live.sale().order()).getFirst();
+        discount(offered, "\"kind\": \"REVERSAL\", \"unitPrice\": 5.00", Permission.ORDER_DISCOUNT, false)
+                .andExpect(status().isOk());
+        kitchen.awaitRows("discount_record", live.store(), 4);
+        closeTheOrder(0);
+
+        assertThat(rows(reporting.report("discounts", live.store(), day, day, "groupBy", "origin")))
+                .as("an offer is a free unit: at 5.00 it is a discount, its amounts as recorded")
+                .contains("OFFER|OFFER|0|0|7.50|0.00");
+    }
+
+    @Test
+    void offerThreeReverseAllVoidOneOfferTheTwoLeftCostsTwoUnits() throws Exception {
+        UUID three = confirmedRoundOf("3");
+        discount(three, "\"kind\": \"OFFER\"", Permission.ORDER_OFFER, true).andExpect(status().isOk()); // t1
+        discount(three, "\"kind\": \"REVERSAL\"", Permission.ORDER_DISCOUNT, false)
+                .andExpect(status().isOk()); // t2
+        kitchen.voidLine(live.sale(), three, "1", false).andExpect(status().isCreated()); // t3, at list price
+        discount(three, "\"kind\": \"OFFER\"", Permission.ORDER_OFFER, true).andExpect(status().isOk()); // t4
+        kitchen.awaitRows("discount_record", live.store(), 6);
+        closeTheOrder(2);
+
+        assertThat(rows(reporting.report("discounts", live.store(), day, day, "groupBy", "origin")))
+                .as("the first offer's 0.50 and the 2 offered at t4 (2c = 1.00)")
+                .contains("OFFER|OFFER|2|3|36.00|1.50");
+    }
+
+    /** A round of {@code quantity} under the published promotion (12.00 each), consumed. @return its line */
+    private UUID confirmedRoundOf(String quantity) throws Exception {
+        UUID order = live.sale().order();
+        UUID line = OrdersFixtures.id(orders.draft(live.sale().shop(), order, quantity, cashier.employeeId(),
+                cashier.terminalId()));
+        orders.confirm(live.sale().shop(), order, """
+                        {"orderVersion": %d, "catalogVersion": %d, "lineIds": ["%s"], "promotionVersion": %d}"""
+                        .formatted(sales.orderVersion(cashier, order), live.sale().shop().catalogVersion(), line,
+                                promotionVersion), cashier.employeeId(), cashier.terminalId())
+                .andExpect(status().isCreated());
+        kitchen.awaitRows("consumption_record", live.store(), 3);
+        return line;
+    }
+
     /** Pays what is due in cash and closes the order; waits until the cost of its offers is projected. */
     private void closeTheOrder(int offeredLines) throws Exception {
         UUID order = live.sale().order();

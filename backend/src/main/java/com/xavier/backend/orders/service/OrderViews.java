@@ -257,7 +257,8 @@ public class OrderViews {
     }
 
     /**
-     * S53: the order's billing lines sold as an OFFER (their effective price origin, through their lineage), with the
+     * S53: the order's billing lines given away as an OFFER (their effective price origin, through their lineage, and a
+     * unit price of 0: an offer is a free unit), with the
      * offer that made them so and the round line whose consumption carries their cost. The net quantity already
      * leaves out voids, transfers out and splits out, and a reversed line is no longer an offer.
      */
@@ -275,7 +276,8 @@ public class OrderViews {
             List<OrderLinePriceAdjustment> own = adjusted.getOrDefault(line.getId(), List.of());
             EffectivePrice price = EffectivePrice.of(line, own, inherited.get(line.getId()), lineage.get(line.getId()));
             BigDecimal net = line.getQuantity().subtract(deducted.getOrDefault(line.getId(), BigDecimal.ZERO));
-            if (net.signum() <= 0 || !"OFFER".equals(price.origin())) {
+            // an offer is a free unit: a line reversed part way to a positive price is a discounted line
+            if (net.signum() <= 0 || !"OFFER".equals(price.origin()) || price.unitPrice().amount().signum() != 0) {
                 continue;
             }
             OrderLinePriceAdjustment offer = !own.isEmpty() && own.getLast().getKind() == AdjustmentKind.OFFER
