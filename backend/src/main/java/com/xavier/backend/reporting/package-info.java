@@ -15,6 +15,9 @@
  * audit records of its exports and rebuilds. Allowed dependencies follow D65, plus {@code audit} (the export is
  * audited, D86) and {@code dining :: dto} ({@code DiningApi.tableInfo} returns {@code TableInfo}). D99 adds inventory
  * (its movement facts and {@code StockMovementsPosted}); reporting is the only module that may depend on it.
+ *
+ * <p>R4 (D131): the listeners in {@code reporting.inventory} project the cost of goods (consumption, reversals,
+ * manual waste, wasted voids' shares, cost variances) and the discounts, for the margin and discount reports.
  */
 @ApplicationModule(displayName = "Reporting", allowedDependencies = {
         "shared", "access", "audit", "organization", "organization :: dto", "identity", "dining", "dining :: dto",
