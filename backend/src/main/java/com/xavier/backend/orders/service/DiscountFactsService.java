@@ -1,5 +1,6 @@
 package com.xavier.backend.orders.service;
 
+import com.xavier.backend.orders.AdjustmentKind;
 import com.xavier.backend.orders.DiscountFacts;
 import com.xavier.backend.orders.LineAmounts;
 import com.xavier.backend.orders.SourceRef;
@@ -68,7 +69,8 @@ public class DiscountFactsService {
                     LineSnapshot snapshot = line.snapshot().orElseThrow();
                     PromotionRef promotion = line.promotion().orElseThrow();
                     return line(line, snapshot, line.listUnitPrice(), snapshot.unitPrice(), line.getQuantity(),
-                            "PROMOTION", promotion, line.getConfirmedByEmployeeId(), null, line.getConfirmedAt());
+                            "PROMOTION", promotion, line.getConfirmedByEmployeeId(), null, line.getConfirmedAt(),
+                            null);
                 }).toList();
         return new DiscountFacts(LineDiscountsRecorded.BATCH, batchId, order.getId(), order.getStoreId(),
                 order.getBusinessDay(), promoted);
@@ -79,26 +81,48 @@ public class DiscountFactsService {
                 .orElseThrow(() -> new OrderNotFoundException("DiscountSource", adjustmentId));
         Order order = lookup.load(adjustment.getOrderId());
         OrderLine line = lines.findById(adjustment.getLineId()).orElseThrow();
-        String origin = switch (adjustment.getKind()) {
+        String origin = originOf(adjustment.getKind());
+        return new DiscountFacts(LineDiscountsRecorded.ADJUSTMENT, adjustmentId, order.getId(), order.getStoreId(),
+                order.getBusinessDay(), List.of(line(line, line.snapshot().orElseThrow(),
+                adjustment.previousUnitPrice(), adjustment.unitPrice(), adjustment.getQuantity(), origin, null,
+                adjustment.getOperatorEmployeeId(), adjustment.getApproverEmployeeId(), adjustment.getAt(),
+                adjustment.getKind() == AdjustmentKind.REVERSAL ? reversedOrigin(line, adjustment) : null)));
+    }
+
+    private static String originOf(AdjustmentKind kind) {
+        return switch (kind) {
             case OFFER -> "OFFER";
             case REWARD -> "LOYALTY";
             case DISCOUNT, REVERSAL -> "MANUAL";
         };
-        return new DiscountFacts(LineDiscountsRecorded.ADJUSTMENT, adjustmentId, order.getId(), order.getStoreId(),
-                order.getBusinessDay(), List.of(line(line, line.snapshot().orElseThrow(),
-                adjustment.previousUnitPrice(), adjustment.unitPrice(), adjustment.getQuantity(), origin, null,
-                adjustment.getOperatorEmployeeId(), adjustment.getApproverEmployeeId(), adjustment.getAt())));
     }
 
-    private static DiscountFacts.DiscountLine line(OrderLine line, LineSnapshot snapshot, Money previous, Money price,
+    /**
+     * What a reversal takes back: the origin of the latest adjustment that was not a reversal in the line's lineage
+     * (its own before the reversal, else its nearest ancestor's before the copy); without one, the line's promotion
+     * when it has one, else a manual price.
+     */
+    private String reversedOrigin(OrderLine line, OrderLinePriceAdjustment reversal) {
+        // the lineage's latest non-reversal adjustment up to the reversal: a split or transferred copy takes back its
+        // ancestor's offer (the same walk as its price origin, OrderViews)
+        return adjustments.findPriceOrigins(List.of(line.getId()), reversal.getAt()).stream().findFirst()
+                .flatMap(origin -> adjustments.findById(origin.getAdjustmentId()))
+                .map(earlier -> originOf(earlier.getKind()))
+                .orElse(line.promotion().isPresent() ? "PROMOTION" : "MANUAL");
+    }
+
+    private DiscountFacts.DiscountLine line(OrderLine line, LineSnapshot snapshot, Money previous, Money price,
                                                    BigDecimal quantity, String origin, PromotionRef promotion,
-                                                   UUID operator, UUID approver, java.time.Instant at) {
+                                                   UUID operator, UUID approver, java.time.Instant at,
+                                                   String reversesOrigin) {
         Money discount = LineAmounts.of(previous, quantity, snapshot.taxRatePercent()).gross()
                 .minus(LineAmounts.of(price, quantity, snapshot.taxRatePercent()).gross());
+        OrderLine round = lines.roundLineOf(line.getId()).flatMap(lines::findById)
+                .orElseThrow(() -> new IllegalStateException("Line " + line.getId() + " descends from no round line"));
         return new DiscountFacts.DiscountLine(line.getId(), line.getItemId(), snapshot.itemCode(),
                 snapshot.releaseId(), snapshot.taxCode(), snapshot.taxRatePercent(), line.listUnitPrice(), previous,
                 price, quantity, discount, origin, promotion == null ? null : promotion.id(),
                 promotion == null ? null : promotion.code(), promotion == null ? null : promotion.name(), operator,
-                approver, at);
+                approver, at, round.getId(), round.getQuantity(), reversesOrigin);
     }
 }

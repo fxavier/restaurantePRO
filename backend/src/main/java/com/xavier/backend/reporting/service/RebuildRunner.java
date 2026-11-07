@@ -1,6 +1,7 @@
 package com.xavier.backend.reporting.service;
 
 import com.xavier.backend.fiscal.FiscalApi;
+import com.xavier.backend.inventory.InventoryFacts;
 import com.xavier.backend.orders.OrdersApi;
 import com.xavier.backend.reporting.model.dto.RebuildView;
 import com.xavier.backend.reporting.repository.RebuildRuns;
@@ -32,10 +33,14 @@ class RebuildRunner {
     private final FiscalApi fiscal;
     private final OrdersApi orders;
     private final SettlementFacts settlement;
+    private final CostProjections costs;
+    private final InventoryFacts inventory;
     private final Clock clock;
 
     RebuildRunner(RebuildRuns runs, Projections projections, FiscalApi fiscal, OrdersApi orders,
-                  SettlementFacts settlement, Clock clock) {
+                  SettlementFacts settlement, CostProjections costs, InventoryFacts inventory, Clock clock) {
+        this.costs = costs;
+        this.inventory = inventory;
         this.runs = runs;
         this.projections = projections;
         this.fiscal = fiscal;
@@ -59,6 +64,17 @@ class RebuildRunner {
                     projections::projectRefund);
             pull(runId, projected, page -> settlement.creditChargeIds(run.storeId(), run.from(), run.to(), page),
                     projections::projectCreditCharge);
+            pull(runId, projected, page -> inventory.sourceIds(run.storeId(), run.from(), run.to(), page),
+                    source -> costs.projectStockSource(source.sourceType(), source.sourceId()));
+            // a correction that revalued nothing posted no movement, so sourceIds does not name it
+            pull(runId, projected, page -> inventory.costVarianceSources(run.storeId(), run.from(), run.to(), page),
+                    source -> costs.projectStockSource(source.sourceType(), source.sourceId()));
+            pull(runId, projected, page -> inventory.wasteVoidIds(run.storeId(), run.from(), run.to(), page),
+                    costs::projectWaste);
+            pull(runId, projected, page -> orders.discountSourceIds(run.storeId(), run.from(), run.to(), page),
+                    source -> costs.projectDiscounts(source.sourceType(), source.sourceId()));
+            pull(runId, projected, page -> orders.closedOrderIds(run.storeId(), run.from(), run.to(), page),
+                    costs::projectOfferCosts);
             runs.finish(runId, projected[0], null, clock.instant());
         } catch (RuntimeException e) {
             log.error("Rebuild {} of store {} failed after {} facts", runId, run.storeId(), projected[0], e);
@@ -67,8 +83,8 @@ class RebuildRunner {
         }
     }
 
-    private void pull(UUID runId, long[] projected, Function<Pageable, Page<UUID>> ids, Consumer<UUID> project) {
-        Page<UUID> page;
+    private <T> void pull(UUID runId, long[] projected, Function<Pageable, Page<T>> ids, Consumer<T> project) {
+        Page<T> page;
         int number = 0;
         do {
             page = ids.apply(PageRequest.of(number++, PAGE));

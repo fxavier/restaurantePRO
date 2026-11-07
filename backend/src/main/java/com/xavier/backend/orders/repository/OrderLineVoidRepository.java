@@ -2,7 +2,6 @@ package com.xavier.backend.orders.repository;
 
 import com.xavier.backend.orders.model.OrderLineVoid;
 import java.time.LocalDate;
-import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -45,25 +44,4 @@ public interface OrderLineVoidRepository extends JpaRepository<OrderLineVoid, UU
             SELECT EXISTS (SELECT 1 FROM origin o JOIN orders.order_batch b ON b.id = o.batch_id
                            WHERE b.dispatched_at <= o.voided_at)""", nativeQuery = true)
     boolean wasAfterDispatch(@Param("voidId") UUID voidId);
-
-    /**
-     * The round line the voided line descends from (D100): the voided line itself when it has a round, else the
-     * source line its transfer and split facts lead back to. A confirmed line always has one or the other.
-     */
-    @Query(value = """
-            WITH RECURSIVE origin (line_id, batch_id) AS (
-                SELECT l.id, l.batch_id
-                FROM orders.order_line_void v JOIN orders.order_line l ON l.id = v.line_id
-                WHERE v.id = :voidId
-                UNION ALL
-                SELECT s.id, s.batch_id
-                FROM origin o
-                JOIN (SELECT target_line_id, source_line_id FROM orders.order_transfer_line
-                      UNION ALL
-                      SELECT target_line_id, source_line_id FROM orders.order_line_split) t
-                    ON t.target_line_id = o.line_id
-                JOIN orders.order_line s ON s.id = t.source_line_id
-                WHERE o.batch_id IS NULL)
-            SELECT line_id FROM origin WHERE batch_id IS NOT NULL""", nativeQuery = true)
-    Optional<UUID> consumedLineId(@Param("voidId") UUID voidId);
 }

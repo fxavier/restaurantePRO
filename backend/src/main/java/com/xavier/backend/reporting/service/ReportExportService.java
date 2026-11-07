@@ -4,7 +4,9 @@ import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.reporting.exception.ExportParamsException;
+import com.xavier.backend.reporting.model.dto.DiscountRow;
 import com.xavier.backend.reporting.model.dto.ExportRequest;
+import com.xavier.backend.reporting.model.dto.MarginRow;
 import com.xavier.backend.reporting.model.dto.ReceiptsRow;
 import com.xavier.backend.reporting.model.dto.ReportView;
 import com.xavier.backend.reporting.model.dto.SalesRow;
@@ -35,7 +37,7 @@ public class ReportExportService {
 
     static final String EXPORTED = "REPORT_EXPORTED";
     private static final String LINE_END = "\r\n";
-    private static final Set<String> GROUPED = Set.of("sales", "receipts", "voids");
+    private static final Set<String> GROUPED = Set.of("sales", "receipts", "voids", "margins", "discounts");
 
     private final AccessPolicy access;
     private final ReportService reports;
@@ -62,6 +64,9 @@ public class ReportExportService {
             case "receipts" -> receipts(reports.receipts(storeId, from, to,
                     grouping(params, ReceiptsGrouping.class)));
             case "voids" -> voids(reports.voids(storeId, from, to, grouping(params, VoidsGrouping.class)));
+            case "margins" -> margins(reports.margins(storeId, from, to, grouping(params, MarginGrouping.class)));
+            case "discounts" -> discounts(reports.discounts(storeId, from, to,
+                    grouping(params, DiscountGrouping.class)));
             default -> throw new ExportParamsException("report");
         };
         int rows = lines.size() - 2; // the header and the totals
@@ -95,6 +100,19 @@ public class ReportExportService {
                 row -> List.of(text(row.key()), text(row.label()), String.valueOf(row.voids()),
                         row.quantity().toPlainString(), amount(row.gross()), String.valueOf(row.wasted()),
                         String.valueOf(row.afterDispatch())));
+    }
+
+    private static List<List<String>> margins(ReportView<MarginRow> view) {
+        return table(List.of("key", "label", "netSales", "costOfSales", "waste", "costVariance", "margin",
+                "marginPercent"), view, row -> List.of(text(row.key()), text(row.label()), amount(row.netSales()),
+                amount(row.costOfSales()), amount(row.waste()), amount(row.costVariance()), amount(row.margin()),
+                row.marginPercent() == null ? "" : row.marginPercent().toPlainString()));
+    }
+
+    private static List<List<String>> discounts(ReportView<DiscountRow> view) {
+        return table(List.of("key", "label", "lines", "quantity", "discount", "offerCost"), view,
+                row -> List.of(text(row.key()), text(row.label()), String.valueOf(row.lines()),
+                        row.quantity().toPlainString(), amount(row.discount()), amount(row.offerCost())));
     }
 
     /** The header, one line per row, and the totals with {@code TOTAL} in the first column. */

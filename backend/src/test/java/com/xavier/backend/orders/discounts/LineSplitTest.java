@@ -132,6 +132,23 @@ class LineSplitTest {
         assertThat(inPos(() -> ordersApi.voidFacts(voided.voidId())).consumedLineId()).isEqualTo(line);
     }
 
+    @Test
+    void theDiscountFactsOfASplitLineNameTheRoundLineItCameFromAndItsQuantity() throws Exception {
+        splitOne();
+        UUID split = splitLine();
+        UUID adjustment = ordersApi.discountSourceIds(shop.store(), java.time.LocalDate.of(2000, 1, 1),
+                java.time.LocalDate.of(2100, 1, 1), org.springframework.data.domain.PageRequest.of(0, 10))
+                .getContent().getLast().sourceId();
+
+        com.xavier.backend.orders.DiscountFacts.DiscountLine fact = ordersApi.discountFacts("ADJUSTMENT", adjustment)
+                .lines().getFirst();
+
+        assertThat(fact.lineId()).isEqualTo(split);
+        assertThat(fact.quantity()).isEqualByComparingTo("1");
+        assertThat(fact.consumedLineId()).as("the round line whose consumption carries the cost").isEqualTo(line);
+        assertThat(fact.consumedLineQuantity()).as("its confirmed quantity").isEqualByComparingTo("3");
+    }
+
     void splitOne() throws Exception {
         fixtures.discount(shop, order, """
                         {"orderVersion": 1, "lines": [{"lineId": "%s", "quantity": 1}], "kind": "DISCOUNT",

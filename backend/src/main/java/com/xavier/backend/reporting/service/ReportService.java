@@ -5,6 +5,8 @@ import com.xavier.backend.access.Permission;
 import com.xavier.backend.organization.OrganizationApi;
 import com.xavier.backend.organization.model.dto.StoreSummary;
 import com.xavier.backend.reporting.exception.ReportStoreNotFoundException;
+import com.xavier.backend.reporting.model.dto.DiscountRow;
+import com.xavier.backend.reporting.model.dto.MarginRow;
 import com.xavier.backend.reporting.model.dto.ReceiptsRow;
 import com.xavier.backend.reporting.model.dto.ReportStatus;
 import com.xavier.backend.reporting.model.dto.ReportView;
@@ -13,7 +15,10 @@ import com.xavier.backend.reporting.model.dto.TaxRow;
 import com.xavier.backend.reporting.model.dto.VoidsRow;
 import com.xavier.backend.reporting.repository.RebuildRuns;
 import com.xavier.backend.reporting.repository.ReportQueries;
+import com.xavier.backend.reporting.repository.ReportQueries.CostAggregate;
 import com.xavier.backend.reporting.repository.ReportQueries.CreditAggregate;
+import com.xavier.backend.reporting.repository.ReportQueries.DiscountAggregate;
+import com.xavier.backend.reporting.repository.ReportQueries.OfferCostAggregate;
 import com.xavier.backend.reporting.repository.ReportQueries.ReceiptsAggregate;
 import com.xavier.backend.reporting.repository.ReportQueries.SalesAggregate;
 import com.xavier.backend.reporting.repository.ReportQueries.TaxAggregate;
@@ -156,6 +161,145 @@ public class ReportService {
         Instant asOf = latest(totalMoney == null ? null : totalMoney.asOf(),
                 totalCredit == null ? null : totalCredit.asOf());
         return view(range, grouping.name(), rows, receiptsRow(null, null, totalMoney, totalCredit, currency), asOf);
+    }
+
+    /**
+     * Margins by item, family or day (D131): net sales − cost of sales − cost variance, with waste apart. Both sides
+     * are in the order's business day (D85); a cost variance is in the day it was recorded.
+     */
+    public ReportView<MarginRow> margins(UUID storeId, LocalDate from, LocalDate to, String groupBy) {
+        access.require(Permission.REPORT_VIEW, storeId);
+        ReportRange range = new ReportRange(storeId, from, to);
+        MarginGrouping grouping = MarginGrouping.valueOf(groupBy.toUpperCase(Locale.ROOT));
+        Currency currency = currencyOf(storeId);
+        Map<String, Margin> groups = new TreeMap<>(Comparator.nullsLast(Comparator.naturalOrder()));
+        List<Instant> asOf = new java.util.ArrayList<>();
+        add(groups, asOf, queries.margin(ReportQueries.MARGIN_SALES, grouping.salesKey, storeId, from, to),
+                Margin::sales);
+        add(groups, asOf, queries.margin(ReportQueries.MARGIN_COST, grouping.costKey, storeId, from, to),
+                Margin::cost);
+        add(groups, asOf, queries.margin(ReportQueries.MARGIN_WASTE, grouping.costKey, storeId, from, to),
+                Margin::cost);
+        add(groups, asOf, queries.margin(ReportQueries.MARGIN_VARIANCE, grouping.varianceKey, storeId, from, to),
+                Margin::variance);
+        Map<String, String> names = grouping == MarginGrouping.ITEM ? labels.items(groups.keySet()) : Map.of();
+        List<MarginRow> rows = groups.entrySet().stream().map(group -> group.getValue().row(group.getKey(),
+                grouping == MarginGrouping.FAMILY ? group.getKey() : label(names, group.getKey()), currency))
+                .toList();
+        return costView(range, grouping.name(), rows, marginTotals(rows, currency),
+                latest(asOf.toArray(Instant[]::new)));
+    }
+
+    /** Discounts and offers by origin, promotion, employee (who gave it), approver or item, with the offers' cost. */
+    public ReportView<DiscountRow> discounts(UUID storeId, LocalDate from, LocalDate to, String groupBy) {
+        access.require(Permission.REPORT_VIEW, storeId);
+        ReportRange range = new ReportRange(storeId, from, to);
+        DiscountGrouping grouping = DiscountGrouping.valueOf(groupBy.toUpperCase(Locale.ROOT));
+        Currency currency = currencyOf(storeId);
+        Map<String, DiscountAggregate> discounts = byKey(queries.discounts(grouping.key, storeId, from, to),
+                DiscountAggregate::key);
+        Map<String, OfferCostAggregate> offers = byKey(queries.offerCosts(grouping.offerKey, storeId, from, to),
+                OfferCostAggregate::key);
+        List<String> keys = Stream.concat(discounts.keySet().stream(), offers.keySet().stream()).distinct()
+                .sorted(Comparator.nullsLast(Comparator.naturalOrder())).toList();
+        Map<String, String> names = switch (grouping) {
+            case EMPLOYEE, APPROVER -> labels.employees(keys);
+            case ITEM -> labels.items(keys);
+            default -> Map.of();
+        };
+        List<DiscountRow> rows = keys.stream().map(key -> discountRow(key,
+                grouping == DiscountGrouping.ORIGIN || grouping == DiscountGrouping.PROMOTION ? key
+                        : label(names, key), discounts.get(key), offers.get(key), currency)).toList();
+        Instant asOf = latest(Stream.concat(discounts.values().stream().map(DiscountAggregate::asOf),
+                offers.values().stream().map(OfferCostAggregate::asOf)).toArray(Instant[]::new));
+        return costView(range, grouping.name(), rows, discountTotals(rows, currency), asOf);
+    }
+
+    /** The totals are the sum of the rows as shown, so an export's rows always add up to its TOTAL (S53 review). */
+    private static MarginRow marginTotals(List<MarginRow> rows, Currency currency) {
+        Money net = sum(rows.stream().map(MarginRow::netSales), currency);
+        Money margin = sum(rows.stream().map(MarginRow::margin), currency);
+        return new MarginRow(null, null, net, sum(rows.stream().map(MarginRow::costOfSales), currency),
+                sum(rows.stream().map(MarginRow::waste), currency),
+                sum(rows.stream().map(MarginRow::costVariance), currency), margin, percentOf(margin, net));
+    }
+
+    private static DiscountRow discountTotals(List<DiscountRow> rows, Currency currency) {
+        return new DiscountRow(null, null, rows.stream().mapToLong(DiscountRow::lines).sum(),
+                rows.stream().map(DiscountRow::quantity).reduce(BigDecimal.ZERO, BigDecimal::add),
+                sum(rows.stream().map(DiscountRow::discount), currency),
+                sum(rows.stream().map(DiscountRow::offerCost), currency));
+    }
+
+    private static Money sum(Stream<Money> amounts, Currency currency) {
+        return amounts.reduce(money(null, currency), Money::plus);
+    }
+
+    private static BigDecimal percentOf(Money margin, Money net) {
+        return net.amount().signum() == 0 ? null
+                : margin.amount().multiply(HUNDRED).divide(net.amount(), 2, Money.ROUNDING);
+    }
+
+    private static void add(Map<String, Margin> groups, List<Instant> asOf, List<CostAggregate> rows,
+                            java.util.function.BiConsumer<Margin, CostAggregate> into) {
+        rows.forEach(row -> {
+            into.accept(groups.computeIfAbsent(row.key(), key -> new Margin()), row);
+            asOf.add(row.asOf());
+        });
+    }
+
+    private static DiscountRow discountRow(String key, String label, DiscountAggregate discount,
+                                           OfferCostAggregate offer, Currency currency) {
+        return new DiscountRow(key, label, discount == null ? 0 : discount.lines(),
+                discount == null ? BigDecimal.ZERO : discount.quantity(),
+                money(discount == null ? null : rounded(discount.discount(), currency), currency),
+                money(offer == null ? null : rounded(offer.offerCost(), currency), currency));
+    }
+
+    /** The margin sums of one group, at the projections' scale until they are shown. */
+    private static final class Margin {
+
+        private BigDecimal netSales = BigDecimal.ZERO;
+        private BigDecimal costOfSales = BigDecimal.ZERO;
+        private BigDecimal waste = BigDecimal.ZERO;
+        private BigDecimal variance = BigDecimal.ZERO;
+
+        void sales(CostAggregate row) {
+            netSales = netSales.add(row.amount());
+        }
+
+        void cost(CostAggregate row) {
+            costOfSales = costOfSales.add(row.amount());
+            waste = waste.add(row.waste());
+        }
+
+        void variance(CostAggregate row) {
+            variance = variance.add(row.amount());
+        }
+
+        /** Rounded once for display (D113); the margin is computed from the shown amounts, so the row adds up. */
+        MarginRow row(String key, String label, Currency currency) {
+            Money net = money(rounded(netSales, currency), currency);
+            Money cost = money(rounded(costOfSales, currency), currency);
+            Money costVariance = money(rounded(variance, currency), currency);
+            Money margin = net.minus(cost).minus(costVariance);
+            return new MarginRow(key, label, net, cost, money(rounded(waste, currency), currency), costVariance,
+                    margin, percentOf(margin, net));
+        }
+    }
+
+    private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
+
+    /** A projection amount (scale 4) at the minor unit: reports round only when they show money (D113). */
+    private static BigDecimal rounded(BigDecimal amount, Currency currency) {
+        return amount == null ? null : amount.setScale(currency.getDefaultFractionDigits(), Money.ROUNDING);
+    }
+
+    /** A cost report's view (D131): its freshness also waits on consumption, its finality on open exceptions. */
+    private <T> ReportView<T> costView(ReportRange range, String groupBy, List<T> rows, T totals, Instant asOf) {
+        long pending = freshness.pendingCostFacts();
+        return new ReportView<>(range.storeId(), range.from(), range.to(), groupBy.toLowerCase(Locale.ROOT), rows,
+                totals, asOf, pending, freshness.isCostFinal(range.storeId(), range.from(), range.to(), pending));
     }
 
     private <T> ReportView<T> view(ReportRange range, String groupBy, List<T> rows, T totals, Instant asOf) {

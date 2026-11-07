@@ -1,5 +1,7 @@
 package com.xavier.backend.reporting.controller;
 
+import com.xavier.backend.reporting.model.dto.DiscountRow;
+import com.xavier.backend.reporting.model.dto.MarginRow;
 import com.xavier.backend.reporting.model.dto.ReceiptsRow;
 import com.xavier.backend.reporting.model.dto.ReportStatus;
 import com.xavier.backend.reporting.model.dto.ReportView;
@@ -60,6 +62,20 @@ class ReportController {
     ReportView<VoidsRow> voids(@RequestParam UUID storeId, @RequestParam LocalDate from, @RequestParam LocalDate to,
                                @RequestParam @Pattern(regexp = "reason|employee|item|approver") String groupBy) {
         return reports.voids(storeId, from, to, groupBy);
+    }
+
+    @GetMapping("/margins")
+    ReportView<MarginRow> margins(@RequestParam UUID storeId, @RequestParam LocalDate from, @RequestParam LocalDate to,
+                                  @RequestParam @Pattern(regexp = "item|family|day") String groupBy) {
+        return reports.margins(storeId, from, to, groupBy);
+    }
+
+    @GetMapping("/discounts")
+    ReportView<DiscountRow> discounts(@RequestParam UUID storeId, @RequestParam LocalDate from,
+                                      @RequestParam LocalDate to,
+                                      @RequestParam @Pattern(regexp = "origin|promotion|employee|approver|item")
+                                      String groupBy) {
+        return reports.discounts(storeId, from, to, groupBy);
     }
 
     @GetMapping("/receipts")

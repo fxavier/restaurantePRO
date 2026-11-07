@@ -1,5 +1,7 @@
 package com.xavier.backend.orders.service;
 
+import com.xavier.backend.orders.model.event.OrderClosed;
+import org.springframework.context.ApplicationEventPublisher;
 import com.xavier.backend.dining.DiningApi;
 import com.xavier.backend.orders.BillingLine;
 import com.xavier.backend.promotions.EarnCommand;
@@ -43,13 +45,15 @@ public class OrderCoordinationService {
     private final LineFamilies families;
     private final LoyaltyApi loyalty;
     private final DeliveryGuards deliveries;
+    private final ApplicationEventPublisher events;
     private final Clock clock;
 
     OrderCoordinationService(OrderRepository orders, OrderBatchRepository batches, OrderLookup lookup,
                              OrderViews views, OrderChanges changes, DiningApi dining,
                              RewardLineage rewards, LineFamilies families, LoyaltyApi loyalty,
-                             DeliveryGuards deliveries, Clock clock) {
+                             DeliveryGuards deliveries, ApplicationEventPublisher events, Clock clock) {
         this.deliveries = deliveries;
+        this.events = events;
         this.rewards = rewards;
         this.families = families;
         this.loyalty = loyalty;
@@ -99,6 +103,7 @@ public class OrderCoordinationService {
             dining.closeOccupation(orderId, CloseReason.ORDER_CLOSED);
         }
         changes.record("ORDER_CLOSED", order, Map.of("closedByEmployeeId", actorEmployeeId.toString()));
+        events.publishEvent(new OrderClosed(order.getId(), order.getStoreId(), order.getBusinessDay()));
     }
 
     /**

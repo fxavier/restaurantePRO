@@ -24,6 +24,17 @@ public record EffectivePrice(Money listUnitPrice, Money unitPrice, String origin
      */
     public static EffectivePrice of(OrderLine line, List<OrderLinePriceAdjustment> adjustments,
                                     String inheritedRewardCode) {
+        return of(line, adjustments, inheritedRewardCode, null);
+    }
+
+    /**
+     * @param lineageOrigin the latest adjustment that is not a reversal in the line's lineage (its nearest
+     *                      ancestor's before the copy, S53): the origin and label of a copy without an adjustment of
+     *                      its own, when the copy sells at that adjustment's unit price; {@code null} when not read or
+     *                      there is none
+     */
+    public static EffectivePrice of(OrderLine line, List<OrderLinePriceAdjustment> adjustments,
+                                    String inheritedRewardCode, OrderLinePriceAdjustment lineageOrigin) {
         Money list = line.listUnitPrice();
         Optional<OrderLinePriceAdjustment> latest = adjustments.isEmpty() ? Optional.empty()
                 : Optional.of(adjustments.getLast());
@@ -32,6 +43,11 @@ public record EffectivePrice(Money listUnitPrice, Money unitPrice, String origin
         if (unit.equals(list)) {
             return new EffectivePrice(list, unit, null, null);
         }
+        // D107 amendment (S53): a copy takes its lineage's origin and label only at that adjustment's own price;
+        // at any other price (a partial reversal before the copy) it is a plain discount, as before S53
+        if (latest.isEmpty() && lineageOrigin != null && unit.equals(lineageOrigin.unitPrice())) {
+            return ofAdjustment(list, unit, lineageOrigin);
+        }
         if (latest.isEmpty() && inheritedRewardCode != null) {
             return new EffectivePrice(list, unit, "LOYALTY", "Recompensa " + inheritedRewardCode);
         }
@@ -39,7 +55,10 @@ public record EffectivePrice(Money listUnitPrice, Money unitPrice, String origin
             return line.promotion().map(promotion -> new EffectivePrice(list, unit, "PROMOTION", promotion.name()))
                     .orElseGet(() -> new EffectivePrice(list, unit, "MANUAL", "Desconto"));
         }
-        OrderLinePriceAdjustment last = latest.get();
+        return ofAdjustment(list, unit, latest.get());
+    }
+
+    private static EffectivePrice ofAdjustment(Money list, Money unit, OrderLinePriceAdjustment last) {
         return switch (last.getKind()) {
             case OFFER -> new EffectivePrice(list, unit, "OFFER", "Oferta");
             case REWARD -> new EffectivePrice(list, unit, "LOYALTY", "Recompensa " + last.getRewardCode());
