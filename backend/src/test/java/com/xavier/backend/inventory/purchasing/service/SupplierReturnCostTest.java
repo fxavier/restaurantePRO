@@ -70,8 +70,9 @@ class SupplierReturnCostTest {
     }
 
     /**
-     * D125 amended: 10@1 on hand, 10 received at 2, those 10 returned: the OUT leaves at the average (−15) and the
-     * supplier's credit beyond it, (2 − 1.5) × 10, is the receipt line's cost variance.
+     * D125 amended: 10@1 on hand, 10 received at 2, those 10 returned: the OUT leaves at the average (−15) while the
+     * supplier credits 20. The receipt line's cost variance is (average − receipt cost) × q = −5: a positive variance
+     * is always more cost of goods, and this credit lowers it.
      */
     @Test
     void aLinkedReturnBooksTheReceiptCostBeyondTheAverageAsAVariance() throws Exception {
@@ -89,7 +90,7 @@ class SupplierReturnCostTest {
         assertThat(jdbc.sql("""
                         SELECT value || '|' || receipt_line_id FROM inventory.cost_variance WHERE return_line_id IN
                             (SELECT id FROM inventory.supplier_return_line WHERE return_id = ?)""")
-                .param(returned).query(String.class).single()).isEqualTo("5.0000|" + lineAtTwo);
+                .param(returned).query(String.class).single()).isEqualTo("-5.0000|" + lineAtTwo);
     }
 
     @Test

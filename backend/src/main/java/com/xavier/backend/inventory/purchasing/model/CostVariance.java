@@ -14,7 +14,8 @@ import org.hibernate.type.SqlTypes;
 /**
  * A cost difference of a receipt line that the stock value cannot carry (D125 amended), for the margin report (D131):
  * the consumed share of a cost correction (cost that already left stock at the old price), or a linked supplier
- * return's credit beyond the average it left at. Append-only (a trigger); at most one per correction or return line.
+ * return's credit against the average it left at. {@code value} is signed: positive is always more cost of goods,
+ * negative less. Append-only (a trigger); at most one per correction or return line.
  */
 @Entity
 @Table(schema = "inventory", name = "cost_variance")
@@ -68,7 +69,7 @@ public class CostVariance {
 
     /**
      * A return of {@code receiptLineId} left at the average while the supplier credits the line's cost: their
-     * difference, {@code (receipt cost − average) × quantity}.
+     * difference, {@code (average − receipt cost) × quantity} (negative when the credit exceeds the average).
      */
     public static CostVariance ofReturn(UUID storeId, UUID warehouseId, UUID stockItemId, LocalDate businessDate,
                                         BigDecimal value, String currency, UUID returnLineId, UUID receiptLineId) {

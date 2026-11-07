@@ -1,5 +1,6 @@
 -- D125 amended: a return linked to a receipt line leaves at the average (D113) while the supplier credits the line's
--- cost; the difference, (receipt cost − average) × quantity, is a cost variance of that receipt line too. A variance
+-- cost; the difference, (average − receipt cost) × quantity, is a cost variance of that receipt line too.
+-- Sign convention (one rule for every variance): a positive value is always more cost of goods, a negative one less. A variance
 -- now comes from a cost correction or from a supplier return line, exactly one; receipt_line_id names the line.
 -- DDL only: no existing variance row is touched (they are append-only).
 ALTER TABLE inventory.cost_variance
@@ -15,3 +16,7 @@ ALTER TABLE inventory.cost_variance
     ADD CONSTRAINT cost_variance_return_line_uk UNIQUE (return_line_id),
     ADD CONSTRAINT cost_variance_source_ck CHECK (num_nonnulls(correction_id, return_line_id) = 1),
     ADD CONSTRAINT cost_variance_return_receipt_line_ck CHECK (return_line_id IS NULL OR receipt_line_id IS NOT NULL);
+
+COMMENT ON COLUMN inventory.cost_variance.value IS
+    'Signed: positive is more cost of goods, negative less. A cost correction: the consumed share of (new - previous) '
+    'x quantity. A linked supplier return: (average - receipt cost) x quantity.';

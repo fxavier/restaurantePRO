@@ -11,8 +11,8 @@ import org.springframework.stereotype.Repository;
 /**
  * The net purchases report (D131): per supplier or per stock item, over business days {@code from..to} of a store,
  * what confirmed receipts brought in ({@code round(quantity × unit cost, 4)} per line, as the ledger values a RECEIPT),
- * what confirmed supplier returns sent back at the supplier's credit (the SUPPLIER_RETURN value plus a linked
- * return's cost variance), and the cost corrections (revaluation + variance) dated in the period.
+ * what confirmed supplier returns sent back at the supplier's credit (the SUPPLIER_RETURN value at the average, less
+ * a linked return's cost variance, which is negative when the credit exceeds the average), and the cost corrections (revaluation + variance) dated in the period.
  */
 @Repository
 public class PurchaseQueries {
@@ -25,7 +25,7 @@ public class PurchaseQueries {
             WHERE r.store_id = :store AND r.status = 'CONFIRMED' AND r.business_date BETWEEN :from AND :to
             UNION ALL
             SELECT s.supplier_id, l.stock_item_id, 0, l.quantity_base, 0,
-                   -m.value + coalesce(v.value, 0), 0
+                   -m.value - coalesce(v.value, 0), 0
             FROM inventory.supplier_return s
             JOIN inventory.supplier_return_line l ON l.return_id = s.id
             JOIN inventory.stock_movement m ON m.source_type = 'SUPPLIER_RETURN' AND m.source_id = s.id

@@ -117,6 +117,31 @@ class PurchaseReportTest {
         assertThat(report.get("totalValue").asDouble()).isEqualTo(47.0);
     }
 
+    /** A linked return is valued at the supplier's credit: the OUT at the average less its (negative) variance. */
+    @Test
+    void aLinkedReturnCountsAtTheSuppliersCredit() throws Exception {
+        UUID shop = fixtures.newActiveStore();
+        UUID room = fixtures.newWarehouse(shop, "ALLOW");
+        steps.confirmedReceipt(shop, room, supplierA, flour, "10", "1");
+        UUID atTwo = steps.confirmedReceipt(shop, room, supplierB, flour, "10", "2");
+        String line = steps.get(shop, "/receipts/" + atTwo).get("lines").get(0).get("id").asString();
+        UUID returned = InventoryFixtures.id(mvc.perform(idem(post(BO + "/supplier-returns")).with(buyer(shop))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"warehouseId\": \"%s\", \"goodsReceiptId\": \"%s\", \"lines\": [{\"receiptLineId\": \"%s\", \"stockItemId\": \"%s\", \"quantity\": 10}]}"
+                                .formatted(room, atTwo, line, flour)))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        steps.command(shop, "/supplier-returns/" + returned + "/confirm").andExpect(status().isOk());
+
+        JsonNode report = json(mvc.perform(get(BO + "/reports/purchases").param("storeId", shop.toString())
+                .param("from", day.toString()).param("to", day.toString()).param("groupBy", "supplier")
+                .with(InventoryFixtures.account(shop, Permission.INVENTORY_VIEW))).andExpect(status().isOk()));
+
+        JsonNode b = row(report, supplierB);
+        assertThat(b.get("receivedValue").asDouble()).isEqualTo(20.0);
+        assertThat(b.get("returnedValue").asDouble()).as("15 at the average, less the −5 variance").isEqualTo(20.0);
+        assertThat(b.get("netValue").asDouble()).isZero();
+    }
+
     @Test
     void anotherPeriodIsEmptyAndTheReportIsScopedAndValidated() throws Exception {
         mvc.perform(get(BO + "/reports/purchases").param("storeId", store.toString())

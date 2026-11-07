@@ -53,8 +53,8 @@ import org.springframework.transaction.annotation.Transactional;
  * Returns to a supplier (D125): {@code GOODS_RECEIVE} in the warehouse's store. Confirmation, once the store is live,
  * posts SUPPLIER_RETURN OUTs (source SUPPLIER_RETURN, one per line) valued at the current average like every OUT
  * (D113); a line linked to a receipt line names that line's current cost for reference only, books the supplier's
- * credit beyond the average, {@code (receipt cost − average) × quantity}, as that receipt line's cost variance (D125
- * amended), and returns at most what it received less what was already returned (422 RETURN_EXCEEDS_RECEIVED). A return is a manual OUT for the
+ * credit against the average, {@code (average − receipt cost) × quantity}, as that receipt line's cost variance (D125
+ * amended; a positive variance is always more cost of goods), and returns at most what it received less what was already returned (422 RETURN_EXCEEDS_RECEIVED). A return is a manual OUT for the
  * warehouse's negative policy (422 NEGATIVE_STOCK_REFUSED, D118). Lock order: the receipt (serializing the returns of
  * its lines), the return, then the ledger's balance rows. Audited.
  */
@@ -193,7 +193,8 @@ public class SupplierReturnService {
                 continue;
             }
             BigDecimal credited = MovingAverage.valueOf(posted.quantity().negate(), receiptCost);
-            BigDecimal variance = credited.add(posted.value()); // the OUT's value is negative
+            // (average − receipt cost) × q: positive is always more cost of goods; a credit above the average lowers it
+            BigDecimal variance = posted.value().negate().subtract(credited);
             if (variance.signum() != 0) {
                 SupplierReturnLine line = saved.getLines().stream()
                         .filter(candidate -> candidate.getId().equals(posted.sourceLineId())).findFirst().orElseThrow();
