@@ -103,6 +103,7 @@ public class PartitionDocumentService {
     private static DraftLine draftLine(Bill bill, BillPartitionLine line) {
         BillingLine billing = bill.line(line.getOrderLineId()).orElseThrow();
         return new DraftLine(billing.lineId(), billing.description(), line.getQuantity(), billing.unitPrice(),
-                billing.ratePercent(), line.gross(), line.net(), line.tax(), billing.taxCode());
+                billing.ratePercent(), line.gross(), line.net(), line.tax(), billing.taxCode(),
+                billing.listUnitPrice(), billing.discountLabel());
     }
 }

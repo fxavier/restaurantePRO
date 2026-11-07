@@ -86,6 +86,28 @@ public class SettlementRuleException extends BusinessRuleException {
                 + " paid or being paid: refund first.", Map.of("unpaid", unpaid.amount()));
     }
 
+    /** D105: like {@link #voidExceedsUnpaid}, for a discount after confirmation. */
+    public static SettlementRuleException discountExceedsUnpaid(UUID orderId, Money residualAfter, Money owed,
+                                                                Money unpaid) {
+        return new SettlementRuleException(SettlementRule.DISCOUNT_EXCEEDS_UNPAID, "The discount would leave "
+                + residualAfter.amount() + " due on order " + orderId + ", less than the " + owed.amount()
+                + " paid or being paid: refund first.", Map.of("unpaid", unpaid.amount()));
+    }
+
+    /** D105: a discounted line has no quantity in a LIVE partition. */
+    public static SettlementRuleException discountedLinePartitioned(UUID lineId, BigDecimal available) {
+        return new SettlementRuleException(SettlementRule.QUANTITY_PARTITIONED, "Only "
+                + plain(available) + " of line " + lineId
+                + " is in no partition: cancel the partition before discounting it.",
+                Map.of("lineId", lineId, "available", available));
+    }
+
+    /** D127: settlement's close of a DELIVERY order refuses before its document is drafted or issued. */
+    public static SettlementRuleException deliveryNotDelivered(UUID orderId) {
+        return new SettlementRuleException(SettlementRule.DELIVERY_NOT_DELIVERED,
+                "Order " + orderId + " is closed only once its delivery is DELIVERED.");
+    }
+
     /** @param what why the quantity is invoiced, e.g. "Order … has its document" */
     public static SettlementRuleException correctionRequiresFiscalAdapter(String what) {
         return new SettlementRuleException(SettlementRule.CORRECTION_REQUIRES_FISCAL_ADAPTER, what

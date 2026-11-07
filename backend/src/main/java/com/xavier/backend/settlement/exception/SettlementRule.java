@@ -86,5 +86,9 @@ public enum SettlementRule {
     /** R3 (D77): more than what is left of the payment once its earlier refunds are taken out. */
     REFUND_EXCEEDS_REFUNDABLE,
     /** R3 (D77): a refund to a method other than cash needs the terminal's or provider's refund reference. */
-    EXTERNAL_REFERENCE_REQUIRED
+    EXTERNAL_REFERENCE_REQUIRED,
+    /** R4 (D105): the discount would leave the bill below what was paid, put on account or is in flight. */
+    DISCOUNT_EXCEEDS_UNPAID,
+    /** R4 (D127): a DELIVERY order is closed, and its document issued at the close, only once it is DELIVERED. */
+    DELIVERY_NOT_DELIVERED
 }
