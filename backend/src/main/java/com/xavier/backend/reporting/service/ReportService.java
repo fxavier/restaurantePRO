@@ -187,7 +187,7 @@ public class ReportService {
         List<MarginRow> rows = groups.entrySet().stream().map(group -> group.getValue().row(group.getKey(),
                 grouping == MarginGrouping.FAMILY ? group.getKey() : label(names, group.getKey()), currency))
                 .toList();
-        return view(range, grouping.name(), rows, total.row(null, null, currency),
+        return costView(range, grouping.name(), rows, total.row(null, null, currency),
                 latest(asOf.toArray(Instant[]::new)));
     }
 
@@ -209,7 +209,7 @@ public class ReportService {
                         : label(names, group.key()), currency)).toList();
         DiscountAggregate totals = queries.discounts(ReportQueries.TOTAL, storeId, from, to).stream().findFirst()
                 .orElse(null);
-        return view(range, grouping.name(), rows, totals == null
+        return costView(range, grouping.name(), rows, totals == null
                 ? new DiscountRow(null, null, 0, BigDecimal.ZERO, money(null, currency), money(null, currency))
                 : discountRow(totals, null, currency), totals == null ? null : totals.asOf());
     }
@@ -274,6 +274,13 @@ public class ReportService {
     /** A projection amount (scale 4) at the minor unit: reports round only when they show money (D113). */
     private static BigDecimal rounded(BigDecimal amount, Currency currency) {
         return amount == null ? null : amount.setScale(currency.getDefaultFractionDigits(), Money.ROUNDING);
+    }
+
+    /** A cost report's view (D131): its freshness also waits on consumption, its finality on open exceptions. */
+    private <T> ReportView<T> costView(ReportRange range, String groupBy, List<T> rows, T totals, Instant asOf) {
+        long pending = freshness.pendingCostFacts();
+        return new ReportView<>(range.storeId(), range.from(), range.to(), groupBy.toLowerCase(Locale.ROOT), rows,
+                totals, asOf, pending, freshness.isCostFinal(range.storeId(), range.from(), range.to(), pending));
     }
 
     private <T> ReportView<T> view(ReportRange range, String groupBy, List<T> rows, T totals, Instant asOf) {

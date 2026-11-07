@@ -1,6 +1,8 @@
 package com.xavier.backend.inventory;
 
 import com.xavier.backend.inventory.repository.FactQueries;
+import com.xavier.backend.organization.BusinessDays;
+import com.xavier.backend.organization.OrganizationApi;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -20,9 +22,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class InventoryFacts {
 
     private final FactQueries facts;
+    private final OrganizationApi organization;
 
-    InventoryFacts(FactQueries facts) {
+    InventoryFacts(FactQueries facts, OrganizationApi organization) {
         this.facts = facts;
+        this.organization = organization;
     }
 
     /** The movements of {@code (sourceType, sourceId)} in posting order; empty when it posted none. */
@@ -69,6 +73,16 @@ public class InventoryFacts {
      */
     public Page<SourceRef> costVarianceSources(UUID storeId, LocalDate from, LocalDate to, Pageable pageable) {
         return facts.costVarianceSources(storeId, from, to, pageable);
+    }
+
+    /**
+     * The store's open consumption exceptions (a round line consumed nothing yet: its cost is missing) whose line was
+     * confirmed on business days {@code from..to} (inclusive), for reporting's finality (S53).
+     */
+    public long openExceptionCount(UUID storeId, LocalDate from, LocalDate to) {
+        return organization.findStore(storeId).map(store -> facts.openExceptionCount(storeId,
+                BusinessDays.startOf(from, store.timezone(), store.businessDayCutoff()),
+                BusinessDays.startOf(to.plusDays(1), store.timezone(), store.businessDayCutoff()))).orElse(0L);
     }
 
     /** The round a line was consumed from, once consumption settled it; empty before, or for a line never in one. */

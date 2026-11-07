@@ -122,6 +122,15 @@ public class FactQueries {
         return new PageImpl<>(page, pageable, total);
     }
 
+    /** Open exceptions of the store whose line was confirmed in {@code [start, end)}. */
+    public long openExceptionCount(UUID storeId, java.time.Instant start, java.time.Instant end) {
+        return jdbc.sql("""
+                        SELECT count(*) FROM inventory.consumption_exception
+                        WHERE store_id = ? AND resolved_at IS NULL AND confirmed_at >= ? AND confirmed_at < ?""")
+                .params(storeId, java.sql.Timestamp.from(start), java.sql.Timestamp.from(end)).query(Long.class)
+                .single();
+    }
+
     public Optional<UUID> roundOf(UUID lineId) {
         return jdbc.sql("SELECT batch_id FROM inventory.consumed_line WHERE line_id = ?").param(lineId)
                 .query(UUID.class).optional();

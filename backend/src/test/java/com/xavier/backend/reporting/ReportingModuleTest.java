@@ -7,6 +7,7 @@ import com.xavier.backend.fiscal.FiscalFixtures;
 import com.xavier.backend.identity.ApproverVerifier;
 import com.xavier.backend.orders.OrdersFixtures;
 import com.xavier.backend.inventory.InventoryFixtures;
+import com.xavier.backend.inventory.consumption.service.RoundConsumption;
 import com.xavier.backend.orders.OrdersCatalog;
 import com.xavier.backend.orders.OrdersPromotions;
 import com.xavier.backend.promotions.PromotionsFixtures;
@@ -57,7 +58,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
         "restaurantpro.settlement.provider-timeout=PT2S",
         "restaurantpro.settlement.sweep-interval=PT1H"
 })
-@MockitoSpyBean(types = {SettlementFacts.class, Projections.class, CostProjections.class})
+@MockitoSpyBean(types = {SettlementFacts.class, Projections.class, CostProjections.class, RoundConsumption.class})
 @MockitoBean(types = ApproverVerifier.class)
 public @interface ReportingModuleTest {
 }
