@@ -134,6 +134,22 @@ class RewardRedemptionTest {
     }
 
     @Test
+    void aRewardedLineCannotBeTransferredSoItsVoidStillGivesThePointsBack() throws Exception {
+        customer(1, member).andExpect(status().isOk());
+        redeem(2, "1").andExpect(status().isOk());
+        UUID rewarded = jdbc.sql("SELECT target_line_id FROM orders.order_line_split WHERE source_line_id = ?")
+                .param(line).query(UUID.class).single();
+        UUID target = fixtures.openedAt(shop, fixtures.newTable(shop, "M2"), operator, terminal);
+
+        fixtures.transfer(shop, order, 3, target, 0, java.util.Map.of(rewarded, "1"), false, operator, terminal,
+                        UUID.randomUUID().toString())
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("REWARDED_LINE_NOT_TRANSFERABLE"));
+        fixtures.transfer(shop, order, 3, target, 0, java.util.Map.of(line, "1"), false, operator, terminal,
+                UUID.randomUUID().toString()).andExpect(status().isCreated()); // its unrewarded source still moves
+    }
+
+    @Test
     void anUnknownOrInactiveCustomerIsRefused() throws Exception {
         customer(1, UUID.randomUUID()).andExpect(status().isNotFound());
     }

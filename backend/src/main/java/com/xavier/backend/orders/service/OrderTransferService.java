@@ -3,7 +3,9 @@ package com.xavier.backend.orders.service;
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.PosContext;
+import com.xavier.backend.orders.AdjustmentKind;
 import com.xavier.backend.orders.exception.OrderNotFoundException;
+import com.xavier.backend.orders.repository.OrderLinePriceAdjustmentRepository;
 import com.xavier.backend.orders.exception.OrderRuleException;
 import com.xavier.backend.orders.model.Order;
 import com.xavier.backend.orders.model.OrderLine;
@@ -41,6 +43,7 @@ public class OrderTransferService {
     private final OrderLineRepository lines;
     private final OrderTransferRepository transfers;
     private final OrderTransferLineRepository transferLines;
+    private final OrderLinePriceAdjustmentRepository adjustments;
     private final OrderLookup lookup;
     private final OrderViews views;
     private final OrderCancellation cancellation;
@@ -49,12 +52,14 @@ public class OrderTransferService {
     private final Clock clock;
 
     OrderTransferService(OrderLineRepository lines, OrderTransferRepository transfers,
-                         OrderTransferLineRepository transferLines, OrderLookup lookup, OrderViews views,
+                         OrderTransferLineRepository transferLines, OrderLinePriceAdjustmentRepository adjustments,
+                         OrderLookup lookup, OrderViews views,
                          OrderCancellation cancellation, AccessPolicy accessPolicy, OrderChanges changes,
                          Clock clock) {
         this.lines = lines;
         this.transfers = transfers;
         this.transferLines = transferLines;
+        this.adjustments = adjustments;
         this.lookup = lookup;
         this.views = views;
         this.cancellation = cancellation;
@@ -65,7 +70,8 @@ public class OrderTransferService {
 
     /**
      * @throws OrderRuleException 422 {@code SAME_ORDER}, {@code ORDER_IN_SETTLEMENT} (source), {@code ORDER_FROZEN},
-     *                            {@code TABLE_LOCKED} (target), {@code QUANTITY_EXCEEDS_NET}
+     *                            {@code TABLE_LOCKED} (target), {@code QUANTITY_EXCEEDS_NET},
+     *                            {@code REWARDED_LINE_NOT_TRANSFERABLE} (D112)
      */
     @Transactional
     public TransferView transfer(UUID sourceId, TransferRequest request) {
@@ -113,6 +119,9 @@ public class OrderTransferService {
             OrderLine line = lines.findByIdAndOrderId(lineId, sourceId)
                     .orElseThrow(() -> new OrderNotFoundException("OrderLine", lineId));
             line.requireAvailable(deducted.getOrDefault(lineId, BigDecimal.ZERO), quantity);
+            if (adjustments.existsByLineIdAndKind(lineId, AdjustmentKind.REWARD)) {
+                throw OrderRuleException.rewardedLineNotTransferable(lineId);
+            }
             taken.put(line, quantity);
         });
         return taken;

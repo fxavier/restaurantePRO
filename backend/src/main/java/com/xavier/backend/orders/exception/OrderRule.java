@@ -45,5 +45,7 @@ public enum OrderRule {
     /** R4: a reward is redeemed on exactly one unit (D112). */
     REWARD_NEEDS_SINGLE_UNIT,
     /** R4: the order's customer cannot change once a reward was redeemed on it (D112). */
-    LOYALTY_REDEEMED
+    LOYALTY_REDEEMED,
+    /** R4: a line with a loyalty reward stays on its order, so voiding it gives the points back (D112). */
+    REWARDED_LINE_NOT_TRANSFERABLE
 }
