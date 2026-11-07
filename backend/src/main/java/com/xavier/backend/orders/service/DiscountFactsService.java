@@ -90,15 +90,17 @@ public class DiscountFactsService {
                 adjustment.getOperatorEmployeeId(), adjustment.getApproverEmployeeId(), adjustment.getAt())));
     }
 
-    private static DiscountFacts.DiscountLine line(OrderLine line, LineSnapshot snapshot, Money previous, Money price,
+    private DiscountFacts.DiscountLine line(OrderLine line, LineSnapshot snapshot, Money previous, Money price,
                                                    BigDecimal quantity, String origin, PromotionRef promotion,
                                                    UUID operator, UUID approver, java.time.Instant at) {
         Money discount = LineAmounts.of(previous, quantity, snapshot.taxRatePercent()).gross()
                 .minus(LineAmounts.of(price, quantity, snapshot.taxRatePercent()).gross());
+        OrderLine round = lines.roundLineOf(line.getId()).flatMap(lines::findById)
+                .orElseThrow(() -> new IllegalStateException("Line " + line.getId() + " descends from no round line"));
         return new DiscountFacts.DiscountLine(line.getId(), line.getItemId(), snapshot.itemCode(),
                 snapshot.releaseId(), snapshot.taxCode(), snapshot.taxRatePercent(), line.listUnitPrice(), previous,
                 price, quantity, discount, origin, promotion == null ? null : promotion.id(),
                 promotion == null ? null : promotion.code(), promotion == null ? null : promotion.name(), operator,
-                approver, at);
+                approver, at, round.getId(), round.getQuantity());
     }
 }

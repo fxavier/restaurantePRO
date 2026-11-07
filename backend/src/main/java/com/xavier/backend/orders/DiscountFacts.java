@@ -23,11 +23,15 @@ public record DiscountFacts(String sourceType, UUID sourceId, UUID orderId, UUID
      * {@code LOYALTY} (a reward);
      * the promotion fields are set for {@code PROMOTION}. {@code operatorEmployeeId} is who confirmed the round or
      * made the adjustment, {@code approverEmployeeId} who approved it ({@code null} when nobody had to).
+     * {@code consumedLineId} (S53, as {@link VoidFacts#consumedLineId()}) is the round line the discounted line
+     * descends from through splits and transfers, whose consumption carries its cost, and
+     * {@code consumedLineQuantity} that round line's confirmed quantity, so a share of its cost can be taken.
      */
     public record DiscountLine(UUID lineId, UUID itemId, String itemCode, UUID releaseId, String taxCode,
                                BigDecimal taxRatePercent, Money listUnitPrice, Money previousUnitPrice,
                                Money unitPrice, BigDecimal quantity, Money discountGross, String origin,
                                UUID promotionId, String promotionCode, String promotionName,
-                               UUID operatorEmployeeId, UUID approverEmployeeId, Instant at) {
+                               UUID operatorEmployeeId, UUID approverEmployeeId, Instant at,
+                               UUID consumedLineId, BigDecimal consumedLineQuantity) {
     }
 }
