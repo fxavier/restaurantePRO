@@ -19,6 +19,7 @@ import com.xavier.backend.inventory.model.MovementType;
 import com.xavier.backend.inventory.model.dto.PostMovement;
 import com.xavier.backend.inventory.service.BusinessDates;
 import com.xavier.backend.inventory.service.StockLedger;
+import com.xavier.backend.shared.events.EventPublicationStats;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
 import java.time.Clock;
 import java.time.Instant;
@@ -57,21 +58,26 @@ public class CountApprovalService {
 
     /** The listeners of S47's consumption package (round and void consumption). */
     static final String CONSUMPTION_LISTENERS = "com.xavier.backend.inventory.consumption";
+    /** When a consumption event happened: a round's confirmation, a void's instant. */
+    static final List<String> CONSUMPTION_INSTANTS = List.of("confirmedAt", "at");
 
     private final StockCountRepository counts;
     private final CountLedgerQueries ledgerQueries;
     private final StockLedger ledger;
+    private final EventPublicationStats publications;
     private final BusinessDates businessDates;
     private final AccessPolicy accessPolicy;
     private final AuditLog auditLog;
     private final Clock clock;
 
     CountApprovalService(StockCountRepository counts, CountLedgerQueries ledgerQueries, StockLedger ledger,
-                         BusinessDates businessDates, AccessPolicy accessPolicy,
+                         EventPublicationStats publications, BusinessDates businessDates,
+                         AccessPolicy accessPolicy,
                          AuditLog auditLog, Clock clock) {
         this.counts = counts;
         this.ledgerQueries = ledgerQueries;
         this.ledger = ledger;
+        this.publications = publications;
         this.businessDates = businessDates;
         this.accessPolicy = accessPolicy;
         this.auditLog = auditLog;
@@ -87,11 +93,13 @@ public class CountApprovalService {
                 .orElseThrow(() -> new InventoryNotFoundException(StockCountService.ENTITY, id));
         count.requireApprovable();
         Actor approver = accessPolicy.current();
+        // exact: count endpoints are BackOffice only, so counters and approvers are accounts recorded by account id
         if (count.recordedBy(approver.kind().name(), StockCountService.recordedId(approver))) {
             throw CountRuleException.selfApproval(id);
         }
         Instant cutOff = count.latestCutOff();
-        long pending = ledgerQueries.pendingConsumption(CONSUMPTION_LISTENERS, storeId, cutOff);
+        long pending = publications.pendingFor(CONSUMPTION_LISTENERS, "storeId", storeId.toString(),
+                CONSUMPTION_INSTANTS, cutOff);
         if (pending > 0) {
             throw CountConflictException.consumptionBacklog(storeId, pending);
         }

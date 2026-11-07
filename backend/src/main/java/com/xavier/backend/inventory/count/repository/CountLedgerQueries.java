@@ -81,33 +81,17 @@ public class CountLedgerQueries {
     }
 
     /**
-     * How many consumption publications of {@code storeId} are not completed yet for a round confirmed (or a void
-     * made) at or before {@code cutOff}: those could still move the expected quantity. The prefix is served by the
-     * partial index of V1006 ({@code completion_date IS NULL}, {@code listener_id text_pattern_ops}); the JSON
-     * filter only reads the few pending rows. A publication without the fields counts (conservative).
-     */
-    public long pendingConsumption(String listenerPrefix, UUID storeId, Instant cutOff) {
-        return jdbc.sql("""
-                        SELECT count(*) FROM (
-                            SELECT serialized_event::jsonb AS event FROM event_publication
-                            WHERE completion_date IS NULL AND listener_id LIKE :prefix) p
-                        WHERE coalesce(p.event ->> 'storeId', :store) = :store
-                          AND coalesce((coalesce(p.event ->> 'confirmedAt', p.event ->> 'at'))::timestamptz,
-                                       :cutOff) <= :cutOff""")
-                .param("prefix", listenerPrefix + "%").param("store", storeId.toString())
-                .param("cutOff", Timestamp.from(cutOff))
-                .query(Long.class).single();
-    }
-
-    /**
-     * The open consumption exceptions of {@code storeId} raised for a sale at or before {@code cutOff}. The table
-     * records when the exception was raised ({@code created_at}), at or after the confirmation it is about.
+     * The open consumption exceptions of {@code storeId} raised for a sale at or before {@code cutOff}.
+     * Ceiling (until S47's {@code confirmed_at} lands): the table only records when an exception was raised
+     * ({@code created_at}), at or after the confirmation it is about, so filtering on it could miss a sale confirmed
+     * before the cut-off; until then every open exception of the store counts, whatever its time (over-blocking is
+     * safe, missing one is not), and {@code cutOff} is unused.
      */
     public long openExceptions(UUID storeId, Instant cutOff) {
         return jdbc.sql("""
                         SELECT count(*) FROM inventory.consumption_exception
-                        WHERE store_id = ? AND resolved_at IS NULL AND created_at <= ?""")
-                .params(storeId, Timestamp.from(cutOff)).query(Long.class).single();
+                        WHERE store_id = ? AND resolved_at IS NULL""")
+                .params(storeId).query(Long.class).single();
     }
 
     /**
