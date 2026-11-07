@@ -47,6 +47,7 @@ import java.util.stream.Collectors;
 import org.hibernate.id.uuid.UuidVersion7Strategy;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -261,15 +262,20 @@ public class GoodsReceiptService {
         return lock(id);
     }
 
-    /** The receipt row FOR UPDATE, refreshed so the decision is taken on the locked state. */
-    GoodsReceipt lock(UUID id) {
+    /**
+     * The receipt row FOR UPDATE, refreshed so the decision is taken on the locked state. Returns and cost corrections
+     * take it first, so the returns and corrections of one receipt serialize.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public GoodsReceipt lock(UUID id) {
         GoodsReceipt receipt = receipts.findById(id).orElseThrow(() -> new InventoryNotFoundException(ENTITY, id));
         entityManager.refresh(receipt, LockModeType.PESSIMISTIC_WRITE);
         return receipt;
     }
 
     /** A line's cost per base unit now: the last correction's new cost, or the cost it was received at. */
-    BigDecimal currentCost(GoodsReceiptLine line) {
+    @Transactional(readOnly = true)
+    public BigDecimal currentCost(GoodsReceiptLine line) {
         return corrections.findFirstByReceiptLineIdOrderBySeqDesc(line.getId())
                 .map(ReceiptCostCorrection::getNewUnitCost).orElse(line.getUnitCostBase());
     }

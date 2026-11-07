@@ -106,6 +106,36 @@ class ReceiptConfirmOnceTest {
     }
 
     @Test
+    void aDraftIsEditedWithItsVersionAndConfirmedAsEdited() throws Exception {
+        String created = steps.newReceipt(store, warehouse, supplier, line(item, "10", "10")).andReturn()
+                .getResponse().getContentAsString();
+        UUID receipt = InventoryFixtures.id(created);
+        long version = InventoryFixtures.json(created).get("version").asLong();
+        assertThat(version).as("the version a client sends back is the one its create answered")
+                .isEqualTo(jdbc.sql("SELECT version FROM inventory.goods_receipt WHERE id = ?").param(receipt)
+                        .query(Long.class).single());
+        String edit = """
+                {"supplierDocumentRef": "FT 2026/88", "lines": [%s], "version": %d}""";
+
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put(InventoryFixtures.BO
+                                + "/receipts/" + receipt).with(PurchasingSteps.buyer(store))
+                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors
+                                .csrf()).contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content(edit.formatted(line(item, "8", "11"), version)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.supplierDocumentRef").value("FT 2026/88"));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put(InventoryFixtures.BO
+                                + "/receipts/" + receipt).with(PurchasingSteps.buyer(store))
+                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors
+                                .csrf()).contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content(edit.formatted(line(item, "1", "1"), version)))
+                .andExpect(status().isConflict());
+        steps.command(store, "/receipts/" + receipt + "/confirm").andExpect(status().isOk());
+
+        assertThat(steps.movements(GoodsReceiptService.SOURCE_TYPE, receipt))
+                .containsExactly("RECEIPT|8.000000|11.000000|88.0000");
+    }
+
+    @Test
     void aCancelledDraftIsNeverConfirmed() throws Exception {
         UUID receipt = steps.receipt(store, warehouse, supplier, line(item, "10", "10"));
         steps.command(store, "/receipts/" + receipt + "/cancel").andExpect(status().isOk())

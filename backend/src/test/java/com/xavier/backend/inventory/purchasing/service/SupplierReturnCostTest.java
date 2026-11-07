@@ -121,6 +121,25 @@ class SupplierReturnCostTest {
                 .andExpect(jsonPath("$.code").value("RECEIPT_NOT_CONFIRMED"));
     }
 
+    @Test
+    void aDraftReturnIsEditedWithItsVersion() throws Exception {
+        UUID returned = linkedReturn("1");
+        long version = steps.get(store, "/supplier-returns/" + returned).get("version").asLong();
+
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put(BO + "/supplier-returns/"
+                                + returned).with(buyer(store))
+                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors
+                                .csrf()).contentType(MediaType.APPLICATION_JSON).content("""
+                                {"reason": "wrong size", "version": %d,
+                                 "lines": [{"receiptLineId": "%s", "stockItemId": "%s", "quantity": 2}]}"""
+                                .formatted(version, lineAt10, item)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.lines[0].quantityBase").value(2.0))
+                .andExpect(jsonPath("$.reason").value("wrong size"));
+        confirm(returned).andExpect(status().isOk());
+
+        assertThat(returnMovement(returned)).isEqualTo("SUPPLIER_RETURN|-2.000000|11.000000|-22.0000|10.000000");
+    }
+
     private UUID linkedReturn(String quantity) throws Exception {
         return id(newReturn(warehouse, receiptAt10, """
                 {"receiptLineId": "%s", "stockItemId": "%s", "quantity": %s}""".formatted(lineAt10, item, quantity))
