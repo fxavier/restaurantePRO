@@ -135,6 +135,26 @@ class DiscountReportTest {
                 + "source_id", live.store())).isEqualTo(before);
     }
 
+    @Test
+    void theDiscountsAreExportedAsCsvAndAudited() throws Exception {
+        String csv = mvc.perform(post(ReportingFixtures.REPORTS + "/exports")
+                        .with(com.xavier.backend.cash.CashFixtures.account(live.store(), Permission.REPORT_VIEW,
+                                Permission.REPORT_EXPORT)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"report": "discounts", "params": {"storeId": "%s", "from": "%s", "to": "%s",
+                                 "groupBy": "origin"}}""".formatted(live.store(), day, day)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+
+        assertThat(csv.split("\r\n")).containsExactly(
+                "key,label,lines,quantity,discount,offerCost",
+                "MANUAL,MANUAL,1,2.000,1.00,0.00",
+                "OFFER,OFFER,1,1.000,12.50,0.50",
+                "PROMOTION,PROMOTION,1,2.000,1.00,0.00",
+                "TOTAL,,3,5.000,14.50,0.50");
+        assertThat(reporting.count("SELECT count(*) FROM audit.audit_event WHERE action = 'REPORT_EXPORTED' "
+                + "AND store_id = ? AND details->>'report' = 'discounts'", live.store())).isOne();
+    }
+
     private ResultActions discount(UUID line, String values, Permission permission, boolean approved)
             throws Exception {
         var request = post(OrdersFixtures.POS + "/orders/" + live.sale().order() + "/discounts")

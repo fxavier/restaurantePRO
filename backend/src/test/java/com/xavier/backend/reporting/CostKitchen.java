@@ -144,6 +144,24 @@ public class CostKitchen {
         return returned;
     }
 
+    /**
+     * Salt received at 1 (10), all of it wasted, then its receipt line corrected to 2: nothing is left to revalue, so
+     * the correction posts no movement and the whole difference (10.00) is a cost variance (D125 as amended).
+     * @return the correction's id
+     */
+    public UUID correctionWithNothingOnHand(LiveSale live) throws Exception {
+        PurchasingSteps steps = new PurchasingSteps(mvc, jdbc);
+        UUID store = live.store();
+        UUID salt = inventory.newStockItem("un");
+        UUID receipt = steps.confirmedReceipt(store, live.warehouse(), steps.newSupplier(), salt, "10", "1");
+        String line = steps.get(store, "/receipts/" + receipt).get("lines").get(0).get("id").asString();
+        steps.waste(store, live.warehouse(), salt, "10");
+        return id(mvc.perform(idem(post(BO + "/receipts/" + receipt + "/lines/" + line + "/cost-corrections"))
+                        .with(PurchasingSteps.buyer(store)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"newUnitCost\": 2, \"reason\": \"invoice at 2\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+    }
+
     /** Waits until the store's cost projections hold {@code rows} rows of {@code table} (by store). */
     public void awaitRows(String table, UUID store, long rows) {
         ReportingFixtures.await(rows + " rows of " + table, () -> jdbc.sql(

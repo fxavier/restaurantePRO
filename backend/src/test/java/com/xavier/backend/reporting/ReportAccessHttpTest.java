@@ -81,6 +81,23 @@ class ReportAccessHttpTest {
                 .andExpect(status().isBadRequest());
     }
 
+    @Test
+    void marginsAndDiscountsAreStoreScopedAndAcceptOnlyTheirGroupings() throws Exception {
+        RequestPostProcessor elsewhere = CashFixtures.account(UUID.randomUUID(), Permission.REPORT_VIEW);
+        RequestPostProcessor viewer = CashFixtures.account(store, Permission.REPORT_VIEW);
+        report("margins", "item", elsewhere).andExpect(status().isForbidden());
+        report("discounts", "origin", elsewhere).andExpect(status().isForbidden());
+        report("margins", "item", viewer).andExpect(status().isNotFound());
+        report("discounts", "approver", viewer).andExpect(status().isNotFound());
+        report("margins", "origin", viewer).andExpect(status().isBadRequest());
+        report("discounts", "family", viewer).andExpect(status().isBadRequest());
+    }
+
+    private ResultActions report(String report, String groupBy, RequestPostProcessor who) throws Exception {
+        return mvc.perform(get(ReportingFixtures.REPORTS + "/" + report).param("storeId", store.toString())
+                .param("from", DAY.toString()).param("to", DAY.toString()).param("groupBy", groupBy).with(who));
+    }
+
     private ResultActions sales(LocalDate from, LocalDate to, String groupBy, RequestPostProcessor who)
             throws Exception {
         return mvc.perform(get(ReportingFixtures.REPORTS + "/sales").param("storeId", store.toString())

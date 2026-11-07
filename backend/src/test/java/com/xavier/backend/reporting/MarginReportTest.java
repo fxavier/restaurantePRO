@@ -15,6 +15,8 @@ import com.xavier.backend.reporting.CostKitchen.LiveSale;
 import com.xavier.backend.reporting.service.CostProjections;
 import com.xavier.backend.settlement.SettlementFixtures;
 import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -23,6 +25,7 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.JsonNode;
 
@@ -53,6 +56,9 @@ class MarginReportTest {
 
     @Autowired
     MockMvc mvc;
+
+    @Autowired
+    JdbcClient jdbc;
 
     LiveSale live;
     LocalDate day;
@@ -192,6 +198,53 @@ class MarginReportTest {
         kitchen.awaitRows("consumption_record", live.store(), 4);
         assertThat(amount(reporting.report("margins", live.store(), day, day, "groupBy", "item").get("totals"),
                 "waste")).isEqualTo("4.50");
+    }
+
+    @Test
+    void redeliveredCostFactsProjectNothingNew() throws Exception {
+        String everything = """
+                SELECT 'c' || movement_id || value AS r FROM reporting.consumption_record WHERE store_id = :s
+                UNION ALL SELECT 'w' || void_id || value FROM reporting.consumption_waste_record WHERE store_id = :s
+                UNION ALL SELECT 'v' || variance_id || value FROM reporting.cost_variance_record WHERE store_id = :s
+                ORDER BY 1""";
+        List<String> before = jdbc.sql(everything).param("s", live.store()).query(String.class).list();
+
+        for (Map<String, Object> source : reporting.rows("""
+                SELECT source_type, source_id FROM reporting.consumption_record WHERE store_id = ?
+                UNION SELECT source_type, source_id FROM reporting.cost_variance_record WHERE store_id = ?""",
+                live.store(), live.store())) {
+            projections.projectStockSource((String) source.get("source_type"), (UUID) source.get("source_id"));
+        }
+        for (Map<String, Object> waste : reporting.rows(
+                "SELECT void_id FROM reporting.consumption_waste_record WHERE store_id = ?", live.store())) {
+            projections.projectWaste((UUID) waste.get("void_id"));
+        }
+
+        assertThat(before).hasSize(5);
+        assertThat(jdbc.sql(everything).param("s", live.store()).query(String.class).list()).isEqualTo(before);
+    }
+
+    @Test
+    void theMarginsAreExportedAsCsvAndAudited() throws Exception {
+        String csv = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post(ReportingFixtures.REPORTS + "/exports")
+                        .with(com.xavier.backend.cash.CashFixtures.account(live.store(), Permission.REPORT_VIEW,
+                                Permission.REPORT_EXPORT))
+                        .with(org.springframework.security.test.web.servlet.request
+                                .SecurityMockMvcRequestPostProcessors.csrf())
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON).content("""
+                                {"report": "margins", "params": {"storeId": "%s", "from": "%s", "to": "%s",
+                                 "groupBy": "day"}}""".formatted(live.store(), day, day)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+
+        assertThat(csv.split("\r\n")).containsExactly(
+                "key,label,netSales,costOfSales,waste,costVariance,margin,marginPercent",
+                day + "," + day + ",21.55,1.00,2.50,-5.00,25.55,118.56",
+                "TOTAL,,21.55,1.00,2.50,-5.00,25.55,118.56");
+        assertThat((String) reporting.row("""
+                SELECT details::text AS details FROM audit.audit_event
+                WHERE action = 'REPORT_EXPORTED' AND store_id = ?""", live.store()).get("details"))
+                .contains("\"report\": \"margins\"").contains("\"rows\": 1");
     }
 
     private static String amount(JsonNode row, String field) {

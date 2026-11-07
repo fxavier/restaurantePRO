@@ -201,7 +201,7 @@ public class ReportingFixtures {
 
     /** Deletes every projection row of the store, as before its first projection. */
     public void wipeProjections(UUID store) {
-        for (String table : List.of("sales_record", "payment_record", "credit_record", "void_record")) {
+        for (String table : com.xavier.backend.reporting.repository.ProjectionStore.PROJECTIONS) {
             jdbc.sql("DELETE FROM reporting." + table + " WHERE store_id = ?").param(store).update();
         }
     }
