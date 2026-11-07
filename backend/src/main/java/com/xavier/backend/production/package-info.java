@@ -6,9 +6,10 @@
  * transaction during the socket I/O.
  *
  * <p>Production consumes the {@code orders} and {@code fiscal} events (rounds, voids, subtotals, documents and
- * their copies) and settlement's debt-payment slips (D65, D75) through idempotent listeners and tells orders that a round was received through
- * {@link com.xavier.backend.orders.OrdersProductionApi}. Nothing depends on production. Allowed dependencies follow
- * D35.
+ * their copies, R4 delivery dispatches, D129) and settlement's debt-payment slips (D65, D75) through idempotent
+ * listeners, and tells orders that a round was received through
+ * {@link com.xavier.backend.orders.OrdersProductionApi}, which also gives a delivery slip's content. Nothing depends
+ * on production. Allowed dependencies follow D35.
  */
 @ApplicationModule(displayName = "Production", allowedDependencies = {
         "shared", "audit", "access", "organization", "organization :: dto", "orders", "orders :: event",
