@@ -1,6 +1,8 @@
 package com.xavier.backend.orders;
 
 import com.xavier.backend.orders.service.BatchFactsService;
+import com.xavier.backend.orders.service.DiscountFactsService;
+import com.xavier.backend.orders.service.LineAdjustmentService;
 import com.xavier.backend.orders.service.LineVoidService;
 import com.xavier.backend.orders.service.OrderCoordinationService;
 import com.xavier.backend.orders.service.VoidFactsService;
@@ -30,9 +32,13 @@ public class OrdersApi {
     private final LineVoidService voids;
     private final VoidFactsService voidFacts;
     private final BatchFactsService batchFacts;
+    private final LineAdjustmentService adjustments;
+    private final DiscountFactsService discountFacts;
 
     OrdersApi(OrderCoordinationService coordination, LineVoidService voids, VoidFactsService voidFacts,
-              BatchFactsService batchFacts) {
+              BatchFactsService batchFacts, LineAdjustmentService adjustments, DiscountFactsService discountFacts) {
+        this.adjustments = adjustments;
+        this.discountFacts = discountFacts;
         this.coordination = coordination;
         this.voids = voids;
         this.voidFacts = voidFacts;
@@ -87,7 +93,10 @@ public class OrdersApi {
     /**
      * OPEN → CLOSED at {@code expectedVersion}, closing the table occupation through {@code DiningApi} for a DINE_IN
      * order. Settlement checked balance, attempts and document first (D50 §7.8). Needs an authenticated session (the
-     * occupation close and the audit record the current actor); {@code actorEmployeeId} is stored as the closer.
+     * occupation close and the audit record the current actor); {@code actorEmployeeId} is stored as the closer. R4
+     * (D111): when the order's customer is a loyalty member, {@code LoyaltyApi.earnForOrder} records its points before
+     * this returns, in the same transaction, once per order. It is insert-only: no {@code FOR UPDATE}, only the
+     * {@code FOR KEY SHARE} the entry's foreign key takes on {@code loyalty_account}, in that row's D132 position.
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public void close(UUID orderId, long expectedVersion, UUID actorEmployeeId) {
@@ -108,6 +117,26 @@ public class OrdersApi {
     @Transactional(propagation = Propagation.MANDATORY)
     public VoidView voidLine(SettledVoidCommand cmd, UUID approverEmployeeId) {
         return voids.voidSettled(cmd, approverEmployeeId);
+    }
+
+    /**
+     * The coordinated price adjustment (D105). <strong>Contract:</strong> the caller holds the order's
+     * {@code order_settlement} lock and has checked the headroom (no quantity of the lines in a live partition or on a
+     * document, and the ORDER residual after the discount at or above what was paid, put on account or is in flight),
+     * so this ignores the PAYMENT lock; INVOICE still refuses (422 {@code ORDER_FROZEN}). It claims the order at
+     * {@code cmd.expectedVersion()}, applies the D106 limits (an approver is needed above the free limit and for an
+     * offer: {@code approverEmployeeId}, verified by the caller, else 403), splits a partial quantity first, redeems a
+     * REWARD through {@code LoyaltyApi}, publishes {@code LineDiscountsRecorded} and audits each line in the session's
+     * actor, exactly like the POS route. A REVERSAL raises the bill and is refused.
+     *
+     * @return the order's billing view after the adjustment
+     * @throws com.xavier.backend.orders.exception.OrderRuleException 422 {@code ORDER_FROZEN},
+     *         {@code PRICE_INCREASE_NOT_ALLOWED}, {@code DISCOUNT_LIMIT_EXCEEDED}, {@code SELF_APPROVAL},
+     *         {@code LOYALTY_CUSTOMER_REQUIRED}, {@code REWARD_NEEDS_SINGLE_UNIT}, {@code QUANTITY_EXCEEDS_NET}
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public OrderBillingView adjustLinePrice(SettledAdjustmentCommand cmd, UUID approverEmployeeId) {
+        return adjustments.adjustSettled(cmd, approverEmployeeId);
     }
 
     /**
@@ -137,6 +166,26 @@ public class OrdersApi {
     @Transactional(readOnly = true)
     public BatchFacts batchFacts(UUID batchId) {
         return batchFacts.facts(batchId);
+    }
+
+    /**
+     * The discount facts of one source (D100, for reporting): a round's promoted lines ({@code BATCH}) or one price
+     * adjustment ({@code ADJUSTMENT}), as {@code LineDiscountsRecorded} named it. Immutable, so each pull is the same.
+     *
+     * @throws com.xavier.backend.shared.exception.NotFoundException 404 for an unknown source
+     */
+    @Transactional(readOnly = true)
+    public DiscountFacts discountFacts(String sourceType, UUID sourceId) {
+        return discountFacts.facts(sourceType, sourceId);
+    }
+
+    /**
+     * The discount sources of the store whose order's business day is in {@code [from, to]}: rounds with a promoted
+     * line and price adjustments, in creation order (ids are UUIDv7), for a projection rebuild. The sort is ignored.
+     */
+    @Transactional(readOnly = true)
+    public Page<SourceRef> discountSourceIds(UUID storeId, LocalDate from, LocalDate to, Pageable p) {
+        return discountFacts.sourceIds(storeId, from, to, p);
     }
 
     /** OPEN orders of the store whose business day is on or before {@code businessDayInclusive} (day close). */
