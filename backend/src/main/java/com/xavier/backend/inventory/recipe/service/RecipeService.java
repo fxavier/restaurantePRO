@@ -177,7 +177,7 @@ public class RecipeService {
             requireNoCycle(recipe.getOutputStockItemId(), version.getIngredients().stream()
                     .map(i -> i.getStockItemId()).collect(Collectors.toSet()));
         }
-        Optional<RecipeVersion> current = versions.findByRecipeIdAndStatus(recipeId, VersionStatus.ACTIVE);
+        Optional<RecipeVersion> current = versions.findByRecipeIdAndPeriodStatus(recipeId, VersionStatus.ACTIVE);
         current.ifPresent(active -> {
             active.supersedeAt(from);
             versions.flush(); // the partial unique index allows one ACTIVE version: retire it first
@@ -261,7 +261,7 @@ public class RecipeService {
                 continue;
             }
             recipes.findByOutputStockItemId(next)
-                    .flatMap(r -> versions.findByRecipeIdAndStatus(r.getId(), VersionStatus.ACTIVE))
+                    .flatMap(r -> versions.findByRecipeIdAndPeriodStatus(r.getId(), VersionStatus.ACTIVE))
                     .ifPresent(active -> active.getIngredients().forEach(i -> pending.push(i.getStockItemId())));
         }
     }

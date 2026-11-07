@@ -1,13 +1,11 @@
 package com.xavier.backend.inventory.recipe.model;
 
-import com.xavier.backend.inventory.recipe.exception.RecipeConflictException;
 import com.xavier.backend.inventory.recipe.exception.RecipeRuleException;
 import com.xavier.backend.inventory.recipe.model.dto.RecipeVersionView;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
+import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.OrderBy;
@@ -24,8 +22,8 @@ import org.hibernate.id.uuid.UuidVersion7Strategy;
 /**
  * A version of a recipe (D115): its yield and ingredients, edited only while DRAFT. Activating it makes it effective
  * from an instant; the next activation supersedes it at its own start, so the periods of a recipe never overlap and
- * consumption finds exactly one version for any confirmation instant. Illegal transitions are 409
- * {@code RECIPE_VERSION_IMMUTABLE}; the database refuses them too (trigger).
+ * consumption finds exactly one version for any confirmation instant ({@link EffectivePeriod}). Illegal transitions are
+ * 409 {@code RECIPE_VERSION_IMMUTABLE}; the database refuses them too (trigger).
  */
 @Entity
 @Table(schema = "inventory", name = "recipe_version")
@@ -40,19 +38,14 @@ public class RecipeVersion {
     @Column(nullable = false, updatable = false)
     private int versionNo;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 12)
-    private VersionStatus status;
+    @Embedded
+    private EffectivePeriod period;
 
     @Column(nullable = false, precision = 19, scale = 6)
     private BigDecimal yieldQuantity;
 
     @Column(nullable = false, length = 10)
     private String yieldUnit;
-
-    private Instant effectiveFrom;
-
-    private Instant effectiveTo;
 
     private String notes;
 
@@ -83,7 +76,7 @@ public class RecipeVersion {
         version.id = UuidVersion7Strategy.INSTANCE.generateUuid(null);
         version.recipeId = recipeId;
         version.versionNo = versionNo;
-        version.status = VersionStatus.DRAFT;
+        version.period = EffectivePeriod.draft();
         version.createdByAccountId = accountId;
         version.createdAt = now;
         version.write(yieldQuantity, yieldUnit, notes, ingredients);
@@ -92,15 +85,13 @@ public class RecipeVersion {
 
     /** Replaces the yield, notes and ingredients of a DRAFT. */
     public void revise(BigDecimal yieldQuantity, String yieldUnit, String notes, List<IngredientLine> lines) {
-        requireDraft("be edited");
+        period.requireDraft(id, "be edited");
         write(yieldQuantity, yieldUnit, notes, lines);
     }
 
     /** DRAFT → ACTIVE, effective from {@code from}. */
     public void activate(Instant from, UUID accountId, Instant now) {
-        requireDraft("be activated");
-        status = VersionStatus.ACTIVE;
-        effectiveFrom = from;
+        period.activate(id, from);
         activatedByAccountId = accountId;
         activatedAt = now;
     }
@@ -111,25 +102,17 @@ public class RecipeVersion {
      * @throws RecipeRuleException RECIPE_EFFECTIVE_FROM_INVALID when {@code to} is not after its own start
      */
     public void supersedeAt(Instant to) {
-        if (status != VersionStatus.ACTIVE) {
-            throw RecipeConflictException.immutable(id, status, "be superseded");
-        }
-        if (!to.isAfter(effectiveFrom)) {
-            throw RecipeRuleException.effectiveFromInvalid(effectiveFrom);
-        }
-        status = VersionStatus.SUPERSEDED;
-        effectiveTo = to;
+        period.supersedeAt(id, to);
     }
 
     /** Whether it is the version in force at {@code at}: [effectiveFrom, effectiveTo), never for a DRAFT. */
     public boolean isEffectiveAt(Instant at) {
-        return status != VersionStatus.DRAFT && !at.isBefore(effectiveFrom)
-                && (effectiveTo == null || at.isBefore(effectiveTo));
+        return period.isEffectiveAt(at);
     }
 
     public RecipeVersionView toView() {
-        return new RecipeVersionView(id, recipeId, versionNo, status.name(), yieldQuantity, yieldUnit, effectiveFrom,
-                effectiveTo, notes, activatedAt, getVersion(),
+        return new RecipeVersionView(id, recipeId, versionNo, period.status().name(), yieldQuantity, yieldUnit,
+                period.effectiveFrom(), period.effectiveTo(), notes, activatedAt, getVersion(),
                 ingredients.stream().map(RecipeIngredient::toView).toList());
     }
 
@@ -140,12 +123,6 @@ public class RecipeVersion {
         ingredients.clear();
         for (int i = 0; i < lines.size(); i++) {
             ingredients.add(RecipeIngredient.of(this, lines.get(i), i));
-        }
-    }
-
-    private void requireDraft(String action) {
-        if (status != VersionStatus.DRAFT) {
-            throw RecipeConflictException.immutable(id, status, action);
         }
     }
 
@@ -162,7 +139,7 @@ public class RecipeVersion {
     }
 
     public VersionStatus getStatus() {
-        return status;
+        return period.status();
     }
 
     public BigDecimal getYieldQuantity() {
@@ -174,11 +151,11 @@ public class RecipeVersion {
     }
 
     public Instant getEffectiveFrom() {
-        return effectiveFrom;
+        return period.effectiveFrom();
     }
 
     public Instant getEffectiveTo() {
-        return effectiveTo;
+        return period.effectiveTo();
     }
 
     public String getNotes() {
