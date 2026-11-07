@@ -2,7 +2,6 @@ package com.xavier.backend.orders.delivery;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -63,16 +62,12 @@ class DeliveryCommandsTest {
 
     @Test
     void aDispatchNeedsNoDraftsAConfirmedRoundAndACourierOfTheStore() throws Exception {
-        JsonNode opened = deliveries.opened(d, employee, terminal);
-        UUID order = OrdersFixtures.id(opened);
+        UUID order = OrdersFixtures.id(deliveries.opened(d, employee, terminal));
         deliveries.dispatch(d, order, 0, d.courier()).andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("DELIVERY_HAS_DRAFTS"));
 
-        JsonNode fee = opened.get("lines").get(0);
-        mvc.perform(delete(DeliveryFixtures.POS + "/orders/" + order + "/lines/" + fee.get("id").asString())
-                        .with(OrdersActors.pos(d.shop().store(), employee, terminal, Permission.ORDER_EDIT))
-                        .with(csrf()).contentType(MediaType.APPLICATION_JSON).content("{\"version\": 0}"))
-                .andExpect(status().isNoContent());
+        // the fee draft is locked at the API (FEE_LINE_LOCKED); an order with nothing at all is made directly
+        jdbc.sql("DELETE FROM orders.order_line WHERE order_id = ? AND status = 'DRAFT'").param(order).update();
         deliveries.dispatch(d, order, 0, d.courier()).andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("DELIVERY_NOTHING_CONFIRMED"));
 
@@ -162,6 +157,78 @@ class DeliveryCommandsTest {
 
         update(order, "{\"version\": 2, \"promisedAt\": \"2027-03-01T21:00:00Z\"}")
                 .andExpect(status().isUnprocessableContent()).andExpect(jsonPath("$.code").value("ADDRESS_FROZEN"));
+    }
+
+    /** The zone swap finds the fee draft by what it is, not by the old zone's fee item now. */
+    @Test
+    void aZoneSwapReplacesTheFeeDraftEvenAfterTheOldZoneChangedItsFee() throws Exception {
+        UUID order = OrdersFixtures.id(deliveries.opened(d, employee, terminal));
+        UUID laterFee = deliveries.feeItem(d.shop(), "5", "3.50");
+        UUID otherFee = deliveries.feeItem(d.shop(), "5", "4.50");
+        fixtures.republish(d.shop().store());
+        deliveries.updateZone(d.zone(), laterFee, true);
+        UUID otherZone = deliveries.zone(d.shop(), "B" + CustomersFixtures.token().substring(0, 6), otherFee);
+
+        update(order, "{\"version\": 0, \"zoneId\": \"%s\"}".formatted(otherZone)).andExpect(status().isOk());
+
+        assertThat(fees(order, "DRAFT")).containsExactly(otherFee.toString());
+    }
+
+    @Test
+    void aConfirmedFeeStaysOnAZoneChangeAndTheNewZonesFeeIsAdded() throws Exception {
+        UUID order = deliveries.confirmedDelivery(d, employee, terminal);
+        UUID otherFee = deliveries.feeItem(d.shop(), "5", "4.50");
+        fixtures.republish(d.shop().store());
+        UUID otherZone = deliveries.zone(d.shop(), "C" + CustomersFixtures.token().substring(0, 6), otherFee);
+
+        update(order, "{\"version\": 0, \"zoneId\": \"%s\"}".formatted(otherZone)).andExpect(status().isOk());
+
+        assertThat(fees(order, "CONFIRMED")).containsExactly(d.feeItem().toString());
+        assertThat(fees(order, "DRAFT")).containsExactly(otherFee.toString());
+    }
+
+    @Test
+    void aZoneChangeToAnUnpublishedFeeIsRefusedAndChangesNothing() throws Exception {
+        UUID order = OrdersFixtures.id(deliveries.opened(d, employee, terminal));
+        UUID unpublished = deliveries.zone(d.shop(), "U" + CustomersFixtures.token().substring(0, 6),
+                deliveries.feeItem(d.shop(), "5", "9.00"));
+
+        update(order, "{\"version\": 0, \"zoneId\": \"%s\"}".formatted(unpublished))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("FEE_ITEM_NOT_PUBLISHED"));
+
+        assertThat(jdbc.sql("SELECT zone_id FROM orders.delivery WHERE order_id = ?").param(order).query(UUID.class)
+                .single()).isEqualTo(d.zone());
+        assertThat(fees(order, "DRAFT")).containsExactly(d.feeItem().toString());
+    }
+
+    /** D42: a POS of another real store gets 403 on every command on this store's delivery, and nothing changes. */
+    @Test
+    void anotherStoresPosIsRefusedOnEveryCommand() throws Exception {
+        DeliveryShop elsewhere = deliveries.shop();
+        UUID theirs = deliveries.confirmedDelivery(elsewhere, employee, terminal);
+        UUID mine = d.shop().store();
+
+        deliveries.transition(mine, theirs, "dispatch", """
+                {"version": 0, "courierEmployeeId": "%s"}""".formatted(elsewhere.courier()))
+                .andExpect(status().isForbidden());
+        deliveries.transition(mine, theirs, "delivered", "{\"version\": 0}").andExpect(status().isForbidden());
+        deliveries.transition(mine, theirs, "returned", "{\"version\": 0, \"reason\": \"x\"}")
+                .andExpect(status().isForbidden());
+        mvc.perform(put(DeliveryFixtures.POS + "/deliveries/" + theirs)
+                        .with(OrdersActors.pos(mine, employee, terminal, Permission.DELIVERY_OPERATE)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"version\": 0, \"promisedAt\": "
+                                + "\"2027-03-01T21:00:00Z\"}"))
+                .andExpect(status().isForbidden());
+
+        assertThat(deliveries.version(theirs)).isZero();
+        assertThat(deliveries.deliveryStatus(theirs)).isEqualTo("PENDING");
+    }
+
+    List<String> fees(UUID order, String status) {
+        return jdbc.sql("""
+                SELECT item_id::text FROM orders.order_line WHERE order_id = ? AND status = ? AND automatic
+                ORDER BY id""").param(order).param(status).query(String.class).list();
     }
 
     @Test

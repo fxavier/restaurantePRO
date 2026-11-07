@@ -410,7 +410,8 @@ class CodedErrorContractTest {
             Map.entry("courier-not-in-store", () -> DeliveryRuleException.courierNotInStore(ID)),
             Map.entry("delivery-not-delivered", () -> DeliveryRuleException.notDelivered(ID)),
             Map.entry("delivery-in-progress", () -> DeliveryRuleException.inProgress(ID)),
-            Map.entry("address-frozen", () -> DeliveryRuleException.addressFrozen(ID)));
+            Map.entry("address-frozen", () -> DeliveryRuleException.addressFrozen(ID)),
+            Map.entry("fee-line-locked", () -> DeliveryRuleException.feeLineLocked(ID)));
 
     @Autowired
     MockMvc mvc;
@@ -1007,6 +1008,8 @@ class CodedErrorContractTest {
                 "The delivery of order " + ID + " is out or delivered: it cannot be cancelled.", "");
         expect("address-frozen", 422, "ADDRESS_FROZEN",
                 "The delivery of order " + ID + " was dispatched: its address, zone and promise are frozen.", "");
+        expect("fee-line-locked", 422, "FEE_LINE_LOCKED", "Line " + ID
+                + " is the delivery fee: change the zone, or give a discount or an offer, instead.", "");
     }
 
     private void expect(String name, int status, String code, String detail, String extra) throws Exception {

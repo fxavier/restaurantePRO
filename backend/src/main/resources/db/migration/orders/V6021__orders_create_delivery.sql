@@ -25,11 +25,12 @@ CREATE TABLE orders.delivery
     customer_id         UUID                     NOT NULL,
     -- null when the customer has no phone (the slip then shows none)
     phone_digits        VARCHAR(20),
-    address_line1       VARCHAR(160)             NOT NULL,
-    address_line2       VARCHAR(160),
-    city                VARCHAR(80),
+    -- the sizes of customers.customer_address (V11002), so a saved address always fits its snapshot
+    address_line1       VARCHAR(200)             NOT NULL,
+    address_line2       VARCHAR(200),
+    city                VARCHAR(100),
     postal_code         VARCHAR(20),
-    address_notes       VARCHAR(300),
+    address_notes       TEXT,
     zone_id             UUID                     NOT NULL,
     zone_code           VARCHAR(20)              NOT NULL,
     status              VARCHAR(20)              NOT NULL,

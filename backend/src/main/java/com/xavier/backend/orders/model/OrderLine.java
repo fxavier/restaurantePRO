@@ -155,6 +155,21 @@ public class OrderLine {
     }
 
     /**
+     * A delivery order's fee (D128): one automatic unit of the zone's FEE item, of kind FEE from the start, so it is
+     * recognised (and locked, P48) while still a draft. Confirmation sets the kind from the catalog again.
+     */
+    public static OrderLine feeDraft(UUID orderId, UUID itemId, UUID variantId, UUID employeeId, Instant now) {
+        OrderLine line = automaticDraft(orderId, itemId, variantId, BigDecimal.ONE, employeeId, now);
+        line.kind = LineKind.FEE;
+        return line;
+    }
+
+    /** An automatic FEE line: a delivery order's fee (D128). */
+    public boolean isAutomaticFee() {
+        return automatic && kind == LineKind.FEE;
+    }
+
+    /**
      * The confirmed copy a transfer puts on {@code targetOrderId}: the source's snapshot, item, variant and notes for
      * {@code quantity}, with the transfer as its origin and no round, so production never sees it again (§8.2).
      */

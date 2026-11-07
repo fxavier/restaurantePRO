@@ -13,7 +13,7 @@ import java.util.UUID;
  * ({@code notes} replaces the address's own notes).
  */
 public record DeliveryRequest(UUID customerId, UUID addressId, @Valid AddressRequest address, @NotNull UUID zoneId,
-                              Instant promisedAt, @Size(max = 300) String notes) {
+                              Instant promisedAt, @Size(max = AddressRequest.MAX_NOTES) String notes) {
 
     @AssertTrue(message = "give exactly one of addressId and address")
     public boolean isOneAddress() {

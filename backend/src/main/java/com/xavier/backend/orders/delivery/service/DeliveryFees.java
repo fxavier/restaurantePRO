@@ -8,7 +8,6 @@ import com.xavier.backend.orders.delivery.model.DeliveryZone;
 import com.xavier.backend.orders.model.CatalogPricing;
 import com.xavier.backend.orders.model.Order;
 import com.xavier.backend.orders.service.DraftLineService;
-import java.math.BigDecimal;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
 
@@ -40,6 +39,12 @@ public class DeliveryFees {
 
     /** Adds the zone's fee as an automatic draft of the order; the caller checked {@link #requirePublished}. */
     public void addTo(Order order, DeliveryZone zone, UUID employeeId) {
-        drafts.addAutomaticDraft(order, zone.getFeeItemId(), zone.getFeeVariantId(), BigDecimal.ONE, employeeId);
+        drafts.addFeeDraft(order, zone.getFeeItemId(), zone.getFeeVariantId(), employeeId);
+    }
+
+    /** A zone swap: the order's fee drafts give way to the new zone's fee (a confirmed fee stays, P48). */
+    public void replaceDraft(Order order, DeliveryZone zone, UUID employeeId) {
+        drafts.removeFeeDrafts(order);
+        addTo(order, zone, employeeId);
     }
 }

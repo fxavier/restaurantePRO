@@ -18,7 +18,6 @@ import com.xavier.backend.orders.delivery.model.dto.DispatchRequest;
 import com.xavier.backend.orders.delivery.model.dto.ReturnedRequest;
 import com.xavier.backend.orders.delivery.repository.DeliveryEventRepository;
 import com.xavier.backend.orders.delivery.repository.DeliveryRepository;
-import com.xavier.backend.orders.delivery.repository.DeliveryZoneRepository;
 import com.xavier.backend.orders.exception.OrderConflictException;
 import com.xavier.backend.orders.exception.OrderNotFoundException;
 import com.xavier.backend.orders.model.Order;
@@ -27,14 +26,13 @@ import com.xavier.backend.orders.model.event.DeliveryDispatched;
 import com.xavier.backend.orders.OrderLifecycle;
 import com.xavier.backend.orders.repository.OrderBatchRepository;
 import com.xavier.backend.orders.repository.OrderLineRepository;
+import com.xavier.backend.orders.repository.OrderRepository;
 import com.xavier.backend.orders.service.OrderChanges;
 import com.xavier.backend.orders.service.OrderLookup;
 import com.xavier.backend.shared.persistence.OptimisticLocking;
 import java.time.Clock;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.UUID;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -52,11 +50,11 @@ public class DeliveryService {
 
     private final DeliveryRepository deliveries;
     private final DeliveryEventRepository events;
-    private final DeliveryZoneRepository zoneRepository;
     private final DeliveryZones zones;
     private final DeliveryFees fees;
     private final DeliveryViews views;
     private final OrderLookup lookup;
+    private final OrderRepository orderRows;
     private final OrderLineRepository lines;
     private final OrderBatchRepository batches;
     private final EmployeeDirectory employees;
@@ -66,17 +64,17 @@ public class DeliveryService {
     private final Clock clock;
 
     DeliveryService(DeliveryRepository deliveries, DeliveryEventRepository events,
-                    DeliveryZoneRepository zoneRepository, DeliveryZones zones, DeliveryFees fees,
-                    DeliveryViews views, OrderLookup lookup, OrderLineRepository lines, OrderBatchRepository batches,
+                    DeliveryZones zones, DeliveryFees fees,
+                    DeliveryViews views, OrderLookup lookup, OrderRepository orderRows, OrderLineRepository lines, OrderBatchRepository batches,
                     EmployeeDirectory employees, AccessPolicy accessPolicy, OrderChanges changes,
                     ApplicationEventPublisher publisher, Clock clock) {
         this.deliveries = deliveries;
         this.events = events;
-        this.zoneRepository = zoneRepository;
         this.zones = zones;
         this.fees = fees;
         this.views = views;
         this.lookup = lookup;
+        this.orderRows = orderRows;
         this.lines = lines;
         this.batches = batches;
         this.employees = employees;
@@ -87,8 +85,9 @@ public class DeliveryService {
     }
 
     /**
-     * Changes the address, zone or promise of a PENDING delivery. A new zone replaces the old zone's fee while it is
-     * still a draft; a confirmed fee stays (it is corrected by a void or a discount, P48).
+     * Changes the address, zone or promise of a PENDING delivery. A new zone replaces the order's fee draft by its own
+     * fee, and adds it when the fee was already confirmed: a confirmed fee is a fact and stays (it is corrected by a
+     * void, a discount or an offer, P48).
      *
      * @throws DeliveryRuleException 422 {@code ADDRESS_FROZEN} once dispatched, {@code ZONE_OTHER_STORE},
      *         {@code ZONE_INACTIVE}, {@code FEE_ITEM_NOT_PUBLISHED}
@@ -104,9 +103,8 @@ public class DeliveryService {
         UUID previousZone = delivery.getZoneId();
         delivery.edit(address(request.address()), zone, request.promisedAt());
         delivery = deliveries.saveAndFlush(delivery);
-        Order order = lookup.load(orderId);
         if (zone != null && !zone.getId().equals(previousZone)) {
-            replaceFeeDraft(order, zoneRepository.findById(previousZone).orElseThrow(), zone, pos.employeeId());
+            fees.replaceDraft(lookup.load(orderId), zone, pos.employeeId());
         }
         changed("DELIVERY_CHANGED", delivery, Map.of());
         return views.of(delivery);
@@ -123,6 +121,10 @@ public class DeliveryService {
     public DeliveryView dispatch(UUID orderId, DispatchRequest request) {
         PosContext pos = accessPolicy.requirePos(Permission.DELIVERY_OPERATE);
         Delivery delivery = inSessionStore(pos, orderId, request.version());
+        // D132: the order row before the delivery row. FOR UPDATE waits for a draft being added (its foreign key
+        // holds FOR KEY SHARE on the order) and for a round, so the drafts read next are the committed ones. It
+        // does not move the order's version: a delivery never changes the order (§8.3).
+        orderRows.lockForDispatch(orderId);
         Order order = lookup.load(orderId);
         if (order.getLifecycle() != OrderLifecycle.OPEN) {
             throw OrderConflictException.notOpen(orderId);
@@ -189,20 +191,6 @@ public class DeliveryService {
         }
         changed("DELIVERY_" + delivery.getStatus().name(), delivery, details);
         return event;
-    }
-
-    private void replaceFeeDraft(Order order, DeliveryZone previous, DeliveryZone zone, UUID employeeId) {
-        List<OrderLine> previousFee = lines.findByOrderIdOrderById(order.getId()).stream()
-                .filter(line -> line.isDraft() && line.isAutomatic()
-                        && line.getItemId().equals(previous.getFeeItemId())
-                        && Objects.equals(line.getVariantId(), previous.getFeeVariantId()))
-                .toList();
-        if (previousFee.isEmpty()) {
-            return;
-        }
-        lines.deleteAll(previousFee);
-        lines.flush();
-        fees.addTo(order, zone, employeeId);
     }
 
     private void changed(String action, Delivery delivery, Map<String, Object> details) {

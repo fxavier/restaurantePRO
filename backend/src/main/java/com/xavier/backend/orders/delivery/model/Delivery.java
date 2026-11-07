@@ -38,19 +38,19 @@ public class Delivery {
     @Column(updatable = false, length = 20)
     private String phoneDigits;
 
-    @Column(name = "address_line1", nullable = false, length = 160)
+    @Column(name = "address_line1", nullable = false, length = 200)
     private String addressLine1;
 
-    @Column(name = "address_line2", length = 160)
+    @Column(name = "address_line2", length = 200)
     private String addressLine2;
 
-    @Column(length = 80)
+    @Column(length = 100)
     private String city;
 
     @Column(length = 20)
     private String postalCode;
 
-    @Column(length = 300)
+    @Column(columnDefinition = "text")
     private String addressNotes;
 
     @Column(nullable = false)

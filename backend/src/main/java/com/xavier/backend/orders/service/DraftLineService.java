@@ -5,6 +5,8 @@ import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.PosContext;
 import com.xavier.backend.catalog.CatalogApi;
 import com.xavier.backend.catalog.model.dto.CatalogSnapshot;
+import com.xavier.backend.orders.OrderMode;
+import com.xavier.backend.orders.delivery.exception.DeliveryRuleException;
 import com.xavier.backend.orders.exception.OrderNotFoundException;
 import com.xavier.backend.orders.exception.OrderRuleException;
 import com.xavier.backend.orders.model.CatalogPricing;
@@ -134,16 +136,30 @@ public class DraftLineService {
         }
     }
 
-    /**
-     * One automatic draft in the caller's transaction (D109; R4 also the delivery fee of D128), audited like any
-     * draft. The caller checked the item is in the published catalog.
-     */
-    public OrderLine addAutomaticDraft(Order order, UUID itemId, UUID variantId, BigDecimal quantity,
-                                       UUID employeeId) {
+    private void addAutomaticDraft(Order order, UUID itemId, UUID variantId, BigDecimal quantity, UUID employeeId) {
         OrderLine line = lines.saveAndFlush(OrderLine.automaticDraft(order.getId(), itemId, variantId, quantity,
                 employeeId, clock.instant()));
         changed("ORDER_LINE_DRAFTED", order, line);
-        return line;
+    }
+
+    /**
+     * A delivery order's fee draft (D128) in the caller's transaction, audited like any draft. The caller checked the
+     * item is a published FEE item. Once added, only a zone swap ({@link #removeFeeDrafts}), a discount or an offer
+     * changes it (P48).
+     */
+    public void addFeeDraft(Order order, UUID itemId, UUID variantId, UUID employeeId) {
+        OrderLine line = lines.saveAndFlush(OrderLine.feeDraft(order.getId(), itemId, variantId, employeeId,
+                clock.instant()));
+        changed("ORDER_LINE_DRAFTED", order, line);
+    }
+
+    /** The zone swap of a PENDING delivery: its fee drafts go (a confirmed fee stays a fact). */
+    public void removeFeeDrafts(Order order) {
+        List<OrderLine> fees = lines.findByOrderIdOrderById(order.getId()).stream()
+                .filter(line -> line.isDraft() && line.isAutomaticFee()).toList();
+        lines.deleteAll(fees);
+        lines.flush();
+        fees.forEach(line -> changed("ORDER_LINE_DRAFT_DELETED", order, line));
     }
 
     @Transactional
@@ -151,7 +167,7 @@ public class DraftLineService {
         PosContext pos = accessPolicy.requirePos(Permission.ORDER_EDIT);
         Order order = lookup.inSessionStore(pos, orderId);
         order.requireChangeable();
-        OrderLine line = draft(orderId, lineId, request.version());
+        OrderLine line = unlockedDraft(order, lineId, request.version());
         CatalogSnapshot current = inCatalog(order, line.getItemId(), request.variantId());
         line.edit(request.variantId(), request.quantity(), request.notes());
         line = lines.saveAndFlush(line);
@@ -164,12 +180,24 @@ public class DraftLineService {
         PosContext pos = accessPolicy.requirePos(Permission.ORDER_EDIT);
         Order order = lookup.inSessionStore(pos, orderId);
         order.requireChangeable();
-        OrderLine line = draft(orderId, lineId, request.version());
+        OrderLine line = unlockedDraft(order, lineId, request.version());
         components.deleteAll(components.findByLineIdOrderByPosition(lineId));
         components.flush();
         lines.delete(line);
         lines.flush();
         changed("ORDER_LINE_DRAFT_DELETED", order, line);
+    }
+
+    /**
+     * {@link #draft}, refusing a delivery order's fee (422 {@code FEE_LINE_LOCKED}, P48): only a zone swap, a discount
+     * or an offer changes it.
+     */
+    private OrderLine unlockedDraft(Order order, UUID lineId, long version) {
+        OrderLine line = draft(order.getId(), lineId, version);
+        if (order.getMode() == OrderMode.DELIVERY && line.isAutomaticFee()) {
+            throw DeliveryRuleException.feeLineLocked(lineId);
+        }
+        return line;
     }
 
     /** The line of this order (404), at the client's version (409), still a draft (409 {@code LINE_NOT_DRAFT}). */

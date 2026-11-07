@@ -57,6 +57,12 @@ public class DeliveryRuleException extends BusinessRuleException {
                 "The delivery of order " + orderId + " is out or delivered: it cannot be cancelled.");
     }
 
+    /** P48: a delivery order's fee draft changes only by a zone swap, a discount or an offer. */
+    public static DeliveryRuleException feeLineLocked(UUID lineId) {
+        return new DeliveryRuleException("FEE_LINE_LOCKED", "Line " + lineId
+                + " is the delivery fee: change the zone, or give a discount or an offer, instead.");
+    }
+
     public static DeliveryRuleException addressFrozen(UUID orderId) {
         return new DeliveryRuleException("ADDRESS_FROZEN",
                 "The delivery of order " + orderId + " was dispatched: its address, zone and promise are frozen.");

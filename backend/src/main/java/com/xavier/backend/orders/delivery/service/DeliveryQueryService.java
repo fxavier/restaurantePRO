@@ -12,7 +12,9 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import com.xavier.backend.orders.delivery.model.Delivery;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -51,8 +53,9 @@ public class DeliveryQueryService {
                                               Pageable pageable) {
         accessPolicy.require(Permission.ORDER_VIEW, storeId);
         Pageable byOrder = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.by("orderId"));
-        Page<com.xavier.backend.orders.delivery.model.Delivery> page = deliveries.findInDays(storeId, from, to,
-                courierId, byOrder);
-        return PageResponse.from(page.map(delivery -> views.of(delivery)));
+        Page<Delivery> page = deliveries.findInDays(storeId, from, to, courierId, byOrder);
+        // one read of order numbers and history for the whole page, not one per delivery
+        return PageResponse.from(new PageImpl<>(views.of(page.getContent()), page.getPageable(),
+                page.getTotalElements()));
     }
 }

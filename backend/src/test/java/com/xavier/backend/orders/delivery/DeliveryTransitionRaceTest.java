@@ -29,8 +29,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * D133 "delivered and cancelled at once": two transitions of one delivery from two terminals. Deterministic
- * interleaving: a third transaction holds the delivery row, both requests read the same version and queue on their
- * UPDATE (seen in {@code pg_stat_activity}), then the holder lets go. The delivery's {@code @Version} lets exactly one
+ * interleaving: a third transaction holds the delivery row, both requests read the same version and queue (seen in
+ * {@code pg_stat_activity}), then the holder lets go. The delivery's {@code @Version} lets exactly one
  * win; the other is a 409 and leaves nothing behind (no event, no order change).
  */
 @OrdersModuleTest
@@ -102,6 +102,39 @@ class DeliveryTransitionRaceTest {
         assertThat(deliveries.history(order)).hasSize(4);
     }
 
+    /**
+     * D132: the dispatch locks the order before it reads the drafts, so a draft being added (its foreign key holds
+     * {@code FOR KEY SHARE} on the order) makes it wait, and once that draft commits the dispatch sees it.
+     */
+    @Test
+    void aDispatchWaitsForADraftBeingAddedAndThenRefusesIt() throws Exception {
+        UUID order = deliveries.confirmedDelivery(d, employee, terminal);
+        CountDownLatch drafted = new CountDownLatch(1);
+        CountDownLatch commit = new CountDownLatch(1);
+        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+            // a draft as DraftLineService writes it: the row insert, whose foreign key takes FOR KEY SHARE on the order
+            Future<?> adding = pool.submit(() -> new TransactionTemplate(transactionManager).executeWithoutResult(
+                    status -> {
+                        jdbc.sql("""
+                                INSERT INTO orders.order_line (id, order_id, status, item_id, quantity, created_at,
+                                    created_by_employee_id, version)
+                                VALUES (gen_random_uuid(), ?, 'DRAFT', ?, 1, now(), ?, 0)""")
+                                .param(order).param(d.shop().item()).param(employee).update();
+                        drafted.countDown();
+                        await(commit);
+                    }));
+            assertThat(drafted.await(30, TimeUnit.SECONDS)).isTrue();
+            Future<Integer> dispatch = pool.submit(() -> deliveries.dispatch(d, order, 0, d.courier()).andReturn()
+                    .getResponse().getStatus());
+            waitUntil(() -> dispatch.isDone() || waiting("%order_header%for update%") == 1);
+            assertThat(dispatch.isDone()).as("the dispatch must wait for the draft's transaction").isFalse();
+            commit.countDown();
+            adding.get(30, TimeUnit.SECONDS);
+            assertThat(dispatch.get(30, TimeUnit.SECONDS)).isEqualTo(422);
+        }
+        assertThat(deliveries.deliveryStatus(order)).isEqualTo("PENDING");
+    }
+
     /** Runs both requests while a third transaction holds the delivery row; both must queue on it. */
     List<Integer> whileHeld(UUID order, Callable<Integer> first, Callable<Integer> second) throws Exception {
         CountDownLatch held = new CountDownLatch(1);
@@ -117,19 +150,18 @@ class DeliveryTransitionRaceTest {
             assertThat(held.await(30, TimeUnit.SECONDS)).isTrue();
             Future<Integer> a = pool.submit(first);
             Future<Integer> b = pool.submit(second);
-            waitUntil(() -> a.isDone() || b.isDone() || waitingOnTheDelivery() == 2);
-            assertThat(a.isDone() || b.isDone()).as("both must queue on the delivery row").isFalse();
+            // each waits on a row lock: on the delivery row, or (a dispatch behind a cancel, D132) on the order row
+            waitUntil(() -> a.isDone() || b.isDone() || waiting("%orders.%") == 2);
+            assertThat(a.isDone() || b.isDone()).as("both must queue behind the held delivery").isFalse();
             release.countDown();
             holder.get(30, TimeUnit.SECONDS);
             return List.of(a.get(30, TimeUnit.SECONDS), b.get(30, TimeUnit.SECONDS));
         }
     }
 
-    long waitingOnTheDelivery() {
-        return jdbc.sql("""
-                SELECT count(*) FROM pg_stat_activity
-                WHERE wait_event_type = 'Lock' AND query ILIKE 'update orders.delivery set%'""")
-                .query(Long.class).single();
+    long waiting(String queryPattern) {
+        return jdbc.sql("SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query ILIKE ?")
+                .param(queryPattern).query(Long.class).single();
     }
 
     static void waitUntil(BooleanSupplier condition) {

@@ -9,6 +9,11 @@ import com.xavier.backend.customers.CustomersFixtures;
 import com.xavier.backend.orders.OrdersFixtures;
 import com.xavier.backend.orders.OrdersModuleTest;
 import com.xavier.backend.orders.delivery.DeliveryFixtures.DeliveryShop;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+
+import org.springframework.http.MediaType;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -105,6 +110,53 @@ class DeliveryFeeLineTest {
         assertThat(row).containsEntry("address_line1", "Av. 24 de Julho 100")
                 .containsEntry("address_notes", "ring twice");
         assertThat(row.get("promised_at")).isNotNull();
+    }
+
+    /** P48: the fee draft is removed or changed only by a zone swap, a discount or an offer. */
+    @Test
+    void theFeeDraftCannotBeDeletedOrEditedButAnotherDraftCan() throws Exception {
+        JsonNode order = deliveries.opened(d, employee, terminal);
+        UUID id = OrdersFixtures.id(order);
+        String fee = order.get("lines").get(0).get("id").asString();
+        UUID other = OrdersFixtures.id(fixtures.draft(d.shop(), id, "1", employee, terminal));
+
+        mvc.perform(delete(DeliveryFixtures.POS + "/orders/" + id + "/lines/" + fee).with(pos()).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"version\": 0}"))
+                .andExpect(status().isUnprocessableContent()).andExpect(jsonPath("$.code").value("FEE_LINE_LOCKED"));
+        mvc.perform(put(DeliveryFixtures.POS + "/orders/" + id + "/lines/" + fee).with(pos()).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"version\": 0, \"quantity\": 0.001}"))
+                .andExpect(status().isUnprocessableContent()).andExpect(jsonPath("$.code").value("FEE_LINE_LOCKED"));
+        mvc.perform(delete(DeliveryFixtures.POS + "/orders/" + id + "/lines/" + other).with(pos()).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"version\": 0}"))
+                .andExpect(status().isNoContent());
+
+        assertThat(fixtures.count("SELECT count(*) FROM orders.order_line WHERE id = ? AND quantity = 1",
+                UUID.fromString(fee))).isOne();
+    }
+
+    @Test
+    void aLongAddressAndLongNotesOpenAndTheRequestNotesReplaceTheSavedAddresssNotes() throws Exception {
+        String line1 = "R".repeat(170);
+        String notes = "n".repeat(400);
+        UUID typed = OrdersFixtures.id(OrdersFixtures.json(deliveries.open(d.shop(), """
+                        {"customerId": "%s", "address": {"line1": "%s", "notes": "%s"}, "zoneId": "%s"}"""
+                        .formatted(d.customer(), line1, notes, d.zone()), employee, terminal, Permission.ORDER_EDIT,
+                Permission.DELIVERY_OPERATE).andExpect(status().isCreated()).andReturn().getResponse()
+                .getContentAsString()));
+        UUID saved = OrdersFixtures.id(OrdersFixtures.json(deliveries.open(d.shop(), """
+                        {"customerId": "%s", "addressId": "%s", "zoneId": "%s", "notes": "ring twice"}"""
+                        .formatted(d.customer(), d.address(), d.zone()), employee, terminal, Permission.ORDER_EDIT,
+                Permission.DELIVERY_OPERATE).andExpect(status().isCreated()).andReturn().getResponse()
+                .getContentAsString()));
+
+        assertThat(jdbc.sql("SELECT address_line1 || '|' || address_notes FROM orders.delivery WHERE order_id = ?")
+                .param(typed).query(String.class).single()).isEqualTo(line1 + "|" + notes);
+        assertThat(jdbc.sql("SELECT address_notes FROM orders.delivery WHERE order_id = ?").param(saved)
+                .query(String.class).single()).isEqualTo("ring twice");
+    }
+
+    org.springframework.test.web.servlet.request.RequestPostProcessor pos() {
+        return com.xavier.backend.orders.OrdersActors.pos(d.shop().store(), employee, terminal, Permission.ORDER_EDIT);
     }
 
     @Test

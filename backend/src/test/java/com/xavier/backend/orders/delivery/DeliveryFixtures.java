@@ -89,15 +89,20 @@ public class DeliveryFixtures {
     }
 
     public void deactivateZone(UUID zone) throws Exception {
+        updateZone(zone, null, false);
+    }
+
+    /** Changes the zone's fee item ({@code null} keeps it) and active flag, at its current version. */
+    public void updateZone(UUID zone, UUID feeItem, boolean active) throws Exception {
         JsonNode current = OrdersFixtures.json(mvc.perform(get("/api/v1/backoffice/delivery-zones/" + zone)
                         .with(OrdersActors.backOffice(Permission.DELIVERY_ZONE_MANAGE)))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
         mvc.perform(put("/api/v1/backoffice/delivery-zones/" + zone)
                         .with(OrdersActors.backOffice(Permission.DELIVERY_ZONE_MANAGE)).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content("""
-                                {"version": %d, "name": "%s", "feeItemId": "%s", "active": false}""".formatted(
+                                {"version": %d, "name": "%s", "feeItemId": "%s", "active": %s}""".formatted(
                                 current.get("version").asLong(), current.get("name").asString(),
-                                current.get("feeItemId").asString())))
+                                feeItem == null ? current.get("feeItemId").asString() : feeItem, active)))
                 .andExpect(status().isOk());
     }
 
@@ -146,8 +151,13 @@ public class DeliveryFixtures {
     }
 
     public ResultActions transition(DeliveryShop d, UUID order, String command, String body) throws Exception {
+        return transition(d.shop().store(), order, command, body);
+    }
+
+    /** A delivery command from a POS session of {@code store}. */
+    public ResultActions transition(UUID store, UUID order, String command, String body) throws Exception {
         return mvc.perform(post(POS + "/deliveries/" + order + "/" + command)
-                .with(OrdersActors.pos(d.shop().store(), UUID.randomUUID(), UUID.randomUUID(),
+                .with(OrdersActors.pos(store, UUID.randomUUID(), UUID.randomUUID(),
                         Permission.DELIVERY_OPERATE)).with(csrf())
                 .header("Idempotency-Key", UUID.randomUUID().toString()).contentType(MediaType.APPLICATION_JSON)
                 .content(body));
