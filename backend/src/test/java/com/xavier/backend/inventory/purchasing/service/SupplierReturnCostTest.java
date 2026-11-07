@@ -69,6 +69,29 @@ class SupplierReturnCostTest {
         assertThat(steps.balance(warehouse, item)).isEqualTo("15.000000|165.0000|11.000000");
     }
 
+    /**
+     * D125 amended: 10@1 on hand, 10 received at 2, those 10 returned: the OUT leaves at the average (−15) and the
+     * supplier's credit beyond it, (2 − 1.5) × 10, is the receipt line's cost variance.
+     */
+    @Test
+    void aLinkedReturnBooksTheReceiptCostBeyondTheAverageAsAVariance() throws Exception {
+        UUID room = fixtures.newWarehouse(store, "ALLOW");
+        steps.confirmedReceipt(store, room, supplier, item, "10", "1");
+        UUID atTwo = steps.confirmedReceipt(store, room, supplier, item, "10", "2");
+        String lineAtTwo = steps.get(store, "/receipts/" + atTwo).get("lines").get(0).get("id").asString();
+        UUID returned = id(newReturn(room, atTwo, """
+                {"receiptLineId": "%s", "stockItemId": "%s", "quantity": 10}""".formatted(lineAtTwo, item))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+
+        confirm(returned).andExpect(status().isOk());
+
+        assertThat(returnMovement(returned)).isEqualTo("SUPPLIER_RETURN|-10.000000|1.500000|-15.0000|2.000000");
+        assertThat(jdbc.sql("""
+                        SELECT value || '|' || receipt_line_id FROM inventory.cost_variance WHERE return_line_id IN
+                            (SELECT id FROM inventory.supplier_return_line WHERE return_id = ?)""")
+                .param(returned).query(String.class).single()).isEqualTo("5.0000|" + lineAtTwo);
+    }
+
     @Test
     void anUnlinkedReturnIsValuedAtTheAverage() throws Exception {
         UUID returned = id(newReturn(warehouse, null, "{\"stockItemId\": \"%s\", \"quantity\": 3}".formatted(item))

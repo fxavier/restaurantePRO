@@ -6,9 +6,12 @@ import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.inventory.exception.InventoryNotFoundException;
 import com.xavier.backend.inventory.exception.InventoryRuleException;
 import com.xavier.backend.inventory.model.MovementType;
+import com.xavier.backend.inventory.model.MovingAverage;
+import com.xavier.backend.inventory.model.dto.MovementView;
 import com.xavier.backend.inventory.model.StockItem;
 import com.xavier.backend.inventory.model.dto.PostMovement;
 import com.xavier.backend.inventory.purchasing.exception.PurchasingRuleException;
+import com.xavier.backend.inventory.purchasing.model.CostVariance;
 import com.xavier.backend.inventory.purchasing.model.GoodsReceipt;
 import com.xavier.backend.inventory.purchasing.model.GoodsReceiptLine;
 import com.xavier.backend.inventory.purchasing.model.SupplierReturn;
@@ -17,6 +20,7 @@ import com.xavier.backend.inventory.purchasing.model.dto.ReturnLineRequest;
 import com.xavier.backend.inventory.purchasing.model.dto.SupplierReturnRequest;
 import com.xavier.backend.inventory.purchasing.model.dto.SupplierReturnUpdateRequest;
 import com.xavier.backend.inventory.purchasing.model.dto.SupplierReturnView;
+import com.xavier.backend.inventory.purchasing.repository.CostVarianceRepository;
 import com.xavier.backend.inventory.purchasing.repository.GoodsReceiptRepository;
 import com.xavier.backend.inventory.purchasing.repository.ReceiptRef;
 import com.xavier.backend.inventory.purchasing.repository.SupplierRepository;
@@ -27,6 +31,7 @@ import com.xavier.backend.inventory.service.BusinessDates;
 import com.xavier.backend.inventory.service.InventoryScope;
 import com.xavier.backend.inventory.service.StockLedger;
 import com.xavier.backend.inventory.service.Units;
+import com.xavier.backend.organization.OrganizationApi;
 import com.xavier.backend.shared.persistence.OptimisticLocking;
 import com.xavier.backend.shared.web.PageResponse;
 import jakarta.persistence.EntityManager;
@@ -36,6 +41,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -46,8 +52,9 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Returns to a supplier (D125): {@code GOODS_RECEIVE} in the warehouse's store. Confirmation, once the store is live,
  * posts SUPPLIER_RETURN OUTs (source SUPPLIER_RETURN, one per line) valued at the current average like every OUT
- * (D113); a line linked to a receipt line names that line's current cost for reference only and returns at most what
- * it received less what was already returned (422 RETURN_EXCEEDS_RECEIVED). A return is a manual OUT for the
+ * (D113); a line linked to a receipt line names that line's current cost for reference only, books the supplier's
+ * credit beyond the average, {@code (receipt cost − average) × quantity}, as that receipt line's cost variance (D125
+ * amended), and returns at most what it received less what was already returned (422 RETURN_EXCEEDS_RECEIVED). A return is a manual OUT for the
  * warehouse's negative policy (422 NEGATIVE_STOCK_REFUSED, D118). Lock order: the receipt (serializing the returns of
  * its lines), the return, then the ledger's balance rows. Audited.
  */
@@ -69,6 +76,8 @@ public class SupplierReturnService {
     private final BusinessDates businessDates;
     private final AccessPolicy accessPolicy;
     private final AuditLog auditLog;
+    private final CostVarianceRepository variances;
+    private final OrganizationApi organization;
     private final EntityManager entityManager;
     private final Clock clock;
 
@@ -76,7 +85,8 @@ public class SupplierReturnService {
                           SupplierRepository suppliers, StockItemRepository items,
                           GoodsReceiptService receiptService, Units units, StockLedger ledger, InventoryScope scope,
                           ActivationService activations, BusinessDates businessDates, AccessPolicy accessPolicy,
-                          AuditLog auditLog, EntityManager entityManager, Clock clock) {
+                          AuditLog auditLog, CostVarianceRepository variances, OrganizationApi organization,
+                          EntityManager entityManager, Clock clock) {
         this.returns = returns;
         this.receipts = receipts;
         this.suppliers = suppliers;
@@ -89,6 +99,8 @@ public class SupplierReturnService {
         this.businessDates = businessDates;
         this.accessPolicy = accessPolicy;
         this.auditLog = auditLog;
+        this.variances = variances;
+        this.organization = organization;
         this.entityManager = entityManager;
         this.clock = clock;
     }
@@ -128,11 +140,12 @@ public class SupplierReturnService {
     public SupplierReturnView update(UUID id, SupplierReturnUpdateRequest request) {
         ReceiptRef ref = refOf(id);
         accessPolicy.require(Permission.GOODS_RECEIVE, ref.storeId());
-        SupplierReturn supplierReturn = lock(id);
-        OptimisticLocking.requireVersion(SupplierReturn.class, id, supplierReturn.getVersion(), request.version());
         GoodsReceipt receipt = ref.sourceId() == null ? null
                 : receipts.findById(ref.sourceId()).orElseThrow();
-        supplierReturn.edit(request.reason(), lines(receipt, request.lines()));
+        List<SupplierReturnLine> lines = lines(receipt, request.lines()); // checked before the lock
+        SupplierReturn supplierReturn = lock(id);
+        OptimisticLocking.requireVersion(SupplierReturn.class, id, supplierReturn.getVersion(), request.version());
+        supplierReturn.edit(request.reason(), lines);
         SupplierReturn saved = returns.saveAndFlush(supplierReturn);
         audit("SUPPLIER_RETURN_UPDATED", saved);
         return view(saved);
@@ -158,6 +171,7 @@ public class SupplierReturnService {
         supplierReturn.confirm(accessPolicy.current().userId(), now, day);
         SupplierReturn saved = returns.saveAndFlush(supplierReturn);
         List<PostMovement> movements = new ArrayList<>();
+        Map<UUID, BigDecimal> receiptCosts = new HashMap<>();
         for (SupplierReturnLine line : saved.getLines()) {
             PostMovement out = PostMovement.of(saved.getWarehouseId(), line.getStockItemId(),
                     MovementType.SUPPLIER_RETURN, line.getQuantityBase().negate(), SOURCE_TYPE, id, day, now)
@@ -166,11 +180,27 @@ public class SupplierReturnService {
             if (line.getReceiptLineId() != null) {
                 GoodsReceiptLine received = receipt.line(line.getReceiptLineId()).orElseThrow();
                 requireReturnable(received, line, id);
-                out = out.atCost(receiptService.currentCost(received)); // for reference: OUTs go at the average
+                BigDecimal receiptCost = receiptService.currentCost(received);
+                receiptCosts.put(line.getId(), receiptCost);
+                out = out.atCost(receiptCost); // for reference: OUTs go at the average
             }
             movements.add(out);
         }
-        ledger.post(movements);
+        String currency = organization.companyProfile().currency().getCurrencyCode();
+        for (MovementView posted : ledger.post(movements)) {
+            BigDecimal receiptCost = receiptCosts.get(posted.sourceLineId());
+            if (receiptCost == null || !posted.type().equals(MovementType.SUPPLIER_RETURN.name())) {
+                continue;
+            }
+            BigDecimal credited = MovingAverage.valueOf(posted.quantity().negate(), receiptCost);
+            BigDecimal variance = credited.add(posted.value()); // the OUT's value is negative
+            if (variance.signum() != 0) {
+                SupplierReturnLine line = saved.getLines().stream()
+                        .filter(candidate -> candidate.getId().equals(posted.sourceLineId())).findFirst().orElseThrow();
+                variances.saveAndFlush(CostVariance.ofReturn(saved.getStoreId(), saved.getWarehouseId(),
+                        line.getStockItemId(), day, variance, currency, line.getId(), line.getReceiptLineId()));
+            }
+        }
         audit("SUPPLIER_RETURN_CONFIRMED", saved);
         return view(saved);
     }
@@ -220,10 +250,8 @@ public class SupplierReturnService {
                             + " is not a line of stock item " + item.getId() + " on this return's receipt.");
                 }
             }
-            BigDecimal quantity = units.toBase(line.quantity(), line.unit(), item.getBaseUnit());
-            if (quantity.signum() <= 0) {
-                throw InventoryRuleException.invalidQuantity("A return line returns a positive quantity.");
-            }
+            BigDecimal quantity = PurchaseUnits.requireQuantity(item.getId(),
+                    units.toBase(line.quantity(), line.unit(), item.getBaseUnit()));
             lines.add(SupplierReturnLine.of(line.receiptLineId(), item.getId(), quantity));
         }
         return lines;

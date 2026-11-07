@@ -94,9 +94,12 @@ public class PurchaseOrderService {
 
     @Transactional
     public PurchaseOrderView update(UUID id, PurchaseOrderUpdateRequest request) {
-        PurchaseOrder order = lockAuthorized(id);
+        accessPolicy.require(Permission.PURCHASE_MANAGE, storeOf(id));
+        PurchaseOrder order = orders.findById(id).orElseThrow(() -> new InventoryNotFoundException(ENTITY, id));
+        List<PurchaseOrderLine> lines = lines(order.getSupplierId(), request.lines()); // checked before the lock
+        entityManager.refresh(order, LockModeType.PESSIMISTIC_WRITE);
         OptimisticLocking.requireVersion(PurchaseOrder.class, id, order.getVersion(), request.version());
-        order.edit(lines(order.getSupplierId(), request.lines()), request.expectedAt(), request.notes());
+        order.edit(lines, request.expectedAt(), request.notes());
         PurchaseOrder saved = orders.saveAndFlush(order);
         audit("PURCHASE_ORDER_UPDATED", saved);
         return view(saved);
@@ -150,8 +153,9 @@ public class PurchaseOrderService {
                     : supplierItems.find(supplierId, line.stockItemId(), unit.packId())
                     .map(SupplierItem::getLastUnitCost)
                     .orElseThrow(() -> PurchasingRuleException.unitCostRequired(line.stockItemId()));
-            lines.add(PurchaseOrderLine.of(line.stockItemId(), unit.packId(), line.quantity(),
-                    unit.toBase(line.quantity()), cost));
+            BigDecimal quantityBase = PurchaseUnits.requireQuantity(line.stockItemId(), unit.toBase(line.quantity()));
+            PurchaseUnits.requireValue(line.stockItemId(), quantityBase, cost);
+            lines.add(PurchaseOrderLine.of(line.stockItemId(), unit.packId(), line.quantity(), quantityBase, cost));
         }
         return lines;
     }

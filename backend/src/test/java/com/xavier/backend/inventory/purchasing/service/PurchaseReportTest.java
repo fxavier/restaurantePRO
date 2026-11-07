@@ -27,8 +27,8 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import tools.jackson.databind.JsonNode;
 
 /**
- * D131 "purchases by supplier and item": what a store's confirmed receipts brought in over a period of business
- * days, plus the cost corrections dated in it. Drafts and other stores never count.
+ * D131 "purchases by supplier and item", net: what a store's confirmed receipts brought in over a period of business
+ * days, less its confirmed supplier returns, plus the cost corrections dated in it. Drafts and other stores never count.
  */
 @InventoryModuleTest
 class PurchaseReportTest {
@@ -66,6 +66,13 @@ class PurchaseReportTest {
         UUID elsewhere = fixtures.newActiveStore();
         steps.confirmedReceipt(elsewhere, fixtures.newWarehouse(elsewhere, "ALLOW"), supplierA, flour, "7", "7");
 
+        UUID returned = InventoryFixtures.id(mvc.perform(idem(post(BO + "/supplier-returns")).with(buyer(store))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"warehouseId\": \"%s\", \"supplierId\": \"%s\", \"lines\": [{\"stockItemId\": \"%s\", \"quantity\": 1}]}"
+                                .formatted(warehouse, supplierB, oil)))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        steps.command(store, "/supplier-returns/" + returned + "/confirm").andExpect(status().isOk());
+
         JsonNode receipt = steps.get(store, "/receipts/" + receiptA);
         day = LocalDate.parse(receipt.get("businessDate").asString());
         String flourLine = receipt.get("lines").get(0).get("stockItemId").asString().equals(flour.toString())
@@ -82,12 +89,16 @@ class PurchaseReportTest {
 
         assertThat(report.get("rows")).hasSize(2);
         JsonNode a = row(report, supplierA);
-        assertThat(a.get("quantityBase").isNull()).isTrue();
+        assertThat(a.get("receivedQuantity").isNull()).isTrue();
         assertThat(a.get("receivedValue").asDouble()).isEqualTo(35.0);
         assertThat(a.get("correctionValue").asDouble()).isEqualTo(5.0);
-        assertThat(a.get("value").asDouble()).isEqualTo(40.0);
-        assertThat(row(report, supplierB).get("value").asDouble()).isEqualTo(10.0);
-        assertThat(report.get("totalValue").asDouble()).isEqualTo(50.0);
+        assertThat(a.get("returnedValue").asDouble()).isEqualTo(0.0);
+        assertThat(a.get("netValue").asDouble()).isEqualTo(40.0);
+        JsonNode b = row(report, supplierB);
+        assertThat(b.get("receivedValue").asDouble()).isEqualTo(10.0);
+        assertThat(b.get("returnedValue").asDouble()).as("1 oil at the average 3").isEqualTo(3.0);
+        assertThat(b.get("netValue").asDouble()).isEqualTo(7.0);
+        assertThat(report.get("totalValue").asDouble()).isEqualTo(47.0);
     }
 
     @Test
@@ -95,11 +106,15 @@ class PurchaseReportTest {
         JsonNode report = json(report("item", account(Permission.INVENTORY_VIEW)).andExpect(status().isOk()));
 
         JsonNode flourRow = row(report, flour);
-        assertThat(flourRow.get("quantityBase").asDouble()).isEqualTo(14.0);
+        assertThat(flourRow.get("receivedQuantity").asDouble()).isEqualTo(14.0);
         assertThat(flourRow.get("receivedValue").asDouble()).isEqualTo(30.0);
         assertThat(flourRow.get("correctionValue").asDouble()).isEqualTo(5.0);
-        assertThat(row(report, oil).get("value").asDouble()).isEqualTo(15.0);
-        assertThat(report.get("totalValue").asDouble()).isEqualTo(50.0);
+        JsonNode oilRow = row(report, oil);
+        assertThat(oilRow.get("receivedQuantity").asDouble()).isEqualTo(5.0);
+        assertThat(oilRow.get("returnedQuantity").asDouble()).isEqualTo(1.0);
+        assertThat(oilRow.get("netQuantity").asDouble()).isEqualTo(4.0);
+        assertThat(oilRow.get("netValue").asDouble()).isEqualTo(12.0);
+        assertThat(report.get("totalValue").asDouble()).isEqualTo(47.0);
     }
 
     @Test

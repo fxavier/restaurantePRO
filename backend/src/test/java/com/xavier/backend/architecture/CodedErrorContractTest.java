@@ -346,6 +346,7 @@ class CodedErrorContractTest {
                     "Pack " + ID + " is not a pack of stock item " + OTHER + ".")),
             Map.entry("purchase-unit-cost-required", () -> PurchasingRuleException.unitCostRequired(ID)),
             Map.entry("purchase-reason-required", () -> PurchasingRuleException.reasonRequired("cost correction")),
+            Map.entry("line-value-too-large", () -> PurchasingRuleException.lineValueTooLarge(ID)),
             Map.entry("po-state", () -> PurchasingConflictException.orderState(ID, "SUBMITTED", "be edited")),
             Map.entry("receipt-state", () -> PurchasingConflictException.receiptState(ID, "CONFIRMED",
                     "be confirmed")),
@@ -839,6 +840,8 @@ class CodedErrorContractTest {
         expect("purchase-unit-cost-required", 422, "UNIT_COST_REQUIRED", "Stock item " + ID
                 + " needs a unit cost: this supplier has no last cost for it.", "");
         expect("purchase-reason-required", 422, "REASON_REQUIRED", "A cost correction needs a reason.", "");
+        expect("line-value-too-large", 422, "LINE_VALUE_TOO_LARGE", "The line of stock item " + ID
+                + " is worth more than a stock value can hold: split it or check its cost.", "");
     }
 
     @Test

@@ -82,6 +82,22 @@ class PackConversionTest {
                 .andExpect(jsonPath("$.code").value("PURCHASE_REFERENCE_MISMATCH"));
     }
 
+    /** Quantities and values are bounded before anything is locked: a coded 422, never a numeric overflow. */
+    @Test
+    void aQuantityThatConvertsToNothingOrTooMuchAndAnOversizedLineValueAreRefused() throws Exception {
+        UUID item = fixtures.newStockItem("un");
+        UUID tenth = steps.newPack(item, "0.1");
+        UUID box = steps.newPack(item, "12");
+
+        steps.newReceipt(store, warehouse, supplier, packLine(item, tenth, "0.000001", "1"))
+                .andExpect(status().isUnprocessableContent()).andExpect(jsonPath("$.code").value("INVALID_QUANTITY"));
+        steps.newReceipt(store, warehouse, supplier, packLine(item, box, "9999999999999", "1"))
+                .andExpect(status().isUnprocessableContent()).andExpect(jsonPath("$.code").value("INVALID_QUANTITY"));
+        steps.newReceipt(store, warehouse, supplier, PurchasingSteps.line(item, "9999999999999", "9999999999999"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("LINE_VALUE_TOO_LARGE"));
+    }
+
     private UUID receiptInPacks(UUID item, UUID pack, String packs, String pricePerPack) throws Exception {
         return steps.receipt(store, warehouse, supplier, packLine(item, pack, packs, pricePerPack));
     }

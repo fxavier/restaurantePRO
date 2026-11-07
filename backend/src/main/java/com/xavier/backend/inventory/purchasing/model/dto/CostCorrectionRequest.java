@@ -7,7 +7,7 @@ import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 
 /**
- * The corrected cost of a confirmed receipt line, per base unit (D125). {@code reason} is checked by the use case
+ * The corrected cost of a confirmed receipt line, per its purchase unit: its pack, or the base unit without one (D125). {@code reason} is checked by the use case
  * (422 REASON_REQUIRED).
  */
 public record CostCorrectionRequest(

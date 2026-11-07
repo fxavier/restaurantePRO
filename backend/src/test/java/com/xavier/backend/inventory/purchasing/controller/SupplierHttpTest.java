@@ -41,7 +41,7 @@ class SupplierHttpTest {
     @Test
     void aSupplierIsCreatedEditedWithItsVersionAndItsCodeIsUnique() throws Exception {
         String supplierCode = code("SUP");
-        RequestPostProcessor manager = account(UUID.randomUUID(), Permission.PURCHASE_MANAGE);
+        RequestPostProcessor manager = account(null, Permission.PURCHASE_MANAGE);
         UUID supplier = id(create(supplierCode, manager).andExpect(status().isCreated())
                 .andExpect(jsonPath("$.active").value(true)).andReturn().getResponse().getContentAsString());
         create(supplierCode, manager).andExpect(status().isConflict())
@@ -62,14 +62,26 @@ class SupplierHttpTest {
         mvc.perform(get(BO + "/suppliers/" + UUID.randomUUID()).with(manager)).andExpect(status().isNotFound());
     }
 
+    /** Suppliers are company-wide: writing them needs the installation-wide grant; a store's buyer reads them. */
     @Test
-    void onlyAPurchasingManagerSomewhereManagesSuppliers() throws Exception {
-        create(code("SUP"), account(UUID.randomUUID(), Permission.INVENTORY_MANAGE))
+    void onlyAnInstallationWidePurchasingManagerWritesSuppliersAndAStoresBuyerReadsThem() throws Exception {
+        RequestPostProcessor storeBuyer = account(UUID.randomUUID(), Permission.PURCHASE_MANAGE);
+        UUID supplier = new PurchasingSteps(mvc, jdbc).newSupplier();
+        UUID item = fixtures.newStockItem("un");
+
+        create(code("SUP"), storeBuyer).andExpect(status().isForbidden());
+        mvc.perform(put(BO + "/suppliers/" + supplier).with(storeBuyer).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"code\": \"X\", \"name\": \"X\", \"active\": false, \"version\": 0}"))
                 .andExpect(status().isForbidden());
+        addItem(supplier, item, null, null, storeBuyer).andExpect(status().isForbidden());
+        create(code("SUP"), account(null, Permission.INVENTORY_MANAGE)).andExpect(status().isForbidden());
+
+        mvc.perform(get(BO + "/suppliers").with(storeBuyer)).andExpect(status().isOk());
+        mvc.perform(get(BO + "/suppliers/" + supplier).with(storeBuyer)).andExpect(status().isOk());
+        mvc.perform(get(BO + "/suppliers/" + supplier + "/items").with(storeBuyer)).andExpect(status().isOk());
         mvc.perform(get(BO + "/suppliers").with(account(null, Permission.INVENTORY_VIEW)))
                 .andExpect(status().isForbidden());
-        mvc.perform(get(BO + "/suppliers").with(account(UUID.randomUUID(), Permission.PURCHASE_MANAGE)))
-                .andExpect(status().isOk());
     }
 
     @Test

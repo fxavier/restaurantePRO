@@ -1,6 +1,8 @@
 package com.xavier.backend.inventory.purchasing.service;
 
 import com.xavier.backend.inventory.exception.InventoryNotFoundException;
+import com.xavier.backend.inventory.exception.InventoryRuleException;
+import com.xavier.backend.inventory.model.MovingAverage;
 import com.xavier.backend.inventory.model.StockItem;
 import com.xavier.backend.inventory.model.StockItemPack;
 import com.xavier.backend.inventory.purchasing.exception.PurchasingRuleException;
@@ -43,6 +45,40 @@ public class PurchaseUnits {
                     + stockItemId + ".");
         }
         return new Unit(item, pack);
+    }
+
+    /** At most 13 integer digits, as a stock quantity ({@code NUMERIC(19,6)}). */
+    private static final int QUANTITY_INTEGER_DIGITS = 13;
+    /** At most 15 integer digits, as a stock value ({@code NUMERIC(19,4)}). */
+    private static final int VALUE_INTEGER_DIGITS = 15;
+
+    /**
+     * A quantity in the base unit that a stock movement can hold: above zero once converted, and within 13 integer
+     * digits. Checked on the request's lines, before anything is locked.
+     *
+     * @throws InventoryRuleException INVALID_QUANTITY
+     */
+    public static BigDecimal requireQuantity(UUID stockItemId, BigDecimal quantityBase) {
+        if (quantityBase.signum() <= 0) {
+            throw InventoryRuleException.invalidQuantity("The quantity of stock item " + stockItemId
+                    + " is zero once converted to its base unit.");
+        }
+        if (integerDigits(quantityBase) > QUANTITY_INTEGER_DIGITS) {
+            throw InventoryRuleException.invalidQuantity("The quantity of stock item " + stockItemId
+                    + " is too large once converted to its base unit.");
+        }
+        return quantityBase;
+    }
+
+    /** @throws PurchasingRuleException LINE_VALUE_TOO_LARGE when {@code quantity × cost} would not fit a value */
+    public static void requireValue(UUID stockItemId, BigDecimal quantityBase, BigDecimal unitCostBase) {
+        if (integerDigits(MovingAverage.valueOf(quantityBase, unitCostBase)) > VALUE_INTEGER_DIGITS) {
+            throw PurchasingRuleException.lineValueTooLarge(stockItemId);
+        }
+    }
+
+    private static int integerDigits(BigDecimal number) {
+        return Math.max(number.precision() - number.scale(), 0);
     }
 
     /** A stock item and its purchase pack ({@code null}: the base unit). */

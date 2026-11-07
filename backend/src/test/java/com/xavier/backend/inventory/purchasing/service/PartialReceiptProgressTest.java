@@ -137,6 +137,13 @@ class PartialReceiptProgressTest {
         newReceipt(submittedOrder(), against(flourLine, flour, "1")).andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("PURCHASE_REFERENCE_MISMATCH"));
 
+        UUID sameStoreOtherRoom = fixtures.newWarehouse(store, "ALLOW");
+        mvc.perform(idem(post(BO + "/receipts")).with(buyer(store)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"warehouseId\": \"%s\", \"purchaseOrderId\": \"%s\", \"lines\": [{\"stockItemId\": \"%s\", \"packQuantity\": 1}]}"
+                                .formatted(sameStoreOtherRoom, order, flour)))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("PURCHASE_REFERENCE_MISMATCH"));
+
         UUID otherStore = fixtures.newActiveStore();
         UUID otherRoom = fixtures.newWarehouse(otherStore, "ALLOW");
         mvc.perform(idem(post(BO + "/receipts")).with(buyer(otherStore)).contentType(MediaType.APPLICATION_JSON)

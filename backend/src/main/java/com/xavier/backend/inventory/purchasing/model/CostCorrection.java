@@ -6,12 +6,13 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 
 /**
- * How a receipt line's cost correction splits (D125): the share still on hand, {@code min(received, on hand)}, is
- * revalued ({@code revalued × Δ}, a REVALUATION); the rest of {@code received × Δ} was already consumed at the old
- * cost and becomes a cost variance for the margin report. Values are HALF_UP at scale 4, so the two always add up
- * to {@code round(received × Δ, 4)}.
+ * How a receipt line's cost correction splits (D125 amended): only the line's own share still in stock
+ * ({@link ReceiptShare}) is revalued, {@code share × Δ} as a REVALUATION, capped so the balance value never goes below
+ * zero; everything else of {@code (received − returned) × Δ} was consumed (or returned) at the old cost and becomes a
+ * cost variance. Values are HALF_UP at scale 4, and the two always add up to {@code round((received − returned) × Δ,
+ * 4)}.
  *
- * @param revaluedQuantity the on-hand share (scale 6), zero when nothing is on hand
+ * @param revaluedQuantity the line's share still in stock (scale 6), zero when none is left
  * @param revaluationValue signed, scale 4
  * @param varianceValue    signed, scale 4
  */
@@ -19,16 +20,19 @@ public record CostCorrection(BigDecimal revaluedQuantity, BigDecimal revaluation
 
     /**
      * @param received     what the line brought in and still counts (received less returned), base unit
-     * @param onHand       the warehouse's current quantity of the item (may be negative)
+     * @param share        the line's share still in stock ({@link ReceiptShare})
+     * @param balanceValue the warehouse's current value of the item
      * @param previousCost the line's cost before this correction, per base unit
      * @param newCost      the corrected cost, per base unit
      */
-    public static CostCorrection split(BigDecimal received, BigDecimal onHand, BigDecimal previousCost,
-                                       BigDecimal newCost) {
+    public static CostCorrection split(BigDecimal received, BigDecimal share, BigDecimal balanceValue,
+                                       BigDecimal previousCost, BigDecimal newCost) {
         BigDecimal delta = newCost.subtract(previousCost);
-        BigDecimal revalued = received.min(onHand.max(BigDecimal.ZERO))
-                .setScale(StockPosition.QUANTITY_SCALE, RoundingMode.UNNECESSARY);
-        BigDecimal revaluation = MovingAverage.valueOf(revalued, delta);
+        BigDecimal revalued = share.max(BigDecimal.ZERO).min(received)
+                .setScale(StockPosition.QUANTITY_SCALE, RoundingMode.HALF_UP);
+        BigDecimal floor = balanceValue.max(BigDecimal.ZERO).negate().setScale(StockPosition.VALUE_SCALE,
+                RoundingMode.UNNECESSARY);
+        BigDecimal revaluation = MovingAverage.valueOf(revalued, delta).max(floor); // the value never goes below 0
         BigDecimal total = MovingAverage.valueOf(received, delta);
         return new CostCorrection(revalued, revaluation, total.subtract(revaluation));
     }

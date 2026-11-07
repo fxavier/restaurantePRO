@@ -28,8 +28,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Suppliers and what they sell (D123). Company-wide: {@code PURCHASE_MANAGE} in any store (PRD R4 conventions).
- * Audited.
+ * Suppliers and what they sell (D123). Company-wide: writes (create, update and deactivate, supplier items) need
+ * {@code PURCHASE_MANAGE} installation-wide, as other company-wide configuration (S39, S40); reads need it in any
+ * store. A confirmed receipt's last-cost update is a fact of the receipt, not a supplier write. Audited.
  */
 @Service
 public class SupplierService {
@@ -55,7 +56,7 @@ public class SupplierService {
 
     @Transactional
     public SupplierView create(SupplierRequest request) {
-        accessPolicy.requireInAnyStore(Permission.PURCHASE_MANAGE);
+        accessPolicy.require(Permission.PURCHASE_MANAGE);
         Supplier supplier = save(Supplier.create(new Supplier.Contact(request.code(), request.name(),
                 request.taxId(), request.email(), request.phone(), request.notes()), clock.instant()));
         audit("SUPPLIER_CREATED", supplier);
@@ -64,7 +65,7 @@ public class SupplierService {
 
     @Transactional
     public SupplierView update(UUID id, SupplierUpdateRequest request) {
-        accessPolicy.requireInAnyStore(Permission.PURCHASE_MANAGE);
+        accessPolicy.require(Permission.PURCHASE_MANAGE);
         Supplier supplier = find(id);
         OptimisticLocking.requireVersion(Supplier.class, id, supplier.getVersion(), request.version());
         supplier.update(new Supplier.Contact(request.code(), request.name(), request.taxId(), request.email(),
@@ -89,7 +90,7 @@ public class SupplierService {
     /** @throws PurchasingConflictException SUPPLIER_ITEM_EXISTS for the same stock item and pack */
     @Transactional
     public SupplierItemView addItem(UUID supplierId, SupplierItemRequest request) {
-        accessPolicy.requireInAnyStore(Permission.PURCHASE_MANAGE);
+        accessPolicy.require(Permission.PURCHASE_MANAGE);
         find(supplierId);
         PurchaseUnits.Unit unit = units.of(request.stockItemId(), request.packId());
         SupplierItem item = UniqueConstraints.saveAndFlush(supplierItems,

@@ -115,6 +115,11 @@ public class GoodsReceiptService {
             if (!order.getStoreId().equals(storeId)) {
                 throw InventoryRuleException.warehouseStoreMismatch(request.warehouseId(), order.getStoreId());
             }
+            if (!order.getWarehouseId().equals(request.warehouseId())) {
+                throw PurchasingRuleException.referenceMismatch("Purchase order " + order.getId()
+                        + " is received in warehouse " + order.getWarehouseId() + ", not " + request.warehouseId()
+                        + ".");
+            }
             order.requireReceivable();
             if (supplierId != null && !supplierId.equals(order.getSupplierId())) {
                 throw PurchasingRuleException.referenceMismatch("Purchase order " + order.getId()
@@ -135,13 +140,15 @@ public class GoodsReceiptService {
 
     @Transactional
     public ReceiptView update(UUID id, ReceiptUpdateRequest request) {
-        GoodsReceipt receipt = lockAuthorized(id, refOf(id));
-        OptimisticLocking.requireVersion(GoodsReceipt.class, id, receipt.getVersion(), request.version());
+        accessPolicy.require(Permission.GOODS_RECEIVE, refOf(id).storeId());
+        GoodsReceipt receipt = receipts.findById(id).orElseThrow(() -> new InventoryNotFoundException(ENTITY, id));
         PurchaseOrder order = receipt.getPurchaseOrderId() == null ? null
                 : orders.findById(receipt.getPurchaseOrderId()).orElseThrow();
+        List<GoodsReceiptLine> lines = lines(order, receipt.getSupplierId(), request.lines()); // before the lock
+        entityManager.refresh(receipt, LockModeType.PESSIMISTIC_WRITE);
+        OptimisticLocking.requireVersion(GoodsReceipt.class, id, receipt.getVersion(), request.version());
         receipt.edit(request.supplierDocumentRef(),
-                request.receivedAt() == null ? receipt.getReceivedAt() : request.receivedAt(),
-                lines(order, receipt.getSupplierId(), request.lines()));
+                request.receivedAt() == null ? receipt.getReceivedAt() : request.receivedAt(), lines);
         GoodsReceipt saved = receipts.saveAndFlush(receipt);
         audit("GOODS_RECEIPT_UPDATED", saved);
         return view(saved, List.of());
@@ -219,8 +226,11 @@ public class GoodsReceiptService {
                         .map(SupplierItem::getLastUnitCost)
                         .orElseThrow(() -> PurchasingRuleException.unitCostRequired(line.stockItemId()));
             }
+            BigDecimal quantityBase = PurchaseUnits.requireQuantity(line.stockItemId(),
+                    unit.toBase(line.packQuantity()));
+            PurchaseUnits.requireValue(line.stockItemId(), quantityBase, cost);
             lines.add(GoodsReceiptLine.of(orderLine == null ? null : orderLine.getId(), line.stockItemId(),
-                    unit.packId(), line.packQuantity(), unit.toBase(line.packQuantity()), cost));
+                    unit.packId(), line.packQuantity(), quantityBase, cost));
         }
         return lines;
     }

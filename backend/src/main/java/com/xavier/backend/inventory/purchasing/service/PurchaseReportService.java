@@ -14,7 +14,10 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Purchases by supplier or by stock item over a period of business days (D131), {@code INVENTORY_VIEW}. */
+/**
+ * Net purchases (received − returned + corrections) by supplier or by stock item over a period of business days
+ * (D131), {@code INVENTORY_VIEW}; {@code totalValue} is the Σ of the rows' net values.
+ */
 @Service
 public class PurchaseReportService {
 
@@ -45,6 +48,6 @@ public class PurchaseReportService {
         List<PurchaseRow> rows = grouping == Grouping.SUPPLIER ? queries.bySupplier(storeId, from, to)
                 : queries.byItem(storeId, from, to);
         return new InventoryReport<>(storeId, from, to, rows,
-                rows.stream().map(PurchaseRow::value).reduce(BigDecimal.ZERO, BigDecimal::add));
+                rows.stream().map(PurchaseRow::netValue).reduce(BigDecimal.ZERO, BigDecimal::add));
     }
 }

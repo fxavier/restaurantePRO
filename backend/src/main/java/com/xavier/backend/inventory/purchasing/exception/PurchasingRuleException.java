@@ -61,6 +61,12 @@ public class PurchasingRuleException extends BusinessRuleException {
         return new PurchasingRuleException(PurchasingRule.REASON_REQUIRED, "A " + what + " needs a reason.");
     }
 
+    /** A line's value would not fit a stock value (15 integer digits, scale 4). */
+    public static PurchasingRuleException lineValueTooLarge(UUID stockItemId) {
+        return new PurchasingRuleException(PurchasingRule.LINE_VALUE_TOO_LARGE, "The line of stock item "
+                + stockItemId + " is worth more than a stock value can hold: split it or check its cost.");
+    }
+
     public PurchasingRule rule() {
         return rule;
     }
