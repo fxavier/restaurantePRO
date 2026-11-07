@@ -2,6 +2,7 @@ package com.xavier.backend.inventory.service;
 
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
+import com.xavier.backend.inventory.consumption.repository.ConsumptionBook;
 import com.xavier.backend.inventory.model.MovementType;
 import com.xavier.backend.inventory.model.dto.MovementView;
 import com.xavier.backend.inventory.model.dto.StatusView;
@@ -31,9 +32,12 @@ public class InventoryQueryService {
     private final EventPublicationStats publications;
     private final InventoryScope scope;
     private final AccessPolicy accessPolicy;
+    private final ConsumptionBook consumption;
 
     InventoryQueryService(InventoryQueries queries, BalanceProjection projection, ActivationService activations,
-                          EventPublicationStats publications, InventoryScope scope, AccessPolicy accessPolicy) {
+                          EventPublicationStats publications, InventoryScope scope, AccessPolicy accessPolicy,
+                          ConsumptionBook consumption) {
+        this.consumption = consumption;
         this.queries = queries;
         this.projection = projection;
         this.activations = activations;
@@ -67,6 +71,6 @@ public class InventoryQueryService {
                 activeFrom.orElse(null), publications.pendingFor(CONSUMPTION_LISTENERS),
                 queries.openExceptions(storeId), queries.negativeBalances(storeId),
                 check.map(BalanceProjection.BalanceCheck::driftingBalances).orElse(0),
-                check.map(BalanceProjection.BalanceCheck::checkedAt).orElse(null));
+                check.map(BalanceProjection.BalanceCheck::checkedAt).orElse(null), consumption.pendingVoids(storeId));
     }
 }

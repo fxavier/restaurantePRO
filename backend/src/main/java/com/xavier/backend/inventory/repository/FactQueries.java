@@ -53,4 +53,21 @@ public class FactQueries {
                 .params(storeId, from, to).query(Long.class).single();
         return new PageImpl<>(page, pageable, total);
     }
+
+    /** The waste records of a wasted void, in the order they were recorded. */
+    public List<com.xavier.backend.inventory.WasteFact> wasteOf(UUID voidId) {
+        return jdbc.sql("""
+                        SELECT void_id, original_movement_id, store_id, warehouse_id, stock_item_id, sale_item_id,
+                               source_line_id, quantity, unit_cost, value, currency, business_date, occurred_at
+                        FROM inventory.waste_record WHERE void_id = ? ORDER BY created_at, id""")
+                .param(voidId)
+                .query((rs, n) -> new com.xavier.backend.inventory.WasteFact(rs.getObject("void_id", UUID.class),
+                        rs.getObject("original_movement_id", UUID.class), rs.getObject("store_id", UUID.class),
+                        rs.getObject("warehouse_id", UUID.class), rs.getObject("stock_item_id", UUID.class),
+                        rs.getObject("sale_item_id", UUID.class), rs.getObject("source_line_id", UUID.class),
+                        rs.getBigDecimal("quantity"), rs.getBigDecimal("unit_cost"), rs.getBigDecimal("value"),
+                        rs.getString("currency"), rs.getObject("business_date", LocalDate.class),
+                        rs.getTimestamp("occurred_at").toInstant()))
+                .list();
+    }
 }

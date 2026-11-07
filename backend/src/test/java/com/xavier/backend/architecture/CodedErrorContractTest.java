@@ -36,8 +36,13 @@ import com.xavier.backend.fiscal.FiscalIssueFailedException;
 import com.xavier.backend.fiscal.exception.DraftMismatchException;
 import com.xavier.backend.fiscal.exception.PaymentSnapshotMismatchException;
 import com.xavier.backend.identity.exception.LoginThrottledException;
+import com.xavier.backend.inventory.consumption.exception.ConsumptionConflictException;
+import com.xavier.backend.inventory.consumption.exception.ConsumptionRuleException;
 import com.xavier.backend.inventory.exception.InventoryConflictException;
 import com.xavier.backend.inventory.exception.InventoryRuleException;
+import com.xavier.backend.inventory.preparation.exception.PreparationConflictException;
+import com.xavier.backend.inventory.recipe.exception.RecipeConflictException;
+import com.xavier.backend.inventory.recipe.exception.RecipeRuleException;
 import com.xavier.backend.inventory.purchasing.exception.PurchasingConflictException;
 import com.xavier.backend.inventory.purchasing.exception.PurchasingRuleException;
 import com.xavier.backend.identity.exception.PinChangeNotRequiredException;
@@ -303,6 +308,8 @@ class CodedErrorContractTest {
             Map.entry("inventory-period-required", InventoryRuleException::periodRequired),
             Map.entry("inventory-range-too-large", () -> InventoryRuleException.rangeTooLarge(366)),
             Map.entry("inventory-not-active", () -> InventoryRuleException.notActive(ID)),
+            Map.entry("activation-in-past", () -> InventoryRuleException.activationInPast(
+                    java.time.Instant.parse("2026-11-06T10:00:00Z"))),
             Map.entry("transfer-state", () -> InventoryConflictException.transferState(ID, "SHIPPED", "be shipped")),
             Map.entry("inventory-already-active", () -> InventoryConflictException.alreadyActive(ID)),
             Map.entry("movement-source-mismatch", () -> InventoryConflictException.sourceMismatch("ORDER_LINE", ID)),
@@ -312,6 +319,23 @@ class CodedErrorContractTest {
             Map.entry("route-exists", () -> InventoryConflictException.routeExists(ID, "BAR")),
             Map.entry("default-route-exists", () -> InventoryConflictException.routeExists(ID, null)),
             Map.entry("stock-level-exists", () -> InventoryConflictException.levelExists(ID, OTHER)),
+            // R4 recipes, consumption, preparations (S47)
+            Map.entry("recipe-effective-from-invalid", () -> RecipeRuleException.effectiveFromInvalid(
+                    java.time.Instant.parse("2026-11-06T10:00:00Z"))),
+            Map.entry("recipe-effective-from-in-past", () -> RecipeRuleException.effectiveFromInPast(
+                    java.time.Instant.parse("2026-11-06T10:00:00Z"))),
+            Map.entry("recipe-target-invalid", RecipeRuleException::targetInvalid),
+            Map.entry("item-not-found", () -> RecipeRuleException.itemNotFound(ID, OTHER)),
+            Map.entry("recipe-output-not-prepared", () -> RecipeRuleException.outputNotPrepared(ID)),
+            Map.entry("recipe-cycle", () -> RecipeRuleException.cycle(ID, OTHER)),
+            Map.entry("no-active-recipe", () -> RecipeRuleException.noActiveRecipe(ID)),
+            Map.entry("policy-rule-duplicate", () -> RecipeRuleException.policyRuleDuplicate(ID)),
+            Map.entry("consumption-unresolved", () -> ConsumptionRuleException.unresolved(ID, "NO_RECIPE")),
+            Map.entry("recipe-version-immutable", () -> RecipeConflictException.immutable(ID, "ACTIVE", "be edited")),
+            Map.entry("recipe-exists", () -> RecipeConflictException.exists("item " + ID)),
+            Map.entry("policy-version-taken", RecipeConflictException::policyVersionTaken),
+            Map.entry("consumption-exception-resolved", () -> ConsumptionConflictException.alreadyResolved(ID)),
+            Map.entry("preparation-state", () -> PreparationConflictException.state(ID, "CONFIRMED", "be confirmed")),
             Map.entry("loyalty-not-member", () -> LoyaltyRuleException.notMember(ID)),
             Map.entry("loyalty-suspended", () -> LoyaltyRuleException.suspended(ID)),
             Map.entry("loyalty-insufficient-points", () -> LoyaltyRuleException.insufficientPoints(10, 40)),
@@ -768,6 +792,9 @@ class CodedErrorContractTest {
                 ",\"maxDays\":366");
         expect("inventory-not-active", 422, "INVENTORY_NOT_ACTIVE", "Inventory is not active in store " + ID
                 + ": activate it and count the opening stock first.", "");
+        expect("activation-in-past", 422, "ACTIVATION_IN_PAST",
+                "Inventory goes live now or later, not before 2026-11-06T10:00:00Z.",
+                ",\"notBefore\":\"2026-11-06T10:00:00Z\"");
     }
 
     @Test
@@ -794,6 +821,43 @@ class CodedErrorContractTest {
         expect("default-route-exists", 409, "ROUTE_EXISTS", "Store " + ID + " already has a default route.", "");
         expect("stock-level-exists", 409, "STOCK_LEVEL_EXISTS", "Warehouse " + ID
                 + " already has a minimum for stock item " + OTHER + ".", "");
+    }
+
+    @Test
+    void recipeAndConsumptionRules() throws Exception {
+        expect("recipe-effective-from-invalid", 422, "RECIPE_EFFECTIVE_FROM_INVALID",
+                "A new version must take effect after 2026-11-06T10:00:00Z, when the current one did.",
+                ",\"notAfter\":\"2026-11-06T10:00:00Z\"");
+        expect("recipe-effective-from-in-past", 422, "RECIPE_EFFECTIVE_FROM_INVALID",
+                "A version takes effect now or later, not before 2026-11-06T10:00:00Z.",
+                ",\"notBefore\":\"2026-11-06T10:00:00Z\"");
+        expect("recipe-target-invalid", 422, "RECIPE_TARGET_INVALID", "A recipe is for a catalog item (itemId, "
+                + "optionally variantId) or a prepared stock item (outputStockItemId): exactly one of them.", "");
+        expect("item-not-found", 422, "ITEM_NOT_FOUND", "Catalog item " + ID + " with variant " + OTHER
+                + " was not found.", "");
+        expect("recipe-output-not-prepared", 422, "RECIPE_OUTPUT_NOT_PREPARED", "Stock item " + ID
+                + " is not PREPARED: only a prepared item has a preparation recipe.", "");
+        expect("recipe-cycle", 422, "RECIPE_CYCLE", "The recipe of stock item " + ID
+                + " would need itself through stock item " + OTHER + ".", ",\"stockItemId\":\"" + OTHER + "\"");
+        expect("no-active-recipe", 422, "NO_ACTIVE_RECIPE", "Stock item " + ID
+                + " has no active preparation recipe.", "");
+        expect("policy-rule-duplicate", 422, "POLICY_RULE_DUPLICATE",
+                "The consumption policy has two rules for family " + ID + ".", "");
+        expect("consumption-unresolved", 422, "CONSUMPTION_UNRESOLVED", "Consumption exception " + ID
+                + " still cannot be consumed: NO_RECIPE. Fix it and reprocess again.", ",\"kind\":\"NO_RECIPE\"");
+    }
+
+    @Test
+    void recipeAndConsumptionConflicts() throws Exception {
+        expect("recipe-version-immutable", 409, "RECIPE_VERSION_IMMUTABLE", "Version " + ID
+                + " is ACTIVE and cannot be edited: create a new version.", "");
+        expect("recipe-exists", 409, "RECIPE_EXISTS", "There is already a recipe for item " + ID + ".", "");
+        expect("policy-version-taken", 409, "POLICY_VERSION_TAKEN",
+                "Another consumption policy version was created or activated at the same time: retry.", "");
+        expect("consumption-exception-resolved", 409, "CONSUMPTION_EXCEPTION_RESOLVED", "Consumption exception "
+                + ID + " is already resolved.", "");
+        expect("preparation-state", 409, "PREPARATION_STATE", "Preparation " + ID
+                + " is CONFIRMED and cannot be confirmed.", "");
     }
 
     @Test
