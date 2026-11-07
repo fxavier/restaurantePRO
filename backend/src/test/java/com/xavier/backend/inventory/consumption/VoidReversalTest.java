@@ -25,7 +25,14 @@ import org.junit.jupiter.api.Test;
  * cost kept as its reference cost. When the average has not moved since the sale, both are the same value.
  */
 @InventoryModuleTest
+@org.springframework.test.context.event.RecordApplicationEvents
 class VoidReversalTest extends ConsumptionTestBase {
+
+    @org.springframework.beans.factory.annotation.Autowired
+    com.xavier.backend.inventory.InventoryFacts facts;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    org.springframework.test.context.event.ApplicationEvents published;
 
     UUID pizza;
     UUID flour;
@@ -78,21 +85,108 @@ class VoidReversalTest extends ConsumptionTestBase {
             assertThat((BigDecimal) w.get("unit_cost")).isEqualByComparingTo("2");
             assertThat((BigDecimal) w.get("value")).isEqualByComparingTo("1.0000");
         });
-        com.xavier.backend.inventory.InventoryFixtures.json(mvc.perform(
-                        org.springframework.test.web.servlet.request.MockMvcRequestBuilders
-                                .get(com.xavier.backend.inventory.InventoryFixtures.BO + "/reports/waste")
-                                .param("storeId", kitchen.store.toString()).param("from", Kitchen.DAY.toString())
-                                .param("to", Kitchen.DAY.toString())
-                                .with(com.xavier.backend.inventory.InventoryFixtures.account(kitchen.store,
-                                        com.xavier.backend.access.Permission.INVENTORY_VIEW)))
-                .andReturn().getResponse().getContentAsString()).get("rows").forEach(row -> {
-            if (row.get("stockItemId").asString().equals(flour.toString())) {
-                assertThat(row.get("quantity").decimalValue()).isEqualByComparingTo("0.5");
-                assertThat(row.get("value").decimalValue()).isEqualByComparingTo("1.0000");
-            }
+        assertThat(kitchen.rows(kitchen.report("waste"), flour)).singleElement().satisfies(row -> {
+            assertThat(row.get("quantity").decimalValue()).isEqualByComparingTo("0.5");
+            assertThat(row.get("value").decimalValue()).isEqualByComparingTo("1.0000");
         });
         voids.reverse(dropped.voidId());
         assertThat(kitchen.wasteRecords(dropped.voidId())).hasSize(1);
+    }
+
+    /**
+     * A wasted kilo is reclassified from sale to waste: the rotation report counts no consumption for it, the waste
+     * report counts it once, and a ConsumptionWasteRecorded event carries it (no stock movement fires).
+     */
+    @Test
+    void aWastedKiloCountsOnceAsWasteAndNotAsConsumption() throws Exception {
+        UUID sugar = kitchen.stockItem("kg");
+        UUID cake = kitchen.catalogItem(null);
+        kitchen.receive(kitchen.kitchen, sugar, "10", "2.000000");
+        kitchen.saleRecipe(cake, null, "1", ingredient(sugar, "1", "kg"));
+        BatchFacts round = kitchen.round(clock.instant(), OrderMode.DINE_IN, line(cake, "1", "KITCHEN"));
+        consumption.consume(round.batchId());
+
+        VoidFacts dropped = kitchen.voided(lineOf(round), "1", true, clock.instant());
+        voids.reverse(dropped.voidId());
+
+        assertThat(kitchen.rows(kitchen.report("rotation"), sugar)).singleElement()
+                .satisfies(row -> assertThat(row.get("consumptionCost").decimalValue()).isEqualByComparingTo("0"));
+        assertThat(kitchen.rows(kitchen.report("waste"), sugar)).singleElement().satisfies(row -> {
+            assertThat(row.get("quantity").decimalValue()).isEqualByComparingTo("1");
+            assertThat(row.get("value").decimalValue()).isEqualByComparingTo("2.0000");
+        });
+        assertThat(facts.wasteOf(dropped.voidId())).singleElement().satisfies(waste -> {
+            assertThat(waste.stockItemId()).isEqualTo(sugar);
+            assertThat(waste.quantity()).isEqualByComparingTo("1");
+            assertThat(waste.value()).isEqualByComparingTo("2.0000");
+        });
+        assertThat(published.stream(com.xavier.backend.inventory.model.event.ConsumptionWasteRecorded.class)
+                .filter(event -> event.voidId().equals(dropped.voidId()))).singleElement().satisfies(event -> {
+            assertThat(event.storeId()).isEqualTo(kitchen.store);
+            assertThat(event.warehouseId()).isEqualTo(kitchen.kitchen);
+            assertThat(event.stockItemId()).isEqualTo(sugar);
+            assertThat(event.quantity()).isEqualByComparingTo("1");
+            assertThat(event.value()).isEqualByComparingTo("2.0000");
+            assertThat(event.occurredAt()).isEqualTo(dropped.at());
+        });
+    }
+
+    /** Two half voids put back the sale's whole value: the last one carries what the first left (review repro). */
+    @Test
+    void twoHalfVoidsPutBackTheWholeValueOfTheSale() throws Exception {
+        UUID sugar = kitchen.stockItem("kg");
+        UUID cake = kitchen.catalogItem(null);
+        kitchen.receive(kitchen.kitchen, sugar, "10", "1.000050");
+        kitchen.saleRecipe(cake, null, "1", ingredient(sugar, "0.5", "kg"));
+        BigDecimal before = kitchen.value(kitchen.kitchen, sugar);
+        BatchFacts round = kitchen.round(clock.instant(), OrderMode.DINE_IN, line(cake, "2", "KITCHEN"));
+        consumption.consume(round.batchId());
+
+        voids.reverse(kitchen.voided(lineOf(round), "1", false, clock.instant()).voidId());
+        voids.reverse(kitchen.voided(lineOf(round), "1", false, clock.instant()).voidId());
+
+        assertThat(kitchen.quantity(kitchen.kitchen, sugar)).isEqualByComparingTo("10");
+        assertThat(kitchen.value(kitchen.kitchen, sugar)).isEqualByComparingTo(before).isEqualByComparingTo("10.0005");
+    }
+
+    /** A sale that emptied the stock took its whole value; voiding it in full puts exactly that value back. */
+    @Test
+    void aFullVoidOfASaleThatEmptiedTheStockPutsItsWholeValueBack() throws Exception {
+        UUID cream = kitchen.stockItem("g");
+        UUID cake = kitchen.catalogItem(null);
+        kitchen.receive(kitchen.kitchen, cream, "1000", "0.000333");
+        kitchen.receive(kitchen.kitchen, cream, "2000", "0.000334"); // 3000 g worth 1.0010, average 0.000334
+        kitchen.saleRecipe(cake, null, "1", ingredient(cream, "3000", "g"));
+        BatchFacts round = kitchen.round(clock.instant(), OrderMode.DINE_IN, line(cake, "1", "KITCHEN"));
+        consumption.consume(round.batchId());
+        assertThat(kitchen.value(kitchen.kitchen, cream)).isEqualByComparingTo("0");
+
+        voids.reverse(kitchen.voided(lineOf(round), "1", false, clock.instant()).voidId());
+
+        assertThat(kitchen.quantity(kitchen.kitchen, cream)).isEqualByComparingTo("3000");
+        assertThat(kitchen.value(kitchen.kitchen, cream)).isEqualByComparingTo("1.0010");
+    }
+
+    /**
+     * Check (review item 9): a line split three ways at 6 decimals (S46) and every copy voided in full. The voids
+     * name the same round line and add up to its quantity, so the line nets to zero in quantity and value.
+     */
+    @Test
+    void aLineSplitThreeWaysAndVoidedInFullNetsToZero() throws Exception {
+        UUID salt = kitchen.stockItem("kg");
+        UUID pinch = kitchen.catalogItem(null);
+        kitchen.receive(kitchen.kitchen, salt, "1", "3.000000");
+        kitchen.saleRecipe(pinch, null, "1", ingredient(salt, "0.1", "kg"));
+        BigDecimal before = kitchen.value(kitchen.kitchen, salt);
+        BatchFacts round = kitchen.round(clock.instant(), OrderMode.DINE_IN, line(pinch, "1", "KITCHEN"));
+        consumption.consume(round.batchId());
+
+        for (String copy : java.util.List.of("0.333333", "0.333333", "0.333334")) {
+            voids.reverse(kitchen.voided(lineOf(round), copy, false, clock.instant()).voidId());
+        }
+
+        assertThat(kitchen.quantity(kitchen.kitchen, salt)).isEqualByComparingTo("1");
+        assertThat(kitchen.value(kitchen.kitchen, salt)).isEqualByComparingTo(before);
     }
 
     /** Three voids of a third each: the last one reverses whatever rounding left, so the line nets to zero. */

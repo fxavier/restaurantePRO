@@ -43,6 +43,7 @@ class ConsumptionExceptionTest extends ConsumptionTestBase {
         kitchen.saleRecipe(pizza, null, "1", ingredient(flour, "250", "g"));
         BatchFacts round = kitchen.round(clock.instant(), OrderMode.DINE_IN, line(pizza, "1", "KITCHEN"),
                 line(ghost, "1", "KITCHEN"));
+        clock.advance(Duration.ofMinutes(3)); // consumed late: the exception keeps the line's confirmation
 
         consumption.consume(round.batchId());
 
@@ -150,8 +151,9 @@ class ConsumptionExceptionTest extends ConsumptionTestBase {
     }
 
     /**
-     * A void waits only for a line that may still be consumed: one held by an exception counts as a pending void on
-     * the status; one consumed for nothing (packaging of another mode only) resolves at once.
+     * A void waits only for a line that may still be consumed: one held by an exception (on the line or on any menu
+     * component) counts as a pending void on the status; one consumed for nothing (packaging of another mode only)
+     * resolves at once.
      */
     @Test
     void onlyAVoidOfALineHeldByAnExceptionWaits() throws Exception {
@@ -161,12 +163,81 @@ class ConsumptionExceptionTest extends ConsumptionTestBase {
                 line(kitchen.catalogItem(null), "1", "KITCHEN"));
         consumption.consume(round.batchId());
 
+        UUID drink = kitchen.catalogItem(null);
+        kitchen.saleRecipe(drink, null, "1", ingredient(kitchen.stockItem("ml"), "200", "ml"));
+        BatchFacts menu = kitchen.round(clock.instant(), OrderMode.DINE_IN, Kitchen.menu(kitchen.catalogItem(null),
+                "1", Kitchen.component(drink, "1", "BAR"), Kitchen.component(kitchen.catalogItem(null), "1",
+                        "KITCHEN")));
+        consumption.consume(menu.batchId());
+
         voids.reverse(kitchen.voided(round.lines().get(0).lineId(), "1", false, clock.instant()).voidId());
         voids.reverse(kitchen.voided(round.lines().get(1).lineId(), "1", false, clock.instant()).voidId());
+        voids.reverse(kitchen.voided(menu.lines().get(0).lineId(), "1", false, clock.instant()).voidId());
 
+        // the exception line, and the menu whose second component is still in exception
         mvc.perform(get(InventoryFixtures.BO + "/status").param("storeId", kitchen.store.toString())
                         .with(account(kitchen.store, Permission.INVENTORY_VIEW)))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.pendingVoids").value(1));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.pendingVoids").value(2));
+    }
+
+    /**
+     * A line held by an exception is settled only by its reprocess: a redelivery after the cause is fixed does not
+     * consume it, so a reprocess after a route change consumes it once (review repro: -500 instead of -250).
+     */
+    @Test
+    void aRedeliveryNeverConsumesALineHeldByAnException() throws Exception {
+        UUID pizza = kitchen.catalogItem(null);
+        UUID flour = kitchen.stockItem("g");
+        kitchen.saleRecipe(pizza, null, "1", ingredient(flour, "250", "g"));
+        setActive(flour, false, 0);
+        BatchFacts round = kitchen.round(clock.instant(), OrderMode.DINE_IN, line(pizza, "1", "KITCHEN"));
+        consumption.consume(round.batchId());
+        setActive(flour, true, 1);
+        consumption.consume(round.batchId()); // redelivery
+        assertThat(list(true).get("totalElements").asLong()).isEqualTo(1);
+        UUID other = fixtures.newWarehouse(kitchen.store, "ALLOW");
+        mvc.perform(put(InventoryFixtures.BO + "/consumption-routes/" + kitchen.defaultRoute)
+                        .with(account(null, Permission.INVENTORY_MANAGE))
+                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"warehouseId\": \"%s\", \"version\": 0}".formatted(other)))
+                .andExpect(status().isOk());
+        UUID exception = (UUID) kitchen.exceptions().getFirst().get("id");
+
+        reprocess(exception).andExpect(status().isOk());
+
+        assertThat(kitchen.quantity(kitchen.kitchen, flour).add(kitchen.quantity(other, flour)))
+                .isEqualByComparingTo("-250");
+        assertThat(kitchen.exceptions()).singleElement()
+                .satisfies(e -> assertThat(e.get("resolution")).isEqualTo("REPROCESSED"));
+    }
+
+    /** A line sold while the store was not live is settled for nothing, so a later void never waits for it. */
+    @Test
+    void aVoidOfALineSoldBeforeActivationResolvesAtOnce() throws Exception {
+        Kitchen notLive = Kitchen.openNotLive(mvc, fixtures, ledger, tx, jdbc, orders, catalog);
+        UUID pizza = notLive.catalogItem(null);
+        notLive.saleRecipe(pizza, null, "1", ingredient(notLive.stockItem("g"), "250", "g"));
+        BatchFacts round = notLive.round(clock.instant(), OrderMode.DINE_IN, line(pizza, "1", "KITCHEN"));
+        consumption.consume(round.batchId());
+        clock.advance(Duration.ofMinutes(1));
+        notLive.goLive(clock.instant());
+        clock.advance(Duration.ofMinutes(1));
+
+        voids.reverse(notLive.voided(round.lines().getFirst().lineId(), "1", false, clock.instant()).voidId());
+
+        assertThat(notLive.inventoryStatus().get("pendingVoids").asLong()).isZero();
+        assertThat(notLive.movementsOfStore()).isZero();
+    }
+
+    private void setActive(UUID item, boolean active, int version) throws Exception {
+        mvc.perform(put(InventoryFixtures.BO + "/stock-items/" + item)
+                        .with(account(null, Permission.INVENTORY_MANAGE))
+                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"code": "%s", "name": "Flour", "active": %s, "version": %d}"""
+                                .formatted(InventoryFixtures.code("I"), active, version)))
+                .andExpect(status().isOk());
     }
 
     private JsonNode list(boolean open) throws Exception {

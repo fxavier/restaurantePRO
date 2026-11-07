@@ -151,7 +151,11 @@ public class InventoryQueries {
         return jdbc.sql("""
                         SELECT i.id, i.code, i.name,
                                -coalesce(sum(m.value) FILTER (WHERE m.business_date BETWEEN :from AND :to
-                                   AND m.type IN ('SALE_CONSUMPTION', 'CONSUMPTION_REVERSAL')), 0) AS consumption,
+                                   AND m.type IN ('SALE_CONSUMPTION', 'CONSUMPTION_REVERSAL')), 0)
+                               -- a wasted void moves its share of the sale's cost to waste (D117 as amended)
+                               - coalesce((SELECT sum(r.value) FROM inventory.waste_record r
+                                           WHERE r.store_id = :store AND r.stock_item_id = i.id
+                                             AND r.business_date BETWEEN :from AND :to), 0) AS consumption,
                                coalesce(sum(m.value) FILTER (WHERE m.business_date < :from), 0) AS opening,
                                coalesce(sum(m.value) FILTER (WHERE m.business_date <= :to), 0) AS closing
                         FROM inventory.stock_movement m JOIN inventory.stock_item i ON i.id = m.stock_item_id

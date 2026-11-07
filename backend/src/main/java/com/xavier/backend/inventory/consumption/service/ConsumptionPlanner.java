@@ -71,8 +71,11 @@ public class ConsumptionPlanner {
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public Context context(BatchFacts round) {
+        Optional<ConsumptionPolicyVersion> policy = policies.effectiveAt(round.confirmedAt());
         Map<UUID, Map<UUID, UUID>> families = new HashMap<>();
-        round.lines().stream().map(BatchFacts.BatchLineFact::releaseId).filter(Objects::nonNull).distinct()
+        // families only matter to a policy: without one, every family is tracked and no release is read
+        round.lines().stream().filter(line -> policy.isPresent()).map(BatchFacts.BatchLineFact::releaseId)
+                .filter(Objects::nonNull).distinct()
                 .forEach(release -> families.put(release, catalog.snapshot(round.storeId(), release).items().stream()
                         .filter(item -> item.familyId() != null)
                         .collect(Collectors.toMap(CatalogSnapshot.Item::id, CatalogSnapshot.Item::familyId))));
@@ -80,7 +83,7 @@ public class ConsumptionPlanner {
         routes.findByStoreIdOrderByDestinationCode(round.storeId()).forEach((ConsumptionRoute route) ->
                 warehouses.put(route.getDestinationCode() == null ? "" : route.getDestinationCode(),
                         route.getWarehouseId()));
-        return new Context(round, policies.effectiveAt(round.confirmedAt()), families, warehouses);
+        return new Context(round, policy, families, warehouses);
     }
 
     /**

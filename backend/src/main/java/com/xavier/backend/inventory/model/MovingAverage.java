@@ -27,6 +27,15 @@ public final class MovingAverage {
      *                         OUT, which is always valued at the average
      */
     public static Valued post(StockPosition before, BigDecimal quantity, BigDecimal explicitUnitCost) {
+        return post(before, quantity, explicitUnitCost, null);
+    }
+
+    /**
+     * As {@link #post(StockPosition, BigDecimal, BigDecimal)}, with {@code explicitValue} (scale 4) for an IN with its
+     * own cost that carries an exact value instead of {@code round(q × cost, 4)}; {@code null} for the usual rule.
+     */
+    public static Valued post(StockPosition before, BigDecimal quantity, BigDecimal explicitUnitCost,
+                              BigDecimal explicitValue) {
         Objects.requireNonNull(quantity, "quantity");
         if (quantity.signum() == 0) {
             throw new IllegalArgumentException("a stock movement moves a quantity; a revaluation uses revalue");
@@ -35,7 +44,9 @@ public final class MovingAverage {
         BigDecimal unitCost = (out || explicitUnitCost == null ? before.averageCost() : explicitUnitCost)
                 .setScale(StockPosition.COST_SCALE, ROUNDING);
         boolean empties = out && before.quantity().add(quantity).signum() == 0;
-        BigDecimal value = empties ? before.value().negate() : valueOf(quantity, unitCost);
+        BigDecimal value = empties ? before.value().negate()
+                : explicitValue != null && !out ? explicitValue.setScale(StockPosition.VALUE_SCALE, RoundingMode.UNNECESSARY)
+                : valueOf(quantity, unitCost);
         StockPosition after = before.after(quantity, value, unitCost);
         boolean backFromNegative = quantity.signum() > 0 && before.quantity().signum() < 0
                 && after.quantity().signum() >= 0;

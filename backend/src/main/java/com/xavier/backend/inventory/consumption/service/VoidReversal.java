@@ -8,6 +8,7 @@ import com.xavier.backend.inventory.model.MovementType;
 import com.xavier.backend.inventory.model.StockPosition;
 import com.xavier.backend.inventory.model.dto.MovementView;
 import com.xavier.backend.inventory.model.dto.PostMovement;
+import com.xavier.backend.inventory.model.event.ConsumptionWasteRecorded;
 import com.xavier.backend.inventory.service.ActivationService;
 import com.xavier.backend.inventory.service.StockLedger;
 import com.xavier.backend.orders.OrdersApi;
@@ -23,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,8 +40,11 @@ import org.springframework.transaction.annotation.Transactional;
  *     <li>Not wasted (an error, nothing prepared): a CONSUMPTION_REVERSAL IN at the original movement's unit
  *     cost.</li>
  *     <li>Wasted: no stock movement (the ingredients really were used); the share is reclassified from sale to waste
- *     at the original unit cost in an append-only {@code waste_record}, audited.</li>
+ *     at the original unit cost in an append-only {@code waste_record}, audited, with a
+ *     {@link ConsumptionWasteRecorded} event per record.</li>
  * </ul>
+ * A share is valued at {@code round(q × original cost, 4)}; the share that settles a movement's last quantity carries
+ * exactly what is left of the movement's value, so a fully voided sale gives back its whole value.
  * A void of a line not settled yet waits for it, unless it was voided before the store went live.
  *
  * <p>Reversal sources: {@code VOID / voidId} for a line's own movement; {@code VOID_COMPONENT} with an id derived
@@ -56,10 +61,12 @@ public class VoidReversal {
     private final StockLedger ledger;
     private final ActivationService activations;
     private final AuditLog auditLog;
+    private final ApplicationEventPublisher events;
     private final Clock clock;
 
     VoidReversal(OrdersApi orders, ConsumptionBook book, StockLedger ledger, ActivationService activations,
-                 AuditLog auditLog, Clock clock) {
+                 AuditLog auditLog, ApplicationEventPublisher events, Clock clock) {
+        this.events = events;
         this.orders = orders;
         this.book = book;
         this.ledger = ledger;
@@ -101,7 +108,11 @@ public class VoidReversal {
             return List.of();
         }
         Map<UUID, BigDecimal> open = new HashMap<>();
-        originals.forEach(m -> open.put(m.id(), m.consumed().subtract(book.settledQuantity(m.id()))));
+        Map<UUID, BigDecimal> openValue = new HashMap<>();
+        originals.forEach(m -> {
+            open.put(m.id(), m.consumed().subtract(book.settledQuantity(m.id())));
+            openValue.put(m.id(), m.consumedValue().subtract(book.settledValue(m.id())));
+        });
         List<VoidFacts> all = voids.stream().map(orders::voidFacts).toList();
         boolean lineFullyVoided = all.stream().map(VoidFacts::quantity).reduce(BigDecimal.ZERO, BigDecimal::add)
                 .compareTo(lineQuantity) >= 0;
@@ -130,18 +141,25 @@ public class VoidReversal {
                     continue;
                 }
                 open.put(original.id(), left.subtract(quantity));
+                // the share that settles the movement's last quantity carries exactly what is left of its value
+                BigDecimal value = quantity.compareTo(left) == 0 ? openValue.get(original.id())
+                        : quantity.multiply(original.unitCost()).setScale(StockPosition.VALUE_SCALE,
+                        RoundingMode.HALF_UP);
+                openValue.put(original.id(), openValue.get(original.id()).subtract(value));
                 if (facts.wasted()) {
-                    book.recordWaste(facts.voidId(), original, lineId, quantity, quantity
-                                    .multiply(original.unitCost()).setScale(StockPosition.VALUE_SCALE,
-                                            RoundingMode.HALF_UP), facts.businessDay(), facts.at(), facts.reason(),
-                            now);
-                    wasted++;
+                    if (book.recordWaste(facts.voidId(), original, lineId, quantity, value, facts.businessDay(),
+                            facts.at(), facts.reason(), now)) {
+                        events.publishEvent(new ConsumptionWasteRecorded(facts.voidId(), original.id(),
+                                original.storeId(), original.warehouseId(), original.stockItemId(), quantity, value,
+                                original.currency(), facts.businessDay(), facts.at()));
+                        wasted++;
+                    }
                 } else {
                     reversals.add(new PostMovement(original.warehouseId(), original.stockItemId(),
                             MovementType.CONSUMPTION_REVERSAL, quantity, original.unitCost(), null, source.type(),
                             source.id(), lineId, original.id(), original.recipeVersionId(),
                             original.policyVersionId(), original.saleItemId(), facts.businessDay(), facts.at(),
-                            facts.reason(), false));
+                            facts.reason(), false).withValue(value));
                 }
             }
             if (wasted > 0) {

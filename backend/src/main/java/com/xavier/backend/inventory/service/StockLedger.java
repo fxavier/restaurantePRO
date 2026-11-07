@@ -129,7 +129,7 @@ public class StockLedger {
             StockPosition before = positions.get(key);
             Valued valued = movement.type() == MovementType.REVALUATION
                     ? MovingAverage.revalue(before, movement.value())
-                    : MovingAverage.post(before, movement.quantity(), movement.unitCost());
+                    : MovingAverage.post(before, movement.quantity(), movement.unitCost(), movement.value());
             if (refusedBelowZero(movement, warehouse, valued.after())) {
                 if (store.findBySourceKey(movement.sourceType(), movement.sourceId(), movement.stockItemId(),
                         movement.type().name(), movement.warehouseId()).isPresent()) {

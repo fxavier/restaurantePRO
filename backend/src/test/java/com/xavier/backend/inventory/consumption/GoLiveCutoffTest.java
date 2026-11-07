@@ -35,6 +35,22 @@ class GoLiveCutoffTest extends ConsumptionTestBase {
         assertThat(kitchen.exceptions()).isEmpty();
     }
 
+    /** A line confirmed before go-live is settled for nothing: its void after go-live does not wait (M9). */
+    @Test
+    void aLineConfirmedBeforeGoLiveIsSettledForNothing() throws Exception {
+        java.time.Instant liveFrom = clock.instant().plusSeconds(60);
+        kitchen = Kitchen.openLiveFrom(mvc, fixtures, ledger, tx, jdbc, orders, catalog, liveFrom);
+        UUID pizza = kitchen.catalogItem(null);
+        kitchen.saleRecipe(pizza, null, "1", ingredient(kitchen.stockItem("g"), "250", "g"));
+        BatchFacts before = kitchen.round(liveFrom.minusSeconds(1), OrderMode.DINE_IN, line(pizza, "1", "KITCHEN"));
+        consumption.consume(before.batchId());
+
+        voids.reverse(kitchen.voided(before.lines().getFirst().lineId(), "1", false, liveFrom.plusSeconds(1))
+                .voidId());
+
+        assertThat(kitchen.inventoryStatus().get("pendingVoids").asLong()).isZero();
+    }
+
     @Test
     void aStoreWhereInventoryIsNotLiveConsumesNothing() throws Exception {
         UUID store = fixtures.newStore();

@@ -61,7 +61,8 @@ public final class Kitchen {
     public final UUID defaultRoute;
 
     private Kitchen(MockMvc mvc, InventoryFixtures fixtures, StockLedger ledger, TransactionTemplate tx,
-                    JdbcClient jdbc, OrdersApi orders, CatalogApi catalog, Instant liveFrom) throws Exception {
+                    JdbcClient jdbc, OrdersApi orders, CatalogApi catalog, Instant liveFrom, boolean live)
+            throws Exception {
         this.mvc = mvc;
         this.fixtures = fixtures;
         this.ledger = ledger;
@@ -80,8 +81,8 @@ public final class Kitchen {
                     .map(ref -> new CatalogSnapshot.Item(ref.id(), ref.code(), ref.name(), ref.familyId(), null,
                             null, null, false, null, List.of(), List.of())).toList());
         }).when(catalog).snapshot(any(), any());
-        store = liveFrom == null ? fixtures.newActiveStore() : fixtures.newStore();
-        if (liveFrom != null) {
+        store = live && liveFrom == null ? fixtures.newActiveStore() : fixtures.newStore();
+        if (live && liveFrom != null) {
             mvc.perform(idem(post(InventoryFixtures.BO + "/activations"))
                             .with(account(store, Permission.INVENTORY_MANAGE)).contentType(MediaType.APPLICATION_JSON)
                             .content("{\"storeId\": \"%s\", \"activeFrom\": \"%s\"}".formatted(store, liveFrom)))
@@ -95,14 +96,57 @@ public final class Kitchen {
 
     public static Kitchen open(MockMvc mvc, InventoryFixtures fixtures, StockLedger ledger, TransactionTemplate tx,
                                JdbcClient jdbc, OrdersApi orders, CatalogApi catalog) throws Exception {
-        return new Kitchen(mvc, fixtures, ledger, tx, jdbc, orders, catalog, null);
+        return new Kitchen(mvc, fixtures, ledger, tx, jdbc, orders, catalog, null, true);
+    }
+
+    /** A kitchen whose store is not live in inventory (no activation). */
+    public static Kitchen openNotLive(MockMvc mvc, InventoryFixtures fixtures, StockLedger ledger,
+                                      TransactionTemplate tx, JdbcClient jdbc, OrdersApi orders, CatalogApi catalog)
+            throws Exception {
+        return new Kitchen(mvc, fixtures, ledger, tx, jdbc, orders, catalog, null, false);
+    }
+
+    /** Activates the store from {@code from}. */
+    public void goLive(Instant from) throws Exception {
+        mvc.perform(idem(post(InventoryFixtures.BO + "/activations"))
+                        .with(account(store, Permission.INVENTORY_MANAGE)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"storeId\": \"%s\", \"activeFrom\": \"%s\"}".formatted(store, from)))
+                .andExpect(status().isCreated());
+    }
+
+    /** The store's inventory status, as JSON. */
+    public tools.jackson.databind.JsonNode inventoryStatus() throws Exception {
+        return InventoryFixtures.json(mvc.perform(org.springframework.test.web.servlet.request
+                        .MockMvcRequestBuilders.get(InventoryFixtures.BO + "/status").param("storeId", store.toString())
+                        .with(account(store, Permission.INVENTORY_VIEW)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+    }
+
+    /** A report of this store for {@link #DAY}, as JSON. */
+    public tools.jackson.databind.JsonNode report(String name) throws Exception {
+        return InventoryFixtures.json(mvc.perform(org.springframework.test.web.servlet.request
+                        .MockMvcRequestBuilders.get(InventoryFixtures.BO + "/reports/" + name)
+                        .param("storeId", store.toString()).param("from", DAY.toString())
+                        .param("to", DAY.toString()).with(account(store, Permission.INVENTORY_VIEW)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+    }
+
+    /** The rows of {@code report} for {@code stockItem}. */
+    public List<tools.jackson.databind.JsonNode> rows(tools.jackson.databind.JsonNode report, UUID stockItem) {
+        List<tools.jackson.databind.JsonNode> rows = new java.util.ArrayList<>();
+        report.get("rows").forEach(row -> {
+            if (row.get("stockItemId").asString().equals(stockItem.toString())) {
+                rows.add(row);
+            }
+        });
+        return rows;
     }
 
     /** A kitchen whose store went live at {@code liveFrom}. */
     public static Kitchen openLiveFrom(MockMvc mvc, InventoryFixtures fixtures, StockLedger ledger,
                                        TransactionTemplate tx, JdbcClient jdbc, OrdersApi orders, CatalogApi catalog,
                                        Instant liveFrom) throws Exception {
-        return new Kitchen(mvc, fixtures, ledger, tx, jdbc, orders, catalog, liveFrom);
+        return new Kitchen(mvc, fixtures, ledger, tx, jdbc, orders, catalog, liveFrom, true);
     }
 
     public UUID route(String destination, UUID warehouse) throws Exception {

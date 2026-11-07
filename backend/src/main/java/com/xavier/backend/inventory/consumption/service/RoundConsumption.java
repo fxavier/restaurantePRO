@@ -66,14 +66,12 @@ public class RoundConsumption {
     public List<MovementView> consume(UUID batchId) {
         BatchFacts round = orders.batchFacts(batchId);
         Optional<Instant> live = activations.activeFrom(round.storeId());
-        if (live.isEmpty()) {
-            return List.of(); // D122: a store not live consumes nothing
-        }
         List<UUID> lines = round.lines().stream().map(BatchLineFact::lineId).toList();
         book.lockLines(lines);
         Map<UUID, BigDecimal> settled = new LinkedHashMap<>();
-        if (round.confirmedAt().isBefore(live.get())) {
-            // D122: history before go-live is never consumed; its lines are settled for nothing, so voids resolve
+        if (live.isEmpty() || round.confirmedAt().isBefore(live.get())) {
+            // D122: a store not live, or history before go-live, consumes nothing; its lines are settled for
+            // nothing, so a void of them never waits (also once the store goes live later)
             round.lines().forEach(line -> settled.put(line.lineId(), line.quantity()));
             return post(round, settled, List.of());
         }
@@ -87,6 +85,10 @@ public class RoundConsumption {
             boolean posted = false;
             boolean unresolved = false;
             for (SoldUnit unit : SoldUnit.of(line)) {
+                if (book.hasException(unit.sourceType(), unit.sourceId())) {
+                    unresolved = true; // settled only by its reprocess, never by a redelivery
+                    continue;
+                }
                 Plan plan = planner.plan(context, unit, false);
                 if (plan.unresolved() != null) {
                     recordException(round, unit, plan.unresolved(), now);

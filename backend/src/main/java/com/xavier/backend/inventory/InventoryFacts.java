@@ -39,4 +39,9 @@ public class InventoryFacts {
     public Page<SourceRef> sourceIds(UUID storeId, LocalDate from, LocalDate to, Pageable pageable) {
         return facts.sourceIds(storeId, from, to, pageable);
     }
+
+    /** The waste a wasted void recorded (D117 as amended), one per sale movement it reclassified; empty if none. */
+    public List<WasteFact> wasteOf(UUID voidId) {
+        return facts.wasteOf(voidId);
+    }
 }
