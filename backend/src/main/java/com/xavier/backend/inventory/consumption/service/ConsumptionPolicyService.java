@@ -27,9 +27,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * The consumption policy (D116), company-wide, {@code RECIPE_MANAGE}: versions of per-family rules, edited while
- * DRAFT and activated like recipe versions (never in the past, after the version in force, which they supersede).
- * Audited.
+ * The consumption policy (D116), company-wide, {@code RECIPE_MANAGE} (writes installation-wide): versions of
+ * per-family rules, edited while DRAFT and activated like recipe versions (never in the past, after the version in
+ * force, which they supersede). Audited.
  */
 @Service
 public class ConsumptionPolicyService {
@@ -57,7 +57,7 @@ public class ConsumptionPolicyService {
 
     @Transactional
     public PolicyVersionView create(PolicyVersionRequest request) {
-        accessPolicy.requireInAnyStore(Permission.RECIPE_MANAGE);
+        accessPolicy.require(Permission.RECIPE_MANAGE);
         ConsumptionPolicyVersion version = UniqueConstraints.saveAndFlush(policies,
                 ConsumptionPolicyVersion.draft(policies.maxVersionNo() + 1, rules(request), clock.instant()),
                 RecipeConflictException::policyVersionTaken,
@@ -68,7 +68,7 @@ public class ConsumptionPolicyService {
 
     @Transactional
     public PolicyVersionView revise(int versionNo, PolicyVersionRequest request) {
-        accessPolicy.requireInAnyStore(Permission.RECIPE_MANAGE);
+        accessPolicy.require(Permission.RECIPE_MANAGE);
         ConsumptionPolicyVersion version = require(versionNo);
         if (request.version() != null) {
             OptimisticLocking.requireVersion(ConsumptionPolicyVersion.class, version.getId(), version.getVersion(),
@@ -86,7 +86,7 @@ public class ConsumptionPolicyService {
     /** DRAFT → ACTIVE from {@code effectiveFrom} (now when absent), superseding the version in force then. */
     @Transactional
     public PolicyVersionView activate(int versionNo, ActivateRequest request) {
-        accessPolicy.requireInAnyStore(Permission.RECIPE_MANAGE);
+        accessPolicy.require(Permission.RECIPE_MANAGE);
         ConsumptionPolicyVersion version = require(versionNo);
         if (version.getStatus() != VersionStatus.DRAFT) {
             throw RecipeConflictException.immutable(version.getId(), version.getStatus(), "be activated");

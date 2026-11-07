@@ -103,6 +103,45 @@ class DiscountLimitTest {
     }
 
     @Test
+    void aPercentDiscountIsLimitedByTheRequestedPercentNotByItsRounding() throws Exception {
+        aConfirmedLineOfOneAt("10.09");
+
+        // 10 % of 10.09 is 9.081, 9.08 HALF_UP: 10.01 % realized, but 10 % asked
+        discount(1, "\"kind\": \"DISCOUNT\", \"percent\": 10", Permission.ORDER_DISCOUNT, null)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.lines[0].unitPrice.amount").value(9.08));
+    }
+
+    @Test
+    void aboveTheFreeLimitARequestedPercentNeedsAnApprover() throws Exception {
+        aConfirmedLineOfOneAt("10.09");
+
+        discount(1, "\"kind\": \"DISCOUNT\", \"percent\": 10.5", Permission.ORDER_DISCOUNT, null)
+                .andExpect(status().isForbidden());
+        discount(1, "\"kind\": \"DISCOUNT\", \"percent\": 10.5", Permission.ORDER_DISCOUNT, manager)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.lines[0].unitPrice.amount").value(9.03));
+    }
+
+    @Test
+    void theMaximumIsAHardCeilingOnTheRealizedPercentToo() throws Exception {
+        aConfirmedLineOfOneAt("1.99", "10", "40");
+
+        // 40 % of 1.99 is 1.194, 1.19 HALF_UP: 40.20 % realized, above the 40 % maximum
+        discount(1, "\"kind\": \"DISCOUNT\", \"percent\": 40", Permission.ORDER_DISCOUNT, manager)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("DISCOUNT_LIMIT_EXCEEDED"));
+    }
+
+    @Test
+    void aGivenUnitPriceIsLimitedByTheRealizedPercent() throws Exception {
+        aConfirmedLineOfOneAt("10.09");
+
+        discount(1, "\"kind\": \"DISCOUNT\", \"unitPrice\": 9.08", Permission.ORDER_DISCOUNT, null) // 10.01 %
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void anOfferIsPriceZeroAndAlwaysApproved() throws Exception {
         discount(1, "\"kind\": \"OFFER\"", Permission.ORDER_OFFER, null).andExpect(status().isForbidden());
         discount(1, "\"kind\": \"OFFER\"", Permission.ORDER_DISCOUNT, manager).andExpect(status().isForbidden());
@@ -173,6 +212,26 @@ class DiscountLimitTest {
     void aBodyWhoseValuesDoNotMatchTheKindIsInvalid() throws Exception {
         discount(1, "\"kind\": \"DISCOUNT\", \"percent\": 10, \"unitPrice\": 5.00", Permission.ORDER_DISCOUNT,
                 null).andExpect(status().isBadRequest());
+    }
+
+    /** Replaces the order under test by one with a single confirmed unit of a shop's item at {@code price} (10/50). */
+    private void aConfirmedLineOfOneAt(String price) throws Exception {
+        aConfirmedLineOfOneAt(price, "10", "50");
+    }
+
+    private void aConfirmedLineOfOneAt(String price, String freeLimit, String max) throws Exception {
+        shop = fixtures.shop();
+        promotions.limits(shop.store(), freeLimit, max);
+        long promotionVersion = promotions.publish(shop.store());
+        fixtures.reprice(shop, price);
+        long catalogVersion = fixtures.republish(shop.store());
+        order = id(fixtures.openedOrder(shop, operator, terminal));
+        line = id(fixtures.draft(shop, order, "1", operator, terminal));
+        fixtures.confirm(shop, order, """
+                {"orderVersion": 0, "catalogVersion": %d, "lineIds": ["%s"], "promotionVersion": %d}"""
+                .formatted(catalogVersion, line, promotionVersion), operator, terminal)
+                .andExpect(status().isCreated());
+        manager = fixtures.employee(shop, IdentityFixtures.MANAGER);
     }
 
     ResultActions discount(long orderVersion, String values, Permission permission, Employee approver)

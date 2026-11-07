@@ -51,6 +51,11 @@ spring:
       max-file-size: 5MB
       max-request-size: 6MB
 
+springdoc:
+  # D10: schemas are named by their fully qualified class name; by simple name, records of the same name in two
+  # modules (customers and delivery AddressRequest, the nested Line records) merge into one wrong schema.
+  use-fqn: true
+
 server:
   servlet:
     session:
