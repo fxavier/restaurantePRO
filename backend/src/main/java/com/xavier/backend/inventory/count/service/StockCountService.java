@@ -14,6 +14,7 @@ import com.xavier.backend.inventory.count.model.dto.CountRequest;
 import com.xavier.backend.inventory.count.model.dto.CountView;
 import com.xavier.backend.inventory.count.model.dto.RejectCountRequest;
 import com.xavier.backend.inventory.count.repository.CountLedgerQueries;
+import com.xavier.backend.inventory.count.repository.CountRef;
 import com.xavier.backend.inventory.count.repository.StockCountRepository;
 import com.xavier.backend.inventory.exception.InventoryNotFoundException;
 import com.xavier.backend.inventory.exception.InventoryRuleException;
@@ -90,23 +91,44 @@ public class StockCountService {
 
     /**
      * Starts counting. A REGULAR ALL count gets a line for every item on hand. Starting an OPENING count makes the
-     * store live from that instant if it is not yet (D122 amendment): sales are consumed from then on, and the
-     * opening absorbs those before each line's cut-off.
+     * store live from that instant (D122a): it activates a store that is not live, or brings a go-live scheduled
+     * for later forward to now. That cannot be undone, so an opening also needs {@code INVENTORY_MANAGE}, like an
+     * explicit activation. Sales are consumed from then on, and the opening absorbs those before each cut-off.
      */
     @Transactional
     public CountView start(UUID id) {
-        StockCount count = lockAuthorized(id, Permission.INVENTORY_COUNT);
+        CountRef ref = counts.refOf(id).orElseThrow(() -> new InventoryNotFoundException(ENTITY, id));
+        accessPolicy.require(Permission.INVENTORY_COUNT, ref.storeId());
+        boolean opening = ref.kind() == CountKind.OPENING;
+        if (opening) {
+            accessPolicy.require(Permission.INVENTORY_MANAGE, ref.storeId());
+        }
+        StockCount count = counts.findForUpdate(id)
+                .orElseThrow(() -> new InventoryNotFoundException(StockCountService.ENTITY, id));
         Instant now = clock.instant();
         count.start(now, count.listsOnHandAtStart() ? ledgerQueries.onHand(count.getWarehouseId()) : Map.of());
         CountView view = saved("STOCK_COUNT_STARTED", count);
-        UUID accountId = accessPolicy.current().userId();
-        if (count.getKind() == CountKind.OPENING
-                && ledgerQueries.activateIfAbsent(count.getStoreId(), now, accountId, now)) {
-            auditLog.recordAsCurrentActor("INVENTORY_ACTIVATED", "InventoryActivation",
-                    count.getStoreId().toString(), count.getStoreId(), null, null,
-                    Map.of("activeFrom", now.toString(), "openingCountId", id.toString()));
+        if (opening) {
+            goLive(count, now);
         }
         return view;
+    }
+
+    private void goLive(StockCount count, Instant now) {
+        UUID storeId = count.getStoreId();
+        Map<String, Object> details = new HashMap<>();
+        details.put("activeFrom", now.toString());
+        details.put("openingCountId", count.getId().toString());
+        if (ledgerQueries.activateIfAbsent(storeId, now, accessPolicy.current().userId(), now)) {
+            auditLog.recordAsCurrentActor("INVENTORY_ACTIVATED", "InventoryActivation", storeId.toString(), storeId,
+                    null, null, details);
+            return;
+        }
+        ledgerQueries.bringActivationForward(storeId, now).ifPresent(scheduled -> {
+            details.put("previousActiveFrom", scheduled.toString());
+            auditLog.recordAsCurrentActor("INVENTORY_ACTIVATION_MOVED", "InventoryActivation", storeId.toString(),
+                    storeId, null, null, details);
+        });
     }
 
     /** Records what was counted of one item (again, while IN_PROGRESS). Quantities are converted to the base unit. */

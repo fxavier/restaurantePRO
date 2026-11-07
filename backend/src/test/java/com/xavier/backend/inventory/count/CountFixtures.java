@@ -56,13 +56,29 @@ public final class CountFixtures {
     public UUID startedCount(UUID store, UUID warehouse, String kind) throws Exception {
         UUID count = InventoryFixtures.id(create(store, warehouse, kind).andExpect(status().isCreated()).andReturn()
                 .getResponse().getContentAsString());
-        start(store, count);
+        if (kind.equals("OPENING")) {
+            startOpening(store, count);
+        } else {
+            start(store, count);
+        }
         return count;
     }
 
+    /** Starts a regular count: {@code INVENTORY_COUNT} is enough. */
     public void start(UUID store, UUID count) throws Exception {
-        started = clock.instant();
-        command(store, count, "start", Permission.INVENTORY_COUNT).andExpect(status().isOk());
+        started(mvc.perform(idem(post(COUNTS + "/" + count + "/start"))
+                .with(account(store, Permission.INVENTORY_COUNT))));
+    }
+
+    /** Starts an opening: it makes the store live, so {@code INVENTORY_MANAGE} too (D122a). */
+    public void startOpening(UUID store, UUID count) throws Exception {
+        started(mvc.perform(idem(post(COUNTS + "/" + count + "/start"))
+                .with(account(store, Permission.INVENTORY_COUNT, Permission.INVENTORY_MANAGE))));
+    }
+
+    private void started(ResultActions start) throws Exception {
+        start.andExpect(status().isOk());
+        started = clock.instant(); // the fixed clock: the instant the count started
         clock.advance(COUNTING);
     }
 
@@ -131,8 +147,19 @@ public final class CountFixtures {
 
     /** A sale's consumption of {@code quantity} confirmed at {@code at}, as the round listener posts it. */
     public void sale(UUID warehouse, UUID item, String quantity, Instant at) {
+        sale(warehouse, item, quantity, at, "ORDER_LINE");
+    }
+
+    /** A sale's consumption with {@code sourceType} ORDER_LINE or ORDER_LINE_COMPONENT. */
+    public void sale(UUID warehouse, UUID item, String quantity, Instant at, String sourceType) {
         posted(PostMovement.of(warehouse, item, MovementType.SALE_CONSUMPTION, new BigDecimal(quantity).negate(),
-                "ORDER_LINE", UUID.randomUUID(), day(at), at));
+                sourceType, UUID.randomUUID(), day(at), at));
+    }
+
+    /** A void's CONSUMPTION_REVERSAL of {@code quantity}, source VOID or VOID_COMPONENT, as S47 posts it. */
+    public void voidReversal(UUID warehouse, UUID item, String quantity, Instant at, String sourceType) {
+        posted(PostMovement.of(warehouse, item, MovementType.CONSUMPTION_REVERSAL, new BigDecimal(quantity),
+                sourceType, UUID.randomUUID(), day(at), at));
     }
 
     public void posted(PostMovement movement) {

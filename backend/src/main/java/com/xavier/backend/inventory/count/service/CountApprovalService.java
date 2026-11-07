@@ -14,7 +14,6 @@ import com.xavier.backend.inventory.count.model.dto.CountView;
 import com.xavier.backend.inventory.count.repository.CountLedgerQueries;
 import com.xavier.backend.inventory.count.repository.StockCountRepository;
 import com.xavier.backend.inventory.exception.InventoryNotFoundException;
-import com.xavier.backend.inventory.model.BalanceKey;
 import com.xavier.backend.inventory.model.MovementType;
 import com.xavier.backend.inventory.model.dto.PostMovement;
 import com.xavier.backend.inventory.service.BusinessDates;
@@ -40,9 +39,10 @@ import org.springframework.transaction.annotation.Transactional;
  *     <li>409 CONSUMPTION_BACKLOG while a consumption publication of the store for a round (or void) at or before
  *     the latest cut-off is pending, and 409 CONSUMPTION_EXCEPTIONS_OPEN while the store has open consumption
  *     exceptions up to that cut-off: either way the expected quantity is not known yet;</li>
- *     <li>every balance row of the count is locked up front, in the ledger's order ({@link StockLedger#lock}), so
- *     sales posting on the same items wait and never deadlock, and the expected quantities are read under the
- *     lock;</li>
+ *     <li>it posts once, so its balance rows are locked by that one {@link StockLedger#post}, in the ledger's order:
+ *     sales posting on the same items wait or are waited for, never in a cycle. The expected quantities are read
+ *     before it: a movement that commits in between occurs after the cut-offs (a sale's confirmation, a manual
+ *     movement's now), and anything confirmed up to them is held back by the backlog check;</li>
  *     <li>each line is settled at its own cut-off: expected = Σ movements with {@code occurred_at ≤ counted_at}, so
  *     a sale after the cut-off is not counted against it;</li>
  *     <li>the differences post in one {@link StockLedger#post} call, source {@code STOCK_COUNT} (the count id, the
@@ -108,8 +108,6 @@ public class CountApprovalService {
             throw CountConflictException.consumptionExceptionsOpen(storeId, exceptions);
         }
         UUID warehouseId = count.getWarehouseId();
-        ledger.lock(count.getLines().stream().map(line -> new BalanceKey(warehouseId, line.getStockItemId()))
-                .toList());
         if (count.getKind() == CountKind.OPENING && !isFirst(count)) {
             throw CountRuleException.openingNotFirst(warehouseId);
         }
@@ -127,7 +125,7 @@ public class CountApprovalService {
     }
 
     /**
-     * Under the balance locks: no approved opening in the warehouse, and no movement other than consumption at or
+     * No approved opening in the warehouse, and no movement other than consumption at or
      * before the latest cut-off (D122 amendment). Sales since the store went live are absorbed: the opening posts
      * counted − expected. The partial unique index settles two racing openings.
      */

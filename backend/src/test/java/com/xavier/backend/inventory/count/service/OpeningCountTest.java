@@ -183,6 +183,71 @@ class OpeningCountTest {
         assertThat(activations.activeFrom(store)).contains(live);
     }
 
+    @Test
+    void startingAnOpeningMakesTheStoreLiveSoItNeedsInventoryManage() throws Exception {
+        UUID opening = InventoryFixtures.id(counts.create(store, warehouse, "OPENING").andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString());
+
+        counts.command(store, opening, "start", Permission.INVENTORY_COUNT).andExpect(status().isForbidden());
+        mvc.perform(idem(post(CountFixtures.COUNTS + "/" + opening + "/start"))
+                        .with(account(store, Permission.INVENTORY_MANAGE)))
+                .andExpect(status().isForbidden());
+        mvc.perform(idem(post(CountFixtures.COUNTS + "/" + UUID.randomUUID() + "/start"))
+                        .with(account(store, Permission.INVENTORY_COUNT, Permission.INVENTORY_MANAGE)))
+                .andExpect(status().isNotFound());
+
+        assertThat(activations.activeFrom(store)).isEmpty();
+        assertThat(jdbc.sql("SELECT status FROM inventory.stock_count WHERE id = ?").param(opening)
+                .query(String.class).single()).isEqualTo("DRAFT");
+        counts.startOpening(store, opening);
+        assertThat(activations.activeFrom(store)).contains(counts.startedAt());
+    }
+
+    /** Go-live was scheduled for tomorrow; the opening is counted tonight, so the store goes live now. */
+    @Test
+    void anOpeningStartedBeforeAScheduledGoLiveBringsItForward() throws Exception {
+        Instant tomorrow = clock.instant().plus(java.time.Duration.ofDays(1));
+        mvc.perform(idem(post(BO + "/activations")).with(account(store, Permission.INVENTORY_MANAGE))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"storeId\": \"%s\", \"activeFrom\": \"%s\"}".formatted(store, tomorrow)))
+                .andExpect(status().isCreated());
+
+        UUID opening = counts.startedCount(store, warehouse, "OPENING");
+
+        assertThat(activations.activeFrom(store)).contains(counts.startedAt());
+        assertThat(jdbc.sql("""
+                        SELECT details ->> 'previousActiveFrom' || '|' || (details ->> 'activeFrom')
+                        FROM audit.audit_event WHERE action = 'INVENTORY_ACTIVATION_MOVED' AND store_id = ?""")
+                .param(store).query(String.class).single())
+                .isEqualTo(tomorrow + "|" + counts.startedAt());
+        counts.line(store, opening, flour, "10", counts.at(10), "2").andExpect(status().isOk());
+        counts.sale(warehouse, flour, "1", counts.at(30)); // consumed: on or after active_from now
+        counts.command(store, opening, "submit", Permission.INVENTORY_COUNT).andExpect(status().isOk());
+        counts.approve(store, opening).andExpect(status().isOk());
+
+        assertThat(counts.balance(warehouse, flour)).isEqualTo("9.000000|18.0000");
+    }
+
+    /**
+     * Every consumption source is absorbed by the opening: a menu component's sale, a void's reversal and a
+     * component void's reversal before the cut-off (sold 3, 2 given back: expected −1, counted 5, OPENING +6).
+     */
+    @Test
+    void everyConsumptionSourceBeforeTheCutOffIsAbsorbed() throws Exception {
+        UUID opening = counts.startedCount(store, warehouse, "OPENING");
+        counts.sale(warehouse, flour, "3", counts.at(2), "ORDER_LINE_COMPONENT");
+        counts.voidReversal(warehouse, flour, "1", counts.at(3), "VOID");
+        counts.voidReversal(warehouse, flour, "1", counts.at(4), "VOID_COMPONENT");
+        counts.line(store, opening, flour, "5", counts.at(10), "2").andExpect(status().isOk());
+        counts.command(store, opening, "submit", Permission.INVENTORY_COUNT).andExpect(status().isOk());
+
+        counts.approve(store, opening).andExpect(status().isOk())
+                .andExpect(jsonPath("$.lines[0].expectedQuantity").value(-1.0))
+                .andExpect(jsonPath("$.lines[0].difference").value(6.0));
+
+        assertThat(counts.balance(warehouse, flour)).isEqualTo("5.000000|10.0000");
+    }
+
     private ResultActions waste(UUID warehouseId) throws Exception {
         return mvc.perform(idem(post(BO + "/movements/waste")).with(account(store, Permission.INVENTORY_MOVE))
                 .contentType(MediaType.APPLICATION_JSON).content("""

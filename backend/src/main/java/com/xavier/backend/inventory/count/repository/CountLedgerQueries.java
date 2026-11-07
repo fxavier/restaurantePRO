@@ -10,6 +10,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -106,6 +107,23 @@ public class CountLedgerQueries {
                         VALUES (?, ?, ?, ?)
                         ON CONFLICT (store_id) DO NOTHING""")
                 .params(storeId, Timestamp.from(activeFrom), accountId, Timestamp.from(now)).update() == 1;
+    }
+
+    /**
+     * Brings a scheduled go-live of {@code storeId} forward to {@code now} when it is still in the future (D122a
+     * amendment: an opening started before it makes the store live at once).
+     *
+     * @return the scheduled instant it replaced, or empty when there was none in the future
+     */
+    public Optional<Instant> bringActivationForward(UUID storeId, Instant now) {
+        return jdbc.sql("""
+                        UPDATE inventory.inventory_activation a SET active_from = ?
+                        FROM (SELECT store_id, active_from FROM inventory.inventory_activation
+                              WHERE store_id = ? FOR UPDATE) old
+                        WHERE a.store_id = old.store_id AND old.active_from > ?
+                        RETURNING old.active_from""")
+                .params(Timestamp.from(now), storeId, Timestamp.from(now))
+                .query((rs, n) -> rs.getTimestamp(1).toInstant()).optional();
     }
 
     /** The approved count lines of {@code storeId} that posted a COUNT_ADJUSTMENT on a business day in the period. */

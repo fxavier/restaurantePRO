@@ -16,6 +16,11 @@ public interface StockCountRepository extends JpaRepository<StockCount, UUID> {
     @Query("SELECT c.storeId FROM StockCount c WHERE c.id = :id")
     Optional<UUID> storeOf(UUID id);
 
+    /** The store and kind of a count alone, to authorize a start before the row is locked (D42 (b)). */
+    @Query("SELECT new com.xavier.backend.inventory.count.repository.CountRef(c.storeId, c.kind) FROM StockCount c"
+            + " WHERE c.id = :id")
+    Optional<CountRef> refOf(UUID id);
+
     /** The count row FOR UPDATE (its lines load lazily, in the same transaction). */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT c FROM StockCount c WHERE c.id = :id")
