@@ -27,6 +27,8 @@ import com.xavier.backend.catalog.exception.CatalogRuleException;
 import com.xavier.backend.catalog.exception.ReleaseValidationFailedException;
 import com.xavier.backend.catalog.model.dto.ReleaseValidationError;
 import com.xavier.backend.dining.exception.IllegalOccupationStateException;
+import com.xavier.backend.dining.exception.IllegalReservationStateException;
+import com.xavier.backend.dining.exception.ReservationRuleException;
 import com.xavier.backend.dining.exception.StillOccupiedException;
 import com.xavier.backend.dining.exception.TableOccupiedException;
 import com.xavier.backend.dining.exception.TableUnavailableException;
@@ -104,6 +106,16 @@ class CodedErrorContractTest {
             Map.entry("occupation-closed", () -> IllegalOccupationStateException.closed(ID)),
             Map.entry("no-open-occupation", () -> IllegalOccupationStateException.noOpenOccupation(ID)),
             Map.entry("still-occupied", () -> new StillOccupiedException("Table", ID)),
+            Map.entry("reservation-not-booked", () -> IllegalReservationStateException.notBooked(ID)),
+            Map.entry("reservation-not-started", () -> ReservationRuleException.notStarted(ID)),
+            Map.entry("reservation-in-the-past", () -> ReservationRuleException.inThePast(
+                    java.time.Instant.parse("2027-01-01T12:00:00Z"))),
+            Map.entry("reservation-other-store", () -> ReservationRuleException.otherStore(ID)),
+            Map.entry("reservation-table-other-store", () -> ReservationRuleException.tableOtherStore(ID)),
+            Map.entry("reservation-customer-not-found", () -> ReservationRuleException.customerNotFound(ID)),
+            Map.entry("reservation-range-reversed", () -> ReservationRuleException.reversed(
+                    LocalDate.parse("2027-02-01"), LocalDate.parse("2027-01-01"))),
+            Map.entry("reservation-range-too-large", () -> ReservationRuleException.tooLarge(92)),
             Map.entry("pin-unchanged", PinUnchangedException::new),
             Map.entry("pin-change-not-required", PinChangeNotRequiredException::new),
             Map.entry("login-throttled", () -> new LoginThrottledException(Duration.ofSeconds(90))),
@@ -349,6 +361,24 @@ class CodedErrorContractTest {
         expect("table-locked", 422, "TABLE_LOCKED", "Table " + ID + " is locked.", "");
         expect("still-occupied", 422, "OCCUPIED",
                 "Table " + ID + " has an open table occupation and cannot be deactivated.", "");
+    }
+
+    @Test
+    void reservationErrors() throws Exception {
+        expect("reservation-not-booked", 409, "RESERVATION_NOT_BOOKED", "Reservation " + ID + " is not booked.", "");
+        expect("reservation-not-started", 422, "RESERVATION_NOT_STARTED",
+                "Reservation " + ID + " has not started: it cannot be a no-show yet.", "");
+        expect("reservation-in-the-past", 422, "RESERVATION_IN_THE_PAST",
+                "A reservation starting at 2027-01-01T12:00:00Z is already past its no-show grace.", "");
+        expect("reservation-other-store", 422, "RESERVATION_OTHER_STORE",
+                "Reservation " + ID + " is not in this store.", "");
+        expect("reservation-table-other-store", 422, "TABLE_OTHER_STORE", "Table " + ID + " is not in this store.",
+                "");
+        expect("reservation-customer-not-found", 422, "CUSTOMER_NOT_FOUND", "Customer " + ID + " was not found.", "");
+        expect("reservation-range-reversed", 422, "RANGE_REVERSED",
+                "The range starts on 2027-02-01, after its end 2027-01-01.", "");
+        expect("reservation-range-too-large", 422, "RANGE_TOO_LARGE", "The range is longer than 92 days: narrow it.",
+                ",\"maxDays\":92");
     }
 
     @Test

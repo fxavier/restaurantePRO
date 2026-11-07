@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.xavier.backend.access.Permission;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -35,6 +36,7 @@ public class DiningFixtures {
     public static final String AREAS = "/api/v1/backoffice/areas";
     public static final String TABLES = "/api/v1/backoffice/tables";
     public static final String POS_TABLES = "/api/v1/pos/tables";
+    public static final String POS_RESERVATIONS = "/api/v1/pos/reservations";
     public static final JsonMapper JSON = JsonMapper.builder().build();
 
     private final MockMvc mvc;
@@ -61,6 +63,25 @@ public class DiningFixtures {
         return order;
     }
 
+    /** Seats a walk-in or, with {@code reservation}, a reservation's party at {@code table}; returns the order id. */
+    public UUID seatReservation(UUID store, UUID table, UUID reservation) {
+        UUID order = UUID.randomUUID();
+        UUID employee = UUID.randomUUID();
+        DiningActors.runAsPos(store, employee,
+                () -> tx.execute(status -> dining.openOccupation(table, order, 2, employee, reservation)));
+        return order;
+    }
+
+    public UUID occupationOf(UUID order) {
+        return jdbc.sql("SELECT id FROM dining.table_occupation WHERE order_id = :order AND closed_at IS NULL")
+                .param("order", order).query(UUID.class).single();
+    }
+
+    public UUID reservationOccupation(UUID reservation) {
+        return jdbc.sql("SELECT occupation_id FROM dining.reservation WHERE id = :id").param("id", reservation)
+                .query(UUID.class).optional().orElse(null);
+    }
+
     public void markSubtotalPrinted(UUID store, UUID order) {
         DiningActors.runAsPos(store, UUID.randomUUID(), () -> tx.execute(status -> {
             dining.markSubtotalPrinted(order);
@@ -69,13 +90,55 @@ public class DiningFixtures {
     }
 
     public UUID newStore() throws Exception {
+        return newStore("Africa/Maputo");
+    }
+
+    public UUID newStore(String timezone) throws Exception {
         String code = "D" + UUID.randomUUID().toString().substring(0, 8);
         String json = mvc.perform(post("/api/v1/backoffice/stores").with(admin(Permission.STORE_MANAGE)).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"code": "%s", "name": "Store", "timezone": "Africa/Maputo"}""".formatted(code)))
+                                {"code": "%s", "name": "Store", "timezone": "%s"}""".formatted(code, timezone)))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         return id(json);
+    }
+
+    /** Books a reservation through the POS API, as a host would; returns its id. */
+    public UUID book(UUID store, Instant startsAt, UUID... tables) throws Exception {
+        return id(mvc.perform(post(POS_RESERVATIONS).with(DiningActors.pos(store, UUID.randomUUID(),
+                                Permission.RESERVATION_MANAGE)).with(csrf())
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
+                        .contentType(MediaType.APPLICATION_JSON).content(reservation(startsAt, null, tables)))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+    }
+
+    public static String reservation(Instant startsAt, UUID customer, UUID... tables) {
+        String tableIds = java.util.Arrays.stream(tables).map(t -> "\"" + t + "\"")
+                .collect(java.util.stream.Collectors.joining(","));
+        return """
+                {"startsAt": "%s", "durationMinutes": 90, "partySize": 4, "contactName": "Ana",
+                 "contactPhone": "+258 84 123 4567", "customerId": %s, "notes": "window", "tableIds": [%s]}"""
+                .formatted(startsAt, customer == null ? "null" : "\"" + customer + "\"", tableIds);
+    }
+
+    /** Moves a booked reservation's start, as if time had passed since it was booked (the API refuses a past start). */
+    public void moveStart(UUID reservation, Instant startsAt) {
+        jdbc.sql("UPDATE dining.reservation SET starts_at = :startsAt WHERE id = :id")
+                .param("startsAt", java.sql.Timestamp.from(startsAt)).param("id", reservation).update();
+    }
+
+    public String reservationStatus(UUID reservation) {
+        return jdbc.sql("SELECT status FROM dining.reservation WHERE id = :id").param("id", reservation)
+                .query(String.class).single();
+    }
+
+    /** A customer row as the customers module stores it (the dining tests only need it to exist). */
+    public UUID newCustomer() {
+        UUID id = UUID.randomUUID();
+        jdbc.sql("""
+                        INSERT INTO customers.customer (id, name, active, created_at, updated_at, version)
+                        VALUES (:id, 'Ana', true, now(), now(), 0)""").param("id", id).update();
+        return id;
     }
 
     public UUID createArea(UUID store, String code) throws Exception {
