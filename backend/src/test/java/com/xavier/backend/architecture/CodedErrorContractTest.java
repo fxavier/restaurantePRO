@@ -29,6 +29,8 @@ import com.xavier.backend.fiscal.FiscalIssueFailedException;
 import com.xavier.backend.fiscal.exception.DraftMismatchException;
 import com.xavier.backend.fiscal.exception.PaymentSnapshotMismatchException;
 import com.xavier.backend.identity.exception.LoginThrottledException;
+import com.xavier.backend.inventory.exception.InventoryConflictException;
+import com.xavier.backend.inventory.exception.InventoryRuleException;
 import com.xavier.backend.identity.exception.PinChangeNotRequiredException;
 import com.xavier.backend.identity.exception.PinUnchangedException;
 import com.xavier.backend.orders.exception.OrderConflictException;
@@ -249,7 +251,34 @@ class CodedErrorContractTest {
                     "be released")),
             Map.entry("phone-exists", () -> CustomersConflictException.phoneExists(ID, "258841234567")),
             Map.entry("credit-account-exists", () -> CustomersConflictException.accountExists(ID)),
-            Map.entry("credit-source-mismatch", () -> CustomersConflictException.sourceMismatch("debt payment", ID)));
+            Map.entry("credit-source-mismatch", () -> CustomersConflictException.sourceMismatch("debt payment", ID)),
+            Map.entry("unit-dimension-mismatch", () -> InventoryRuleException.dimensionMismatch("kg", "l")),
+            Map.entry("unknown-unit", () -> InventoryRuleException.unknownUnit("lb")),
+            Map.entry("warehouse-store-mismatch", () -> InventoryRuleException.warehouseStoreMismatch(ID, OTHER)),
+            Map.entry("reason-required", InventoryRuleException::reasonRequired),
+            Map.entry("negative-stock-refused", () -> InventoryRuleException.negativeStockRefused(ID, OTHER,
+                    new BigDecimal("2.000000"))),
+            Map.entry("unit-cost-required", () -> InventoryRuleException.unitCostRequired(ID)),
+            Map.entry("inventory-invalid-quantity", () -> InventoryRuleException.invalidQuantity(
+                    "A WASTE line moves a positive quantity.")),
+            Map.entry("duplicate-stock-item", () -> InventoryRuleException.duplicateStockItem(ID)),
+            Map.entry("same-warehouse", () -> InventoryRuleException.sameWarehouse(ID)),
+            Map.entry("received-exceeds-shipped", () -> InventoryRuleException.receivedExceedsShipped(ID,
+                    new BigDecimal("4.000000"))),
+            Map.entry("inventory-invalid-period", () -> InventoryRuleException.invalidPeriod(
+                    LocalDate.parse("2026-11-05"), LocalDate.parse("2026-11-04"))),
+            Map.entry("inventory-period-required", InventoryRuleException::periodRequired),
+            Map.entry("inventory-range-too-large", () -> InventoryRuleException.rangeTooLarge(366)),
+            Map.entry("inventory-not-active", () -> InventoryRuleException.notActive(ID)),
+            Map.entry("transfer-state", () -> InventoryConflictException.transferState(ID, "SHIPPED", "be shipped")),
+            Map.entry("inventory-already-active", () -> InventoryConflictException.alreadyActive(ID)),
+            Map.entry("movement-source-mismatch", () -> InventoryConflictException.sourceMismatch("ORDER_LINE", ID)),
+            Map.entry("stock-item-code-taken", () -> InventoryConflictException.codeTaken("STOCK_ITEM", "FLOUR")),
+            Map.entry("warehouse-code-taken", () -> InventoryConflictException.codeTaken("WAREHOUSE", "BAR")),
+            Map.entry("pack-code-taken", () -> InventoryConflictException.codeTaken("PACK", "BOX12")),
+            Map.entry("route-exists", () -> InventoryConflictException.routeExists(ID, "BAR")),
+            Map.entry("default-route-exists", () -> InventoryConflictException.routeExists(ID, null)),
+            Map.entry("stock-level-exists", () -> InventoryConflictException.levelExists(ID, OTHER)));
 
     @Autowired
     MockMvc mvc;
@@ -586,6 +615,54 @@ class CodedErrorContractTest {
                 "The credit account of customer " + ID + " was opened at the same time; retry.", "");
         expect("credit-source-mismatch", 409, "CREDIT_SOURCE_MISMATCH",
                 "The debt payment " + ID + " is already recorded with other values.", "");
+    }
+
+    @Test
+    void inventoryRules() throws Exception {
+        expect("unit-dimension-mismatch", 422, "UNIT_DIMENSION_MISMATCH", "The unit kg cannot be converted to l.", "");
+        expect("unknown-unit", 422, "UNKNOWN_UNIT", "There is no stock unit lb.", "");
+        expect("warehouse-store-mismatch", 422, "WAREHOUSE_STORE_MISMATCH", "Warehouse " + ID
+                + " does not belong to store " + OTHER + ".", "");
+        expect("reason-required", 422, "REASON_REQUIRED", "A manual stock movement needs a reason.", "");
+        expect("unit-cost-required", 422, "UNIT_COST_REQUIRED", "An incoming adjustment of stock item " + ID
+                + " needs a unit cost.", "");
+        expect("inventory-invalid-quantity", 422, "INVALID_QUANTITY", "A WASTE line moves a positive quantity.", "");
+        expect("duplicate-stock-item", 422, "DUPLICATE_STOCK_ITEM", "Stock item " + ID
+                + " appears on more than one line.", "");
+        expect("same-warehouse", 422, "SAME_WAREHOUSE", "A transfer goes to another warehouse than " + ID + ".", "");
+        expect("inventory-invalid-period", 422, "INVALID_PERIOD",
+                "The period starts (2026-11-05) after it ends (2026-11-04).", "");
+        expect("inventory-period-required", 422, "INVALID_PERIOD", "This report needs a period (from, to).", "");
+        expect("inventory-range-too-large", 422, "RANGE_TOO_LARGE", "The range is longer than 366 days: narrow it.",
+                ",\"maxDays\":366");
+        expect("inventory-not-active", 422, "INVENTORY_NOT_ACTIVE", "Inventory is not active in store " + ID
+                + ": activate it and count the opening stock first.", "");
+    }
+
+    @Test
+    void inventoryQuantityRulesCarryTheItemAndTheQuantity() throws Exception {
+        expect("negative-stock-refused", 422, "NEGATIVE_STOCK_REFUSED", "Warehouse " + ID
+                        + " refuses manual movements below zero: it holds 2.000000 of stock item " + OTHER + ".",
+                ",\"stockItemId\":\"" + OTHER + "\",\"available\":2.000000");
+        expect("received-exceeds-shipped", 422, "RECEIVED_EXCEEDS_SHIPPED", "More of stock item " + ID
+                        + " was received than the 4.000000 shipped.",
+                ",\"stockItemId\":\"" + ID + "\",\"shipped\":4.000000");
+    }
+
+    @Test
+    void inventoryConflicts() throws Exception {
+        expect("transfer-state", 409, "TRANSFER_STATE", "Transfer " + ID + " is SHIPPED and cannot be shipped.", "");
+        expect("inventory-already-active", 409, "INVENTORY_ALREADY_ACTIVE",
+                "Inventory is already active in store " + ID + ".", "");
+        expect("movement-source-mismatch", 409, "MOVEMENT_SOURCE_MISMATCH", "The ORDER_LINE " + ID
+                + " already has stock movements with other values.", "");
+        expect("stock-item-code-taken", 409, "STOCK_ITEM_CODE_TAKEN", "The stock item code FLOUR is taken.", "");
+        expect("warehouse-code-taken", 409, "WAREHOUSE_CODE_TAKEN", "The warehouse code BAR is taken.", "");
+        expect("pack-code-taken", 409, "PACK_CODE_TAKEN", "The pack code BOX12 is taken.", "");
+        expect("route-exists", 409, "ROUTE_EXISTS", "Store " + ID + " already has a route for destination BAR.", "");
+        expect("default-route-exists", 409, "ROUTE_EXISTS", "Store " + ID + " already has a default route.", "");
+        expect("stock-level-exists", 409, "STOCK_LEVEL_EXISTS", "Warehouse " + ID
+                + " already has a minimum for stock item " + OTHER + ".", "");
     }
 
     private void expect(String name, int status, String code, String detail, String extra) throws Exception {
