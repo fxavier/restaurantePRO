@@ -19,7 +19,8 @@ public record DiscountFacts(String sourceType, UUID sourceId, UUID orderId, UUID
      * One discounted line: its catalog {@code listUnitPrice}, the price before this source ({@code previousUnitPrice},
      * the list price for a round) and after it ({@code unitPrice}), the quantity it applied to, and
      * {@code discountGross} = {@link LineAmounts#of} gross at the previous price − at the new one, for that quantity
-     * (negative for a REVERSAL). {@code origin} is {@code PROMOTION}, {@code MANUAL} (a discount), {@code OFFER} or {@code LOYALTY} (a reward);
+     * (negative for a REVERSAL). {@code origin} is {@code PROMOTION}, {@code MANUAL} (a discount), {@code OFFER} or
+     * {@code LOYALTY} (a reward);
      * the promotion fields are set for {@code PROMOTION}. {@code operatorEmployeeId} is who confirmed the round or
      * made the adjustment, {@code approverEmployeeId} who approved it ({@code null} when nobody had to).
      */

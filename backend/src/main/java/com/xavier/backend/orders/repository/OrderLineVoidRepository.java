@@ -25,7 +25,8 @@ public interface OrderLineVoidRepository extends JpaRepository<OrderLineVoid, UU
 
     /**
      * Whether production had received the voided line's round when the void was recorded. A line transferred in has
-     * no round of its own: its origin is followed back through the transfer and split facts to the round it was confirmed in.
+     * no round of its own: its origin is followed back through the transfer and split facts to the round it was
+     * confirmed in.
      */
     @Query(value = """
             WITH RECURSIVE origin (line_id, batch_id, voided_at) AS (

@@ -9,10 +9,12 @@ import java.util.UUID;
 /**
  * A void as reporting projects it (D84): an immutable fact, so a pull returns the same facts every time.
  * {@code businessDay} is the order's; {@code gross} is {@link LineAmounts#of} of the voided quantity at the line's
- * effective price when the void was recorded (R4: its latest price adjustment by then, else its snapshot, D105); {@code afterDispatch} says production had received the line's round when the void was recorded (for a
- * line transferred in, the round it came from on the source order). {@code consumedLineId} (D100) is the round line
+ * effective price when the void was recorded (R4: its latest price adjustment by then, else its snapshot, D105);
+ * {@code afterDispatch} says production had received the line's round when the void was recorded (for a line
+ * transferred in, the round it came from on the source order). {@code consumedLineId} (D100) is the round line
  * the voided line descends from through transfers and splits (D105): the voided line itself when it was confirmed
- * in a round, else the source line its transfers and splits lead back to, so inventory reverses the consumption it posted for that line.
+ * in a round, else the source line its transfers and splits lead back to, so inventory reverses the consumption it
+ * posted for that line.
  */
 public record VoidFacts(UUID voidId, UUID orderId, UUID storeId, LocalDate businessDay, Instant at,
                         VoidedLine lineSnapshot, BigDecimal quantity, Money gross, String reason, boolean wasted,

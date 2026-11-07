@@ -46,7 +46,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Discounts after confirmation (D105, D106, D112): each adjusted line gets an {@link OrderLinePriceAdjustment} fact
- * that sets its effective unit price ({@code 0 ≤ price ≤ list}, D101). A quantity below the line's net quantity first
+ * that sets its effective unit price ({@code 0 ≤ price ≤ list}, D101). A quantity below the line's net quantity
+ * first
  * splits it ({@link OrderLineSplit}): the adjustment applies to the new line, which has no round, so production and
  * stock never see it again. The POS route ({@link #authorize}, then {@link #adjust}) needs billing lock NONE; the
  * settled route ({@link #adjustSettled}) runs under settlement's {@code order_settlement} lock, which checked the
@@ -136,7 +137,8 @@ public class LineAdjustmentService {
     /**
      * Phase 2 of the POS route: the adjustments, under the order's version, with billing lock NONE.
      *
-     * @throws OrderRuleException 422 {@code ORDER_IN_SETTLEMENT}, {@code ORDER_FROZEN}, {@code DISCOUNT_LIMIT_EXCEEDED},
+     * @throws OrderRuleException 422 {@code ORDER_IN_SETTLEMENT}, {@code ORDER_FROZEN},
+     *                            {@code DISCOUNT_LIMIT_EXCEEDED},
      *                            {@code PRICE_INCREASE_NOT_ALLOWED}, {@code LOYALTY_CUSTOMER_REQUIRED},
      *                            {@code REWARD_NEEDS_SINGLE_UNIT}, {@code QUANTITY_EXCEEDS_NET}
      */

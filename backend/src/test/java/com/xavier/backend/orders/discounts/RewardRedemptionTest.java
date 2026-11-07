@@ -13,10 +13,13 @@ import com.xavier.backend.orders.OrdersApi;
 import com.xavier.backend.orders.OrdersFixtures;
 import com.xavier.backend.orders.OrdersFixtures.Shop;
 import com.xavier.backend.orders.OrdersModuleTest;
+import com.xavier.backend.orders.OrdersTestClock;
 import com.xavier.backend.orders.SettledVoidCommand;
 import com.xavier.backend.promotions.loyalty.LoyaltyFixtures;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -61,8 +64,19 @@ class RewardRedemptionTest {
     UUID line;
     UUID member;
 
+    @Autowired
+    OrdersTestClock clock;
+
+    /**
+     * The loyalty program is company-wide and the loyalty tests publish versions with a clock that runs ahead; this
+     * test's clock is pinned just after the latest publication, so it can retire that version and earn under its own.
+     */
     @BeforeEach
     void aMemberWithFiftyPointsAtATableOfThreeCoffees() throws Exception {
+        Instant latest = jdbc.sql("SELECT max(published_at) FROM promotions.loyalty_program_version")
+                .query(Instant.class).optional().orElse(null);
+        Instant now = Instant.now();
+        clock.pin(latest == null || latest.isBefore(now) ? now : latest.plusSeconds(1));
         reward = "FREE" + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
         loyalty.publishProgram("1.00", 1, LoyaltyFixtures.reward(reward, 10, "FREE_UNIT", null, null, null));
         member = loyalty.member();
@@ -70,6 +84,11 @@ class RewardRedemptionTest {
         shop = fixtures.shop();
         order = id(fixtures.openedOrder(shop, operator, terminal));
         line = fixtures.confirmedLine(shop, order, "3", 0, operator, terminal);
+    }
+
+    @AfterEach
+    void releaseTheClock() {
+        clock.release();
     }
 
     @Test
