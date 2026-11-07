@@ -4,7 +4,8 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 /**
- * Rotation of one item over the period (D131): cost of consumption (sales net of reversals) ÷ average stock value
+ * Rotation of one item over the period (D131): cost of consumption (sales net of reversals and of the
+ * cost wasted voids reclassified as waste) ÷ average stock value
  * ((opening + closing) ÷ 2, by business day). {@code rotation} is null when the average value is not positive.
  */
 public record RotationRow(UUID stockItemId, String code, String name, BigDecimal consumptionCost,

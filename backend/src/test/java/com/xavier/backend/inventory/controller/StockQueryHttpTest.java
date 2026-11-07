@@ -109,15 +109,16 @@ class StockQueryHttpTest {
         mvc.perform(get(BO + "/status").param("storeId", store.toString()).with(viewer()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.state").value("ACTIVE"))
-                .andExpect(jsonPath("$.activeFrom").value(InventoryFixtures.ACTIVE_FROM.toString()))
+                .andExpect(jsonPath("$.activeFrom").isNotEmpty())
                 .andExpect(jsonPath("$.negativeBalances").value(1))
                 .andExpect(jsonPath("$.openExceptions").value(0))
                 .andExpect(jsonPath("$.driftingBalances").value(0))
                 .andExpect(jsonPath("$.pendingFacts").isNumber());
 
         jdbc.sql("""
-                        INSERT INTO inventory.consumption_exception (id, store_id, source_type, source_id, kind, created_at)
-                        VALUES (gen_random_uuid(), ?, 'ORDER_LINE', gen_random_uuid(), 'NO_RECIPE', now())""")
+                        INSERT INTO inventory.consumption_exception
+                            (id, store_id, source_type, source_id, kind, confirmed_at, created_at)
+                        VALUES (gen_random_uuid(), ?, 'ORDER_LINE', gen_random_uuid(), 'NO_RECIPE', now(), now())""")
                 .param(store).update();
         mvc.perform(get(BO + "/status").param("storeId", store.toString()).with(viewer()))
                 .andExpect(jsonPath("$.openExceptions").value(1));

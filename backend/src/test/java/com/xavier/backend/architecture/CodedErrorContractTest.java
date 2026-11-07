@@ -38,8 +38,15 @@ import com.xavier.backend.fiscal.exception.PaymentSnapshotMismatchException;
 import com.xavier.backend.identity.exception.LoginThrottledException;
 import com.xavier.backend.inventory.count.exception.CountConflictException;
 import com.xavier.backend.inventory.count.exception.CountRuleException;
+import com.xavier.backend.inventory.consumption.exception.ConsumptionConflictException;
+import com.xavier.backend.inventory.consumption.exception.ConsumptionRuleException;
 import com.xavier.backend.inventory.exception.InventoryConflictException;
 import com.xavier.backend.inventory.exception.InventoryRuleException;
+import com.xavier.backend.inventory.preparation.exception.PreparationConflictException;
+import com.xavier.backend.inventory.recipe.exception.RecipeConflictException;
+import com.xavier.backend.inventory.recipe.exception.RecipeRuleException;
+import com.xavier.backend.inventory.purchasing.exception.PurchasingConflictException;
+import com.xavier.backend.inventory.purchasing.exception.PurchasingRuleException;
 import com.xavier.backend.identity.exception.PinChangeNotRequiredException;
 import com.xavier.backend.identity.exception.PinUnchangedException;
 import com.xavier.backend.orders.exception.OrderConflictException;
@@ -304,6 +311,8 @@ class CodedErrorContractTest {
             Map.entry("inventory-period-required", InventoryRuleException::periodRequired),
             Map.entry("inventory-range-too-large", () -> InventoryRuleException.rangeTooLarge(366)),
             Map.entry("inventory-not-active", () -> InventoryRuleException.notActive(ID)),
+            Map.entry("activation-in-past", () -> InventoryRuleException.activationInPast(
+                    java.time.Instant.parse("2026-11-06T10:00:00Z"))),
             Map.entry("transfer-state", () -> InventoryConflictException.transferState(ID, "SHIPPED", "be shipped")),
             Map.entry("inventory-already-active", () -> InventoryConflictException.alreadyActive(ID)),
             Map.entry("movement-source-mismatch", () -> InventoryConflictException.sourceMismatch("ORDER_LINE", ID)),
@@ -326,6 +335,23 @@ class CodedErrorContractTest {
             Map.entry("consumption-backlog", () -> CountConflictException.consumptionBacklog(ID, 3)),
             Map.entry("consumption-exceptions-open", () -> CountConflictException.consumptionExceptionsOpen(ID, 2)),
             Map.entry("live-count-exists", () -> CountConflictException.liveCountExists(ID)),
+            // R4 recipes, consumption, preparations (S47)
+            Map.entry("recipe-effective-from-invalid", () -> RecipeRuleException.effectiveFromInvalid(
+                    java.time.Instant.parse("2026-11-06T10:00:00Z"))),
+            Map.entry("recipe-effective-from-in-past", () -> RecipeRuleException.effectiveFromInPast(
+                    java.time.Instant.parse("2026-11-06T10:00:00Z"))),
+            Map.entry("recipe-target-invalid", RecipeRuleException::targetInvalid),
+            Map.entry("item-not-found", () -> RecipeRuleException.itemNotFound(ID, OTHER)),
+            Map.entry("recipe-output-not-prepared", () -> RecipeRuleException.outputNotPrepared(ID)),
+            Map.entry("recipe-cycle", () -> RecipeRuleException.cycle(ID, OTHER)),
+            Map.entry("no-active-recipe", () -> RecipeRuleException.noActiveRecipe(ID)),
+            Map.entry("policy-rule-duplicate", () -> RecipeRuleException.policyRuleDuplicate(ID)),
+            Map.entry("consumption-unresolved", () -> ConsumptionRuleException.unresolved(ID, "NO_RECIPE")),
+            Map.entry("recipe-version-immutable", () -> RecipeConflictException.immutable(ID, "ACTIVE", "be edited")),
+            Map.entry("recipe-exists", () -> RecipeConflictException.exists("item " + ID)),
+            Map.entry("policy-version-taken", RecipeConflictException::policyVersionTaken),
+            Map.entry("consumption-exception-resolved", () -> ConsumptionConflictException.alreadyResolved(ID)),
+            Map.entry("preparation-state", () -> PreparationConflictException.state(ID, "CONFIRMED", "be confirmed")),
             Map.entry("loyalty-not-member", () -> LoyaltyRuleException.notMember(ID)),
             Map.entry("loyalty-suspended", () -> LoyaltyRuleException.suspended(ID)),
             Map.entry("loyalty-insufficient-points", () -> LoyaltyRuleException.insufficientPoints(10, 40)),
@@ -349,7 +375,41 @@ class CodedErrorContractTest {
             Map.entry("menu-group-invalid", () -> CatalogRuleException.menuGroupInvalid(
                     "Item BURGER is STANDARD: only a MENU item has menu groups.")),
             Map.entry("menu-not-allowed", () -> CatalogRuleException.menuNotAllowed("LUNCH", "a macro")),
-            Map.entry("item-not-published", () -> CatalogRuleException.itemNotPublished(OTHER, List.of(ID))));
+            Map.entry("item-not-published", () -> CatalogRuleException.itemNotPublished(OTHER, List.of(ID))),
+            // R4 inventory purchasing (S48)
+            Map.entry("po-has-receipts", () -> PurchasingRuleException.hasReceipts(ID)),
+            Map.entry("po-not-submitted", () -> PurchasingRuleException.notSubmitted(ID, "CLOSED")),
+            Map.entry("return-exceeds-received", () -> PurchasingRuleException.returnExceedsReceived(ID,
+                    new BigDecimal("4.000000"))),
+            Map.entry("receipt-not-confirmed", () -> PurchasingRuleException.receiptNotConfirmed(ID, "DRAFT")),
+            Map.entry("purchase-reference-mismatch", () -> PurchasingRuleException.referenceMismatch(
+                    "Pack " + ID + " is not a pack of stock item " + OTHER + ".")),
+            Map.entry("purchase-unit-cost-required", () -> PurchasingRuleException.unitCostRequired(ID)),
+            Map.entry("purchase-reason-required", () -> PurchasingRuleException.reasonRequired("cost correction")),
+            Map.entry("line-value-too-large", () -> PurchasingRuleException.lineValueTooLarge(ID)),
+            Map.entry("po-state", () -> PurchasingConflictException.orderState(ID, "SUBMITTED", "be edited")),
+            Map.entry("receipt-state", () -> PurchasingConflictException.receiptState(ID, "CONFIRMED",
+                    "be confirmed")),
+            Map.entry("return-state", () -> PurchasingConflictException.returnState(ID, "CANCELLED", "be confirmed")),
+            Map.entry("po-number-taken", () -> PurchasingConflictException.orderNumberTaken(ID, "PO-7")),
+            Map.entry("supplier-item-exists", () -> PurchasingConflictException.supplierItemExists(ID, OTHER)),
+            Map.entry("cost-correction-concurrent", () -> PurchasingConflictException.correctionConcurrent(ID)),
+            Map.entry("supplier-code-taken", () -> InventoryConflictException.codeTaken("SUPPLIER", "MOAGEM")),
+            // R4 orders (S46): pricing, menus, discounts, loyalty
+            Map.entry("promotions-changed", () -> OrderConflictException.promotionsChanged(null, 4L)),
+            Map.entry("prices-changed", () -> OrderConflictException.pricesChanged(new BigDecimal("20.00"),
+                    new BigDecimal("25.00"), List.of())),
+            Map.entry("item-sold-out", () -> OrderRuleException.itemSoldOut(ID, null)),
+            Map.entry("menu-selection-invalid", () -> OrderRuleException.menuSelectionInvalid("LUNCH",
+                    "group STARTER takes 1 to 1 choices, not 0")),
+            Map.entry("macro-not-published", () -> OrderRuleException.macroNotPublished("DRINKS")),
+            Map.entry("discount-limit-exceeded", () -> OrderRuleException.discountLimitExceeded(ID,
+                    new BigDecimal("52.00"), new BigDecimal("50"))),
+            Map.entry("price-increase-not-allowed", () -> OrderRuleException.priceIncreaseNotAllowed(ID)),
+            Map.entry("loyalty-customer-required", () -> OrderRuleException.loyaltyCustomerRequired(ID)),
+            Map.entry("reward-needs-single-unit", () -> OrderRuleException.rewardNeedsSingleUnit(ID)),
+            Map.entry("loyalty-redeemed", () -> OrderRuleException.loyaltyRedeemed(ID)),
+            Map.entry("reward-already-redeemed", () -> OrderRuleException.rewardAlreadyRedeemed(ID)));
 
     @Autowired
     MockMvc mvc;
@@ -748,6 +808,9 @@ class CodedErrorContractTest {
                 ",\"maxDays\":366");
         expect("inventory-not-active", 422, "INVENTORY_NOT_ACTIVE", "Inventory is not active in store " + ID
                 + ": activate it and count the opening stock first.", "");
+        expect("activation-in-past", 422, "ACTIVATION_IN_PAST",
+                "Inventory goes live now or later, not before 2026-11-06T10:00:00Z.",
+                ",\"notBefore\":\"2026-11-06T10:00:00Z\"");
     }
 
     @Test
@@ -804,6 +867,43 @@ class CodedErrorContractTest {
     }
 
     @Test
+    void recipeAndConsumptionRules() throws Exception {
+        expect("recipe-effective-from-invalid", 422, "RECIPE_EFFECTIVE_FROM_INVALID",
+                "A new version must take effect after 2026-11-06T10:00:00Z, when the current one did.",
+                ",\"notAfter\":\"2026-11-06T10:00:00Z\"");
+        expect("recipe-effective-from-in-past", 422, "RECIPE_EFFECTIVE_FROM_INVALID",
+                "A version takes effect now or later, not before 2026-11-06T10:00:00Z.",
+                ",\"notBefore\":\"2026-11-06T10:00:00Z\"");
+        expect("recipe-target-invalid", 422, "RECIPE_TARGET_INVALID", "A recipe is for a catalog item (itemId, "
+                + "optionally variantId) or a prepared stock item (outputStockItemId): exactly one of them.", "");
+        expect("item-not-found", 422, "ITEM_NOT_FOUND", "Catalog item " + ID + " with variant " + OTHER
+                + " was not found.", "");
+        expect("recipe-output-not-prepared", 422, "RECIPE_OUTPUT_NOT_PREPARED", "Stock item " + ID
+                + " is not PREPARED: only a prepared item has a preparation recipe.", "");
+        expect("recipe-cycle", 422, "RECIPE_CYCLE", "The recipe of stock item " + ID
+                + " would need itself through stock item " + OTHER + ".", ",\"stockItemId\":\"" + OTHER + "\"");
+        expect("no-active-recipe", 422, "NO_ACTIVE_RECIPE", "Stock item " + ID
+                + " has no active preparation recipe.", "");
+        expect("policy-rule-duplicate", 422, "POLICY_RULE_DUPLICATE",
+                "The consumption policy has two rules for family " + ID + ".", "");
+        expect("consumption-unresolved", 422, "CONSUMPTION_UNRESOLVED", "Consumption exception " + ID
+                + " still cannot be consumed: NO_RECIPE. Fix it and reprocess again.", ",\"kind\":\"NO_RECIPE\"");
+    }
+
+    @Test
+    void recipeAndConsumptionConflicts() throws Exception {
+        expect("recipe-version-immutable", 409, "RECIPE_VERSION_IMMUTABLE", "Version " + ID
+                + " is ACTIVE and cannot be edited: create a new version.", "");
+        expect("recipe-exists", 409, "RECIPE_EXISTS", "There is already a recipe for item " + ID + ".", "");
+        expect("policy-version-taken", 409, "POLICY_VERSION_TAKEN",
+                "Another consumption policy version was created or activated at the same time: retry.", "");
+        expect("consumption-exception-resolved", 409, "CONSUMPTION_EXCEPTION_RESOLVED", "Consumption exception "
+                + ID + " is already resolved.", "");
+        expect("preparation-state", 409, "PREPARATION_STATE", "Preparation " + ID
+                + " is CONFIRMED and cannot be confirmed.", "");
+    }
+
+    @Test
     void loyaltyRules() throws Exception {
         expect("loyalty-not-member", 422, "LOYALTY_NOT_MEMBER", "Customer " + ID + " is not a loyalty member.", "");
         expect("loyalty-suspended", 422, "LOYALTY_ACCOUNT_SUSPENDED",
@@ -845,6 +945,68 @@ class CodedErrorContractTest {
                 "Item LUNCH is a MENU: a macro cannot name it, because a menu needs its component choices.", "");
         expect("item-not-published", 422, "ITEM_NOT_PUBLISHED", "Item(s) [" + ID
                 + "] are not in the published catalog of store " + OTHER + ".", ",\"itemIds\":[\"" + ID + "\"]");
+    }
+
+    @Test
+    void inventoryPurchasingRules() throws Exception {
+        expect("po-has-receipts", 422, "PO_HAS_RECEIPTS", "Purchase order " + ID
+                + " has confirmed receipts: close it instead of cancelling it.", "");
+        expect("po-not-submitted", 422, "PO_NOT_SUBMITTED", "Purchase order " + ID
+                + " is CLOSED: goods are received only against a submitted order.", "");
+        expect("return-exceeds-received", 422, "RETURN_EXCEEDS_RECEIVED", "Only 4.000000 of receipt line " + ID
+                + " can still be returned.", ",\"receiptLineId\":\"" + ID + "\",\"available\":4.000000");
+        expect("receipt-not-confirmed", 422, "RECEIPT_NOT_CONFIRMED", "Goods receipt " + ID
+                + " is DRAFT: only a confirmed receipt has costs to correct or goods to return.", "");
+        expect("purchase-reference-mismatch", 422, "PURCHASE_REFERENCE_MISMATCH",
+                "Pack " + ID + " is not a pack of stock item " + OTHER + ".", "");
+        expect("purchase-unit-cost-required", 422, "UNIT_COST_REQUIRED", "Stock item " + ID
+                + " needs a unit cost: this supplier has no last cost for it.", "");
+        expect("purchase-reason-required", 422, "REASON_REQUIRED", "A cost correction needs a reason.", "");
+        expect("line-value-too-large", 422, "LINE_VALUE_TOO_LARGE", "The line of stock item " + ID
+                + " is worth more than a stock value can hold: split it or check its cost.", "");
+    }
+
+    @Test
+    void inventoryPurchasingConflicts() throws Exception {
+        expect("po-state", 409, "PO_STATE", "Purchase order " + ID + " is SUBMITTED and cannot be edited.", "");
+        expect("receipt-state", 409, "RECEIPT_STATE", "Goods receipt " + ID
+                + " is CONFIRMED and cannot be confirmed.", "");
+        expect("return-state", 409, "RETURN_STATE", "Supplier return " + ID + " is CANCELLED and cannot be confirmed.",
+                "");
+        expect("po-number-taken", 409, "PO_NUMBER_TAKEN", "Store " + ID + " already has a purchase order PO-7.", "");
+        expect("supplier-item-exists", 409, "SUPPLIER_ITEM_EXISTS", "Supplier " + ID + " already has stock item "
+                + OTHER + " in that pack.", "");
+        expect("cost-correction-concurrent", 409, "COST_CORRECTION_CONCURRENT", "Receipt line " + ID
+                + " was corrected at the same time; retry on its new cost.", "");
+        expect("supplier-code-taken", 409, "SUPPLIER_CODE_TAKEN", "The supplier code MOAGEM is taken.", "");
+    }
+
+    @Test
+    void ordersR4Codes() throws Exception {
+        expect("promotions-changed", 409, "PROMOTIONS_CHANGED",
+                "The promotions changed (version null → 4): review the prices and confirm again.",
+                ",\"promotionVersion\":4");
+        expect("prices-changed", 409, "PRICES_CHANGED",
+                "The prices changed (20.00 → 25.00): review them and confirm again.",
+                ",\"expectedGross\":20.00,\"gross\":25.00,\"lines\":[]");
+        expect("item-sold-out", 422, "ITEM_SOLD_OUT", "Item " + ID + " is sold out.", "");
+        expect("menu-selection-invalid", 422, "MENU_SELECTION_INVALID",
+                "Menu LUNCH: group STARTER takes 1 to 1 choices, not 0.", "");
+        expect("macro-not-published", 422, "MACRO_NOT_PUBLISHED",
+                "Macro DRINKS is not in the published catalog.", "");
+        expect("discount-limit-exceeded", 422, "DISCOUNT_LIMIT_EXCEEDED", "Line " + ID
+                + " would be 52.00 % off its list price; the store allows at most 50 %.", "");
+        expect("price-increase-not-allowed", 422, "PRICE_INCREASE_NOT_ALLOWED", "Line " + ID
+                + ": a discount only lowers the price, and a reversal only restores it up to the list price of a "
+                + "line without a reward.", "");
+        expect("loyalty-customer-required", 422, "LOYALTY_CUSTOMER_REQUIRED",
+                "Order " + ID + " has no customer to redeem a reward for.", "");
+        expect("reward-needs-single-unit", 422, "REWARD_NEEDS_SINGLE_UNIT",
+                "A reward is redeemed on one unit of line " + ID + ".", "");
+        expect("loyalty-redeemed", 422, "LOYALTY_REDEEMED",
+                "Order " + ID + " has a redeemed reward: its customer cannot change.", "");
+        expect("reward-already-redeemed", 422, "REWARD_ALREADY_REDEEMED",
+                "Line " + ID + " already carries a loyalty reward.", "");
     }
 
     private void expect(String name, int status, String code, String detail, String extra) throws Exception {

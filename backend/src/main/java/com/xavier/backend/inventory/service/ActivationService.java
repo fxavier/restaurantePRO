@@ -4,6 +4,7 @@ import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.inventory.exception.InventoryConflictException;
+import com.xavier.backend.inventory.exception.InventoryRuleException;
 import com.xavier.backend.inventory.model.InventoryActivation;
 import com.xavier.backend.inventory.model.dto.ActivationRequest;
 import com.xavier.backend.inventory.model.dto.ActivationView;
@@ -26,6 +27,12 @@ public class ActivationService {
 
     static final String ENTITY = "InventoryActivation";
 
+    /**
+     * ponytail: grace ceiling. An {@code activeFrom} at most this far in the past is a client's "now" that took a
+     * moment to arrive, and is taken as now; anything older is refused (422 ACTIVATION_IN_PAST).
+     */
+    static final java.time.Duration ACTIVATION_GRACE = java.time.Duration.ofSeconds(60);
+
     private final InventoryActivationRepository activations;
     private final InventoryScope scope;
     private final AccessPolicy accessPolicy;
@@ -41,19 +48,31 @@ public class ActivationService {
         this.clock = clock;
     }
 
-    /** @throws InventoryConflictException INVENTORY_ALREADY_ACTIVE (409), also when two activations race */
+    /**
+     * @throws InventoryConflictException INVENTORY_ALREADY_ACTIVE (409), also when two activations race
+     * @throws InventoryRuleException     ACTIVATION_IN_PAST (422) for an {@code activeFrom} more than
+     *                                    {@link #ACTIVATION_GRACE} before now (within it, it is now)
+     */
     @Transactional
     public ActivationView activate(ActivationRequest request) {
         scope.requireStore(Permission.INVENTORY_MANAGE, request.storeId());
         if (activations.existsById(request.storeId())) {
             throw InventoryConflictException.alreadyActive(request.storeId());
         }
+        Instant now = clock.instant();
+        Instant from = request.activeFrom() == null ? now : request.activeFrom();
+        if (from.isBefore(now.minus(ACTIVATION_GRACE))) {
+            throw InventoryRuleException.activationInPast(now.minus(ACTIVATION_GRACE));
+        }
+        if (from.isBefore(now)) {
+            from = now; // a client's "now" that arrived late
+        }
         UUID accountId = accessPolicy.current().userId();
         InventoryActivation activation = UniqueConstraints.saveAndFlush(activations,
-                InventoryActivation.of(request.storeId(), request.activeFrom(), accountId, clock.instant()),
+                InventoryActivation.of(request.storeId(), from, accountId, now),
                 () -> InventoryConflictException.alreadyActive(request.storeId()), "inventory_activation_pk");
         auditLog.recordAsCurrentActor("INVENTORY_ACTIVATED", ENTITY, request.storeId().toString(),
-                request.storeId(), null, null, Map.of("activeFrom", request.activeFrom().toString()));
+                request.storeId(), null, null, Map.of("activeFrom", from.toString()));
         return view(activation);
     }
 

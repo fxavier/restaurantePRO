@@ -87,6 +87,9 @@ public class Order {
     @Column(nullable = false)
     private int nextBatchNo;
 
+    /** The customer of the order (D130): how loyalty finds the member (D111, D112). Not the document's buyer. */
+    private UUID customerId;
+
     @Version
     private long version;
 
@@ -259,6 +262,21 @@ public class Order {
         return true;
     }
 
+    /**
+     * Names the order's customer (D130); the version moves with it.
+     *
+     * @param rewardRedeemed a reward was redeemed for the current customer (D112)
+     * @throws OrderRuleException {@code ORDER_FROZEN}, {@code LOYALTY_REDEEMED}
+     */
+    public void assignCustomer(UUID customerId, boolean rewardRedeemed) {
+        requireChangeable();
+        Objects.requireNonNull(customerId, "customerId");
+        if (rewardRedeemed && !customerId.equals(this.customerId)) {
+            throw OrderRuleException.loyaltyRedeemed(id);
+        }
+        this.customerId = customerId;
+    }
+
     /** OPEN → CLOSED. Settlement has checked the balance and the document (D50 §7.8). */
     public void close(UUID employeeId, Instant now) {
         requireOpen();
@@ -336,6 +354,10 @@ public class Order {
 
     public Instant getClosedAt() {
         return closedAt;
+    }
+
+    public UUID getCustomerId() {
+        return customerId;
     }
 
     public long getVersion() {

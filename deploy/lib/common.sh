@@ -47,6 +47,49 @@ recipients_file() {
   printf '%s\n' "$f"
 }
 
+# The Compose project of this installation, as docker compose resolves it for deploy/compose.yaml:
+# COMPOSE_PROJECT_NAME from the environment, else from the env files (COMPOSE_ENV_FILES, comma-separated, else
+# deploy/.env; the last one that sets it wins), else the top-level name: of compose.yaml.
+installation_project() {
+  local files f found="" name
+  if [[ -n "${COMPOSE_PROJECT_NAME:-}" ]]; then printf '%s\n' "$COMPOSE_PROJECT_NAME"; return 0; fi
+  files="${COMPOSE_ENV_FILES:-$DEPLOY_DIR/.env}"
+  local IFS=,
+  for f in $files; do
+    [[ "$f" == /* ]] || f="$DEPLOY_DIR/$f"
+    [[ -f "$f" ]] || continue
+    [[ "$f" != "$DEPLOY_DIR/.env" ]] || require_safe_dotenv
+    name="$(grep -E '^[[:space:]]*COMPOSE_PROJECT_NAME=' "$f" | tail -1 | sed -E "s/^[[:space:]]*COMPOSE_PROJECT_NAME=//; s/^[\"']//; s/[\"'][[:space:]]*$//" || true)"
+    [[ -z "$name" ]] || found="$name"
+  done
+  [[ -n "$found" ]] || found="$(sed -nE 's/^name:[[:space:]]*([^[:space:]#]+).*/\1/p' "$DEPLOY_DIR/compose.yaml" | head -1)"
+  printf '%s\n' "$found"
+}
+
+# Refuses database container $1 when Docker Compose manages it for another installation than this one
+# (installation_project): a restore or a backup must never reach another company's database by a mistyped
+# --container. $2 = the project named by --other-installation, the only way past this guard, and only for
+# exactly that project (logged as a WARNING). A container Compose did not create (a throwaway or a
+# pitr-restore.sh container) is allowed. Compose also stamps com.docker.compose.project on the images it builds,
+# so a container started from such an image inherits it: only the config-hash label, which Compose puts on the
+# containers it creates and never on images, marks a container as Compose-managed.
+require_own_installation() {
+  local container=$1 other=${2:-} labels project own
+  labels="$(docker container inspect -f '{{index .Config.Labels "com.docker.compose.config-hash"}}|{{index .Config.Labels "com.docker.compose.project"}}' "$container" 2>/dev/null)" \
+    || die "container $container not found"
+  project=""
+  [[ "$labels" == "|"* ]] || project="${labels#*|}"
+  own="$(installation_project)"
+  if [[ -n "$other" ]]; then
+    [[ "$project" == "$other" && "$project" != "$own" ]] \
+      || die "--other-installation $other does not match container $container, which belongs to installation ${project:-<none: not Compose-managed>} (this installation: $own); refusing to touch it"
+    echo "${0##*/}: WARNING: --other-installation $other: acting on container $container of ANOTHER installation ($other), not this one ($own)" >&2
+    return 0
+  fi
+  [[ -z "$project" || "$project" == "$own" ]] \
+    || die "container $container belongs to installation $project (Compose project), not to this installation ($own); refusing to touch it. If you really mean installation $project, pass --other-installation $project"
+}
+
 # D98 rule 1: production unless RESTAURANTPRO_ENVIRONMENT says test. Sets RP_ENV.
 env_mode() {
   require_safe_dotenv # here too: a die inside setting's command substitution would only end the subshell

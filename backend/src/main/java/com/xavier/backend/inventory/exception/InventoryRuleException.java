@@ -84,6 +84,12 @@ public class InventoryRuleException extends BusinessRuleException {
                 "The range is longer than " + maxDays + " days: narrow it.", Map.of("maxDays", maxDays));
     }
 
+    /** Go-live never reaches into the past: rounds already sold stay history (D122, S47 review). */
+    public static InventoryRuleException activationInPast(java.time.Instant now) {
+        return new InventoryRuleException(InventoryRule.ACTIVATION_IN_PAST,
+                "Inventory goes live now or later, not before " + now + ".", Map.of("notBefore", now.toString()));
+    }
+
     public static InventoryRuleException notActive(UUID storeId) {
         return new InventoryRuleException(InventoryRule.INVENTORY_NOT_ACTIVE,
                 "Inventory is not active in store " + storeId + ": activate it and count the opening stock first.");

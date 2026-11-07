@@ -8,8 +8,9 @@ import java.util.UUID;
  * {@code pendingFacts} the consumption publications not processed yet (installation-wide, D86);
  * {@code openExceptions} unresolved consumption exceptions; {@code negativeBalances} balances below zero;
  * {@code driftingBalances} balance rows that differed from their movements at the last nightly check
- * ({@code driftCheckedAt}, null before the first one; rebuild them).
+ * ({@code driftCheckedAt}, null before the first one; rebuild them); {@code pendingVoids} voids waiting for their
+ * line's consumption (held by an exception or late, S47).
  */
 public record StatusView(UUID storeId, String state, Instant activeFrom, long pendingFacts, long openExceptions,
-                         long negativeBalances, long driftingBalances, Instant driftCheckedAt) {
+                         long negativeBalances, long driftingBalances, Instant driftCheckedAt, long pendingVoids) {
 }

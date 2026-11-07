@@ -10,6 +10,8 @@ import com.xavier.backend.orders.model.dto.TransferView;
 import com.xavier.backend.orders.model.dto.VoidLineRequest;
 import com.xavier.backend.orders.model.dto.VoidView;
 import com.xavier.backend.orders.service.Approval;
+import com.xavier.backend.orders.model.dto.DiscountRequest;
+import com.xavier.backend.orders.service.LineAdjustmentService;
 import com.xavier.backend.orders.service.LineVoidService;
 import com.xavier.backend.orders.service.OrderCancelService;
 import com.xavier.backend.orders.service.OrderTransferService;
@@ -27,7 +29,8 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * POS adjustments of orders (PRD S14): voids, transfers, table moves, cancel and the subtotal printout. All are
+ * POS adjustments of orders (PRD S14): voids, transfers, table moves, cancel, the subtotal printout and (R4, S46) price
+ * adjustments. All are
  * idempotent; store and terminal come from the session (D39).
  */
 @RestController
@@ -40,11 +43,13 @@ class PosOrderAdjustmentController {
     private final TableMoveService tableMoves;
     private final OrderCancelService cancels;
     private final SubtotalService subtotals;
+    private final LineAdjustmentService adjustments;
     private final IdempotentRequests idempotent;
 
     PosOrderAdjustmentController(LineVoidService voids, OrderTransferService transfers, TableMoveService tableMoves,
                                  OrderCancelService cancels, SubtotalService subtotals,
-                                 IdempotentRequests idempotent) {
+                                 LineAdjustmentService adjustments, IdempotentRequests idempotent) {
+        this.adjustments = adjustments;
         this.voids = voids;
         this.transfers = transfers;
         this.tableMoves = tableMoves;
@@ -64,6 +69,20 @@ class PosOrderAdjustmentController {
             VoidView voided = voids.voidLine(id, body, approval);
             return ResponseEntity.created(URI.create(ORDERS + "/" + id + "/voids/" + voided.id())).body(voided);
         });
+    }
+
+    /**
+     * D105, D106: the approver, when the POS sends one, is verified first, outside any transaction; whether the
+     * discount needs one is decided under the order's version (missing → 403).
+     */
+    @PostMapping(ORDERS + "/{id}/discounts")
+    ResponseEntity<OrderView> discount(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
+                                       @RequestHeader(value = "X-Approver-Code", required = false) String approverCode,
+                                       @RequestHeader(value = "X-Approver-Pin", required = false) String approverPin,
+                                       @Valid @RequestBody DiscountRequest body, HttpServletRequest request) {
+        UUID approver = adjustments.authorize(id, body.kind(), approverCode, approverPin);
+        return idempotent.execute("orders.lines.discount", key, request, body, OrderView.class,
+                () -> ResponseEntity.ok(adjustments.adjust(id, body, approver)));
     }
 
     @PostMapping(ORDERS + "/{id}/transfers")

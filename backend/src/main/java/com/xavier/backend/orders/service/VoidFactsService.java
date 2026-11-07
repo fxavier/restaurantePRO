@@ -7,7 +7,10 @@ import com.xavier.backend.orders.model.LineSnapshot;
 import com.xavier.backend.orders.model.Order;
 import com.xavier.backend.orders.model.OrderLine;
 import com.xavier.backend.orders.model.OrderLineVoid;
+import com.xavier.backend.orders.model.EffectivePrice;
+import com.xavier.backend.orders.repository.OrderLinePriceAdjustmentRepository;
 import com.xavier.backend.orders.repository.OrderLineRepository;
+import com.xavier.backend.shared.Money;
 import com.xavier.backend.orders.repository.OrderLineVoidRepository;
 import java.time.LocalDate;
 import java.util.UUID;
@@ -25,9 +28,12 @@ public class VoidFactsService {
 
     private final OrderLineVoidRepository voids;
     private final OrderLineRepository lines;
+    private final OrderLinePriceAdjustmentRepository adjustments;
     private final OrderLookup lookup;
 
-    VoidFactsService(OrderLineVoidRepository voids, OrderLineRepository lines, OrderLookup lookup) {
+    VoidFactsService(OrderLineVoidRepository voids, OrderLineRepository lines,
+                     OrderLinePriceAdjustmentRepository adjustments, OrderLookup lookup) {
+        this.adjustments = adjustments;
         this.voids = voids;
         this.lines = lines;
         this.lookup = lookup;
@@ -39,11 +45,13 @@ public class VoidFactsService {
         Order order = lookup.load(voided.getOrderId());
         OrderLine line = lines.findById(voided.getLineId()).orElseThrow();
         LineSnapshot snapshot = line.snapshot().orElseThrow();
+        Money unitPrice = EffectivePrice.of(line, adjustments.findByLineIdOrderBySeq(line.getId()).stream()
+                .filter(adjustment -> !adjustment.getAt().isAfter(voided.getVoidedAt())).toList()).unitPrice();
         return new VoidFacts(voided.getId(), order.getId(), order.getStoreId(), order.getBusinessDay(),
                 voided.getVoidedAt(), new VoidFacts.VoidedLine(line.getId(), line.getItemId(), snapshot.itemCode(),
-                snapshot.billedDescription(), snapshot.unitPrice(), snapshot.taxCode(), snapshot.taxRatePercent(),
+                snapshot.billedDescription(), unitPrice, snapshot.taxCode(), snapshot.taxRatePercent(),
                 snapshot.releaseId()), voided.getQuantity(),
-                LineAmounts.of(snapshot.unitPrice(), voided.getQuantity(), snapshot.taxRatePercent()).gross(),
+                LineAmounts.of(unitPrice, voided.getQuantity(), snapshot.taxRatePercent()).gross(),
                 voided.getReason(), voided.isWasted(), voided.getOperatorEmployeeId(),
                 voided.getApproverEmployeeId(), voids.wasAfterDispatch(voidId), voids.consumedLineId(voidId)
                 .orElseThrow(() -> new IllegalStateException("Void " + voidId + " descends from no round line")));

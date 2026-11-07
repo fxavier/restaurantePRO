@@ -9,6 +9,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.xavier.backend.orders.exception.OrderConflictException;
 import com.xavier.backend.orders.exception.OrderRuleException;
+import com.xavier.backend.shared.Money;
 import java.math.BigDecimal;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -63,7 +64,8 @@ class OrderLineTakingTest {
         UUID transfer = UUID.randomUUID();
         UUID mover = UUID.randomUUID();
 
-        OrderLine copy = OrderLine.transferredCopy(source, target, new BigDecimal("1.5"), transfer, mover, NOW);
+        OrderLine copy = OrderLine.transferredCopy(source, SNAPSHOT.unitPrice(), target, new BigDecimal("1.5"), transfer,
+                mover, NOW);
 
         assertThat(copy.getOrderId()).isEqualTo(target);
         assertThat(copy.getStatus()).isEqualTo(LineStatus.CONFIRMED);
@@ -75,5 +77,41 @@ class OrderLineTakingTest {
         assertThat(copy.getOriginTransferId()).isEqualTo(transfer);
         assertThat(copy.getConfirmedByEmployeeId()).isEqualTo(mover);
         assertThat(copy.getConfirmedAt()).isEqualTo(NOW);
+    }
+
+    @Test
+    void aTransferredCopyKeepsTheSourcesListPriceAndCarriesItsEffectivePrice() {
+        OrderLine source = confirmed();
+        Money discounted = Money.of("10.00", SNAPSHOT.unitPrice().currency());
+
+        OrderLine copy = OrderLine.transferredCopy(source, discounted, UUID.randomUUID(), BigDecimal.ONE,
+                UUID.randomUUID(), UUID.randomUUID(), NOW);
+
+        assertThat(copy.snapshot().orElseThrow().unitPrice()).isEqualTo(discounted);
+        assertThat(copy.listUnitPrice()).isEqualTo(SNAPSHOT.unitPrice());
+    }
+
+    @Test
+    void aSplitCopyStaysOnTheOrderWithTheSplitAsItsOnlyOrigin() {
+        OrderLine source = confirmed();
+        UUID split = UUID.randomUUID();
+
+        OrderLine copy = OrderLine.splitCopy(source, SNAPSHOT.unitPrice(), BigDecimal.ONE, split, EMPLOYEE, NOW);
+
+        assertThat(copy.getOrderId()).isEqualTo(source.getOrderId());
+        assertThat(copy.getStatus()).isEqualTo(LineStatus.CONFIRMED);
+        assertThat(copy.getOriginSplitId()).isEqualTo(split);
+        assertThat(copy.getBatchId()).isNull();
+        assertThat(copy.getOriginTransferId()).isNull();
+        assertThat(copy.getQuantity()).isEqualByComparingTo("1");
+    }
+
+    @Test
+    void anEffectivePriceAboveTheListPriceIsRefused() {
+        OrderLine source = confirmed();
+        Money above = Money.of("99.00", SNAPSHOT.unitPrice().currency());
+
+        assertThatThrownBy(() -> OrderLine.splitCopy(source, above, BigDecimal.ONE, UUID.randomUUID(), EMPLOYEE, NOW))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 }

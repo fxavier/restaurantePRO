@@ -15,7 +15,7 @@ Conventions for every endpoint below, as in R2 and R3:
 - **Idem:** `Idempotency-Key` through `access.IdempotentRequests` (`execute`, or `steps` for D63).
 - **Approver:** the `X-Approver-Code` and `X-Approver-Pin` headers, verified before the transaction (D40); missing or invalid → 403.
 - **Errors:** a stale version gives 409. Business rules give 422 `ProblemDetail` with a stable `code`, and every new code is added to `CodedErrorContractTest`.
-- **Store scope:** D42 order. Company-wide resources (suppliers, stock items, recipes, loyalty program) use `requireInAnyStore`.
+- **Store scope:** D42 order. Company-wide resources (suppliers, stock items, recipes, loyalty program) are read with `requireInAnyStore`; supplier and stock-item writes need the permission installation-wide (`accessPolicy.require(X)`, D125 amendment).
 - **Audit:** every write calls `AuditLog.recordAsCurrentActor` (D41) or `recordAsSystem` (jobs, listeners).
 
 ---
@@ -184,7 +184,7 @@ Conventions for every endpoint below, as in R2 and R3:
 | method & path | permission | idem | notes / errors |
 |---|---|---|---|
 | `/stock-items` (+ `/packs`), `/warehouses`, `/consumption-routes`, `/stock-levels` (CRUD) | `INVENTORY_MANAGE` (`INVENTORY_VIEW` for GET) | POST | 422 `UNIT_DIMENSION_MISMATCH`, `WAREHOUSE_STORE_MISMATCH` |
-| `POST /activations {storeId, activeFrom}` | `INVENTORY_MANAGE` | yes | 409 already active |
+| `POST /activations {storeId, activeFrom?}` | `INVENTORY_MANAGE` | yes | 409 already active; omit `activeFrom` for now (up to 60 s in the past is taken as now), earlier → 422 `ACTIVATION_IN_PAST` (S47 review) |
 | `GET /stock?warehouseId&belowMinimum&negative`; `GET /movements?warehouseId&stockItemId&from&to&type` | `INVENTORY_VIEW` | — | Paged (D23) |
 | `POST /movements/waste`, `/manual-adjustments`, `/returns-to-stock {warehouseId, lines[{stockItemId, quantity, unit}], reason}` | `INVENTORY_MOVE` | yes | 422 `REASON_REQUIRED`, `NEGATIVE_STOCK_REFUSED`; MANUAL_ADJUSTMENT IN needs a unit cost |
 | `POST /transfers`, `PUT /transfers/{id}`, `POST /transfers/{id}/ship`, `/receive {lines[{stockItemId, quantityReceived}]}`, `/cancel` | `INVENTORY_TRANSFER` at the source (ship) and destination (receive) store | yes | 409 `TRANSFER_STATE`; 422 `SAME_WAREHOUSE`, `RECEIVED_EXCEEDS_SHIPPED`; same store → ship receives |
@@ -304,7 +304,7 @@ S46 needs S38, S39, S40 merged. S47, S48 and S49 need S42 merged.
 
 **Contracts:**
 - Receipt confirm (one transaction, CAS DRAFT → CONFIRMED): `RECEIPT` movements (source `GOODS_RECEIPT`, line id) through `StockLedger.post`; `supplier_item.last_unit_cost` updated; receipt progress of the purchase order derived from Σ confirmed lines per order line.
-- Return confirm: `SUPPLIER_RETURN` at the receipt line's unit cost when linked (≤ received − returned, 422 `RETURN_EXCEEDS_RECEIVED`), else at average; `manual = true` for the negative policy.
+- Return confirm: `SUPPLIER_RETURN` at the average (D113); when linked, the receipt line's cost is kept for reference, `(average − receipt cost) × q` is booked as that line's `cost_variance`, and the quantity is ≤ received − returned (422 `RETURN_EXCEEDS_RECEIVED`); `manual = true` for the negative policy (D125 amendment).
 - Cost correction: D125 (REVALUATION for the on-hand share; the rest to `cost_variance`), publishes `StockMovementsPosted` with source `COST_CORRECTION`.
 
 **Endpoints** (`/api/v1/backoffice/inventory`):

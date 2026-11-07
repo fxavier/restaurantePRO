@@ -1,5 +1,6 @@
 package com.xavier.backend.orders;
 
+import com.xavier.backend.orders.model.event.LineDiscountsRecorded;
 import com.xavier.backend.orders.model.event.OrderBatchConfirmed;
 import com.xavier.backend.orders.model.event.OrderLinesVoided;
 import com.xavier.backend.orders.model.event.SubtotalRequested;
@@ -24,6 +25,7 @@ public class OrderEventProbe {
     private final List<OrderBatchConfirmed> received = new CopyOnWriteArrayList<>();
     private final List<OrderLinesVoided> voids = new CopyOnWriteArrayList<>();
     private final List<SubtotalRequested> subtotals = new CopyOnWriteArrayList<>();
+    private final List<LineDiscountsRecorded> discounts = new CopyOnWriteArrayList<>();
     private final Set<UUID> failing = ConcurrentHashMap.newKeySet();
 
     @ApplicationModuleListener
@@ -39,6 +41,16 @@ public class OrderEventProbe {
     @ApplicationModuleListener
     void on(SubtotalRequested event) {
         subtotals.add(event);
+    }
+
+    @ApplicationModuleListener
+    void on(LineDiscountsRecorded event) {
+        discounts.add(event);
+    }
+
+    /** The discount notices of the order that arrived, waiting up to 10 s for {@code expected}. */
+    public List<LineDiscountsRecorded> discountsOf(UUID orderId, int expected) throws InterruptedException {
+        return await(() -> discounts.stream().filter(event -> event.orderId().equals(orderId)).toList(), expected);
     }
 
     /** The voids of the order that arrived, waiting up to 10 s for {@code expected}. */
