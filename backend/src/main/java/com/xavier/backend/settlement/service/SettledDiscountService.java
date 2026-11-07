@@ -29,8 +29,9 @@ import org.springframework.transaction.annotation.Transactional;
  * {@code OrdersApi.adjustLinePrice}, which applies the D106 limits, splits a partial quantity, redeems a reward and
  * refuses a REVERSAL, exactly like the orders route. Phase 1 (D40) is outside any transaction: the kind's permission
  * on the order's store (404, 403), then the approver, when the POS sent one. Phase 2 is one transaction: the order's
- * store (D42) → {@code order_settlement FOR UPDATE} → per line, none of it on a document (or the order frozen) and none
- * in a LIVE partition → the adjustment (D132: {@code order_header}, then {@code loyalty_account}) → the ORDER residual
+ * store (D42) → {@code order_settlement FOR UPDATE} → per line, none of it on a document (a frozen order's residual
+ * draft covers every line) and none in a LIVE partition → the adjustment (D132: {@code order_header}, then
+ * {@code loyalty_account}) → the ORDER residual
  * after it at or above what its target was paid, put on account or has in flight, else the whole transaction rolls
  * back. The headroom is checked on the adjusted bill, so every kind (a reward's price comes from loyalty) is measured
  * by orders' own amounts rather than a second computation of them.
@@ -110,9 +111,6 @@ public class SettledDiscountService {
         accessPolicy.requireSessionStore(pos, orders.storeOf(orderId), PaymentAttemptService.ORDER, orderId);
         locks.lockOrder(orderId);
         Bill bill = bills.of(orderId).requireOpen();
-        if (bill.frozen()) {
-            throw SettlementRuleException.correctionRequiresFiscalAdapter("Order " + orderId + " has its document");
-        }
         Coverage coverage = fiscal.coverage(orderId);
         request.lines().stream().map(SettledDiscountRequest.Line::lineId).distinct().forEach(lineId -> {
             requireOnNoDocument(coverage, lineId);
