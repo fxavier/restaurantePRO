@@ -139,6 +139,47 @@ class OfferLineageTest {
         assertThat(copy.discountLabel()).as("offered after it moved").isEqualTo("Desconto 10%");
     }
 
+    @Test
+    void theCopyOfAPartlyReversedDiscountIsAPlainDiscount() throws Exception {
+        adjust(other, discounted, null, "\"kind\": \"DISCOUNT\", \"percent\": 20", Permission.ORDER_DISCOUNT,
+                manager).andExpect(status().isOk());
+        adjust(other, discounted, null, "\"kind\": \"REVERSAL\", \"unitPrice\": 11.25", Permission.ORDER_DISCOUNT,
+                null).andExpect(status().isOk());
+        UUID target = transferOne(other, discounted);
+
+        BillingLine copy = ordersApi.billingView(target).lines().getFirst();
+        assertThat(copy.unitPrice().amount()).isEqualByComparingTo("11.25");
+        assertThat(copy.discountLabel()).as("not the 20 % it no longer sells at").isEqualTo("Desconto");
+        assertThat(ordersApi.billingView(other).lines().getFirst().discountLabel()).isEqualTo("Desconto");
+    }
+
+    @Test
+    void anOfferReversedPartWayIsAPlainDiscountAndNoOffer() throws Exception {
+        adjust(order, line, null, "\"kind\": \"REVERSAL\", \"unitPrice\": 6.25", Permission.ORDER_DISCOUNT, null)
+                .andExpect(status().isOk());
+
+        BillingLine billed = ordersApi.billingView(order).lines().getFirst();
+        assertThat(billed.unitPrice().amount()).isEqualByComparingTo("6.25");
+        assertThat(billed.discountLabel()).isEqualTo("Desconto");
+        close(order);
+        assertThat(ordersApi.offerFacts(order).lines()).isEmpty();
+    }
+
+    @Test
+    void aReversalTakesBackWhatCameBeforeItNotALaterDiscount() throws Exception {
+        adjust(order, line, null, "\"kind\": \"REVERSAL\"", Permission.ORDER_DISCOUNT, null)
+                .andExpect(status().isOk());
+        adjust(order, line, null, "\"kind\": \"DISCOUNT\", \"percent\": 10", Permission.ORDER_DISCOUNT, null)
+                .andExpect(status().isOk());
+
+        var sources = ordersApi.discountSourceIds(shop.store(), LocalDate.of(2000, 1, 1), LocalDate.of(2100, 1, 1),
+                PageRequest.of(0, 10)).getContent();
+        assertThat(sources.stream().map(source -> ordersApi.discountFacts(source.sourceType(), source.sourceId())
+                        .lines().getFirst()).filter(fact -> fact.lineId().equals(line))
+                .map(fact -> fact.origin() + ">" + fact.reversesOrigin()).toList())
+                .containsExactly("OFFER>null", "MANUAL>OFFER", "MANUAL>null");
+    }
+
     private UUID transferOne() throws Exception {
         return transferOne(order, line);
     }

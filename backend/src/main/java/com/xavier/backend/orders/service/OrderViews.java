@@ -234,17 +234,12 @@ public class OrderViews {
         return rewards.rewardCodes(copies);
     }
 
-    /**
-     * S53: the lines' price origins from their lineage, for those whose own adjustments do not say: a copy (split or
-     * transfer) without an adjustment of its own, and a line whose latest adjustment is a reversal.
-     */
+    /** S53: the lineage price origins of the copies (split or transfer) without an adjustment of their own. */
     private Map<UUID, OrderLinePriceAdjustment> lineageOrigins(Collection<OrderLine> candidates,
                                                                Map<UUID, List<OrderLinePriceAdjustment>> adjusted) {
-        List<UUID> ids = candidates.stream().filter(line -> !line.isDraft()).filter(line -> {
-            List<OrderLinePriceAdjustment> own = adjusted.getOrDefault(line.getId(), List.of());
-            return own.isEmpty() ? line.getOriginTransferId() != null || line.getOriginSplitId() != null
-                    : own.getLast().getKind() == AdjustmentKind.REVERSAL;
-        }).map(OrderLine::getId).toList();
+        List<UUID> ids = candidates.stream().filter(line -> !line.isDraft())
+                .filter(line -> line.getOriginTransferId() != null || line.getOriginSplitId() != null)
+                .filter(line -> !adjusted.containsKey(line.getId())).map(OrderLine::getId).toList();
         if (ids.isEmpty()) {
             return Map.of();
         }
