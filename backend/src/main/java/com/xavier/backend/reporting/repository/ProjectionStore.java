@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -15,6 +16,11 @@ import org.springframework.stereotype.Repository;
  */
 @Repository
 public class ProjectionStore {
+
+    /** Every projection table with its own store and business date (the line and tax tables cascade). */
+    public static final List<String> PROJECTIONS = List.of("sales_record", "payment_record", "credit_record",
+            "void_record", "consumption_record", "consumption_waste_record", "cost_variance_record",
+            "discount_record");
 
     private final JdbcClient jdbc;
 
@@ -49,6 +55,31 @@ public class ProjectionStore {
     public record VoidRecord(UUID voidId, UUID storeId, LocalDate businessDate, int localHour, String itemCode,
                              String description, BigDecimal quantity, BigDecimal gross, String reason,
                              boolean wasted, boolean afterDispatch, UUID employeeId, UUID approverId) {
+    }
+
+    /** A stock movement that is cost of goods (D131): a sale's consumption, its reversal, or a manual waste. */
+    public record ConsumptionRecord(UUID movementId, UUID storeId, LocalDate businessDate, UUID saleItemId,
+                                    String familyCode, UUID lineId, UUID warehouseId, UUID stockItemId, String type,
+                                    BigDecimal quantity, BigDecimal value, String sourceType, UUID sourceId) {
+    }
+
+    /** A wasted void's share of one sale movement (D117 as amended): its value moves from cost of sales to waste. */
+    public record WasteRecord(UUID voidId, UUID originalMovementId, UUID storeId, LocalDate businessDate,
+                              UUID saleItemId, String familyCode, UUID lineId, UUID warehouseId, UUID stockItemId,
+                              BigDecimal quantity, BigDecimal value) {
+    }
+
+    /** A cost variance (D125): positive is more cost of goods. */
+    public record VarianceRecord(UUID varianceId, String sourceType, UUID sourceId, UUID storeId,
+                                 LocalDate businessDate, UUID warehouseId, UUID stockItemId, UUID receiptLineId,
+                                 BigDecimal value) {
+    }
+
+    /** One discounted line of a discount source (D105). */
+    public record DiscountRecord(String sourceType, UUID sourceId, UUID lineId, UUID storeId, LocalDate businessDate,
+                                 UUID itemId, String familyCode, String origin, String kind, String promotionCode,
+                                 UUID operatorEmployeeId, UUID approverEmployeeId, BigDecimal quantity,
+                                 BigDecimal discountGross) {
     }
 
     /** @return whether the header was inserted (false: the document was already projected) */
@@ -133,9 +164,59 @@ public class ProjectionStore {
                 .update() == 1;
     }
 
+    public void insertConsumption(ConsumptionRecord c, Instant projectedAt) {
+        jdbc.sql("""
+                        INSERT INTO reporting.consumption_record (movement_id, store_id, business_date, sale_item_id,
+                            family_code, line_id, warehouse_id, stock_item_id, type, quantity, value, source_type,
+                            source_id, projected_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT (movement_id) DO NOTHING""")
+                .params(c.movementId(), c.storeId(), c.businessDate(), c.saleItemId(), c.familyCode(), c.lineId(),
+                        c.warehouseId(), c.stockItemId(), c.type(), c.quantity(), c.value(), c.sourceType(),
+                        c.sourceId(), Timestamp.from(projectedAt))
+                .update();
+    }
+
+    public void insertWaste(WasteRecord w, Instant projectedAt) {
+        jdbc.sql("""
+                        INSERT INTO reporting.consumption_waste_record (void_id, original_movement_id, store_id,
+                            business_date, sale_item_id, family_code, line_id, warehouse_id, stock_item_id, quantity,
+                            value, projected_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT (void_id, original_movement_id) DO NOTHING""")
+                .params(w.voidId(), w.originalMovementId(), w.storeId(), w.businessDate(), w.saleItemId(),
+                        w.familyCode(), w.lineId(), w.warehouseId(), w.stockItemId(), w.quantity(), w.value(),
+                        Timestamp.from(projectedAt))
+                .update();
+    }
+
+    public void insertVariance(VarianceRecord v, Instant projectedAt) {
+        jdbc.sql("""
+                        INSERT INTO reporting.cost_variance_record (variance_id, source_type, source_id, store_id,
+                            business_date, warehouse_id, stock_item_id, receipt_line_id, value, projected_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT (variance_id) DO NOTHING""")
+                .params(v.varianceId(), v.sourceType(), v.sourceId(), v.storeId(), v.businessDate(),
+                        v.warehouseId(), v.stockItemId(), v.receiptLineId(), v.value(), Timestamp.from(projectedAt))
+                .update();
+    }
+
+    public void insertDiscount(DiscountRecord d, Instant projectedAt) {
+        jdbc.sql("""
+                        INSERT INTO reporting.discount_record (source_type, source_id, line_id, store_id,
+                            business_date, item_id, family_code, origin, kind, promotion_code, operator_employee_id,
+                            approver_employee_id, quantity, discount_gross, projected_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT (source_type, source_id, line_id) DO NOTHING""")
+                .params(d.sourceType(), d.sourceId(), d.lineId(), d.storeId(), d.businessDate(), d.itemId(),
+                        d.familyCode(), d.origin(), d.kind(), d.promotionCode(), d.operatorEmployeeId(),
+                        d.approverEmployeeId(), d.quantity(), d.discountGross(), Timestamp.from(projectedAt))
+                .update();
+    }
+
     /** A rebuild's first step: the store's projection rows in {@code [from, to]} (projections, never facts). */
     public void deleteRange(UUID storeId, LocalDate from, LocalDate to) {
-        for (String table : new String[] {"sales_record", "payment_record", "credit_record", "void_record"}) {
+        for (String table : PROJECTIONS) {
             jdbc.sql("DELETE FROM reporting." + table + " WHERE store_id = ? AND business_date BETWEEN ? AND ?")
                     .params(storeId, from, to).update();
         }
