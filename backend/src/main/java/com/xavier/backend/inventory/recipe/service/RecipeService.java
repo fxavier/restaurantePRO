@@ -47,7 +47,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Recipes and their versions (D115), company-wide: {@code RECIPE_MANAGE} held installation-wide or in any store.
+ * Recipes and their versions (D115), company-wide: writes need {@code RECIPE_MANAGE} installation-wide, reads hold
+ * it installation-wide or in any store.
  * A version is edited while DRAFT and immutable once activated; activating one supersedes the ACTIVE version at the
  * new start, under the recipe's row lock, so periods never overlap. Every write is audited.
  */
@@ -91,7 +92,7 @@ public class RecipeService {
 
     @Transactional
     public RecipeView create(RecipeRequest request) {
-        accessPolicy.requireInAnyStore(Permission.RECIPE_MANAGE);
+        accessPolicy.require(Permission.RECIPE_MANAGE);
         Recipe recipe = request.outputStockItemId() != null ? preparation(request) : sale(request);
         Recipe saved = UniqueConstraints.saveAndFlush(recipes, recipe, () -> RecipeConflictException.exists(
                         recipe.isPreparation() ? "stock item " + recipe.getOutputStockItemId()
@@ -108,7 +109,7 @@ public class RecipeService {
 
     @Transactional
     public RecipeView rename(UUID id, RecipeUpdateRequest request) {
-        accessPolicy.requireInAnyStore(Permission.RECIPE_MANAGE);
+        accessPolicy.require(Permission.RECIPE_MANAGE);
         Recipe recipe = require(id);
         OptimisticLocking.requireVersion(Recipe.class, id, recipe.getVersion(), request.version());
         recipe.rename(request.name());
@@ -124,7 +125,7 @@ public class RecipeService {
      */
     @Transactional
     public void delete(UUID id) {
-        accessPolicy.requireInAnyStore(Permission.RECIPE_MANAGE);
+        accessPolicy.require(Permission.RECIPE_MANAGE);
         Recipe recipe = recipes.lockById(id).orElseThrow(() -> new InventoryNotFoundException(ENTITY, id));
         List<RecipeVersion> all = versions.findByRecipeIdOrderByVersionNo(id);
         all.stream().filter(v -> v.getStatus() != VersionStatus.DRAFT).findFirst().ifPresent(used -> {
@@ -140,7 +141,7 @@ public class RecipeService {
     /** A new DRAFT version, numbered after the last one (under the recipe's lock). */
     @Transactional
     public RecipeVersionView addVersion(UUID recipeId, RecipeVersionRequest request) {
-        accessPolicy.requireInAnyStore(Permission.RECIPE_MANAGE);
+        accessPolicy.require(Permission.RECIPE_MANAGE);
         Recipe recipe = recipes.lockById(recipeId)
                 .orElseThrow(() -> new InventoryNotFoundException(ENTITY, recipeId));
         List<IngredientLine> lines = validated(recipe, request);
@@ -155,7 +156,7 @@ public class RecipeService {
     /** Rewrites a DRAFT (409 RECIPE_VERSION_IMMUTABLE otherwise). */
     @Transactional
     public RecipeVersionView reviseVersion(UUID recipeId, int versionNo, RecipeVersionRequest request) {
-        accessPolicy.requireInAnyStore(Permission.RECIPE_MANAGE);
+        accessPolicy.require(Permission.RECIPE_MANAGE);
         Recipe recipe = require(recipeId);
         RecipeVersion version = requireVersion(recipeId, versionNo);
         if (request.version() != null) {
@@ -180,7 +181,7 @@ public class RecipeService {
      */
     @Transactional
     public RecipeVersionView activate(UUID recipeId, int versionNo, ActivateRequest request) {
-        accessPolicy.requireInAnyStore(Permission.RECIPE_MANAGE);
+        accessPolicy.require(Permission.RECIPE_MANAGE);
         Recipe recipe = recipes.lockById(recipeId)
                 .orElseThrow(() -> new InventoryNotFoundException(ENTITY, recipeId));
         RecipeVersion version = requireVersion(recipeId, versionNo);
