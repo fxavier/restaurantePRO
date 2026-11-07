@@ -86,6 +86,47 @@ public class OrderRuleException extends BusinessRuleException {
                 "Order " + orderId + " has its document: reprint it as a copy instead of a subtotal.");
     }
 
+    public static OrderRuleException itemSoldOut(UUID itemId, UUID variantId) {
+        return new OrderRuleException(OrderRule.ITEM_SOLD_OUT, "Item " + itemId
+                + (variantId == null ? "" : " variant " + variantId) + " is sold out.");
+    }
+
+    public static OrderRuleException menuSelectionInvalid(String itemCode, String why) {
+        return new OrderRuleException(OrderRule.MENU_SELECTION_INVALID, "Menu " + itemCode + ": " + why + ".");
+    }
+
+    public static OrderRuleException macroNotPublished(String macroCode) {
+        return new OrderRuleException(OrderRule.MACRO_NOT_PUBLISHED,
+                "Macro " + macroCode + " is not in the published catalog.");
+    }
+
+    public static OrderRuleException discountLimitExceeded(UUID lineId, BigDecimal percent, BigDecimal maxPercent) {
+        return new OrderRuleException(OrderRule.DISCOUNT_LIMIT_EXCEEDED, "Line " + lineId + " would be "
+                + percent.toPlainString() + " % off its list price; the store allows at most "
+                + maxPercent.toPlainString() + " %.");
+    }
+
+    public static OrderRuleException priceIncreaseNotAllowed(UUID lineId) {
+        return new OrderRuleException(OrderRule.PRICE_INCREASE_NOT_ALLOWED,
+                "Line " + lineId + ": a discount only lowers the price, and a reversal only restores it up to the "
+                        + "list price of a line without a reward.");
+    }
+
+    public static OrderRuleException loyaltyCustomerRequired(UUID orderId) {
+        return new OrderRuleException(OrderRule.LOYALTY_CUSTOMER_REQUIRED,
+                "Order " + orderId + " has no customer to redeem a reward for.");
+    }
+
+    public static OrderRuleException rewardNeedsSingleUnit(UUID lineId) {
+        return new OrderRuleException(OrderRule.REWARD_NEEDS_SINGLE_UNIT,
+                "A reward is redeemed on one unit of line " + lineId + ".");
+    }
+
+    public static OrderRuleException loyaltyRedeemed(UUID orderId) {
+        return new OrderRuleException(OrderRule.LOYALTY_REDEEMED,
+                "Order " + orderId + " has a redeemed reward: its customer cannot change.");
+    }
+
     public OrderRule rule() {
         return rule;
     }

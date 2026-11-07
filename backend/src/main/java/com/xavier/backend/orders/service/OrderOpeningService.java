@@ -3,6 +3,7 @@ package com.xavier.backend.orders.service;
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.PosContext;
+import com.xavier.backend.catalog.CatalogApi;
 import com.xavier.backend.dining.DiningApi;
 import com.xavier.backend.dining.model.dto.OccupationView;
 import com.xavier.backend.organization.BusinessDays;
@@ -38,13 +39,18 @@ public class OrderOpeningService {
     private final OrderLookup lookup;
     private final DiningApi dining;
     private final OrganizationApi organization;
+    private final CatalogApi catalog;
+    private final DraftLineService drafts;
     private final AccessPolicy accessPolicy;
     private final OrderChanges changes;
     private final OrderViews views;
     private final Clock clock;
 
     OrderOpeningService(OrderRepository orders, OrderLookup lookup, DiningApi dining, OrganizationApi organization,
-                        AccessPolicy accessPolicy, OrderChanges changes, OrderViews views, Clock clock) {
+                        CatalogApi catalog, DraftLineService drafts, AccessPolicy accessPolicy,
+                        OrderChanges changes, OrderViews views, Clock clock) {
+        this.catalog = catalog;
+        this.drafts = drafts;
         this.orders = orders;
         this.lookup = lookup;
         this.dining = dining;
@@ -69,7 +75,7 @@ public class OrderOpeningService {
         OccupationView occupation = dining.openOccupation(tableId, order.getId(), request.guests(), pos.employeeId());
         order.seatedAt(tableId, occupation.tableCode());
         orders.saveAndFlush(order);
-        opened(order);
+        opened(order, pos);
         return views.of(order);
     }
 
@@ -82,11 +88,12 @@ public class OrderOpeningService {
                 orders.nextOrderNumber(), request.guests(),
                 BusinessDays.of(now, store.timezone(), store.businessDayCutoff()), store.currency(),
                 pos.employeeId(), now));
-        opened(order);
+        opened(order, pos);
         return views.of(order);
     }
 
-    private void opened(Order order) {
+    /** Audits the opening, then adds the automatic drafts of the published catalog (D109). */
+    private void opened(Order order, PosContext pos) {
         Map<String, Object> details = new HashMap<>();
         details.put("mode", order.getMode().name());
         details.put("orderNumber", order.getOrderNumber());
@@ -94,6 +101,7 @@ public class OrderOpeningService {
             details.put("tableId", order.getTableId().toString());
         }
         changes.record("ORDER_OPENED", order, details);
+        drafts.addAutomatic(order, catalog.currentSnapshot(order.getStoreId()), pos.employeeId());
     }
 
     private StoreSummary store(PosContext pos) {

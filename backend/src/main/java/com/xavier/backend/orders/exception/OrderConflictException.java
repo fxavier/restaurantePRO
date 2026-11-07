@@ -41,6 +41,22 @@ public class OrderConflictException extends ConflictException {
                 Map.of("catalogVersion", current));
     }
 
+    /** D104: another promotion release is published than the one the POS previewed ({@code null} = none). */
+    public static OrderConflictException promotionsChanged(Long sent, Long current) {
+        Map<String, Object> properties = new java.util.HashMap<>();
+        properties.put("promotionVersion", current);
+        return new OrderConflictException("PROMOTIONS_CHANGED", "The promotions changed (version " + sent + " → "
+                + current + "): review the prices and confirm again.", properties);
+    }
+
+    /** D104: the round's gross now differs from what the POS showed (a time window passed); {@code lines} is new. */
+    public static OrderConflictException pricesChanged(java.math.BigDecimal expected, java.math.BigDecimal actual,
+                                                       java.util.List<?> lines) {
+        return new OrderConflictException("PRICES_CHANGED", "The prices changed (" + expected.toPlainString()
+                + " → " + actual.toPlainString() + "): review them and confirm again.",
+                Map.of("expectedGross", expected, "gross", actual, "lines", lines));
+    }
+
     public static OrderConflictException tableOccupied(UUID tableId) {
         return new OrderConflictException("TABLE_OCCUPIED", "Table " + tableId + " is occupied.");
     }

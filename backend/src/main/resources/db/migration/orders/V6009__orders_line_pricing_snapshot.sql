@@ -6,7 +6,7 @@ ALTER TABLE orders.order_line
     ADD COLUMN automatic            BOOLEAN       NOT NULL DEFAULT false,
     ADD COLUMN list_unit_price      NUMERIC(19, 4),
     ADD COLUMN promotion_id         UUID,
-    ADD COLUMN promotion_code       VARCHAR(30),
+    ADD COLUMN promotion_code       VARCHAR(40),
     ADD COLUMN promotion_name       VARCHAR(120),
     ADD COLUMN promotion_release_id UUID,
     ADD COLUMN promotion_version    BIGINT,

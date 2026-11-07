@@ -151,9 +151,9 @@ class OrdersPricingSchemaTest {
             WHERE id = ?""";
 
     static final String ADJUSTMENT = """
-            INSERT INTO orders.order_line_price_adjustment (id, order_id, line_id, seq, kind, previous_unit_price,
-                unit_price, currency, reason, operator_employee_id, approver_employee_id, at)
-            VALUES (gen_random_uuid(), ?, ?, ?, ?, ?::numeric, ?::numeric, 'MZN', 'x', gen_random_uuid(), %s,
+            INSERT INTO orders.order_line_price_adjustment (id, order_id, line_id, seq, kind, quantity,
+                previous_unit_price, unit_price, currency, reason, operator_employee_id, approver_employee_id, at)
+            VALUES (gen_random_uuid(), ?, ?, ?, ?, 1, ?::numeric, ?::numeric, 'MZN', 'x', gen_random_uuid(), %s,
                 now())""";
 
     UUID adjustment(UUID order, UUID line, int seq, String kind, String previous, String price, String approver) {

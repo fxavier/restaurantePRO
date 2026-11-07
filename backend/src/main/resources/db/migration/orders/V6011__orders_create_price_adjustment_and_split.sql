@@ -10,6 +10,8 @@ CREATE TABLE orders.order_line_price_adjustment
     line_id              UUID                     NOT NULL,
     seq                  INTEGER                  NOT NULL,
     kind                 VARCHAR(10)              NOT NULL,
+    -- the line's net quantity the new price applies to when it was recorded (reporting's discount amount)
+    quantity             NUMERIC(12, 3)           NOT NULL,
     percent              NUMERIC(7, 4),
     previous_unit_price  NUMERIC(19, 4)           NOT NULL,
     unit_price           NUMERIC(19, 4)           NOT NULL,
@@ -26,6 +28,7 @@ CREATE TABLE orders.order_line_price_adjustment
     CONSTRAINT order_line_price_adjustment_line_seq_uk UNIQUE (line_id, seq),
     CONSTRAINT order_line_price_adjustment_seq_ck CHECK (seq >= 1),
     CONSTRAINT order_line_price_adjustment_kind_ck CHECK (kind IN ('DISCOUNT', 'OFFER', 'REWARD', 'REVERSAL')),
+    CONSTRAINT order_line_price_adjustment_quantity_positive_ck CHECK (quantity > 0),
     CONSTRAINT order_line_price_adjustment_unit_price_ck CHECK (unit_price >= 0),
     CONSTRAINT order_line_price_adjustment_percent_ck CHECK (percent IS NULL OR (percent > 0 AND percent <= 100)),
     -- DISCOUNT, OFFER and REWARD lower the price; REVERSAL raises it back (to at most the list price, checked in code)

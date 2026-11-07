@@ -29,5 +29,21 @@ public enum OrderRule {
     /** A transfer of an order onto itself. */
     SAME_ORDER,
     /** A subtotal of an order whose document exists (P27): the POS reprints the document as a copy instead. */
-    DOCUMENT_ISSUED
+    DOCUMENT_ISSUED,
+    /** R4: an item (or variant) of the round, or a menu component, is flagged sold out in the store (D109). */
+    ITEM_SOLD_OUT,
+    /** R4: a menu's choices do not match its groups in the published catalog (D108). */
+    MENU_SELECTION_INVALID,
+    /** R4: no macro with that code in the published catalog (D109). */
+    MACRO_NOT_PUBLISHED,
+    /** R4: the cumulative discount against the list price exceeds the store's maximum (D106). */
+    DISCOUNT_LIMIT_EXCEEDED,
+    /** R4: a discount that does not lower the price, or a reversal above the list price or on a reward (D105). */
+    PRICE_INCREASE_NOT_ALLOWED,
+    /** R4: a reward on an order without a customer (D112). */
+    LOYALTY_CUSTOMER_REQUIRED,
+    /** R4: a reward is redeemed on exactly one unit (D112). */
+    REWARD_NEEDS_SINGLE_UNIT,
+    /** R4: the order's customer cannot change once a reward was redeemed on it (D112). */
+    LOYALTY_REDEEMED
 }

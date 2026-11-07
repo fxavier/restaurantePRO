@@ -27,12 +27,17 @@ public interface OrderLineRepository extends JpaRepository<OrderLine, UUID> {
     /** The lines confirmed in a round, in creation order; a line transferred in has no round. */
     List<OrderLine> findByBatchIdOrderById(UUID batchId);
 
-    /** What the facts take off each confirmed line of the orders: Σ voids + Σ transferred out (never stored). */
+    /**
+     * What the facts take off each confirmed line of the orders: Σ voids + Σ transferred out + Σ split out (D105;
+     * never stored).
+     */
     @Query(value = """
             SELECT l.id AS lineId,
                    COALESCE((SELECT sum(v.quantity) FROM orders.order_line_void v WHERE v.line_id = l.id), 0)
                  + COALESCE((SELECT sum(t.quantity) FROM orders.order_transfer_line t
-                             WHERE t.source_line_id = l.id), 0) AS deducted
+                             WHERE t.source_line_id = l.id), 0)
+                 + COALESCE((SELECT sum(s.quantity) FROM orders.order_line_split s
+                             WHERE s.source_line_id = l.id), 0) AS deducted
             FROM orders.order_line l
             WHERE l.order_id IN (:orderIds) AND l.status = 'CONFIRMED'""", nativeQuery = true)
     List<LineDeduction> deductions(@Param("orderIds") Collection<UUID> orderIds);
