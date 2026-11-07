@@ -44,4 +44,35 @@ public class InventoryFacts {
     public List<WasteFact> wasteOf(UUID voidId) {
         return facts.wasteOf(voidId);
     }
+
+    /**
+     * The wasted voids with waste records in {@code storeId} on business days {@code from..to} (inclusive), in the
+     * order of their first record, for a reporting rebuild; the page's sort is ignored.
+     */
+    public Page<UUID> wasteVoidIds(UUID storeId, LocalDate from, LocalDate to, Pageable pageable) {
+        return facts.wasteVoidIds(storeId, from, to, pageable);
+    }
+
+    /**
+     * The cost variances of a source {@code StockMovementsPosted} names: a cost correction ({@code COST_CORRECTION})
+     * or a supplier return ({@code SUPPLIER_RETURN}, one per linked line with a variance); empty for any other source
+     * or when it recorded none.
+     */
+    public List<CostVarianceFact> costVariancesOf(String sourceType, UUID sourceId) {
+        return facts.costVariancesOf(sourceType, sourceId);
+    }
+
+    /**
+     * The sources with cost variances in {@code storeId} on business days {@code from..to} (inclusive), in recording
+     * order, for a reporting rebuild (a correction that revalued nothing posted no movement, so
+     * {@link #sourceIds} does not list it); the page's sort is ignored.
+     */
+    public Page<SourceRef> costVarianceSources(UUID storeId, LocalDate from, LocalDate to, Pageable pageable) {
+        return facts.costVarianceSources(storeId, from, to, pageable);
+    }
+
+    /** The round a line was consumed from, once consumption settled it; empty before, or for a line never in one. */
+    public Optional<UUID> roundOf(UUID lineId) {
+        return facts.roundOf(lineId);
+    }
 }
