@@ -10,7 +10,10 @@ import java.util.Objects;
  * {@code value = round(q × avg, 4)}, signed like {@code q}. A cost an OUT names (a supplier return at its receipt's
  * cost, a transfer shortage at the shipping cost) is for reference only and never values it, so a positive quantity
  * never carries a negative value. An OUT that empties the stock takes all its value ({@code −V}), so no residue is
- * left at zero. An OUT never changes the average. When an IN brings a negative quantity back to zero or above, a
+ * left at zero; an OUT that leaves the quantity at or above zero takes at most the value the stock holds
+ * ({@code −min(round(q × avg, 4), V)} when {@code V ≥ 0}), so while the quantity stays at or above zero the value never
+ * goes below zero and an OUT's value is never positive (S47 review: a bag sold gram by gram rounds every sale up, and
+ * its last sales carry less than nominal, down to 0). Below zero the rules are unchanged. An OUT never changes the average. When an IN brings a negative quantity back to zero or above, a
  * REVALUATION (quantity 0) moves the value so that {@code value = quantity × new cost}: the sales posted below zero at
  * an older average are corrected once the real cost is known.
  */
@@ -44,9 +47,20 @@ public final class MovingAverage {
         BigDecimal unitCost = (out || explicitUnitCost == null ? before.averageCost() : explicitUnitCost)
                 .setScale(StockPosition.COST_SCALE, ROUNDING);
         boolean empties = out && before.quantity().add(quantity).signum() == 0;
-        BigDecimal value = empties ? before.value().negate()
-                : explicitValue != null && !out ? explicitValue.setScale(StockPosition.VALUE_SCALE, RoundingMode.UNNECESSARY)
-                : valueOf(quantity, unitCost);
+        BigDecimal value;
+        if (empties) {
+            value = before.value().negate();
+        } else if (!out) {
+            value = explicitValue != null
+                    ? explicitValue.setScale(StockPosition.VALUE_SCALE, RoundingMode.UNNECESSARY)
+                    : valueOf(quantity, unitCost);
+        } else {
+            value = valueOf(quantity, unitCost);
+            boolean staysAtOrAboveZero = before.quantity().add(quantity).signum() >= 0;
+            if (staysAtOrAboveZero && before.value().signum() >= 0) {
+                value = value.max(before.value().negate()); // never more than the stock holds (S47 review)
+            }
+        }
         StockPosition after = before.after(quantity, value, unitCost);
         boolean backFromNegative = quantity.signum() > 0 && before.quantity().signum() < 0
                 && after.quantity().signum() >= 0;

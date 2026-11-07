@@ -106,6 +106,11 @@ public final class Kitchen {
         return new Kitchen(mvc, fixtures, ledger, tx, jdbc, orders, catalog, null, false);
     }
 
+    /** When the store went live (from its inventory status). */
+    public Instant liveFrom() throws Exception {
+        return Instant.parse(inventoryStatus().get("activeFrom").asString());
+    }
+
     /** Activates the store from {@code from}. */
     public void goLive(Instant from) throws Exception {
         mvc.perform(idem(post(InventoryFixtures.BO + "/activations"))

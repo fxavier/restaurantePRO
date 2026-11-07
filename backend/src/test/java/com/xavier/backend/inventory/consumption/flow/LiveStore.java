@@ -21,16 +21,16 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * Inventory switched on in a sale's store: live from {@code liveFrom}, one warehouse as the default route, flour in
+ * Inventory switched on in a sale's store: live from now, one warehouse as the default route, flour in
  * stock (100 kg at 2.00) and a recipe of 250 g of flour per item sold (the shop's item).
  */
 record LiveStore(UUID store, UUID warehouse, UUID flour) {
 
-    static LiveStore of(Sale sale, Instant liveFrom, MockMvc mvc, InventoryFixtures fixtures) throws Exception {
+    static LiveStore of(Sale sale, MockMvc mvc, InventoryFixtures fixtures) throws Exception {
         UUID store = sale.store();
         mvc.perform(idem(post(BO + "/activations")).with(account(store, Permission.INVENTORY_MANAGE))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"storeId\": \"%s\", \"activeFrom\": \"%s\"}".formatted(store, liveFrom)))
+                        .content("{\"storeId\": \"%s\"}".formatted(store))) // live from now
                 .andExpect(status().isCreated());
         UUID warehouse = fixtures.newWarehouse(store, "ALLOW");
         mvc.perform(idem(post(BO + "/consumption-routes")).with(account(null, Permission.INVENTORY_MANAGE))

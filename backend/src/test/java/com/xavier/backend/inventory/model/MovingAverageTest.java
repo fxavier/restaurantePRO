@@ -59,6 +59,24 @@ class MovingAverageTest {
     }
 
     /** Weighted-average costing: an OUT's own cost (a supplier return, a shortage) is for reference only. */
+    /**
+     * S47 review: while the quantity stays at or above zero, an OUT never takes more value than the stock holds (a
+     * 300 g bag at 0.012355 sold gram by gram rounds each sale up to 0.0124); the value never goes below zero and
+     * an OUT's value is never positive.
+     */
+    @Test
+    void anOutNeverTakesMoreValueThanTheStockHolds() {
+        StockPosition bag = position("2", "0.0100", "0.012355");
+
+        Valued out = MovingAverage.post(bag, q("-1"), null);
+
+        assertThat(out.value()).isEqualByComparingTo("-0.0100");
+        assertThat(out.after().value()).isEqualByComparingTo("0");
+        Valued last = MovingAverage.post(out.after(), q("-1"), null);
+        assertThat(last.value()).isEqualByComparingTo("0");
+        assertThat(last.after()).isEqualTo(position("0", "0", "0.012355"));
+    }
+
     @Test
     void anOutWithItsOwnCostIsStillValuedAtTheAverage() {
         Valued out = MovingAverage.post(position("20", "220", "11"), q("-5"), c("99"));

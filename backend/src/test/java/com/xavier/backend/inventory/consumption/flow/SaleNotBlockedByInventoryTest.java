@@ -56,7 +56,7 @@ class SaleNotBlockedByInventoryTest {
     void theRoundPaymentAndCloseCommitWhileConsumptionIsHeld() throws Exception {
         Sale sale = sales.sale("1");
         waitUntil(() -> roundPublications(jdbc, sale.order(), true) == 1, "the first round's consumption");
-        LiveStore live = LiveStore.of(sale, clock.instant(), mvc, inventory);
+        LiveStore live = LiveStore.of(sale, mvc, inventory);
         RoundConsumption held = AopTestUtils.getUltimateTargetObject(consumption);
         CountDownLatch entered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);

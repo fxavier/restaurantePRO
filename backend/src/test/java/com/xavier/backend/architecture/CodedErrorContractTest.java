@@ -308,6 +308,8 @@ class CodedErrorContractTest {
             Map.entry("inventory-period-required", InventoryRuleException::periodRequired),
             Map.entry("inventory-range-too-large", () -> InventoryRuleException.rangeTooLarge(366)),
             Map.entry("inventory-not-active", () -> InventoryRuleException.notActive(ID)),
+            Map.entry("activation-in-past", () -> InventoryRuleException.activationInPast(
+                    java.time.Instant.parse("2026-11-06T10:00:00Z"))),
             Map.entry("transfer-state", () -> InventoryConflictException.transferState(ID, "SHIPPED", "be shipped")),
             Map.entry("inventory-already-active", () -> InventoryConflictException.alreadyActive(ID)),
             Map.entry("movement-source-mismatch", () -> InventoryConflictException.sourceMismatch("ORDER_LINE", ID)),
@@ -775,6 +777,9 @@ class CodedErrorContractTest {
                 ",\"maxDays\":366");
         expect("inventory-not-active", 422, "INVENTORY_NOT_ACTIVE", "Inventory is not active in store " + ID
                 + ": activate it and count the opening stock first.", "");
+        expect("activation-in-past", 422, "ACTIVATION_IN_PAST",
+                "Inventory goes live now or later, not before 2026-11-06T10:00:00Z.",
+                ",\"notBefore\":\"2026-11-06T10:00:00Z\"");
     }
 
     @Test

@@ -230,6 +230,19 @@ class ConsumptionExceptionTest extends ConsumptionTestBase {
         assertThat(notLive.movementsOfStore()).isZero();
     }
 
+    /** An activation never reaches into the past: rounds already sold stay history (review round 3). */
+    @Test
+    void aBackdatedActivationIsRefused() throws Exception {
+        Kitchen notLive = Kitchen.openNotLive(mvc, fixtures, ledger, tx, jdbc, orders, catalog);
+
+        mvc.perform(idem(post(InventoryFixtures.BO + "/activations"))
+                        .with(account(notLive.store, Permission.INVENTORY_MANAGE))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"storeId\": \"%s\", \"activeFrom\": \"%s\"}"
+                                .formatted(notLive.store, clock.instant().minusSeconds(3600))))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("ACTIVATION_IN_PAST"));
+    }
+
     private void setActive(UUID item, boolean active, int version) throws Exception {
         mvc.perform(put(InventoryFixtures.BO + "/stock-items/" + item)
                         .with(account(null, Permission.INVENTORY_MANAGE))

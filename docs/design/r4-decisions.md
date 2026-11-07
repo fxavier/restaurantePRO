@@ -185,6 +185,8 @@ As before, every transition is a method on the aggregate, and an illegal transit
 
 **D117 amendment (S47 review, 2026-11-07):** a void with waste posts no stock movement, because the ingredients really were used; its share of the sale's cost (quantity × original unit cost) is reclassified from sale to waste in an append-only `inventory.waste_record`, audited and included in the waste report. A void without waste still posts the `CONSUMPTION_REVERSAL` IN at the original cost.
 
+**D113 amendment (S47 review round 3, 2026-11-07):** while a balance's quantity stays at or above zero its value never goes below zero and an OUT's value is never positive: with the value before the OUT `V ≥ 0` and the resulting quantity `≥ 0`, an OUT takes `−min(round(q × avg, 4), V)` (an emptying OUT still takes `−V`), so the last sales of a bag sold unit by unit may carry less than nominal, down to 0; the negative-stock rules are unchanged. A void's reversal or waste share is kept within `[0, value left of the sale]`, and the share that settles a sale's last quantity carries exactly what is left. D122 also gains: an activation never starts in the past (422 `ACTIVATION_IN_PAST`); rounds sold while a store was not live stay history.
+
 ---
 
 ## 8. Purchasing (§5, §8.4 "apenas a receção confirmada altera stock")

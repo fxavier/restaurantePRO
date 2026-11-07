@@ -65,7 +65,7 @@ class TransferredLineVoidConsumptionTest {
         when(approvers.verify(any(), any(), eq(Permission.ORDER_VOID_APPROVE), any())).thenReturn(MANAGER);
         Sale sale = sales.sale("1");
         waitUntil(() -> roundPublications(jdbc, sale.order(), true) == 1, "the first round's consumption");
-        LiveStore live = LiveStore.of(sale, clock.instant(), mvc, inventory);
+        LiveStore live = LiveStore.of(sale, mvc, inventory);
         var cashier = sale.cashier();
         sales.confirmRound(sale.shop(), cashier, sale.order(), "2", sales.orderVersion(cashier, sale.order()));
         UUID line = jdbc.sql("""

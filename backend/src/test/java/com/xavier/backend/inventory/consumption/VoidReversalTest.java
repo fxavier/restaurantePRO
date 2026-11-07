@@ -189,6 +189,124 @@ class VoidReversalTest extends ConsumptionTestBase {
         assertThat(kitchen.value(kitchen.kitchen, salt)).isEqualByComparingTo(before);
     }
 
+    /**
+     * Review repro (salt bag): 300 sales of 1 g from a 300 g bag at 0.012355 round each sale up; the stock value never
+     * goes below zero, so the late sales carry less than nominal, and voiding the last one never puts back a negative
+     * value.
+     */
+    @Test
+    void aBagSoldGramByGramNeverGoesBelowZeroInValueAndItsVoidIsNotNegative() throws Exception {
+        UUID salt = kitchen.stockItem("g");
+        UUID dish = kitchen.catalogItem(null);
+        kitchen.receive(kitchen.kitchen, salt, "300", "0.012355"); // 3.7065
+        kitchen.saleRecipe(dish, null, "1", ingredient(salt, "1", "g"));
+        BatchFacts round = null;
+        for (int i = 0; i < 300; i++) {
+            round = kitchen.round(clock.instant(), OrderMode.DINE_IN, line(dish, "1", "KITCHEN"));
+            consumption.consume(round.batchId());
+        }
+        assertThat(jdbc.sql("""
+                        SELECT count(*) FROM inventory.stock_movement
+                        WHERE stock_item_id = ? AND type = 'SALE_CONSUMPTION' AND value > 0""").param(salt)
+                .query(Long.class).single()).isZero();
+        assertThat(kitchen.value(kitchen.kitchen, salt)).isEqualByComparingTo("0");
+
+        VoidFacts error = kitchen.voided(lineOf(round), "1", false, clock.instant());
+        voids.reverse(error.voidId());
+
+        assertThat((BigDecimal) kitchen.movements("VOID", error.voidId()).getFirst().get("value")).isNotNegative();
+        assertThat(kitchen.value(kitchen.kitchen, salt)).isNotNegative();
+    }
+
+    /** Review repro: a sale that emptied the stock, voided in ten parts; no part puts back a negative value. */
+    @Test
+    void tenVoidsOfAnEmptyingSaleNeverPutBackANegativeValue() throws Exception {
+        BatchFacts round = emptyingIceSale();
+        for (int i = 0; i < 10; i++) {
+            voids.reverse(kitchen.voided(lineOf(round), "1", false, clock.instant()).voidId());
+        }
+
+        assertThat(jdbc.sql("""
+                        SELECT count(*) FROM inventory.stock_movement
+                        WHERE stock_item_id = ? AND type = 'CONSUMPTION_REVERSAL' AND value < 0""").param(ice)
+                .query(Long.class).single()).isZero();
+        assertThat(kitchen.quantity(kitchen.kitchen, ice)).isEqualByComparingTo("3000");
+        assertThat(kitchen.value(kitchen.kitchen, ice)).isEqualByComparingTo("0.0050");
+    }
+
+    /** Review repro: the same, the last part wasted: its waste record is never negative (waste_record_cost_ck). */
+    @Test
+    void aWastedLastPartOfAnEmptyingSaleRecordsNoNegativeWaste() throws Exception {
+        BatchFacts round = emptyingIceSale();
+        for (int i = 0; i < 9; i++) {
+            voids.reverse(kitchen.voided(lineOf(round), "1", false, clock.instant()).voidId());
+        }
+        VoidFacts wasted = kitchen.voided(lineOf(round), "1", true, clock.instant());
+
+        voids.reverse(wasted.voidId());
+
+        assertThat(kitchen.wasteRecords(wasted.voidId())).singleElement()
+                .satisfies(w -> assertThat((BigDecimal) w.get("value")).isNotNegative());
+    }
+
+    /** M8: a wasted void, then an unwasted one, on a 2-unit line: each settles half (the waste counts as settled). */
+    @Test
+    void aWastedThenAnUnwastedVoidEachSettleTheirShare() throws Exception {
+        BatchFacts round = sold("2");
+        voids.reverse(kitchen.voided(lineOf(round), "1", true, clock.instant()).voidId());
+        VoidFacts error = kitchen.voided(lineOf(round), "1", false, clock.instant());
+
+        voids.reverse(error.voidId());
+
+        assertThat((BigDecimal) kitchen.movements("VOID", error.voidId()).getFirst().get("quantity"))
+                .isEqualByComparingTo("0.25");
+    }
+
+    /** M10: a wasted void that completes the line records exactly the remainder rounding left. */
+    @Test
+    void aWastedVoidThatCompletesTheLineRecordsTheExactRemainder() throws Exception {
+        UUID salt = kitchen.stockItem("kg");
+        UUID pinch = kitchen.catalogItem(null);
+        kitchen.saleRecipe(pinch, null, "3", ingredient(salt, "0.01", "g")); // 3 sold → 0.000010 kg
+        BatchFacts round = kitchen.round(clock.instant(), OrderMode.DINE_IN, line(pinch, "3", "KITCHEN"));
+        consumption.consume(round.batchId());
+        voids.reverse(kitchen.voided(lineOf(round), "1", false, clock.instant()).voidId());
+        voids.reverse(kitchen.voided(lineOf(round), "1", false, clock.instant()).voidId());
+        VoidFacts last = kitchen.voided(lineOf(round), "1", true, clock.instant());
+
+        voids.reverse(last.voidId());
+
+        assertThat(kitchen.wasteRecords(last.voidId())).singleElement()
+                .satisfies(w -> assertThat((BigDecimal) w.get("quantity")).isEqualByComparingTo("0.000004"));
+    }
+
+    /** M11: a redelivered wasted void publishes its ConsumptionWasteRecorded event once. */
+    @Test
+    void aRedeliveredWastedVoidPublishesItsEventOnce() throws Exception {
+        BatchFacts round = sold("2");
+        VoidFacts dropped = kitchen.voided(lineOf(round), "1", true, clock.instant());
+
+        voids.reverse(dropped.voidId());
+        voids.reverse(dropped.voidId());
+
+        assertThat(published.stream(com.xavier.backend.inventory.model.event.ConsumptionWasteRecorded.class)
+                .filter(event -> event.voidId().equals(dropped.voidId()))).hasSize(1);
+    }
+
+    private UUID ice;
+
+    /** 3000 ml worth 0.0050 (average 0.000002), all sold in one line of 10 drinks: the sale takes the whole value. */
+    private BatchFacts emptyingIceSale() throws Exception {
+        ice = kitchen.stockItem("ml");
+        UUID drink = kitchen.catalogItem(null);
+        kitchen.receive(kitchen.kitchen, ice, "1000", "0.000001");
+        kitchen.receive(kitchen.kitchen, ice, "2000", "0.000002");
+        kitchen.saleRecipe(drink, null, "1", ingredient(ice, "300", "ml"));
+        BatchFacts round = kitchen.round(clock.instant(), OrderMode.DINE_IN, line(drink, "10", "KITCHEN"));
+        consumption.consume(round.batchId());
+        return round;
+    }
+
     /** Three voids of a third each: the last one reverses whatever rounding left, so the line nets to zero. */
     @Test
     void theVoidThatCompletesTheLineReversesTheWholeRemainder() throws Exception {
@@ -319,7 +437,7 @@ class VoidReversalTest extends ConsumptionTestBase {
     @Test
     void aVoidBeforeGoLiveOrInAStoreNotLiveWaitsForNothing() throws Exception {
         VoidFacts beforeGoLive = kitchen.voided(UUID.randomUUID(), "1", false,
-                com.xavier.backend.inventory.InventoryFixtures.ACTIVE_FROM.minusSeconds(1));
+                kitchen.liveFrom().minusSeconds(1));
         UUID notLive = fixtures.newStore();
         VoidFacts elsewhere = new VoidFacts(UUID.randomUUID(), UUID.randomUUID(), notLive, Kitchen.DAY,
                 clock.instant(), beforeGoLive.lineSnapshot(), BigDecimal.ONE, beforeGoLive.gross(), "error", false,

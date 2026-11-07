@@ -55,7 +55,7 @@ class ConsumptionRestartTest {
     void aCrashedConsumptionIsDeliveredAfterARestartAndConsumedOnce() throws Exception {
         Sale sale = sales.sale("1");
         waitUntil(() -> roundPublications(jdbc, sale.order(), true) == 1, "the first round's consumption");
-        LiveStore live = LiveStore.of(sale, clock.instant(), mvc, inventory);
+        LiveStore live = LiveStore.of(sale, mvc, inventory);
         RoundConsumption crashing = AopTestUtils.getUltimateTargetObject(consumption);
         doThrow(new IllegalStateException("crash before consumption finished")).when(crashing).consume(any());
         try {
