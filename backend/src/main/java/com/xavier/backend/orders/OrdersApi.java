@@ -94,8 +94,9 @@ public class OrdersApi {
      * OPEN → CLOSED at {@code expectedVersion}, closing the table occupation through {@code DiningApi} for a DINE_IN
      * order. Settlement checked balance, attempts and document first (D50 §7.8). Needs an authenticated session (the
      * occupation close and the audit record the current actor); {@code actorEmployeeId} is stored as the closer. R4
-     * (D111): when the order has a customer, {@code LoyaltyApi.earnForOrder} records its points before this returns,
-     * in the same transaction (insert only, no account lock, once per order).
+     * (D111): when the order's customer is a loyalty member, {@code LoyaltyApi.earnForOrder} records its points before
+     * this returns, in the same transaction, once per order. It is insert-only: no {@code FOR UPDATE}, only the
+     * {@code FOR KEY SHARE} the entry's foreign key takes on {@code loyalty_account}, in that row's D132 position.
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public void close(UUID orderId, long expectedVersion, UUID actorEmployeeId) {

@@ -24,6 +24,36 @@ public interface OrderLinePriceAdjustmentRepository extends JpaRepository<OrderL
     boolean existsByLineIdAndKind(UUID lineId, AdjustmentKind kind);
 
     /**
+     * D112a: for each of {@code lineIds}, the line that holds its loyalty reward: the line itself, or the nearest
+     * ancestor through transfer and split facts whose REWARD was recorded before the fact that moved the quantity
+     * away from it (a split or transfer made before a reward never carries it). Lines without one are absent.
+     */
+    @Query(value = """
+            WITH RECURSIVE origin (start_id, line_id, bound, depth) AS (
+                SELECT l.id, l.id, CAST(NULL AS TIMESTAMP WITH TIME ZONE), 0
+                FROM orders.order_line l WHERE l.id IN (:lineIds)
+                UNION ALL
+                SELECT o.start_id, e.source_line_id, e.at, o.depth + 1
+                FROM origin o
+                JOIN (SELECT tl.target_line_id, tl.source_line_id, t.transferred_at AS at
+                      FROM orders.order_transfer_line tl JOIN orders.order_transfer t ON t.id = tl.transfer_id
+                      UNION ALL
+                      SELECT s.target_line_id, s.source_line_id, s.at FROM orders.order_line_split s) e
+                    ON e.target_line_id = o.line_id)
+            SELECT DISTINCT ON (o.start_id) o.start_id AS lineId, o.line_id AS rewardedLineId
+            FROM origin o
+            JOIN orders.order_line_price_adjustment a ON a.line_id = o.line_id AND a.kind = 'REWARD'
+                AND (o.bound IS NULL OR a.at <= o.bound)
+            ORDER BY o.start_id, o.depth""", nativeQuery = true)
+    List<RewardOrigin> findRewardOrigins(@Param("lineIds") Collection<UUID> lineIds);
+
+    interface RewardOrigin {
+        UUID getLineId();
+
+        UUID getRewardedLineId();
+    }
+
+    /**
      * The store's discount sources whose order's business day is in {@code [from, to]}: rounds with a promoted line
      * and price adjustments, in id (creation) order across both.
      */

@@ -127,11 +127,6 @@ public class OrderRuleException extends BusinessRuleException {
                 "Order " + orderId + " has a redeemed reward: its customer cannot change.");
     }
 
-    public static OrderRuleException rewardedLineNotTransferable(UUID lineId) {
-        return new OrderRuleException(OrderRule.REWARDED_LINE_NOT_TRANSFERABLE,
-                "Line " + lineId + " carries a loyalty reward: void it on its order instead of transferring it.");
-    }
-
     public OrderRule rule() {
         return rule;
     }

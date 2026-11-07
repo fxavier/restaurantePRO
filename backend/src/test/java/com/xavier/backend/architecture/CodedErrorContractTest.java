@@ -347,8 +347,7 @@ class CodedErrorContractTest {
             Map.entry("price-increase-not-allowed", () -> OrderRuleException.priceIncreaseNotAllowed(ID)),
             Map.entry("loyalty-customer-required", () -> OrderRuleException.loyaltyCustomerRequired(ID)),
             Map.entry("reward-needs-single-unit", () -> OrderRuleException.rewardNeedsSingleUnit(ID)),
-            Map.entry("loyalty-redeemed", () -> OrderRuleException.loyaltyRedeemed(ID)),
-            Map.entry("rewarded-line-not-transferable", () -> OrderRuleException.rewardedLineNotTransferable(ID)));
+            Map.entry("loyalty-redeemed", () -> OrderRuleException.loyaltyRedeemed(ID)));
 
     @Autowired
     MockMvc mvc;
@@ -843,8 +842,6 @@ class CodedErrorContractTest {
                 "A reward is redeemed on one unit of line " + ID + ".", "");
         expect("loyalty-redeemed", 422, "LOYALTY_REDEEMED",
                 "Order " + ID + " has a redeemed reward: its customer cannot change.", "");
-        expect("rewarded-line-not-transferable", 422, "REWARDED_LINE_NOT_TRANSFERABLE", "Line " + ID
-                + " carries a loyalty reward: void it on its order instead of transferring it.", "");
     }
 
     private void expect(String name, int status, String code, String detail, String extra) throws Exception {

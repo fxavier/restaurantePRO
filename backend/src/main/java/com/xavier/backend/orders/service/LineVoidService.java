@@ -5,7 +5,6 @@ import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.PosContext;
 import com.xavier.backend.identity.ApprovalDeniedException;
 import com.xavier.backend.identity.ApproverVerifier;
-import com.xavier.backend.orders.AdjustmentKind;
 import com.xavier.backend.orders.LineAmounts;
 import com.xavier.backend.orders.repository.OrderLinePriceAdjustmentRepository;
 import com.xavier.backend.promotions.LoyaltyApi;
@@ -25,6 +24,7 @@ import com.xavier.backend.orders.repository.OrderLineVoidRepository;
 import com.xavier.backend.shared.Money;
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -152,9 +152,10 @@ public class LineVoidService {
         line.requireAvailable(views.deducted(line), quantity);
         OrderLineVoid voided = voids.saveAndFlush(OrderLineVoid.of(line, quantity, reason, wasted, operatorId,
                 approverId, terminalId, clock.instant()));
-        if (adjustments.existsByLineIdAndKind(line.getId(), AdjustmentKind.REWARD)) {
-            loyalty.reverseRedemption(line.getId(), voided.getId()); // D112: the points come back with the void
-        }
+        // D112a: the points come back with the void, from the line that holds the reward (the voided line or the
+        // one it was transferred or split from), to the customer the REDEEM entry names
+        adjustments.findRewardOrigins(List.of(line.getId())).forEach(origin ->
+                loyalty.reverseRedemption(origin.getRewardedLineId(), voided.getId()));
         LineSnapshot snapshot = line.snapshot().orElseThrow();
         events.publishEvent(new OrderLinesVoided(order.getId(), voided.getId(), order.getStoreId(), terminalId,
                 order.getOrderNumber(), order.getTableCode(), new Line(line.getId(), snapshot.itemCode(),

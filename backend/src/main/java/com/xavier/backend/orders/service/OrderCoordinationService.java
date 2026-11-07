@@ -1,17 +1,12 @@
 package com.xavier.backend.orders.service;
 
-import com.xavier.backend.catalog.CatalogApi;
-import com.xavier.backend.catalog.model.dto.CatalogSnapshot;
 import com.xavier.backend.dining.DiningApi;
-import com.xavier.backend.orders.AdjustmentKind;
 import com.xavier.backend.orders.BillingLine;
-import com.xavier.backend.orders.model.OrderLinePriceAdjustment;
 import com.xavier.backend.orders.repository.OrderLinePriceAdjustmentRepository;
 import com.xavier.backend.promotions.EarnCommand;
 import com.xavier.backend.promotions.EarnLine;
 import com.xavier.backend.promotions.LoyaltyApi;
 import java.time.Instant;
-import java.util.HashMap;
 import java.util.Set;
 import java.util.stream.Collectors;
 import com.xavier.backend.dining.model.dto.CloseReason;
@@ -46,16 +41,16 @@ public class OrderCoordinationService {
     private final OrderChanges changes;
     private final DiningApi dining;
     private final OrderLinePriceAdjustmentRepository adjustments;
-    private final CatalogApi catalog;
+    private final LineFamilies families;
     private final LoyaltyApi loyalty;
     private final Clock clock;
 
     OrderCoordinationService(OrderRepository orders, OrderBatchRepository batches, OrderLookup lookup,
                              OrderViews views, OrderChanges changes, DiningApi dining,
-                             OrderLinePriceAdjustmentRepository adjustments, CatalogApi catalog, LoyaltyApi loyalty,
+                             OrderLinePriceAdjustmentRepository adjustments, LineFamilies families, LoyaltyApi loyalty,
                              Clock clock) {
         this.adjustments = adjustments;
-        this.catalog = catalog;
+        this.families = families;
         this.loyalty = loyalty;
         this.orders = orders;
         this.batches = batches;
@@ -105,32 +100,26 @@ public class OrderCoordinationService {
     }
 
     /**
-     * D111: the order's customer earns in the close's transaction, on each billing line's effective gross, rewarded
-     * lines flagged (they never earn). Insert-only in promotions, no account lock (D132); idempotent per order.
+     * D111: a member customer earns in the close's transaction, on each billing line's effective gross; a line whose
+     * reward is its own or an ancestor's (D112a) is flagged and never earns. Insert-only in promotions: no FOR UPDATE,
+     * only the FOR KEY SHARE its foreign key takes on {@code loyalty_account} (D132); idempotent per order.
      */
     private void earn(Order order, Instant now) {
-        if (order.getCustomerId() == null) {
+        if (order.getCustomerId() == null || !loyalty.isMember(order.getCustomerId())) {
             return;
         }
         List<BillingLine> billed = views.billing(order).lines();
         if (billed.isEmpty()) {
             return;
         }
-        Set<UUID> rewarded = adjustments.findByOrderIdInOrderByLineIdAscSeqAsc(List.of(order.getId())).stream()
-                .filter(adjustment -> adjustment.getKind() == AdjustmentKind.REWARD)
-                .map(OrderLinePriceAdjustment::getLineId).collect(Collectors.toSet());
-        Map<UUID, CatalogSnapshot> releases = new HashMap<>();
+        Set<UUID> rewarded = adjustments.findRewardOrigins(billed.stream().map(BillingLine::lineId).toList())
+                .stream().map(OrderLinePriceAdjustmentRepository.RewardOrigin::getLineId).collect(Collectors.toSet());
+        LineFamilies.Resolver familyOf = families.resolver(order.getStoreId());
         List<EarnLine> lines = billed.stream().map(line -> new EarnLine(line.itemId(),
-                familyOf(order, line, releases), line.gross(), rewarded.contains(line.lineId()))).toList();
+                familyOf.familyOf(line.releaseId(), line.itemId()), line.gross(), rewarded.contains(line.lineId())))
+                .toList();
         loyalty.earnForOrder(new EarnCommand(order.getId(), order.getStoreId(), order.getCustomerId(),
                 order.getBusinessDay(), now, lines));
-    }
-
-    private UUID familyOf(Order order, BillingLine line, Map<UUID, CatalogSnapshot> releases) {
-        CatalogSnapshot release = releases.computeIfAbsent(line.releaseId(),
-                releaseId -> catalog.snapshot(order.getStoreId(), releaseId));
-        return release.items().stream().filter(item -> item.id().equals(line.itemId())).findFirst()
-                .map(CatalogSnapshot.Item::familyId).orElse(null);
     }
 
     public long countOpen(UUID storeId, LocalDate businessDayInclusive) {

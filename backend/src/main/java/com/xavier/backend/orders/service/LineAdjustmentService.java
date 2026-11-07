@@ -3,8 +3,6 @@ package com.xavier.backend.orders.service;
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.PosContext;
-import com.xavier.backend.catalog.CatalogApi;
-import com.xavier.backend.catalog.model.dto.CatalogSnapshot;
 import com.xavier.backend.identity.ApprovalDeniedException;
 import com.xavier.backend.identity.ApproverVerifier;
 import com.xavier.backend.orders.AdjustLine;
@@ -70,7 +68,7 @@ public class LineAdjustmentService {
     private final OrderViews views;
     private final PromotionsApi promotions;
     private final LoyaltyApi loyalty;
-    private final CatalogApi catalog;
+    private final LineFamilies families;
     private final ApproverVerifier approvers;
     private final AccessPolicy accessPolicy;
     private final ApplicationEventPublisher events;
@@ -79,7 +77,7 @@ public class LineAdjustmentService {
 
     LineAdjustmentService(OrderLineRepository lines, OrderLinePriceAdjustmentRepository adjustments,
                           OrderLineSplitRepository splits, OrderLookup lookup, OrderViews views,
-                          PromotionsApi promotions, LoyaltyApi loyalty, CatalogApi catalog,
+                          PromotionsApi promotions, LoyaltyApi loyalty, LineFamilies families,
                           ApproverVerifier approvers, AccessPolicy accessPolicy, ApplicationEventPublisher events,
                           OrderChanges changes, Clock clock) {
         this.lines = lines;
@@ -89,7 +87,7 @@ public class LineAdjustmentService {
         this.views = views;
         this.promotions = promotions;
         this.loyalty = loyalty;
-        this.catalog = catalog;
+        this.families = families;
         this.approvers = approvers;
         this.accessPolicy = accessPolicy;
         this.events = events;
@@ -229,7 +227,8 @@ public class LineAdjustmentService {
         if (adjustment.kind() == AdjustmentKind.REWARD) {
             RedemptionResult redeemed = loyalty.redeem(new RedeemCommand(order.getCustomerId(),
                     adjustment.rewardCode(), target.getId(), order.getId(), order.getStoreId(),
-                    order.getBusinessDay(), line.getItemId(), familyOf(order, line), current));
+                    order.getBusinessDay(), line.getItemId(), families.familyOf(order.getStoreId(),
+                    line.snapshot().orElseThrow().releaseId(), line.getItemId()), current));
             newPrice = redeemed.newUnitPrice();
             loyaltyEntry = redeemed.entryId();
             if (newPrice.amount().compareTo(current.amount()) >= 0) {
@@ -319,12 +318,5 @@ public class LineAdjustmentService {
             throw OrderRuleException.priceIncreaseNotAllowed(line.getId());
         }
         return next;
-    }
-
-    /** The line's family, from the catalog release it was priced from (a reward may be scoped by family). */
-    private UUID familyOf(Order order, OrderLine line) {
-        CatalogSnapshot release = catalog.snapshot(order.getStoreId(), line.snapshot().orElseThrow().releaseId());
-        return release.items().stream().filter(item -> item.id().equals(line.getItemId())).findFirst()
-                .map(CatalogSnapshot.Item::familyId).orElse(null);
     }
 }

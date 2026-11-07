@@ -134,19 +134,59 @@ class RewardRedemptionTest {
     }
 
     @Test
-    void aRewardedLineCannotBeTransferredSoItsVoidStillGivesThePointsBack() throws Exception {
+    void aMergedRewardedLineGivesThePointsBackOnceWhenItsCopyIsVoided() throws Exception {
         customer(1, member).andExpect(status().isOk());
         redeem(2, "1").andExpect(status().isOk());
-        UUID rewarded = jdbc.sql("SELECT target_line_id FROM orders.order_line_split WHERE source_line_id = ?")
-                .param(line).query(UUID.class).single();
+        UUID rewarded = rewardedLine();
         UUID target = fixtures.openedAt(shop, fixtures.newTable(shop, "M2"), operator, terminal);
 
+        fixtures.transfer(shop, order, 3, target, 0, java.util.Map.of(line, "2", rewarded, "1"), true, operator,
+                terminal, UUID.randomUUID().toString()).andExpect(status().isCreated()); // M1 merged into M2
+        UUID copy = copyOf(target, rewarded);
+        assertThat(ordersApi.billingView(target).lines()).filteredOn(billed -> billed.lineId().equals(copy))
+                .singleElement().satisfies(billed -> assertThat(billed.unitPrice().amount()).isZero());
+        voidOn(target, copy);
+
+        assertThat(loyalty.balance(member)).isEqualTo(50);
+        assertThat(redeemReversals(rewarded)).isOne();
+    }
+
+    @Test
+    void aRewardedLineTransferredAloneGivesThePointsBackWhenItsCopyIsVoided() throws Exception {
+        customer(1, member).andExpect(status().isOk());
+        redeem(2, "1").andExpect(status().isOk());
+        UUID rewarded = rewardedLine();
+        UUID target = fixtures.openedAt(shop, fixtures.newTable(shop, "M2"), operator, terminal);
         fixtures.transfer(shop, order, 3, target, 0, java.util.Map.of(rewarded, "1"), false, operator, terminal,
-                        UUID.randomUUID().toString())
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.code").value("REWARDED_LINE_NOT_TRANSFERABLE"));
-        fixtures.transfer(shop, order, 3, target, 0, java.util.Map.of(line, "1"), false, operator, terminal,
-                UUID.randomUUID().toString()).andExpect(status().isCreated()); // its unrewarded source still moves
+                UUID.randomUUID().toString()).andExpect(status().isCreated());
+
+        voidOn(target, copyOf(target, rewarded));
+
+        assertThat(loyalty.balance(member)).isEqualTo(50);
+        assertThat(redeemReversals(rewarded)).isOne();
+    }
+
+    UUID rewardedLine() {
+        return jdbc.sql("SELECT target_line_id FROM orders.order_line_split WHERE source_line_id = ?")
+                .param(line).query(UUID.class).single();
+    }
+
+    UUID copyOf(UUID target, UUID source) {
+        return jdbc.sql("SELECT target_line_id FROM orders.order_transfer_line WHERE source_line_id = ? "
+                + "AND target_order_id = ?").param(source).param(target).query(UUID.class).single();
+    }
+
+    void voidOn(UUID target, UUID copy) {
+        long version = ordersApi.billingView(target).version();
+        OrdersActors.runAsPos(shop.store(), operator, terminal, () -> new TransactionTemplate(transactionManager)
+                .execute(status -> ordersApi.voidLine(new SettledVoidCommand(target, version, copy, BigDecimal.ONE,
+                        "wrong dish", false, operator), UUID.randomUUID())));
+    }
+
+    long redeemReversals(UUID rewardedLine) {
+        return jdbc.sql("SELECT count(*) FROM promotions.loyalty_point_entry r JOIN promotions.loyalty_point_entry d "
+                + "ON r.reverses_entry_id = d.id WHERE d.source_type = 'ORDER_LINE' AND d.source_id = ? "
+                + "AND r.kind = 'REDEEM_REVERSAL'").param(rewardedLine).query(Long.class).single();
     }
 
     @Test
