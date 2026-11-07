@@ -18,6 +18,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import org.hibernate.annotations.UuidGenerator;
@@ -95,8 +96,7 @@ public class Reservation {
 
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(schema = "dining", name = "reservation_table", joinColumns = @JoinColumn(name = "reservation_id"))
-    @Column(name = "table_id", nullable = false)
-    private Set<UUID> tableIds = new HashSet<>();
+    private Set<ReservationTable> tables = new HashSet<>();
 
     protected Reservation() {
         // JPA
@@ -150,7 +150,7 @@ public class Reservation {
 
     public ReservationView toView() {
         return new ReservationView(id, storeId, startsAt, durationMinutes, partySize, contactName,
-                contactPhoneDigits, customerId, notes, status, tableIds.stream().sorted().toList(), occupationId,
+                contactPhoneDigits, customerId, notes, status, tableIdsSorted(), occupationId,
                 seatedAt, cancelledAt, cancelReason, noShowAt, noShowByActorKind, createdAt, version);
     }
 
@@ -171,9 +171,13 @@ public class Reservation {
         this.contactPhoneDigits = details.contactPhoneDigits();
         this.customerId = details.customerId();
         this.notes = details.notes() == null || details.notes().isBlank() ? null : details.notes().strip();
-        this.tableIds.clear();
-        this.tableIds.addAll(details.tableIds());
+        this.tables.clear();
+        details.tableIds().forEach(tableId -> this.tables.add(new ReservationTable(tableId, storeId)));
         this.updatedAt = now;
+    }
+
+    private List<UUID> tableIdsSorted() {
+        return tables.stream().map(ReservationTable::tableId).sorted().toList();
     }
 
     private void requireBooked() {
@@ -215,7 +219,7 @@ public class Reservation {
     }
 
     public Set<UUID> getTableIds() {
-        return Set.copyOf(tableIds);
+        return Set.copyOf(tableIdsSorted());
     }
 
     public Long getVersion() {

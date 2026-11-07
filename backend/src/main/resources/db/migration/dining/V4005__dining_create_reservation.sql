@@ -29,6 +29,7 @@ CREATE TABLE dining.reservation
     updated_at             TIMESTAMP WITH TIME ZONE NOT NULL,
     version                BIGINT                   NOT NULL,
     CONSTRAINT reservation_pk PRIMARY KEY (id),
+    -- target of reservation_table_reservation_same_store_fk
     CONSTRAINT reservation_id_store_uk UNIQUE (id, store_id),
     -- the seating occupation is in the reservation's store
     CONSTRAINT reservation_occupation_same_store_fk FOREIGN KEY (occupation_id, store_id)
@@ -56,13 +57,16 @@ CREATE INDEX reservation_store_starts_ix ON dining.reservation (store_id, starts
 -- an occupation seats at most one reservation
 CREATE UNIQUE INDEX reservation_occupation_uk ON dining.reservation (occupation_id) WHERE occupation_id IS NOT NULL;
 
--- the informative tables of a reservation
+-- the informative tables of a reservation, all of the reservation's store
 CREATE TABLE dining.reservation_table
 (
     reservation_id UUID NOT NULL,
     table_id       UUID NOT NULL,
+    store_id       UUID NOT NULL,
     CONSTRAINT reservation_table_pk PRIMARY KEY (reservation_id, table_id),
-    CONSTRAINT reservation_table_reservation_fk FOREIGN KEY (reservation_id) REFERENCES dining.reservation (id),
-    CONSTRAINT reservation_table_table_fk FOREIGN KEY (table_id) REFERENCES dining.restaurant_table (id)
+    CONSTRAINT reservation_table_reservation_same_store_fk FOREIGN KEY (reservation_id, store_id)
+        REFERENCES dining.reservation (id, store_id),
+    CONSTRAINT reservation_table_table_same_store_fk FOREIGN KEY (table_id, store_id)
+        REFERENCES dining.restaurant_table (id, store_id)
 );
 CREATE INDEX reservation_table_table_ix ON dining.reservation_table (table_id);

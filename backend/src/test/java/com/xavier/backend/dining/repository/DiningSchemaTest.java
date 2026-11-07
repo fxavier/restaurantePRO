@@ -60,7 +60,33 @@ class DiningSchemaTest {
                 .hasMessageContaining("reservation_contact_phone_digits_ck");
     }
 
+    @Test
+    void theDatabaseRejectsAReservationNamingAnotherStoresTable() {
+        UUID storeA = UUID.randomUUID();
+        UUID storeB = UUID.randomUUID();
+        UUID tableOfB = insertTable(storeB, insertArea(storeB), 4);
+        UUID reservationOfA = insertReservation(storeA, "BOOKED", "NULL", null);
+
+        assertThatThrownBy(() -> jdbc.sql("""
+                        INSERT INTO dining.reservation_table (reservation_id, table_id, store_id)
+                        VALUES (:reservation, :table, :store)""")
+                .param("reservation", reservationOfA).param("table", tableOfB).param("store", storeA).update())
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("reservation_table_table_same_store_fk");
+        assertThatThrownBy(() -> jdbc.sql("""
+                        INSERT INTO dining.reservation_table (reservation_id, table_id, store_id)
+                        VALUES (:reservation, :table, :store)""")
+                .param("reservation", reservationOfA).param("table", tableOfB).param("store", storeB).update())
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("reservation_table_reservation_same_store_fk");
+    }
+
     void insertReservation(String status, String phoneSql, String cancelReason) {
+        insertReservation(UUID.randomUUID(), status, phoneSql, cancelReason);
+    }
+
+    UUID insertReservation(UUID store, String status, String phoneSql, String cancelReason) {
+        UUID id = UUID.randomUUID();
         jdbc.sql("""
                         INSERT INTO dining.reservation (id, store_id, starts_at, party_size, contact_name,
                             contact_phone_digits, status, cancelled_at, cancel_reason, created_by_actor_kind,
@@ -68,8 +94,9 @@ class DiningSchemaTest {
                         VALUES (:id, :store, now(), 2, 'Ana', %s, :status,
                             CASE WHEN :status = 'CANCELLED' THEN now() END, :reason, 'EMPLOYEE', now(), now(), 0)"""
                         .formatted(phoneSql))
-                .param("id", UUID.randomUUID()).param("store", UUID.randomUUID()).param("status", status)
+                .param("id", id).param("store", store).param("status", status)
                 .param("reason", cancelReason).update();
+        return id;
     }
 
     UUID insertArea(UUID store) {
@@ -81,7 +108,7 @@ class DiningSchemaTest {
         return id;
     }
 
-    void insertTable(UUID store, UUID area, int seats) {
+    UUID insertTable(UUID store, UUID area, int seats) {
         UUID id = UUID.randomUUID();
         jdbc.sql("""
                         INSERT INTO dining.restaurant_table
@@ -89,5 +116,6 @@ class DiningSchemaTest {
                         VALUES (:id, :store, :area, :code, :seats, true, 0, now(), now())""")
                 .param("id", id).param("store", store).param("area", area)
                 .param("code", "T" + id.toString().substring(0, 8)).param("seats", seats).update();
+        return id;
     }
 }

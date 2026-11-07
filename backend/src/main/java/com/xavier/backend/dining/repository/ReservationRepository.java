@@ -20,16 +20,16 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
 
     /** Per table, the earliest BOOKED start in {@code (after, until]} (the map indicator, P47). */
     @Query("""
-            select new com.xavier.backend.dining.repository.NextReservation(t, min(r.startsAt))
-            from Reservation r join r.tableIds t
+            select new com.xavier.backend.dining.repository.NextReservation(t.tableId, min(r.startsAt))
+            from Reservation r join r.tables t
             where r.storeId = :storeId and r.status = com.xavier.backend.dining.model.dto.ReservationStatus.BOOKED
               and r.startsAt > :after and r.startsAt <= :until
-            group by t""")
+            group by t.tableId""")
     List<NextReservation> nextByTable(UUID storeId, Instant after, Instant until);
 
     @Query("""
-            select min(r.startsAt) from Reservation r join r.tableIds t
-            where t = :tableId and r.status = com.xavier.backend.dining.model.dto.ReservationStatus.BOOKED
+            select min(r.startsAt) from Reservation r join r.tables t
+            where t.tableId = :tableId and r.status = com.xavier.backend.dining.model.dto.ReservationStatus.BOOKED
               and r.startsAt > :after and r.startsAt <= :until""")
     Optional<Instant> nextForTable(UUID tableId, Instant after, Instant until);
 
