@@ -2,8 +2,10 @@ package com.xavier.backend.orders.service;
 
 import com.xavier.backend.catalog.CatalogApi;
 import com.xavier.backend.catalog.model.dto.CatalogSnapshot;
+import com.xavier.backend.orders.AdjustmentKind;
 import com.xavier.backend.orders.BillingLine;
 import com.xavier.backend.orders.LineAmounts;
+import com.xavier.backend.orders.OfferFacts;
 import com.xavier.backend.orders.OrderBillingView;
 import com.xavier.backend.orders.model.EffectivePrice;
 import com.xavier.backend.orders.model.LinePricing;
@@ -31,6 +33,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Component;
 
@@ -79,9 +82,11 @@ public class OrderViews {
         drafts.forEach(line -> lineViews.add(draftView(line, priced.of(line.getId()),
                 chosen.getOrDefault(line.getId(), List.of()))));
         Map<UUID, String> inherited = inheritedRewards(all, adjusted);
+        Map<UUID, OrderLinePriceAdjustment> lineage = lineageOrigins(all, adjusted);
         all.stream().filter(line -> !line.isDraft()).forEach(line -> lineViews.add(confirmedView(line,
                 deducted.getOrDefault(line.getId(), BigDecimal.ZERO), adjusted.getOrDefault(line.getId(), List.of()),
-                inherited.get(line.getId()), chosen.getOrDefault(line.getId(), List.of()))));
+                inherited.get(line.getId()), lineage.get(line.getId()),
+                chosen.getOrDefault(line.getId(), List.of()))));
         List<BatchView> batchViews = batches.findByOrderIdOrderByBatchNo(order.getId()).stream()
                 .map(batch -> batchView(batch, order.getVersion(), lineViews)).toList();
         Long promotionVersion = priced == null ? pricer.currentVersion(order.getStoreId()) : priced.promotionVersion();
@@ -89,7 +94,8 @@ public class OrderViews {
                 order.getMode(), order.getTableId(), order.getTableCode(), order.getGuests(), order.getLifecycle(),
                 order.getBillingLock(), order.getBusinessDay(), order.getOpenedAt(), order.getOpenedByEmployeeId(),
                 order.getVersion(), current.map(CatalogSnapshot::version).orElse(null), lineViews, batchViews,
-                due(order, billingLines(all, deducted, adjusted, inherited)), promotionVersion, order.getCustomerId());
+                due(order, billingLines(all, deducted, adjusted, inherited, lineage)), promotionVersion,
+                order.getCustomerId());
     }
 
     /** One draft as the POS shows it right after a change: priced alone, as confirmation would price it now. */
@@ -133,11 +139,12 @@ public class OrderViews {
                 .stream().collect(Collectors.groupingBy(OrderLine::getOrderId));
         Map<UUID, BigDecimal> deducted = deductions(ids);
         Map<UUID, List<OrderLinePriceAdjustment>> adjusted = adjustments(ids);
-        Map<UUID, String> inherited = inheritedRewards(confirmed.values().stream().flatMap(List::stream).toList(),
-                adjusted);
+        List<OrderLine> all = confirmed.values().stream().flatMap(List::stream).toList();
+        Map<UUID, String> inherited = inheritedRewards(all, adjusted);
+        Map<UUID, OrderLinePriceAdjustment> lineage = lineageOrigins(all, adjusted);
         return orders.stream().map(order -> {
             List<BillingLine> billable = billingLines(confirmed.getOrDefault(order.getId(), List.of()), deducted,
-                    adjusted, inherited);
+                    adjusted, inherited, lineage);
             return new OrderBillingView(order.getId(), order.getStoreId(), order.getVersion(), order.getLifecycle(),
                     order.getBillingLock(), order.getBusinessDay(), billable, due(order, billable), order.getMode(),
                     order.getTableId(), order.getTableCode(), order.getCustomerId());
@@ -146,9 +153,9 @@ public class OrderViews {
 
     private static LineView confirmedView(OrderLine line, BigDecimal deducted,
                                           List<OrderLinePriceAdjustment> adjusted, String inheritedReward,
-                                          List<OrderLineComponent> chosen) {
+                                          OrderLinePriceAdjustment lineageOrigin, List<OrderLineComponent> chosen) {
         LineSnapshot snapshot = line.snapshot().orElseThrow();
-        EffectivePrice price = EffectivePrice.of(line, adjusted, inheritedReward);
+        EffectivePrice price = EffectivePrice.of(line, adjusted, inheritedReward, lineageOrigin);
         BigDecimal net = line.getQuantity().subtract(deducted);
         Money gross = LineAmounts.of(price.unitPrice(), net, snapshot.taxRatePercent()).gross();
         Money discount = LineAmounts.of(price.listUnitPrice(), net, snapshot.taxRatePercent()).gross().minus(gross);
@@ -177,11 +184,12 @@ public class OrderViews {
 
     private static List<BillingLine> billingLines(Collection<OrderLine> candidates, Map<UUID, BigDecimal> deducted,
                                                   Map<UUID, List<OrderLinePriceAdjustment>> adjusted,
-                                                  Map<UUID, String> inherited) {
+                                                  Map<UUID, String> inherited,
+                                                  Map<UUID, OrderLinePriceAdjustment> lineage) {
         return candidates.stream().filter(line -> !line.isDraft()).map(line -> {
             LineSnapshot snapshot = line.snapshot().orElseThrow();
             EffectivePrice price = EffectivePrice.of(line, adjusted.getOrDefault(line.getId(), List.of()),
-                    inherited.get(line.getId()));
+                    inherited.get(line.getId()), lineage.get(line.getId()));
             BigDecimal net = line.getQuantity().subtract(deducted.getOrDefault(line.getId(), BigDecimal.ZERO));
             LineAmounts amounts = LineAmounts.of(price.unitPrice(), net, snapshot.taxRatePercent());
             return new BillingLine(line.getId(), snapshot.billedDescription(), net, price.unitPrice(),
@@ -224,6 +232,62 @@ public class OrderViews {
                         && !line.snapshot().orElseThrow().unitPrice().equals(line.listUnitPrice()))
                 .map(OrderLine::getId).toList();
         return rewards.rewardCodes(copies);
+    }
+
+    /**
+     * S53: the lines' price origins from their lineage, for those whose own adjustments do not say: a copy (split or
+     * transfer) without an adjustment of its own, and a line whose latest adjustment is a reversal.
+     */
+    private Map<UUID, OrderLinePriceAdjustment> lineageOrigins(Collection<OrderLine> candidates,
+                                                               Map<UUID, List<OrderLinePriceAdjustment>> adjusted) {
+        List<UUID> ids = candidates.stream().filter(line -> !line.isDraft()).filter(line -> {
+            List<OrderLinePriceAdjustment> own = adjusted.getOrDefault(line.getId(), List.of());
+            return own.isEmpty() ? line.getOriginTransferId() != null || line.getOriginSplitId() != null
+                    : own.getLast().getKind() == AdjustmentKind.REVERSAL;
+        }).map(OrderLine::getId).toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        List<OrderLinePriceAdjustmentRepository.PriceOrigin> origins = adjustments.findPriceOrigins(ids, null);
+        Map<UUID, OrderLinePriceAdjustment> byId = adjustments.findAllById(origins.stream()
+                        .map(OrderLinePriceAdjustmentRepository.PriceOrigin::getAdjustmentId).toList()).stream()
+                .collect(Collectors.toMap(OrderLinePriceAdjustment::getId, Function.identity()));
+        return origins.stream().collect(Collectors.toMap(OrderLinePriceAdjustmentRepository.PriceOrigin::getLineId,
+                origin -> byId.get(origin.getAdjustmentId())));
+    }
+
+    /**
+     * S53: the order's billing lines sold as an OFFER (their effective price origin, through their lineage), with the
+     * offer that made them so and the round line whose consumption carries their cost. The net quantity already
+     * leaves out voids, transfers out and splits out, and a reversed line is no longer an offer.
+     */
+    public List<OfferFacts.OfferLine> offers(Order order) {
+        List<OrderLine> confirmed = lines.findByOrderIdAndStatusOrderById(order.getId(), LineStatus.CONFIRMED);
+        Map<UUID, BigDecimal> deducted = deductions(List.of(order.getId()));
+        Map<UUID, List<OrderLinePriceAdjustment>> adjusted = adjustments(List.of(order.getId()));
+        Map<UUID, String> inherited = inheritedRewards(confirmed, adjusted);
+        Map<UUID, OrderLinePriceAdjustment> lineage = lineageOrigins(confirmed, adjusted);
+        List<OfferFacts.OfferLine> offers = new ArrayList<>();
+        for (OrderLine line : confirmed) {
+            if (line.isDraft()) {
+                continue;
+            }
+            List<OrderLinePriceAdjustment> own = adjusted.getOrDefault(line.getId(), List.of());
+            EffectivePrice price = EffectivePrice.of(line, own, inherited.get(line.getId()), lineage.get(line.getId()));
+            BigDecimal net = line.getQuantity().subtract(deducted.getOrDefault(line.getId(), BigDecimal.ZERO));
+            if (net.signum() <= 0 || !"OFFER".equals(price.origin())) {
+                continue;
+            }
+            OrderLinePriceAdjustment offer = !own.isEmpty() && own.getLast().getKind() == AdjustmentKind.OFFER
+                    ? own.getLast() : lineage.get(line.getId());
+            OrderLine round = lines.roundLineOf(line.getId()).flatMap(lines::findById)
+                    .orElseThrow(() -> new IllegalStateException("Line " + line.getId() + " has no round line"));
+            offers.add(new OfferFacts.OfferLine(line.getId(), line.getItemId(),
+                    line.snapshot().orElseThrow().releaseId(), round.getId(), round.getQuantity(), net,
+                    offer.getOperatorEmployeeId(), offer.getApproverEmployeeId(),
+                    line.promotion().map(PromotionRef::code).orElse(null)));
+        }
+        return offers;
     }
 
     private Map<UUID, List<OrderLinePriceAdjustment>> adjustments(List<UUID> orderIds) {

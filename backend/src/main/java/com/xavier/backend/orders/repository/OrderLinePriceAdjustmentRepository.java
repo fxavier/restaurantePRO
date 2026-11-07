@@ -30,18 +30,7 @@ public interface OrderLinePriceAdjustmentRepository extends JpaRepository<OrderL
      * ancestor through transfer and split facts whose REWARD was recorded before the fact that moved the quantity
      * away from it (a split or transfer made before a reward never carries it). Lines without one are absent.
      */
-    @Query(value = """
-            WITH RECURSIVE origin (start_id, line_id, bound, depth) AS (
-                SELECT l.id, l.id, CAST(NULL AS TIMESTAMP WITH TIME ZONE), 0
-                FROM orders.order_line l WHERE l.id IN (:lineIds)
-                UNION ALL
-                SELECT o.start_id, e.source_line_id, e.at, o.depth + 1
-                FROM origin o
-                JOIN (SELECT tl.target_line_id, tl.source_line_id, t.transferred_at AS at
-                      FROM orders.order_transfer_line tl JOIN orders.order_transfer t ON t.id = tl.transfer_id
-                      UNION ALL
-                      SELECT s.target_line_id, s.source_line_id, s.at FROM orders.order_line_split s) e
-                    ON e.target_line_id = o.line_id)
+    @Query(value = LineAncestry.ORIGIN + """
             SELECT DISTINCT ON (o.start_id) o.start_id AS lineId, o.line_id AS rewardedLineId
             FROM origin o
             JOIN orders.order_line_price_adjustment a ON a.line_id = o.line_id AND a.kind = 'REWARD'
@@ -74,6 +63,28 @@ public interface OrderLinePriceAdjustmentRepository extends JpaRepository<OrderL
                 0)
             FROM lineage g JOIN orders.order_line l ON l.id = g.line_id""", nativeQuery = true)
     java.math.BigDecimal rewardLineageNet(@Param("rewardedLineId") UUID rewardedLineId);
+
+    /**
+     * S53: for each of {@code lineIds}, the adjustment its price origin comes from: the latest adjustment that is not
+     * a reversal, on the line itself or, failing that, on the nearest ancestor before the quantity moved away from it.
+     * On the line itself only those recorded at or before {@code asOf} count ({@code null}: all). Lines whose lineage
+     * has none are absent.
+     */
+    @Query(value = LineAncestry.ORIGIN + """
+            SELECT DISTINCT ON (o.start_id) o.start_id AS lineId, a.id AS adjustmentId
+            FROM origin o
+            JOIN orders.order_line_price_adjustment a ON a.line_id = o.line_id AND a.kind <> 'REVERSAL'
+                AND (o.bound IS NULL OR a.at <= o.bound)
+                AND (o.depth > 0 OR CAST(:asOf AS TIMESTAMP WITH TIME ZONE) IS NULL
+                     OR a.at <= CAST(:asOf AS TIMESTAMP WITH TIME ZONE))
+            ORDER BY o.start_id, o.depth, a.seq DESC""", nativeQuery = true)
+    List<PriceOrigin> findPriceOrigins(@Param("lineIds") Collection<UUID> lineIds, @Param("asOf") java.time.Instant asOf);
+
+    interface PriceOrigin {
+        UUID getLineId();
+
+        UUID getAdjustmentId();
+    }
 
     interface RewardOrigin {
         UUID getLineId();

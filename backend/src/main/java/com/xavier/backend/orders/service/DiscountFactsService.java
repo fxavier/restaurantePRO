@@ -98,14 +98,15 @@ public class DiscountFactsService {
     }
 
     /**
-     * What a reversal takes back: the origin of the line's latest earlier adjustment that was not a reversal; without
-     * one, the line's promotion when it has one, else a manual price.
+     * What a reversal takes back: the origin of the latest adjustment that was not a reversal in the line's lineage
+     * (its own before the reversal, else its nearest ancestor's before the copy); without one, the line's promotion
+     * when it has one, else a manual price.
      */
     private String reversedOrigin(OrderLine line, OrderLinePriceAdjustment reversal) {
-        return adjustments.findByLineIdOrderBySeq(line.getId()).stream()
-                .filter(earlier -> earlier.getSeq() < reversal.getSeq())
-                .filter(earlier -> earlier.getKind() != AdjustmentKind.REVERSAL)
-                .reduce((first, second) -> second)
+        // the lineage's latest non-reversal adjustment up to the reversal: a split or transferred copy takes back its
+        // ancestor's offer (the same walk as its price origin, OrderViews)
+        return adjustments.findPriceOrigins(List.of(line.getId()), reversal.getAt()).stream().findFirst()
+                .flatMap(origin -> adjustments.findById(origin.getAdjustmentId()))
                 .map(earlier -> originOf(earlier.getKind()))
                 .orElse(line.promotion().isPresent() ? "PROMOTION" : "MANUAL");
     }

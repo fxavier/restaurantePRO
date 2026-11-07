@@ -35,6 +35,19 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
 
     Page<Order> findByStoreIdAndLifecycle(UUID storeId, OrderLifecycle lifecycle, Pageable pageable);
 
+    /** S53: the store's orders of {@code lifecycle} whose business day is in {@code [from, to]}, in id order. */
+    @Query(value = """
+            select o.id from Order o where o.storeId = :storeId and o.lifecycle = :lifecycle
+              and o.businessDay between :from and :to order by o.id""",
+            countQuery = """
+            select count(o) from Order o where o.storeId = :storeId and o.lifecycle = :lifecycle
+              and o.businessDay between :from and :to""")
+    Page<UUID> findIdsByStoreAndLifecycleAndBusinessDay(
+            @Param("storeId") UUID storeId,
+            @Param("lifecycle") OrderLifecycle lifecycle,
+            @Param("from") java.time.LocalDate from,
+            @Param("to") java.time.LocalDate to, Pageable pageable);
+
     List<Order> findByStoreIdAndLifecycleOrderByOpenedAt(UUID storeId, OrderLifecycle lifecycle);
 
     long countByStoreIdAndLifecycleAndBusinessDayLessThanEqual(UUID storeId, OrderLifecycle lifecycle,

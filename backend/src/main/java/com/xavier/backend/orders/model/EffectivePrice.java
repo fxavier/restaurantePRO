@@ -1,5 +1,6 @@
 package com.xavier.backend.orders.model;
 
+import com.xavier.backend.orders.AdjustmentKind;
 import com.xavier.backend.shared.Money;
 import java.math.BigDecimal;
 import java.util.List;
@@ -24,6 +25,17 @@ public record EffectivePrice(Money listUnitPrice, Money unitPrice, String origin
      */
     public static EffectivePrice of(OrderLine line, List<OrderLinePriceAdjustment> adjustments,
                                     String inheritedRewardCode) {
+        return of(line, adjustments, inheritedRewardCode, null);
+    }
+
+    /**
+     * @param lineageOrigin the latest adjustment that is not a reversal in the line's lineage (its own, else its
+     *                      nearest ancestor's before the copy, S53): the origin and label of a copy without an
+     *                      adjustment of its own, or of a line whose latest adjustment is a reversal; {@code null}
+     *                      when not read or there is none
+     */
+    public static EffectivePrice of(OrderLine line, List<OrderLinePriceAdjustment> adjustments,
+                                    String inheritedRewardCode, OrderLinePriceAdjustment lineageOrigin) {
         Money list = line.listUnitPrice();
         Optional<OrderLinePriceAdjustment> latest = adjustments.isEmpty() ? Optional.empty()
                 : Optional.of(adjustments.getLast());
@@ -32,6 +44,11 @@ public record EffectivePrice(Money listUnitPrice, Money unitPrice, String origin
         if (unit.equals(list)) {
             return new EffectivePrice(list, unit, null, null);
         }
+        boolean reversed = latest.filter(last -> last.getKind() == AdjustmentKind.REVERSAL).isPresent();
+        if ((latest.isEmpty() || reversed) && lineageOrigin != null) {
+            // after a reversal the price is not the earlier adjustment's own, so its percent is not shown
+            return ofAdjustment(list, unit, lineageOrigin, !reversed);
+        }
         if (latest.isEmpty() && inheritedRewardCode != null) {
             return new EffectivePrice(list, unit, "LOYALTY", "Recompensa " + inheritedRewardCode);
         }
@@ -39,12 +56,16 @@ public record EffectivePrice(Money listUnitPrice, Money unitPrice, String origin
             return line.promotion().map(promotion -> new EffectivePrice(list, unit, "PROMOTION", promotion.name()))
                     .orElseGet(() -> new EffectivePrice(list, unit, "MANUAL", "Desconto"));
         }
-        OrderLinePriceAdjustment last = latest.get();
+        return ofAdjustment(list, unit, latest.get(), true);
+    }
+
+    private static EffectivePrice ofAdjustment(Money list, Money unit, OrderLinePriceAdjustment last,
+                                               boolean withPercent) {
         return switch (last.getKind()) {
             case OFFER -> new EffectivePrice(list, unit, "OFFER", "Oferta");
             case REWARD -> new EffectivePrice(list, unit, "LOYALTY", "Recompensa " + last.getRewardCode());
-            case DISCOUNT -> new EffectivePrice(list, unit, "MANUAL", last.getPercent() == null ? "Desconto"
-                    : "Desconto " + last.getPercent().stripTrailingZeros().toPlainString() + "%");
+            case DISCOUNT -> new EffectivePrice(list, unit, "MANUAL", last.getPercent() == null || !withPercent
+                    ? "Desconto" : "Desconto " + last.getPercent().stripTrailingZeros().toPlainString() + "%");
             case REVERSAL -> new EffectivePrice(list, unit, "MANUAL", "Desconto");
         };
     }

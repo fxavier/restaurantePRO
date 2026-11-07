@@ -4,6 +4,7 @@ import com.xavier.backend.orders.service.BatchFactsService;
 import com.xavier.backend.orders.service.DiscountFactsService;
 import com.xavier.backend.orders.service.LineAdjustmentService;
 import com.xavier.backend.orders.service.LineVoidService;
+import com.xavier.backend.orders.service.OfferFactsService;
 import com.xavier.backend.orders.service.OrderCoordinationService;
 import com.xavier.backend.orders.service.VoidFactsService;
 import java.time.LocalDate;
@@ -34,9 +35,12 @@ public class OrdersApi {
     private final BatchFactsService batchFacts;
     private final LineAdjustmentService adjustments;
     private final DiscountFactsService discountFacts;
+    private final OfferFactsService offerFacts;
 
     OrdersApi(OrderCoordinationService coordination, LineVoidService voids, VoidFactsService voidFacts,
-              BatchFactsService batchFacts, LineAdjustmentService adjustments, DiscountFactsService discountFacts) {
+              BatchFactsService batchFacts, LineAdjustmentService adjustments, DiscountFactsService discountFacts,
+              OfferFactsService offerFacts) {
+        this.offerFacts = offerFacts;
         this.adjustments = adjustments;
         this.discountFacts = discountFacts;
         this.coordination = coordination;
@@ -186,6 +190,26 @@ public class OrdersApi {
     @Transactional(readOnly = true)
     public Page<SourceRef> discountSourceIds(UUID storeId, LocalDate from, LocalDate to, Pageable p) {
         return discountFacts.sourceIds(storeId, from, to, p);
+    }
+
+    /**
+     * What a CLOSED order gave away as offers (S53, for reporting): its billing lines priced as an OFFER through
+     * their lineage. Empty lines while the order is open.
+     *
+     * @throws com.xavier.backend.shared.exception.NotFoundException 404 for an unknown order
+     */
+    @Transactional(readOnly = true)
+    public OfferFacts offerFacts(UUID orderId) {
+        return offerFacts.facts(orderId);
+    }
+
+    /**
+     * The ids of the store's CLOSED orders whose business day is in {@code [from, to]}, in creation order, for a
+     * projection rebuild (S53). The page's sort is ignored.
+     */
+    @Transactional(readOnly = true)
+    public Page<UUID> closedOrderIds(UUID storeId, LocalDate from, LocalDate to, Pageable p) {
+        return offerFacts.closedOrderIds(storeId, from, to, p);
     }
 
     /** OPEN orders of the store whose business day is on or before {@code businessDayInclusive} (day close). */
