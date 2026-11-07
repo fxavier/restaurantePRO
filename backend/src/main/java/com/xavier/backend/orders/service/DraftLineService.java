@@ -130,10 +130,20 @@ public class DraftLineService {
                     .isEmpty()) {
                 continue;
             }
-            OrderLine line = lines.saveAndFlush(OrderLine.automaticDraft(order.getId(), automatic.itemId(),
-                    automatic.variantId(), quantity, employeeId, clock.instant()));
-            changed("ORDER_LINE_DRAFTED", order, line);
+            addAutomaticDraft(order, automatic.itemId(), automatic.variantId(), quantity, employeeId);
         }
+    }
+
+    /**
+     * One automatic draft in the caller's transaction (D109; R4 also the delivery fee of D128), audited like any
+     * draft. The caller checked the item is in the published catalog.
+     */
+    public OrderLine addAutomaticDraft(Order order, UUID itemId, UUID variantId, BigDecimal quantity,
+                                       UUID employeeId) {
+        OrderLine line = lines.saveAndFlush(OrderLine.automaticDraft(order.getId(), itemId, variantId, quantity,
+                employeeId, clock.instant()));
+        changed("ORDER_LINE_DRAFTED", order, line);
+        return line;
     }
 
     @Transactional
