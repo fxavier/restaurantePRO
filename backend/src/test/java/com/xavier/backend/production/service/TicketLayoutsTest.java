@@ -2,6 +2,9 @@ package com.xavier.backend.production.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.xavier.backend.orders.DeliverySlip;
+import com.xavier.backend.orders.OrderMode;
+import com.xavier.backend.orders.model.event.ComponentLine;
 import com.xavier.backend.orders.model.event.Line;
 import com.xavier.backend.orders.model.event.SubtotalLine;
 import com.xavier.backend.shared.Money;
@@ -20,7 +23,7 @@ class TicketLayoutsTest {
 
     @Test
     void aRoundTicketNamesDestinationTableOrderRoundAndTimeThenItsLines() {
-        List<String> lines = TicketLayouts.batch("BAR", 42, "M1", 2, AT, MAPUTO, List.of(
+        List<String> lines = TicketLayouts.batch("BAR", 42, "M1", OrderMode.DINE_IN, 2, AT, MAPUTO, List.of(
                 line("Cerveja 2M", null, "2", null),
                 line("Pizza", "Grande", "1.500", "sem\ncebola")));
 
@@ -30,7 +33,8 @@ class TicketLayoutsTest {
 
     @Test
     void anOrderWithoutTableShowsOnlyItsNumber() {
-        assertThat(TicketLayouts.batch("COZINHA", 7, null, 1, AT, MAPUTO, List.of(line("Sopa", null, "1", null))))
+        assertThat(TicketLayouts.batch("BAR", 7, null, OrderMode.COUNTER, 1, AT, MAPUTO,
+                List.of(line("Sopa", null, "1", null))))
                 .contains("Pedido #7").doesNotContain("Mesa null - Pedido #7");
     }
 
@@ -51,6 +55,82 @@ class TicketLayoutsTest {
         assertThat(lines).containsExactly(TicketLayouts.SUBTOTAL_TITLE, TicketLayouts.NOT_AN_INVOICE,
                 "Mesa M1 - Pedido #42", TicketLayouts.RULE, "2 x Cerveja 2M 58.00 = 116.00", TicketLayouts.RULE,
                 "TOTAL 116.00 MZN");
+    }
+
+    @Test
+    void aDeliveryOrTakeawayRoundIsHeadedByItsModeAndNumber() {
+        assertThat(TicketLayouts.batch("BAR", 12, null, OrderMode.DELIVERY, 1, AT, MAPUTO,
+                List.of(line("Sopa", null, "1", null)))).containsSequence("BAR", "ENTREGA #12", "Ronda 1")
+                .doesNotContain("Pedido #12");
+        assertThat(TicketLayouts.batch("BAR", 13, null, OrderMode.TAKEAWAY, 1, AT, MAPUTO,
+                List.of(line("Sopa", null, "1", null)))).containsSequence("BAR", "TAKEAWAY #13", "Ronda 1");
+    }
+
+    @Test
+    void aRoundWithoutModeKeepsTheR3Header() {
+        assertThat(TicketLayouts.batch("BAR", 42, "M1", null, 1, AT, MAPUTO, List.of(line("Sopa", null, "1", null))))
+                .containsSequence("BAR", "Mesa M1 - Pedido #42");
+        assertThat(TicketLayouts.batch("BAR", 7, null, null, 1, AT, MAPUTO, List.of(line("Sopa", null, "1", null))))
+                .containsSequence("BAR", "Pedido #7");
+    }
+
+    @Test
+    void aMenuPrintsOnEachTicketWithOnlyThatDestinationsComponentsUnderIt() {
+        Line menu = new Line(java.util.UUID.randomUUID(), "MN", "Menu almoço", null, new BigDecimal("2"), "rápido",
+                null, List.of(new ComponentLine("S", "Sopa", new BigDecimal("2.000"), "KITCHEN"),
+                new ComponentLine("J", "Sumo", new BigDecimal("2.000"), " BAR "),
+                new ComponentLine("P", "Pão", new BigDecimal("2.000"), null)));
+        Line beer = line("Cerveja 2M", null, "1", null);
+
+        assertThat(TicketLayouts.batch("KITCHEN", 42, "M1", OrderMode.DINE_IN, 1, AT, MAPUTO, List.of(menu, beer)))
+                .endsWith(TicketLayouts.RULE, "2 x Menu almoço", "   > rápido", "   + 2 x Sopa");
+        assertThat(TicketLayouts.batch("BAR", 42, "M1", OrderMode.DINE_IN, 1, AT, MAPUTO, List.of(menu, beer)))
+                .endsWith(TicketLayouts.RULE, "2 x Menu almoço", "   > rápido", "   + 2 x Sumo", "1 x Cerveja 2M");
+    }
+
+    @Test
+    void aLineOfAnotherDestinationIsLeftOffTheTicket() {
+        Line soup = new Line(java.util.UUID.randomUUID(), "S", "Sopa", null, BigDecimal.ONE, null, "KITCHEN");
+
+        assertThat(TicketLayouts.batch("BAR", 42, "M1", OrderMode.DINE_IN, 1, AT, MAPUTO,
+                List.of(soup, line("Cerveja 2M", null, "1", null))))
+                .endsWith(TicketLayouts.RULE, "1 x Cerveja 2M").doesNotContain("1 x Sopa");
+    }
+
+    @Test
+    void anR3LineWithoutComponentsPrintsAsBefore() {
+        Line r3 = new Line(java.util.UUID.randomUUID(), "I1", "Cerveja 2M", null, BigDecimal.ONE, null, "BAR", null);
+
+        assertThat(TicketLayouts.batch("BAR", 42, "M1", null, 1, AT, MAPUTO, List.of(r3)))
+                .endsWith(TicketLayouts.RULE, "1 x Cerveja 2M");
+    }
+
+    @Test
+    void aDeliverySlipCarriesTheCustomerAddressZonePromiseLinesAndDue() {
+        Currency mzn = Currency.getInstance("MZN");
+        DeliverySlip slip = new DeliverySlip(12, "Ana Silva", "841234567", new DeliverySlip.Address(
+                "Rua da Entrega 7", "3º esq", "Maputo", "1100", "portão azul"), "Z1",
+                Instant.parse("2026-11-04T11:30:00Z"), List.of(new DeliverySlip.Line("Taxa de entrega",
+                BigDecimal.ONE), new DeliverySlip.Line("Pizza", new BigDecimal("2.000"))),
+                Money.of("15.50", mzn));
+
+        assertThat(TicketLayouts.deliverySlip(slip, AT, MAPUTO)).containsExactly(TicketLayouts.DELIVERY_SLIP_TITLE,
+                TicketLayouts.NOT_AN_INVOICE, "ENTREGA #12", "04/11/2026 12:05", TicketLayouts.RULE,
+                "Cliente: Ana Silva", "Tel: 841234567", "Rua da Entrega 7", "3º esq", "1100 Maputo",
+                "Notas: portão azul", "Zona: Z1", "Prometido: 04/11/2026 13:30", TicketLayouts.RULE,
+                "1 x Taxa de entrega", "2 x Pizza", TicketLayouts.RULE, "A PAGAR 15.50 MZN");
+    }
+
+    @Test
+    void aDeliverySlipLeavesOutWhatTheDeliveryDoesNotHave() {
+        DeliverySlip slip = new DeliverySlip(12, "Ana Silva", null, new DeliverySlip.Address("Rua da Entrega 7",
+                null, "Maputo", null, null), "Z1", null, List.of(new DeliverySlip.Line("Pizza", BigDecimal.ONE)),
+                Money.of("9.00", Currency.getInstance("MZN")));
+
+        assertThat(TicketLayouts.deliverySlip(slip, AT, MAPUTO)).containsExactly(TicketLayouts.DELIVERY_SLIP_TITLE,
+                TicketLayouts.NOT_AN_INVOICE, "ENTREGA #12", "04/11/2026 12:05", TicketLayouts.RULE,
+                "Cliente: Ana Silva", "Rua da Entrega 7", "Maputo", "Zona: Z1", TicketLayouts.RULE, "1 x Pizza",
+                TicketLayouts.RULE, "A PAGAR 9.00 MZN");
     }
 
     static Line line(String description, String variant, String quantity, String notes) {
