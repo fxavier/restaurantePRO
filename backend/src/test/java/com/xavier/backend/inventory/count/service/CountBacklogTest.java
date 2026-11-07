@@ -14,6 +14,7 @@ import com.xavier.backend.orders.model.event.OrderLinesVoided;
 import com.xavier.backend.organization.MutableClock;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -75,6 +76,7 @@ class CountBacklogTest {
     void submittedCount() throws Exception {
         counts = new CountFixtures(mvc, ledger, tx, jdbc, clock);
         store = fixtures.newActiveStore();
+        clock.advance(Duration.ofHours(4)); // history below happens after go-live (now)
         warehouse = fixtures.newWarehouse(store, "ALLOW");
         item = fixtures.newStockItem("un");
         counts.receipt(warehouse, item, "10", "2", clock.instant().minusSeconds(3600));

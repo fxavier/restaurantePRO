@@ -74,6 +74,7 @@ class CountApprovalSaleDeadlockTest {
     void tenOfEachInLockOrder() throws Exception {
         counts = new CountFixtures(mvc, ledger, tx, jdbc, clock);
         store = fixtures.newActiveStore();
+        clock.advance(Duration.ofHours(4)); // history below happens after go-live (now)
         warehouse = fixtures.newWarehouse(store, "ALLOW");
         List<BalanceKey> keys = new ArrayList<>(List.of(new BalanceKey(warehouse, fixtures.newStockItem("un")),
                 new BalanceKey(warehouse, fixtures.newStockItem("un"))));

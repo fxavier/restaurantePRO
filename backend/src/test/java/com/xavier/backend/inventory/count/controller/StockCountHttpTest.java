@@ -15,6 +15,7 @@ import com.xavier.backend.inventory.InventoryModuleTest;
 import com.xavier.backend.inventory.count.CountFixtures;
 import com.xavier.backend.inventory.service.StockLedger;
 import com.xavier.backend.organization.MutableClock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -64,6 +65,7 @@ class StockCountHttpTest {
     void liveStore() throws Exception {
         counts = new CountFixtures(mvc, ledger, tx, jdbc, clock);
         store = fixtures.newActiveStore();
+        clock.advance(Duration.ofHours(4)); // history below happens after go-live (now)
         warehouse = fixtures.newWarehouse(store, "ALLOW");
         flour = fixtures.newStockItem("g");
         now = clock.instant().truncatedTo(ChronoUnit.SECONDS);

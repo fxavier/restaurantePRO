@@ -57,6 +57,7 @@ class CountCutoffTest {
     void stock() throws Exception {
         counts = new CountFixtures(mvc, ledger, tx, jdbc, clock);
         store = fixtures.newActiveStore();
+        clock.advance(Duration.ofHours(4)); // history below happens after go-live (now)
         warehouse = fixtures.newWarehouse(store, "ALLOW");
         flour = fixtures.newStockItem("un");
         oil = fixtures.newStockItem("un");

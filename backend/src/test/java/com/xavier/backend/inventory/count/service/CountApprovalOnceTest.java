@@ -13,6 +13,7 @@ import com.xavier.backend.inventory.model.dto.PostMovement;
 import com.xavier.backend.inventory.service.StockLedger;
 import com.xavier.backend.organization.MutableClock;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -62,6 +63,7 @@ class CountApprovalOnceTest {
     void submittedCountOneShort() throws Exception {
         counts = new CountFixtures(mvc, ledger, tx, jdbc, clock);
         store = fixtures.newActiveStore();
+        clock.advance(Duration.ofHours(4)); // history below happens after go-live (now)
         warehouse = fixtures.newWarehouse(store, "ALLOW");
         item = fixtures.newStockItem("un");
         Instant now = clock.instant().truncatedTo(ChronoUnit.SECONDS);

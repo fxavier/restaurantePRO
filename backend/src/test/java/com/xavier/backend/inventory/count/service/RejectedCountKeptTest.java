@@ -15,6 +15,7 @@ import com.xavier.backend.inventory.InventoryModuleTest;
 import com.xavier.backend.inventory.count.CountFixtures;
 import com.xavier.backend.inventory.service.StockLedger;
 import com.xavier.backend.organization.MutableClock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
@@ -62,6 +63,7 @@ class RejectedCountKeptTest {
     void submittedCount() throws Exception {
         counts = new CountFixtures(mvc, ledger, tx, jdbc, clock);
         store = fixtures.newActiveStore();
+        clock.advance(Duration.ofHours(4)); // history below happens after go-live (now)
         warehouse = fixtures.newWarehouse(store, "ALLOW");
         item = fixtures.newStockItem("un");
         Instant now = clock.instant().truncatedTo(ChronoUnit.SECONDS);

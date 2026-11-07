@@ -53,15 +53,16 @@ public class CountLedgerQueries {
 
     /**
      * Whether {@code warehouseId} has a movement at or before {@code instant} that is not consumption: sales
-     * ({@code ORDER_LINE}, {@code ORDER_LINE_COMPONENT}) and their voids ({@code VOID}: reversals, waste and the
-     * revaluations they bring) happen live once the store is active and are absorbed by the opening (D122
+     * ({@code ORDER_LINE}, {@code ORDER_LINE_COMPONENT}) and their void reversals ({@code VOID},
+     * {@code VOID_COMPONENT}), with the revaluations they bring, happen live once the store is active and are absorbed by the opening (D122
      * amendment); a receipt, transfer, preparation, manual movement or count is a fact the opening must precede.
      */
     public boolean hasNonConsumptionMovementAtOrBefore(UUID warehouseId, Instant instant) {
         return jdbc.sql("""
                         SELECT EXISTS (SELECT 1 FROM inventory.stock_movement
                                        WHERE warehouse_id = ? AND occurred_at <= ?
-                                         AND source_type NOT IN ('ORDER_LINE', 'ORDER_LINE_COMPONENT', 'VOID'))""")
+                                         AND source_type NOT IN ('ORDER_LINE', 'ORDER_LINE_COMPONENT', 'VOID',
+                                                                 'VOID_COMPONENT'))""")
                 .params(warehouseId, Timestamp.from(instant)).query(Boolean.class).single();
     }
 
@@ -81,17 +82,15 @@ public class CountLedgerQueries {
     }
 
     /**
-     * The open consumption exceptions of {@code storeId} raised for a sale at or before {@code cutOff}.
-     * Ceiling (until S47's {@code confirmed_at} lands): the table only records when an exception was raised
-     * ({@code created_at}), at or after the confirmation it is about, so filtering on it could miss a sale confirmed
-     * before the cut-off; until then every open exception of the store counts, whatever its time (over-blocking is
-     * safe, missing one is not), and {@code cutOff} is unused.
+     * The open consumption exceptions of {@code storeId} for a line confirmed at or before {@code cutOff}
+     * ({@code confirmed_at}, S47), however late they were raised. Served by
+     * {@code consumption_exception_open_confirmed_ix}.
      */
     public long openExceptions(UUID storeId, Instant cutOff) {
         return jdbc.sql("""
                         SELECT count(*) FROM inventory.consumption_exception
-                        WHERE store_id = ? AND resolved_at IS NULL""")
-                .params(storeId).query(Long.class).single();
+                        WHERE store_id = ? AND resolved_at IS NULL AND confirmed_at <= ?""")
+                .params(storeId, Timestamp.from(cutOff)).query(Long.class).single();
     }
 
     /**
