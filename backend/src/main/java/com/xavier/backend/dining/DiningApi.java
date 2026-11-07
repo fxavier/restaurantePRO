@@ -3,7 +3,10 @@ package com.xavier.backend.dining;
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.dining.exception.DiningNotFoundException;
 import com.xavier.backend.dining.exception.IllegalOccupationStateException;
+import com.xavier.backend.dining.exception.IllegalReservationStateException;
+import com.xavier.backend.dining.exception.ReservationRuleException;
 import com.xavier.backend.dining.exception.TableOccupiedException;
+import com.xavier.backend.dining.model.Reservation;
 import com.xavier.backend.dining.model.RestaurantTable;
 import com.xavier.backend.dining.model.RoomArea;
 import com.xavier.backend.dining.model.TableOccupation;
@@ -11,13 +14,16 @@ import com.xavier.backend.dining.model.dto.CloseReason;
 import com.xavier.backend.dining.model.dto.OccupationView;
 import com.xavier.backend.dining.model.dto.TableInfo;
 import com.xavier.backend.dining.model.dto.TableState;
+import com.xavier.backend.dining.repository.ReservationRepository;
 import com.xavier.backend.dining.repository.RestaurantTableRepository;
 import com.xavier.backend.dining.repository.RoomAreaRepository;
 import com.xavier.backend.dining.repository.TableOccupationRepository;
 import com.xavier.backend.dining.service.DiningChanges;
 import com.xavier.backend.dining.service.DiningRows;
+import com.xavier.backend.dining.service.ReservationIndicator;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -42,6 +48,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class DiningApi {
 
     static final String ENTITY = "TableOccupation";
+    static final String RESERVATION = "Reservation";
 
     private final TableOccupationRepository occupations;
     private final RestaurantTableRepository tables;
@@ -49,10 +56,15 @@ public class DiningApi {
     private final AccessPolicy accessPolicy;
     private final DiningChanges changes;
     private final DiningRows rows;
+    private final ReservationRepository reservations;
+    private final ReservationIndicator reservationIndicator;
     private final Clock clock;
 
     DiningApi(TableOccupationRepository occupations, RestaurantTableRepository tables, RoomAreaRepository areas,
-              AccessPolicy accessPolicy, DiningChanges changes, DiningRows rows, Clock clock) {
+              ReservationRepository reservations, AccessPolicy accessPolicy, DiningChanges changes, DiningRows rows,
+              ReservationIndicator reservationIndicator, Clock clock) {
+        this.reservations = reservations;
+        this.reservationIndicator = reservationIndicator;
         this.occupations = occupations;
         this.tables = tables;
         this.areas = areas;
@@ -73,10 +85,34 @@ public class DiningApi {
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public OccupationView openOccupation(UUID tableId, UUID orderId, int guests, UUID employeeId) {
-        RestaurantTable table = lockedOpenableTable(tableId, accessPolicy.current().storeId());
+        return openOccupation(tableId, orderId, guests, employeeId, null);
+    }
+
+    /**
+     * {@link #openOccupation(UUID, UUID, int, UUID)} that also seats a reservation (D126): with {@code reservationId}
+     * the reservation, of the session's store, moves BOOKED → SEATED and is linked to the new occupation, in the
+     * caller's transaction. Any table of the store may seat it (its tables are informative).
+     *
+     * @param reservationId {@code null} for a walk-in
+     * @throws IllegalReservationStateException 409 {@code RESERVATION_NOT_BOOKED} (also when a concurrent seating
+     *         won: the reservation row lock makes it a compare-and-set)
+     * @throws ReservationRuleException 422 {@code RESERVATION_OTHER_STORE}
+     * @throws DiningNotFoundException 404 for an unknown reservation
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public OccupationView openOccupation(UUID tableId, UUID orderId, int guests, UUID employeeId,
+                                         UUID reservationId) {
+        UUID storeId = accessPolicy.current().storeId();
+        if (reservationId != null) {
+            requireReservationOf(storeId, reservationId); // a plain read, before any lock
+        }
+        RestaurantTable table = lockedOpenableTable(tableId, storeId);
         TableOccupation occupation = save(TableOccupation.open(table.getStoreId(), tableId, orderId, guests,
                 employeeId, clock.instant()));
         changed("TABLE_OCCUPATION_OPENED", occupation, Map.of("guests", guests));
+        if (reservationId != null) {
+            seat(reservationId, occupation);
+        }
         return occupation.toView(table.getCode());
     }
 
@@ -133,8 +169,9 @@ public class DiningApi {
         RestaurantTable table = table(tableId);
         UUID openOrderId = occupations.findByTableIdAndClosedAtIsNull(tableId)
                 .map(TableOccupation::getOrderId).orElse(null);
+        Instant nextReservationAt = reservationIndicator.nextFor(table.getStoreId(), tableId);
         return new TableState(tableId, table.getStoreId(), table.isActive(), area(table).isActive(), table.isLocked(),
-                openOrderId);
+                openOrderId, nextReservationAt != null, nextReservationAt);
     }
 
     /** The table's code and its current area, for labels; empty for an unknown table. Needs no session. */
@@ -158,6 +195,24 @@ public class DiningApi {
             throw TableOccupiedException.table(tableId);
         }
         return table;
+    }
+
+    private void requireReservationOf(UUID storeId, UUID reservationId) {
+        UUID reservationStore = reservations.findStoreIdById(reservationId)
+                .orElseThrow(() -> new DiningNotFoundException(RESERVATION, reservationId));
+        if (!reservationStore.equals(storeId)) {
+            throw ReservationRuleException.otherStore(reservationId);
+        }
+    }
+
+    /** Lock order: table, area, then the reservation; the reservation lock serializes concurrent seatings. */
+    private void seat(UUID reservationId, TableOccupation occupation) {
+        Reservation reservation = rows.lockReservation(reservationId);
+        reservation.seat(occupation.getId(), clock.instant());
+        reservations.saveAndFlush(reservation);
+        changes.record("RESERVATION_SEATED", RESERVATION, reservationId, occupation.getStoreId(), Map.of(
+                "occupationId", occupation.getId().toString(), "tableId", occupation.getTableId().toString(),
+                "orderId", occupation.getOrderId().toString()));
     }
 
     /** The partial unique indexes decide a race the checks missed: 409, never 500. */

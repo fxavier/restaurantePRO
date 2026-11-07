@@ -12,15 +12,15 @@ import org.springframework.modulith.test.ApplicationModuleTest;
 import org.springframework.test.context.TestPropertySource;
 
 /**
- * Boots the dining module with the modules it calls (organization for store existence, plus shared, access,
- * audit) on the shared Testcontainers PostgreSQL. Organization needs the company bootstrap settings to start.
+ * Boots the dining module with the modules it calls (organization for store existence, customers for a
+ * reservation's customer, plus shared, access, audit) on the shared Testcontainers PostgreSQL. Organization needs the company bootstrap settings to start.
  * Every dining test uses this one annotation, so they share one cached context (and one connection pool).
  * The database is shared by the whole test JVM: never assume empty tables.
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
-@ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization"})
+@ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization", "customers"})
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, DiningFixtures.class, DiningChangeStream.Probe.class})
 @TestPropertySource(properties = {

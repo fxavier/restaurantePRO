@@ -29,6 +29,13 @@ public class DiningChanges {
         changeNotifier.notifyAfterCommit(storeId, ChangeTopic.TABLES, changedId);
     }
 
+    /** A change made by a job (D41: {@code SYSTEM}, no actor), e.g. the automatic no-show (P47). */
+    public void recordAsSystem(String action, String entityType, UUID entityId, UUID storeId,
+                               Map<String, Object> details) {
+        auditLog.recordAsSystem(action, entityType, entityId.toString(), storeId, null, null, details);
+        changeNotifier.notifyAfterCommit(storeId, ChangeTopic.TABLES, entityId);
+    }
+
     public void record(String action, String entityType, UUID entityId, UUID storeId, Map<String, Object> details) {
         record(action, entityType, entityId, storeId, entityId, details);
     }

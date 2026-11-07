@@ -28,10 +28,13 @@ public class TableLockService {
     private final AccessPolicy accessPolicy;
     private final DiningChanges changes;
     private final DiningRows rows;
+    private final ReservationIndicator reservations;
     private final Clock clock;
 
     TableLockService(RestaurantTableRepository tables, TableOccupationRepository occupations,
-                     AccessPolicy accessPolicy, DiningChanges changes, DiningRows rows, Clock clock) {
+                     AccessPolicy accessPolicy, DiningChanges changes, DiningRows rows,
+                     ReservationIndicator reservations, Clock clock) {
+        this.reservations = reservations;
         this.tables = tables;
         this.occupations = occupations;
         this.accessPolicy = accessPolicy;
@@ -76,6 +79,7 @@ public class TableLockService {
     }
 
     private TableMap.Table viewOf(RestaurantTable table) {
-        return TableMapService.statusOf(table, occupations.findByTableIdAndClosedAtIsNull(table.getId()).orElse(null));
+        return TableMapService.statusOf(table, occupations.findByTableIdAndClosedAtIsNull(table.getId()).orElse(null),
+                reservations.nextFor(table.getStoreId(), table.getId()));
     }
 }
