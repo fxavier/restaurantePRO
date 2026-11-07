@@ -88,18 +88,18 @@ public class ReportQueries {
             GROUP BY 1""";
 
     /**
-     * Discounted lines; an OFFER's cost is its line's consumption cost (net of reversals and of what wasted voids
-     * moved to waste), as cost of sales.
+     * Discounted lines. An OFFER's cost is its share of the consumption of the round line it descends from (a partial
+     * offer is a split line with no consumption of its own): that line's sale consumption × the offered quantity ÷
+     * the line's confirmed quantity. The gross consumption, so a void of other units of the line does not change it.
      */
     public static final String DISCOUNTS = """
             SELECT %s AS key, count(*) AS lines, sum(d.quantity) AS quantity, sum(d.discount_gross) AS discount,
                    coalesce(sum(o.cost), 0) AS offer_cost, max(d.projected_at) AS as_of
             FROM reporting.discount_record d
             LEFT JOIN LATERAL (
-                SELECT coalesce((SELECT -sum(c.value) FROM reporting.consumption_record c
-                                 WHERE c.line_id = d.line_id AND c.type <> 'WASTE'), 0)
-                       - coalesce((SELECT sum(w.value) FROM reporting.consumption_waste_record w
-                                   WHERE w.line_id = d.line_id), 0) AS cost) o ON d.origin = 'OFFER'
+                SELECT -sum(c.value) * d.quantity / d.consumed_line_quantity AS cost
+                FROM reporting.consumption_record c
+                WHERE c.line_id = d.consumed_line_id AND c.type = 'SALE_CONSUMPTION') o ON d.origin = 'OFFER'
             WHERE d.store_id = :store AND d.business_date BETWEEN :from AND :to
             GROUP BY 1 ORDER BY 1 NULLS LAST""";
 

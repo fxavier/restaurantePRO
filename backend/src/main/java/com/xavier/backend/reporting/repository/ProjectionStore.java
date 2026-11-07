@@ -79,7 +79,7 @@ public class ProjectionStore {
     public record DiscountRecord(String sourceType, UUID sourceId, UUID lineId, UUID storeId, LocalDate businessDate,
                                  UUID itemId, String familyCode, String origin, String kind, String promotionCode,
                                  UUID operatorEmployeeId, UUID approverEmployeeId, BigDecimal quantity,
-                                 BigDecimal discountGross) {
+                                 BigDecimal discountGross, UUID consumedLineId, BigDecimal consumedLineQuantity) {
     }
 
     /** @return whether the header was inserted (false: the document was already projected) */
@@ -205,12 +205,14 @@ public class ProjectionStore {
         jdbc.sql("""
                         INSERT INTO reporting.discount_record (source_type, source_id, line_id, store_id,
                             business_date, item_id, family_code, origin, kind, promotion_code, operator_employee_id,
-                            approver_employee_id, quantity, discount_gross, projected_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            approver_employee_id, quantity, discount_gross, consumed_line_id,
+                            consumed_line_quantity, projected_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT (source_type, source_id, line_id) DO NOTHING""")
                 .params(d.sourceType(), d.sourceId(), d.lineId(), d.storeId(), d.businessDate(), d.itemId(),
                         d.familyCode(), d.origin(), d.kind(), d.promotionCode(), d.operatorEmployeeId(),
-                        d.approverEmployeeId(), d.quantity(), d.discountGross(), Timestamp.from(projectedAt))
+                        d.approverEmployeeId(), d.quantity(), d.discountGross(), d.consumedLineId(),
+                        d.consumedLineQuantity(), Timestamp.from(projectedAt))
                 .update();
     }
 

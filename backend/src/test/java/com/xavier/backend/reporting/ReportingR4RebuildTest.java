@@ -53,7 +53,8 @@ class ReportingR4RebuildTest {
             FROM reporting.cost_variance_record WHERE store_id = ? ORDER BY variance_id""",
             """
             SELECT source_type, source_id, line_id, business_date, item_id, family_code, origin, kind, promotion_code,
-                   operator_employee_id, approver_employee_id, quantity, discount_gross
+                   operator_employee_id, approver_employee_id, quantity, discount_gross, consumed_line_id,
+                   consumed_line_quantity
             FROM reporting.discount_record WHERE store_id = ? ORDER BY source_id, line_id""");
 
     @Autowired

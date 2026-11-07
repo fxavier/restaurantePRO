@@ -60,8 +60,21 @@ public class CostKitchen {
         }
     }
 
+    /** A shop live in inventory: its warehouse (the default route) and flour in stock. */
+    public record LiveShop(Shop shop, UUID warehouse, UUID flour) {
+    }
+
     /** A live shop and a sale of {@code quantity} items (12.50 each, 16 %) in one confirmed, consumed round. */
     public LiveSale liveSale(String quantity) throws Exception {
+        LiveShop live = liveShop();
+        recipe(live, live.shop().item(), "250");
+        Sale sale = openSale(live.shop());
+        sales.confirmRound(live.shop(), sale.cashier(), sale.order(), quantity, 0);
+        return new LiveSale(sale, live.warehouse(), live.flour());
+    }
+
+    /** A new shop whose store is live from now, with 100 kg of flour at 2.00 in its default warehouse. */
+    public LiveShop liveShop() throws Exception {
         Shop shop = orders.shop();
         cash.setCutoff(shop.store(), cash.cutoffFarFromNow());
         mvc.perform(idem(post(BO + "/activations")).with(account(shop.store(), Permission.INVENTORY_MANAGE))
@@ -81,27 +94,35 @@ public class CostKitchen {
                                  "lines": [{"stockItemId": "%s", "quantity": 100, "unitCost": 2}]}"""
                                 .formatted(warehouse, flour)))
                 .andExpect(status().isCreated());
+        return new LiveShop(shop, warehouse, flour);
+    }
+
+    /** An active recipe of {@code grams} g of flour per {@code item} sold (2.00 a kg). */
+    public void recipe(LiveShop live, UUID item, String grams) throws Exception {
         UUID recipe = id(mvc.perform(idem(post(BO + "/recipes")).with(account(null, Permission.RECIPE_MANAGE))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"itemId\": \"%s\", \"name\": \"Shop item\"}".formatted(shop.item())))
+                        .content("{\"itemId\": \"%s\", \"name\": \"Recipe\"}".formatted(item)))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
         mvc.perform(idem(post(BO + "/recipes/" + recipe + "/versions")).with(account(null, Permission.RECIPE_MANAGE))
                         .contentType(MediaType.APPLICATION_JSON).content("""
                                 {"yieldQuantity": 1, "yieldUnit": "un", "ingredients": [
-                                 {"stockItemId": "%s", "quantity": 250, "unit": "g", "kind": "INGREDIENT"}]}"""
-                                .formatted(flour)))
+                                 {"stockItemId": "%s", "quantity": %s, "unit": "g", "kind": "INGREDIENT"}]}"""
+                                .formatted(live.flour(), grams)))
                 .andExpect(status().isCreated());
         mvc.perform(idem(post(BO + "/recipes/" + recipe + "/versions/1/activate"))
                         .with(account(null, Permission.RECIPE_MANAGE)).contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isOk());
+    }
+
+    /** A cashier with an open session, a fiscal series and an open order in the shop's store, no round yet. */
+    public Sale openSale(Shop shop) throws Exception {
         UUID register = cash.newRegister(shop.store());
         Pos cashier = CashFixtures.pos(shop.store());
         UUID session = cash.openSession(cashier, register, "0");
         UUID series = fiscal.newSeries(shop.store(), "S" + UUID.randomUUID().toString().substring(0, 6), 1);
         UUID order = OrdersFixtures.id(orders.openedOrder(shop, cashier.employeeId(), cashier.terminalId()));
-        sales.confirmRound(shop, cashier, order, quantity, 0);
-        return new LiveSale(new Sale(shop, cashier, register, session, series, order), warehouse, flour);
+        return new Sale(shop, cashier, register, session, series, order);
     }
 
     /** A void of {@code quantity} of {@code line} with an approver (a mock in this context), wasted or not. */

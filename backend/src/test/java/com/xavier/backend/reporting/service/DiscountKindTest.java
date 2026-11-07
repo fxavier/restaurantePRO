@@ -32,6 +32,6 @@ class DiscountKindTest {
         Money price = Money.of("12.50", MZN);
         return new DiscountLine(UUID.randomUUID(), UUID.randomUUID(), "ITEM", UUID.randomUUID(), "IVA16",
                 new BigDecimal("16"), price, price, price, BigDecimal.ONE, Money.of(discount, MZN), origin, null,
-                null, null, UUID.randomUUID(), null, Instant.EPOCH);
+                null, null, UUID.randomUUID(), null, Instant.EPOCH, UUID.randomUUID(), BigDecimal.ONE);
     }
 }

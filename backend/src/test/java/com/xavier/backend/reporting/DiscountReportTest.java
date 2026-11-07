@@ -65,6 +65,7 @@ class DiscountReportTest {
     LiveSale live;
     Pos cashier;
     String promotion;
+    UUID promoted;
     LocalDate day;
 
     @BeforeEach
@@ -78,7 +79,7 @@ class DiscountReportTest {
         promotions.promotion(live.store(), live.sale().shop().item(), promotion,
                 "\"kind\": \"AMOUNT_OFF_UNIT\", \"amount\": 0.50", null);
         long promotionVersion = promotions.publish(live.store());
-        UUID promoted = OrdersFixtures.id(orders.draft(live.sale().shop(), order, "2", cashier.employeeId(),
+        promoted = OrdersFixtures.id(orders.draft(live.sale().shop(), order, "2", cashier.employeeId(),
                 cashier.terminalId()));
         orders.confirm(live.sale().shop(), order, """
                         {"orderVersion": %d, "catalogVersion": %d, "lineIds": ["%s"], "promotionVersion": %d}"""
@@ -104,6 +105,19 @@ class DiscountReportTest {
                 "PROMOTION|PROMOTION|1|2|1.00|0.00");
         assertThat(line(report.get("totals"))).isEqualTo("||3|5|14.50|0.50");
         assertThat(report.get("asOf").isNull()).isFalse();
+    }
+
+    @Test
+    void anOfferOfPartOfALineCostsItsShareOfTheRoundLinesConsumption() throws Exception {
+        discount(promoted, "\"quantity\": 1}], \"kind\": \"OFFER\"", Permission.ORDER_OFFER, true, false)
+                .andExpect(status().isOk());
+        kitchen.awaitRows("discount_record", live.store(), 4);
+        reporting.awaitNothingPendingFor(live.store());
+
+        JsonNode report = reporting.report("discounts", live.store(), day, day, "groupBy", "origin");
+
+        assertThat(rows(report)).as("1 of the 2 promoted (1.00 consumed): 0.50, not 0").contains(
+                "OFFER|OFFER|2|2|24.00|1.00");
     }
 
     @Test
@@ -157,12 +171,19 @@ class DiscountReportTest {
 
     private ResultActions discount(UUID line, String values, Permission permission, boolean approved)
             throws Exception {
+        return discount(line, "}], " + values, permission, approved, true);
+    }
+
+    /** {@code values} continues the line object ({@code "quantity": 1}], …) when {@code wholeLine} is false. */
+    private ResultActions discount(UUID line, String values, Permission permission, boolean approved,
+                                   boolean wholeLine) throws Exception {
         var request = post(OrdersFixtures.POS + "/orders/" + live.sale().order() + "/discounts")
                 .with(OrdersActors.pos(live.store(), cashier.employeeId(), cashier.terminalId(), permission))
                 .with(csrf()).header("Idempotency-Key", UUID.randomUUID().toString())
                 .contentType(MediaType.APPLICATION_JSON).content("""
-                        {"orderVersion": %d, "lines": [{"lineId": "%s"}], %s, "reason": "regular"}"""
-                        .formatted(sales.orderVersion(cashier, live.sale().order()), line, values));
+                        {"orderVersion": %d, "lines": [{"lineId": "%s"%s, "reason": "regular"}"""
+                        .formatted(sales.orderVersion(cashier, live.sale().order()), line,
+                                wholeLine ? values : ", " + values));
         if (approved) {
             request = request.header("X-Approver-Code", "MGR").header("X-Approver-Pin", "1234");
         }

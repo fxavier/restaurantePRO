@@ -7,6 +7,7 @@ import com.xavier.backend.fiscal.FiscalFixtures;
 import com.xavier.backend.identity.ApproverVerifier;
 import com.xavier.backend.orders.OrdersFixtures;
 import com.xavier.backend.inventory.InventoryFixtures;
+import com.xavier.backend.orders.OrdersCatalog;
 import com.xavier.backend.orders.OrdersPromotions;
 import com.xavier.backend.promotions.PromotionsFixtures;
 import com.xavier.backend.reporting.service.CostProjections;
@@ -45,7 +46,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 @Import({TestcontainersConfiguration.class, DiningFixtures.class, OrdersFixtures.class, CashFixtures.class,
         FiscalFixtures.class, SettlementFixtures.class, SettlementTestClock.Config.class,
         FakePaymentProvider.Config.class, ReportingFixtures.class, InventoryFixtures.class, PromotionsFixtures.class,
-        OrdersPromotions.class, CostKitchen.class})
+        OrdersPromotions.class, OrdersCatalog.class, CostKitchen.class})
 @TestPropertySource(properties = {
         "restaurantpro.bootstrap.company.name=Test Company",
         "restaurantpro.bootstrap.company.tax-id=TEST-TAX-ID",
