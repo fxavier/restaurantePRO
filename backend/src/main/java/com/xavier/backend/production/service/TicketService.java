@@ -102,16 +102,18 @@ public class TicketService {
         }
     }
 
+    /**
+     * A VOID ticket on each destination of the voided line, its own or its menu components' (D108), routed as rounds
+     * are; a publication stored before R4 (no components, no mode) prints as it did.
+     */
     @Transactional(propagation = Propagation.MANDATORY)
     public void printVoid(OrderLinesVoided event) {
-        String destination = event.line().destination();
-        if (destination == null || destination.isBlank()) {
-            return;
+        for (String destination : TicketLayouts.destinations(List.of(event.line()))) {
+            routed(event.storeId(), destination, new TicketDraft(event.storeId(), TicketSource.VOID, event.voidId(),
+                    destination, JobKind.ORIGINAL, event.orderId(), event.terminalId(), TicketLayouts.voided(
+                    destination, event.orderNumber(), event.tableCode(), event.mode(), event.at(),
+                    zone(event.storeId()), event.line(), event.quantity(), event.reason()), null));
         }
-        routed(event.storeId(), destination.strip(), new TicketDraft(event.storeId(), TicketSource.VOID,
-                event.voidId(), destination.strip(), JobKind.ORIGINAL, event.orderId(), event.terminalId(),
-                TicketLayouts.voided(destination.strip(), event.orderNumber(), event.tableCode(), event.at(),
-                        zone(event.storeId()), event.line(), event.quantity(), event.reason()), null));
     }
 
     /**

@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.xavier.backend.access.Permission;
+import com.xavier.backend.identity.IdentityFixtures;
 import com.xavier.backend.orders.OrdersActors;
 import com.xavier.backend.orders.OrdersFixtures;
 import com.xavier.backend.orders.delivery.DeliveryFixtures.DeliveryShop;
@@ -37,6 +38,26 @@ final class PosRequests {
                 .with(OrdersActors.pos(d.shop().store(), UUID.randomUUID(), terminal, Permission.DELIVERY_OPERATE))
                 .with(csrf()).header("Idempotency-Key", UUID.randomUUID().toString())
                 .contentType(MediaType.APPLICATION_JSON).content(body));
+    }
+
+    /**
+     * {@code POST /pos/orders/{order}/voids} of {@code quantity} of {@code line}, approved by {@code approver} (PIN
+     * {@link OrdersFixtures#PIN}); the void's id.
+     */
+    static UUID voided(MockMvc mvc, JdbcClient jdbc, UUID store, UUID order, UUID line, String quantity,
+                       IdentityFixtures.Employee approver) throws Exception {
+        long version = jdbc.sql("SELECT version FROM orders.order_header WHERE id = ?").param(order)
+                .query(Long.class).single();
+        mvc.perform(post(OrdersFixtures.POS + "/orders/" + order + "/voids")
+                        .with(OrdersActors.pos(store, UUID.randomUUID(), UUID.randomUUID(), Permission.ORDER_VOID))
+                        .with(csrf()).header("Idempotency-Key", UUID.randomUUID().toString())
+                        .header("X-Approver-Code", approver.code()).header("X-Approver-Pin", OrdersFixtures.PIN)
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"orderVersion": %d, "lineId": "%s", "quantity": %s, "reason": "engano",
+                                 "wasted": false}""".formatted(version, line, quantity)))
+                .andExpect(status().isCreated());
+        return jdbc.sql("SELECT id FROM orders.order_line_void WHERE line_id = ? ORDER BY id DESC LIMIT 1")
+                .param(line).query(UUID.class).single();
     }
 
     static long orderNumber(JdbcClient jdbc, UUID order) {

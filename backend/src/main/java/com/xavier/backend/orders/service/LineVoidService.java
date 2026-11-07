@@ -15,13 +15,17 @@ import com.xavier.backend.orders.model.OrderLine;
 import com.xavier.backend.orders.model.OrderLineVoid;
 import com.xavier.backend.orders.model.dto.VoidLineRequest;
 import com.xavier.backend.orders.model.dto.VoidView;
+import com.xavier.backend.orders.model.event.ComponentLine;
 import com.xavier.backend.orders.model.event.Line;
 import com.xavier.backend.orders.model.event.OrderLinesVoided;
+import com.xavier.backend.orders.repository.OrderLineComponentRepository;
 import com.xavier.backend.orders.repository.OrderLineRepository;
 import com.xavier.backend.orders.repository.OrderLineVoidRepository;
 import com.xavier.backend.shared.Money;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Clock;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -45,6 +49,7 @@ public class LineVoidService {
 
     private final OrderLineRepository lines;
     private final OrderLineVoidRepository voids;
+    private final OrderLineComponentRepository components;
     private final RewardLineage rewards;
     private final OrderLookup lookup;
     private final OrderViews views;
@@ -55,12 +60,13 @@ public class LineVoidService {
     private final Clock clock;
 
     LineVoidService(OrderLineRepository lines, OrderLineVoidRepository voids,
-                    RewardLineage rewards, OrderLookup lookup,
+                    OrderLineComponentRepository components, RewardLineage rewards, OrderLookup lookup,
                     OrderViews views, ApproverVerifier approvers, AccessPolicy accessPolicy,
                     ApplicationEventPublisher events, OrderChanges changes, Clock clock) {
         this.rewards = rewards;
         this.lines = lines;
         this.voids = voids;
+        this.components = components;
         this.lookup = lookup;
         this.views = views;
         this.approvers = approvers;
@@ -155,12 +161,26 @@ public class LineVoidService {
         events.publishEvent(new OrderLinesVoided(order.getId(), voided.getId(), order.getStoreId(), terminalId,
                 order.getOrderNumber(), order.getTableCode(), new Line(line.getId(), snapshot.itemCode(),
                 snapshot.description(), snapshot.variantName(), line.getQuantity(), line.getNotes(),
-                snapshot.destination()), voided.getQuantity(), voided.getReason(), voided.getVoidedAt()));
+                snapshot.destination(), voidedComponents(voided)), voided.getQuantity(), voided.getReason(),
+                voided.getVoidedAt(), order.getMode()));
         changes.recordWithReason("ORDER_LINE_VOIDED", ENTITY, voided.getId(), order, approverId, voided.getReason(),
                 Map.of("orderId", order.getId().toString(), "lineId", line.getId().toString(),
                         "quantity", voided.getQuantity().toPlainString(), "wasted", voided.isWasted()));
         return new Recorded(voided, LineAmounts.of(views.effectivePrice(line).unitPrice(), voided.getQuantity(),
                 snapshot.taxRatePercent()).gross());
+    }
+
+    /**
+     * D108: a voided menu's components, each with the quantity voided of it (per menu unit × the voided quantity).
+     * They are frozen on the round line the voided line descends from, so a transferred or split menu keeps them.
+     */
+    private List<ComponentLine> voidedComponents(OrderLineVoid voided) {
+        UUID roundLine = voids.consumedLineId(voided.getId()).orElse(voided.getLineId());
+        return components.findByLineIdOrderByPosition(roundLine).stream()
+                .map(component -> new ComponentLine(component.getItemCode(), component.getDescription(),
+                        component.getQuantity().multiply(voided.getQuantity()).setScale(3, RoundingMode.HALF_UP),
+                        component.getDestination()))
+                .toList();
     }
 
     /** A recorded void and its gross at the line's snapshot price. */

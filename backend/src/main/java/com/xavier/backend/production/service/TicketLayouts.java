@@ -15,6 +15,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /** The printed text of production's own tickets (documents arrive laid out by fiscal). Pure functions. */
 final class TicketLayouts {
@@ -34,7 +36,6 @@ final class TicketLayouts {
     private TicketLayouts() {
     }
 
-    /** A round for one destination: only the lines of this round, so a second round prints only its new lines. */
     /**
      * A round for one destination: only the lines of this round, so a second round prints only its new lines. A line
      * prints when it, or one of its menu components, goes to {@code destination}; under it, only the components that
@@ -78,12 +79,17 @@ final class TicketLayouts {
      */
     static List<String> deliverySlip(DeliverySlip slip, Instant at, ZoneId zone) {
         List<String> out = new ArrayList<>(List.of(DELIVERY_SLIP_TITLE, NOT_AN_INVOICE, DELIVERY + slip.orderNumber(),
-                time(at, zone), RULE, "Cliente: " + slip.customerName()));
+                time(at, zone), RULE));
+        addIfPresent(out, "Cliente: ", slip.customerName());
         addIfPresent(out, "Tel: ", slip.phone());
         DeliverySlip.Address address = slip.address();
         out.add(address.line1());
         addIfPresent(out, "", address.line2());
-        out.add(address.postalCode() == null ? address.city() : address.postalCode() + " " + address.city());
+        String place = Stream.of(address.postalCode(), address.city()).filter(part -> part != null && !part.isBlank())
+                .collect(Collectors.joining(" "));
+        if (!place.isEmpty()) {
+            out.add(place);
+        }
         addIfPresent(out, "Notas: ", address.notes());
         out.add("Zona: " + slip.zone());
         if (slip.promisedAt() != null) {
@@ -96,10 +102,19 @@ final class TicketLayouts {
         return out;
     }
 
-    static List<String> voided(String destination, long orderNumber, String tableCode, Instant at, ZoneId zone,
-                               Line line, BigDecimal quantity, String reason) {
-        return List.of(VOID_TITLE, destination, header(orderNumber, tableCode), time(at, zone), RULE,
-                "-" + plain(quantity) + " x " + item(line), "Motivo: " + reason);
+    /**
+     * A void for one destination, which the voided line or one of its menu components goes to: the line, and under it
+     * the voided quantity of only the components that go there (D108), headed like its round (D129).
+     */
+    static List<String> voided(String destination, long orderNumber, String tableCode, OrderMode mode, Instant at,
+                               ZoneId zone, Line line, BigDecimal quantity, String reason) {
+        List<String> out = new ArrayList<>(List.of(VOID_TITLE, destination, header(orderNumber, tableCode, mode),
+                time(at, zone), RULE, "-" + plain(quantity) + " x " + item(line)));
+        componentsOf(line).stream().filter(component -> destination.equals(destinationOf(component.destination())))
+                .forEach(component -> out.add("   + -" + plain(component.quantity()) + " x "
+                        + component.description()));
+        out.add("Motivo: " + reason);
+        return out;
     }
 
     /** A bill to check (spec §8.1): it prints only, it is not a document. */
