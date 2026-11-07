@@ -12,7 +12,8 @@ import org.springframework.modulith.test.ApplicationModuleTest;
 import org.springframework.test.context.TestPropertySource;
 
 /**
- * Boots promotions with the modules it calls: organization (stores, zones, the company currency) and catalog (the
+ * Boots promotions with the modules it calls: organization (stores, zones, the company currency), customers (loyalty
+ * members) and catalog (the
  * published catalog a release validates against), plus shared, access and audit, on the shared Testcontainers
  * PostgreSQL. Stores and catalogs are built through their HTTP APIs ({@link PromotionsFixtures}). One annotation, one
  * cached context. The database is shared by the whole test JVM: never assume empty tables.
@@ -20,7 +21,7 @@ import org.springframework.test.context.TestPropertySource;
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
-@ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization", "catalog"})
+@ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization", "customers", "catalog"})
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, PromotionsFixtures.class, PromotionsNoticeTest.NoticeStream.class})
 @TestPropertySource(properties = {
