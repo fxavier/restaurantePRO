@@ -97,6 +97,9 @@ public class OrdersApi {
      * (D111): when the order's customer is a loyalty member, {@code LoyaltyApi.earnForOrder} records its points before
      * this returns, in the same transaction, once per order. It is insert-only: no {@code FOR UPDATE}, only the
      * {@code FOR KEY SHARE} the entry's foreign key takes on {@code loyalty_account}, in that row's D132 position.
+     * A DELIVERY order closes only once its delivery is DELIVERED (D127).
+     *
+     * @throws com.xavier.backend.orders.delivery.exception.DeliveryRuleException 422 {@code DELIVERY_NOT_DELIVERED}
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public void close(UUID orderId, long expectedVersion, UUID actorEmployeeId) {
