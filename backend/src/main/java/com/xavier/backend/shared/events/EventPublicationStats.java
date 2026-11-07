@@ -63,6 +63,39 @@ public class EventPublicationStats {
                 .query(Long.class).single();
     }
 
+    /**
+     * {@link #pendingFor(String)} narrowed to the events that concern one key and happened up to a cut-off: the
+     * serialized event's top-level {@code keyField} equals {@code keyValue}, and its first present field of
+     * {@code instantFields} (an ISO-8601 instant) is at or before {@code cutOff}. A publication without the key, or
+     * without any of the instant fields, counts as pending (conservative). The prefix is served by the partial index
+     * of V1006; the JSON is read only on the pending rows it returns.
+     */
+    @Transactional(readOnly = true)
+    public long pendingFor(String listenerIdPrefix, String keyField, String keyValue, List<String> instantFields,
+                           Instant cutOff) {
+        if (instantFields.isEmpty()) {
+            throw new IllegalArgumentException("name at least one instant field");
+        }
+        StringBuilder instant = new StringBuilder("coalesce(");
+        for (int i = 0; i < instantFields.size(); i++) {
+            instant.append(i == 0 ? "" : ", ").append("p.event ->> :instant").append(i);
+        }
+        instant.append(")");
+        var spec = jdbc.sql("""
+                        SELECT count(*) FROM (
+                            SELECT serialized_event::jsonb AS event FROM event_publication
+                            WHERE completion_date IS NULL AND listener_id LIKE :prefix ESCAPE '\\') p
+                        WHERE coalesce(p.event ->> :keyField, :keyValue) = :keyValue
+                          AND coalesce((%s)::timestamptz, :cutOff) <= :cutOff""".formatted(instant))
+                .param("prefix", escapeLike(listenerIdPrefix) + "%")
+                .param("keyField", keyField).param("keyValue", keyValue)
+                .param("cutOff", Timestamp.from(cutOff));
+        for (int i = 0; i < instantFields.size(); i++) {
+            spec = spec.param("instant" + i, instantFields.get(i));
+        }
+        return spec.query(Long.class).single();
+    }
+
     /** The publications in {@code state}, oldest first. The page's sort is ignored. */
     @Transactional(readOnly = true)
     public PageResponse<EventPublicationView> list(EventPublicationState state, Pageable pageable) {

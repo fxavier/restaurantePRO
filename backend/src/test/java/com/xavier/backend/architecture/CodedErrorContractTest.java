@@ -36,6 +36,8 @@ import com.xavier.backend.fiscal.FiscalIssueFailedException;
 import com.xavier.backend.fiscal.exception.DraftMismatchException;
 import com.xavier.backend.fiscal.exception.PaymentSnapshotMismatchException;
 import com.xavier.backend.identity.exception.LoginThrottledException;
+import com.xavier.backend.inventory.count.exception.CountConflictException;
+import com.xavier.backend.inventory.count.exception.CountRuleException;
 import com.xavier.backend.inventory.consumption.exception.ConsumptionConflictException;
 import com.xavier.backend.inventory.consumption.exception.ConsumptionRuleException;
 import com.xavier.backend.inventory.exception.InventoryConflictException;
@@ -67,6 +69,7 @@ import com.xavier.backend.settlement.reconciliation.model.dto.StatementError;
 import com.xavier.backend.shared.Money;
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -319,6 +322,19 @@ class CodedErrorContractTest {
             Map.entry("route-exists", () -> InventoryConflictException.routeExists(ID, "BAR")),
             Map.entry("default-route-exists", () -> InventoryConflictException.routeExists(ID, null)),
             Map.entry("stock-level-exists", () -> InventoryConflictException.levelExists(ID, OTHER)),
+            Map.entry("opening-not-first", () -> CountRuleException.openingNotFirst(ID)),
+            Map.entry("count-incomplete", () -> CountRuleException.incomplete(ID)),
+            Map.entry("counted-at-out-of-range", () -> CountRuleException.countedAtOutOfRange(
+                    Instant.parse("2026-11-07T09:00:00Z"), Instant.parse("2026-11-07T10:00:00Z"),
+                    Instant.parse("2026-11-07T12:00:00Z"))),
+            Map.entry("count-self-approval", () -> CountRuleException.selfApproval(ID)),
+            Map.entry("unit-cost-opening-only", CountRuleException::unitCostOpeningOnly),
+            Map.entry("count-scope-invalid", () -> CountRuleException.scopeInvalid(
+                    "A LIST count names the stock items to count.")),
+            Map.entry("count-state", () -> CountConflictException.state(ID, "SUBMITTED", "be cancelled")),
+            Map.entry("consumption-backlog", () -> CountConflictException.consumptionBacklog(ID, 3)),
+            Map.entry("consumption-exceptions-open", () -> CountConflictException.consumptionExceptionsOpen(ID, 2)),
+            Map.entry("live-count-exists", () -> CountConflictException.liveCountExists(ID)),
             // R4 recipes, consumption, preparations (S47)
             Map.entry("recipe-effective-from-invalid", () -> RecipeRuleException.effectiveFromInvalid(
                     java.time.Instant.parse("2026-11-06T10:00:00Z"))),
@@ -821,6 +837,33 @@ class CodedErrorContractTest {
         expect("default-route-exists", 409, "ROUTE_EXISTS", "Store " + ID + " already has a default route.", "");
         expect("stock-level-exists", 409, "STOCK_LEVEL_EXISTS", "Warehouse " + ID
                 + " already has a minimum for stock item " + OTHER + ".", "");
+    }
+
+    @Test
+    void inventoryCountRules() throws Exception {
+        expect("opening-not-first", 422, "OPENING_NOT_FIRST", "Warehouse " + ID
+                + " already has stock movements or an opening count before this opening's cut-off.", "");
+        expect("count-incomplete", 422, "COUNT_INCOMPLETE",
+                "Count " + ID + " has no line, or a line not counted yet.", "");
+        expect("counted-at-out-of-range", 422, "COUNTED_AT_OUT_OF_RANGE", "A line is counted between the count's "
+                + "start (2026-11-07T10:00:00Z) and now (2026-11-07T12:00:00Z), not at 2026-11-07T09:00:00Z.", "");
+        expect("count-self-approval", 422, "SELF_APPROVAL", "Count " + ID
+                + " was counted (in part) by its approver: another person approves it.", "");
+        expect("unit-cost-opening-only", 422, "UNIT_COST_OPENING_ONLY",
+                "A unit cost is entered on an opening count only: a regular count is valued at the average.", "");
+        expect("count-scope-invalid", 422, "COUNT_SCOPE_INVALID", "A LIST count names the stock items to count.", "");
+    }
+
+    @Test
+    void inventoryCountConflicts() throws Exception {
+        expect("count-state", 409, "COUNT_STATE", "Count " + ID + " is SUBMITTED and cannot be cancelled.", "");
+        expect("consumption-backlog", 409, "CONSUMPTION_BACKLOG", "Stock consumption of store " + ID + " has 3 "
+                + "publication(s) still pending up to the count's cut-off: approve the count once they are processed.",
+                "");
+        expect("consumption-exceptions-open", 409, "CONSUMPTION_EXCEPTIONS_OPEN", "Store " + ID + " has 2 open "
+                + "consumption exception(s) up to the count's cut-off: resolve them, then approve.", "");
+        expect("live-count-exists", 409, "LIVE_COUNT_EXISTS", "Warehouse " + ID
+                + " already has a count that is not decided or cancelled.", "");
     }
 
     @Test
