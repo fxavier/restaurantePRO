@@ -37,6 +37,14 @@ public record EffectivePrice(Money listUnitPrice, Money unitPrice, String origin
         };
     }
 
+    /** D101: {@code percent} off {@code price}, HALF_UP per unit to the minor unit; within {@code [0, price]}. */
+    public static Money afterPercentOff(Money price, BigDecimal percent) {
+        if (percent.signum() <= 0 || percent.compareTo(BigDecimal.valueOf(100)) > 0) {
+            throw new IllegalArgumentException("A percent off is in (0, 100]: " + percent);
+        }
+        return price.times(BigDecimal.ONE.subtract(percent.movePointLeft(2)));
+    }
+
     /** The cumulative discount against the list price in percent, {@code 1 − unit/list} (D106); 0 for a free item. */
     public static BigDecimal percentOff(Money listUnitPrice, Money unitPrice) {
         if (listUnitPrice.amount().signum() == 0) {

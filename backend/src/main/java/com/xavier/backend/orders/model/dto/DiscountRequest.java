@@ -1,7 +1,9 @@
 package com.xavier.backend.orders.model.dto;
 
 import com.xavier.backend.orders.AdjustmentKind;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
@@ -29,6 +31,21 @@ public record DiscountRequest(
         @DecimalMin("0") @Digits(integer = 15, fraction = 2) BigDecimal unitPrice,
         @Size(max = 30) String rewardCode,
         @NotBlank @Size(max = 200) String reason) {
+
+    /** DISCOUNT: exactly one of percent and unitPrice; REWARD: a reward code only; OFFER: no value. */
+    @JsonIgnore
+    @AssertTrue(message = "the values do not match the kind")
+    public boolean isValuesMatchTheKind() {
+        if (kind == null) {
+            return true;
+        }
+        return switch (kind) {
+            case DISCOUNT -> (percent == null) != (unitPrice == null) && rewardCode == null;
+            case OFFER -> percent == null && unitPrice == null && rewardCode == null;
+            case REWARD -> percent == null && unitPrice == null && rewardCode != null && !rewardCode.isBlank();
+            case REVERSAL -> percent == null && rewardCode == null;
+        };
+    }
 
     public record Line(@NotNull UUID lineId,
                        @DecimalMin(value = "0", inclusive = false) @Digits(integer = 9, fraction = 3)

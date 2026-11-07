@@ -149,6 +149,22 @@ public class OrdersFixtures {
         return line;
     }
 
+    /**
+     * {@code POST /orders/{order}/discounts} as {@code employee} holding {@code permission}, with the approver headers
+     * when {@code approver} is not null (its PIN is {@link #PIN}).
+     */
+    public ResultActions discount(Shop shop, UUID order, String body, UUID employee, UUID terminal,
+                                  Permission permission, IdentityFixtures.Employee approver) throws Exception {
+        var request = post(POS + "/orders/" + order + "/discounts")
+                .with(OrdersActors.pos(shop.store(), employee, terminal, permission)).with(csrf())
+                .header("Idempotency-Key", UUID.randomUUID().toString()).contentType(MediaType.APPLICATION_JSON)
+                .content(body);
+        if (approver != null) {
+            request = request.header("X-Approver-Code", approver.code()).header("X-Approver-Pin", PIN);
+        }
+        return mvc.perform(request);
+    }
+
     /** A real employee of the shop's store with {@code role} and PIN {@link #PIN}, to approve (D40). */
     public IdentityFixtures.Employee employee(Shop shop, UUID role) throws Exception {
         return new IdentityFixtures(mvc).employee(PIN, shop.store(), role);
