@@ -12,7 +12,8 @@ import java.math.RoundingMode;
  * cost variance. Values are HALF_UP at scale 4, and the two always add up to {@code round((received − returned) × Δ,
  * 4)}.
  *
- * @param revaluedQuantity the line's share still in stock (scale 6), zero when none is left
+ * @param revaluedQuantity the line's share still in stock (scale 6), zero when none is left; when the value floor
+ *                         caps the revaluation, the quantity it stands for ({@code revaluation ÷ Δ})
  * @param revaluationValue signed, scale 4
  * @param varianceValue    signed, scale 4
  */
@@ -32,7 +33,11 @@ public record CostCorrection(BigDecimal revaluedQuantity, BigDecimal revaluation
                 .setScale(StockPosition.QUANTITY_SCALE, RoundingMode.HALF_UP);
         BigDecimal floor = balanceValue.max(BigDecimal.ZERO).negate().setScale(StockPosition.VALUE_SCALE,
                 RoundingMode.UNNECESSARY);
-        BigDecimal revaluation = MovingAverage.valueOf(revalued, delta).max(floor); // the value never goes below 0
+        BigDecimal uncapped = MovingAverage.valueOf(revalued, delta);
+        BigDecimal revaluation = uncapped.max(floor); // the value never goes below 0
+        if (revaluation.compareTo(uncapped) != 0) {
+            revalued = revaluation.divide(delta, StockPosition.QUANTITY_SCALE, MovingAverage.ROUNDING); // what it covers
+        }
         BigDecimal total = MovingAverage.valueOf(received, delta);
         return new CostCorrection(revalued, revaluation, total.subtract(revaluation));
     }

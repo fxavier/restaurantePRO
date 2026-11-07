@@ -66,6 +66,7 @@ class CostCorrectionSplitTest {
         CostCorrection split = CostCorrection.split(TEN, TEN, new BigDecimal("20"), TEN, new BigDecimal("5"));
 
         assertThat(split.revaluationValue()).isEqualTo(new BigDecimal("-20.0000"));
+        assertThat(split.revaluedQuantity()).isEqualTo(new BigDecimal("4.000000"));
         assertThat(split.varianceValue()).isEqualTo(new BigDecimal("-30.0000"));
     }
 

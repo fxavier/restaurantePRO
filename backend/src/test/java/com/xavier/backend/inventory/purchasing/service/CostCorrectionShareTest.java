@@ -107,6 +107,30 @@ class CostCorrectionShareTest {
         assertThat(steps.balance(warehouse, item)).isEqualTo("5.000000|55.0000|11.000000");
     }
 
+    /**
+     * B's own return takes its own quantity off B's share; the later waste takes its proportion: 10@1, B 10@2, 5 of B
+     * returned (B keeps 5 of the 15 on hand), 5 wasted (B keeps 5 × 10/15). Correcting B to 3 revalues 3.333333.
+     */
+    @Test
+    void aReturnOfTheLineTakesItsOwnQuantityAndLaterOutsTheirProportion() throws Exception {
+        steps.confirmedReceipt(store, warehouse, supplier, item, "10", "1");
+        UUID b = steps.confirmedReceipt(store, warehouse, supplier, item, "10", "2");
+        String line = steps.get(store, "/receipts/" + b).get("lines").get(0).get("id").asString();
+        UUID returned = InventoryFixtures.id(mvc.perform(idem(post(BO + "/supplier-returns")).with(buyer(store))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"warehouseId\": \"%s\", \"goodsReceiptId\": \"%s\", \"lines\": [{\"receiptLineId\": \"%s\", \"stockItemId\": \"%s\", \"quantity\": 5}]}"
+                                .formatted(warehouse, b, line, item)))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        steps.command(store, "/supplier-returns/" + returned + "/confirm").andExpect(status().isOk());
+        steps.waste(store, warehouse, item, "5");
+
+        JsonNode correction = correct(b, "3");
+
+        assertThat(correction.get("revaluedQuantity").asString()).isEqualTo("3.333333");
+        assertThat(correction.get("revaluationValue").asString()).isEqualTo("3.3333");
+        assertThat(correction.get("varianceValue").asString()).isEqualTo("1.6667");
+    }
+
     @Test
     void aDownwardCorrectionNeverTakesTheValueBelowZero() throws Exception {
         UUID a = steps.confirmedReceipt(store, warehouse, supplier, item, "10", "10");
@@ -117,6 +141,8 @@ class CostCorrectionShareTest {
         JsonNode correction = correct(a, "5");
 
         assertThat(correction.get("revaluationValue").asDouble()).isEqualTo(-20.0);
+        assertThat(correction.get("revaluedQuantity").asDouble()).as("the quantity the capped value stands for: 20 ÷ 5")
+                .isEqualTo(4.0);
         assertThat(correction.get("varianceValue").asDouble()).isEqualTo(-30.0);
         assertThat(steps.balance(warehouse, item)).startsWith("10.000000|0.0000|");
     }

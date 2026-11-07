@@ -26,8 +26,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Stock items and their packs (D114). Company-wide, like customers: {@code INVENTORY_MANAGE} to write and
- * {@code INVENTORY_VIEW} to read, held installation-wide or in any store. Every write is audited.
+ * Stock items and their packs (D114). Company-wide data: {@code INVENTORY_MANAGE} installation-wide to write (as
+ * S20, S39, S40 and suppliers), {@code INVENTORY_VIEW} installation-wide or in any store to read. Every write is
+ * audited.
  */
 @Service
 public class StockItemService {
@@ -65,7 +66,7 @@ public class StockItemService {
 
     @Transactional
     public StockItemView create(StockItemRequest request) {
-        accessPolicy.requireInAnyStore(Permission.INVENTORY_MANAGE);
+        accessPolicy.require(Permission.INVENTORY_MANAGE);
         StockItem item = UniqueConstraints.saveAndFlush(items, StockItem.create(request.code(), request.name(),
                         units.unit(request.baseUnit()), request.kind(), clock.instant()),
                 () -> InventoryConflictException.codeTaken("STOCK_ITEM", request.code().strip()),
@@ -77,7 +78,7 @@ public class StockItemService {
 
     @Transactional
     public StockItemView update(UUID id, StockItemUpdateRequest request) {
-        accessPolicy.requireInAnyStore(Permission.INVENTORY_MANAGE);
+        accessPolicy.require(Permission.INVENTORY_MANAGE);
         StockItem item = require(id);
         OptimisticLocking.requireVersion(StockItem.class, id, item.getVersion(), request.version());
         item.update(request.code(), request.name(), request.active(), clock.instant());
@@ -98,7 +99,7 @@ public class StockItemService {
 
     @Transactional
     public PackView addPack(UUID id, PackRequest request) {
-        accessPolicy.requireInAnyStore(Permission.INVENTORY_MANAGE);
+        accessPolicy.require(Permission.INVENTORY_MANAGE);
         StockItem item = require(id);
         StockItemPack pack = UniqueConstraints.saveAndFlush(packs, StockItemPack.create(id, request.code(),
                         request.name(), units.toBase(request.quantity(), request.unit(), item.getBaseUnit())),

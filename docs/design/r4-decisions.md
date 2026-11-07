@@ -195,6 +195,8 @@ As before, every transition is a method on the aggregate, and an illegal transit
 
 **D125 amendment (S48 review, 2026-11-07).**
 - *Cost correction share.* `min(received, on hand)` is replaced: a correction revalues only **that receipt line's own share still in stock under the moving average**. The share starts at the line's quantity (less any negative stock it covered), and every later OUT of the same warehouse and item, in `posting_seq` order, keeps `1 − |out| ÷ quantity before it` of it. A return linked to the line takes its own quantity off the share and is not counted again in the product (its quantity still lowers the quantity on hand for the OUTs after it). The share is replayed from the ledger under the balance row's lock. The REVALUATION (`share × Δ`) is capped so the balance value never goes below 0, and everything not revalued of `(received − returned) × Δ` is a `CostVariance`. The new cost is per the line's purchase unit (its pack, or the base unit), as in every purchasing request.
+- *Accepted ceilings of the share* (value is always conserved through `CostVariance`): the share is a moving-average approximation, and **INs never give share back**: a reversal or an IN at the average after the receipt does not restore it. A return linked to receipt line B is B's own for B, and proportional for every other line.
+- *Value floor.* When the floor caps the REVALUATION, `revalued_quantity` records the quantity the capped value stands for (`revaluation ÷ Δ`, scale 6), so the correction record is self-consistent.
 - *Linked returns.* The `SUPPLIER_RETURN` OUT stays at the average (D113; S42), with the receipt line's cost kept for reference. `(average − receipt cost) × quantity` is booked as a `CostVariance` of that receipt line, so the supplier's credit difference is recorded (10@1 on hand, 10 received at 2 and returned: OUT −15, variance −5, credit 20). `cost_variance` names its receipt line and exactly one source: a correction or a return line (V13044).
 - *Sign convention* (one rule, inherited by S53): a positive `cost_variance.value` always means **more cost of goods**, a negative one less. Corrections: the consumed share of `(new − previous) × quantity` (positive when the cost was understated). Linked returns: `(average − receipt cost) × quantity`. The purchases report values a return at the supplier's credit, `|OUT value| − variance`.
 - *Suppliers* are company-wide configuration: writes (create, update and deactivate, supplier items) need `PURCHASE_MANAGE` installation-wide; reads need it in any store (S39, S40 precedent). A receipt's last-cost update is a fact of the receipt.
@@ -303,7 +305,7 @@ As before, every transition is a method on the aggregate, and an illegal transit
 | `GOODS_RECEIVE` | receipts, returns, cost corrections | ✓ | | | | ✓ | |
 | `INVENTORY_REBUILD` | balance rebuild, exception reprocess | | | | | | |
 
-Store scope as before: warehouses, counts, transfers, receipts and purchase orders belong to a store (D42). Suppliers, stock items, recipes and the loyalty program are company-wide (`requireInAnyStore`, as customers).
+Store scope as before: warehouses, counts, transfers, receipts and purchase orders belong to a store (D42). Suppliers, stock items, recipes and the loyalty program are company-wide: reads use `requireInAnyStore` (as customers); writes to suppliers and stock items need the permission installation-wide (`accessPolicy.require(X)`, as S20, S39, S40; D125 amendment).
 
 ---
 
