@@ -54,11 +54,15 @@ class RewardRedemptionTest {
     JdbcClient jdbc;
 
     @Autowired
+    com.xavier.backend.orders.OrdersPromotions promotions;
+
+    @Autowired
     PlatformTransactionManager transactionManager;
 
     final UUID operator = UUID.randomUUID();
     final UUID terminal = UUID.randomUUID();
     String reward;
+    String amountOff;
     Shop shop;
     UUID order;
     UUID line;
@@ -78,7 +82,9 @@ class RewardRedemptionTest {
         Instant now = Instant.now();
         clock.pin(latest == null || latest.isBefore(now) ? now : latest.plusSeconds(1));
         reward = "FREE" + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
-        loyalty.publishProgram("1.00", 1, LoyaltyFixtures.reward(reward, 10, "FREE_UNIT", null, null, null));
+        amountOff = "OFF" + reward.substring(4);
+        loyalty.publishProgram("1.00", 1, LoyaltyFixtures.reward(reward, 10, "FREE_UNIT", null, null, null),
+                LoyaltyFixtures.reward(amountOff, 10, "AMOUNT_OFF_UNIT", "2.00", null, null));
         member = loyalty.member();
         loyalty.earn(member, UUID.randomUUID(), "50.00");
         shop = fixtures.shop();
@@ -166,6 +172,66 @@ class RewardRedemptionTest {
         assertThat(redeemReversals(rewarded)).isOne();
     }
 
+    // D112a: the redemption is reversed once, by the void that leaves the reward's lineage with net quantity 0
+
+    @Test
+    void halfAndHalfVoidsOfARewardedUnitGiveThePointsBackOnceOnTheSecond() throws Exception {
+        customer(1, member).andExpect(status().isOk());
+        redeem(2, "1").andExpect(status().isOk());
+        UUID rewarded = rewardedLine();
+
+        voidOn(order, rewarded, "0.5");
+        assertThat(loyalty.balance(member)).as("half a unit still carries the reward").isEqualTo(40);
+        voidOn(order, rewarded, "0.5");
+
+        assertThat(loyalty.balance(member)).isEqualTo(50);
+        assertThat(redeemReversals(rewarded)).isOne();
+    }
+
+    @Test
+    void aRewardedUnitTransferredInPartIsReversedWhenBothPartsAreVoided() throws Exception {
+        customer(1, member).andExpect(status().isOk());
+        redeem(2, "1").andExpect(status().isOk());
+        UUID rewarded = rewardedLine();
+        UUID target = fixtures.openedAt(shop, fixtures.newTable(shop, "M2"), operator, terminal);
+        fixtures.transfer(shop, order, 3, target, 0, java.util.Map.of(rewarded, "0.4"), false, operator, terminal,
+                UUID.randomUUID().toString()).andExpect(status().isCreated());
+
+        voidOn(order, rewarded, "0.6");
+        assertThat(loyalty.balance(member)).isEqualTo(40);
+        voidOn(target, copyOf(target, rewarded), "0.4");
+
+        assertThat(loyalty.balance(member)).isEqualTo(50);
+        assertThat(redeemReversals(rewarded)).isOne();
+    }
+
+    @Test
+    void afterASplitOfARewardedUnitOnlyVoidingBothSidesGivesThePointsBack() throws Exception {
+        customer(1, member).andExpect(status().isOk());
+        fixtures.discount(shop, order, """
+                        {"orderVersion": 2, "lines": [{"lineId": "%s", "quantity": 1}], "kind": "REWARD",
+                         "rewardCode": "%s", "reason": "loyalty"}""".formatted(line, amountOff), operator, terminal,
+                        Permission.LOYALTY_REDEEM, null)
+                .andExpect(status().isOk());
+        UUID rewarded = rewardedLine();
+        promotions.limits(shop.store(), "50", "50");
+        promotions.publish(shop.store());
+        fixtures.discount(shop, order, """
+                        {"orderVersion": 3, "lines": [{"lineId": "%s", "quantity": 0.5}], "kind": "DISCOUNT",
+                         "unitPrice": 10.00, "reason": "regular"}""".formatted(rewarded), operator, terminal,
+                        Permission.ORDER_DISCOUNT, null)
+                .andExpect(status().isOk());
+        UUID side = jdbc.sql("SELECT target_line_id FROM orders.order_line_split WHERE source_line_id = ?")
+                .param(rewarded).query(UUID.class).single();
+
+        voidOn(order, side, "0.5");
+        assertThat(loyalty.balance(member)).isEqualTo(40);
+        voidOn(order, rewarded, "0.5");
+
+        assertThat(loyalty.balance(member)).isEqualTo(50);
+        assertThat(redeemReversals(rewarded)).isOne();
+    }
+
     UUID rewardedLine() {
         return jdbc.sql("SELECT target_line_id FROM orders.order_line_split WHERE source_line_id = ?")
                 .param(line).query(UUID.class).single();
@@ -177,10 +243,14 @@ class RewardRedemptionTest {
     }
 
     void voidOn(UUID target, UUID copy) {
+        voidOn(target, copy, "1");
+    }
+
+    void voidOn(UUID target, UUID lineId, String quantity) {
         long version = ordersApi.billingView(target).version();
         OrdersActors.runAsPos(shop.store(), operator, terminal, () -> new TransactionTemplate(transactionManager)
-                .execute(status -> ordersApi.voidLine(new SettledVoidCommand(target, version, copy, BigDecimal.ONE,
-                        "wrong dish", false, operator), UUID.randomUUID())));
+                .execute(status -> ordersApi.voidLine(new SettledVoidCommand(target, version, lineId,
+                        new BigDecimal(quantity), "wrong dish", false, operator), UUID.randomUUID())));
     }
 
     long redeemReversals(UUID rewardedLine) {

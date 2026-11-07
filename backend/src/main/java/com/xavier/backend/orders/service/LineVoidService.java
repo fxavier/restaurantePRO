@@ -152,10 +152,13 @@ public class LineVoidService {
         line.requireAvailable(views.deducted(line), quantity);
         OrderLineVoid voided = voids.saveAndFlush(OrderLineVoid.of(line, quantity, reason, wasted, operatorId,
                 approverId, terminalId, clock.instant()));
-        // D112a: the points come back with the void, from the line that holds the reward (the voided line or the
-        // one it was transferred or split from), to the customer the REDEEM entry names
-        adjustments.findRewardOrigins(List.of(line.getId())).forEach(origin ->
-                loyalty.reverseRedemption(origin.getRewardedLineId(), voided.getId()));
+        // D112a: the points come back once, with the void that leaves the reward's lineage (the line holding it and
+        // its transferred and split copies) at net 0, to the customer the REDEEM entry names; earlier partial voids
+        // return nothing, because units still carry the reward
+        adjustments.findRewardOrigins(List.of(line.getId())).stream()
+                .map(OrderLinePriceAdjustmentRepository.RewardOrigin::getRewardedLineId)
+                .filter(rewarded -> adjustments.rewardLineageNet(rewarded).signum() == 0)
+                .forEach(rewarded -> loyalty.reverseRedemption(rewarded, voided.getId()));
         LineSnapshot snapshot = line.snapshot().orElseThrow();
         events.publishEvent(new OrderLinesVoided(order.getId(), voided.getId(), order.getStoreId(), terminalId,
                 order.getOrderNumber(), order.getTableCode(), new Line(line.getId(), snapshot.itemCode(),

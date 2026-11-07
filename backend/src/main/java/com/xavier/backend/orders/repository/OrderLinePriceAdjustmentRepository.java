@@ -47,6 +47,32 @@ public interface OrderLinePriceAdjustmentRepository extends JpaRepository<OrderL
             ORDER BY o.start_id, o.depth""", nativeQuery = true)
     List<RewardOrigin> findRewardOrigins(@Param("lineIds") Collection<UUID> lineIds);
 
+    /**
+     * D112a: the net quantity the reward on {@code rewardedLineId} still rides on: that line and every line moved off
+     * it, by a transfer or split recorded at or after the reward, and off those in turn; each line's quantity minus
+     * its voids, transfers out and splits out.
+     */
+    @Query(value = """
+            WITH RECURSIVE lineage (line_id) AS (
+                SELECT CAST(:rewardedLineId AS UUID)
+                UNION
+                SELECT e.target_line_id
+                FROM lineage g
+                JOIN (SELECT tl.source_line_id, tl.target_line_id, t.transferred_at AS at
+                      FROM orders.order_transfer_line tl JOIN orders.order_transfer t ON t.id = tl.transfer_id
+                      UNION ALL
+                      SELECT s.source_line_id, s.target_line_id, s.at FROM orders.order_line_split s) e
+                    ON e.source_line_id = g.line_id
+                WHERE e.at >= (SELECT min(a.at) FROM orders.order_line_price_adjustment a
+                               WHERE a.line_id = :rewardedLineId AND a.kind = 'REWARD'))
+            SELECT COALESCE(sum(l.quantity
+                - COALESCE((SELECT sum(v.quantity) FROM orders.order_line_void v WHERE v.line_id = l.id), 0)
+                - COALESCE((SELECT sum(t.quantity) FROM orders.order_transfer_line t WHERE t.source_line_id = l.id), 0)
+                - COALESCE((SELECT sum(s.quantity) FROM orders.order_line_split s WHERE s.source_line_id = l.id), 0)),
+                0)
+            FROM lineage g JOIN orders.order_line l ON l.id = g.line_id""", nativeQuery = true)
+    java.math.BigDecimal rewardLineageNet(@Param("rewardedLineId") UUID rewardedLineId);
+
     interface RewardOrigin {
         UUID getLineId();
 
