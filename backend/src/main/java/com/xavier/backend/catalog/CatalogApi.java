@@ -19,6 +19,7 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -61,6 +62,14 @@ public class CatalogApi {
     public CatalogSnapshot currentSnapshot(UUID storeId) {
         return parse(releases.findByStoreIdAndStatus(storeId, ReleaseStatus.PUBLISHED)
                 .orElseThrow(() -> new NoPublishedCatalogException(storeId)));
+    }
+
+    /**
+     * The catalog the store sells from now, or empty when it has never published. Never throws, so a caller's
+     * transaction is never marked for rollback by a missing catalog (orders opening an order, D109).
+     */
+    public Optional<CatalogSnapshot> findCurrentSnapshot(UUID storeId) {
+        return releases.findByStoreIdAndStatus(storeId, ReleaseStatus.PUBLISHED).map(this::parse);
     }
 
     /**

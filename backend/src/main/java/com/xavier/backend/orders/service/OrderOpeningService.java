@@ -4,12 +4,6 @@ import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.PosContext;
 import com.xavier.backend.catalog.CatalogApi;
-import com.xavier.backend.shared.exception.NotFoundException;
-import com.xavier.backend.catalog.model.dto.CatalogSnapshot;
-import java.util.Optional;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.TransactionDefinition;
-import org.springframework.transaction.support.TransactionTemplate;
 import com.xavier.backend.dining.DiningApi;
 import com.xavier.backend.dining.model.dto.OccupationView;
 import com.xavier.backend.organization.BusinessDays;
@@ -47,7 +41,6 @@ public class OrderOpeningService {
     private final OrganizationApi organization;
     private final CatalogApi catalog;
     private final DraftLineService drafts;
-    private final TransactionTemplate ownReadOnly;
     private final AccessPolicy accessPolicy;
     private final OrderChanges changes;
     private final OrderViews views;
@@ -55,13 +48,10 @@ public class OrderOpeningService {
 
     OrderOpeningService(OrderRepository orders, OrderLookup lookup, DiningApi dining, OrganizationApi organization,
                         CatalogApi catalog, DraftLineService drafts, AccessPolicy accessPolicy,
-                        OrderChanges changes, OrderViews views, PlatformTransactionManager transactionManager,
+                        OrderChanges changes, OrderViews views,
                         Clock clock) {
         this.catalog = catalog;
         this.drafts = drafts;
-        this.ownReadOnly = new TransactionTemplate(transactionManager);
-        this.ownReadOnly.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
-        this.ownReadOnly.setReadOnly(true);
         this.orders = orders;
         this.lookup = lookup;
         this.dining = dining;
@@ -112,20 +102,8 @@ public class OrderOpeningService {
             details.put("tableId", order.getTableId().toString());
         }
         changes.record("ORDER_OPENED", order, details);
-        publishedCatalog(order.getStoreId())
+        catalog.findCurrentSnapshot(order.getStoreId()) // none published: no automatic drafts, as in R1–R3
                 .ifPresent(current -> drafts.addAutomatic(order, current, pos.employeeId()));
-    }
-
-    /**
-     * The store's published catalog, or empty when it has none (an order still opens, as in R1–R3). Read in its own
-     * read-only transaction: the catalog's 404 would otherwise mark the opening's transaction rollback-only.
-     */
-    private Optional<CatalogSnapshot> publishedCatalog(UUID storeId) {
-        try {
-            return Optional.ofNullable(ownReadOnly.execute(status -> catalog.currentSnapshot(storeId)));
-        } catch (NotFoundException noPublishedCatalog) {
-            return Optional.empty();
-        }
     }
 
     private StoreSummary store(PosContext pos) {
