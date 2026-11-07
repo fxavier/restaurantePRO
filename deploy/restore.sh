@@ -13,9 +13,14 @@
 # how to recover. Configuration files are not touched: extract them by hand
 # (see deploy/README.md, "Restore drill").
 #
-# Usage: deploy/restore.sh [--force] [--container NAME] [--db NAME] [--identity AGE_KEY_FILE] ARCHIVE
+# Usage: deploy/restore.sh [--force] [--container NAME] [--other-installation PROJECT] [--db NAME]
+#                          [--identity AGE_KEY_FILE] ARCHIVE
 #   --force      replace a non-empty target database entirely (drops it, open connections included)
 #   --container  postgres container (default: the compose service "postgres" of deploy/compose.yaml)
+#   --other-installation  the target container belongs to Compose project PROJECT, another installation than
+#                this one (COMPOSE_PROJECT_NAME, else the env file, else compose.yaml's name). Without it such a
+#                container is refused, with or without --force; with it only that exact project is accepted,
+#                with a WARNING. Containers Compose does not manage (throwaway, pitr-restore.sh) are allowed
 #   --db         target database (default: restaurantpro)
 #   --identity   age identity file, needed for .age archives (default: $BACKUP_AGE_IDENTITY). It must be
 #                yours, mode 0600 or 0400, and outside deploy/ and the archive's directory (D98 rule 2):
@@ -28,6 +33,7 @@ DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DB_USER=restaurantpro
 db=restaurantpro
 force=false
+other_installation=""
 container=""
 identity="${BACKUP_AGE_IDENTITY:-}"
 archive=""
@@ -44,6 +50,7 @@ while (($#)); do
   case "$1" in
     --force) force=true; shift ;;
     --container) container="${2:?--container needs a value}"; shift 2 ;;
+    --other-installation) other_installation="${2:?--other-installation needs a value}"; shift 2 ;;
     --db) db="${2:?--db needs a value}"; shift 2 ;;
     --identity) identity="${2:?--identity needs a value}"; shift 2 ;;
     -h | --help) awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0" >&2; exit 0 ;;
@@ -51,7 +58,7 @@ while (($#)); do
     *) [[ -z "$archive" ]] || die "only one archive allowed"; archive="$1"; shift ;;
   esac
 done
-[[ -n "$archive" ]] || die "usage: restore.sh [--force] [--container NAME] [--db NAME] [--identity FILE] ARCHIVE"
+[[ -n "$archive" ]] || die "usage: restore.sh [--force] [--container NAME] [--other-installation PROJECT] [--db NAME] [--identity FILE] ARCHIVE"
 [[ -f "$archive" ]] || die "archive not found: $archive"
 env_mode
 sidecar="${archive%.age}"
@@ -71,6 +78,7 @@ if [[ -z "$container" ]]; then
   container="$(docker compose -f "$DEPLOY_DIR/compose.yaml" ps -q postgres)"
   [[ -n "$container" ]] || die "postgres service is not running (start it or pass --container)"
 fi
+require_own_installation "$container" "$other_installation" # before anything reads or writes the target
 
 psql_in() { local d=$1; shift; docker exec -i "$container" psql -X -q -At -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$d" "$@"; }
 admin() { psql_in postgres -c "$1"; }
