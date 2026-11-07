@@ -30,9 +30,9 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 /** D60: a publication tells the store's POS clients to re-read the catalog, once it has committed. */
 @CatalogModuleTest
 @Import(CatalogNoticeHttpTest.NoticeStream.class)
-class CatalogNoticeHttpTest {
+public class CatalogNoticeHttpTest {
 
-    static final String CATALOG_NOTICE = "data:{\"topic\":\"CATALOG\"}";
+    public static final String CATALOG_NOTICE = "data:{\"topic\":\"CATALOG\"}";
 
     @Autowired
     MockMvc mvc;
@@ -90,9 +90,9 @@ class CatalogNoticeHttpTest {
      * subscribes straight to {@link ChangeNotifier}, so the real after-commit path is what the test observes.
      */
     @RestController
-    static class NoticeStream {
+    public static class NoticeStream {
 
-        static final String PATH = "/test-only/catalog-notices/";
+        public static final String PATH = "/test-only/catalog-notices/";
 
         private final ChangeNotifier notifier;
 
