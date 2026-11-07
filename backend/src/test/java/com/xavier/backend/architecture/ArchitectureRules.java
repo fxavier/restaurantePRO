@@ -167,42 +167,28 @@ final class ArchitectureRules {
                 noOtherModuleDependsOn(root, "reporting",
                         "reporting is a read-only projection: nothing depends on it (D65, spec §8.1)")
                         .allowEmptyShould(true),
-                // D99 (R4); allowEmptyShould: promotions and inventory are skeletons until Group 1
-                mustNotDependOn(root, "promotions", "orders", PROMOTIONS_GET_THEIR_FACTS_PASSED)
-                        .allowEmptyShould(true),
-                mustNotDependOn(root, "promotions", "settlement", PROMOTIONS_GET_THEIR_FACTS_PASSED)
-                        .allowEmptyShould(true),
-                mustNotDependOn(root, "promotions", "fiscal", PROMOTIONS_GET_THEIR_FACTS_PASSED)
-                        .allowEmptyShould(true),
-                mustNotDependOn(root, "promotions", "cash", PROMOTIONS_GET_THEIR_FACTS_PASSED).allowEmptyShould(true),
-                mustNotDependOn(root, "promotions", "production", PROMOTIONS_GET_THEIR_FACTS_PASSED)
-                        .allowEmptyShould(true),
-                mustNotDependOn(root, "promotions", "inventory", PROMOTIONS_GET_THEIR_FACTS_PASSED)
-                        .allowEmptyShould(true),
-                mustNotDependOn(root, "promotions", "dining", PROMOTIONS_GET_THEIR_FACTS_PASSED)
-                        .allowEmptyShould(true),
-                mustNotDependOn(root, "promotions", "reporting", PROMOTIONS_GET_THEIR_FACTS_PASSED)
-                        .allowEmptyShould(true),
-                mustNotDependOn(root, "inventory", "settlement", INVENTORY_READS_ORDER_AND_CATALOG_FACTS)
-                        .allowEmptyShould(true),
-                mustNotDependOn(root, "inventory", "fiscal", INVENTORY_READS_ORDER_AND_CATALOG_FACTS)
-                        .allowEmptyShould(true),
-                mustNotDependOn(root, "inventory", "cash", INVENTORY_READS_ORDER_AND_CATALOG_FACTS)
-                        .allowEmptyShould(true),
-                mustNotDependOn(root, "inventory", "customers", INVENTORY_READS_ORDER_AND_CATALOG_FACTS)
-                        .allowEmptyShould(true),
-                mustNotDependOn(root, "inventory", "promotions", INVENTORY_READS_ORDER_AND_CATALOG_FACTS)
-                        .allowEmptyShould(true),
-                mustNotDependOn(root, "inventory", "dining", INVENTORY_READS_ORDER_AND_CATALOG_FACTS)
-                        .allowEmptyShould(true),
-                mustNotDependOn(root, "inventory", "production", INVENTORY_READS_ORDER_AND_CATALOG_FACTS)
-                        .allowEmptyShould(true),
+                // D99 (R4). No allowEmptyShould: promotions and inventory are real modules, so a rule that checks
+                // no class fails (A53, ArchitectureRulesFireTest.noD99RuleCanPassVacuously)
+                mustNotDependOn(root, "promotions", "orders", PROMOTIONS_GET_THEIR_FACTS_PASSED),
+                mustNotDependOn(root, "promotions", "settlement", PROMOTIONS_GET_THEIR_FACTS_PASSED),
+                mustNotDependOn(root, "promotions", "fiscal", PROMOTIONS_GET_THEIR_FACTS_PASSED),
+                mustNotDependOn(root, "promotions", "cash", PROMOTIONS_GET_THEIR_FACTS_PASSED),
+                mustNotDependOn(root, "promotions", "production", PROMOTIONS_GET_THEIR_FACTS_PASSED),
+                mustNotDependOn(root, "promotions", "inventory", PROMOTIONS_GET_THEIR_FACTS_PASSED),
+                mustNotDependOn(root, "promotions", "dining", PROMOTIONS_GET_THEIR_FACTS_PASSED),
+                mustNotDependOn(root, "promotions", "reporting", PROMOTIONS_GET_THEIR_FACTS_PASSED),
+                mustNotDependOn(root, "inventory", "settlement", INVENTORY_READS_ORDER_AND_CATALOG_FACTS),
+                mustNotDependOn(root, "inventory", "fiscal", INVENTORY_READS_ORDER_AND_CATALOG_FACTS),
+                mustNotDependOn(root, "inventory", "cash", INVENTORY_READS_ORDER_AND_CATALOG_FACTS),
+                mustNotDependOn(root, "inventory", "customers", INVENTORY_READS_ORDER_AND_CATALOG_FACTS),
+                mustNotDependOn(root, "inventory", "promotions", INVENTORY_READS_ORDER_AND_CATALOG_FACTS),
+                mustNotDependOn(root, "inventory", "dining", INVENTORY_READS_ORDER_AND_CATALOG_FACTS),
+                mustNotDependOn(root, "inventory", "production", INVENTORY_READS_ORDER_AND_CATALOG_FACTS),
                 mustNotDependOn(root, "orders", "inventory",
                         "stock consumes order facts through events; confirming a sale never waits on stock (D99, "
-                                + "spec §5)").allowEmptyShould(true),
+                                + "spec §5)"),
                 noOtherModuleExceptDependsOn(root, "inventory", "reporting",
-                        "a financial reversal never restores stock: only reporting reads inventory (D99, spec §8.4)")
-                        .allowEmptyShould(true),
+                        "a financial reversal never restores stock: only reporting reads inventory (D99, spec §8.4)"),
         };
     }
 
