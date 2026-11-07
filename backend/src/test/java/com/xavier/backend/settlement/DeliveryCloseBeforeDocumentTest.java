@@ -14,7 +14,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 /**
  * D127, P48 (S50 review, binding): settlement's close of a DELIVERY order that is not DELIVERED is refused with 422
  * {@code DELIVERY_NOT_DELIVERED} before s1, so no document is drafted or issued and the order is not frozen: the
- * close is not left half done. Paying in advance stays allowed; once DELIVERED the same close succeeds.
+ * close is not left half done. {@code POST /documents} refuses the same way (P48: no document before delivery).
+ * Paying in advance stays allowed; once DELIVERED the same close, or the document, succeeds.
  */
 @SettlementModuleTest
 class DeliveryCloseBeforeDocumentTest {
@@ -51,6 +52,28 @@ class DeliveryCloseBeforeDocumentTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.lifecycle").value("CLOSED"))
                 .andExpect(jsonPath("$.fiscalState").value("ISSUED"));
+        assertThat(fixtures.documents(sale.order())).isOne();
+    }
+
+    @Test
+    void theDocumentOfADeliveryOrderIsIssuedOnlyOnceItIsDelivered() throws Exception {
+        DeliverySale delivery = fixtures.deliverySale(customers);
+        Sale sale = delivery.sale();
+        delivery.deliveries().dispatch(delivery.shop(), sale.order(), 0, delivery.shop().courier())
+                .andExpect(status().isOk());
+
+        fixtures.issue(sale.cashier(), sale.order(), UUID.randomUUID().toString())
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("DELIVERY_NOT_DELIVERED"));
+
+        assertThat(fixtures.documents(sale.order())).as("no document drafted or issued").isZero();
+        assertThat(fixtures.count("SELECT count(*) FROM orders.order_header WHERE id = ? AND billing_lock = "
+                + "'INVOICE'", sale.order())).as("the order is not frozen").isZero();
+
+        delivery.deliveries().delivered(delivery.shop(), sale.order(), 1).andExpect(status().isOk());
+        fixtures.issue(sale.cashier(), sale.order(), UUID.randomUUID().toString())
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("ISSUED"));
         assertThat(fixtures.documents(sale.order())).isOne();
     }
 }
