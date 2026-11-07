@@ -1,0 +1,8 @@
+# Override for the isolation drill (deploy/test-two-installations.sh): each installation reads its secrets
+# from its own directory, outside deploy/, instead of deploy/secrets/. A real installation has its own deploy/
+# copy, so its secrets/ is already its own; the drill runs two installations from one checkout.
+secrets:
+  db_password:
+    file: ${RP_ISOLATION_SECRETS:?the drill sets the installation's secret directory}/db_password
+  admin_initial_password:
+    file: ${RP_ISOLATION_SECRETS:?the drill sets the installation's secret directory}/admin_initial_password
