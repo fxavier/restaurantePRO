@@ -1,0 +1,2 @@
+# Load smoke reports (load-<UTC>.json): run output, not source.
+reports/

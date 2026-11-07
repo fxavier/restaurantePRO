@@ -24,7 +24,7 @@ Canonical terms from spec §8.1. Code uses the English name; the Portuguese term
 | PriceList / ItemPrice | Lista de preço / Preço | catalog | Price per item(-variant) per list. |
 | ProductionDestination | Destino de produção | catalog (reference), production (R2) | Kitchen/bar/pantry zone an item is routed to. |
 | ConfigurationRelease | Publicação | catalog | Frozen catalog snapshot: DRAFT → VALIDATED → PUBLISHED → RETIRED. |
-| Order | Pedido / conta | orders | One bill of a store: DINE_IN (at a table), COUNTER or TAKEAWAY. Lifecycle OPEN → CLOSED (only via settlement) or OPEN → CANCELLED (nothing billed). Its business day is fixed at opening. |
+| Order | Pedido / conta | orders | One bill of a store: DINE_IN (at a table), COUNTER, TAKEAWAY or DELIVERY (R4: no table, customer required). Lifecycle OPEN → CLOSED (only via settlement) or OPEN → CANCELLED (nothing billed). Its business day is fixed at opening. |
 | OrderLine (DRAFT / CONFIRMED) | Linha (rascunho / confirmada) | orders | A DRAFT line is server-side and may be edited or deleted; it is not a fact. A CONFIRMED line carries its snapshot and is immutable (DB trigger). |
 | OrderBatch | Ronda / lote | orders | A round: the drafts confirmed together, numbered per order. CONFIRMED → DISPATCHED once production received it. Never re-sent. |
 | Line snapshot | Instantâneo da linha | orders | Item, variant, code, description, unit price, tax category, code and rate, release, catalog version and destination, copied from the catalog snapshot at confirmation. Republishing never changes it. |
@@ -92,6 +92,54 @@ Canonical terms from spec §8.1. Code uses the English name; the Portuguese term
 | SalesRecord | Registo de venda | reporting | The projection of one issued document (lines, taxes) for reports, with payment, credit and void records; rebuilt from the facts, never a source of money or stock. |
 | Support grant | Acesso de suporte | identity | A time-limited (≤ 24 h), reasoned authorization for a support account to log in; it expires by itself, ends its sessions, and every step is audited. |
 | Operational key / recovery key | Chave operacional / de recuperação | deploy | The two age identities whose public recipients encrypt every production backup: the operational one restores weekly on a restore host; the recovery one, held by a second custodian, proves quarterly that it alone restores. Neither is ever on the server. |
+| PromotionRelease | Publicação de promoções | promotions | A store's frozen snapshot of promotions, time windows and discount limits: DRAFT → VALIDATED → PUBLISHED → RETIRED, as the catalog release. Orders reads only the published one; republishing never changes a confirmed line. |
+| Promotion | Promoção | promotions | A line-level rule in the working copy (percent off, amount off per unit or fixed unit price) with validity, windows, scope, modes and "members only". One per line, no stacking. Happy hour ("happy hour") is a promotion with a time window. |
+| Effective unit price | Preço efetivo | orders | The unit price a line is billed at after any promotion, discount, offer or reward, `0 ≤ effective ≤ list`. The only input of the amount rule; the discount amount is derived from list − effective, never stored. |
+| List unit price | Preço de tabela | orders | The catalog price of a confirmed line before any discount (`list_unit_price`; R3 lines read it as their unit price). |
+| Price adjustment | Desconto / oferta | orders | A fact on a confirmed line: DISCOUNT (percent or new price), OFFER (price 0, always approved), REWARD (loyalty) or REVERSAL (back up to the list price). The latest one sets the effective price. |
+| Price origin / discount label | Origem / etiqueta do desconto | orders | Where a line's effective price came from (promotion, manual discount, offer, reward) and the label printed under it ("Desconto 10%", "Oferta"). A copy takes its lineage's label only at that adjustment's price. |
+| Line split | Divisão de linha | orders | A fact: q units of a confirmed line moved to a new CONFIRMED line of the same order (no batch), so a discount or reward can apply to part of a line. |
+| Discount limits | Limites de desconto | promotions | Per store, in the promotion release: up to the free limit an operator discounts alone, up to the maximum with an approver, beyond it refused. Measured against the list price. |
+| Settled discount | Desconto com pagamentos | settlement, orders | A discount made while a payment is under way (`/settlement/discounts`): only on unpartitioned, uninvoiced quantity, and the residual after it must stay at or above what is already paid. |
+| LoyaltyAccount | Conta de fidelização | promotions | One per customer, company-wide, ACTIVE or SUSPENDED, enrolled explicitly. Has no balance column: the row is the lock for redemptions. |
+| LoyaltyPointLedger | Movimentos de pontos | promotions | Append-only point entries (`LoyaltyPointEntry`): EARN, REDEEM, EARN_REVERSAL, REDEEM_REVERSAL, ADJUSTMENT, EXPIRY. Balance = Σ entries; debits are allocated to earnings FIFO (`LoyaltyAllocation`). |
+| LoyaltyProgramVersion | Programa de fidelização | promotions | Company-wide earning rule (spend unit, points per unit, eligible items) and rewards: DRAFT → PUBLISHED → RETIRED. Points are earned once, at close. |
+| Reward | Prémio | promotions, orders | A redeemable benefit of the program (`FREE_UNIT` or `AMOUNT_OFF_UNIT`) on one unit of a confirmed line, paid with points. Moves with transfers and splits; reversed once, by the void that empties its lineage. |
+| Reward lineage | Linhagem do prémio | orders | The reward-holding line plus its transferred and split copies made after the reward. `RewardLineage` is the only answer to "does this line carry a reward". |
+| Menu / component | Menu / componente | catalog, orders | A catalog item of kind MENU billed as one line at the menu price; its chosen components are frozen child records with no amount, printed on their own destinations and consumed by their own recipes. |
+| Macro | Macro | catalog | A named list of items, variants and quantities in the release that a POS adds as drafts in one tap. |
+| Automatic item | Artigo automático | catalog, orders | An item the release adds as an automatic draft when a table or order opens (a cover charge per guest), or a delivery zone's fee line (kind FEE). |
+| Sold-out | Esgotado | catalog | An operational flag per store × item or variant, outside the release; a sold-out item is refused at confirmation (`ITEM_SOLD_OUT`). |
+| Daily dish | Prato do dia | catalog | An operational list of published items per store × business date, outside the release. |
+| Reservation | Reserva | dining | A booking with contact, party size, start and tables: BOOKED → SEATED, CANCELLED or NO_SHOW (automatic after the grace). Informative: it never blocks a table or a sale. |
+| Delivery | Entrega | orders | The lifecycle of a DELIVERY order: PENDING → OUT_FOR_DELIVERY → DELIVERED, or RETURNED → re-dispatch or cancel. Separate from the order's lifecycle, financial and fiscal states; the order closes only once DELIVERED. |
+| DeliveryZone | Zona de entrega | orders | A store's delivery area with its fee item, added as an automatic FEE line when a delivery order opens. |
+| DeliveryEvent | Evento de entrega | orders | A fact: one delivery transition (dispatch, delivered, returned, cancel), with who and when. The delivery history. |
+| Courier | Estafeta | orders, identity | The employee, assigned to the store, a delivery is dispatched to. Their cash is recorded by a cashier in the cashier's own session. |
+| Delivery slip | Guia de entrega | production | A non-fiscal ticket (`DELIVERY_SLIP`) printed at dispatch: customer, phone, address, items, amount due. A re-dispatch prints a new one. |
+| Warehouse | Armazém | inventory | A store's stock location (kitchen, bar store-room), with its negative-stock policy (ALLOW or REFUSE_MANUAL). |
+| StockItem | Artigo de stock | inventory | A company-wide ingredient or prepared item (PURCHASED or PREPARED) with a base unit and packs. Distinct from a catalog item. |
+| StockMovement | Movimento de stock | inventory | The record of reference: a signed quantity and value per warehouse × stock item, with its source. Immutable; unique per source. |
+| StockBalance | Saldo de stock | inventory | Quantity, value and average cost per warehouse × stock item: a projection of the movements, updated under lock in the posting transaction, reconciled nightly and rebuildable. |
+| Average cost | Custo médio | inventory | The weighted moving average of a balance. An OUT takes its proportional share of the value (−V when it empties the stock); a TRANSFER_IN carries its OUT's value. |
+| Recipe / RecipeVersion | Ficha técnica / versão | inventory | Ingredients (and packaging per mode) per catalog item or variant, or per prepared item, with a yield. ACTIVE versions are immutable; consumption uses the version effective at the line's confirmation. |
+| ConsumptionRoute | Rota de consumo | inventory | Store × production destination (or default) → warehouse: where a sold line consumes. |
+| ConsumptionPolicyVersion | Política de consumo | inventory | Per family, versioned: whether its sales are tracked in stock. |
+| Consumption | Consumo | inventory | The SALE_CONSUMPTION movements posted from a confirmed round's facts, after the fact, never blocking the sale. Transferred and split lines are never consumed again. |
+| ConsumptionException | Exceção de consumo | inventory | A line that could not be consumed (no recipe, no route, inactive item): visible and reprocessed after the fix, never skipped silently. |
+| Waste share | Parte de desperdício | inventory | The cost of a voided-with-waste quantity, reclassified from sale to waste (`waste_record`) with no stock movement. A void without waste reverses the consumption instead. |
+| Preparation | Preparação | inventory | Producing a prepared item from its recipe: ingredient OUTs and one PREPARATION_IN valued at their sum, in one transaction. |
+| StockCount | Inventário (contagem) | inventory | A count of a warehouse with a cut-off per line: DRAFT → IN_PROGRESS → SUBMITTED → APPROVED or REJECTED. Approval posts counted − expected. The first is the OPENING count, which makes the store live. |
+| InventoryActivation | Ativação do stock | inventory | A store's go-live instant: only lines confirmed at or after it are consumed; history is never backfilled. Never in the past. |
+| StockTransfer | Transferência de stock | inventory | Goods moved between warehouses (same store at once; between stores ship, then receive, a shortfall posted as TRANSFER_SHORTAGE). Unrelated to order transfers. |
+| Supplier | Fornecedor | inventory | Company-wide supplier, with its items' codes and last cost. Written only with the permission installation-wide. |
+| PurchaseOrder | Encomenda (a fornecedor) | inventory | DRAFT → SUBMITTED → CLOSED or CANCELLED. Changes no stock; receipt progress (NONE, PARTIAL, FULL) is derived. |
+| GoodsReceipt | Receção | inventory | What arrived, per warehouse, optionally against a purchase order: DRAFT → CONFIRMED. Only confirmation posts RECEIPT movements. Partial receipts are separate receipts. |
+| SupplierReturn | Devolução a fornecedor | inventory | Goods sent back: SUPPLIER_RETURN OUTs at the average; when linked to a receipt line, the difference to the receipt cost is a cost variance. |
+| Cost correction | Correção de custo | inventory | A later price difference on a confirmed receipt line: a REVALUATION of the line's share still in stock, the rest a cost variance. The receipt is never edited. |
+| Cost variance | Desvio de custo | inventory, reporting | The part of a cost correction or linked return that is not revalued in stock. Positive = more cost of goods. Part of the margin. |
+| Cost of sales | Custo das vendas | reporting | SALE_CONSUMPTION − CONSUMPTION_REVERSAL value of a store × business day × item or family, plus cost variance; net sales minus it is the margin. Waste is a separate column. |
+| Cost of offers | Custo das ofertas | reporting | The consumption cost of offered lines (OFFER origin at unit price 0). |
 | AuditEvent | Evento de auditoria | audit | Append-only record: actor, approver, action, entity, store, terminal, instant, reason. |
 | Money | Valor monetário | shared | BigDecimal + Currency, HALF_UP at line level, largest-remainder allocation. |
 | IdempotencyRecord | Chave de idempotência | shared | Stored (scope, key, request hash, response) for repeatable commands. |

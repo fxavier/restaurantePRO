@@ -29,10 +29,6 @@ include::module-catalog.adoc[]
 plantuml::module-customers.puml[,,format=svg]
 include::module-customers.adoc[]
 
-== Dining
-plantuml::module-dining.puml[,,format=svg]
-include::module-dining.adoc[]
-
 == Fiscal
 plantuml::module-fiscal.puml[,,format=svg]
 include::module-fiscal.adoc[]
@@ -45,9 +41,21 @@ include::module-identity.adoc[]
 plantuml::module-cash.puml[,,format=svg]
 include::module-cash.adoc[]
 
+== Dining
+plantuml::module-dining.puml[,,format=svg]
+include::module-dining.adoc[]
+
+== Promotions
+plantuml::module-promotions.puml[,,format=svg]
+include::module-promotions.adoc[]
+
 == Orders
 plantuml::module-orders.puml[,,format=svg]
 include::module-orders.adoc[]
+
+== Inventory
+plantuml::module-inventory.puml[,,format=svg]
+include::module-inventory.adoc[]
 
 == Settlement
 plantuml::module-settlement.puml[,,format=svg]

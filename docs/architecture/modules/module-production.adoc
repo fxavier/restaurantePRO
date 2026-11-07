@@ -10,10 +10,11 @@
 * `c.x.b.o.OrganizationApi` (in Organization)
 * `c.x.b.o.OrdersProductionApi` (in Orders)
 |Events listened to
-|* `c.x.b.o.model.event.OrderBatchConfirmed` (async) 
-* `c.x.b.o.model.event.OrderLinesVoided` (async) 
-* `c.x.b.f.model.event.FiscalDocumentReprintRequested` (async) 
-* `c.x.b.o.model.event.SubtotalRequested` (async) 
+|* `c.x.b.o.model.event.DeliveryDispatched` (async) 
+* `c.x.b.o.model.event.OrderBatchConfirmed` (async) 
 * `c.x.b.f.model.event.FiscalDocumentIssued` (async) 
+* `c.x.b.o.model.event.OrderLinesVoided` (async) 
+* `c.x.b.o.model.event.SubtotalRequested` (async) 
+* `c.x.b.f.model.event.FiscalDocumentReprintRequested` (async) 
 * `c.x.b.s.model.event.ReceiptSlipRequested` (async) 
 |===
