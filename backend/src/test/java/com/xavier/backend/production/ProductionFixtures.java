@@ -170,7 +170,12 @@ public class ProductionFixtures {
 
     /** Runs the worker until {@code condition} holds (sends are asynchronous), for up to 20 s. */
     public void runWorkerUntil(BooleanSupplier condition, String what) throws InterruptedException {
-        long deadline = System.nanoTime() + Duration.ofSeconds(20).toNanos();
+        runWorkerUntil(condition, what, Duration.ofSeconds(20));
+    }
+
+    /** As {@link #runWorkerUntil(BooleanSupplier, String)}, for a send that is slow by design. */
+    public void runWorkerUntil(BooleanSupplier condition, String what, Duration within) throws InterruptedException {
+        long deadline = System.nanoTime() + within.toNanos();
         while (!condition.getAsBoolean()) {
             if (System.nanoTime() > deadline) {
                 throw new AssertionError("Timed out waiting for: " + what);
