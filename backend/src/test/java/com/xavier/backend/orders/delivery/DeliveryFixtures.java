@@ -219,6 +219,17 @@ public class DeliveryFixtures {
                 FROM orders.order_line l WHERE l.order_id = ? AND l.status = 'CONFIRMED'""").param(order).update();
     }
 
+    /** Voids the whole of the order's confirmed lines of {@code item}, as S14 writes a void fact. */
+    public void voidItem(UUID order, UUID item) {
+        jdbc.sql("""
+                INSERT INTO orders.order_line_void (id, order_id, line_id, quantity, reason, wasted,
+                    operator_employee_id, approver_employee_id, terminal_id, voided_at)
+                SELECT gen_random_uuid(), l.order_id, l.id, l.quantity, 'wrong zone', false, gen_random_uuid(),
+                    gen_random_uuid(), gen_random_uuid(), now()
+                FROM orders.order_line l WHERE l.order_id = ? AND l.item_id = ? AND l.status = 'CONFIRMED'""")
+                .param(order).param(item).update();
+    }
+
     public static List<JsonNode> list(JsonNode array) {
         return StreamSupport.stream(array.spliterator(), false).toList();
     }

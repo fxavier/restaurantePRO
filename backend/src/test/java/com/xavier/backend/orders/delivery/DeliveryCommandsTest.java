@@ -174,17 +174,30 @@ class DeliveryCommandsTest {
         assertThat(fees(order, "DRAFT")).containsExactly(otherFee.toString());
     }
 
+    /** An order never carries two fees: a confirmed, unvoided fee blocks a zone change until it is voided. */
     @Test
-    void aConfirmedFeeStaysOnAZoneChangeAndTheNewZonesFeeIsAdded() throws Exception {
+    void aZoneChangeWithAConfirmedFeeIsRefusedUntilTheFeeIsVoided() throws Exception {
         UUID order = deliveries.confirmedDelivery(d, employee, terminal);
         UUID otherFee = deliveries.feeItem(d.shop(), "5", "4.50");
         fixtures.republish(d.shop().store());
         UUID otherZone = deliveries.zone(d.shop(), "C" + CustomersFixtures.token().substring(0, 6), otherFee);
+        String change = "{\"version\": 0, \"zoneId\": \"%s\"}".formatted(otherZone);
 
-        update(order, "{\"version\": 0, \"zoneId\": \"%s\"}".formatted(otherZone)).andExpect(status().isOk());
+        update(order, change).andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("ZONE_FEE_CONFIRMED"));
+        assertThat(jdbc.sql("SELECT zone_id FROM orders.delivery WHERE order_id = ?").param(order).query(UUID.class)
+                .single()).isEqualTo(d.zone());
+        assertThat(deliveries.version(order)).isZero();
+        assertThat(fees(order, "DRAFT")).isEmpty();
 
-        assertThat(fees(order, "CONFIRMED")).containsExactly(d.feeItem().toString());
+        deliveries.voidItem(order, d.feeItem());
+        update(order, change).andExpect(status().isOk());
+
         assertThat(fees(order, "DRAFT")).containsExactly(otherFee.toString());
+        assertThat(fixtures.count("""
+                SELECT count(*) FROM orders.order_line l WHERE l.order_id = ? AND l.automatic AND l.quantity
+                    - COALESCE((SELECT sum(v.quantity) FROM orders.order_line_void v WHERE v.line_id = l.id), 0) > 0""",
+                order)).as("live fees").isOne();
     }
 
     @Test

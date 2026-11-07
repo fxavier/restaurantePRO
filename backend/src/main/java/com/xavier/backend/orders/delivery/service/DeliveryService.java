@@ -29,9 +29,11 @@ import com.xavier.backend.orders.repository.OrderLineRepository;
 import com.xavier.backend.orders.repository.OrderRepository;
 import com.xavier.backend.orders.service.OrderChanges;
 import com.xavier.backend.orders.service.OrderLookup;
+import com.xavier.backend.orders.service.OrderViews;
 import com.xavier.backend.shared.persistence.OptimisticLocking;
 import java.time.Clock;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.context.ApplicationEventPublisher;
@@ -55,6 +57,7 @@ public class DeliveryService {
     private final DeliveryViews views;
     private final OrderLookup lookup;
     private final OrderRepository orderRows;
+    private final OrderViews orderViews;
     private final OrderLineRepository lines;
     private final OrderBatchRepository batches;
     private final EmployeeDirectory employees;
@@ -65,7 +68,8 @@ public class DeliveryService {
 
     DeliveryService(DeliveryRepository deliveries, DeliveryEventRepository events,
                     DeliveryZones zones, DeliveryFees fees,
-                    DeliveryViews views, OrderLookup lookup, OrderRepository orderRows, OrderLineRepository lines, OrderBatchRepository batches,
+                    DeliveryViews views, OrderLookup lookup, OrderRepository orderRows, OrderViews orderViews,
+                    OrderLineRepository lines, OrderBatchRepository batches,
                     EmployeeDirectory employees, AccessPolicy accessPolicy, OrderChanges changes,
                     ApplicationEventPublisher publisher, Clock clock) {
         this.deliveries = deliveries;
@@ -75,6 +79,7 @@ public class DeliveryService {
         this.views = views;
         this.lookup = lookup;
         this.orderRows = orderRows;
+        this.orderViews = orderViews;
         this.lines = lines;
         this.batches = batches;
         this.employees = employees;
@@ -86,21 +91,22 @@ public class DeliveryService {
 
     /**
      * Changes the address, zone or promise of a PENDING delivery. A new zone replaces the order's fee draft by its own
-     * fee, and adds it when the fee was already confirmed: a confirmed fee is a fact and stays (it is corrected by a
-     * void, a discount or an offer, P48).
+     * fee. A confirmed fee is a fact: while it has quantity left, the zone does not change (422
+     * {@code ZONE_FEE_CONFIRMED}); once it is voided, the new zone's fee is added as a draft.
      *
      * @throws DeliveryRuleException 422 {@code ADDRESS_FROZEN} once dispatched, {@code ZONE_OTHER_STORE},
-     *         {@code ZONE_INACTIVE}, {@code FEE_ITEM_NOT_PUBLISHED}
+     *         {@code ZONE_INACTIVE}, {@code FEE_ITEM_NOT_PUBLISHED}, {@code ZONE_FEE_CONFIRMED}
      */
     @Transactional
     public DeliveryView update(UUID orderId, DeliveryUpdateRequest request) {
         PosContext pos = accessPolicy.requirePos(Permission.DELIVERY_OPERATE);
         Delivery delivery = inSessionStore(pos, orderId, request.version());
         DeliveryZone zone = request.zoneId() == null ? null : zones.usable(request.zoneId(), pos.storeId());
-        if (zone != null) {
-            fees.requirePublished(zone);
-        }
         UUID previousZone = delivery.getZoneId();
+        if (zone != null && !zone.getId().equals(previousZone)) {
+            fees.requirePublished(zone);
+            requireNoLiveConfirmedFee(orderId);
+        }
         delivery.edit(address(request.address()), zone, request.promisedAt());
         delivery = deliveries.saveAndFlush(delivery);
         if (zone != null && !zone.getId().equals(previousZone)) {
@@ -163,6 +169,22 @@ public class DeliveryService {
         DeliveryStatus from = delivery.markReturned();
         transitioned(delivery, from, pos, request.reason().strip());
         return views.of(delivery);
+    }
+
+    /**
+     * An order never carries two fees: a confirmed fee with net quantity left blocks a zone change until it is voided.
+     *
+     * @throws DeliveryRuleException 422 {@code ZONE_FEE_CONFIRMED}
+     */
+    private void requireNoLiveConfirmedFee(UUID orderId) {
+        Map<UUID, java.math.BigDecimal> deducted = orderViews.deductions(List.of(orderId));
+        boolean live = lines.findByOrderIdOrderById(orderId).stream()
+                .filter(line -> !line.isDraft() && line.isAutomaticFee())
+                .anyMatch(line -> line.getQuantity().compareTo(
+                        deducted.getOrDefault(line.getId(), java.math.BigDecimal.ZERO)) > 0);
+        if (live) {
+            throw DeliveryRuleException.zoneFeeConfirmed(orderId);
+        }
     }
 
     /** D42 (b): the delivery's store only (404), the session's store (403), then the delivery at the client's version. */

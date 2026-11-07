@@ -42,7 +42,7 @@ public class DeliveryFees {
         drafts.addFeeDraft(order, zone.getFeeItemId(), zone.getFeeVariantId(), employeeId);
     }
 
-    /** A zone swap: the order's fee drafts give way to the new zone's fee (a confirmed fee stays, P48). */
+    /** A zone swap: the order's fee drafts give way to the new zone's fee (the caller refused a live confirmed fee). */
     public void replaceDraft(Order order, DeliveryZone zone, UUID employeeId) {
         drafts.removeFeeDrafts(order);
         addTo(order, zone, employeeId);

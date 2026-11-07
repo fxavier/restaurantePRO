@@ -63,6 +63,12 @@ public class DeliveryRuleException extends BusinessRuleException {
                 + " is the delivery fee: change the zone, or give a discount or an offer, instead.");
     }
 
+    /** An order never carries two fees: the confirmed one is voided before the zone changes. */
+    public static DeliveryRuleException zoneFeeConfirmed(UUID orderId) {
+        return new DeliveryRuleException("ZONE_FEE_CONFIRMED",
+                "The delivery fee is already confirmed: void it before changing the zone.");
+    }
+
     public static DeliveryRuleException addressFrozen(UUID orderId) {
         return new DeliveryRuleException("ADDRESS_FROZEN",
                 "The delivery of order " + orderId + " was dispatched: its address, zone and promise are frozen.");
