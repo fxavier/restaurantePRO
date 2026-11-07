@@ -142,26 +142,39 @@ class InventoryFactsTest {
     }
 
     @Test
-    void theOpenExceptionsAreCountedByTheBusinessDayTheirLineWasConfirmedOn() {
-        // Africa/Maputo (UTC+2), cutoff 05:00: Monday runs from 2026-11-02T03:00Z to 2026-11-03T03:00Z
-        exception("2026-11-02T10:00:00Z", false);
-        exception("2026-11-03T02:59:00Z", false); // still Monday: before the cutoff
-        exception("2026-11-03T03:00:00Z", false); // Tuesday
-        exception("2026-11-02T11:00:00Z", true); // resolved
+    void anOpenExceptionCountsForItsOrdersBusinessDayEvenWhenConfirmedAfterTheCutoff() {
+        // Africa/Maputo (UTC+2), cutoff 05:00: Monday runs from 2026-11-02T03:00Z to 2026-11-03T03:00Z. An order
+        // opened at 04:50 on Tuesday morning (Monday's day) whose round is confirmed at 05:05 (by its instant,
+        // Tuesday) belongs to Monday.
+        exception(MONDAY, "2026-11-03T03:05:00Z", false);
+        exception(TUESDAY, "2026-11-03T10:00:00Z", false);
+        exception(MONDAY, "2026-11-02T10:00:00Z", true); // resolved
 
-        assertThat(facts.openExceptionCount(store, MONDAY, MONDAY)).isEqualTo(2);
-        assertThat(facts.openExceptionCount(store, TUESDAY, TUESDAY)).isEqualTo(1);
-        assertThat(facts.openExceptionCount(store, MONDAY, TUESDAY)).isEqualTo(3);
+        assertThat(facts.openExceptionCount(store, MONDAY, MONDAY)).isEqualTo(1);
+        assertThat(facts.openExceptionCount(store, TUESDAY, TUESDAY)).as("the late round is Monday's").isEqualTo(1);
+        assertThat(facts.openExceptionCount(store, MONDAY, TUESDAY)).isEqualTo(2);
         assertThat(facts.openExceptionCount(UUID.randomUUID(), MONDAY, TUESDAY)).isZero();
     }
 
-    private void exception(String confirmedAt, boolean resolved) {
+    @Test
+    void anExceptionWithoutItsDayCountsConservativelyByItsConfirmation() {
+        exception(null, "2026-11-02T10:00:00Z", false); // Monday
+        exception(null, "2026-11-03T10:00:00Z", false); // Tuesday by its instant, perhaps Monday's order
+        exception(null, "2026-11-04T10:00:00Z", false); // Wednesday
+
+        assertThat(facts.openExceptionCount(store, MONDAY, MONDAY)).as("Monday or the day after").isEqualTo(2);
+        assertThat(facts.openExceptionCount(store, TUESDAY, TUESDAY)).isEqualTo(2);
+        assertThat(facts.openExceptionCount(store, MONDAY.minusDays(1), MONDAY.minusDays(1))).isEqualTo(1);
+    }
+
+    private void exception(LocalDate businessDay, String confirmedAt, boolean resolved) {
         jdbc.sql("""
                         INSERT INTO inventory.consumption_exception (id, store_id, source_type, source_id, kind,
-                            created_at, confirmed_at, resolved_at, resolution)
-                        VALUES (?, ?, 'ORDER_LINE', ?, 'NO_RECIPE', now(), ?::timestamptz,
+                            created_at, confirmed_at, business_day, resolved_at, resolution)
+                        VALUES (?, ?, 'ORDER_LINE', ?, 'NO_RECIPE', now(), ?::timestamptz, ?,
                                 CASE WHEN ? THEN now() END, CASE WHEN ? THEN 'reprocessed' END)""")
-                .params(UUID.randomUUID(), store, UUID.randomUUID(), confirmedAt, resolved, resolved).update();
+                .params(UUID.randomUUID(), store, UUID.randomUUID(), confirmedAt, businessDay, resolved, resolved)
+                .update();
     }
 
     @Test

@@ -52,15 +52,16 @@ public class ConsumptionBook {
      * @return whether it was recorded now (false: the same source already has an exception of this kind)
      */
     public boolean recordException(UUID storeId, String sourceType, UUID sourceId, UUID itemId, ExceptionKind kind,
-                                   UUID batchId, UUID lineId, Instant confirmedAt, Instant now) {
+                                   UUID batchId, UUID lineId, Instant confirmedAt, java.time.LocalDate businessDay,
+                                   Instant now) {
         return jdbc.sql("""
                         INSERT INTO inventory.consumption_exception
                             (id, store_id, source_type, source_id, item_id, kind, batch_id, line_id, confirmed_at,
-                             created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             business_day, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT (source_type, source_id, kind) DO NOTHING""")
                 .params(UuidVersion7Strategy.INSTANCE.generateUuid(null), storeId, sourceType, sourceId, itemId,
-                        kind.name(), batchId, lineId, java.sql.Timestamp.from(confirmedAt),
+                        kind.name(), batchId, lineId, java.sql.Timestamp.from(confirmedAt), businessDay,
                         java.sql.Timestamp.from(now)).update() == 1;
     }
 

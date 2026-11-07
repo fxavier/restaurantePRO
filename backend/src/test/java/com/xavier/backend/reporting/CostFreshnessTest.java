@@ -95,6 +95,9 @@ class CostFreshnessTest {
         ReportingFixtures.await("the consumption exception", () -> reporting.count(
                 "SELECT count(*) FROM inventory.consumption_exception WHERE store_id = ? AND resolved_at IS NULL",
                 store) == 1);
+        assertThat(reporting.row("SELECT business_day FROM inventory.consumption_exception WHERE store_id = ?", store)
+                .get("business_day")).as("the order's business day").isEqualTo(java.sql.Date.valueOf(
+                reporting.businessDayOf(sale.order())));
         sales.payCash(sale, "25.00", "25.00").andExpect(status().isCreated());
         closeTheDayFinancially(sale);
         reporting.issuedDocuments(sale.order()).forEach(reporting::awaitSalesRecord);

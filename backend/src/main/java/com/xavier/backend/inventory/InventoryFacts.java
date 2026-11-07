@@ -76,13 +76,15 @@ public class InventoryFacts {
     }
 
     /**
-     * The store's open consumption exceptions (a round line consumed nothing yet: its cost is missing) whose line was
-     * confirmed on business days {@code from..to} (inclusive), for reporting's finality (S53).
+     * The store's open consumption exceptions (a round line consumed nothing yet: its cost is missing) of its orders'
+     * business days {@code from..to} (inclusive), for reporting's finality (S53). An exception recorded before its
+     * order's day was kept counts when its line was confirmed from the first instant of {@code from} up to the end of
+     * the day after {@code to}: a round confirmed after the cutoff may still belong to the day before.
      */
     public long openExceptionCount(UUID storeId, LocalDate from, LocalDate to) {
-        return organization.findStore(storeId).map(store -> facts.openExceptionCount(storeId,
+        return organization.findStore(storeId).map(store -> facts.openExceptionCount(storeId, from, to,
                 BusinessDays.startOf(from, store.timezone(), store.businessDayCutoff()),
-                BusinessDays.startOf(to.plusDays(1), store.timezone(), store.businessDayCutoff()))).orElse(0L);
+                BusinessDays.startOf(to.plusDays(2), store.timezone(), store.businessDayCutoff()))).orElse(0L);
     }
 
     /** The round a line was consumed from, once consumption settled it; empty before, or for a line never in one. */
