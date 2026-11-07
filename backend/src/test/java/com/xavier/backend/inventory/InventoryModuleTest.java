@@ -1,6 +1,8 @@
 package com.xavier.backend.inventory;
 
 import com.xavier.backend.TestcontainersConfiguration;
+import com.xavier.backend.catalog.CatalogApi;
+import com.xavier.backend.orders.OrdersApi;
 import com.xavier.backend.organization.MutableClock;
 import java.lang.annotation.Documented;
 import java.lang.annotation.ElementType;
@@ -11,11 +13,13 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.modulith.test.ApplicationModuleTest;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 /**
  * Boots the inventory module with what it calls: organization (stores, their zone and cut-off, the company currency),
  * plus shared, access and audit, on the shared Testcontainers PostgreSQL. The clock is a {@link MutableClock}. One
- * annotation, one cached context; never assume empty tables.
+ * annotation, one cached context; never assume empty tables. The facades inventory reads (orders' rounds and voids,
+ * catalog's items, S47) are mocks: a test stubs the facts it consumes.
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
@@ -29,5 +33,6 @@ import org.springframework.test.context.TestPropertySource;
         "restaurantpro.bootstrap.company.country=MZ",
         "restaurantpro.bootstrap.company.currency=MZN"
 })
+@MockitoBean(types = {OrdersApi.class, CatalogApi.class})
 public @interface InventoryModuleTest {
 }

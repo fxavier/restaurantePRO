@@ -184,7 +184,7 @@ Conventions for every endpoint below, as in R2 and R3:
 | method & path | permission | idem | notes / errors |
 |---|---|---|---|
 | `/stock-items` (+ `/packs`), `/warehouses`, `/consumption-routes`, `/stock-levels` (CRUD) | `INVENTORY_MANAGE` (`INVENTORY_VIEW` for GET) | POST | 422 `UNIT_DIMENSION_MISMATCH`, `WAREHOUSE_STORE_MISMATCH` |
-| `POST /activations {storeId, activeFrom}` | `INVENTORY_MANAGE` | yes | 409 already active |
+| `POST /activations {storeId, activeFrom?}` | `INVENTORY_MANAGE` | yes | 409 already active; omit `activeFrom` for now (up to 60 s in the past is taken as now), earlier → 422 `ACTIVATION_IN_PAST` (S47 review) |
 | `GET /stock?warehouseId&belowMinimum&negative`; `GET /movements?warehouseId&stockItemId&from&to&type` | `INVENTORY_VIEW` | — | Paged (D23) |
 | `POST /movements/waste`, `/manual-adjustments`, `/returns-to-stock {warehouseId, lines[{stockItemId, quantity, unit}], reason}` | `INVENTORY_MOVE` | yes | 422 `REASON_REQUIRED`, `NEGATIVE_STOCK_REFUSED`; MANUAL_ADJUSTMENT IN needs a unit cost |
 | `POST /transfers`, `PUT /transfers/{id}`, `POST /transfers/{id}/ship`, `/receive {lines[{stockItemId, quantityReceived}]}`, `/cancel` | `INVENTORY_TRANSFER` at the source (ship) and destination (receive) store | yes | 409 `TRANSFER_STATE`; 422 `SAME_WAREHOUSE`, `RECEIVED_EXCEEDS_SHIPPED`; same store → ship receives |

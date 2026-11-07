@@ -14,7 +14,9 @@ import java.util.UUID;
  * @param unitCost  an IN's own cost (a receipt, a transfer IN, an opening), or {@code null} to value it at the current
  *                  average. An OUT is always valued at the average (weighted-average costing, D113); a cost given
  *                  for an OUT (a supplier return at its receipt's cost, a shortage) is stored for reference only
- * @param value     a REVALUATION's value (signed, scale 4); {@code null} for every other type
+ * @param value     a REVALUATION's value (signed, scale 4); or the exact value (0 or more) of an IN at its own cost
+ *                  instead of {@code round(q × unitCost, 4)}: a CONSUMPTION_REVERSAL giving back what is left of a
+ *                  sale's value, a TRANSFER_IN carrying its TRANSFER_OUT's value (S47); {@code null} otherwise
  * @param sourceType what the movement comes from ({@code ORDER_LINE}, {@code GOODS_RECEIPT}, {@code TRANSFER}…);
  *                  with {@code sourceId}, item, type and warehouse it is the idempotency key (§8.2)
  * @param occurredAt the economic instant (a line's confirmation, a receipt's confirmation, a count's cut-off)
@@ -38,8 +40,13 @@ public record PostMovement(UUID warehouseId, UUID stockItemId, MovementType type
         if (!type.accepts(quantity)) {
             throw new IllegalArgumentException(type + " does not move a quantity of " + quantity);
         }
-        if ((type == MovementType.REVALUATION) != (value != null)) {
-            throw new IllegalArgumentException("a value is given for a REVALUATION, and only for one");
+        if (type == MovementType.REVALUATION && value == null) {
+            throw new IllegalArgumentException("a REVALUATION is given its value");
+        }
+        boolean exactIn = type == MovementType.CONSUMPTION_REVERSAL || type == MovementType.TRANSFER_IN;
+        if (value != null && type != MovementType.REVALUATION && (!exactIn || unitCost == null || value.signum() < 0)) {
+            throw new IllegalArgumentException("only a REVALUATION, or a CONSUMPTION_REVERSAL or TRANSFER_IN at its own "
+                    + "cost with a value of 0 or more, is given a value");
         }
         if (unitCost != null && unitCost.signum() < 0) {
             throw new IllegalArgumentException("a unit cost is never negative");
@@ -81,6 +88,13 @@ public record PostMovement(UUID warehouseId, UUID stockItemId, MovementType type
         return new PostMovement(warehouseId, stockItemId, type, quantity, unitCost, value, sourceType, sourceId,
                 sourceLineId, reversesMovementId, recipeVersionId, policyVersionId, saleItemId, businessDate,
                 occurredAt, why, true);
+    }
+
+    /** A CONSUMPTION_REVERSAL or TRANSFER_IN at its own cost carrying exactly {@code exact} (scale 4, 0 or more). */
+    public PostMovement withValue(BigDecimal exact) {
+        return new PostMovement(warehouseId, stockItemId, type, quantity, unitCost, exact, sourceType, sourceId,
+                sourceLineId, reversesMovementId, recipeVersionId, policyVersionId, saleItemId, businessDate,
+                occurredAt, reason, manual);
     }
 
     public PostMovement withReason(String why) {

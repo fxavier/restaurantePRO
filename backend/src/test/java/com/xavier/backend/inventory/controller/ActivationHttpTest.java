@@ -25,10 +25,18 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 @InventoryModuleTest
 class ActivationHttpTest {
 
-    static final Instant FROM = Instant.parse("2026-11-07T05:00:00Z");
-
     @Autowired
     MockMvc mvc;
+
+    @Autowired
+    com.xavier.backend.organization.MutableClock clock;
+
+    Instant from;
+
+    @org.junit.jupiter.api.BeforeEach
+    void tomorrow() {
+        from = clock.instant().plus(java.time.Duration.ofDays(1)).truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
+    }
 
     @Autowired
     InventoryFixtures fixtures;
@@ -43,12 +51,34 @@ class ActivationHttpTest {
 
         activate(store, account(store, Permission.INVENTORY_MANAGE)).andExpect(status().isCreated())
                 .andExpect(jsonPath("$.storeId").value(store.toString()))
-                .andExpect(jsonPath("$.activeFrom").value(FROM.toString()))
+                .andExpect(jsonPath("$.activeFrom").value(from.toString()))
                 .andExpect(jsonPath("$.activatedByAccountId").value(InventoryFixtures.ACCOUNT_ID.toString()));
         activate(store, account(store, Permission.INVENTORY_MANAGE)).andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("INVENTORY_ALREADY_ACTIVE"));
 
-        assertThat(activations.activeFrom(store)).contains(FROM);
+        assertThat(activations.activeFrom(store)).contains(from);
+    }
+
+    /** Without a start it goes live now; a start a few seconds old is now; an older one is refused (S47 review). */
+    @Test
+    void aStoreGoesLiveNowOrLaterNeverInThePast() throws Exception {
+        UUID late = fixtures.newStore();
+        UUID backdated = fixtures.newStore();
+
+        mvc.perform(idem(post(BO + "/activations")).with(account(backdated, Permission.INVENTORY_MANAGE))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"storeId\": \"%s\", \"activeFrom\": \"%s\"}".formatted(backdated,
+                                clock.instant().minusSeconds(120))))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("ACTIVATION_IN_PAST"));
+        mvc.perform(idem(post(BO + "/activations")).with(account(late, Permission.INVENTORY_MANAGE))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"storeId\": \"%s\", \"activeFrom\": \"%s\"}".formatted(late,
+                                clock.instant().minusSeconds(5))))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.activeFrom").value(clock.instant().toString()));
+        mvc.perform(idem(post(BO + "/activations")).with(account(backdated, Permission.INVENTORY_MANAGE))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"storeId\": \"%s\"}".formatted(backdated)))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.activeFrom").value(clock.instant().toString()));
     }
 
     @Test
@@ -61,6 +91,6 @@ class ActivationHttpTest {
 
     private ResultActions activate(UUID store, RequestPostProcessor actor) throws Exception {
         return mvc.perform(idem(post(BO + "/activations")).with(actor).contentType(MediaType.APPLICATION_JSON)
-                .content("{\"storeId\": \"%s\", \"activeFrom\": \"%s\"}".formatted(store, FROM)));
+                .content("{\"storeId\": \"%s\", \"activeFrom\": \"%s\"}".formatted(store, from)));
     }
 }

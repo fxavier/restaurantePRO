@@ -47,14 +47,12 @@ public class InventoryFixtures {
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
     }
 
-    public static final java.time.Instant ACTIVE_FROM = java.time.Instant.parse("2026-11-01T05:00:00Z");
-
-    /** A store where inventory is live (D122) since {@link #ACTIVE_FROM}, so manual movements are allowed. */
+    /** A store where inventory is live (D122) from now (activation never reaches into the past). */
     public UUID newActiveStore() throws Exception {
         UUID store = newStore();
         mvc.perform(idem(post(BO + "/activations")).with(account(store, Permission.INVENTORY_MANAGE))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"storeId\": \"%s\", \"activeFrom\": \"%s\"}".formatted(store, ACTIVE_FROM)))
+                        .content("{\"storeId\": \"%s\"}".formatted(store)))
                 .andExpect(status().isCreated());
         return store;
     }

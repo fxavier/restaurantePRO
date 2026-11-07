@@ -17,6 +17,7 @@ import com.xavier.backend.inventory.model.dto.TransferLineRequest;
 import com.xavier.backend.inventory.model.dto.TransferRequest;
 import com.xavier.backend.inventory.model.dto.TransferUpdateRequest;
 import com.xavier.backend.inventory.model.dto.TransferView;
+import com.xavier.backend.inventory.repository.LedgerStore;
 import com.xavier.backend.inventory.repository.StockItemRepository;
 import com.xavier.backend.inventory.repository.StockTransferRepository;
 import com.xavier.backend.inventory.repository.TransferStores;
@@ -62,11 +63,13 @@ public class TransferService {
     private final AccessPolicy accessPolicy;
     private final AuditLog auditLog;
     private final EntityManager entityManager;
+    private final LedgerStore ledgerStore;
     private final Clock clock;
 
     TransferService(StockTransferRepository transfers, StockItemRepository items, StockLedger ledger, Units units,
                     InventoryScope scope, BusinessDates businessDates, AccessPolicy accessPolicy, AuditLog auditLog,
-                    EntityManager entityManager, Clock clock) {
+                    EntityManager entityManager, LedgerStore ledgerStore, Clock clock) {
+        this.ledgerStore = ledgerStore;
         this.transfers = transfers;
         this.items = items;
         this.ledger = ledger;
@@ -183,9 +186,15 @@ public class TransferService {
         transfer.receive(received, actorId(), now);
         List<PostMovement> movements = new ArrayList<>();
         for (TransferLine line : transfer.getLines()) {
+            // the IN carries exactly the value its OUT took (D113 as amended): a transfer never creates value
+            BigDecimal shipped = ledgerStore.findBySourceKey(SOURCE_TYPE, transfer.getId(), line.getStockItemId(),
+                            MovementType.TRANSFER_OUT.name(), transfer.getFromWarehouseId())
+                    .orElseThrow(() -> new IllegalStateException("transfer " + transfer.getId()
+                            + " was shipped without its TRANSFER_OUT of " + line.getStockItemId()))
+                    .value().negate();
             movements.add(PostMovement.of(transfer.getToWarehouseId(), line.getStockItemId(),
                     MovementType.TRANSFER_IN, line.getQuantityShipped(), SOURCE_TYPE, transfer.getId(), day, now)
-                    .atCost(line.getUnitCost()));
+                    .atCost(line.getUnitCost()).withValue(shipped));
             if (line.shortfall().signum() > 0) {
                 movements.add(PostMovement.of(transfer.getToWarehouseId(), line.getStockItemId(),
                         MovementType.TRANSFER_SHORTAGE, line.shortfall().negate(), SOURCE_TYPE, transfer.getId(),

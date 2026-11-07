@@ -131,11 +131,17 @@ public class InventoryQueries {
 
     public List<WasteRow> waste(UUID storeId, LocalDate from, LocalDate to) {
         return jdbc.sql("""
-                        SELECT i.id, i.code, i.name, i.base_unit, -sum(m.quantity) AS quantity, -sum(m.value) AS value
-                        FROM inventory.stock_movement m JOIN inventory.stock_item i ON i.id = m.stock_item_id
-                        WHERE m.store_id = ? AND m.business_date BETWEEN ? AND ? AND m.type = 'WASTE'
+                        SELECT i.id, i.code, i.name, i.base_unit, sum(w.quantity) AS quantity, sum(w.value) AS value
+                        FROM (SELECT m.stock_item_id, -m.quantity AS quantity, -m.value AS value
+                              FROM inventory.stock_movement m
+                              WHERE m.store_id = ? AND m.business_date BETWEEN ? AND ? AND m.type = 'WASTE'
+                              UNION ALL
+                              -- wasted voids (D117 as amended): no stock movement, the sale's cost reclassified
+                              SELECT r.stock_item_id, r.quantity, r.value FROM inventory.waste_record r
+                              WHERE r.store_id = ? AND r.business_date BETWEEN ? AND ?) w
+                        JOIN inventory.stock_item i ON i.id = w.stock_item_id
                         GROUP BY i.id, i.code, i.name, i.base_unit ORDER BY i.code""")
-                .params(storeId, from, to)
+                .params(storeId, from, to, storeId, from, to)
                 .query((rs, n) -> new WasteRow(rs.getObject("id", UUID.class), rs.getString("code"),
                         rs.getString("name"), rs.getString("base_unit"), rs.getBigDecimal("quantity"),
                         rs.getBigDecimal("value"))).list();
@@ -145,7 +151,11 @@ public class InventoryQueries {
         return jdbc.sql("""
                         SELECT i.id, i.code, i.name,
                                -coalesce(sum(m.value) FILTER (WHERE m.business_date BETWEEN :from AND :to
-                                   AND m.type IN ('SALE_CONSUMPTION', 'CONSUMPTION_REVERSAL')), 0) AS consumption,
+                                   AND m.type IN ('SALE_CONSUMPTION', 'CONSUMPTION_REVERSAL')), 0)
+                               -- a wasted void moves its share of the sale's cost to waste (D117 as amended)
+                               - coalesce((SELECT sum(r.value) FROM inventory.waste_record r
+                                           WHERE r.store_id = :store AND r.stock_item_id = i.id
+                                             AND r.business_date BETWEEN :from AND :to), 0) AS consumption,
                                coalesce(sum(m.value) FILTER (WHERE m.business_date < :from), 0) AS opening,
                                coalesce(sum(m.value) FILTER (WHERE m.business_date <= :to), 0) AS closing
                         FROM inventory.stock_movement m JOIN inventory.stock_item i ON i.id = m.stock_item_id
