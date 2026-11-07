@@ -32,6 +32,9 @@ class SettledDiscountHeadroomTest {
     @Autowired
     ApproverVerifier approvers;
 
+    @Autowired
+    com.xavier.backend.customers.CustomersFixtures customers;
+
     @BeforeEach
     void aManagerApproves() {
         when(approvers.verify(any(), any(), eq(Permission.ORDER_DISCOUNT_APPROVE), any())).thenReturn(MANAGER);
@@ -84,6 +87,31 @@ class SettledDiscountHeadroomTest {
 
         fixtures.percentOff(sale, line(sale), null, "50").andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("DISCOUNT_EXCEEDS_UNPAID"));
+    }
+
+    @Test
+    void aLiveAmountPartitionStaysOutOfTheResidualTheDiscountMayReduce() throws Exception {
+        Sale sale = fixtures.sale("2"); // 25.00
+        fixtures.partitionAmount(sale.cashier(), sale.order(), fixtures.orderVersion(sale.cashier(), sale.order()),
+                "10.00").andExpect(status().isCreated()); // the residual is 15.00
+        fixtures.payCash(sale, "12.00", "12.00").andExpect(status().isCreated());
+
+        // the bill would be 12.50, of which the residual 2.50: below the 12.00 the ORDER target was paid
+        fixtures.percentOff(sale, line(sale), null, "50").andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("DISCOUNT_EXCEEDS_UNPAID"));
+        assertThat(adjustments(sale.order())).isZero();
+    }
+
+    @Test
+    void anOrderOnAccountIsNotDiscounted() throws Exception {
+        Sale sale = fixtures.sale("2"); // 25.00
+        fixtures.creditCharge(sale, customers.creditCustomer("100.00"), "20.00").andExpect(status().isCreated());
+
+        // a credit sale on the ORDER target drafts its document: the order is frozen, the lines are on it
+        fixtures.percentOff(sale, line(sale), null, "50").andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("CORRECTION_REQUIRES_FISCAL_ADAPTER"));
+        assertThat(adjustments(sale.order())).isZero();
+        fixtures.settlement(sale.cashier(), sale.order()).andExpect(jsonPath("$.due.amount").value(25.00));
     }
 
     @Test

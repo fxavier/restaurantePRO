@@ -6,6 +6,10 @@ import com.xavier.backend.fiscal.model.dto.DraftCommand;
 import com.xavier.backend.fiscal.model.dto.DraftLine;
 import com.xavier.backend.fiscal.model.dto.SourceType;
 import com.xavier.backend.orders.BillingLine;
+import com.xavier.backend.orders.DeliveryStatus;
+import com.xavier.backend.orders.OrderBillingView;
+import com.xavier.backend.orders.OrderMode;
+import com.xavier.backend.settlement.exception.SettlementRuleException;
 import com.xavier.backend.settlement.model.LineSplit;
 import com.xavier.backend.settlement.model.TaxRoundingPlacement.Candidate;
 import com.xavier.backend.settlement.service.Bills.Bill;
@@ -74,7 +78,20 @@ final class ResidualDocuments {
                 .command().lines().isEmpty();
     }
 
+    /**
+     * Every draft command of settlement (residual, partition, credit sale) is built here, so it is the one place that
+     * refuses a DELIVERY order not yet DELIVERED (D127, P48: no fiscal document before delivery). Each caller builds
+     * the command before it freezes the order or calls fiscal, in the transaction of any earlier write, so the
+     * refusal leaves nothing half done. {@code OrdersApi.close} checks the delivery again for a close with no draft.
+     *
+     * @throws SettlementRuleException 422 {@code DELIVERY_NOT_DELIVERED}
+     */
     static DraftCommand command(Bill bill, SourceType source, UUID sourceId, Buyer buyer, List<DraftLine> lines) {
+        OrderBillingView view = bill.view();
+        if (view.mode() == OrderMode.DELIVERY
+                && (view.delivery() == null || view.delivery().status() != DeliveryStatus.DELIVERED)) {
+            throw SettlementRuleException.deliveryNotDelivered(view.orderId());
+        }
         Money zero = Money.of(BigDecimal.ZERO, bill.due().currency());
         return new DraftCommand(bill.storeId(), source, sourceId, bill.view().orderId(), bill.view().businessDay(),
                 buyer, null, false, lines, sum(lines, DraftLine::gross, zero), sum(lines, DraftLine::net, zero),

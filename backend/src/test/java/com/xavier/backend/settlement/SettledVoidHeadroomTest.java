@@ -30,6 +30,9 @@ class SettledVoidHeadroomTest {
     @Autowired
     ApproverVerifier approvers;
 
+    @Autowired
+    com.xavier.backend.customers.CustomersFixtures customers;
+
     @BeforeEach
     void aManagerApproves() {
         when(approvers.verify(any(), any(), eq(Permission.ORDER_VOID_APPROVE), any())).thenReturn(MANAGER);
@@ -78,6 +81,19 @@ class SettledVoidHeadroomTest {
                         "1", UUID.randomUUID().toString())
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("VOID_EXCEEDS_UNPAID"));
+    }
+
+    @Test
+    void anOrderOnAccountIsNotVoided() throws Exception {
+        Sale sale = fixtures.sale("2"); // 25.00
+        fixtures.creditCharge(sale, customers.creditCustomer("100.00"), "20.00").andExpect(status().isCreated());
+        UUID line = fixtures.lineIds(sale.cashier(), sale.order()).getFirst();
+
+        fixtures.settledVoid(sale.cashier(), sale.order(), fixtures.orderVersion(sale.cashier(), sale.order()), line,
+                        "1", UUID.randomUUID().toString()) // the credit sale drafted the order's document
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("CORRECTION_REQUIRES_FISCAL_ADAPTER"));
+        assertThat(fixtures.count("SELECT count(*) FROM orders.order_line_void WHERE line_id = ?", line)).isZero();
     }
 
     @Test
