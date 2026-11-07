@@ -160,8 +160,8 @@ public class GoodsReceiptService {
         if (activations.activeFrom(ref.storeId()).isEmpty()) {
             throw InventoryRuleException.notActive(ref.storeId()); // D122: the opening count comes first (S49)
         }
-        if (ref.purchaseOrderId() != null) {
-            PurchaseOrder order = orders.findById(ref.purchaseOrderId()).orElseThrow();
+        if (ref.sourceId() != null) {
+            PurchaseOrder order = orders.findById(ref.sourceId()).orElseThrow();
             entityManager.refresh(order, LockModeType.PESSIMISTIC_WRITE);
             order.requireReceivable();
         }
