@@ -6,7 +6,10 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.util.UUID;
 
-/** A new item, ACTIVE. {@code productionDestination} is an upper-case code (KITCHEN, BAR…) or null. */
+/**
+ * A new item, ACTIVE. {@code productionDestination} is an upper-case code (KITCHEN, BAR…) or null; {@code kind}
+ * STANDARD (also when null), MENU or FEE.
+ */
 public record ItemCreateRequest(
         @NotBlank @Size(max = 30) String code,
         @NotBlank @Size(max = 120) String name,
@@ -14,7 +17,8 @@ public record ItemCreateRequest(
         @NotNull UUID unitId,
         @NotNull UUID taxCategoryId,
         @Size(max = 30) @Pattern(regexp = ItemCreateRequest.DESTINATION_CODE) String productionDestination,
-        boolean soldByWeight) {
+        boolean soldByWeight,
+        @Pattern(regexp = "STANDARD|MENU|FEE") String kind) {
 
     static final String DESTINATION_CODE = "^[A-Z][A-Z0-9_]*$";
 }
