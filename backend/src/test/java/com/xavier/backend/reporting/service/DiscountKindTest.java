@@ -26,12 +26,14 @@ class DiscountKindTest {
         assertThat(CostProjections.kindOf(line("LOYALTY", "12.50"))).isEqualTo("REWARD");
         assertThat(CostProjections.kindOf(line("MANUAL", "1.00"))).isEqualTo("DISCOUNT");
         assertThat(CostProjections.kindOf(line("MANUAL", "-1.00"))).isEqualTo("REVERSAL");
+        assertThat(CostProjections.kindOf(line("OFFER", "-12.50"))).as("a reversal reported under OFFER")
+                .isEqualTo("REVERSAL");
     }
 
     private static DiscountLine line(String origin, String discount) {
         Money price = Money.of("12.50", MZN);
         return new DiscountLine(UUID.randomUUID(), UUID.randomUUID(), "ITEM", UUID.randomUUID(), "IVA16",
                 new BigDecimal("16"), price, price, price, BigDecimal.ONE, Money.of(discount, MZN), origin, null,
-                null, null, UUID.randomUUID(), null, Instant.EPOCH, UUID.randomUUID(), BigDecimal.ONE);
+                null, null, UUID.randomUUID(), null, Instant.EPOCH, UUID.randomUUID(), BigDecimal.ONE, null);
     }
 }

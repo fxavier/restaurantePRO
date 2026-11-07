@@ -54,7 +54,7 @@ class ReportingR4RebuildTest {
             """
             SELECT source_type, source_id, line_id, business_date, item_id, family_code, origin, kind, promotion_code,
                    operator_employee_id, approver_employee_id, quantity, discount_gross, consumed_line_id,
-                   consumed_line_quantity
+                   consumed_line_quantity, at
             FROM reporting.discount_record WHERE store_id = ? ORDER BY source_id, line_id""");
 
     @Autowired
@@ -151,8 +151,8 @@ class ReportingR4RebuildTest {
                 stray, stray, this.live.store(), day, this.live.warehouse(), this.live.flour());
         reporting.rows("""
                 INSERT INTO reporting.discount_record (source_type, source_id, line_id, store_id, business_date,
-                    origin, kind, quantity, discount_gross, projected_at)
-                VALUES ('ADJUSTMENT', ?, ?, ?, ?, 'MANUAL', 'DISCOUNT', 1, 1, now()) RETURNING line_id""",
+                    origin, kind, quantity, discount_gross, at, projected_at)
+                VALUES ('ADJUSTMENT', ?, ?, ?, ?, 'MANUAL', 'DISCOUNT', 1, 1, now(), now()) RETURNING line_id""",
                 stray, stray, this.live.store(), day);
 
         reporting.rebuild(this.live.store(), day, day, UUID.randomUUID().toString()).andExpect(status().isAccepted());

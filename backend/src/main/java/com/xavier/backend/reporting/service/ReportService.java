@@ -182,12 +182,10 @@ public class ReportService {
         add(groups, asOf, queries.margin(ReportQueries.MARGIN_VARIANCE, grouping.varianceKey, storeId, from, to),
                 Margin::variance);
         Map<String, String> names = grouping == MarginGrouping.ITEM ? labels.items(groups.keySet()) : Map.of();
-        Margin total = new Margin();
-        groups.values().forEach(total::plus);
         List<MarginRow> rows = groups.entrySet().stream().map(group -> group.getValue().row(group.getKey(),
                 grouping == MarginGrouping.FAMILY ? group.getKey() : label(names, group.getKey()), currency))
                 .toList();
-        return costView(range, grouping.name(), rows, total.row(null, null, currency),
+        return costView(range, grouping.name(), rows, marginTotals(rows, currency),
                 latest(asOf.toArray(Instant[]::new)));
     }
 
@@ -207,11 +205,33 @@ public class ReportService {
         List<DiscountRow> rows = groups.stream().map(group -> discountRow(group,
                 grouping == DiscountGrouping.ORIGIN || grouping == DiscountGrouping.PROMOTION ? group.key()
                         : label(names, group.key()), currency)).toList();
-        DiscountAggregate totals = queries.discounts(ReportQueries.TOTAL, storeId, from, to).stream().findFirst()
-                .orElse(null);
-        return costView(range, grouping.name(), rows, totals == null
-                ? new DiscountRow(null, null, 0, BigDecimal.ZERO, money(null, currency), money(null, currency))
-                : discountRow(totals, null, currency), totals == null ? null : totals.asOf());
+        return costView(range, grouping.name(), rows, discountTotals(rows, currency),
+                latest(groups.stream().map(DiscountAggregate::asOf).toArray(Instant[]::new)));
+    }
+
+    /** The totals are the sum of the rows as shown, so an export's rows always add up to its TOTAL (S53 review). */
+    private static MarginRow marginTotals(List<MarginRow> rows, Currency currency) {
+        Money net = sum(rows.stream().map(MarginRow::netSales), currency);
+        Money margin = sum(rows.stream().map(MarginRow::margin), currency);
+        return new MarginRow(null, null, net, sum(rows.stream().map(MarginRow::costOfSales), currency),
+                sum(rows.stream().map(MarginRow::waste), currency),
+                sum(rows.stream().map(MarginRow::costVariance), currency), margin, percentOf(margin, net));
+    }
+
+    private static DiscountRow discountTotals(List<DiscountRow> rows, Currency currency) {
+        return new DiscountRow(null, null, rows.stream().mapToLong(DiscountRow::lines).sum(),
+                rows.stream().map(DiscountRow::quantity).reduce(BigDecimal.ZERO, BigDecimal::add),
+                sum(rows.stream().map(DiscountRow::discount), currency),
+                sum(rows.stream().map(DiscountRow::offerCost), currency));
+    }
+
+    private static Money sum(Stream<Money> amounts, Currency currency) {
+        return amounts.reduce(money(null, currency), Money::plus);
+    }
+
+    private static BigDecimal percentOf(Money margin, Money net) {
+        return net.amount().signum() == 0 ? null
+                : margin.amount().multiply(HUNDRED).divide(net.amount(), 2, Money.ROUNDING);
     }
 
     private static void add(Map<String, Margin> groups, List<Instant> asOf, List<CostAggregate> rows,
@@ -249,23 +269,14 @@ public class ReportService {
             variance = variance.add(row.amount());
         }
 
-        void plus(Margin other) {
-            netSales = netSales.add(other.netSales);
-            costOfSales = costOfSales.add(other.costOfSales);
-            waste = waste.add(other.waste);
-            variance = variance.add(other.variance);
-        }
-
         /** Rounded once for display (D113); the margin is computed from the shown amounts, so the row adds up. */
         MarginRow row(String key, String label, Currency currency) {
             Money net = money(rounded(netSales, currency), currency);
             Money cost = money(rounded(costOfSales, currency), currency);
             Money costVariance = money(rounded(variance, currency), currency);
             Money margin = net.minus(cost).minus(costVariance);
-            BigDecimal percent = net.amount().signum() == 0 ? null : margin.amount().multiply(HUNDRED)
-                    .divide(net.amount(), 2, Money.ROUNDING);
             return new MarginRow(key, label, net, cost, money(rounded(waste, currency), currency), costVariance,
-                    margin, percent);
+                    margin, percentOf(margin, net));
         }
     }
 

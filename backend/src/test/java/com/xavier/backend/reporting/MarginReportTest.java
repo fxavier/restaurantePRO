@@ -225,6 +225,22 @@ class MarginReportTest {
     }
 
     @Test
+    void theStatusAsOfMovesWithACostProjection() throws Exception {
+        java.time.Instant before = java.time.Instant.parse(reporting.reportStatus(live.store())
+                .get("lastProjectedAt").asString());
+
+        kitchen.wasteFlour(live, "1");
+        kitchen.awaitRows("consumption_record", live.store(), 4);
+
+        java.time.Instant newest = ((java.sql.Timestamp) reporting.row(
+                "SELECT max(projected_at) AS at FROM reporting.consumption_record WHERE store_id = ?", live.store())
+                .get("at")).toInstant();
+        assertThat(newest).isAfter(before);
+        assertThat(java.time.Instant.parse(reporting.reportStatus(live.store()).get("lastProjectedAt").asString()))
+                .isEqualTo(newest);
+    }
+
+    @Test
     void theMarginsAreExportedAsCsvAndAudited() throws Exception {
         String csv = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
                         .post(ReportingFixtures.REPORTS + "/exports")

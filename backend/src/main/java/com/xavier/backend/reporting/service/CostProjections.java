@@ -91,19 +91,31 @@ public class CostProjections {
         for (DiscountLine line : facts.lines()) {
             store.insertDiscount(new DiscountRecord(facts.sourceType(), facts.sourceId(), line.lineId(),
                     facts.storeId(), facts.businessDay(), line.itemId(),
-                    families.familyOf(facts.storeId(), line.releaseId(), line.itemId()), line.origin(), kindOf(line),
+                    families.familyOf(facts.storeId(), line.releaseId(), line.itemId()), originOf(line), kindOf(line),
                     line.promotionCode(), line.operatorEmployeeId(), line.approverEmployeeId(), line.quantity(),
-                    line.discountGross().amount(), line.consumedLineId(), line.consumedLineQuantity()), now);
+                    line.discountGross().amount(), line.consumedLineId(), line.consumedLineQuantity(), line.at()),
+                    now);
         }
     }
 
-    /** PROMOTION, OFFER and LOYALTY (a REWARD) name their kind; a MANUAL change is a DISCOUNT or its REVERSAL. */
+    /**
+     * A REVERSAL (it gives money back: a negative discount) is the kind of a reversal whatever it takes back;
+     * otherwise PROMOTION, OFFER and LOYALTY (a REWARD) name their kind and a MANUAL change is a DISCOUNT.
+     */
     static String kindOf(DiscountLine line) {
+        if (line.discountGross().amount().signum() < 0) {
+            return "REVERSAL";
+        }
         return switch (line.origin()) {
             case "PROMOTION", "OFFER" -> line.origin();
             case "LOYALTY" -> "REWARD";
-            default -> line.discountGross().amount().signum() < 0 ? "REVERSAL" : "DISCOUNT";
+            default -> "DISCOUNT";
         };
+    }
+
+    /** A reversal is reported under the origin of what it takes back, so it nets it (S53 review). */
+    static String originOf(DiscountLine line) {
+        return line.reversesOrigin() != null ? line.reversesOrigin() : line.origin();
     }
 
     private ConsumptionRecord consumption(String sourceType, UUID sourceId, MovementFact m,

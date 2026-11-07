@@ -109,7 +109,8 @@ public class Projections {
         VoidFacts v = orders.voidFacts(voidId);
         store.insertVoid(new VoidRecord(v.voidId(), v.storeId(), v.businessDay(), localHour(v.storeId(), v.at()),
                 v.lineSnapshot().itemCode(), v.lineSnapshot().description(), v.quantity(), v.gross().amount(),
-                v.reason(), v.wasted(), v.afterDispatch(), v.operatorEmployeeId(), v.approverEmployeeId()),
+                v.reason(), v.wasted(), v.afterDispatch(), v.operatorEmployeeId(), v.approverEmployeeId(),
+                v.lineSnapshot().lineId(), v.at()),
                 clock.instant());
     }
 

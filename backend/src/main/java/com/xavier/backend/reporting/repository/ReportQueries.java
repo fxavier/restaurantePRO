@@ -88,19 +88,42 @@ public class ReportQueries {
             GROUP BY 1""";
 
     /**
-     * Discounted lines. An OFFER's cost is its share of the consumption of the round line it descends from (a partial
-     * offer is a split line with no consumption of its own): that line's sale consumption × the offered quantity ÷
-     * the line's confirmed quantity. The gross consumption, so a void of other units of the line does not change it.
+     * Discounted lines, a REVERSAL netting what it takes back (negative lines, quantity and discount, under the
+     * origin it reverses). An OFFER's cost is its signed offered quantity × the unit cost of the round line it
+     * descends from (that line's sale consumption ÷ its confirmed quantity: a partial offer is a split line with no
+     * consumption of its own, and a void of other units of the round line does not change it). Units of the offered
+     * line voided after the offer carry none: up to what is still offered, they come off the line's latest offer.
+     * Each record's cost is rounded to the projections' scale (4).
      */
     public static final String DISCOUNTS = """
-            SELECT %s AS key, count(*) AS lines, sum(d.quantity) AS quantity, sum(d.discount_gross) AS discount,
-                   coalesce(sum(o.cost), 0) AS offer_cost, max(d.projected_at) AS as_of
-            FROM reporting.discount_record d
+            WITH d AS (
+                SELECT d.*, CASE WHEN d.kind = 'REVERSAL' THEN -1 ELSE 1 END AS sign,
+                       d.origin = 'OFFER' AND d.kind <> 'REVERSAL' AND d.at = max(d.at) FILTER (
+                           WHERE d.origin = 'OFFER' AND d.kind <> 'REVERSAL') OVER (PARTITION BY d.line_id)
+                           AS latest_offer
+                FROM reporting.discount_record d
+                WHERE d.store_id = :store AND d.business_date BETWEEN :from AND :to),
+            offered AS (
+                SELECT line_id, sum(sign * quantity) AS quantity,
+                       min(at) FILTER (WHERE kind <> 'REVERSAL') AS since
+                FROM d WHERE origin = 'OFFER' GROUP BY line_id),
+            voided AS (
+                SELECT o.line_id, least(greatest(o.quantity, 0), coalesce(sum(v.quantity), 0)) AS quantity
+                FROM offered o
+                LEFT JOIN reporting.void_record v ON v.line_id = o.line_id AND v.voided_at >= o.since
+                GROUP BY o.line_id, o.quantity)
+            SELECT %s AS key, sum(d.sign) AS lines, sum(d.sign * d.quantity) AS quantity,
+                   sum(d.discount_gross) AS discount,
+                   coalesce(sum(round(u.unit_cost * (d.sign * d.quantity
+                       - CASE WHEN d.latest_offer THEN x.quantity ELSE 0 END), 4)) FILTER (WHERE d.origin = 'OFFER'),
+                       0) AS offer_cost,
+                   max(d.projected_at) AS as_of
+            FROM d
+            LEFT JOIN voided x ON x.line_id = d.line_id
             LEFT JOIN LATERAL (
-                SELECT -sum(c.value) * d.quantity / d.consumed_line_quantity AS cost
+                SELECT -sum(c.value) / d.consumed_line_quantity AS unit_cost
                 FROM reporting.consumption_record c
-                WHERE c.line_id = d.consumed_line_id AND c.type = 'SALE_CONSUMPTION') o ON d.origin = 'OFFER'
-            WHERE d.store_id = :store AND d.business_date BETWEEN :from AND :to
+                WHERE c.line_id = d.consumed_line_id AND c.type = 'SALE_CONSUMPTION') u ON d.origin = 'OFFER'
             GROUP BY 1 ORDER BY 1 NULLS LAST""";
 
     private final JdbcClient jdbc;

@@ -69,7 +69,7 @@ class RebuildEqualsLiveTest {
                     + "WHERE store_id = ? ORDER BY charge_id",
             """
             SELECT void_id, business_date, local_hour, item_code, description, quantity, gross, reason, wasted,
-                   after_dispatch, employee_id, approver_id
+                   after_dispatch, employee_id, approver_id, line_id, voided_at
             FROM reporting.void_record WHERE store_id = ? ORDER BY void_id""");
 
     @Autowired

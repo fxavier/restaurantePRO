@@ -71,6 +71,7 @@ class DiscountReportTest {
     @BeforeEach
     void aDayOfAPromotionADiscountAndAnOffer() throws Exception {
         when(approvers.verify(any(), any(), eq(Permission.ORDER_DISCOUNT_APPROVE), any())).thenReturn(manager);
+        when(approvers.verify(any(), any(), eq(Permission.ORDER_VOID_APPROVE), any())).thenReturn(manager);
         live = kitchen.liveSale("1"); // the round to offer: no promotion is published yet
         cashier = live.sale().cashier();
         UUID order = live.sale().order();
@@ -118,6 +119,65 @@ class DiscountReportTest {
 
         assertThat(rows(report)).as("1 of the 2 promoted (1.00 consumed): 0.50, not 0").contains(
                 "OFFER|OFFER|2|2|24.00|1.00");
+    }
+
+    @Test
+    void aReversedOfferNetsToNothingUnderOffer() throws Exception {
+        UUID offered = sales.lineIds(cashier, live.sale().order()).getFirst();
+        discount(offered, "\"kind\": \"REVERSAL\"", Permission.ORDER_DISCOUNT, false).andExpect(status().isOk());
+        kitchen.awaitRows("discount_record", live.store(), 4);
+        reporting.awaitNothingPendingFor(live.store());
+
+        JsonNode report = reporting.report("discounts", live.store(), day, day, "groupBy", "origin");
+
+        assertThat(rows(report)).containsExactly(
+                "MANUAL|MANUAL|1|2|1.00|0.00",
+                "OFFER|OFFER|0|0|0.00|0.00",
+                "PROMOTION|PROMOTION|1|2|1.00|0.00");
+        assertThat(line(report.get("totals"))).isEqualTo("||2|4|2.00|0.00");
+    }
+
+    @Test
+    void anOfferedUnitVoidedAfterTheOfferCarriesNoOfferCost() throws Exception {
+        discount(promoted, "\"quantity\": 1}], \"kind\": \"OFFER\"", Permission.ORDER_OFFER, true, false)
+                .andExpect(status().isOk());
+        kitchen.voidLine(live.sale(), splitOf(promoted), "1", false).andExpect(status().isCreated());
+        kitchen.awaitRows("discount_record", live.store(), 4);
+        kitchen.awaitRows("void_record", live.store(), 1);
+        reporting.awaitNothingPendingFor(live.store());
+
+        assertThat(rows(reporting.report("discounts", live.store(), day, day, "groupBy", "origin")))
+                .as("only the first offer's 0.50 is left").contains("OFFER|OFFER|2|2|24.00|0.50");
+    }
+
+    @Test
+    void aVoidOfOtherUnitsOfTheRoundLineLeavesTheOfferCostAlone() throws Exception {
+        discount(promoted, "\"quantity\": 1}], \"kind\": \"OFFER\"", Permission.ORDER_OFFER, true, false)
+                .andExpect(status().isOk());
+        kitchen.voidLine(live.sale(), promoted, "1", false).andExpect(status().isCreated()); // the unit not offered
+        kitchen.awaitRows("discount_record", live.store(), 4);
+        kitchen.awaitRows("consumption_record", live.store(), 3); // its consumption reversed
+        reporting.awaitNothingPendingFor(live.store());
+
+        assertThat(rows(reporting.report("discounts", live.store(), day, day, "groupBy", "origin")))
+                .as("the offered unit still cost 0.50").contains("OFFER|OFFER|2|2|24.00|1.00");
+    }
+
+    @Test
+    void aUnitVoidedBeforeTheOfferIsNotTakenOffIt() throws Exception {
+        kitchen.voidLine(live.sale(), promoted, "1", false).andExpect(status().isCreated());
+        discount(promoted, "\"kind\": \"OFFER\"", Permission.ORDER_OFFER, true).andExpect(status().isOk());
+        kitchen.awaitRows("discount_record", live.store(), 4);
+        kitchen.awaitRows("void_record", live.store(), 1);
+        reporting.awaitNothingPendingFor(live.store());
+
+        assertThat(rows(reporting.report("discounts", live.store(), day, day, "groupBy", "origin")))
+                .as("the one unit left was offered: 0.50").contains("OFFER|OFFER|2|2|24.00|1.00");
+    }
+
+    private UUID splitOf(UUID line) {
+        return (UUID) reporting.row("SELECT target_line_id FROM orders.order_line_split WHERE source_line_id = ?",
+                line).get("target_line_id");
     }
 
     @Test

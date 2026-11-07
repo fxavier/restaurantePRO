@@ -54,7 +54,8 @@ public class ProjectionStore {
 
     public record VoidRecord(UUID voidId, UUID storeId, LocalDate businessDate, int localHour, String itemCode,
                              String description, BigDecimal quantity, BigDecimal gross, String reason,
-                             boolean wasted, boolean afterDispatch, UUID employeeId, UUID approverId) {
+                             boolean wasted, boolean afterDispatch, UUID employeeId, UUID approverId, UUID lineId,
+                             Instant voidedAt) {
     }
 
     /** A stock movement that is cost of goods (D131): a sale's consumption, its reversal, or a manual waste. */
@@ -79,7 +80,8 @@ public class ProjectionStore {
     public record DiscountRecord(String sourceType, UUID sourceId, UUID lineId, UUID storeId, LocalDate businessDate,
                                  UUID itemId, String familyCode, String origin, String kind, String promotionCode,
                                  UUID operatorEmployeeId, UUID approverEmployeeId, BigDecimal quantity,
-                                 BigDecimal discountGross, UUID consumedLineId, BigDecimal consumedLineQuantity) {
+                                 BigDecimal discountGross, UUID consumedLineId, BigDecimal consumedLineQuantity,
+                                 Instant at) {
     }
 
     /** @return whether the header was inserted (false: the document was already projected) */
@@ -155,12 +157,12 @@ public class ProjectionStore {
         return jdbc.sql("""
                         INSERT INTO reporting.void_record (void_id, store_id, business_date, local_hour, item_code,
                             description, quantity, gross, reason, wasted, after_dispatch, employee_id, approver_id,
-                            projected_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            line_id, voided_at, projected_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT (void_id) DO NOTHING""")
                 .params(v.voidId(), v.storeId(), v.businessDate(), v.localHour(), v.itemCode(), v.description(),
                         v.quantity(), v.gross(), v.reason(), v.wasted(), v.afterDispatch(), v.employeeId(),
-                        v.approverId(), Timestamp.from(projectedAt))
+                        v.approverId(), v.lineId(), Timestamp.from(v.voidedAt()), Timestamp.from(projectedAt))
                 .update() == 1;
     }
 
@@ -206,13 +208,13 @@ public class ProjectionStore {
                         INSERT INTO reporting.discount_record (source_type, source_id, line_id, store_id,
                             business_date, item_id, family_code, origin, kind, promotion_code, operator_employee_id,
                             approver_employee_id, quantity, discount_gross, consumed_line_id,
-                            consumed_line_quantity, projected_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            consumed_line_quantity, at, projected_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT (source_type, source_id, line_id) DO NOTHING""")
                 .params(d.sourceType(), d.sourceId(), d.lineId(), d.storeId(), d.businessDate(), d.itemId(),
                         d.familyCode(), d.origin(), d.kind(), d.promotionCode(), d.operatorEmployeeId(),
                         d.approverEmployeeId(), d.quantity(), d.discountGross(), d.consumedLineId(),
-                        d.consumedLineQuantity(), Timestamp.from(projectedAt))
+                        d.consumedLineQuantity(), Timestamp.from(d.at()), Timestamp.from(projectedAt))
                 .update();
     }
 
