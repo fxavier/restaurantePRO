@@ -1,0 +1,20 @@
+[%autowidth.stretch, cols="h,a"]
+|===
+|Base package
+|`com.xavier.backend.inventory`
+|Spring components
+|_Services_
+
+* `c.x.b.i.InventoryFacts`
+|Bean references
+|* `c.x.b.o.OrganizationApi` (in Organization)
+* `c.x.b.a.IdempotentRequests` (in Access)
+* `c.x.b.o.OrdersApi` (in Orders)
+* `c.x.b.a.AccessPolicy` (in Access)
+* `c.x.b.a.AuditLog` (in Audit)
+* `c.x.b.c.CatalogApi` (in Catalog)
+* `c.x.b.s.events.EventPublicationStats` (in Shared kernel)
+|Events listened to
+|* `c.x.b.o.model.event.OrderBatchConfirmed` (async) 
+* `c.x.b.o.model.event.OrderLinesVoided` (async) 
+|===
