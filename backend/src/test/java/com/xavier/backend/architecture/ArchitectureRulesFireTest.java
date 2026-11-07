@@ -1,12 +1,14 @@
 package com.xavier.backend.architecture;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.EvaluationResult;
 import java.util.Arrays;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -88,7 +90,27 @@ class ArchitectureRulesFireTest {
 
         assertThat(result.getFailureReport().getDetails())
                 .anySatisfy(line -> assertThat(line).contains("StockShortcut").contains("StockLedger"))
+                .anySatisfy(line -> assertThat(line).contains("StockRefund").contains("StockLedger"))
                 .noneSatisfy(line -> assertThat(line).contains("StockReport"));
+    }
+
+    /**
+     * A53 (S54): promotions and inventory are real modules now, so no D99 rule may pass vacuously. Each one fails on
+     * an import with no class in it instead of passing, so a moved or renamed package cannot silence it.
+     */
+    @Test
+    void noD99RuleCanPassVacuously() {
+        JavaClasses nothing = new ClassFileImporter().importPackages("com.xavier.archfixture.empty");
+        List<ArchRule> d99 = Arrays.stream(ArchitectureRules.forbiddenModuleDependencies("com.xavier.backend"))
+                .filter(rule -> rule.getDescription().contains("(D99")).toList();
+
+        assertThat(nothing).isEmpty();
+        assertThat(d99).as("promotions ↛ 8, inventory ↛ 7, orders ↛ inventory, only reporting → inventory")
+                .hasSize(17);
+        for (ArchRule rule : d99) {
+            assertThatThrownBy(() -> rule.check(nothing)).as(rule.getDescription())
+                    .hasMessageContaining("failed to check any classes");
+        }
     }
 
     /** D71: a call to OrdersApi.voidLine from outside settlement is caught; settlement's own call is not. */
