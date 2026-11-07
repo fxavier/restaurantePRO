@@ -497,7 +497,21 @@ done
 if [[ "$(docker inspect -f '{{.State.Running}}' "$b_pg" 2>/dev/null)" != true ]] || ! docker volume inspect "$b_volume" >/dev/null 2>&1; then
   fail "rp-b's database container or volume is gone after pitr-restore.sh was refused"
 fi
-pass "pitr-restore.sh --force refuses container $b_pg_name and volume $b_volume (Compose label com.docker.compose.project=rp-b)"
+pass "pitr-restore.sh --force refuses container $b_pg_name and volume $b_volume (created by Compose for rp-b: config-hash label on the container, volume label on the volume)"
+# An earlier pitr-restore.sh --name container, started from a Compose-built image so it inherits the image's
+# project and service labels (but not config-hash), and its volume: --force must replace both.
+earlier="$RUN_ID-pitr-earlier"
+PITR_NAMES+=("$earlier")
+docker volume create --label restaurantpro.pitr="$earlier" "$earlier-data" >/dev/null
+docker run -d --name "$earlier" --network none --label restaurantpro.pitr="$earlier" --label com.docker.compose.project=rp-a \
+  --label com.docker.compose.service=postgres --entrypoint sleep "$PG_IMAGE" 600 >/dev/null
+as_operator a "$DEPLOY_DIR/pitr-restore.sh" --force --name "$earlier" --target-time latest --wal-dir "$WORK/a/wal-empty" \
+  --identity "$WORK/a/keys/operational.key" "$archive" >/dev/null 2>"$WORK/pitr.err" || true # A's archive is no base backup
+if ! grep -q -- "--force: removing container $earlier" "$WORK/pitr.err" || ! grep -q -- "--force: removing volume $earlier-data" "$WORK/pitr.err"; then
+  fail "pitr-restore.sh --force did not replace its own earlier container and volume (inherited Compose labels): $(grep pitr-restore: "$WORK/pitr.err" | head -2)"
+fi
+! docker container inspect "$earlier" >/dev/null 2>&1 || fail "the earlier pitr-restore.sh container $earlier is still there"
+pass "pitr-restore.sh --force replaces its own earlier container (Compose project/service labels inherited from the image) and volume"
 restore_a() { as_operator a "$DEPLOY_DIR/restore.sh" --identity "$WORK/a/keys/operational.key" "$@" 2>"$WORK/r.err"; }
 backup_a() { as_operator a "$DEPLOY_DIR/backup.sh" "$@" 2>"$WORK/r.err"; }
 refused_as_other() { grep -q "belongs to installation rp-b" "$WORK/r.err"; }
