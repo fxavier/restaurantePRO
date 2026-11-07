@@ -26,12 +26,15 @@ public record DiscountFacts(String sourceType, UUID sourceId, UUID orderId, UUID
      * {@code consumedLineId} (S53, as {@link VoidFacts#consumedLineId()}) is the round line the discounted line
      * descends from through splits and transfers, whose consumption carries its cost, and
      * {@code consumedLineQuantity} that round line's confirmed quantity, so a share of its cost can be taken.
+     * {@code reversesOrigin} (S53) is set on a REVERSAL only: the origin of the price it takes back, that of the
+     * line's latest earlier adjustment that was not a reversal ({@code PROMOTION} for a promoted line without one,
+     * else {@code MANUAL}).
      */
     public record DiscountLine(UUID lineId, UUID itemId, String itemCode, UUID releaseId, String taxCode,
                                BigDecimal taxRatePercent, Money listUnitPrice, Money previousUnitPrice,
                                Money unitPrice, BigDecimal quantity, Money discountGross, String origin,
                                UUID promotionId, String promotionCode, String promotionName,
                                UUID operatorEmployeeId, UUID approverEmployeeId, Instant at,
-                               UUID consumedLineId, BigDecimal consumedLineQuantity) {
+                               UUID consumedLineId, BigDecimal consumedLineQuantity, String reversesOrigin) {
     }
 }

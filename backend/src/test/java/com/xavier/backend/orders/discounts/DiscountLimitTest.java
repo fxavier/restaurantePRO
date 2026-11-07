@@ -115,6 +115,26 @@ class DiscountLimitTest {
     }
 
     @Test
+    void aReversalNamesTheOriginOfWhatItReverses() throws Exception {
+        discount(1, "\"kind\": \"OFFER\"", Permission.ORDER_OFFER, manager).andExpect(status().isOk());
+        discount(2, "\"kind\": \"REVERSAL\", \"unitPrice\": 5.00", Permission.ORDER_DISCOUNT, null)
+                .andExpect(status().isOk());
+        discount(3, "\"kind\": \"REVERSAL\"", Permission.ORDER_DISCOUNT, null).andExpect(status().isOk());
+        discount(4, "\"kind\": \"DISCOUNT\", \"percent\": 10", Permission.ORDER_DISCOUNT, null)
+                .andExpect(status().isOk());
+        discount(5, "\"kind\": \"REVERSAL\"", Permission.ORDER_DISCOUNT, null).andExpect(status().isOk());
+
+        var sources = ordersApi.discountSourceIds(shop.store(), java.time.LocalDate.of(2000, 1, 1),
+                java.time.LocalDate.of(2100, 1, 1), org.springframework.data.domain.PageRequest.of(0, 10))
+                .getContent();
+        assertThat(sources).hasSize(5);
+        assertThat(sources.stream().map(source -> ordersApi.discountFacts(source.sourceType(), source.sourceId())
+                .lines().getFirst()).map(line -> line.origin() + ">" + line.reversesOrigin()).toList())
+                .as("a reversal after a reversal still takes back the offer")
+                .containsExactly("OFFER>null", "MANUAL>OFFER", "MANUAL>OFFER", "MANUAL>null", "MANUAL>MANUAL");
+    }
+
+    @Test
     void theApproverMustNotBeTheOperator() throws Exception {
         fixtures.discount(shop, order, body(1, "\"kind\": \"DISCOUNT\", \"percent\": 20"), manager.id(), terminal,
                         Permission.ORDER_DISCOUNT, manager)

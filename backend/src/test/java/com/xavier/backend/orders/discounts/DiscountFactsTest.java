@@ -80,4 +80,28 @@ class DiscountFactsTest {
             assertThat(fact.discountGross().amount()).isEqualByComparingTo("1.00");
         });
     }
+
+    @Test
+    void aReversalOfAPromotedLineWithoutAnAdjustmentTakesBackThePromotion() throws Exception {
+        UUID operator = UUID.randomUUID();
+        UUID terminal = UUID.randomUUID();
+        Shop shop = fixtures.shop();
+        promotions.promotion(shop.store(), shop.item(), OrdersPromotions.code("F"),
+                "\"kind\": \"AMOUNT_OFF_UNIT\", \"amount\": 0.50", null);
+        long promotionVersion = promotions.publish(shop.store());
+        UUID order = id(fixtures.openedOrder(shop, operator, terminal));
+        UUID line = id(fixtures.draft(shop, order, "1", operator, terminal));
+        fixtures.confirm(shop, order, """
+                {"orderVersion": 0, "catalogVersion": %d, "lineIds": ["%s"], "promotionVersion": %d}"""
+                .formatted(shop.catalogVersion(), line, promotionVersion), operator, terminal)
+                .andExpect(status().isCreated());
+        fixtures.discount(shop, order, """
+                {"orderVersion": 1, "lines": [{"lineId": "%s"}], "kind": "REVERSAL", "reason": "regular"}"""
+                .formatted(line), operator, terminal, Permission.ORDER_DISCOUNT, null).andExpect(status().isOk());
+
+        var sources = ordersApi.discountSourceIds(shop.store(), LocalDate.of(2000, 1, 1), LocalDate.of(2100, 1, 1),
+                PageRequest.of(0, 10)).getContent();
+        DiscountFacts reversal = ordersApi.discountFacts("ADJUSTMENT", sources.getLast().sourceId());
+        assertThat(reversal.lines().getFirst().reversesOrigin()).isEqualTo("PROMOTION");
+    }
 }
