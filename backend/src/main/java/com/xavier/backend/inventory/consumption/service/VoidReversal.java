@@ -6,6 +6,7 @@ import com.xavier.backend.inventory.model.BalanceKey;
 import com.xavier.backend.inventory.model.MovementType;
 import com.xavier.backend.inventory.model.dto.MovementView;
 import com.xavier.backend.inventory.model.dto.PostMovement;
+import com.xavier.backend.inventory.service.ActivationService;
 import com.xavier.backend.inventory.service.StockLedger;
 import com.xavier.backend.orders.OrdersApi;
 import com.xavier.backend.orders.VoidFacts;
@@ -27,7 +28,8 @@ import org.springframework.transaction.annotation.Transactional;
  * proportion: {@code consumed × voided ÷ line quantity}, capped at what earlier voids left unreversed. Each reversal is
  * a CONSUMPTION_REVERSAL IN at the original movement's unit cost; a wasted void adds a WASTE OUT of the same quantity,
  * so the stock does not change and the cost moves from sale to waste. A void whose line is not consumed yet waits
- * for it ({@code pending_void}); a line never consumed (before go-live, untracked, an exception) reverses nothing.
+ * for it ({@code pending_void}) unless it was voided before the store went live; a line never consumed (before
+ * go-live, untracked, an exception) reverses nothing.
  *
  * <p>Sources: a reversal of a line's own movement is {@code VOID / voidId}; of a menu component's,
  * {@code VOID_COMPONENT} with an id derived from the void and the component, so each original movement has its own
@@ -42,12 +44,15 @@ public class VoidReversal {
     private final OrdersApi orders;
     private final ConsumptionBook book;
     private final StockLedger ledger;
+    private final ActivationService activations;
     private final Clock clock;
 
-    VoidReversal(OrdersApi orders, ConsumptionBook book, StockLedger ledger, Clock clock) {
+    VoidReversal(OrdersApi orders, ConsumptionBook book, StockLedger ledger, ActivationService activations,
+                 Clock clock) {
         this.orders = orders;
         this.book = book;
         this.ledger = ledger;
+        this.activations = activations;
         this.clock = clock;
     }
 
@@ -61,7 +66,9 @@ public class VoidReversal {
         book.lockLines(List.of(facts.consumedLineId()));
         Optional<BigDecimal> lineQuantity = book.consumedQuantity(facts.consumedLineId());
         if (lineQuantity.isEmpty()) {
-            book.recordPendingVoid(voidId, facts.consumedLineId(), facts.storeId(), clock.instant());
+            if (mayStillBeConsumed(facts)) {
+                book.recordPendingVoid(voidId, facts.consumedLineId(), facts.storeId(), clock.instant());
+            }
             return List.of();
         }
         List<SaleMovement> originals = book.saleMovementsOf(facts.consumedLineId());
@@ -81,6 +88,11 @@ public class VoidReversal {
             posted.addAll(reverseLocked(orders.voidFacts(voidId), lineQuantity, originals));
         }
         return posted;
+    }
+
+    /** A line voided before go-live (or in a store not live) was confirmed before it too, so it is never consumed. */
+    private boolean mayStillBeConsumed(VoidFacts facts) {
+        return activations.activeFrom(facts.storeId()).filter(live -> !facts.at().isBefore(live)).isPresent();
     }
 
     private List<MovementView> reverseLocked(VoidFacts facts, BigDecimal lineQuantity, List<SaleMovement> originals) {

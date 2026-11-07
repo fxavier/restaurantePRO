@@ -130,6 +130,24 @@ class VoidReversalTest extends ConsumptionTestBase {
         assertThat(kitchen.movementsOfStore()).isEqualTo(1); // the receipt
     }
 
+    /** Its line was confirmed before the void, so before go-live too: it was never consumed and never will be. */
+    @Test
+    void aVoidBeforeGoLiveOrInAStoreNotLiveWaitsForNothing() throws Exception {
+        VoidFacts beforeGoLive = kitchen.voided(UUID.randomUUID(), "1", false,
+                com.xavier.backend.inventory.InventoryFixtures.ACTIVE_FROM.minusSeconds(1));
+        UUID notLive = fixtures.newStore();
+        VoidFacts elsewhere = new VoidFacts(UUID.randomUUID(), UUID.randomUUID(), notLive, Kitchen.DAY,
+                clock.instant(), beforeGoLive.lineSnapshot(), BigDecimal.ONE, beforeGoLive.gross(), "error", false,
+                UUID.randomUUID(), null, false, UUID.randomUUID());
+        org.mockito.Mockito.when(orders.voidFacts(elsewhere.voidId())).thenReturn(elsewhere);
+
+        voids.reverse(beforeGoLive.voidId());
+        voids.reverse(elsewhere.voidId());
+
+        assertThat(jdbc.sql("SELECT count(*) FROM inventory.pending_void WHERE void_id IN (?, ?)")
+                .params(beforeGoLive.voidId(), elsewhere.voidId()).query(Long.class).single()).isZero();
+    }
+
     @Test
     void aVoidedMenuReversesEachComponentOnce() throws Exception {
         UUID menu = kitchen.catalogItem(null);
