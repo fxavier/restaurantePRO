@@ -17,13 +17,13 @@ public record BatchFacts(UUID batchId, UUID orderId, UUID storeId, LocalDate bus
 
     /**
      * A confirmed line of the round. {@code releaseId} is the catalog release it was priced from, {@code destination}
-     * its production destination; {@code components} is empty until menus (S46).
+     * its production destination; {@code components} are a menu's chosen components (D108), empty otherwise.
      */
     public record BatchLineFact(UUID lineId, UUID itemId, UUID variantId, UUID releaseId, BigDecimal quantity,
                                 String destination, List<ComponentFact> components) {
     }
 
-    /** A component of a menu line (S46). */
+    /** A component of a menu line (D108): {@code quantity} is for the whole line (per menu unit × menus). */
     public record ComponentFact(UUID componentId, UUID itemId, UUID variantId, BigDecimal quantity,
                                 String destination) {
     }

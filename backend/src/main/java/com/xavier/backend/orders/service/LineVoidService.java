@@ -35,7 +35,8 @@ import org.springframework.transaction.annotation.Transactional;
  * ({@link #voidLine}) claims the order's version, checks the net quantity under it, records the void fact and
  * publishes {@link OrderLinesVoided} for production's VOID ticket, in one transaction. {@link #voidSettled} is the
  * same fact, event and audit for settlement's coordinated void (D71), which authorized, verified the approver and
- * checked the headroom itself.
+ * checked the headroom itself. R4 (D112): voiding a rewarded line gives the points back in the same transaction, on
+ * both routes.
  */
 @Service
 public class LineVoidService {
@@ -44,6 +45,7 @@ public class LineVoidService {
 
     private final OrderLineRepository lines;
     private final OrderLineVoidRepository voids;
+    private final RewardLineage rewards;
     private final OrderLookup lookup;
     private final OrderViews views;
     private final ApproverVerifier approvers;
@@ -52,9 +54,11 @@ public class LineVoidService {
     private final OrderChanges changes;
     private final Clock clock;
 
-    LineVoidService(OrderLineRepository lines, OrderLineVoidRepository voids, OrderLookup lookup, OrderViews views,
-                    ApproverVerifier approvers, AccessPolicy accessPolicy, ApplicationEventPublisher events,
-                    OrderChanges changes, Clock clock) {
+    LineVoidService(OrderLineRepository lines, OrderLineVoidRepository voids,
+                    RewardLineage rewards, OrderLookup lookup,
+                    OrderViews views, ApproverVerifier approvers, AccessPolicy accessPolicy,
+                    ApplicationEventPublisher events, OrderChanges changes, Clock clock) {
+        this.rewards = rewards;
         this.lines = lines;
         this.voids = voids;
         this.lookup = lookup;
@@ -143,6 +147,10 @@ public class LineVoidService {
         line.requireAvailable(views.deducted(line), quantity);
         OrderLineVoid voided = voids.saveAndFlush(OrderLineVoid.of(line, quantity, reason, wasted, operatorId,
                 approverId, terminalId, clock.instant()));
+        // D112a: the points come back once, with the void that leaves the reward's lineage (the line holding it and
+        // its transferred and split copies) at net 0, to the customer the REDEEM entry names; earlier partial voids
+        // return nothing, because units still carry the reward
+        rewards.reverseIfSpent(line.getId(), voided.getId());
         LineSnapshot snapshot = line.snapshot().orElseThrow();
         events.publishEvent(new OrderLinesVoided(order.getId(), voided.getId(), order.getStoreId(), terminalId,
                 order.getOrderNumber(), order.getTableCode(), new Line(line.getId(), snapshot.itemCode(),
@@ -151,7 +159,7 @@ public class LineVoidService {
         changes.recordWithReason("ORDER_LINE_VOIDED", ENTITY, voided.getId(), order, approverId, voided.getReason(),
                 Map.of("orderId", order.getId().toString(), "lineId", line.getId().toString(),
                         "quantity", voided.getQuantity().toPlainString(), "wasted", voided.isWasted()));
-        return new Recorded(voided, LineAmounts.of(snapshot.unitPrice(), voided.getQuantity(),
+        return new Recorded(voided, LineAmounts.of(views.effectivePrice(line).unitPrice(), voided.getQuantity(),
                 snapshot.taxRatePercent()).gross());
     }
 

@@ -2,7 +2,10 @@ package com.xavier.backend.orders;
 
 import com.xavier.backend.TestcontainersConfiguration;
 import com.xavier.backend.dining.DiningChangeStream;
+import com.xavier.backend.customers.CustomersFixtures;
 import com.xavier.backend.dining.DiningFixtures;
+import com.xavier.backend.promotions.PromotionsFixtures;
+import com.xavier.backend.promotions.loyalty.LoyaltyFixtures;
 import java.lang.annotation.Documented;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -15,7 +18,9 @@ import org.springframework.test.context.TestPropertySource;
 
 /**
  * Boots orders with the modules it calls: organization (stores, business day, {@code StoreActivity}), dining (table
- * occupations), catalog (the frozen catalog), identity (void approvers, D40), plus shared, access and audit, on the shared Testcontainers PostgreSQL.
+ * occupations), catalog (the frozen catalog), identity (void approvers, D40), customers and promotions (prices,
+ * loyalty, R4), plus shared, access and audit, on the shared Testcontainers PostgreSQL. The clock is
+ * {@link OrdersTestClock}.
  * Stores, catalogs and tables are built through those modules' HTTP APIs ({@link OrdersFixtures}). One annotation,
  * one cached context. The database is shared by the whole test JVM: never assume empty tables.
  */
@@ -23,10 +28,11 @@ import org.springframework.test.context.TestPropertySource;
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
 @ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization", "dining", "catalog", "identity",
-        "customers"})
+        "customers", "promotions"})
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, DiningFixtures.class, OrdersFixtures.class, OrderEventProbe.class,
-        DiningChangeStream.Probe.class})
+        DiningChangeStream.Probe.class, OrdersTestClock.Config.class, PromotionsFixtures.class,
+        CustomersFixtures.class, LoyaltyFixtures.class, OrdersPromotions.class, OrdersCatalog.class})
 @TestPropertySource(properties = {
         "restaurantpro.bootstrap.company.name=Test Company",
         "restaurantpro.bootstrap.company.tax-id=TEST-TAX-ID",

@@ -90,8 +90,8 @@ public class OrderTransferService {
                 pos.terminalId(), now));
         List<TransferView.Line> moved = new ArrayList<>();
         taken.forEach((line, quantity) -> {
-            OrderLine copy = lines.saveAndFlush(OrderLine.transferredCopy(line, targetId, quantity, transfer.getId(),
-                    pos.employeeId(), now));
+            OrderLine copy = lines.saveAndFlush(OrderLine.transferredCopy(line, views.effectivePrice(line).unitPrice(),
+                    targetId, quantity, transfer.getId(), pos.employeeId(), now));
             OrderTransferLine fact = transferLines.saveAndFlush(OrderTransferLine.of(transfer, line, copy));
             moved.add(new TransferView.Line(fact.getSourceLineId(), fact.getTargetLineId(), fact.getQuantity()));
         });

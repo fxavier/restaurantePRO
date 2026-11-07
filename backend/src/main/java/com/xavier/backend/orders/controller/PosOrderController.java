@@ -11,6 +11,9 @@ import com.xavier.backend.orders.model.dto.LineView;
 import com.xavier.backend.orders.model.dto.OrderSummary;
 import com.xavier.backend.orders.model.dto.UpdateLineRequest;
 import com.xavier.backend.orders.service.DraftLineService;
+import com.xavier.backend.orders.model.dto.CustomerRequest;
+import com.xavier.backend.orders.model.dto.MacroRequest;
+import com.xavier.backend.orders.service.OrderCustomerService;
 import com.xavier.backend.orders.service.OrderQueryService;
 import com.xavier.backend.shared.web.PageResponse;
 import org.springframework.data.domain.Pageable;
@@ -35,7 +38,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
-/** POS orders and their draft lines (PRD S13). Store and terminal come from the session (D39). */
+/**
+ * POS orders and their draft lines (PRD S13; R4: macros and the order's customer, S46). Store and terminal come from
+ * the session (D39).
+ */
 @RestController
 class PosOrderController {
 
@@ -45,10 +51,13 @@ class PosOrderController {
     private final OrderQueryService queries;
     private final DraftLineService drafts;
     private final BatchConfirmationService rounds;
+    private final OrderCustomerService customers;
     private final IdempotentRequests idempotent;
 
     PosOrderController(OrderOpeningService opening, OrderQueryService queries, DraftLineService drafts,
-                       BatchConfirmationService rounds, IdempotentRequests idempotent) {
+                       BatchConfirmationService rounds, OrderCustomerService customers,
+                       IdempotentRequests idempotent) {
+        this.customers = customers;
         this.opening = opening;
         this.queries = queries;
         this.drafts = drafts;
@@ -110,6 +119,20 @@ class PosOrderController {
             BatchView batch = rounds.confirm(id, body);
             return ResponseEntity.created(URI.create(ORDERS + "/" + id + "/batches/" + batch.id())).body(batch);
         });
+    }
+
+    @PostMapping(ORDERS + "/{id}/lines/macro")
+    ResponseEntity<OrderView> addMacro(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
+                                       @Valid @RequestBody MacroRequest body, HttpServletRequest request) {
+        return idempotent.execute("orders.lines.macro", key, request, body, OrderView.class,
+                () -> created(drafts.addMacro(id, body)));
+    }
+
+    @PostMapping(ORDERS + "/{id}/customer")
+    ResponseEntity<OrderView> assignCustomer(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
+                                             @Valid @RequestBody CustomerRequest body, HttpServletRequest request) {
+        return idempotent.execute("orders.customer.set", key, request, body, OrderView.class,
+                () -> ResponseEntity.ok(customers.assign(id, body)));
     }
 
     private static ResponseEntity<OrderView> created(OrderView order) {

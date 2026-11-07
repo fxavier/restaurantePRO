@@ -100,6 +100,33 @@ public class OrderLine {
 
     private UUID originTransferId;
 
+    /** Set when the line was split off another line of this order (D105): its third possible origin. */
+    private UUID originSplitId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 10)
+    private LineKind kind = LineKind.STANDARD;
+
+    /** Added by an automatic item (D109) rather than by hand; it behaves as any draft. */
+    @Column(nullable = false, updatable = false)
+    private boolean automatic;
+
+    /** The catalog price at confirmation; {@code null} on an R3 line, which reads as its {@code unitPrice}. */
+    @Column(precision = 19, scale = 4)
+    private BigDecimal listUnitPrice;
+
+    private UUID promotionId;
+
+    @Column(length = 40)
+    private String promotionCode;
+
+    @Column(length = 120)
+    private String promotionName;
+
+    private UUID promotionReleaseId;
+
+    private Long promotionVersion;
+
     @Version
     private long version;
 
@@ -119,16 +146,44 @@ public class OrderLine {
         return line;
     }
 
+    /** A draft an automatic item adds (D109): flagged, otherwise a normal draft. */
+    public static OrderLine automaticDraft(UUID orderId, UUID itemId, UUID variantId, BigDecimal quantity,
+                                           UUID employeeId, Instant now) {
+        OrderLine line = draft(orderId, itemId, variantId, quantity, null, employeeId, now);
+        line.automatic = true;
+        return line;
+    }
+
     /**
      * The confirmed copy a transfer puts on {@code targetOrderId}: the source's snapshot, item, variant and notes for
      * {@code quantity}, with the transfer as its origin and no round, so production never sees it again (§8.2).
      */
-    public static OrderLine transferredCopy(OrderLine source, UUID targetOrderId, BigDecimal quantity,
-                                            UUID transferId, UUID employeeId, Instant now) {
-        LineSnapshot snapshot = source.snapshot().orElseThrow(() -> OrderConflictException.lineNotConfirmed(source.id));
-        OrderLine copy = draft(targetOrderId, source.itemId, source.variantId, quantity, source.notes, employeeId, now);
-        copy.stamp(snapshot, employeeId, now);
+    public static OrderLine transferredCopy(OrderLine source, Money effectiveUnitPrice, UUID targetOrderId,
+                                            BigDecimal quantity, UUID transferId, UUID employeeId, Instant now) {
+        OrderLine copy = copyOf(source, effectiveUnitPrice, targetOrderId, quantity, employeeId, now);
         copy.originTransferId = Objects.requireNonNull(transferId, "transferId");
+        return copy;
+    }
+
+    /**
+     * The confirmed line a split moves {@code quantity} of {@code source} to (D105): the same order, snapshot and list
+     * price, the source's {@code effectiveUnitPrice}, the split as its origin and no round, so production and stock
+     * never see it again.
+     */
+    public static OrderLine splitCopy(OrderLine source, Money effectiveUnitPrice, BigDecimal quantity, UUID splitId,
+                                      UUID employeeId, Instant now) {
+        OrderLine copy = copyOf(source, effectiveUnitPrice, source.orderId, quantity, employeeId, now);
+        copy.originSplitId = Objects.requireNonNull(splitId, "splitId");
+        return copy;
+    }
+
+    private static OrderLine copyOf(OrderLine source, Money effectiveUnitPrice, UUID orderId, BigDecimal quantity,
+                                    UUID employeeId, Instant now) {
+        LineSnapshot snapshot = source.snapshot().orElseThrow(() -> OrderConflictException.lineNotConfirmed(source.id));
+        OrderLine copy = draft(orderId, source.itemId, source.variantId, quantity, source.notes, employeeId, now);
+        copy.kind = source.kind;
+        copy.stamp(snapshot, new LinePricing(source.listUnitPrice(), effectiveUnitPrice, source.promotion()
+                .orElse(null)), employeeId, now);
         return copy;
     }
 
@@ -164,19 +219,41 @@ public class OrderLine {
         }
     }
 
-    /** DRAFT → CONFIRMED in round {@code batchId}, with what the catalog said at that instant. */
+    /** DRAFT → CONFIRMED in round {@code batchId} at the catalog's price, with no promotion. */
     public void confirm(LineSnapshot snapshot, UUID batchId, UUID employeeId, Instant now) {
+        confirm(snapshot, LinePricing.atList(snapshot.unitPrice()), LineKind.STANDARD, batchId, employeeId, now);
+    }
+
+    /**
+     * DRAFT → CONFIRMED in round {@code batchId}, with what the catalog said at that instant ({@code snapshot}, whose
+     * price is the list price) and what promotions made of it ({@code pricing}, D101–D103).
+     */
+    public void confirm(LineSnapshot snapshot, LinePricing pricing, LineKind kind, UUID batchId, UUID employeeId,
+                        Instant now) {
         requireDraft();
-        stamp(snapshot, employeeId, now);
+        if (!pricing.listUnitPrice().equals(snapshot.unitPrice())) {
+            throw new IllegalArgumentException("The list price is the catalog's: " + snapshot.unitPrice());
+        }
+        this.kind = Objects.requireNonNull(kind, "kind");
+        stamp(snapshot, pricing, employeeId, now);
         this.batchId = Objects.requireNonNull(batchId, "batchId");
     }
 
-    private void stamp(LineSnapshot snapshot, UUID employeeId, Instant now) {
+    private void stamp(LineSnapshot snapshot, LinePricing pricing, UUID employeeId, Instant now) {
         itemCode = snapshot.itemCode();
         description = snapshot.description();
         variantName = snapshot.variantName();
-        unitPrice = snapshot.unitPrice().amount();
-        currency = snapshot.unitPrice().currency().getCurrencyCode();
+        unitPrice = pricing.unitPrice().amount();
+        listUnitPrice = pricing.listUnitPrice().amount();
+        currency = pricing.unitPrice().currency().getCurrencyCode();
+        PromotionRef promotion = pricing.promotion();
+        if (promotion != null) {
+            promotionId = promotion.id();
+            promotionCode = promotion.code();
+            promotionName = promotion.name();
+            promotionReleaseId = promotion.releaseId();
+            promotionVersion = promotion.version();
+        }
         taxCategoryId = snapshot.taxCategoryId();
         taxCode = snapshot.taxCode();
         taxRatePercent = snapshot.taxRatePercent();
@@ -188,7 +265,22 @@ public class OrderLine {
         status = LineStatus.CONFIRMED;
     }
 
-    /** The confirmed snapshot; empty for a draft. */
+    /** The catalog price at confirmation; an R3 line, which has none stored, reads as its unit price (D101). */
+    public Money listUnitPrice() {
+        Money effective = snapshot().orElseThrow(() -> OrderConflictException.lineNotConfirmed(id)).unitPrice();
+        return listUnitPrice == null ? effective : Money.of(listUnitPrice, effective.currency());
+    }
+
+    /** The promotion applied at confirmation; empty without one, and for a draft. */
+    public Optional<PromotionRef> promotion() {
+        if (promotionId == null) {
+            return Optional.empty();
+        }
+        return Optional.of(new PromotionRef(promotionId, promotionCode, promotionName, promotionReleaseId,
+                promotionVersion));
+    }
+
+    /** The confirmed snapshot, its {@code unitPrice} the effective price at confirmation; empty for a draft. */
     public Optional<LineSnapshot> snapshot() {
         if (status != LineStatus.CONFIRMED) {
             return Optional.empty();
@@ -252,6 +344,18 @@ public class OrderLine {
 
     public UUID getOriginTransferId() {
         return originTransferId;
+    }
+
+    public UUID getOriginSplitId() {
+        return originSplitId;
+    }
+
+    public LineKind getKind() {
+        return kind;
+    }
+
+    public boolean isAutomatic() {
+        return automatic;
     }
 
     public UUID getConfirmedByEmployeeId() {

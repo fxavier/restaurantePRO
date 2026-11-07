@@ -354,7 +354,22 @@ class CodedErrorContractTest {
             Map.entry("po-number-taken", () -> PurchasingConflictException.orderNumberTaken(ID, "PO-7")),
             Map.entry("supplier-item-exists", () -> PurchasingConflictException.supplierItemExists(ID, OTHER)),
             Map.entry("cost-correction-concurrent", () -> PurchasingConflictException.correctionConcurrent(ID)),
-            Map.entry("supplier-code-taken", () -> InventoryConflictException.codeTaken("SUPPLIER", "MOAGEM")));
+            Map.entry("supplier-code-taken", () -> InventoryConflictException.codeTaken("SUPPLIER", "MOAGEM")),
+            // R4 orders (S46): pricing, menus, discounts, loyalty
+            Map.entry("promotions-changed", () -> OrderConflictException.promotionsChanged(null, 4L)),
+            Map.entry("prices-changed", () -> OrderConflictException.pricesChanged(new BigDecimal("20.00"),
+                    new BigDecimal("25.00"), List.of())),
+            Map.entry("item-sold-out", () -> OrderRuleException.itemSoldOut(ID, null)),
+            Map.entry("menu-selection-invalid", () -> OrderRuleException.menuSelectionInvalid("LUNCH",
+                    "group STARTER takes 1 to 1 choices, not 0")),
+            Map.entry("macro-not-published", () -> OrderRuleException.macroNotPublished("DRINKS")),
+            Map.entry("discount-limit-exceeded", () -> OrderRuleException.discountLimitExceeded(ID,
+                    new BigDecimal("52.00"), new BigDecimal("50"))),
+            Map.entry("price-increase-not-allowed", () -> OrderRuleException.priceIncreaseNotAllowed(ID)),
+            Map.entry("loyalty-customer-required", () -> OrderRuleException.loyaltyCustomerRequired(ID)),
+            Map.entry("reward-needs-single-unit", () -> OrderRuleException.rewardNeedsSingleUnit(ID)),
+            Map.entry("loyalty-redeemed", () -> OrderRuleException.loyaltyRedeemed(ID)),
+            Map.entry("reward-already-redeemed", () -> OrderRuleException.rewardAlreadyRedeemed(ID)));
 
     @Autowired
     MockMvc mvc;
@@ -857,6 +872,34 @@ class CodedErrorContractTest {
         expect("cost-correction-concurrent", 409, "COST_CORRECTION_CONCURRENT", "Receipt line " + ID
                 + " was corrected at the same time; retry on its new cost.", "");
         expect("supplier-code-taken", 409, "SUPPLIER_CODE_TAKEN", "The supplier code MOAGEM is taken.", "");
+    }
+
+    @Test
+    void ordersR4Codes() throws Exception {
+        expect("promotions-changed", 409, "PROMOTIONS_CHANGED",
+                "The promotions changed (version null → 4): review the prices and confirm again.",
+                ",\"promotionVersion\":4");
+        expect("prices-changed", 409, "PRICES_CHANGED",
+                "The prices changed (20.00 → 25.00): review them and confirm again.",
+                ",\"expectedGross\":20.00,\"gross\":25.00,\"lines\":[]");
+        expect("item-sold-out", 422, "ITEM_SOLD_OUT", "Item " + ID + " is sold out.", "");
+        expect("menu-selection-invalid", 422, "MENU_SELECTION_INVALID",
+                "Menu LUNCH: group STARTER takes 1 to 1 choices, not 0.", "");
+        expect("macro-not-published", 422, "MACRO_NOT_PUBLISHED",
+                "Macro DRINKS is not in the published catalog.", "");
+        expect("discount-limit-exceeded", 422, "DISCOUNT_LIMIT_EXCEEDED", "Line " + ID
+                + " would be 52.00 % off its list price; the store allows at most 50 %.", "");
+        expect("price-increase-not-allowed", 422, "PRICE_INCREASE_NOT_ALLOWED", "Line " + ID
+                + ": a discount only lowers the price, and a reversal only restores it up to the list price of a "
+                + "line without a reward.", "");
+        expect("loyalty-customer-required", 422, "LOYALTY_CUSTOMER_REQUIRED",
+                "Order " + ID + " has no customer to redeem a reward for.", "");
+        expect("reward-needs-single-unit", 422, "REWARD_NEEDS_SINGLE_UNIT",
+                "A reward is redeemed on one unit of line " + ID + ".", "");
+        expect("loyalty-redeemed", 422, "LOYALTY_REDEEMED",
+                "Order " + ID + " has a redeemed reward: its customer cannot change.", "");
+        expect("reward-already-redeemed", 422, "REWARD_ALREADY_REDEEMED",
+                "Line " + ID + " already carries a loyalty reward.", "");
     }
 
     private void expect(String name, int status, String code, String detail, String extra) throws Exception {

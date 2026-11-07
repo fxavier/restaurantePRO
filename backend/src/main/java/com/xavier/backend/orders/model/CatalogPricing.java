@@ -37,6 +37,11 @@ public final class CatalogPricing {
                 rate, catalog.releaseId(), catalog.version(), item.productionDestination());
     }
 
+    /** @throws OrderRuleException {@code ITEM_NOT_IN_CATALOG} when the item is not in the catalog */
+    public static CatalogSnapshot.Item itemOf(CatalogSnapshot catalog, UUID itemId, UUID variantId) {
+        return item(catalog, itemId).orElseThrow(() -> OrderRuleException.itemNotInCatalog(itemId, variantId));
+    }
+
     /** The price a draft would get now; empty when the item or variant is no longer in the catalog. */
     public static Optional<Money> previewPrice(CatalogSnapshot catalog, UUID itemId, UUID variantId) {
         return item(catalog, itemId)

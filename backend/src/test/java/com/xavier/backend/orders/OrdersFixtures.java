@@ -131,6 +131,14 @@ public class OrdersFixtures {
                         catalogVersion, String.join(",", lines.stream().map(id -> "\"" + id + "\"").toList()))));
     }
 
+    /** {@code POST /orders/{order}/batches} with a whole JSON {@code body} (R4: promotionVersion, expectedGross). */
+    public ResultActions confirm(Shop shop, UUID order, String body, UUID employee, UUID terminal) throws Exception {
+        return mvc.perform(post(POS + "/orders/" + order + "/batches")
+                .with(OrdersActors.pos(shop.store(), employee, terminal, Permission.ORDER_EDIT)).with(csrf())
+                .header("Idempotency-Key", UUID.randomUUID().toString()).contentType(MediaType.APPLICATION_JSON)
+                .content(body));
+    }
+
     /** Drafts {@code quantity} of the shop's item and confirms it as a round at {@code orderVersion}; the line id. */
     public UUID confirmedLine(Shop shop, UUID order, String quantity, long orderVersion, UUID employee,
                               UUID terminal) throws Exception {
@@ -139,6 +147,22 @@ public class OrdersFixtures {
                 UUID.randomUUID().toString())
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isCreated());
         return line;
+    }
+
+    /**
+     * {@code POST /orders/{order}/discounts} as {@code employee} holding {@code permission}, with the approver headers
+     * when {@code approver} is not null (its PIN is {@link #PIN}).
+     */
+    public ResultActions discount(Shop shop, UUID order, String body, UUID employee, UUID terminal,
+                                  Permission permission, IdentityFixtures.Employee approver) throws Exception {
+        var request = post(POS + "/orders/" + order + "/discounts")
+                .with(OrdersActors.pos(shop.store(), employee, terminal, permission)).with(csrf())
+                .header("Idempotency-Key", UUID.randomUUID().toString()).contentType(MediaType.APPLICATION_JSON)
+                .content(body);
+        if (approver != null) {
+            request = request.header("X-Approver-Code", approver.code()).header("X-Approver-Pin", PIN);
+        }
+        return mvc.perform(request);
     }
 
     /** A real employee of the shop's store with {@code role} and PIN {@link #PIN}, to approve (D40). */
@@ -196,7 +220,7 @@ public class OrdersFixtures {
                         }));
     }
 
-    /** Σ net quantity of the confirmed lines of the orders (quantity − voids − transferred out). */
+    /** Σ net quantity of the confirmed lines of the orders (quantity − voids − transferred out − split out). */
     public java.math.BigDecimal netQuantity(UUID... orders) {
         java.math.BigDecimal total = java.math.BigDecimal.ZERO;
         for (UUID order : orders) {
@@ -204,7 +228,9 @@ public class OrdersFixtures {
                     SELECT COALESCE(sum(l.quantity
                         - COALESCE((SELECT sum(v.quantity) FROM orders.order_line_void v WHERE v.line_id = l.id), 0)
                         - COALESCE((SELECT sum(t.quantity) FROM orders.order_transfer_line t
-                                    WHERE t.source_line_id = l.id), 0)), 0)
+                                    WHERE t.source_line_id = l.id), 0)
+                        - COALESCE((SELECT sum(s.quantity) FROM orders.order_line_split s
+                                    WHERE s.source_line_id = l.id), 0)), 0)
                     FROM orders.order_line l WHERE l.order_id = ? AND l.status = 'CONFIRMED'""")
                     .param(order).query(java.math.BigDecimal.class).single());
         }
