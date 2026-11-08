@@ -15,12 +15,15 @@ import static org.mockito.Mockito.reset;
 import com.xavier.backend.BackendApplication;
 import com.xavier.backend.e2e.Browser.Csrf;
 import com.xavier.backend.fiscal.FiscalApi;
+import com.xavier.backend.inventory.consumption.service.RoundConsumption;
+import com.xavier.backend.inventory.purchasing.service.GoodsReceiptService;
 import com.xavier.backend.orders.OrdersProductionApi;
 import com.xavier.backend.production.TcpFakePrinter;
 import com.xavier.backend.reporting.service.Projections;
 import com.xavier.backend.settlement.FakePaymentProvider;
 import com.xavier.backend.settlement.SettlementTestClock;
 import com.xavier.backend.settlement.service.CreditSaleSteps;
+import com.xavier.backend.settlement.service.OrderSettlementSteps;
 import com.xavier.backend.settlement.service.SettlementIssuer;
 import com.xavier.backend.shared.events.EventPublicationRecovery;
 import java.io.IOException;
@@ -82,8 +85,17 @@ import tools.jackson.databind.JsonNode;
  *   <li>(g) a residual draft with a D96 placement, not issued: B's retried close issues that same draft, with the same
  *       adjustment row and one number;</li>
  *   <li>(h) a D97 snapshot refreshed, not issued: a payment lands meanwhile; B's retry refreshes again and issues with
- *       the fresh snapshot and one number.</li>
+ *       the fresh snapshot and one number;</li>
+ *   <li>(i) a round committed, its consumption not finished (D116): B delivers it again at start → one set of stock
+ *       movements, and a forced redelivery adds none;</li>
+ *   <li>(j) a close with loyalty earning committed, the response never sent (D111): B's retry answers CLOSED → one
+ *       EARN;</li>
+ *   <li>(k) a goods receipt confirm that dies inside its transaction (D125): nothing is left; B's retry with the same
+ *       key confirms it → one receipt, one set of RECEIPT movements; a replay adds none.</li>
  * </ol>
+ *
+ * <p>For (i)–(k) the store is live in inventory (activated at setup) with one warehouse on the default route, the
+ * juice consumes one mango, and a loyalty program gives one point per 10.00.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "restaurantpro.settlement.provider-timeout=PT1S",
@@ -95,7 +107,7 @@ import tools.jackson.databind.JsonNode;
         "restaurantpro.idempotency.step-lease=PT3S"})
 @Import({Installation.FreshDatabase.class, FakePaymentProvider.Config.class, SettlementTestClock.Config.class})
 @MockitoSpyBean(types = {OrdersProductionApi.class, CreditSaleSteps.class, FiscalApi.class, SettlementIssuer.class,
-        Projections.class})
+        Projections.class, RoundConsumption.class, OrderSettlementSteps.class, GoodsReceiptService.class})
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class RestartMatrixTest {
 
@@ -163,6 +175,15 @@ class RestartMatrixTest {
     @Autowired
     EventPublicationRecovery recovery;
 
+    @Autowired
+    RoundConsumption consumption;
+
+    @Autowired
+    OrderSettlementSteps settlementSteps;
+
+    @Autowired
+    GoodsReceiptService receipts;
+
     private final List<String> journey = new ArrayList<>();
 
     Browser office;
@@ -173,6 +194,9 @@ class RestartMatrixTest {
     String managerCode;
     Map<String, UUID> items;
     long catalogVersion;
+    UUID warehouse;
+    UUID mango;
+    UUID supplier;
 
     @Test
     void everyCrashPointEndsWithExactlyOneLogicalEffect() throws Exception {
@@ -186,18 +210,24 @@ class RestartMatrixTest {
             Crash e = integratedChargeLeftUnknown();
             Crash g = residualDraftPlacedNotIssued();
             Crash h = snapshotRefreshedNotIssued();
+            Crash k = receiptConfirmDiesInItsTransaction();
+            Crash i = roundCommittedConsumptionNotFinished();
+            Crash j = closeWithEarningCommittedResponseNeverSent();
 
             // ---- phase 2, instance B: a second application on the same database ----
             try (ConfigurableApplicationContext restarted = restart()) {
                 restarted.getBean(SettlementTestClock.class).advance(Duration.ofMinutes(2));
                 Browser pos = cashier.movedTo(((WebServerApplicationContext) restarted).getWebServer().getPort());
                 Browser bo = office.movedTo(pos.port());
+                recoveredI(i, restarted.getBean(RoundConsumption.class));
                 recoveredA(a);
                 recoveredB(b, pos);
                 recoveredC(c, pos);
                 recoveredE(e);
                 recoveredG(g, pos);
                 recoveredH(h, pos);
+                recoveredJ(j, pos);
+                recoveredK(k, bo);
                 recoveredD(d, bo, c, g, h); // last: B has printed the later documents by then
             }
 
@@ -250,6 +280,30 @@ class RestartMatrixTest {
         cashier.command(POS + "/cash/sessions", Map.of("registerId", register, "openingFloat",
                 new BigDecimal("0.00")), 201, "open session");
         catalogVersion = cashier.get(POS + "/catalog?storeId=" + store, 200).get("version").asLong();
+
+        // (i)–(k): live in inventory, the juice consumes one mango from the one warehouse; points per 10.00
+        String inventory = BO + "/inventory";
+        warehouse = id(office.command(inventory + "/warehouses", Map.of("storeId", store, "code", "ARM", "name",
+                "Armazem"), 201, "warehouse"));
+        office.command(inventory + "/consumption-routes", Map.of("storeId", store, "warehouseId", warehouse), 201,
+                "default route");
+        mango = id(office.command(inventory + "/stock-items", Map.of("code", "MANGA", "name", "Manga", "baseUnit",
+                "un", "kind", "PURCHASED"), 201, "stock item"));
+        UUID recipe = id(office.command(inventory + "/recipes", Map.of("itemId", items.get("SUMO"), "name",
+                "Sumo"), 201, "recipe"));
+        office.command(inventory + "/recipes/" + recipe + "/versions", Map.of("yieldQuantity", BigDecimal.ONE,
+                "yieldUnit", "un", "ingredients", List.of(Map.of("stockItemId", mango, "quantity", BigDecimal.ONE,
+                        "unit", "un", "kind", "INGREDIENT"))), 201, "recipe version");
+        office.command(inventory + "/recipes/" + recipe + "/versions/1/activate", Map.of(), 200, "activate recipe");
+        office.command(inventory + "/activations", Map.of("storeId", store), 201, "inventory go-live");
+        supplier = id(office.command(inventory + "/suppliers", Map.of("code", "FRUTA", "name", "Frutaria"), 201,
+                "supplier"));
+        String programs = BO + "/loyalty/program-versions";
+        UUID program = id(office.command(programs, Map.of("spendUnit", new BigDecimal("10.00"), "pointsPerUnit", 1,
+                "itemIds", List.of(), "familyIds", List.of()), 201, "loyalty program"));
+        office.command(programs + "/" + program + "/publish", Map.of("version", office.get(programs + "/" + program,
+                200).get("version").asLong()), 200, "publish loyalty program");
+        cashier.command(POS + "/customers/" + customer + "/loyalty", null, 201, "enroll the customer");
     }
 
     // ---- (a) ----
@@ -512,6 +566,121 @@ class RestartMatrixTest {
         journey.add("(h) B's retry refreshed the snapshot (PAID) and issued number " + issued.get("number").asLong());
     }
 
+    // ---- (i) ----
+
+    private Crash roundCommittedConsumptionNotFinished() throws Exception {
+        // nothing of the earlier cases is still being consumed, so the spy below fails only this round
+        Awaitility.await().atMost(RECOVERED).until(() -> count("""
+                SELECT count(*) FROM event_publication WHERE completion_date IS NULL
+                  AND listener_id LIKE 'com.xavier.backend.inventory.consumption%'""") == 0);
+        UUID order = order("Mi");
+        UUID sumo = line(order, "SUMO", "1");
+        RoundConsumption spy = AopTestUtils.getUltimateTargetObject(consumption);
+        doThrow(new IllegalStateException("crash before the consumption finished")).when(spy).consume(any());
+        UUID batch;
+        try {
+            batch = id(cashier.command(POS + "/orders/" + order + "/batches", Map.of("orderVersion", version(order),
+                    "catalogVersion", catalogVersion, "lineIds", List.of(sumo)), 201, "(i) confirm the round"));
+            Awaitility.await().atMost(RECOVERED).until(() -> incompleteConsumption(batch));
+        } finally {
+            reset(spy);
+        }
+        assertThat(saleConsumption(batch)).as("nothing posted at A").isZero();
+        return new Crash(order, batch, null, null, null, sumo);
+    }
+
+    private void recoveredI(Crash i, RoundConsumption restartedConsumption) {
+        UUID batch = i.subject();
+        Awaitility.await().atMost(RECOVERED).until(() -> !incompleteConsumption(batch));
+        assertThat(saleConsumption(batch)).as("1 juice → 1 mango, once").isEqualTo(1);
+        assertThat(decimal("SELECT quantity FROM inventory.stock_movement WHERE source_line_id = ? "
+                + "AND type = 'SALE_CONSUMPTION'", i.detail())).isEqualByComparingTo("-1");
+        restartedConsumption.consume(batch); // a forced redelivery
+        assertThat(saleConsumption(batch)).isEqualTo(1);
+        journey.add("(i) B delivered the round to inventory at start: 1 SALE_CONSUMPTION; a redelivery added none");
+    }
+
+    // ---- (j) ----
+
+    private Crash closeWithEarningCommittedResponseNeverSent() throws Exception {
+        UUID order = order("Mj");
+        cashier.command(POS + "/orders/" + order + "/customer", Map.of("orderVersion", version(order),
+                "customerId", customer), 200, "(j) the member on the order");
+        confirm(order, List.of(line(order, "AGUA", "1")), "(j) round");
+        pay(order, null, "37.00", "(j) pay in cash");
+        OrderSettlementSteps spy = AopTestUtils.getUltimateTargetObject(settlementSteps);
+        doAnswer(invocation -> {
+            invocation.callRealMethod();
+            parkAsDead();
+            return null;
+        }).when(spy).close(any(), any());
+        String key = UUID.randomUUID().toString();
+        Map<String, Object> body = Map.of("orderVersion", cashier.get(POS + "/orders/" + order + "/settlement", 200)
+                .get("orderVersion").asLong());
+        String path = POS + "/orders/" + order + "/close";
+        sendAndForget(path, body, key);
+        Awaitility.await().atMost(RECOVERED).until(() -> "CLOSED".equals(jdbc.sql(
+                "SELECT lifecycle FROM orders.order_header WHERE id = ?").param(order).query(String.class).single()));
+        reset(spy);
+        assertThat(earnings(order)).as("the EARN committed with the close").isEqualTo(1);
+        return new Crash(order, null, key, body, path, null);
+    }
+
+    private void recoveredJ(Crash j, Browser pos) throws Exception {
+        JsonNode closed = pos.post(j.path(), j.body(), 200, Csrf.SEND, Map.of("Idempotency-Key", j.key()),
+                "(j) retry the close at B");
+        assertThat(closed.get("lifecycle").asString()).isEqualTo("CLOSED");
+        assertThat(earnings(j.order())).isEqualTo(1);
+        // ⌊37.00 ÷ 10.00⌋ × 1 = 3 points, the customer's only entry
+        assertThat(count("SELECT sum(points) FROM promotions.loyalty_point_entry WHERE customer_id = ?", customer))
+                .isEqualTo(3);
+        assertThat(pos.post(j.path(), j.body(), 200, Csrf.SEND, Map.of("Idempotency-Key", j.key()),
+                "(j) and again").get("lifecycle").asString()).isEqualTo("CLOSED");
+        assertThat(earnings(j.order())).isEqualTo(1);
+        journey.add("(j) B's retried close answered CLOSED: 1 EARN of 3 points");
+    }
+
+    // ---- (k) ----
+
+    private Crash receiptConfirmDiesInItsTransaction() throws Exception {
+        String path = BO + "/inventory/receipts";
+        UUID receipt = id(office.command(path, Map.of("warehouseId", warehouse, "supplierId", supplier,
+                "supplierDocumentRef", "FT-9", "lines", List.of(Map.of("stockItemId", mango, "packQuantity",
+                        new BigDecimal("10"), "unitCost", new BigDecimal("5.00")))), 201, "(k) receipt draft"));
+        GoodsReceiptService spy = AopTestUtils.getUltimateTargetObject(receipts);
+        doAnswer(invocation -> {
+            invocation.callRealMethod(); // the CAS, the RECEIPT movements and the last cost, all in the transaction
+            throw new IllegalStateException("crash before the confirm committed");
+        }).when(spy).confirm(any());
+        String key = UUID.randomUUID().toString();
+        try {
+            office.post(path + "/" + receipt + "/confirm", Map.of(), 500, Csrf.SEND, Map.of("Idempotency-Key", key),
+                    "(k) confirm, dies in its transaction");
+        } finally {
+            reset(spy);
+        }
+        assertThat(jdbc.sql("SELECT status FROM inventory.goods_receipt WHERE id = ?").param(receipt)
+                .query(String.class).single()).isEqualTo("DRAFT");
+        assertThat(receiptMovements(receipt)).as("rolled back with the transaction").isZero();
+        return new Crash(null, receipt, key, Map.of(), path + "/" + receipt + "/confirm", null);
+    }
+
+    private void recoveredK(Crash k, Browser bo) throws Exception {
+        JsonNode confirmed = bo.post(k.path(), k.body(), 200, Csrf.SEND, Map.of("Idempotency-Key", k.key()),
+                "(k) retry the confirm at B");
+        assertThat(confirmed.get("status").asString()).isEqualTo("CONFIRMED");
+        assertThat(receiptMovements(k.subject())).isEqualTo(1);
+        assertThat(bo.post(k.path(), k.body(), 200, Csrf.SEND, Map.of("Idempotency-Key", k.key()),
+                "(k) replay").get("confirmedAt").asString()).isEqualTo(confirmed.get("confirmedAt").asString());
+        assertThat(bo.post(k.path(), k.body(), 409, Csrf.SEND, Browser.idem(), "(k) a new key: already confirmed")
+                .get("code").asString()).isEqualTo("RECEIPT_STATE");
+        assertThat(receiptMovements(k.subject())).isEqualTo(1);
+        // 10 @ 5.00 = +50.00, one RECEIPT
+        assertThat(decimal("SELECT value FROM inventory.stock_movement WHERE source_id = ? AND type = 'RECEIPT'",
+                k.subject())).isEqualByComparingTo("50.00");
+        journey.add("(k) B's retry confirmed the receipt once: 1 RECEIPT movement of 50.00; replay and a new key added none");
+    }
+
     // ---- (f) ----
 
     private void listenerFailingTwiceIsCompletedByTheJob() throws Exception {
@@ -595,6 +764,29 @@ class RestartMatrixTest {
         Method job = EventPublicationRecovery.class.getDeclaredMethod("resubmitDue");
         job.setAccessible(true);
         job.invoke(AopTestUtils.getUltimateTargetObject(recovery));
+    }
+
+    private boolean incompleteConsumption(UUID batch) {
+        return count("""
+                SELECT count(*) FROM event_publication WHERE serialized_event LIKE ?
+                  AND listener_id LIKE 'com.xavier.backend.inventory.consumption%' AND completion_date IS NULL""",
+                "%" + batch + "%") > 0;
+    }
+
+    private long saleConsumption(UUID batch) {
+        return count("""
+                SELECT count(*) FROM inventory.stock_movement m JOIN orders.order_line l ON l.id = m.source_line_id
+                WHERE l.batch_id = ? AND m.type = 'SALE_CONSUMPTION'""", batch);
+    }
+
+    private long earnings(UUID order) {
+        return count("SELECT count(*) FROM promotions.loyalty_point_entry WHERE kind = 'EARN' AND order_id = ?",
+                order);
+    }
+
+    private long receiptMovements(UUID receipt) {
+        return count("SELECT count(*) FROM inventory.stock_movement WHERE source_id = ? AND type = 'RECEIPT'",
+                receipt);
     }
 
     private boolean incompleteProduction(UUID batch) {
