@@ -55,6 +55,10 @@ springdoc:
   # D10: schemas are named by their fully qualified class name; by simple name, records of the same name in two
   # modules (customers and delivery AddressRequest, the nested Line records) merge into one wrong schema.
   use-fqn: true
+  swagger-ui:
+    # Swagger UI echoes the XSRF-TOKEN cookie in X-XSRF-TOKEN, so "Try it out" works for writes (CSRF is on, D26).
+    csrf:
+      enabled: true
 
 server:
   servlet:
