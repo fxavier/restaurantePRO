@@ -175,6 +175,7 @@ public class LineVoidService {
      * They are frozen on the round line the voided line descends from, so a transferred or split menu keeps them.
      */
     private List<ComponentLine> voidedComponents(OrderLineVoid voided) {
+        UUID roundLine = lines.roundLineOf(voided.getLineId()).orElse(voided.getLineId());
         UUID roundLine = voids.consumedLineId(voided.getId()).orElse(voided.getLineId());
         return components.findByLineIdOrderByPosition(roundLine).stream()
                 .map(component -> new ComponentLine(component.getItemCode(), component.getDescription(),

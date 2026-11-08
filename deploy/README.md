@@ -350,6 +350,71 @@ docker compose up -d --build
 
 `--force` replaces the whole database, so the tables, schemas and Flyway history rows of the newer migration are gone. Starting the previous image alone does not undo a migration. Data entered after the backup is lost.
 
+## Two installations on one host (isolation)
+
+Spec §14 #1: each company is its own installation, with its own processes, database, volumes and secrets. Credentials of A do not open B, and restoring A does not change B. One installation is one Compose project: its name (`COMPOSE_PROJECT_NAME` in its `.env`, else `name:` in `compose.yaml`) prefixes every container, volume and network, so give each installation its own `deploy/` copy, `.env`, `secrets/`, `backup-recipients.txt`, backup directory and ports.
+
+**The installation guard.** `backup.sh` and `restore.sh` refuse a `--container` that Docker Compose manages for another project than this installation's. This holds with or without `--force`, so a mistyped container name can never back up or overwrite another company's database. A container Compose did not create (a throwaway one, or one made by `pitr-restore.sh`) is allowed. `pitr-restore.sh --force` replaces only what an earlier `pitr-restore.sh` with the same `--name` created, and refuses every Compose-managed container and volume. If you really mean to act on the other installation, from this one, name it exactly:
+
+```bash
+./restore.sh --force --container rp-b-postgres-1 --other-installation rp-b --identity /dev/shm/b-operational.key ARCHIVE
+```
+
+`--other-installation PROJECT` accepts only that exact project, never this installation's own, and prints a WARNING naming both. It does not lift any other check: without `--force` the restore still stops at a non-empty database, and an archive still needs the identity of the installation it was encrypted for. Prefer running the scripts from the other installation's own `deploy/` directory and environment.
+
+**The isolation drill (A55).** `./test-two-installations.sh` brings up Compose projects `rp-a` and `rp-b` from `drills/isolation/a.env` and `b.env`, with their own secret directories (`drills/isolation/compose.isolation.yaml`), throwaway age keys and generated credentials (production mode, never printed). It fails on the first miss:
+
+1. **separation:** no container, network or volume is shared, and no secret, recipients file or writable path is mounted in both.
+2. **credentials:** A's admin password and session cookie get 401 on B, and the reverse. A's database password fails on B's PostgreSQL, and A's Caddy root certificate does not verify B.
+3. **network:** B's backend can neither resolve nor connect to A's database.
+4. **restore:** back up A, change A, restore A. A matches its backup, and B's `pg_dump` checksum and per-table fingerprint are unchanged.
+5. **tooling:** A's operator environment reaches only A. `restore.sh`, `backup.sh` and `pitr-restore.sh` refuse B's container from A's environment unless `--other-installation rp-b` is given, A's key cannot decrypt B's backup, and B is unchanged.
+6. **teardown:** both stacks are removed with their volumes, and nothing of either is left.
+
+It writes `drills/isolation/drill-isolation-<UTC>.json` and exits non-zero on any violation. It needs Docker, curl and openssl, and ports 18443, 18080, 28443 and 28080 free, and takes about 3–5 minutes. `ISOLATION_FAULT=<step> ./test-two-installations.sh` injects a real violation at that step, and the drill must fail there. `./test-two-installations.sh --self-test` runs shellcheck, the clean drill and then every fault in turn. Run the drill after an upgrade that touches `compose.yaml` or the backup scripts, and before putting a second company on a host. S54 ran it on the R4 schema (backend image built from the integration branch, 155 tables per installation): PASS, 26 checks, exit 0, nothing left behind.
+
+## Load smoke (A56)
+
+Spec §12 targets p95 < 500 ms for simple local commands and reads with 10 POS terminals. `load/load-smoke.sh` measures this against a running stack. It runs `load/LoadSmoke.java` with `java` (JDK 25 or later, no other dependency).
+
+**Run it only against a test or staging installation, never production.** Each run seeds its own store through the BackOffice API, tagged `L<base36 time>`: 10 terminals with a cashier each, a manager, a courier, 40 tables, 300 company-wide catalog items and a fee item, printers on HOLD (nothing prints), a promotion release, discount limits, customers with credit and addresses, and a delivery zone. It then makes real sales with non-certified test documents. These are facts and cannot be removed (spec §8). The installation therefore needs `RESTAURANTPRO_FISCAL_ALLOW_NON_CERTIFIED=true`. The seed also prices, in its own store only, every catalog item that other stores created, because a release must price every active item.
+
+```bash
+umask 077; printf '%s\n' '<the admin password>' > /dev/shm/load-admin   # never on the command line
+LOAD_ADMIN_USERNAME=admin LOAD_ADMIN_PASSWORD_FILE=/dev/shm/load-admin \
+  deploy/load/load-smoke.sh --base-url https://restaurantpro-test.lan --cacert caddy-root.crt
+shred -u /dev/shm/load-admin
+```
+
+The administrator must already have done the first login and changed the initial password. Copy Caddy's root certificate out of the container with `docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt caddy-root.crt`. Options:
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--terminals` | 10 | Concurrent POS terminals (1–40) |
+| `--seconds` | 60 | Length of the measured loop |
+| `--items` | 300 | Catalog items seeded |
+| `--report-dir` | `deploy/load/reports/` | Report directory (git-ignored) |
+| `--no-gate` | gate on | Report a MISS without failing |
+| `--printer-host`, `--printer-port` | `127.0.0.1`, 9 | Address given to the HOLD printers |
+| `--timezone` | UTC | Timezone of the seeded store |
+
+**The plan.** Each terminal loops over these steps:
+
+1. Read the table map, the catalog and the current promotions.
+2. Open a table, or, in one cycle in five, a DELIVERY order with its automatic fee line.
+3. Run two rounds, each confirmed with the catalog version, the promotion version and the preview's expected gross (R4 pricing at confirmation).
+4. Read the order, and print the subtotal for a table.
+5. Settle in turn by one of: equal parts in cash; an ITEMS partition with its own document, then the rest in cash; a credit sale; a 10 % discount plus an approved offer of one unit, then cash; or a delivery: dispatch to the courier, mark it delivered, then cash.
+6. Close the order.
+
+Meanwhile a BackOffice tab reads 1-day reports in turn: sales, taxes, receipts, margins and discounts. Every random choice uses a fixed seed, so runs are comparable.
+
+**Thresholds.** The run fails, with exit 1, on any answer outside 2xx. Unless you pass `--no-gate`, it also fails on any gated operation whose nearest-rank p95 is not strictly below 500 ms. Every measured POS and BackOffice call is gated, with three exceptions that are measured and reported but not gated: `close`, `partitions/{id}/documents` and `credit-charges`. Each of these issues a fiscal document synchronously through the fiscal adapter port, which is an external call (D48, D54). Printing is asynchronous, and no payment provider is used. The report shows p50, p95, p99 and max per operation, the throughput and the variant counts. It is written to `load-<UTC>.json`.
+
+**Checks without a server.** `deploy/load/load-smoke.sh --self-test` runs shellcheck and the program's own checks. These cover the percentile, the 500 ms boundary (exactly 500 ms is a MISS), the plan check with an endpoint removed, the ungated set, JSON and the options. `--dry-run --base-url URL` (logged in as the administrator) or `--dry-run --api-docs FILE` checks that every endpoint of the plan exists in `/v3/api-docs`, and writes nothing.
+
+Measured in S54 on one laptop, with the backend jar, PostgreSQL and the 10 clients on the same machine and the non-certified internal fiscal adapter, over 60 s: 6,310 requests, 291 orders and 0 errors. Every gated p95 was at most 191 ms, except the discount and offer route at 441 ms, which includes an approver's PIN check. `close` was at p95 475 ms, and 544 ms in an earlier run. Re-run on the target hardware before go-live, and after any release that changes the order or settlement paths.
+
 ## Known limitations (later slices)
 
 - The `pg-wal-archive` volume and `backups/` hold only ciphertext, but they are on the database server's disk until the off-box copy runs. Use a separate disk for `backups/` if you can.

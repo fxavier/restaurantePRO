@@ -10,10 +10,14 @@
 |Bean references
 |* `c.x.b.a.IdempotentRequests` (in Access)
 * `c.x.b.c.CatalogApi` (in Catalog)
+* `c.x.b.c.CustomersApi` (in Customers)
 * `c.x.b.a.AccessPolicy` (in Access)
+* `c.x.b.i.EmployeeDirectory` (in Identity)
+* `c.x.b.a.AuditLog` (in Audit)
+* `c.x.b.p.PromotionsApi` (in Promotions)
+* `c.x.b.p.LoyaltyApi` (in Promotions)
 * `c.x.b.i.ApproverVerifier` (in Identity)
 * `c.x.b.d.DiningApi` (in Dining)
-* `c.x.b.a.AuditLog` (in Audit)
 * `c.x.b.s.notify.ChangeNotifier` (in Shared kernel)
 * `c.x.b.o.OrganizationApi` (in Organization)
 |===

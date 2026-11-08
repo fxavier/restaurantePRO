@@ -1,6 +1,6 @@
 # Architecture decision records
 
-Each ADR records a decision as built, with its context and consequences. The full decision texts, with ids, are in [backend-decisions.md](../design/backend-decisions.md) (R1, D1–D33), [r2-decisions.md](../design/r2-decisions.md) (R2, D34–D63) and [r3-decisions.md](../design/r3-decisions.md) (R3, D64–D98). Those documents stay the record for decisions without an ADR here. Supersede an ADR with a new one; do not edit a decision in place.
+Each ADR records a decision as built, with its context and consequences. The full decision texts, with ids, are in [backend-decisions.md](../design/backend-decisions.md) (R1, D1–D33), [r2-decisions.md](../design/r2-decisions.md) (R2, D34–D63) and [r3-decisions.md](../design/r3-decisions.md) (R3, D64–D98) and [r4-decisions.md](../design/r4-decisions.md) (R4, D99–D136). Those documents stay the record for decisions without an ADR here. Supersede an ADR with a new one; do not edit a decision in place.
 
 | ADR | Title | Decision | Status |
 |---|---|---|---|
@@ -31,6 +31,12 @@ Each ADR records a decision as built, with its context and consequences. The ful
 | [0025](0025-tax-cent-of-a-settled-void.md) | The tax cent of a settled void: absorbed, otherwise a pending correction | D96 ★ | Accepted 2026-11-06 |
 | [0026](0026-payment-breakdown-snapshot.md) | The payment breakdown on the document, a snapshot at issue | D97 ★ | Accepted 2026-11-06 |
 | [0027](0027-production-backup-encryption.md) | Production backups encrypted, keys apart, restores tested | D98 ★ | Accepted 2026-11-06 |
+| [0028](0028-r4-module-dependencies.md) | R4 module dependencies (amendments to D65) | D99 ★, D100 | Accepted 2026-11-06 |
+| [0029](0029-every-discount-is-an-effective-unit-price.md) | Every discount is an effective unit price | D101 ★, D103–D107, D112a | Accepted 2026-11-06, amended 2026-11-07 |
+| [0030](0030-loyalty-points-ledger.md) | Loyalty: a points ledger, never a stored balance | D110 ★, D111, D112, D112a | Accepted 2026-11-06 |
+| [0031](0031-stock-ledger-and-moving-average.md) | Stock: a movement ledger, a balance projection and a weighted moving average | D113 ★ + amendment | Accepted 2026-11-06, amended 2026-11-07 |
+| [0032](0032-consumption-by-event-triggered-pull.md) | Consumption: an event-triggered, idempotent pull from the confirmed round | D116 ★ | Accepted 2026-11-06 |
+| [0033](0033-delivery-as-an-order-mode.md) | Delivery is an order mode plus a `Delivery` lifecycle in orders | D127 ★, D128–D130 | Accepted 2026-11-06 |
 
 ## Where the code deviates from a decision text
 

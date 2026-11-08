@@ -46,15 +46,18 @@ public class OrderCoordinationService {
     private final LoyaltyApi loyalty;
     private final ApplicationEventPublisher events;
     private final DeliveryGuards deliveries;
+    private final ApplicationEventPublisher events;
     private final Clock clock;
 
     OrderCoordinationService(OrderRepository orders, OrderBatchRepository batches, OrderLookup lookup,
                              OrderViews views, OrderChanges changes, DiningApi dining,
                              RewardLineage rewards, LineFamilies families, LoyaltyApi loyalty,
+                             DeliveryGuards deliveries, ApplicationEventPublisher events, Clock clock) {
                              ApplicationEventPublisher events, Clock clock) {
         this.events = events;
                              DeliveryGuards deliveries, Clock clock) {
         this.deliveries = deliveries;
+        this.events = events;
         this.rewards = rewards;
         this.families = families;
         this.loyalty = loyalty;

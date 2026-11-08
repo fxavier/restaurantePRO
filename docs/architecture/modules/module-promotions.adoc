@@ -1,0 +1,18 @@
+[%autowidth.stretch, cols="h,a"]
+|===
+|Base package
+|`com.xavier.backend.promotions`
+|Spring components
+|_Services_
+
+* `c.x.b.p.LoyaltyApi`
+* `c.x.b.p.PromotionsApi`
+|Bean references
+|* `c.x.b.o.OrganizationApi` (in Organization)
+* `c.x.b.a.IdempotentRequests` (in Access)
+* `c.x.b.c.CustomersApi` (in Customers)
+* `c.x.b.a.AccessPolicy` (in Access)
+* `c.x.b.a.AuditLog` (in Audit)
+* `c.x.b.s.notify.ChangeNotifier` (in Shared kernel)
+* `c.x.b.c.CatalogApi` (in Catalog)
+|===
