@@ -310,6 +310,85 @@ public class SettlementFixtures {
                         + "\"wasted\": true}").formatted(orderVersion, line, quantity)));
     }
 
+    // ---- R4: settled discounts (D105), delivery orders (D127, D129) ----
+
+    /** The cashier's permissions plus every discount kind's (D106, D134). */
+    static final Permission[] DISCOUNTER = java.util.stream.Stream.concat(java.util.Arrays.stream(CASHIER),
+            java.util.stream.Stream.of(Permission.ORDER_DISCOUNT, Permission.ORDER_OFFER, Permission.LOYALTY_REDEEM))
+            .toArray(Permission[]::new);
+
+    /**
+     * {@code POST /orders/{id}/settlement/discounts} as {@code who} holding {@code permissions}, with the approver
+     * headers when {@code approved} (the verifier is a mock in the settlement context). {@code body} is the request
+     * without its {@code orderVersion}.
+     */
+    public ResultActions settledDiscount(Pos who, UUID order, long orderVersion, String body, boolean approved,
+                                         Permission... permissions) throws Exception {
+        return settledDiscountWithHeaders(who, order, orderVersion, body, approved ? "MGR" : null,
+                approved ? "1234" : null, permissions);
+    }
+
+    /** {@link #settledDiscount} with the approver headers as given ({@code null}: absent). */
+    public ResultActions settledDiscountWithHeaders(Pos who, UUID order, long orderVersion, String body,
+                                                    String approverCode, String approverPin,
+                                                    Permission... permissions) throws Exception {
+        var request = idem(post(ORDERS + "/" + order + "/settlement/discounts"), UUID.randomUUID().toString())
+                .with(who.with(permissions.length == 0 ? DISCOUNTER : permissions))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"orderVersion\": %d, %s}".formatted(orderVersion, body));
+        if (approverCode != null) {
+            request = request.header("X-Approver-Code", approverCode);
+        }
+        if (approverPin != null) {
+            request = request.header("X-Approver-Pin", approverPin);
+        }
+        return mvc.perform(request);
+    }
+
+    /** The orders route ({@code POST /orders/{id}/discounts}, D105), approved, for comparison. */
+    public ResultActions ordersRouteDiscount(Sale sale, UUID line, String percent) throws Exception {
+        return mvc.perform(idem(post(ORDERS + "/" + sale.order() + "/discounts"), UUID.randomUUID().toString())
+                .with(sale.cashier().with(DISCOUNTER)).header("X-Approver-Code", "MGR")
+                .header("X-Approver-Pin", "1234").contentType(MediaType.APPLICATION_JSON).content("""
+                        {"orderVersion": %d, "lines": [{"lineId": "%s"}], "kind": "DISCOUNT", "percent": %s,
+                         "reason": "regular"}""".formatted(orderVersion(sale.cashier(), sale.order()), line,
+                        percent)));
+    }
+
+    /** An approved settled discount of {@code percent} on {@code quantity} of {@code line} (null: all of it). */
+    public ResultActions percentOff(Sale sale, UUID line, String quantity, String percent) throws Exception {
+        String asked = quantity == null ? "" : ", \"quantity\": " + quantity;
+        return settledDiscount(sale.cashier(), sale.order(), orderVersion(sale.cashier(), sale.order()), """
+                "lines": [{"lineId": "%s"%s}], "kind": "DISCOUNT", "percent": %s, "reason": "regular\""""
+                .formatted(line, asked, percent), true);
+    }
+
+    /** An approved settled offer of {@code quantity} of {@code line} (null: all of it). */
+    public ResultActions offer(Sale sale, UUID line, String quantity) throws Exception {
+        String asked = quantity == null ? "" : ", \"quantity\": " + quantity;
+        return settledDiscount(sale.cashier(), sale.order(), orderVersion(sale.cashier(), sale.order()), """
+                "lines": [{"lineId": "%s"%s}], "kind": "OFFER", "reason": "on the house\""""
+                .formatted(line, asked), true);
+    }
+
+    /** A sale whose order is a DELIVERY order (fee 3.00 at 5 % plus 1 item at 12.50), and its delivery shop. */
+    public record DeliverySale(Sale sale, com.xavier.backend.orders.delivery.DeliveryFixtures deliveries,
+                               com.xavier.backend.orders.delivery.DeliveryFixtures.DeliveryShop shop) {
+    }
+
+    /** A delivery-ready shop, a cashier with an OPEN session and a series, and a confirmed DELIVERY order (PENDING). */
+    public DeliverySale deliverySale(com.xavier.backend.customers.CustomersFixtures customers) throws Exception {
+        var deliveries = new com.xavier.backend.orders.delivery.DeliveryFixtures(mvc, jdbc, orders, customers);
+        var shop = deliveries.shop();
+        cash.setCutoff(shop.shop().store(), cash.cutoffFarFromNow());
+        UUID register = cash.newRegister(shop.shop().store());
+        Pos cashier = CashFixtures.pos(shop.shop().store());
+        UUID session = cash.openSession(cashier, register, "0");
+        UUID series = fiscal.newSeries(shop.shop().store(), "S" + UUID.randomUUID().toString().substring(0, 6), 1);
+        UUID order = deliveries.confirmedDelivery(shop, cashier.employeeId(), cashier.terminalId());
+        return new DeliverySale(new Sale(shop.shop(), cashier, register, session, series, order), deliveries, shop);
+    }
+
     // ---- R3: refunds (D77) ----
 
     public static final String PAYMENTS = "/api/v1/pos/payments";

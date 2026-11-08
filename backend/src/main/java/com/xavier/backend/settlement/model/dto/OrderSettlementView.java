@@ -1,5 +1,6 @@
 package com.xavier.backend.settlement.model.dto;
 
+import com.xavier.backend.orders.DeliverySummary;
 import com.xavier.backend.shared.Money;
 import java.util.List;
 import java.util.UUID;
@@ -20,7 +21,8 @@ import java.util.UUID;
  * R3 (D77): {@code paid} is net of refunds, and {@code refunds} are every refund of the order's payments, oldest
  * first. R3 (D97): {@code paymentStatus} is live, {@code PaymentStatus.of(due, paid, credit)} over every target
  * ({@code UNPAID}, {@code PARTIALLY_PAID}, {@code PAID}, {@code ON_ACCOUNT} or {@code MIXED}); a document keeps the
- * one of its issue.
+ * one of its issue. R4 (D129): {@code mode} is how the order is served, {@code customerId} its customer ({@code null}
+ * when none) and {@code delivery} the delivery of a DELIVERY order ({@code null} for any other mode).
  */
 public record OrderSettlementView(UUID orderId, UUID storeId, String lifecycle, long orderVersion, Money due,
                                   Money paid, Money balance, String financialState, String fiscalState,
@@ -28,5 +30,6 @@ public record OrderSettlementView(UUID orderId, UUID storeId, String lifecycle, 
                                   List<LineCoverage> coverage, Money residualBalance,
                                   List<TaxRoundingDifference> taxRoundingDifference, Money credit,
                                   List<CreditChargeView> creditCharges, List<RefundView> refunds,
-                                  List<TaxRoundingAdjustmentView> taxRoundingAdjustments, String paymentStatus) {
+                                  List<TaxRoundingAdjustmentView> taxRoundingAdjustments, String paymentStatus,
+                                  String mode, UUID customerId, DeliverySummary delivery) {
 }

@@ -133,6 +133,20 @@ class StoreFirstAuthorizationHttpTest {
     }
 
     @Test
+    void aStrangersSettledDiscountDoesNotWaitForTheOrdersLockNorLoadTheBill() throws Exception {
+        UUID line = fixtures.lineIds(sale.cashier(), sale.order()).getFirst();
+        clearInvocations(orders);
+        RequestPostProcessor discounter = CashFixtures.pos(cash.newStore()).with(Permission.ORDER_DISCOUNT,
+                Permission.ORDER_VIEW);
+
+        assertThat(whileTheOrderIsLocked(command(SettlementFixtures.ORDERS + "/" + sale.order()
+                + "/settlement/discounts", """
+                {"orderVersion": 1, "lines": [{"lineId": "%s"}], "kind": "DISCOUNT", "percent": 10,
+                 "reason": "regular"}""".formatted(line)).with(discounter))).isEqualTo(403);
+        verify(orders, never()).billingView(sale.order());
+    }
+
+    @Test
     void aStrangersSettlementReadDoesNotLoadTheBill() throws Exception {
         int status = mvc.perform(get(SettlementFixtures.ORDERS + "/" + sale.order() + "/settlement").with(stranger))
                 .andReturn().getResponse().getStatus();
