@@ -148,6 +148,8 @@ public class OrderViews {
         List<OrderLine> all = confirmed.values().stream().flatMap(List::stream).toList();
         Map<UUID, String> inherited = inheritedRewards(all, adjusted);
         Map<UUID, OrderLinePriceAdjustment> lineage = lineageOrigins(all, adjusted);
+        Map<UUID, String> inherited = inheritedRewards(confirmed.values().stream().flatMap(List::stream).toList(),
+                adjusted);
         Map<UUID, DeliverySummary> delivery = deliveries(orders);
         return orders.stream().map(order -> {
             List<BillingLine> billable = billingLines(confirmed.getOrDefault(order.getId(), List.of()), deducted,

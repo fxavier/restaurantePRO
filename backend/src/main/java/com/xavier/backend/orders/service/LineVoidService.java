@@ -176,6 +176,7 @@ public class LineVoidService {
      */
     private List<ComponentLine> voidedComponents(OrderLineVoid voided) {
         UUID roundLine = lines.roundLineOf(voided.getLineId()).orElse(voided.getLineId());
+        UUID roundLine = voids.consumedLineId(voided.getId()).orElse(voided.getLineId());
         return components.findByLineIdOrderByPosition(roundLine).stream()
                 .map(component -> new ComponentLine(component.getItemCode(), component.getDescription(),
                         component.getQuantity().multiply(voided.getQuantity()).setScale(3, RoundingMode.HALF_UP),
