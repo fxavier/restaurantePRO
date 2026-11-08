@@ -24,6 +24,15 @@ public interface OrderLineRepository extends JpaRepository<OrderLine, UUID> {
 
     Optional<OrderLine> findByIdAndOrderId(UUID id, UUID orderId);
 
+    /**
+     * The round line {@code lineId} descends from (D100): the line itself when it has a round, else the source line
+     * its transfer and split facts lead back to. A confirmed line always has one or the other.
+     */
+    @Query(value = LineAncestry.ORIGIN + """
+            SELECT o.line_id FROM origin o JOIN orders.order_line l ON l.id = o.line_id
+            WHERE l.batch_id IS NOT NULL ORDER BY o.depth LIMIT 1""", nativeQuery = true)
+    Optional<UUID> roundLineOf(@Param("lineIds") UUID lineId);
+
     /** The lines confirmed in a round, in creation order; a line transferred in has no round. */
     List<OrderLine> findByBatchIdOrderById(UUID batchId);
 

@@ -53,7 +53,7 @@ public class VoidFactsService {
                 snapshot.releaseId()), voided.getQuantity(),
                 LineAmounts.of(unitPrice, voided.getQuantity(), snapshot.taxRatePercent()).gross(),
                 voided.getReason(), voided.isWasted(), voided.getOperatorEmployeeId(),
-                voided.getApproverEmployeeId(), voids.wasAfterDispatch(voidId), voids.consumedLineId(voidId)
+                voided.getApproverEmployeeId(), voids.wasAfterDispatch(voidId), lines.roundLineOf(line.getId())
                 .orElseThrow(() -> new IllegalStateException("Void " + voidId + " descends from no round line")));
     }
 

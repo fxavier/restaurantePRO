@@ -134,7 +134,8 @@ class RebuildEqualsLiveTest {
         JsonNode run = reporting.awaitRebuildFinished(sale.store());
 
         assertThat(run.get("status").asString()).isEqualTo("COMPLETED");
-        assertThat(run.get("projected").asLong()).isEqualTo(4); // the document, the void, the payment, the charge
+        // the document, the void, the payment, the charge, and the closed order (its offers, S53)
+        assertThat(run.get("projected").asLong()).isEqualTo(5);
         assertThat(projections()).isEqualTo(live);
         assertThat(reports()).isEqualTo(liveReports);
     }

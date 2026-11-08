@@ -60,6 +60,60 @@ public class ReportQueries {
             WHERE store_id = :store AND business_date BETWEEN :from AND :to
             GROUP BY 1 ORDER BY 1 NULLS LAST""";
 
+    public static final String MARGIN_SALES = """
+            SELECT %s AS key, sum(t.net) AS amount, NULL::numeric AS waste, max(t.projected_at) AS as_of
+            FROM reporting.sales_record_line t
+            WHERE t.store_id = :store AND t.business_date BETWEEN :from AND :to
+            GROUP BY 1""";
+
+    /** Consumption less its reversals is cost of sales; a manual WASTE is waste (values of OUTs are negative). */
+    public static final String MARGIN_COST = """
+            SELECT %s AS key, -coalesce(sum(t.value) FILTER (WHERE t.type <> 'WASTE'), 0) AS amount,
+                   -coalesce(sum(t.value) FILTER (WHERE t.type = 'WASTE'), 0) AS waste, max(t.projected_at) AS as_of
+            FROM reporting.consumption_record t
+            WHERE t.store_id = :store AND t.business_date BETWEEN :from AND :to
+            GROUP BY 1""";
+
+    /** A wasted void's share: out of cost of sales and into waste (D117 as amended), as inventory's rotation. */
+    public static final String MARGIN_WASTE = """
+            SELECT %s AS key, -sum(t.value) AS amount, sum(t.value) AS waste, max(t.projected_at) AS as_of
+            FROM reporting.consumption_waste_record t
+            WHERE t.store_id = :store AND t.business_date BETWEEN :from AND :to
+            GROUP BY 1""";
+
+    public static final String MARGIN_VARIANCE = """
+            SELECT %s AS key, sum(t.value) AS amount, NULL::numeric AS waste, max(t.projected_at) AS as_of
+            FROM reporting.cost_variance_record t
+            WHERE t.store_id = :store AND t.business_date BETWEEN :from AND :to
+            GROUP BY 1""";
+
+    /**
+     * Discounted lines, as operators recorded them: a REVERSAL nets what it takes back (negative lines, quantity and
+     * discount, under the origin it reverses).
+     */
+    public static final String DISCOUNTS = """
+            SELECT %s AS key, sum(CASE WHEN d.kind = 'REVERSAL' THEN -1 ELSE 1 END) AS lines,
+                   sum(CASE WHEN d.kind = 'REVERSAL' THEN -d.quantity ELSE d.quantity END) AS quantity,
+                   sum(d.discount_gross) AS discount, max(d.projected_at) AS as_of
+            FROM reporting.discount_record d
+            WHERE d.store_id = :store AND d.business_date BETWEEN :from AND :to
+            GROUP BY 1 ORDER BY 1 NULLS LAST""";
+
+    /**
+     * The cost of offers, measured at close: each offered billing line's net quantity × the unit cost of the round
+     * line it descends from (its sale consumption ÷ its confirmed quantity, so a void of other units of that line
+     * does not change it), rounded per line to the projections' scale (4).
+     */
+    public static final String OFFER_COSTS = """
+            SELECT %s AS key, coalesce(sum(round(o.net_quantity * u.cost / o.consumed_line_quantity, 4)), 0)
+                       AS offer_cost, max(o.projected_at) AS as_of
+            FROM reporting.offer_cost_record o
+            CROSS JOIN LATERAL (
+                SELECT coalesce(-sum(c.value), 0) AS cost FROM reporting.consumption_record c
+                WHERE c.line_id = o.consumed_line_id AND c.type = 'SALE_CONSUMPTION') u
+            WHERE o.store_id = :store AND o.business_date BETWEEN :from AND :to
+            GROUP BY 1 ORDER BY 1 NULLS LAST""";
+
     private final JdbcClient jdbc;
 
     ReportQueries(JdbcClient jdbc) {
@@ -81,6 +135,40 @@ public class ReportQueries {
     }
 
     public record CreditAggregate(String key, BigDecimal onAccount, Instant asOf) {
+    }
+
+    /** One margin source's {@code amount} (and {@code waste}, where it has one) for a group. */
+    public record CostAggregate(String key, BigDecimal amount, BigDecimal waste, Instant asOf) {
+    }
+
+    public record DiscountAggregate(String key, long lines, BigDecimal quantity, BigDecimal discount, Instant asOf) {
+    }
+
+    public record OfferCostAggregate(String key, BigDecimal offerCost, Instant asOf) {
+    }
+
+    /** {@code sql} is one of the {@code MARGIN_*} queries, {@code keyExpression} a margin grouping's key over it. */
+    public List<CostAggregate> margin(String sql, String keyExpression, UUID store, LocalDate from, LocalDate to) {
+        return query(sql.formatted(keyExpression), store, from, to)
+                .query((rs, n) -> new CostAggregate(rs.getString("key"), rs.getBigDecimal("amount"),
+                        rs.getBigDecimal("waste"), instant(rs, "as_of")))
+                .list();
+    }
+
+    /** Discounted lines grouped by {@code keyExpression}. */
+    public List<DiscountAggregate> discounts(String keyExpression, UUID store, LocalDate from, LocalDate to) {
+        return query(DISCOUNTS.formatted(keyExpression), store, from, to)
+                .query((rs, n) -> new DiscountAggregate(rs.getString("key"), rs.getLong("lines"),
+                        rs.getBigDecimal("quantity"), rs.getBigDecimal("discount"), instant(rs, "as_of")))
+                .list();
+    }
+
+    /** The cost of offers grouped by {@code keyExpression} over {@code offer_cost_record o}. */
+    public List<OfferCostAggregate> offerCosts(String keyExpression, UUID store, LocalDate from, LocalDate to) {
+        return query(OFFER_COSTS.formatted(keyExpression), store, from, to)
+                .query((rs, n) -> new OfferCostAggregate(rs.getString("key"), rs.getBigDecimal("offer_cost"),
+                        instant(rs, "as_of")))
+                .list();
     }
 
     /**
@@ -146,13 +234,10 @@ public class ReportQueries {
 
     /** The newest projection of the store, over every projection table; {@code null} before the first. */
     public Instant lastProjectedAt(UUID store) {
-        return jdbc.sql("""
-                        SELECT greatest(
-                            (SELECT max(projected_at) FROM reporting.sales_record WHERE store_id = :store),
-                            (SELECT max(projected_at) FROM reporting.payment_record WHERE store_id = :store),
-                            (SELECT max(projected_at) FROM reporting.credit_record WHERE store_id = :store),
-                            (SELECT max(projected_at) FROM reporting.void_record WHERE store_id = :store)) AS as_of""")
-                .param("store", store).query((rs, n) -> instant(rs, "as_of")).list().getFirst();
+        String newest = ProjectionStore.PROJECTIONS.stream()
+                .map(table -> "(SELECT max(projected_at) FROM reporting." + table + " WHERE store_id = :store)")
+                .collect(java.util.stream.Collectors.joining(", ", "SELECT greatest(", ") AS as_of"));
+        return jdbc.sql(newest).param("store", store).query((rs, n) -> instant(rs, "as_of")).list().getFirst();
     }
 
     private JdbcClient.StatementSpec query(String sql, UUID store, LocalDate from, LocalDate to) {

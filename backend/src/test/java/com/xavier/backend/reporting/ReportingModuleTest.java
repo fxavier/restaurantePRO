@@ -6,6 +6,12 @@ import com.xavier.backend.dining.DiningFixtures;
 import com.xavier.backend.fiscal.FiscalFixtures;
 import com.xavier.backend.identity.ApproverVerifier;
 import com.xavier.backend.orders.OrdersFixtures;
+import com.xavier.backend.inventory.InventoryFixtures;
+import com.xavier.backend.inventory.consumption.service.RoundConsumption;
+import com.xavier.backend.orders.OrdersCatalog;
+import com.xavier.backend.orders.OrdersPromotions;
+import com.xavier.backend.promotions.PromotionsFixtures;
+import com.xavier.backend.reporting.service.CostProjections;
 import com.xavier.backend.reporting.service.Projections;
 import com.xavier.backend.settlement.FakePaymentProvider;
 import com.xavier.backend.settlement.SettlementFacts;
@@ -26,8 +32,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 /**
  * Boots reporting with every module whose facts it projects (and what they need), on the shared Testcontainers
  * PostgreSQL, so a test produces real facts through the POS APIs (settlement's fixtures) and reads the projections.
- * {@code customers} is included because settlement depends on it from S29. Spies: {@link SettlementFacts}, so refund
- * and credit-charge facts can be stubbed until S29/S30 record them, and {@link Projections}, so a test can hold a
+ * {@code customers} is included because settlement depends on it from S29, {@code inventory} for the cost of goods
+ * (S53: real consumption, waste and variances). Spies: {@link SettlementFacts}, so refund and credit-charge facts can
+ * be stubbed until S29/S30 record them, and {@link Projections} and {@link CostProjections}, so a test can hold a
  * projection (freshness). The clock is {@link SettlementTestClock}. The database is shared by the whole test JVM:
  * never assume empty tables; every test uses fresh stores.
  */
@@ -35,11 +42,12 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
 @ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization", "dining", "catalog", "orders",
-        "cash", "fiscal", "identity", "settlement", "customers", "promotions"})
+        "cash", "fiscal", "identity", "settlement", "customers", "promotions", "inventory"})
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, DiningFixtures.class, OrdersFixtures.class, CashFixtures.class,
         FiscalFixtures.class, SettlementFixtures.class, SettlementTestClock.Config.class,
-        FakePaymentProvider.Config.class, ReportingFixtures.class})
+        FakePaymentProvider.Config.class, ReportingFixtures.class, InventoryFixtures.class, PromotionsFixtures.class,
+        OrdersPromotions.class, OrdersCatalog.class, CostKitchen.class})
 @TestPropertySource(properties = {
         "restaurantpro.bootstrap.company.name=Test Company",
         "restaurantpro.bootstrap.company.tax-id=TEST-TAX-ID",
@@ -50,7 +58,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
         "restaurantpro.settlement.provider-timeout=PT2S",
         "restaurantpro.settlement.sweep-interval=PT1H"
 })
-@MockitoSpyBean(types = {SettlementFacts.class, Projections.class})
+@MockitoSpyBean(types = {SettlementFacts.class, Projections.class, CostProjections.class, RoundConsumption.class})
 @MockitoBean(types = ApproverVerifier.class)
 public @interface ReportingModuleTest {
 }

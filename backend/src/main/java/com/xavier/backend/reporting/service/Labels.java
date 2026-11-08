@@ -1,5 +1,7 @@
 package com.xavier.backend.reporting.service;
 
+import com.xavier.backend.catalog.CatalogApi;
+import com.xavier.backend.catalog.ItemRef;
 import com.xavier.backend.identity.EmployeeDirectory;
 import com.xavier.backend.identity.EmployeeSummary;
 import com.xavier.backend.organization.OrganizationApi;
@@ -12,16 +14,24 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Component;
 
-/** Labels of the employees and terminals a report groups by, read when the report is served (D86). */
+/** Labels of the employees, terminals and items a report groups by, read when the report is served (D86). */
 @Component
 class Labels {
 
     private final EmployeeDirectory employees;
     private final OrganizationApi organization;
+    private final CatalogApi catalog;
 
-    Labels(EmployeeDirectory employees, OrganizationApi organization) {
+    Labels(EmployeeDirectory employees, OrganizationApi organization, CatalogApi catalog) {
         this.employees = employees;
         this.organization = organization;
+        this.catalog = catalog;
+    }
+
+    /** Catalog item codes by item id (as text); an unknown id has no label. */
+    Map<String, String> items(Collection<String> keys) {
+        Set<UUID> ids = keys.stream().filter(Objects::nonNull).map(UUID::fromString).collect(Collectors.toSet());
+        return catalog.items(ids).stream().collect(Collectors.toMap(item -> item.id().toString(), ItemRef::code));
     }
 
     /** Display names by employee id (as text); an unknown id has no label. */
