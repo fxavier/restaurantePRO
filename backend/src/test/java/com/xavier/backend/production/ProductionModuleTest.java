@@ -1,8 +1,10 @@
 package com.xavier.backend.production;
 
 import com.xavier.backend.TestcontainersConfiguration;
+import com.xavier.backend.customers.CustomersFixtures;
 import com.xavier.backend.dining.DiningFixtures;
 import com.xavier.backend.fiscal.FiscalFixtures;
+import com.xavier.backend.orders.OrdersCatalog;
 import com.xavier.backend.orders.OrdersFixtures;
 import com.xavier.backend.orders.OrdersProductionApi;
 import com.xavier.backend.shared.notify.ChangeNotifier;
@@ -20,7 +22,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 /**
  * Boots production with the modules whose events and API it uses for real: orders (rounds, through dining, catalog,
  * organization and identity, whose ApproverVerifier orders' voids need) and fiscal (documents and their copies),
- * plus shared, access and audit, on the shared
+ * with the R4 fixtures for delivery customers and menus, plus shared, access and audit, on the shared
  * Testcontainers PostgreSQL. {@code config} is not included, so nothing is scheduled here: tests run the worker
  * with {@code PrintWorker.poll()}. Full-application contexts of other tests (cached, same database) do run it, so
  * tests wait for states and match printed content instead of assuming they are alone. One annotation, one cached
@@ -33,7 +35,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
         "fiscal", "identity", "customers", "promotions"})
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, DiningFixtures.class, OrdersFixtures.class, FiscalFixtures.class,
-        ProductionFixtures.class})
+        ProductionFixtures.class, CustomersFixtures.class, OrdersCatalog.class})
 @TestPropertySource(properties = {
         "restaurantpro.bootstrap.company.name=Test Company",
         "restaurantpro.bootstrap.company.tax-id=TEST-TAX-ID",
