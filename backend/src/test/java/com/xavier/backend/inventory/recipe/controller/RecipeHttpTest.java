@@ -213,6 +213,36 @@ class RecipeHttpTest {
     }
 
     @Test
+    void recipeWritesNeedAnInstallationWideGrantButReadsAcceptAStoreGrant() throws Exception {
+        RequestPostProcessor storeManager = account(UUID.randomUUID(), Permission.RECIPE_MANAGE);
+        UUID recipe = id(create("""
+                {"itemId": "%s", "name": "Pizza"}""".formatted(item)).andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString());
+        version(recipe, "250", "g").andExpect(status().isCreated());
+
+        mvc.perform(get(RECIPES + "/" + recipe).with(storeManager)).andExpect(status().isOk());
+        mvc.perform(idem(post(RECIPES)).with(storeManager).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"itemId\": \"%s\", \"name\": \"Other\"}".formatted(UUID.randomUUID())))
+                .andExpect(status().isForbidden());
+        mvc.perform(idem(put(RECIPES + "/" + recipe)).with(storeManager).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\": \"Renamed\", \"version\": 0}")).andExpect(status().isForbidden());
+        mvc.perform(idem(post(RECIPES + "/" + recipe + "/versions")).with(storeManager)
+                .contentType(MediaType.APPLICATION_JSON).content(versionBody("300", "g", null)))
+                .andExpect(status().isForbidden());
+        mvc.perform(idem(put(RECIPES + "/" + recipe + "/versions/1")).with(storeManager)
+                .contentType(MediaType.APPLICATION_JSON).content(versionBody("300", "g", null)))
+                .andExpect(status().isForbidden());
+        mvc.perform(idem(post(RECIPES + "/" + recipe + "/versions/1/activate")).with(storeManager)
+                .contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isForbidden());
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(RECIPES + "/" + recipe)
+                        .with(storeManager).with(org.springframework.security.test.web.servlet.request
+                                .SecurityMockMvcRequestPostProcessors.csrf()))
+                .andExpect(status().isForbidden());
+        mvc.perform(get(RECIPES + "/" + recipe).with(manager())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Pizza"));
+    }
+
+    @Test
     void theDatabaseRefusesToChangeAnActiveVersionsIngredients() throws Exception {
         UUID recipe = activeRecipe();
 

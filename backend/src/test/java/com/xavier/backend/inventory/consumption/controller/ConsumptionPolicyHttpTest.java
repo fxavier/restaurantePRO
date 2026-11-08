@@ -89,6 +89,22 @@ class ConsumptionPolicyHttpTest {
         mvc.perform(get(POLICIES).with(account(null, Permission.INVENTORY_VIEW))).andExpect(status().isForbidden());
     }
 
+    @Test
+    void policyWritesNeedAnInstallationWideGrantButReadsAcceptAStoreGrant() throws Exception {
+        org.springframework.test.web.servlet.request.RequestPostProcessor storeManager =
+                account(UUID.randomUUID(), Permission.RECIPE_MANAGE);
+        int versionNo = json(draft(rules(UUID.randomUUID())).andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString()).get("versionNo").asInt();
+
+        mvc.perform(get(POLICIES).with(storeManager)).andExpect(status().isOk());
+        mvc.perform(idem(post(POLICIES)).with(storeManager).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"rules\": [{\"tracked\": true}]}")).andExpect(status().isForbidden());
+        mvc.perform(idem(put(POLICIES + "/" + versionNo)).with(storeManager).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"rules\": [{\"tracked\": true}]}")).andExpect(status().isForbidden());
+        mvc.perform(idem(post(POLICIES + "/" + versionNo + "/activate")).with(storeManager)
+                .contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isForbidden());
+    }
+
     /** An instant after now and after the start of the version in force (other tests activate versions too). */
     private Instant afterTheVersionInForce() throws Exception {
         Instant activeFrom = Instant.EPOCH;

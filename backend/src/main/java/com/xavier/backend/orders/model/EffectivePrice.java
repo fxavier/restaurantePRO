@@ -76,6 +76,19 @@ public record EffectivePrice(Money listUnitPrice, Money unitPrice, String origin
         return price.times(BigDecimal.ONE.subtract(percent.movePointLeft(2)));
     }
 
+    /**
+     * The cumulative discount against the list price that a percent off {@code current} asks for, measured before
+     * the new unit price is rounded (D106): 10 % off 10.09 is 10 %, though 9.08 is 10.01 % off.
+     */
+    public static BigDecimal percentOffAsked(Money listUnitPrice, Money current, BigDecimal percent) {
+        if (listUnitPrice.amount().signum() == 0) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal unrounded = current.amount().multiply(BigDecimal.ONE.subtract(percent.movePointLeft(2)));
+        return BigDecimal.ONE.subtract(unrounded.divide(listUnitPrice.amount(), 10,
+                java.math.RoundingMode.HALF_UP)).movePointRight(2);
+    }
+
     /** The cumulative discount against the list price in percent, {@code 1 − unit/list} (D106); 0 for a free item. */
     public static BigDecimal percentOff(Money listUnitPrice, Money unitPrice) {
         if (listUnitPrice.amount().signum() == 0) {
