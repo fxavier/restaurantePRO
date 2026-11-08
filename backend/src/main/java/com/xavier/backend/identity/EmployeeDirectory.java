@@ -1,6 +1,8 @@
 package com.xavier.backend.identity;
 
+import com.xavier.backend.identity.model.Employee;
 import com.xavier.backend.identity.repository.EmployeeRepository;
+import com.xavier.backend.identity.repository.EmployeeStoreAssignmentRepository;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
@@ -19,9 +21,25 @@ import org.springframework.transaction.annotation.Transactional;
 public class EmployeeDirectory {
 
     private final EmployeeRepository employees;
+    private final EmployeeStoreAssignmentRepository assignments;
 
-    EmployeeDirectory(EmployeeRepository employees) {
+    EmployeeDirectory(EmployeeRepository employees, EmployeeStoreAssignmentRepository assignments) {
         this.employees = employees;
+        this.assignments = assignments;
+    }
+
+    /**
+     * Whether {@code employeeId} is an active employee with at least one assignment in {@code storeId} (S50: a
+     * delivery's courier). A locked employee (PIN lockout) still counts: the lock concerns login, not employment.
+     * {@code false} for null arguments or an unknown employee; never throws.
+     */
+    @Transactional(readOnly = true)
+    public boolean isActiveInStore(UUID employeeId, UUID storeId) {
+        if (employeeId == null || storeId == null) {
+            return false; // findById(null) would throw and mark a joined caller transaction rollback-only
+        }
+        return employees.findById(employeeId).filter(Employee::isActive).isPresent()
+                && !assignments.findByEmployeeIdAndStoreId(employeeId, storeId).isEmpty();
     }
 
     /** The summary of every known id in {@code ids}; unknown ids are absent from the map. */

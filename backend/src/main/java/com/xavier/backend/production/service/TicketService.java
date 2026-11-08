@@ -3,8 +3,9 @@ package com.xavier.backend.production.service;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.fiscal.model.event.DocumentPrintout;
 import com.xavier.backend.organization.OrganizationApi;
+import com.xavier.backend.orders.DeliverySlip;
 import com.xavier.backend.orders.OrdersProductionApi;
-import com.xavier.backend.orders.model.event.Line;
+import com.xavier.backend.orders.model.event.DeliveryDispatched;
 import com.xavier.backend.orders.model.event.OrderBatchConfirmed;
 import com.xavier.backend.orders.model.event.OrderLinesVoided;
 import com.xavier.backend.orders.model.event.SubtotalRequested;
@@ -31,12 +32,10 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.HexFormat;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -90,28 +89,31 @@ public class TicketService {
         orders.markBatchDispatched(event.batchId());
     }
 
-    /** A ticket per destination of the round; lines with no destination are not printed (D56). */
+    /**
+     * A ticket per destination of the round, its lines' or their menu components' (D108); what has no destination
+     * is not printed (D56).
+     */
     private void printBatch(OrderBatchConfirmed event) {
-        Map<String, List<Line>> byDestination = event.lines().stream()
-                .filter(line -> line.destination() != null && !line.destination().isBlank())
-                .collect(Collectors.groupingBy(line -> line.destination().strip(), LinkedHashMap::new,
-                        Collectors.toList()));
-        byDestination.forEach((destination, lines) -> routed(event.storeId(), destination, new TicketDraft(
-                event.storeId(), TicketSource.BATCH, event.batchId(), destination, JobKind.ORIGINAL, event.orderId(),
-                event.terminalId(), TicketLayouts.batch(destination, event.orderNumber(), event.tableCode(),
-                event.batchNo(), event.confirmedAt(), zone(event.storeId()), lines), null)));
+        for (String destination : TicketLayouts.destinations(event.lines())) {
+            routed(event.storeId(), destination, new TicketDraft(event.storeId(), TicketSource.BATCH, event.batchId(),
+                    destination, JobKind.ORIGINAL, event.orderId(), event.terminalId(), TicketLayouts.batch(
+                    destination, event.orderNumber(), event.tableCode(), event.mode(), event.batchNo(),
+                    event.confirmedAt(), zone(event.storeId()), event.lines()), null));
+        }
     }
 
+    /**
+     * A VOID ticket on each destination of the voided line, its own or its menu components' (D108), routed as rounds
+     * are; a publication stored before R4 (no components, no mode) prints as it did.
+     */
     @Transactional(propagation = Propagation.MANDATORY)
     public void printVoid(OrderLinesVoided event) {
-        String destination = event.line().destination();
-        if (destination == null || destination.isBlank()) {
-            return;
+        for (String destination : TicketLayouts.destinations(List.of(event.line()))) {
+            routed(event.storeId(), destination, new TicketDraft(event.storeId(), TicketSource.VOID, event.voidId(),
+                    destination, JobKind.ORIGINAL, event.orderId(), event.terminalId(), TicketLayouts.voided(
+                    destination, event.orderNumber(), event.tableCode(), event.mode(), event.at(),
+                    zone(event.storeId()), event.line(), event.quantity(), event.reason()), null));
         }
-        routed(event.storeId(), destination.strip(), new TicketDraft(event.storeId(), TicketSource.VOID,
-                event.voidId(), destination.strip(), JobKind.ORIGINAL, event.orderId(), event.terminalId(),
-                TicketLayouts.voided(destination.strip(), event.orderNumber(), event.tableCode(), event.at(),
-                        zone(event.storeId()), event.line(), event.quantity(), event.reason()), null));
     }
 
     /**
@@ -154,6 +156,19 @@ public class TicketService {
     public void printReceiptSlip(UUID paymentId, UUID storeId, UUID terminalId, List<String> lines) {
         onTerminal(storeId, terminalId, new TicketDraft(storeId, TicketSource.RECEIPT_SLIP, paymentId, "ORIGINAL",
                 JobKind.ORIGINAL, null, terminalId, lines, null));
+    }
+
+    /**
+     * A delivery's slip (D129), on the printer of the terminal that dispatched it; one per dispatch (the delivery
+     * event is the ticket's source), so a re-dispatch prints again and a redelivered event does not. UNROUTED when
+     * that terminal has no printer.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void printDeliverySlip(DeliveryDispatched event) {
+        DeliverySlip slip = orders.deliverySlip(event.orderId());
+        onTerminal(event.storeId(), event.terminalId(), new TicketDraft(event.storeId(), TicketSource.DELIVERY_SLIP,
+                event.deliveryEventId(), "ORIGINAL", JobKind.ORIGINAL, event.orderId(), event.terminalId(),
+                TicketLayouts.deliverySlip(slip, clock.instant(), zone(event.storeId())), null));
     }
 
     /** A test page straight to {@code printer}, whatever its mode routes (HOLD still holds it). */

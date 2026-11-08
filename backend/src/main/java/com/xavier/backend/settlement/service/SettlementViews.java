@@ -57,7 +57,8 @@ class SettlementViews {
                 bill.charges().stream().map(com.xavier.backend.settlement.model.CreditCharge::toView).toList(),
                 bill.refunds().stream().map(com.xavier.backend.settlement.model.Refund::toView).toList(),
                 taxRounding.views(orderId),
-                PaymentStatus.of(bill.due(), bill.paid(), bill.credit()).name());
+                PaymentStatus.of(bill.due(), bill.paid(), bill.credit()).name(), bill.view().mode().name(),
+                bill.view().customerId(), bill.view().delivery());
     }
 
     List<PartitionView> partitions(Bill bill) {

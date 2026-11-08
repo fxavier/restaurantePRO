@@ -26,6 +26,8 @@ public class OrderEventProbe {
     private final List<OrderLinesVoided> voids = new CopyOnWriteArrayList<>();
     private final List<SubtotalRequested> subtotals = new CopyOnWriteArrayList<>();
     private final List<LineDiscountsRecorded> discounts = new CopyOnWriteArrayList<>();
+    private final List<com.xavier.backend.orders.model.event.DeliveryDispatched> dispatches =
+            new CopyOnWriteArrayList<>();
     private final Set<UUID> failing = ConcurrentHashMap.newKeySet();
 
     @ApplicationModuleListener
@@ -46,6 +48,17 @@ public class OrderEventProbe {
     @ApplicationModuleListener
     void on(LineDiscountsRecorded event) {
         discounts.add(event);
+    }
+
+    @ApplicationModuleListener
+    void on(com.xavier.backend.orders.model.event.DeliveryDispatched event) {
+        dispatches.add(event);
+    }
+
+    /** The dispatch notices of the order that arrived, waiting up to 10 s for {@code expected}. */
+    public List<com.xavier.backend.orders.model.event.DeliveryDispatched> dispatchesOf(UUID orderId, int expected)
+            throws InterruptedException {
+        return await(() -> dispatches.stream().filter(event -> event.orderId().equals(orderId)).toList(), expected);
     }
 
     /** The discount notices of the order that arrived, waiting up to 10 s for {@code expected}. */

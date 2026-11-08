@@ -13,6 +13,7 @@ import com.xavier.backend.dining.model.dto.CloseReason;
 import com.xavier.backend.orders.OrderBillingView;
 import com.xavier.backend.orders.OrderLifecycle;
 import com.xavier.backend.orders.exception.OrderNotFoundException;
+import com.xavier.backend.orders.delivery.service.DeliveryGuards;
 import com.xavier.backend.orders.model.Order;
 import com.xavier.backend.orders.model.OrderBatch;
 import com.xavier.backend.orders.repository.OrderBatchRepository;
@@ -44,6 +45,7 @@ public class OrderCoordinationService {
     private final LineFamilies families;
     private final LoyaltyApi loyalty;
     private final ApplicationEventPublisher events;
+    private final DeliveryGuards deliveries;
     private final Clock clock;
 
     OrderCoordinationService(OrderRepository orders, OrderBatchRepository batches, OrderLookup lookup,
@@ -51,6 +53,8 @@ public class OrderCoordinationService {
                              RewardLineage rewards, LineFamilies families, LoyaltyApi loyalty,
                              ApplicationEventPublisher events, Clock clock) {
         this.events = events;
+                             DeliveryGuards deliveries, Clock clock) {
+        this.deliveries = deliveries;
         this.rewards = rewards;
         this.families = families;
         this.loyalty = loyalty;
@@ -91,6 +95,7 @@ public class OrderCoordinationService {
     public void close(UUID orderId, long expectedVersion, UUID actorEmployeeId) {
         Order order = lookup.load(orderId);
         OptimisticLocking.requireVersion(Order.class, orderId, order.getVersion(), expectedVersion);
+        deliveries.requireClosable(order);
         Instant now = clock.instant();
         order.close(actorEmployeeId, now);
         orders.saveAndFlush(order);

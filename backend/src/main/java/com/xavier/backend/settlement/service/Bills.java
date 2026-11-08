@@ -167,6 +167,15 @@ class Bills {
             return openOn(null).stream().map(PaymentAttempt::amount).reduce(residualBalance(), Money::minus);
         }
 
+        /**
+         * D71: what the ORDER target was paid, put on account (D74) or has in flight. A void or a discount (D105)
+         * never takes the ORDER residual below it.
+         */
+        Money orderOwed() {
+            return openOn(null).stream().map(PaymentAttempt::amount).reduce(orderPaid.plus(creditOn(null)),
+                    Money::plus);
+        }
+
         Money paidOf(BillPartition partition) {
             return partitionPaid.getOrDefault(partition.getId(), Money.of(BigDecimal.ZERO, due().currency()));
         }

@@ -66,9 +66,10 @@ public class OrderSettlementSteps {
     /**
      * s1, one transaction: the order's lock → {@code freezeForInvoice} → the residual ORDER draft (fiscal returns the
      * existing document, DRAFT or ISSUED), with the tax cent of settled voids placed on it, or the placement recorded
-     * before re-applied (D96). A close ({@code expectedVersion} given) first checks that the order is
-     * settled (nothing in doubt on any target, paid = due), frozen or not, so a close that cannot succeed never
-     * freezes the order, drafts or issues its document. Until the order is frozen it also checks the client's
+     * before re-applied (D96). A DELIVERY order is refused until DELIVERED when its draft is
+     * built ({@link ResidualDocuments#command}, D127, P48), before the freeze. A close ({@code expectedVersion} given) then checks that the order is settled (nothing in doubt on any target,
+     * paid = due), frozen or not, so a close that cannot succeed never freezes the order, drafts or issues its
+     * document. Until the order is frozen it also checks the client's
      * version; once frozen nothing of the order can change, so a retry (whose client version predates the freeze)
      * skips it.
      *
@@ -80,8 +81,8 @@ public class OrderSettlementSteps {
             Bill bill = lockedBill(pos, orderId);
             OrderBillingView view = bill.view();
             boolean closing = expectedVersion != null;
-            if (closing) {
-                requireSettled(bill); // frozen or not: a close that cannot succeed issues nothing
+            if (closing) { // frozen or not: a close that cannot succeed issues nothing
+                requireSettled(bill);
             }
             List<DocumentView> documents = fiscal.documentsOfOrder(orderId);
             TaxRoundingAdjustments.Placed placed = taxRounding.residual(bill, buyer, documents);

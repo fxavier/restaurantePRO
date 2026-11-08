@@ -13,7 +13,6 @@ import com.xavier.backend.orders.SettledVoidCommand;
 import com.xavier.backend.orders.VoidView;
 import com.xavier.backend.settlement.exception.SettlementRule;
 import com.xavier.backend.settlement.exception.SettlementRuleException;
-import com.xavier.backend.settlement.model.PaymentAttempt;
 import com.xavier.backend.settlement.model.dto.SettledVoidRequest;
 import com.xavier.backend.settlement.service.Bills.Bill;
 import com.xavier.backend.shared.Money;
@@ -126,8 +125,7 @@ public class SettledVoidService {
      */
     private static void requireHeadroom(Bill bill, Money reduction) {
         Money residualAfter = bill.residualDue().minus(reduction);
-        Money owed = bill.openOn(null).stream().map(PaymentAttempt::amount)
-                .reduce(bill.orderPaid().plus(bill.creditOn(null)), Money::plus);
+        Money owed = bill.orderOwed();
         if (residualAfter.amount().compareTo(owed.amount()) < 0) {
             throw SettlementRuleException.voidExceedsUnpaid(bill.view().orderId(), residualAfter, owed,
                     bill.residualDue().minus(owed));

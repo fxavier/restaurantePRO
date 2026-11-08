@@ -36,6 +36,8 @@ import com.xavier.backend.fiscal.FiscalIssueFailedException;
 import com.xavier.backend.fiscal.exception.DraftMismatchException;
 import com.xavier.backend.fiscal.exception.PaymentSnapshotMismatchException;
 import com.xavier.backend.identity.exception.LoginThrottledException;
+import com.xavier.backend.inventory.count.exception.CountConflictException;
+import com.xavier.backend.inventory.count.exception.CountRuleException;
 import com.xavier.backend.inventory.consumption.exception.ConsumptionConflictException;
 import com.xavier.backend.inventory.consumption.exception.ConsumptionRuleException;
 import com.xavier.backend.inventory.exception.InventoryConflictException;
@@ -47,6 +49,9 @@ import com.xavier.backend.inventory.purchasing.exception.PurchasingConflictExcep
 import com.xavier.backend.inventory.purchasing.exception.PurchasingRuleException;
 import com.xavier.backend.identity.exception.PinChangeNotRequiredException;
 import com.xavier.backend.identity.exception.PinUnchangedException;
+import com.xavier.backend.orders.DeliveryStatus;
+import com.xavier.backend.orders.delivery.exception.DeliveryConflictException;
+import com.xavier.backend.orders.delivery.exception.DeliveryRuleException;
 import com.xavier.backend.orders.exception.OrderConflictException;
 import com.xavier.backend.orders.exception.OrderRuleException;
 import com.xavier.backend.production.exception.ProductionRule;
@@ -67,6 +72,7 @@ import com.xavier.backend.settlement.reconciliation.model.dto.StatementError;
 import com.xavier.backend.shared.Money;
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -215,6 +221,11 @@ class CodedErrorContractTest {
                     "AMOUNT")),
             Map.entry("void-exceeds-unpaid", () -> SettlementRuleException.voidExceedsUnpaid(ID,
                     Money.of("12.50", MZN), Money.of("20.00", MZN), Money.of("5.00", MZN))),
+            Map.entry("discount-exceeds-unpaid", () -> SettlementRuleException.discountExceedsUnpaid(ID,
+                    Money.of("12.50", MZN), Money.of("20.00", MZN), Money.of("5.00", MZN))),
+            Map.entry("discounted-line-partitioned", () -> SettlementRuleException.discountedLinePartitioned(ID,
+                    new BigDecimal("1.000"))),
+            Map.entry("settlement-delivery-not-delivered", () -> SettlementRuleException.deliveryNotDelivered(ID)),
             Map.entry("correction-requires-fiscal-adapter", () -> SettlementRuleException
                     .correctionRequiresFiscalAdapter("Order " + ID + " has its document")),
             Map.entry("void-self-approval", SettlementRuleException::voidSelfApproval),
@@ -319,6 +330,19 @@ class CodedErrorContractTest {
             Map.entry("route-exists", () -> InventoryConflictException.routeExists(ID, "BAR")),
             Map.entry("default-route-exists", () -> InventoryConflictException.routeExists(ID, null)),
             Map.entry("stock-level-exists", () -> InventoryConflictException.levelExists(ID, OTHER)),
+            Map.entry("opening-not-first", () -> CountRuleException.openingNotFirst(ID)),
+            Map.entry("count-incomplete", () -> CountRuleException.incomplete(ID)),
+            Map.entry("counted-at-out-of-range", () -> CountRuleException.countedAtOutOfRange(
+                    Instant.parse("2026-11-07T09:00:00Z"), Instant.parse("2026-11-07T10:00:00Z"),
+                    Instant.parse("2026-11-07T12:00:00Z"))),
+            Map.entry("count-self-approval", () -> CountRuleException.selfApproval(ID)),
+            Map.entry("unit-cost-opening-only", CountRuleException::unitCostOpeningOnly),
+            Map.entry("count-scope-invalid", () -> CountRuleException.scopeInvalid(
+                    "A LIST count names the stock items to count.")),
+            Map.entry("count-state", () -> CountConflictException.state(ID, "SUBMITTED", "be cancelled")),
+            Map.entry("consumption-backlog", () -> CountConflictException.consumptionBacklog(ID, 3)),
+            Map.entry("consumption-exceptions-open", () -> CountConflictException.consumptionExceptionsOpen(ID, 2)),
+            Map.entry("live-count-exists", () -> CountConflictException.liveCountExists(ID)),
             // R4 recipes, consumption, preparations (S47)
             Map.entry("recipe-effective-from-invalid", () -> RecipeRuleException.effectiveFromInvalid(
                     java.time.Instant.parse("2026-11-06T10:00:00Z"))),
@@ -393,7 +417,23 @@ class CodedErrorContractTest {
             Map.entry("loyalty-customer-required", () -> OrderRuleException.loyaltyCustomerRequired(ID)),
             Map.entry("reward-needs-single-unit", () -> OrderRuleException.rewardNeedsSingleUnit(ID)),
             Map.entry("loyalty-redeemed", () -> OrderRuleException.loyaltyRedeemed(ID)),
-            Map.entry("reward-already-redeemed", () -> OrderRuleException.rewardAlreadyRedeemed(ID)));
+            Map.entry("reward-already-redeemed", () -> OrderRuleException.rewardAlreadyRedeemed(ID)),
+            // R4 orders (S50): delivery
+            Map.entry("delivery-state", () -> DeliveryConflictException.state(ID, DeliveryStatus.PENDING,
+                    "delivered")),
+            Map.entry("delivery-zone-code-taken", () -> DeliveryConflictException.zoneCodeTaken("CENTRO")),
+            Map.entry("fee-item-not-published", () -> DeliveryRuleException.feeItemNotPublished("CENTRO")),
+            Map.entry("zone-inactive", () -> DeliveryRuleException.zoneInactive("CENTRO")),
+            Map.entry("zone-other-store", () -> DeliveryRuleException.zoneOtherStore(ID)),
+            Map.entry("customer-required", DeliveryRuleException::customerRequired),
+            Map.entry("delivery-has-drafts", () -> DeliveryRuleException.hasDrafts(ID)),
+            Map.entry("delivery-nothing-confirmed", () -> DeliveryRuleException.nothingConfirmed(ID)),
+            Map.entry("courier-not-in-store", () -> DeliveryRuleException.courierNotInStore(ID)),
+            Map.entry("delivery-not-delivered", () -> DeliveryRuleException.notDelivered(ID)),
+            Map.entry("delivery-in-progress", () -> DeliveryRuleException.inProgress(ID)),
+            Map.entry("address-frozen", () -> DeliveryRuleException.addressFrozen(ID)),
+            Map.entry("fee-line-locked", () -> DeliveryRuleException.feeLineLocked(ID)),
+            Map.entry("zone-fee-confirmed", () -> DeliveryRuleException.zoneFeeConfirmed(ID)));
 
     @Autowired
     MockMvc mvc;
@@ -586,6 +626,13 @@ class CodedErrorContractTest {
                 "Only a LIVE ITEMS partition is invoiced on its own; " + ID + " is LIVE AMOUNT.", "");
         expect("void-exceeds-unpaid", 422, "VOID_EXCEEDS_UNPAID", "The void would leave 12.50 due on order " + ID
                 + ", less than the 20.00 paid or being paid: refund first.", ",\"unpaid\":5.00");
+        expect("discount-exceeds-unpaid", 422, "DISCOUNT_EXCEEDS_UNPAID", "The discount would leave 12.50 due on "
+                + "order " + ID + ", less than the 20.00 paid or being paid: refund first.", ",\"unpaid\":5.00");
+        expect("discounted-line-partitioned", 422, "QUANTITY_PARTITIONED", "Only 1 of line " + ID
+                + " is in no partition: cancel the partition before discounting it.",
+                ",\"lineId\":\"" + ID + "\",\"available\":1.000");
+        expect("settlement-delivery-not-delivered", 422, "DELIVERY_NOT_DELIVERED",
+                "Order " + ID + " is closed only once its delivery is DELIVERED.", "");
         expect("correction-requires-fiscal-adapter", 422, "CORRECTION_REQUIRES_FISCAL_ADAPTER", "Order " + ID
                 + " has its document: correcting invoiced quantities needs the market's fiscal adapter.", "");
         expect("void-self-approval", 422, "SELF_APPROVAL", "The approver of a void cannot be the operator.", "");
@@ -824,6 +871,33 @@ class CodedErrorContractTest {
     }
 
     @Test
+    void inventoryCountRules() throws Exception {
+        expect("opening-not-first", 422, "OPENING_NOT_FIRST", "Warehouse " + ID
+                + " already has stock movements or an opening count before this opening's cut-off.", "");
+        expect("count-incomplete", 422, "COUNT_INCOMPLETE",
+                "Count " + ID + " has no line, or a line not counted yet.", "");
+        expect("counted-at-out-of-range", 422, "COUNTED_AT_OUT_OF_RANGE", "A line is counted between the count's "
+                + "start (2026-11-07T10:00:00Z) and now (2026-11-07T12:00:00Z), not at 2026-11-07T09:00:00Z.", "");
+        expect("count-self-approval", 422, "SELF_APPROVAL", "Count " + ID
+                + " was counted (in part) by its approver: another person approves it.", "");
+        expect("unit-cost-opening-only", 422, "UNIT_COST_OPENING_ONLY",
+                "A unit cost is entered on an opening count only: a regular count is valued at the average.", "");
+        expect("count-scope-invalid", 422, "COUNT_SCOPE_INVALID", "A LIST count names the stock items to count.", "");
+    }
+
+    @Test
+    void inventoryCountConflicts() throws Exception {
+        expect("count-state", 409, "COUNT_STATE", "Count " + ID + " is SUBMITTED and cannot be cancelled.", "");
+        expect("consumption-backlog", 409, "CONSUMPTION_BACKLOG", "Stock consumption of store " + ID + " has 3 "
+                + "publication(s) still pending up to the count's cut-off: approve the count once they are processed.",
+                "");
+        expect("consumption-exceptions-open", 409, "CONSUMPTION_EXCEPTIONS_OPEN", "Store " + ID + " has 2 open "
+                + "consumption exception(s) up to the count's cut-off: resolve them, then approve.", "");
+        expect("live-count-exists", 409, "LIVE_COUNT_EXISTS", "Warehouse " + ID
+                + " already has a count that is not decided or cancelled.", "");
+    }
+
+    @Test
     void recipeAndConsumptionRules() throws Exception {
         expect("recipe-effective-from-invalid", 422, "RECIPE_EFFECTIVE_FROM_INVALID",
                 "A new version must take effect after 2026-11-06T10:00:00Z, when the current one did.",
@@ -964,6 +1038,36 @@ class CodedErrorContractTest {
                 "Order " + ID + " has a redeemed reward: its customer cannot change.", "");
         expect("reward-already-redeemed", 422, "REWARD_ALREADY_REDEEMED",
                 "Line " + ID + " already carries a loyalty reward.", "");
+    }
+
+    @Test
+    void ordersDeliveryCodes() throws Exception {
+        expect("delivery-state", 409, "DELIVERY_STATE",
+                "The delivery of order " + ID + " is PENDING: it cannot be delivered.", "");
+        expect("delivery-zone-code-taken", 409, "DELIVERY_ZONE_CODE_TAKEN",
+                "The store already has a delivery zone CENTRO.", "");
+        expect("fee-item-not-published", 422, "FEE_ITEM_NOT_PUBLISHED",
+                "The fee item of delivery zone CENTRO is not a fee in the published catalog.", "");
+        expect("zone-inactive", 422, "ZONE_INACTIVE", "Delivery zone CENTRO is inactive.", "");
+        expect("zone-other-store", 422, "ZONE_OTHER_STORE", "Delivery zone " + ID + " is not in this store.", "");
+        expect("customer-required", 422, "CUSTOMER_REQUIRED",
+                "A DELIVERY order is opened with its customer, address and zone.", "");
+        expect("delivery-has-drafts", 422, "DELIVERY_HAS_DRAFTS",
+                "Order " + ID + " has draft lines: confirm or delete them before the dispatch.", "");
+        expect("delivery-nothing-confirmed", 422, "DELIVERY_NOTHING_CONFIRMED",
+                "Order " + ID + " has no confirmed round to deliver.", "");
+        expect("courier-not-in-store", 422, "COURIER_NOT_IN_STORE",
+                "Employee " + ID + " is not an active employee of this store.", "");
+        expect("delivery-not-delivered", 422, "DELIVERY_NOT_DELIVERED",
+                "Order " + ID + " is closed only once its delivery is DELIVERED.", "");
+        expect("delivery-in-progress", 422, "DELIVERY_IN_PROGRESS",
+                "The delivery of order " + ID + " is out or delivered: it cannot be cancelled.", "");
+        expect("address-frozen", 422, "ADDRESS_FROZEN",
+                "The delivery of order " + ID + " was dispatched: its address, zone and promise are frozen.", "");
+        expect("fee-line-locked", 422, "FEE_LINE_LOCKED", "Line " + ID
+                + " is the delivery fee: change the zone, or give a discount or an offer, instead.", "");
+        expect("zone-fee-confirmed", 422, "ZONE_FEE_CONFIRMED",
+                "The delivery fee is already confirmed: void it before changing the zone.", "");
     }
 
     private void expect(String name, int status, String code, String detail, String extra) throws Exception {

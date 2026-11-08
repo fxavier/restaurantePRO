@@ -30,6 +30,14 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
     @Query("update Order o set o.version = o.version + 1 where o.id = :id and o.version = :version")
     int incrementVersion(@Param("id") UUID id, @Param("version") long version);
 
+    /**
+     * A delivery dispatch's lock on the order (D132: before the delivery row), until commit, without moving its
+     * version. {@code FOR UPDATE} conflicts with the {@code FOR KEY SHARE} a new draft's foreign key takes, so the
+     * dispatch waits for a draft being added and then reads it.
+     */
+    @Query(value = "SELECT id FROM orders.order_header WHERE id = :id FOR UPDATE", nativeQuery = true)
+    Optional<UUID> lockForDispatch(@Param("id") UUID id);
+
     @Query(value = "SELECT nextval('orders.order_number_seq')", nativeQuery = true)
     long nextOrderNumber();
 

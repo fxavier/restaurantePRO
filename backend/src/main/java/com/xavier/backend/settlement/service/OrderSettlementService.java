@@ -39,6 +39,8 @@ public class OrderSettlementService {
     /**
      * @throws com.xavier.backend.fiscal.FiscalIssueFailedException 422 {@code FISCAL_PENDING} with
      *         {@code documentId}: the draft stays pending and a retry issues it with no gap
+     * @throws com.xavier.backend.settlement.exception.SettlementRuleException 422 {@code DELIVERY_NOT_DELIVERED}
+     *         for a DELIVERY order not yet DELIVERED (P48), before anything is drafted
      */
     public DocumentView issueDocument(UUID orderId, IssueDocumentRequest request) {
         PosContext pos = accessPolicy.requirePos(Permission.PAYMENT_COLLECT);
@@ -50,7 +52,7 @@ public class OrderSettlementService {
      * D42 (b) first: the order's store only (404, 403), before its sale document is looked up.
      *
      * @throws com.xavier.backend.settlement.exception.SettlementRuleException 422 {@code NOT_SETTLED},
-     *         {@code FISCAL_PENDING}, {@code ORDER_NOT_OPEN}, {@code NOTHING_TO_BILL}
+     *         {@code FISCAL_PENDING}, {@code ORDER_NOT_OPEN}, {@code NOTHING_TO_BILL}, {@code DELIVERY_NOT_DELIVERED}
      * @throws com.xavier.backend.settlement.exception.SettlementConflictException 409 {@code PAYMENT_IN_DOUBT}
      */
     public OrderSettlementView close(UUID orderId, CloseOrderRequest request) {
