@@ -3,6 +3,7 @@ package com.xavier.backend.orders.model;
 import com.xavier.backend.orders.BillingLock;
 import com.xavier.backend.orders.OrderLifecycle;
 import com.xavier.backend.orders.OrderMode;
+import com.xavier.backend.orders.delivery.exception.DeliveryRuleException;
 import com.xavier.backend.orders.exception.OrderConflictException;
 import com.xavier.backend.orders.exception.OrderRuleException;
 import com.xavier.backend.orders.model.dto.OrderSummary;
@@ -121,13 +122,26 @@ public class Order {
      * A COUNTER or TAKEAWAY order (P15), with no table.
      *
      * @throws OrderRuleException {@code DINE_IN_REQUIRES_TABLE} for {@code DINE_IN}
+     * @throws DeliveryRuleException {@code CUSTOMER_REQUIRED} for {@code DELIVERY} (opened by {@link #delivery})
      */
     public static Order walkIn(OrderMode mode, UUID storeId, UUID terminalId, long orderNumber, Integer guests,
                                LocalDate businessDay, Currency currency, UUID employeeId, Instant now) {
         if (mode == OrderMode.DINE_IN) {
             throw OrderRuleException.dineInRequiresTable();
         }
+        if (mode == OrderMode.DELIVERY) {
+            throw DeliveryRuleException.customerRequired();
+        }
         return open(mode, storeId, terminalId, orderNumber, guests, businessDay, currency, employeeId, now);
+    }
+
+    /** A DELIVERY order (D127): no table, and its customer from the start (the database refuses one without). */
+    public static Order delivery(UUID storeId, UUID terminalId, long orderNumber, Integer guests, UUID customerId,
+                                 LocalDate businessDay, Currency currency, UUID employeeId, Instant now) {
+        Order order = open(OrderMode.DELIVERY, storeId, terminalId, orderNumber, guests, businessDay, currency,
+                employeeId, now);
+        order.customerId = Objects.requireNonNull(customerId, "customerId");
+        return order;
     }
 
     private static Order open(OrderMode mode, UUID storeId, UUID terminalId, long orderNumber, Integer guests,

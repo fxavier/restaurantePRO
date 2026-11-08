@@ -9,6 +9,8 @@ import com.xavier.backend.dining.model.dto.OccupationView;
 import com.xavier.backend.organization.BusinessDays;
 import com.xavier.backend.organization.OrganizationApi;
 import com.xavier.backend.organization.model.dto.StoreSummary;
+import com.xavier.backend.orders.OrderMode;
+import com.xavier.backend.orders.delivery.service.DeliveryOpening;
 import com.xavier.backend.orders.exception.OrderConflictException;
 import com.xavier.backend.orders.model.Order;
 import com.xavier.backend.orders.model.dto.OpenOrderRequest;
@@ -28,7 +30,8 @@ import org.springframework.transaction.annotation.Transactional;
  * Opens orders (P15, A1). A DINE_IN order and its table occupation are created in one transaction: the order's
  * partial unique index and dining's occupation index each let one of two concurrent openings win (409
  * {@code TABLE_OCCUPIED}); dining refuses inactive, locked and other-store tables (422) and the order rolls back with
- * it. The business day is fixed at opening (D16).
+ * it. The business day is fixed at opening (D16). R4: a table opening may seat a reservation (D126: dining's CAS,
+ * 409 {@code RESERVATION_NOT_BOOKED} rolls the opening back), and a DELIVERY order opens with its delivery (D127).
  */
 @Service
 public class OrderOpeningService {
@@ -44,12 +47,14 @@ public class OrderOpeningService {
     private final AccessPolicy accessPolicy;
     private final OrderChanges changes;
     private final OrderViews views;
+    private final DeliveryOpening delivery;
     private final Clock clock;
 
     OrderOpeningService(OrderRepository orders, OrderLookup lookup, DiningApi dining, OrganizationApi organization,
                         CatalogApi catalog, DraftLineService drafts, AccessPolicy accessPolicy,
-                        OrderChanges changes, OrderViews views,
+                        OrderChanges changes, OrderViews views, DeliveryOpening delivery,
                         Clock clock) {
+        this.delivery = delivery;
         this.catalog = catalog;
         this.drafts = drafts;
         this.orders = orders;
@@ -73,7 +78,8 @@ public class OrderOpeningService {
                 pos.employeeId(), now);
         UniqueConstraints.saveAndFlush(orders, order, () -> OrderConflictException.tableOccupied(tableId),
                 OPEN_TABLE_UK);
-        OccupationView occupation = dining.openOccupation(tableId, order.getId(), request.guests(), pos.employeeId());
+        OccupationView occupation = dining.openOccupation(tableId, order.getId(), request.guests(), pos.employeeId(),
+                request.reservationId());
         order.seatedAt(tableId, occupation.tableCode());
         orders.saveAndFlush(order);
         opened(order, pos);
@@ -83,6 +89,9 @@ public class OrderOpeningService {
     @Transactional
     public OrderView openWalkIn(OpenOrderRequest request) {
         PosContext pos = accessPolicy.requirePos(Permission.ORDER_EDIT);
+        if (request.mode() == OrderMode.DELIVERY) {
+            return openDelivery(pos, request);
+        }
         StoreSummary store = store(pos);
         Instant now = clock.instant();
         Order order = orders.saveAndFlush(Order.walkIn(request.mode(), store.id(), pos.terminalId(),
@@ -90,6 +99,24 @@ public class OrderOpeningService {
                 BusinessDays.of(now, store.timezone(), store.businessDayCutoff()), store.currency(),
                 pos.employeeId(), now));
         opened(order, pos);
+        return views.of(order);
+    }
+
+    /**
+     * D127: a DELIVERY order also needs {@code DELIVERY_OPERATE}; customer, address, zone and fee are checked before
+     * anything is written, then the order, its PENDING delivery and the zone's fee draft are written together.
+     */
+    private OrderView openDelivery(PosContext pos, OpenOrderRequest request) {
+        accessPolicy.require(Permission.DELIVERY_OPERATE, pos.storeId());
+        DeliveryOpening.Prepared prepared = delivery.prepare(pos.storeId(), request.delivery());
+        StoreSummary store = store(pos);
+        Instant now = clock.instant();
+        Order order = orders.saveAndFlush(Order.delivery(store.id(), pos.terminalId(), orders.nextOrderNumber(),
+                request.guests(), prepared.customerId(),
+                BusinessDays.of(now, store.timezone(), store.businessDayCutoff()), store.currency(),
+                pos.employeeId(), now));
+        opened(order, pos);
+        delivery.open(order, prepared, pos.employeeId());
         return views.of(order);
     }
 

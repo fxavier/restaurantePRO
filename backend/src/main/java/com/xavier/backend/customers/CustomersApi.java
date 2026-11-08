@@ -1,7 +1,9 @@
 package com.xavier.backend.customers;
 
 import com.xavier.backend.customers.model.CustomerAddress;
+import com.xavier.backend.customers.model.CustomerPhone;
 import com.xavier.backend.customers.repository.CustomerAddressRepository;
+import com.xavier.backend.customers.repository.CustomerPhoneRepository;
 import com.xavier.backend.customers.service.CreditLedgerService;
 import com.xavier.backend.shared.Money;
 import java.time.LocalDate;
@@ -35,8 +37,10 @@ public class CustomersApi {
 
     private final CreditLedgerService ledger;
     private final CustomerAddressRepository addresses;
+    private final CustomerPhoneRepository phones;
 
-    CustomersApi(CreditLedgerService ledger, CustomerAddressRepository addresses) {
+    CustomersApi(CreditLedgerService ledger, CustomerAddressRepository addresses, CustomerPhoneRepository phones) {
+        this.phones = phones;
         this.ledger = ledger;
         this.addresses = addresses;
     }
@@ -67,6 +71,19 @@ public class CustomersApi {
                 .map(CustomerAddress::toView)
                 .map(view -> new AddressSnapshot(view.id(), view.kind(), view.line1(), view.line2(), view.city(),
                         view.postalCode(), view.country(), view.notes()));
+    }
+
+    /**
+     * The customer's primary phone digits, else the lowest digits (S50: the phone a delivery snapshots); empty when
+     * {@code customerId} is null or unknown, or the customer has no phone. Never throws.
+     */
+    @Transactional(readOnly = true)
+    public Optional<String> primaryPhone(UUID customerId) {
+        if (customerId == null) {
+            return Optional.empty();
+        }
+        return phones.findByCustomerIdOrderByPrimaryDescDigitsAsc(customerId).stream().findFirst()
+                .map(CustomerPhone::getDigits);
     }
 
     /** Limit, balance (Σ ledger), reserved, available and block. 422 {@code CREDIT_ACCOUNT_MISSING}. */

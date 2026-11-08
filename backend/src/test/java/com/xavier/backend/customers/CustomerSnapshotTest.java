@@ -79,6 +79,33 @@ class CustomerSnapshotTest {
         assertThat(customers.address(null, address)).isEmpty();
     }
 
+    /** S50: a delivery snapshots its customer's phone, the primary one first, else the lowest digits. */
+    @Test
+    void thePrimaryPhoneIsThePrimaryOneElseTheLowestDigits() throws Exception {
+        UUID store = fixtures.newStore();
+        String base = CustomersFixtures.digits(8);
+        UUID customer = fixtures.newCustomer(CustomersFixtures.pos(store), "Phone " + token(), null, null);
+        UUID none = fixtures.newCustomer(CustomersFixtures.pos(store), "No phone " + token(), null, null);
+        addPhone(customer, "9" + base, false); // the first phone is primary
+        addPhone(customer, "8" + base, false);
+        assertThat(customers.primaryPhone(customer)).hasValue("9" + base);
+
+        jdbc.sql("UPDATE customers.customer_phone SET is_primary = false WHERE customer_id = ?").param(customer)
+                .update();
+
+        assertThat(customers.primaryPhone(customer)).hasValue("8" + base);
+        assertThat(customers.primaryPhone(none)).isEmpty();
+        assertThat(customers.primaryPhone(UUID.randomUUID())).isEmpty();
+        assertThat(customers.primaryPhone(null)).isEmpty();
+    }
+
+    private void addPhone(UUID customer, String number, boolean primary) throws Exception {
+        mvc.perform(idem(post(BO + "/" + customer + "/phones")).with(account(null, Permission.CUSTOMER_MANAGE))
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"number": "%s", "primary": %s}""".formatted(number, primary)))
+                .andExpect(status().isCreated());
+    }
+
     private UUID addAddress(UUID customer, String kind, String line1) throws Exception {
         String body = mvc.perform(idem(post(BO + "/" + customer + "/addresses"))
                         .with(account(null, Permission.CUSTOMER_MANAGE))

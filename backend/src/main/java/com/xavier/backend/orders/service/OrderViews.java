@@ -3,6 +3,10 @@ package com.xavier.backend.orders.service;
 import com.xavier.backend.catalog.CatalogApi;
 import com.xavier.backend.catalog.model.dto.CatalogSnapshot;
 import com.xavier.backend.orders.BillingLine;
+import com.xavier.backend.orders.DeliverySummary;
+import com.xavier.backend.orders.OrderMode;
+import com.xavier.backend.orders.delivery.model.Delivery;
+import com.xavier.backend.orders.delivery.repository.DeliveryRepository;
 import com.xavier.backend.orders.LineAmounts;
 import com.xavier.backend.orders.OrderBillingView;
 import com.xavier.backend.orders.model.EffectivePrice;
@@ -49,11 +53,13 @@ public class OrderViews {
     private final CatalogApi catalog;
     private final LinePricer pricer;
     private final RewardLineage rewards;
+    private final DeliveryRepository deliveryRepository;
     private final Clock clock;
 
     OrderViews(OrderLineRepository lines, OrderBatchRepository batches, OrderLineComponentRepository components,
                OrderLinePriceAdjustmentRepository adjustments, CatalogApi catalog, LinePricer pricer,
-               RewardLineage rewards, Clock clock) {
+               RewardLineage rewards, DeliveryRepository deliveryRepository, Clock clock) {
+        this.deliveryRepository = deliveryRepository;
         this.rewards = rewards;
         this.lines = lines;
         this.batches = batches;
@@ -135,13 +141,25 @@ public class OrderViews {
         Map<UUID, List<OrderLinePriceAdjustment>> adjusted = adjustments(ids);
         Map<UUID, String> inherited = inheritedRewards(confirmed.values().stream().flatMap(List::stream).toList(),
                 adjusted);
+        Map<UUID, DeliverySummary> delivery = deliveries(orders);
         return orders.stream().map(order -> {
             List<BillingLine> billable = billingLines(confirmed.getOrDefault(order.getId(), List.of()), deducted,
                     adjusted, inherited);
             return new OrderBillingView(order.getId(), order.getStoreId(), order.getVersion(), order.getLifecycle(),
                     order.getBillingLock(), order.getBusinessDay(), billable, due(order, billable), order.getMode(),
-                    order.getTableId(), order.getTableCode(), order.getCustomerId());
+                    order.getTableId(), order.getTableCode(), order.getCustomerId(), delivery.get(order.getId()));
         }).toList();
+    }
+
+    /** The delivery summaries of the DELIVERY orders among {@code orders} (D129). */
+    private Map<UUID, DeliverySummary> deliveries(List<Order> orders) {
+        List<UUID> ids = orders.stream().filter(order -> order.getMode() == OrderMode.DELIVERY).map(Order::getId)
+                .toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        return deliveryRepository.findAllById(ids).stream()
+                .collect(Collectors.toMap(Delivery::getOrderId, Delivery::summary));
     }
 
     private static LineView confirmedView(OrderLine line, BigDecimal deducted,
