@@ -3,10 +3,13 @@ package com.xavier.backend.config;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.xavier.backend.access.StepUpRequiredException;
+import com.xavier.backend.shared.web.GlobalExceptionHandler;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.OrderUtils;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.access.AccessDeniedException;
@@ -43,6 +46,24 @@ class ProblemDetailResponderTest {
         assertThat(body.get("code").asString()).isEqualTo("MFA_ENROLMENT_REQUIRED");
         assertThat(body.get("stepUpUri").asString()).isEqualTo("/api/v1/auth/mfa/step-up");
         assertThat(body.get("detail").asString()).isEqualTo("Set up a second factor to continue.");
+    }
+
+    /** shared's handler maps every AccessDeniedException to a plain 403; this advice must be asked first. */
+    @Test
+    void theAdviceIsOrderedBeforeTheGlobalExceptionHandler() {
+        assertThat(OrderUtils.getOrder(ProblemDetailResponder.class, Ordered.LOWEST_PRECEDENCE))
+                .isLessThan(OrderUtils.getOrder(GlobalExceptionHandler.class, Ordered.LOWEST_PRECEDENCE));
+    }
+
+    @Test
+    void aPosSessionRefusalInTheFilterChainHasNoStepUpUri() throws Exception {
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        responder.forbidden().handle(new MockHttpServletRequest(), response, StepUpRequiredException.accountRequired());
+
+        JsonNode body = json.readTree(response.getContentAsString());
+        assertThat(body.get("code").asString()).isEqualTo("MFA_ACCOUNT_REQUIRED");
+        assertThat(body.has("stepUpUri")).isFalse();
     }
 
     @Test

@@ -8,6 +8,11 @@ package com.xavier.backend.access;
  */
 public interface AuthenticationAssurance {
 
-    /** The assurance of the current request's session; {@link AssuranceState#NOT_ENFORCED} when MFA is off. */
+    /**
+     * The assurance of the current request's session; {@link AssuranceState#NOT_ENFORCED} when MFA is off. {@code
+     * enforced} follows the installation mode for every actor kind: an EMPLOYEE session gets {@code enforced = true}
+     * under {@code SENSITIVE} or {@code ALL_BACKOFFICE}, so {@link AccessPolicy} refuses it a sensitive permission
+     * outside the POS gate ({@code MFA_ACCOUNT_REQUIRED}).
+     */
     AssuranceState current();
 }

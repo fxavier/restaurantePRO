@@ -119,15 +119,56 @@ class AccessPolicyStepUpTest {
         assertThat(lookups).hasValue(0);
     }
 
+    /** D142 (amended, S55 review): a PIN session never reaches a sensitive BackOffice permission once enforced. */
     @Test
-    void anEmployeeIsNeverAskedEvenForASensitivePermission() {
+    void anEmployeeIsRefusedASensitivePermissionOutsideThePosGateWhenEnforced() {
+        AccessPolicy policy = policy(FRESH);
+        actAs(Actor.employee(EMPLOYEE, TERMINAL, STORE, Set.of(Permission.CASH_CLOSING_APPROVE.authority(STORE),
+                Permission.EMPLOYEE_MANAGE.authority(), Permission.REPORT_EXPORT.authority(STORE))));
+
+        assertStepUp(() -> policy.require(Permission.CASH_CLOSING_APPROVE, STORE),
+                StepUpRequiredException.ACCOUNT_REQUIRED);
+        assertStepUp(() -> policy.require(Permission.EMPLOYEE_MANAGE), StepUpRequiredException.ACCOUNT_REQUIRED);
+        assertStepUp(() -> policy.requireAny(STORE, Permission.CASH_VIEW, Permission.CASH_CLOSING_APPROVE),
+                StepUpRequiredException.ACCOUNT_REQUIRED);
+        assertStepUp(() -> policy.scopeOf(Permission.REPORT_EXPORT), StepUpRequiredException.ACCOUNT_REQUIRED);
+        assertStepUp(() -> policy.requireInAnyStore(Permission.REPORT_EXPORT),
+                StepUpRequiredException.ACCOUNT_REQUIRED);
+    }
+
+    @Test
+    void anEmployeeKeepsNonSensitiveAccessWhenEnforced() {
         AccessPolicy policy = policy(NEVER);
+        actAs(Actor.employee(EMPLOYEE, TERMINAL, STORE, Set.of(Permission.CASH_VIEW.authority(STORE),
+                Permission.CASH_CLOSING_APPROVE.authority(STORE))));
+
+        assertThatCode(() -> policy.require(Permission.CASH_VIEW, STORE)).doesNotThrowAnyException();
+        assertThatCode(() -> policy.requireAny(STORE, Permission.CASH_VIEW, Permission.CASH_CLOSING_APPROVE))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void anEmployeeIsNotAskedWhenStepUpIsNotEnforced() {
+        AccessPolicy policy = policy(AssuranceState.NOT_ENFORCED);
         actAs(Actor.employee(EMPLOYEE, TERMINAL, STORE, Set.of(Permission.CASH_CLOSING_APPROVE.authority(STORE))));
 
         assertThatCode(() -> policy.require(Permission.CASH_CLOSING_APPROVE, STORE)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void thePosGateNeverAsksEvenForASensitivePermission() {
+        AccessPolicy policy = policy(NEVER);
+        actAs(Actor.employee(EMPLOYEE, TERMINAL, STORE, Set.of(Permission.CASH_CLOSING_APPROVE.authority(STORE))));
+
         assertThatCode(() -> policy.requirePos(Permission.CASH_CLOSING_APPROVE)).doesNotThrowAnyException();
+        assertThatCode(() -> policy.requirePos(Permission.CASH_CLOSING_APPROVE, STORE)).doesNotThrowAnyException();
         assertThatCode(() -> policy.requirePosAny(Permission.CASH_CLOSING_APPROVE)).doesNotThrowAnyException();
         assertThat(lookups).hasValue(0);
+    }
+
+    @Test
+    void anAssuranceStateNeedsAMaxAge() {
+        assertThatThrownBy(() -> new AssuranceState(true, true, NOW, null)).isInstanceOf(NullPointerException.class);
     }
 
     @Test

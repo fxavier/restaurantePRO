@@ -240,16 +240,23 @@ public class AccessPolicy {
 
     /**
      * D142: after a successful check, a BackOffice account whose granting permission is sensitive needs a second
-     * factor proved within {@link AssuranceState#maxAge()}, when {@link AuthenticationAssurance} enforces it. POS
-     * sessions are never asked (the PIN flow stays local); {@code requirePos*} never comes here.
+     * factor proved within {@link AssuranceState#maxAge()}, when {@link AuthenticationAssurance} enforces it. A POS
+     * (PIN) session reaching a sensitive permission here, outside the POS gate, is refused while step-up is enforced
+     * (D142 amended, S55 review): it cannot prove a second factor. {@code requirePos*} never comes here, so POS use
+     * cases and approver PINs are unchanged.
      */
     private void requireFreshSecondFactor(Actor actor, boolean sensitive, Object permission) {
-        if (actor.kind() != ActorKind.ACCOUNT || !sensitive) {
+        if (!sensitive) {
             return;
         }
         AssuranceState state = assurance();
         if (!state.enforced()) {
             return;
+        }
+        if (actor.kind() != ActorKind.ACCOUNT) {
+            log.warn("Access denied: a POS session used a sensitive permission: employee={} terminal={} "
+                    + "permission={}", actor.employeeId(), actor.terminalId(), permission);
+            throw StepUpRequiredException.accountRequired();
         }
         if (!state.enrolled()) {
             log.info("Step-up refused: no second factor enrolled: user={} permission={}", actor.userId(), permission);

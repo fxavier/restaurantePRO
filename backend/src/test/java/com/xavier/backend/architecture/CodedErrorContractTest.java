@@ -135,6 +135,7 @@ class CodedErrorContractTest {
             Map.entry("login-throttled", () -> new LoginThrottledException(Duration.ofSeconds(90))),
             Map.entry("mfa-step-up-required", StepUpRequiredException::stepUpRequired),
             Map.entry("mfa-enrolment-required", StepUpRequiredException::enrolmentRequired),
+            Map.entry("mfa-account-required", StepUpRequiredException::accountRequired),
             Map.entry("cash-rule", () -> new CashRuleViolationException(CashRule.DAY_NOT_OPEN,
                     "The cash day is not open.")),
             Map.entry("fiscal-pending", () -> new FiscalIssueFailedException(ID,
@@ -504,6 +505,13 @@ class CodedErrorContractTest {
                 ",\"stepUpUri\":\"/api/v1/auth/mfa/step-up\"");
         expect("mfa-enrolment-required", 403, "MFA_ENROLMENT_REQUIRED", "Set up a second factor to continue.",
                 ",\"stepUpUri\":\"/api/v1/auth/mfa/step-up\"");
+    }
+
+    /** D142 (amended, S55 review): a PIN session cannot step up, so its refusal names no step-up URI. */
+    @Test
+    void aPosSessionOnASensitivePermissionIsACoded403WithoutStepUpUri() throws Exception {
+        expect("mfa-account-required", 403, "MFA_ACCOUNT_REQUIRED",
+                "Use a BackOffice account with a second factor for this action.", "");
     }
 
     @Test

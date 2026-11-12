@@ -43,12 +43,14 @@ class ProblemDetailResponder {
                 : ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "You are not allowed to do this."));
     }
 
-    /** 403 with the stable {@code code} and where to prove the second factor ({@code stepUpUri}). */
+    /** 403 with the stable {@code code} and, when stepping up can help, where to do it ({@code stepUpUri}). */
     @ExceptionHandler(StepUpRequiredException.class)
     ProblemDetail stepUpRequired(StepUpRequiredException e) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, e.getMessage());
         problem.setProperty("code", e.code());
-        problem.setProperty("stepUpUri", StepUpRequiredException.STEP_UP_URI);
+        if (e.stepUpUri() != null) {
+            problem.setProperty("stepUpUri", e.stepUpUri());
+        }
         return problem;
     }
 
