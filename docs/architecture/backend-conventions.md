@@ -32,6 +32,8 @@ Module layout (D12): `model/`, `model/dto/`, `model/event/`, `repository/`, `ser
 | D65/D84: a `reporting` call to a facade method (public method of an `@Service` in a module's root package, `audit` exempt) must be `@Transactional(readOnly = true)`, on the method or its class | `reportingCallsOnlyReadOnlyFacadeMethods` |
 | D99 forbidden edges: `promotions` ↛ `orders`, `settlement`, `fiscal`, `cash`, `production`, `inventory`, `dining`, `reporting`; `inventory` ↛ `settlement`, `fiscal`, `cash`, `customers`, `promotions`, `dining`, `production`; `orders` ↛ `inventory`; no module but `reporting` → `inventory` (`allowEmptyShould(true)`) | `forbiddenModuleDependenciesAreAbsent` |
 | D99: an `inventory` call to another module's facade method (`audit` exempt) must be `@Transactional(readOnly = true)`, on the method or its class | `inventoryCallsOnlyReadOnlyFacadeMethods` |
+| D137/D144: no class outside `identity..` and `config..` depends on `org.springframework.security.oauth2..` (federation is identity's; config wires the filter chain) | `onlyIdentityAndConfigUseOAuth2` |
+| D137/D149: `shared.ops` (`AlertSource`, `OperationalAlert`, `ExportMonitor`) depends on no module, only on the shared kernel, so every module can implement `AlertSource` without a new edge | `sharedOpsDependsOnNoModule` |
 
 ## Shared contracts (S0)
 
