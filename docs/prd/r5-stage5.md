@@ -1,6 +1,6 @@
 # PRD R5 — Hardening: identity, store availability, alerts, printers (backend)
 
-Status: **PROPOSED** 2026-11-12, together with [r5-decisions.md](../design/r5-decisions.md) (cited as Dn, Pn, An). Earlier decisions: [backend-decisions.md](../design/backend-decisions.md), [r2-decisions.md](../design/r2-decisions.md), [r3-decisions.md](../design/r3-decisions.md), [r4-decisions.md](../design/r4-decisions.md). Glossary: [CONTEXT.md](../../CONTEXT.md). Spec: [product_description.md](../product_description.md). Conventions: [backend-conventions.md](../architecture/backend-conventions.md).
+Status: **APPROVED** 2026-11-12 (all recommendations P52–P60), together with [r5-decisions.md](../design/r5-decisions.md) (cited as Dn, Pn, An). Earlier decisions: [backend-decisions.md](../design/backend-decisions.md), [r2-decisions.md](../design/r2-decisions.md), [r3-decisions.md](../design/r3-decisions.md), [r4-decisions.md](../design/r4-decisions.md). Glossary: [CONTEXT.md](../../CONTEXT.md). Spec: [product_description.md](../product_description.md). Conventions: [backend-conventions.md](../architecture/backend-conventions.md).
 
 Base package `com.xavier.backend`, per-module layout D12, Flyway blocks D160. Every slice is built with TDD, **red first**: the slice's named tests are written and fail before the code, and they are deterministic (an injected `Clock`, fixed ids where order matters, no sleeps; concurrency tests use latches and real PostgreSQL). No `@Disabled`, and `cd backend && rtk mvn clean test` must be green at exit with **0 skipped**.
 
