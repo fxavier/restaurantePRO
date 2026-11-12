@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.xavier.backend.TestcontainersConfiguration;
+import com.xavier.backend.access.StepUpRequiredException;
 import com.xavier.backend.audit.exception.AuditQueryException;
 import com.xavier.backend.customers.exception.CustomerRuleException;
 import com.xavier.backend.customers.exception.CustomersConflictException;
@@ -132,6 +133,8 @@ class CodedErrorContractTest {
             Map.entry("pin-unchanged", PinUnchangedException::new),
             Map.entry("pin-change-not-required", PinChangeNotRequiredException::new),
             Map.entry("login-throttled", () -> new LoginThrottledException(Duration.ofSeconds(90))),
+            Map.entry("mfa-step-up-required", StepUpRequiredException::stepUpRequired),
+            Map.entry("mfa-enrolment-required", StepUpRequiredException::enrolmentRequired),
             Map.entry("cash-rule", () -> new CashRuleViolationException(CashRule.DAY_NOT_OPEN,
                     "The cash day is not open.")),
             Map.entry("fiscal-pending", () -> new FiscalIssueFailedException(ID,
@@ -492,6 +495,15 @@ class CodedErrorContractTest {
     void loginThrottledIs429WithRetryAfter() throws Exception {
         expect("login-throttled", 429, "LOGIN_THROTTLED", "Too many login attempts. Try again later.", "");
         mvc.perform(get(PATH + "login-throttled")).andExpect(header().string("Retry-After", "90"));
+    }
+
+    /** D142: a step-up refusal is a coded 403 that tells the client where to prove the second factor. */
+    @Test
+    void stepUpRefusalsAreCoded403sWithTheStepUpUri() throws Exception {
+        expect("mfa-step-up-required", 403, "MFA_STEP_UP_REQUIRED", "Confirm your second factor to continue.",
+                ",\"stepUpUri\":\"/api/v1/auth/mfa/step-up\"");
+        expect("mfa-enrolment-required", 403, "MFA_ENROLMENT_REQUIRED", "Set up a second factor to continue.",
+                ",\"stepUpUri\":\"/api/v1/auth/mfa/step-up\"");
     }
 
     @Test
@@ -1072,6 +1084,7 @@ class CodedErrorContractTest {
 
     private void expect(String name, int status, String code, String detail, String extra) throws Exception {
         String title = switch (status) {
+            case 403 -> "Forbidden";
             case 404 -> "Not Found";
             case 409 -> "Conflict";
             case 422 -> "Unprocessable Content";
