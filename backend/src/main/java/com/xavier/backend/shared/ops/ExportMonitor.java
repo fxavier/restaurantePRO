@@ -1,5 +1,8 @@
 package com.xavier.backend.shared.ops;
 
+import com.xavier.backend.shared.exception.BusinessRuleException;
+import com.xavier.backend.shared.exception.ConflictException;
+import com.xavier.backend.shared.exception.NotFoundException;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
@@ -10,6 +13,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
 
 /**
@@ -40,7 +44,9 @@ public class ExportMonitor implements AlertSource {
     }
 
     /**
-     * Runs {@code export}, counts its outcome and, on failure, remembers when; the failure is rethrown unchanged.
+     * Runs {@code export}, counts its outcome and, on failure, remembers when; the failure is rethrown unchanged. A
+     * refusal (403 access denied or step-up, 404, 409, 422) is the caller's answer, not a failed export: it is
+     * rethrown without being counted or alerted.
      *
      * @param kind one of {@link #REPORT_CSV}, {@link #AUDIT_CSV}, {@link #INVENTORY_CSV}
      * @throws IllegalArgumentException for another kind, before the export runs
@@ -52,8 +58,10 @@ public class ExportMonitor implements AlertSource {
         T result;
         try {
             result = export.get();
+        } catch (AccessDeniedException | BusinessRuleException | NotFoundException | ConflictException refusal) {
+            throw refusal;
         } catch (RuntimeException e) {
-            lastFailure.put(kind, clock.instant());
+            lastFailure.merge(kind, clock.instant(), (a, b) -> a.isAfter(b) ? a : b);
             count(kind, "failure");
             throw e;
         }
