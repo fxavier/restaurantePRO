@@ -1,6 +1,6 @@
 # Architecture decision records
 
-Each ADR records a decision as built, with its context and consequences. The full decision texts, with ids, are in [backend-decisions.md](../design/backend-decisions.md) (R1, D1–D33), [r2-decisions.md](../design/r2-decisions.md) (R2, D34–D63) and [r3-decisions.md](../design/r3-decisions.md) (R3, D64–D98) and [r4-decisions.md](../design/r4-decisions.md) (R4, D99–D136). Those documents stay the record for decisions without an ADR here. Supersede an ADR with a new one; do not edit a decision in place.
+Each ADR records a decision as built, with its context and consequences. The full decision texts, with ids, are in [backend-decisions.md](../design/backend-decisions.md) (R1, D1–D33), [r2-decisions.md](../design/r2-decisions.md) (R2, D34–D63) and [r3-decisions.md](../design/r3-decisions.md) (R3, D64–D98), [r4-decisions.md](../design/r4-decisions.md) (R4, D99–D136) and [r5-decisions.md](../design/r5-decisions.md) (R5, D137–D161, proposed). Those documents stay the record for decisions without an ADR here. Supersede an ADR with a new one; do not edit a decision in place.
 
 | ADR | Title | Decision | Status |
 |---|---|---|---|
@@ -37,6 +37,11 @@ Each ADR records a decision as built, with its context and consequences. The ful
 | [0031](0031-stock-ledger-and-moving-average.md) | Stock: a movement ledger, a balance projection and a weighted moving average | D113 ★ + amendment | Accepted 2026-11-06, amended 2026-11-07 |
 | [0032](0032-consumption-by-event-triggered-pull.md) | Consumption: an event-triggered, idempotent pull from the confirmed round | D116 ★ | Accepted 2026-11-06 |
 | [0033](0033-delivery-as-an-order-mode.md) | Delivery is an order mode plus a `Delivery` lifecycle in orders | D127 ★, D128–D130 | Accepted 2026-11-06 |
+| [0034](0034-keycloak-not-core-idp-oidc-federation.md) | Keycloak is not the core IdP; optional OIDC federation is the integration path | D138 ★, D144 ★ | Proposed 2026-11-12 |
+| [0035](0035-native-totp-mfa-and-step-up.md) | Native TOTP second factor, per-installation policy, step-up in AccessPolicy | D139 ★, D140–D143, D145 | Proposed 2026-11-12 |
+| [0036](0036-store-item-exclusion.md) | Per-store catalog availability through an explicit exclusion | D146 ★, D147, D148 | Proposed 2026-11-12 |
+| [0037](0037-operational-alerts.md) | Operational alerts: AlertSource, metrics, in-app list, backup status file | D149 ★, D150–D153 | Proposed 2026-11-12 |
+| [0038](0038-escpos-printer-profiles.md) | ESC/POS driver: printer profiles, styled tickets, status probe, drawer kick | D154 ★, D155–D158 | Proposed 2026-11-12 |
 
 ## Where the code deviates from a decision text
 
