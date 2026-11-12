@@ -912,13 +912,18 @@ public final class LoadSmoke {
         final String baseUrl;
 
         Http(Options options) throws Exception {
+            this(options.baseUrl(), options.caCert());
+        }
+
+        /** Also used by DevSeed.java (same directory, JEP 458), which shares this client, Tab and Json. */
+        Http(String baseUrl, Path caCert) throws Exception {
             HttpClient.Builder builder = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10))
                     .executor(Executors.newVirtualThreadPerTaskExecutor());
-            if (options.caCert() != null) {
-                builder.sslContext(trusting(options.caCert()));
+            if (caCert != null) {
+                builder.sslContext(trusting(caCert));
             }
             this.client = builder.build();
-            this.baseUrl = options.baseUrl().replaceAll("/+$", "");
+            this.baseUrl = baseUrl.replaceAll("/+$", "");
         }
 
         /** Trusts the installation's own CA (Caddy's internal root, for example) in addition to nothing else. */
