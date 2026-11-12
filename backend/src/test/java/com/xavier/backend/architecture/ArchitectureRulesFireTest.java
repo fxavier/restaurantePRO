@@ -152,6 +152,31 @@ class ArchitectureRulesFireTest {
                 .noneSatisfy(line -> assertThat(line).contains("service.SettlementIssuer"));
     }
 
+    /** D137: OAuth2 outside identity and config is caught; identity's and config's own use is not. */
+    @Test
+    void anOAuth2DependencyOutsideIdentityAndConfigIsCaught() {
+        EvaluationResult result = ArchitectureRules.onlyIdentityAndConfigUseOAuth2(FORBIDDEN_ROOT)
+                .evaluate(FORBIDDEN_FIXTURE);
+
+        assertThat(result.hasViolation()).isTrue();
+        assertThat(result.getFailureReport().getDetails())
+                .anySatisfy(line -> assertThat(line).contains("OidcShortcut").contains("OidcUser"))
+                .noneSatisfy(line -> assertThat(line).contains("OidcLogin"))
+                .noneSatisfy(line -> assertThat(line).contains("OidcChain"));
+    }
+
+    /** D137: shared.ops reaching into a module is caught; its use of the shared kernel is not. */
+    @Test
+    void aSharedOpsDependencyOnAModuleIsCaught() {
+        EvaluationResult result = ArchitectureRules.sharedOpsDependsOnNoModule(FORBIDDEN_ROOT)
+                .evaluate(FORBIDDEN_FIXTURE);
+
+        assertThat(result.hasViolation()).isTrue();
+        assertThat(result.getFailureReport().getDetails())
+                .anySatisfy(line -> assertThat(line).contains("LeakyAlertSource").contains("OrderTotals"))
+                .noneSatisfy(line -> assertThat(line).contains("KernelAlertSource"));
+    }
+
     /** A15: an injected cash → orders dependency fails the build, naming the offending class. */
     @Test
     void aCashToOrdersDependencyIsCaught() {

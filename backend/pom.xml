@@ -80,6 +80,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
+        <!-- D144: optional OIDC federation (authorization code + PKCE, ID-token validation); only identity and config use it -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-client</artifactId>
+        </dependency>
         <!-- D25: server-side sessions that survive restarts and can be listed/revoked -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

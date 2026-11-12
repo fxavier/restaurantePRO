@@ -1,6 +1,8 @@
 package com.xavier.backend.access;
 
+import java.util.EnumSet;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -160,6 +162,28 @@ public enum Permission {
     INVENTORY_REBUILD;
 
     private static final String PREFIX = "PERM_";
+
+    /** D142 (P54): the permissions that need a fresh second factor; code-defined like the permissions themselves. */
+    private static final Set<Permission> SENSITIVE = EnumSet.of(
+            COMPANY_MANAGE,
+            USER_MANAGE, ROLE_MANAGE,
+            EMPLOYEE_MANAGE,
+            TERMINAL_MANAGE,
+            SUPPORT_ACCESS_MANAGE,
+            FISCAL_MANAGE,
+            CATALOG_PUBLISH, PROMOTION_MANAGE,
+            CASH_CLOSING_APPROVE, CASH_ADJUST,
+            CREDIT_LIMIT_MANAGE,
+            PAYMENT_METHOD_MANAGE,
+            REPORT_EXPORT, AUDIT_EXPORT);
+
+    /**
+     * Whether a BackOffice account needs a fresh second factor to use this permission (D142 step-up, enforced by
+     * {@link AccessPolicy} when {@link AuthenticationAssurance} says so). POS sessions are never asked.
+     */
+    public boolean sensitive() {
+        return SENSITIVE.contains(this);
+    }
 
     /** Installation-wide authority, e.g. {@code PERM_CATALOG_PUBLISH}. */
     public String authority() {

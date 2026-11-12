@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.time.Clock;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -16,6 +17,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
@@ -358,6 +360,13 @@ class AccessPolicyTest {
 
     /** Organization implements the SPI in the application; here every store but {@link #INACTIVE_STORE} is active. */
     static class Stores implements StoreActivity {
+
+        /** AccessPolicy reads time for the step-up freshness (D142). */
+        @Bean
+        Clock clock() {
+            return Clock.systemUTC();
+        }
+
         @Override
         public boolean isActive(UUID storeId) {
             return !storeId.equals(uuid(INACTIVE_STORE));
