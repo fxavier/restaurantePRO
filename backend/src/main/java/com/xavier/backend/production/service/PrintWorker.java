@@ -68,7 +68,7 @@ public class PrintWorker implements DisposableBean {
 
     private void deliver(Dispatch dispatch) {
         try {
-            SendOutcome outcome = transport.send(dispatch.address(), dispatch.payload());
+            SendOutcome outcome = transport.send(dispatch.address(), dispatch.payload(), false).outcome();
             queue.record(dispatch.jobId(), outcome);
         } catch (RuntimeException e) {
             // the job stays PROCESSING; its lease turns it UNKNOWN for a person to resolve

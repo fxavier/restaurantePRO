@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.xavier.backend.production.adapter.PrinterTransport;
 import com.xavier.backend.production.adapter.SendOutcome;
+import com.xavier.backend.production.adapter.SendResult;
 import com.xavier.backend.production.model.PrinterAddress;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -124,14 +125,14 @@ class PrintWorkerTest {
         }
 
         @Override
-        public SendOutcome send(PrinterAddress address, byte[] payload) {
+        public SendResult send(PrinterAddress address, byte[] payload, boolean probeStatus) {
             sent.add(new String(payload));
             if (firstStarted.getCount() > 0) {
                 firstStarted.countDown();
                 awaitRelease();
             }
             allSent.countDown();
-            return SendOutcome.ACCEPTED;
+            return SendResult.of(SendOutcome.ACCEPTED);
         }
 
         private void awaitRelease() {

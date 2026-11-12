@@ -3,6 +3,8 @@ package com.xavier.backend.production.adapter;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.xavier.backend.production.model.CodePage;
+import com.xavier.backend.production.model.PrinterProfile;
+import com.xavier.backend.production.model.Printout;
 import java.io.ByteArrayOutputStream;
 import java.util.HexFormat;
 import java.util.List;
@@ -15,7 +17,7 @@ class EscPosRendererTest {
 
     @Test
     void initialisesSelectsTheCodePageWritesEachLineAndCuts() {
-        byte[] bytes = renderer.render(List.of("BAR", "2 x Cerveja"), null, false, CodePage.CP860);
+        byte[] bytes = render(List.of("BAR", "2 x Cerveja"), null, false, CodePage.CP860);
 
         assertThat(hex(bytes)).startsWith("1b40" + "1b7403")
                 .contains(hex("BAR\n2 x Cerveja\n".getBytes(CodePage.CP860.charset())))
@@ -24,17 +26,17 @@ class EscPosRendererTest {
 
     @Test
     void encodesPortugueseTextInTheSelectedTable() {
-        byte[] bytes = renderer.render(List.of("Ação"), null, false, CodePage.CP860);
+        byte[] bytes = render(List.of("Ação"), null, false, CodePage.CP860);
 
         // CP860: ç = 0x87, ã = 0x84
         assertThat(hex(bytes)).contains("41" + "87" + "84" + "6f" + "0a");
-        assertThat(hex(renderer.render(List.of("x"), null, false, CodePage.CP850))).startsWith("1b40" + "1b7402");
+        assertThat(hex(render(List.of("x"), null, false, CodePage.CP850))).startsWith("1b40" + "1b7402");
     }
 
     @Test
     void aCopyCarriesTheCopyMarkBeforeItsText() {
-        String copy = hex(renderer.render(List.of("BAR"), null, true, CodePage.CP860));
-        String original = hex(renderer.render(List.of("BAR"), null, false, CodePage.CP860));
+        String copy = hex(render(List.of("BAR"), null, true, CodePage.CP860));
+        String original = hex(render(List.of("BAR"), null, false, CodePage.CP860));
 
         String mark = hex(EscPosRenderer.COPY_MARK.getBytes(CodePage.CP860.charset()));
         assertThat(copy).contains(mark);
@@ -44,7 +46,7 @@ class EscPosRendererTest {
 
     @Test
     void aQrPayloadIsStoredAndPrintedAsAModelTwoQrCode() {
-        String bytes = hex(renderer.render(List.of("TOTAL 116.00"), "https://x/q?d=1", false, CodePage.CP860));
+        String bytes = hex(render(List.of("TOTAL 116.00"), "https://x/q?d=1", false, CodePage.CP860));
 
         ByteArrayOutputStream store = new ByteArrayOutputStream();
         int length = "https://x/q?d=1".length() + 3;
@@ -52,6 +54,11 @@ class EscPosRendererTest {
         store.writeBytes("https://x/q?d=1".getBytes());
         assertThat(bytes).contains("1d286b0400314132" + "00").contains(hex(store.toByteArray()))
                 .contains("1d286b0300315130");
+    }
+
+    /** A PLAIN printout under the default profile (80 mm, 48 columns, partial cut), as every R4 printer has. */
+    private byte[] render(List<String> lines, String qrPayload, boolean copyMark, CodePage codePage) {
+        return renderer.render(Printout.plain(lines, qrPayload), PrinterProfile.DEFAULT, codePage, copyMark);
     }
 
     static String hex(byte[] bytes) {

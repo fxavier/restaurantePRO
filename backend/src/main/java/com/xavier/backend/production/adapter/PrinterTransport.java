@@ -8,5 +8,8 @@ import com.xavier.backend.production.model.PrinterAddress;
  */
 public interface PrinterTransport {
 
-    SendOutcome send(PrinterAddress address, byte[] payload);
+    /**
+     * @param probeStatus ask the printer's status first (D157) and send nothing when it is not ready
+     */
+    SendResult send(PrinterAddress address, byte[] payload, boolean probeStatus);
 }

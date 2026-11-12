@@ -73,8 +73,9 @@ public class PrintQueue {
                 ProductionTicket ticket = tickets.findById(job.getTicketId()).orElseThrow();
                 job.claim(now);
                 claimed.add(new Dispatch(job.getId(), printer.getId(), printer.address(), renderer.render(
-                        ticket.lines(), ticket.getQrPayload(), ticket.printsCopyMarkFor(job.getKind()),
-                        printer.getCodePage())));
+                        com.xavier.backend.production.model.Printout.plain(ticket.lines(), ticket.getQrPayload()),
+                        com.xavier.backend.production.model.PrinterProfile.DEFAULT, printer.getCodePage(),
+                        ticket.printsCopyMarkFor(job.getKind()))));
             }
         }
         jobs.flush();
