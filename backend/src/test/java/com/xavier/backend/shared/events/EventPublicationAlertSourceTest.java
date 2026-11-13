@@ -26,6 +26,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.Pageable;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.modulith.test.ApplicationModuleTest;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * D150 EVENTS_FAILED (a publication the recovery job gave up on: CRITICAL) and EVENTS_BACKLOG (the oldest incomplete
@@ -50,24 +51,33 @@ class EventPublicationAlertSourceTest {
     @Autowired
     JdbcClient jdbc;
 
+    @Autowired
+    TransactionTemplate transaction;
+
+    /**
+     * The rows are written and read in one transaction that is rolled back: other cached contexts' recovery jobs share
+     * this database and would otherwise see (and resubmit) these very old incomplete publications.
+     */
     @Test
     void theOldestIncompletePublicationIgnoresCompletedAndExhaustedOnes() {
         Instant completed = Instant.parse("1998-01-01T00:00:00Z");
         Instant exhausted = Instant.parse("1999-01-01T00:00:00Z");
         Instant incomplete = Instant.parse("2000-01-01T00:00:00Z");
-        List<UUID> rows = List.of(publication(completed, 1, true), publication(exhausted, 10, false),
-                publication(incomplete, 1, false));
-        try {
+        transaction.executeWithoutResult(status -> {
+            status.setRollbackOnly();
+            publication(completed, 1, true);
+            publication(exhausted, 10, false);
+            publication(incomplete, 1, false);
+
             assertThat(stats.oldestIncomplete()).contains(incomplete);
-            assertThat(source.alerts())
+            List<OperationalAlert> alerts = source.alerts();
+            assertThat(alerts)
                     .extracting(OperationalAlert::code, OperationalAlert::severity, OperationalAlert::storeId)
                     .contains(tuple("EVENTS_FAILED", AlertSeverity.CRITICAL, null),
                             tuple("EVENTS_BACKLOG", AlertSeverity.WARNING, null));
-            assertThat(alert(source.alerts(), "EVENTS_BACKLOG").since()).isEqualTo(incomplete);
-            assertThat(alert(source.alerts(), "EVENTS_FAILED").since()).isEqualTo(exhausted);
-        } finally {
-            jdbc.sql("DELETE FROM event_publication WHERE id IN (:ids)").param("ids", rows).update();
-        }
+            assertThat(alert(alerts, "EVENTS_BACKLOG").since()).isEqualTo(incomplete);
+            assertThat(alert(alerts, "EVENTS_FAILED").since()).isEqualTo(exhausted);
+        });
     }
 
     @Test

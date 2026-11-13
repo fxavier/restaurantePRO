@@ -53,7 +53,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
         "restaurantpro.settlement.provider-timeout=PT2S",
         "restaurantpro.settlement.sweep-interval=PT1H",
         "restaurantpro.settlement.credit-sweep-interval=PT1H",
-        "restaurantpro.settlement.in-doubt-poll-interval=PT1H"
+        "restaurantpro.settlement.in-doubt-poll-interval=PT1H",
+        // this context stays cached for the rest of the suite: its event recovery job must not resubmit other
+        // contexts' publications from the shared database (it first runs one interval after the start)
+        "restaurantpro.events.resubmit-interval=PT1H"
 })
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, AlertsIntegrationTest.Sources.class, DiningFixtures.class,
