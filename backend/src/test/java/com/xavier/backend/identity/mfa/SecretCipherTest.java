@@ -141,7 +141,11 @@ class SecretCipherTest {
                 });
         new ApplicationContextRunner().withUserConfiguration(CipherOnly.class)
                 .withPropertyValues("restaurantpro.security.mfa.mode=SENSITIVE", "restaurantpro.security.mfa.key-file=")
-                .run(context -> assertThat(context).hasFailed());
+                .run(context -> assertThat(context).hasFailed().getFailure().rootCause()
+                        .hasMessageContaining("MFA mode SENSITIVE needs restaurantpro.security.mfa.key-file"));
+        new ApplicationContextRunner().withUserConfiguration(CipherOnly.class)
+                .withPropertyValues("restaurantpro.security.mfa.mode=OFF", "restaurantpro.security.mfa.key-file=")
+                .run(context -> assertThat(context).hasNotFailed());
     }
 
     @Configuration(proxyBeanMethods = false)
