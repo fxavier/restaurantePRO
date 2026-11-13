@@ -137,7 +137,10 @@ public class DrawerKickService {
 
     /**
      * The ticket and its job, on the terminal's own printer whatever its mode: the queue fails it if not NORMAL. The
-     * job is created as of {@code requestedAt}, which the queue's expiry measures from.
+     * job is created as of {@code min(requestedAt, now)}, which the queue's expiry measures from, so a settlement
+     * clock running ahead cannot lengthen the window. A kick already past its window ({@code requestedAt} missing or
+     * older than {@link PrintJob#KICK_TTL}) is saved FAILED {@code KICK_EXPIRED}, so its cause is always the
+     * lateness, whatever the printer's mode.
      */
     private Kick issue(String sourceType, UUID sourceId, UUID storeId, UUID terminalId, Printer printer,
                        Instant requestedAt) {
@@ -148,9 +151,9 @@ public class DrawerKickService {
                 ProductionTicket.create(draft, printer.getId(), false, now),
                 () -> ProductionConflictException.ticketExists(TicketSource.DRAWER_KICK, sourceId),
                 "production_ticket_source_uk");
-        PrintJob job = PrintJob.first(ticket.getId(), storeId, printer.getId(), JobKind.ORIGINAL,
-                requestedAt != null ? requestedAt : now);
-        if (requestedAt == null) {
+        Instant createdAt = requestedAt == null || requestedAt.isAfter(now) ? now : requestedAt;
+        PrintJob job = PrintJob.first(ticket.getId(), storeId, printer.getId(), JobKind.ORIGINAL, createdAt);
+        if (requestedAt == null || job.kickExpired(now)) {
             job.failUnsent(now, "KICK_EXPIRED");
         }
         job = jobs.saveAndFlush(job);

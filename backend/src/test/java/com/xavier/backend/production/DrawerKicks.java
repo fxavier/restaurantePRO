@@ -52,8 +52,13 @@ public class DrawerKicks {
 
     /** Settlement's event for a cash {@code sourceType} recorded now on the till, published and committed. */
     public void requested(Till till, String sourceType, UUID sourceId) {
+        requested(till, sourceType, sourceId, Instant.now());
+    }
+
+    /** The same event, as if settlement's clock read {@code requestedAt} when it recorded the payment or refund. */
+    public void requested(Till till, String sourceType, UUID sourceId, Instant requestedAt) {
         tx.executeWithoutResult(status -> events.publishEvent(new CashDrawerKickRequested(sourceType, sourceId,
-                till.store(), till.terminal(), Instant.now())));
+                till.store(), till.terminal(), requestedAt)));
     }
 
     /** Deliveries of the kick event about {@code sourceId} that the drawer-kick listener completed. */
