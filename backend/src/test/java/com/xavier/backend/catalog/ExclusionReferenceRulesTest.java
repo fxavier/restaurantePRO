@@ -147,6 +147,32 @@ class ExclusionReferenceRulesTest {
     }
 
     @Test
+    void publishingRefreshesTheStoredWarningsAndOnlyValidationListsExcludedItems() throws Exception {
+        SellableStore b = publications().sellableStore();
+        JsonNode x = fixtures().item();
+        JsonNode y = fixtures().item();
+        priceAll(b, x, y);
+        macro(x, y);
+        UUID release = id(publications().createDraft(b.store()));
+        validate(b.store(), release).andExpect(status().isOk())
+                .andExpect(jsonPath("$.excludedItems.length()").value(0))
+                .andExpect(jsonPath("$.validationWarnings.length()").value(0));
+
+        exclusions().exclude(b.store(), id(x), null).andExpect(status().isOk());
+        publications().publish(b.store(), release, UUID.randomUUID().toString(), "{}").andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PUBLISHED"))
+                .andExpect(jsonPath("$.excludedItems").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.validationWarnings.length()").value(1))
+                .andExpect(jsonPath("$.validationWarnings[0].code").value("MACRO_OMITTED"));
+
+        mvc.perform(get(Publications.RELEASES + "/" + release).with(inStore(b.store(), Permission.CATALOG_MANAGE)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.excludedItems").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.validationWarnings[0].code").value("MACRO_OMITTED"))
+                .andExpect(jsonPath("$.validationWarnings[0].itemId").value(id(x).toString()));
+    }
+
+    @Test
     void entriesOfAnEveryStoreQuickPageNamingAnExcludedItemOrAnOmittedMacroAreOmitted() throws Exception {
         SellableStore b = publications().sellableStore();
         JsonNode x = fixtures().item();
@@ -164,7 +190,8 @@ class ExclusionReferenceRulesTest {
         UUID release = id(publications().createDraft(b.store()));
         assertThat(warnings(json(validate(b.store(), release).andExpect(status().isOk()).andReturn().getResponse()
                 .getContentAsString()))).containsExactly(tuple("MACRO_OMITTED", id(x).toString()),
-                tuple("QUICK_PAGE_ENTRY_OMITTED", id(x).toString()), tuple("QUICK_PAGE_ENTRY_OMITTED", id(x).toString()),
+                tuple("QUICK_PAGE_ENTRY_OMITTED", id(x).toString()),
+                tuple("QUICK_PAGE_ENTRY_OMITTED", id(x).toString()),
                 tuple("QUICK_PAGE_ENTRY_OMITTED", id(x).toString()));
         publications().publish(b.store(), release, UUID.randomUUID().toString(), "{}").andExpect(status().isOk());
 

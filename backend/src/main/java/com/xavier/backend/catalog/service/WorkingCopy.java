@@ -393,8 +393,9 @@ class WorkingCopy {
 
         private CatalogSnapshot.QuickPage quickPage(QuickPage page) {
             return new CatalogSnapshot.QuickPage(page.getId(), page.getCode(), page.getName(), page.getPosition(),
-                    page.getEntries().stream().filter(entry -> exclusionOf(entry) == null).map(entry -> new CatalogSnapshot.QuickPageEntry(entry.getItemId(),
-                            entry.getVariantId(), entry.getMacroId())).toList());
+                    page.getEntries().stream().filter(entry -> exclusionOf(entry) == null)
+                            .map(entry -> new CatalogSnapshot.QuickPageEntry(entry.getItemId(), entry.getVariantId(),
+                                    entry.getMacroId())).toList());
         }
 
         private static CatalogSnapshot.Macro macro(Macro macro) {

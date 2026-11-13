@@ -70,8 +70,8 @@ public class StoreItemExclusionService {
         }
         Item item = items.findById(itemId).orElseThrow(() -> CatalogEntryNotFoundException.item(itemId));
         String reason = request.reason() == null || request.reason().isBlank() ? null : request.reason().strip();
-        boolean changed = exclusions.insertIfAbsent(storeId, itemId, reason, clock.instant(),
-                accessPolicy.current().userId()) == 1 || exclusions.changeReason(storeId, itemId, reason) == 1;
+        boolean changed = exclusions.upsert(storeId, itemId, reason, clock.instant(),
+                accessPolicy.current().userId()) == 1;
         if (changed) {
             Map<String, Object> details = new HashMap<>();
             if (reason != null) {

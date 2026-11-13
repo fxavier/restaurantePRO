@@ -118,7 +118,8 @@ public class ReleaseService {
         });
         long version = releases.maxCatalogVersion(storeId) + 1;
         UUID author = accessPolicy.current().userId();
-        release.publish(version, json.writeValueAsString(view.snapshot(releaseId, version)), author, now);
+        release.publish(version, json.writeValueAsString(view.snapshot(releaseId, version)),
+                json.writeValueAsString(view.warnings()), author, now);
         UniqueConstraints.saveAndFlush(releases, release,
                 () -> new IllegalReleaseStateException("Another release of store " + storeId + " was published at the same time"),
                 "configuration_release_one_published_per_store_ux", "configuration_release_store_version_uk");
@@ -162,7 +163,7 @@ public class ReleaseService {
 
     private ReleaseSummary summary(ConfigurationRelease release) {
         String warnings = release.getValidationWarnings();
-        return release.toSummary(List.of(), warnings == null ? List.of()
+        return release.toSummary(null, warnings == null ? List.of()
                 : List.of(json.readValue(warnings, ReleaseValidationWarning[].class)));
     }
 

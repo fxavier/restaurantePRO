@@ -21,21 +21,20 @@ public interface StoreItemExclusionRepository extends JpaRepository<StoreItemExc
 
     Optional<StoreItemExclusion> findByIdStoreIdAndIdItemId(UUID storeId, UUID itemId);
 
-    /** @return 1 when inserted, 0 when the item is already excluded (also by a concurrent request) */
-    @Modifying
+    /**
+     * Excludes the item, or sets the reason of its exclusion, in one statement. The conflicting row is locked even when
+     * the reason is unchanged, so a concurrent DELETE waits for this transaction.
+     *
+     * @return 1 when inserted or the reason changed, 0 when the exclusion already had {@code reason}
+     */
+    @Modifying(clearAutomatically = true)
     @NativeQuery("""
             INSERT INTO catalog.store_item_exclusion (store_id, item_id, reason, excluded_at, excluded_by_account_id)
             VALUES (:storeId, :itemId, CAST(:reason AS varchar), :at, :accountId)
-            ON CONFLICT DO NOTHING""")
-    int insertIfAbsent(@Param("storeId") UUID storeId, @Param("itemId") UUID itemId, @Param("reason") String reason,
-                       @Param("at") Instant at, @Param("accountId") UUID accountId);
-
-    /** @return 1 when the reason changed, 0 when it already was {@code reason} or the row is gone */
-    @Modifying(clearAutomatically = true)
-    @NativeQuery("""
-            UPDATE catalog.store_item_exclusion SET reason = CAST(:reason AS varchar)
-            WHERE store_id = :storeId AND item_id = :itemId AND reason IS DISTINCT FROM CAST(:reason AS varchar)""")
-    int changeReason(@Param("storeId") UUID storeId, @Param("itemId") UUID itemId, @Param("reason") String reason);
+            ON CONFLICT (store_id, item_id) DO UPDATE SET reason = EXCLUDED.reason
+            WHERE store_item_exclusion.reason IS DISTINCT FROM EXCLUDED.reason""")
+    int upsert(@Param("storeId") UUID storeId, @Param("itemId") UUID itemId, @Param("reason") String reason,
+               @Param("at") Instant at, @Param("accountId") UUID accountId);
 
     /** @return 1 when removed, 0 when the item was not excluded (or a concurrent request removed it first) */
     @Modifying

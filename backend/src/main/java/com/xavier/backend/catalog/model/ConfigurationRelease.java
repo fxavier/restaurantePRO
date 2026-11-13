@@ -102,8 +102,10 @@ public class ConfigurationRelease {
         validationWarnings = warningsJson;
     }
 
-    public void publish(long catalogVersion, String snapshot, UUID publishedBy, Instant now) {
+    /** @param warningsJson the warnings of the validation run at publication (D147), replacing the stored ones */
+    public void publish(long catalogVersion, String snapshot, String warningsJson, UUID publishedBy, Instant now) {
         requirePublishable();
+        this.validationWarnings = warningsJson;
         this.catalogVersion = catalogVersion;
         this.snapshot = snapshot;
         this.publishedBy = publishedBy;

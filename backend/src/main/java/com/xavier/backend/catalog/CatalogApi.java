@@ -8,12 +8,14 @@ import com.xavier.backend.catalog.model.Item;
 import com.xavier.backend.catalog.model.ItemVariant;
 import com.xavier.backend.catalog.model.ReleaseStatus;
 import com.xavier.backend.catalog.model.SoldOutFlag;
+import com.xavier.backend.catalog.model.StoreItemExclusion;
 import com.xavier.backend.catalog.model.dto.CatalogSnapshot;
 import com.xavier.backend.catalog.repository.ConfigurationReleaseRepository;
 import com.xavier.backend.catalog.repository.DailyDishRepository;
 import com.xavier.backend.catalog.repository.ItemRepository;
 import com.xavier.backend.catalog.repository.ItemVariantRepository;
 import com.xavier.backend.catalog.repository.SoldOutFlagRepository;
+import com.xavier.backend.catalog.repository.StoreItemExclusionRepository;
 import java.time.LocalDate;
 import java.util.Collection;
 import java.util.Comparator;
@@ -42,15 +44,18 @@ public class CatalogApi {
     private final ItemVariantRepository variants;
     private final SoldOutFlagRepository soldOutFlags;
     private final DailyDishRepository dailyDishes;
+    private final StoreItemExclusionRepository exclusions;
     private final JsonMapper json;
 
     CatalogApi(ConfigurationReleaseRepository releases, ItemRepository items, ItemVariantRepository variants,
-               SoldOutFlagRepository soldOutFlags, DailyDishRepository dailyDishes, JsonMapper json) {
+               SoldOutFlagRepository soldOutFlags, DailyDishRepository dailyDishes,
+               StoreItemExclusionRepository exclusions, JsonMapper json) {
         this.releases = releases;
         this.items = items;
         this.variants = variants;
         this.soldOutFlags = soldOutFlags;
         this.dailyDishes = dailyDishes;
+        this.exclusions = exclusions;
         this.json = json;
     }
 
@@ -98,6 +103,15 @@ public class CatalogApi {
                 .map(item -> new ItemRef(item.getId(), item.getCode(), item.getName(), item.getFamilyId(),
                         item.isActive(), variantIds.getOrDefault(item.getId(), List.of())))
                 .toList();
+    }
+
+    /**
+     * The items the store excludes from its releases (D146), as configured now: a release published after the
+     * exclusion leaves them out. Use {@link #items} for their variants.
+     */
+    public Set<UUID> excludedItems(UUID storeId) {
+        return exclusions.findAllByIdStoreId(storeId).stream().map(StoreItemExclusion::getItemId)
+                .collect(Collectors.toUnmodifiableSet());
     }
 
     /**

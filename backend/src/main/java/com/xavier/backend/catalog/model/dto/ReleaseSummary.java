@@ -10,8 +10,9 @@ import java.util.UUID;
  *
  * @param status             DRAFT, VALIDATED, PUBLISHED or RETIRED
  * @param excludedItems      the active items the store excludes, which its next release leaves out (D146); computed
- *                           by validation, empty in every other response
- * @param validationWarnings the warnings of the last validation (D147), stored on the release; empty before it
+ *                           by validation only, {@code null} (not computed) in every other response
+ * @param validationWarnings the warnings of the last validation or of the publication (D147), stored on the release;
+ *                           empty before the first validation
  */
 public record ReleaseSummary(UUID id, UUID storeId, String status, Long version, Instant effectiveAt,
                              UUID publishedBy, UUID createdBy, Instant createdAt, Instant validatedAt,

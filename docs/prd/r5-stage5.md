@@ -108,7 +108,7 @@ Frozen configuration names (S62 wires them in Compose; backend slices read them 
 **Contracts:**
 - `WorkingCopy.of(storeId, at)` leaves the store's excluded items out of `activeItems` and applies the D147 table; `View.errors()` keeps its codes; a new `View.warnings()` and `View.excluded()`.
 - `ReleaseValidationError` stays; new `ReleaseValidationWarning(code, itemId, itemCode, message)` with codes `MENU_OPTION_EXCLUDED`, `MACRO_OMITTED`, `QUICK_PAGE_ENTRY_OMITTED`, `AUTOMATIC_ITEM_OMITTED`; new error codes `QUICK_PAGE_ENTRY_EXCLUDED`, `AUTOMATIC_ITEM_EXCLUDED`. `ITEM_WITHOUT_PRICE`'s message names both remedies.
-- The release view gains `excludedItems[{itemId, code, name}]` (computed) and `validationWarnings[]` (stored).
+- The release view gains `excludedItems[{itemId, code, name}]` (computed) and `validationWarnings[]` (stored). **(amended 2026-11-13)** `excludedItems` is computed by `validate` only and is `null` (not computed) in every other release response, because an empty list would read as "excludes nothing"; publish recomputes the warnings and stores them on the release in the same update.
 - `CatalogApi.dailyDishes(storeId, date)` and `GET /pos/catalog/daily-dishes` drop ids absent from the current published snapshot.
 - `CatalogSnapshot.SCHEMA_VERSION` stays 2.
 
