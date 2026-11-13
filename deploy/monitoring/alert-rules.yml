@@ -1,0 +1,121 @@
+# restaurantPRO operational alerts (spec §12; D150, D153). One rule per row of the D150 table, with the
+# thresholds of the in-app alert list (GET /api/v1/backoffice/alerts), plus RestaurantProBackendDown.
+# The metric names are frozen in D150: change them only together with the backend.
+# Every rule carries labels.severity (critical | warning, as in D150) and labels.code (the in-app alert code), and
+# an annotation summary that names no order, payment, job, document or store id (§12, D149).
+groups:
+  - name: restaurantpro-backups
+    rules:
+      - alert: RestaurantProBackupMonitorStale
+        # verify-backups.sh (every 15 min) has not written the status file for 45 min, or the backend cannot read it.
+        expr: backup_status_age_seconds > 45 * 60
+        labels:
+          severity: critical
+          code: BACKUP_MONITOR_STALE
+        annotations:
+          summary: "The backup check has not reported for more than 45 minutes: is the verify-backups.sh cron or timer running?"
+      - alert: RestaurantProBackupLate
+        expr: >-
+          backup_last_success_age_seconds{kind=~"logical|base"} > 26 * 3600
+          or backup_last_success_age_seconds{kind="offbox"} > 30 * 60
+        labels:
+          severity: critical
+          code: BACKUP_LATE
+        annotations:
+          summary: "The last {{ $labels.kind }} backup is late (logical and base: 26 h; off-box copy: 30 min)."
+      - alert: RestaurantProBackupProblem
+        expr: backup_problems > 0
+        labels:
+          severity: critical
+          code: BACKUP_PROBLEM
+        annotations:
+          summary: "The last backup check listed {{ $value }} problem(s): run deploy/verify-backups.sh on the server."
+
+  - name: restaurantpro-disk
+    rules:
+      - alert: RestaurantProDiskSpaceLow
+        expr: filesystem_free_ratio < 0.15 and filesystem_free_ratio >= 0.05
+        labels:
+          severity: warning
+          code: DISK_SPACE_LOW
+        annotations:
+          summary: "Less than 15 % free on the {{ $labels.name }} filesystem."
+      - alert: RestaurantProDiskSpaceCritical
+        expr: filesystem_free_ratio < 0.05
+        labels:
+          severity: critical
+          code: DISK_SPACE_LOW
+        annotations:
+          summary: "Less than 5 % free on the {{ $labels.name }} filesystem."
+
+  - name: restaurantpro-printing
+    rules:
+      - alert: RestaurantProPrintJobsAttention
+        expr: print_jobs_unresolved > 0
+        labels:
+          severity: warning
+          code: PRINT_JOBS_ATTENTION
+        annotations:
+          summary: "Print jobs failed or ended unknown in the last 24 h and nobody resolved them (BackOffice, print queue)."
+      - alert: RestaurantProPrintQueueStalled
+        expr: print_jobs_oldest_waiting_seconds > 5 * 60
+        labels:
+          severity: warning
+          code: PRINT_QUEUE_STALLED
+        annotations:
+          summary: "A print job has waited more than 5 minutes on a printer in NORMAL mode."
+
+  - name: restaurantpro-events
+    rules:
+      - alert: RestaurantProEventsFailed
+        expr: sum by (module) (event_publications{state="failed"}) > 0
+        labels:
+          severity: critical
+          code: EVENTS_FAILED
+        annotations:
+          summary: "Event publications of module {{ $labels.module }} failed after every retry."
+      - alert: RestaurantProEventsBacklog
+        expr: event_publications_oldest_incomplete_seconds > 30 * 60
+        labels:
+          severity: warning
+          code: EVENTS_BACKLOG
+        annotations:
+          summary: "The oldest incomplete event publication is more than 30 minutes old."
+
+  - name: restaurantpro-money
+    rules:
+      - alert: RestaurantProPaymentsInDoubt
+        expr: payment_attempts_in_doubt_overdue > 0
+        labels:
+          severity: critical
+          code: PAYMENTS_IN_DOUBT
+        annotations:
+          summary: "Payment attempts are in doubt past their deadline: resolve them in the BackOffice."
+      - alert: RestaurantProCashDiscrepancy
+        expr: cash_closings_with_difference > 0
+        labels:
+          severity: warning
+          code: CASH_DISCREPANCY
+        annotations:
+          summary: "Cash closings of the last 24 h show a difference above the configured threshold."
+
+  - name: restaurantpro-exports
+    rules:
+      - alert: RestaurantProExportFailed
+        expr: sum by (kind) (increase(exports_total{outcome="failure"}[24h])) > 0
+        labels:
+          severity: warning
+          code: EXPORT_FAILED
+        annotations:
+          summary: "A {{ $labels.kind }} export failed in the last 24 h."
+
+  - name: restaurantpro-availability
+    rules:
+      - alert: RestaurantProBackendDown
+        expr: up{job="restaurantpro-backend"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          code: BACKEND_DOWN
+        annotations:
+          summary: "Prometheus cannot scrape the restaurantPRO backend (down, or the scrape token is wrong)."

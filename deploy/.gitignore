@@ -3,6 +3,9 @@
 secrets/
 backups/
 logs/
+# D151: verify-backups.sh writes the backup status file here; the directory itself ships (status/.gitkeep).
+status/*
+!status/.gitkeep
 # D98: public keys and the pinned host key of this installation.
 backup-recipients.txt
 offbox_known_hosts

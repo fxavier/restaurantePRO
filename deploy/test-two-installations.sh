@@ -8,7 +8,8 @@
 # the first miss:
 #   separation   containers, networks and volumes belong to one project only; no container shares another's
 #                network, PID or IPC namespace; no secret, recipients file or writable path is mounted in both
-#                (the read-only deploy/ scripts and Caddyfile are the only shared mounts)
+#                (the read-only deploy/ scripts and Caddyfile are the only shared mounts; each installation has its
+#                own backup status directory)
 #   credentials  A's admin password and A's session cookie get 401 on B, and the reverse; A's database password
 #                fails authentication on B's PostgreSQL, and the reverse (each with a positive control); A's
 #                Caddy root certificate does not verify B
@@ -193,7 +194,7 @@ secrets_dir() { if [[ "$1" == b && "$fault" == separation ]]; then echo "$WORK/a
 compose() { # $1 installation, then docker compose arguments
   local i=$1
   shift
-  RP_ISOLATION_SECRETS="$(secrets_dir "$i")" BACKUP_AGE_RECIPIENTS_FILE="$WORK/$i/keys/recipients.txt" \
+  RP_ISOLATION_SECRETS="$(secrets_dir "$i")" RP_ISOLATION_STATUS="$WORK/$i/status" BACKUP_AGE_RECIPIENTS_FILE="$WORK/$i/keys/recipients.txt" \
     docker compose -p "rp-$i" --env-file "$ISO_DIR/$i.env" -f "$DEPLOY_DIR/compose.yaml" -f "$ISO_DIR/compose.isolation.yaml" "$@"
 }
 # The environment an operator of installation $1 runs the deploy/ scripts with: its project, its env file, its
@@ -282,6 +283,10 @@ for i in $INSTALLATIONS; do
   make_throwaway_keys "$WORK/$i/keys"
   openssl rand -hex 24 | tr -d '\n' >"$WORK/$i/secrets/db_password"
   printf 'initial-%s' "$(openssl rand -hex 12)" >"$WORK/$i/secrets/admin_initial_password"
+  openssl rand -base64 32 | tr -d '\n' >"$WORK/$i/secrets/mfa_key" # R5 (D143)
+  openssl rand -hex 32 | tr -d '\n' >"$WORK/$i/secrets/metrics_token" # R5 (D152)
+  : >"$WORK/$i/secrets/oidc_client_secret" # R5 (D144): single sign-on off
+  mkdir -m 755 "$WORK/$i/status" # R5 (D151): the backup status directory, mounted read-only into the backend
   chmod 644 "$WORK/$i/secrets/"* # read by non-root users inside the containers; the 0700 directory protects them
 done
 unset BACKUP_AGE_RECIPIENTS_FILE # per installation from here on (compose, as_operator)
@@ -348,13 +353,14 @@ for i in $INSTALLATIONS; do
   private=0
   while IFS='|' read -r c type src _ dst; do
     case "$dst" in
-      /run/secrets/* | /etc/restaurantpro/backup-recipients.txt)
+      /run/secrets/* | /etc/restaurantpro/backup-recipients.txt | /run/restaurantpro/status)
         [[ "$src" == "$WORK/$i/"* ]] || fail "$c of rp-$i mounts $dst from $src, outside rp-$i's own directory $WORK/$i"
         private=$((private + 1)) ;;
     esac
   done <"$WORK/$i.mounts"
-  # postgres: db_password and the recipients; backend: db_password and admin_initial_password.
-  ((private == 4)) || fail "rp-$i mounts $private secret or recipients files, expected 4"
+  # postgres: db_password and the recipients; backend: db_password, admin_initial_password, mfa_key,
+  # metrics_token, oidc_client_secret and the backup status directory.
+  ((private == 8)) || fail "rp-$i mounts $private secret, recipients or status paths, expected 8"
 done
 cut -d'|' -f2-3 "$WORK/a.mounts" | sort -u >"$WORK/a.sources"
 cut -d'|' -f2-3 "$WORK/b.mounts" | sort -u >"$WORK/b.sources"
@@ -365,7 +371,7 @@ while IFS='|' read -r type src; do
   if grep -q "|$type|$src|true|" "$WORK/a.mounts" "$WORK/b.mounts"; then fail "mounted writable in both installations: $src"; fi
   shared_code=$((shared_code + 1))
 done < <(comm -12 "$WORK/a.sources" "$WORK/b.sources")
-pass "secrets and recipients come from each installation's own directory; the only shared mounts are $shared_code read-only deploy/ files (scripts, Caddyfile)"
+pass "secrets, recipients and the backup status directory come from each installation's own directory; the only shared mounts are $shared_code read-only deploy/ files (scripts, Caddyfile)"
 
 # --- 2. credentials ---------------------------------------------------------------------------------------------
 step credentials "A's credentials do not open B, and B's do not open A"
