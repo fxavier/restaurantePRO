@@ -109,10 +109,16 @@ public class CatalogApi {
                 .collect(Collectors.toUnmodifiableSet());
     }
 
-    /** The daily dishes of the store for {@code businessDate}, in order (D109); empty when none were set. */
+    /**
+     * The daily dishes of the store for {@code businessDate}, in order (D109); empty when none were set. A dish whose
+     * item the current published release no longer sells (a republish left it out, D147) is dropped.
+     */
     public List<UUID> dailyDishes(UUID storeId, LocalDate businessDate) {
+        Set<UUID> published = findCurrentSnapshot(storeId)
+                .map(snapshot -> snapshot.items().stream().map(CatalogSnapshot.Item::id).collect(Collectors.toSet()))
+                .orElse(Set.of());
         return dailyDishes.findAllByIdStoreIdAndIdBusinessDateOrderByPosition(storeId, businessDate).stream()
-                .map(DailyDish::getItemId).toList();
+                .map(DailyDish::getItemId).filter(published::contains).toList();
     }
 
     private CatalogSnapshot parse(ConfigurationRelease release) {
