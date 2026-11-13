@@ -22,7 +22,7 @@ One stack per company (spec §2): Caddy (HTTPS on the LAN), the backend, and Pos
    openssl rand -base64 32 | tr -d '\n' > secrets/mfa_key       # encrypts the TOTP secrets (R5, "Second factor (MFA)")
    openssl rand -hex 32 | tr -d '\n' > secrets/metrics_token    # Prometheus scrape token (R5, "Alerts")
    : > secrets/oidc_client_secret                               # empty unless you enable single sign-on
-   chmod 644 secrets/*           # readable inside the containers; the 700 directory protects them on the host
+   chmod 644 secrets/*           # 644, not 600: the containers read them as non-root users; the 700 directory protects them on the host
    ls -ld status                 # ships with the package, mode 755; if missing: mkdir -m 755 status
    ```
 
@@ -410,7 +410,7 @@ To enable it:
 
 1. Register a confidential web client at the provider, with the authorization-code flow, PKCE, and the redirect URI **`https://<RESTAURANTPRO_HOSTNAME>/api/v1/auth/oidc/callback`**. Scope `openid` is enough.
 2. Put the client secret in `secrets/oidc_client_secret` (no newline: `printf '%s' '<secret>' > secrets/oidc_client_secret`, mode 644 like the other secrets), and in `.env`: `RESTAURANTPRO_OIDC_ENABLED=true`, `RESTAURANTPRO_OIDC_ISSUER_URI` (the issuer exactly as the provider's discovery document states it), `RESTAURANTPRO_OIDC_CLIENT_ID`, and optionally `RESTAURANTPRO_OIDC_DISPLAY_NAME` (the button text), `RESTAURANTPRO_OIDC_SCOPES`, `RESTAURANTPRO_OIDC_POST_LOGIN_URI` (default `/backoffice/`).
-3. Give the backend a route to the provider. The backend sits on the `internal` network, which has **no route** to the LAN or the Internet, so as shipped it cannot reach any provider. Add an override that attaches it to a network with a route, for example `compose.override.yaml` next to `compose.yaml` (Compose reads it automatically):
+3. Give the backend a route to the provider. The backend sits on the `internal` network, which has **no route** to the LAN or the Internet, so as shipped it cannot reach any provider. This is deliberate: single sign-on is off by default, and restaurantPRO ships no override, so the backend gets a route only on an installation that enables it. The supported way is an override that attaches it to a network with a route, for example `compose.override.yaml` next to `compose.yaml` (Compose reads it automatically):
 
    ```yaml
    services:
