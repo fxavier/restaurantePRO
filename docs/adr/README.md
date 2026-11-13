@@ -58,4 +58,4 @@ Recorded in the ADRs above, plus one decision without an ADR:
 - S10 login throttle: a fixed 15-minute window; the per-pair counter counts attempts (reset on success), the per-address counter counts failures; not a sliding per-username window (ADR 0008).
 - D78: a statement's period is computed from calendar midnights, not from the store's business-day cutoff (BUG-0002, ADR 0022). Fixed in 8c1bd64.
 - D97: the em dash of the payment breakdown prints as `?` on every printer table except WPC1252 (BUG-0001, ADR 0026). Fixed in ef16b3d: an ASCII hyphen fallback.
-- D158: the 30 s kick window runs from the payment's `requestedAt`, not the job's creation, and a kick past its window is saved FAILED `KICK_EXPIRED` when issued (amended in S60 review and S63; ADR 0038).
+- D158: the 30 s kick window is anchored on the job's `created_at` = `min(requestedAt, now)` (the payment's or refund's recording, never later than the issue), not on the event's delivery, and a kick already past its window is saved FAILED `KICK_EXPIRED` when issued (amended in S60 review and S63; ADR 0038).

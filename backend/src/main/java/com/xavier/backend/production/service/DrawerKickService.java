@@ -71,9 +71,10 @@ public class DrawerKickService {
     /**
      * Settlement's request for a cash payment or refund ({@code sourceType} PAYMENT or REFUND). A terminal with no
      * printer, or a printer with no drawer, gets nothing (logged at INFO): a kick is never kept for later. Its 30 s
-     * window runs from {@code requestedAt}, the payment's or refund's recording (D158 amended, S60 review), so an
-     * event delivered late leaves a FAILED {@code KICK_EXPIRED} job and sends nothing; a publication stored without
-     * {@code requestedAt} ({@code null}) is expired at once.
+     * window runs from {@code min(requestedAt, now)}, {@code requestedAt} being the payment's or refund's recording
+     * (D158 amended, S60 review and S63), so an event delivered late leaves a FAILED {@code KICK_EXPIRED} job, saved
+     * so at issue, and sends nothing; a publication stored without {@code requestedAt} ({@code null}) is expired at
+     * once.
      */
     @Transactional
     public void kick(String sourceType, UUID sourceId, UUID storeId, UUID terminalId, Instant requestedAt) {
@@ -155,6 +156,7 @@ public class DrawerKickService {
         PrintJob job = PrintJob.first(ticket.getId(), storeId, printer.getId(), JobKind.ORIGINAL, createdAt);
         if (requestedAt == null || job.kickExpired(now)) {
             job.failUnsent(now, "KICK_EXPIRED");
+            log.warn("Drawer kick for {} {} expired at issue (requested at {})", sourceType, sourceId, requestedAt);
         }
         job = jobs.saveAndFlush(job);
         notifier.notifyAfterCommit(storeId, ChangeTopic.PRINT_JOBS, job.getId());

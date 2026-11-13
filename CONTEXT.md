@@ -125,7 +125,7 @@ Canonical terms from spec §8.1. Code uses the English name; the Portuguese term
 | Courier | Estafeta | orders, identity | The employee, assigned to the store, a delivery is dispatched to. Their cash is recorded by a cashier in the cashier's own session. |
 | Delivery slip | Guia de entrega | production | A non-fiscal ticket (`DELIVERY_SLIP`) printed at dispatch: customer, phone, address, items, amount due. A re-dispatch prints a new one. |
 | Printer profile | Perfil de impressora | production | A printer's stored ESC/POS settings: paper width and columns, code page (and table override), cut mode, feed lines, status probe, drawer pin and pulse. Presets only fill the form. |
-| Drawer kick | Abertura de gaveta | production | An `ESC p` job on the terminal's receipt printer after a cash payment or refund, or a manual open with a reason: one attempt, never held, retried or redirected; FAILED `KICK_EXPIRED` when claimed more than 30 s after the request. |
+| Drawer kick | Abertura de gaveta | production | An `ESC p` job on the terminal's receipt printer after a cash payment or refund, or a manual open with a reason: one attempt, never held, retried or redirected; a late kick is FAILED `KICK_EXPIRED` at issue, or at claim if its 30 s pass while it is queued. |
 | Warehouse | Armazém | inventory | A store's stock location (kitchen, bar store-room), with its negative-stock policy (ALLOW or REFUSE_MANUAL). |
 | StockItem | Artigo de stock | inventory | A company-wide ingredient or prepared item (PURCHASED or PREPARED) with a base unit and packs. Distinct from a catalog item. |
 | StockMovement | Movimento de stock | inventory | The record of reference: a signed quantity and value per warehouse × stock item, with its source. Immutable; unique per source. |

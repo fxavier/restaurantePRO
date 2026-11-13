@@ -96,7 +96,9 @@ import tools.jackson.databind.JsonNode;
  *       key confirms it → one receipt, one set of RECEIPT movements; a replay adds none.</li>
  *   <li>(l) a cash payment committed, its drawer kick not issued (D158): B delivers the kick request at start; the
  *       payment was recorded more than 30 s before, so the kick is FAILED {@code KICK_EXPIRED} and never sent; a
- *       forced redelivery adds no second kick.</li>
+ *       forced redelivery adds no second kick. This proves D158's promise across a restart: a late redelivered kick
+ *       is never sent and never doubles. That the expiry happens at issue (not at claim) is proven by
+ *       {@code DrawerKickRequestedAtTest}.</li>
  * </ol>
  *
  * <p>For (i)–(k) the store is live in inventory (activated at setup) with one warehouse on the default route, the

@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -26,7 +27,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 @ProductionModuleTest
 class PrintJobUnresolvedPlanTest {
 
-    /** The SQL of {@code countUnresolvedSince}, as Hibernate renders the JPQL (enum literals inline). */
+    /**
+     * The SQL of {@code countUnresolvedSince}, translated by hand from its JPQL (enum literals inline); kept in step
+     * with the JPQL by {@link #theRepositoryQueryKeepsThePartialIndexPredicate()}.
+     */
     static final String UNRESOLVED = """
             SELECT j.store_id, count(j.id), min(j.created_at)
             FROM production.print_job j JOIN production.production_ticket t ON t.id = j.ticket_id
@@ -61,6 +65,21 @@ class PrintJobUnresolvedPlanTest {
 
         assertThat(plan).containsPattern("(Index Only Scan using|Index Scan using|Bitmap Index Scan on) "
                 + "print_job_unresolved_ix");
+    }
+
+    /**
+     * {@link #UNRESOLVED} is a hand translation of the JPQL: this pins the repository query to the partial index's
+     * predicate (and to the store and window columns the plan assumes), so changing the JPQL breaks this test.
+     */
+    @Test
+    void theRepositoryQueryKeepsThePartialIndexPredicate() throws Exception {
+        String jpql = PrintJobRepository.class.getMethod("countUnresolvedSince", Instant.class)
+                .getAnnotation(Query.class).value().replaceAll("\\s+", " ");
+
+        assertThat(jpql).contains("j.status in (com.xavier.backend.production.model.PrintJobStatus.FAILED, "
+                        + "com.xavier.backend.production.model.PrintJobStatus.UNKNOWN)")
+                .contains("j.resolution is null").contains("j.createdAt >= :since").contains("group by j.storeId")
+                .contains("t.sourceType <> com.xavier.backend.production.model.TicketSource.DRAWER_KICK");
     }
 
     private void seed() throws Exception {
