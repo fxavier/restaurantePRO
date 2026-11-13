@@ -33,7 +33,7 @@ Switches every test and the backend to the application role and adds the scope p
 - new `config/persistence/**` (`StoreScopedDataSource`, `StoreScopeDataSourcePostProcessor`, `StoreScopeAdvisor`, `StoreScopeStartupCheck`, `StoreScopeEnforcement`), new `config/alerts/StoreScopeAlertSource.java`
 - new `shared/persistence/StoreScopeViolations.java`, `shared/persistence/StoreProbe.java`; `shared/web/GlobalExceptionHandler.java`
 - `@SystemScoped` on the 14 `@Scheduled` methods, `CompanyBootstrapRunner.run`, `RebuildService.abandonInterruptedRuns`, `AdminBootstrapService`'s listener; `StoreScopes.propagate` in `PrintWorker`, `PaymentSubmitter`, `RebuildService`; `METRICS` in `ProductionMetrics`; `ALERTS` around the R5 alert aggregation in `config/alerts`
-- migrations `shared/V1007`, `organization/V2004`, `identity/V3015`, `customers/V11004`
+- migrations `shared/V1008`, `organization/V2004`, `identity/V3015`, `customers/V11004`
 - `application.yaml`; `deploy/postgres/provision-roles.sql`
 - tests: `TestcontainersConfiguration`, new `OwnerDatabase`, `StoreScopeTestSupport`, the fixture-thread extension (+ `src/test/resources/junit-platform.properties`), `@StrictStoreScope`; the ~30 test files with privileged SQL move to `OwnerDatabase`; `src/test/.../architecture`
 - `docs/architecture/backend-conventions.md` (rule rows)
@@ -50,7 +50,7 @@ Switches every test and the backend to the application role and adds the scope p
 | `config.persistence.StoreScopeStartupCheck` | D163 checks after Flyway (`@DependsOn("flywayInitializer")`) |
 | `shared.persistence.StoreScopeViolations` | `Optional<Kind> classify(Throwable)` (`SCOPE_MISSING`, `WRITE_REFUSED`, `STORE_CHANGE`) by SQL state; `void record(Kind, String origin)` (counter, ERROR log, 24 h memory for the alert) |
 | `shared.persistence.StoreProbe` | `Optional<UUID> storeOf(String table, UUID id)` → `SELECT shared.store_of(CAST(:t AS regclass), :id)` |
-| `V1007__shared_row_level_security.sql` | `rls_all_stores()`, `rls_store_ids()` (plpgsql, `STABLE PARALLEL SAFE`, raise `RS001`); `rls_reject_scope_change()` (`RS002`); `rls_protect_store_table`, `rls_protect_store_or_all_table`, `rls_protect_child_table`, `rls_register_unscoped`; table `rls_unscoped_table`; `store_of(regclass, uuid)` `SECURITY DEFINER SET search_path = pg_catalog`; registers `event_publication`, `event_publication_archive`, `flyway_schema_history`, `shared.idempotency_record`, `shared.spring_session`, `shared.spring_session_attributes` |
+| `V1008__shared_row_level_security.sql` | `rls_all_stores()`, `rls_store_ids()` (plpgsql, `STABLE PARALLEL SAFE`, raise `RS001`); `rls_reject_scope_change()` (`RS002`); `rls_protect_store_table`, `rls_protect_store_or_all_table`, `rls_protect_child_table`, `rls_register_unscoped`; table `rls_unscoped_table`; `store_of(regclass, uuid)` `SECURITY DEFINER SET search_path = pg_catalog`; registers `event_publication`, `event_publication_archive`, `flyway_schema_history`, `shared.idempotency_record`, `shared.spring_session`, `shared.spring_session_attributes` |
 | `V2004`, `V3015`, `V11004` | `rls_register_unscoped` for organization (3), identity (9 + R5's 4; revoke `EXECUTE` on `identity.mfa_break_glass_reset` from `PUBLIC`), customers (8), each with its D167 reason |
 | `provision-roles.sql` | D163 steps; psql variables `:'owner_password'`, `:'app_password'`; idempotent; never echoes a password |
 | Architecture rules | `scheduledEntryPointsAreSystemScoped`, `listenersHaveAStoreOrASystemScope`, `executorSubmissionsPropagateTheStoreScope`, `onlyConfigUsesHikari`; each with an `ArchitectureRulesFireTest` fixture |
@@ -63,7 +63,7 @@ Switches every test and the backend to the application role and adds the scope p
 
 ## Group 1 (after S64, in parallel): S65 ∥ S66 ∥ S67 ∥ S68 ∥ S69
 
-Every policy slice: one migration per module calling the V1007 helpers (no hand-written policy text); its module's D42 probe methods switched to `StoreProbe`; its `<Module>RowLevelSecurityTest`; `assertModuleClassified` for its schemas; plan tests for its hot queries (D171) after an audit of `numeric`/`jsonb`/`LIKE` predicates on protected tables (D169); fixes to its own tests. Each adds its listeners and jobs to `ActorlessStoreScopeTest` cases **in a new test class of its own module** (`<Module>ActorlessScopeTest`), so the S64 class is not edited.
+Every policy slice: one migration per module calling the V1008 helpers (no hand-written policy text); its module's D42 probe methods switched to `StoreProbe`; its `<Module>RowLevelSecurityTest`; `assertModuleClassified` for its schemas; plan tests for its hot queries (D171) after an audit of `numeric`/`jsonb`/`LIKE` predicates on protected tables (D169); fixes to its own tests. Each adds its listeners and jobs to `ActorlessStoreScopeTest` cases **in a new test class of its own module** (`<Module>ActorlessScopeTest`), so the S64 class is not edited.
 
 ### S65 — Deploy: roles, provisioning, restore, drills
 **Write scope:** `deploy/compose.yaml`, `deploy/postgres/provision.sh` (new), `deploy/backend-entrypoint.sh`, `deploy/restore.sh`, `deploy/verify-restore.sh`, `deploy/test-backup-restore.sh`, `deploy/test-pitr.sh`, `deploy/test-two-installations.sh`, `deploy/drills/isolation/**`, `deploy/README.md`, `deploy/.env.example` (comment only), `backend/compose.yaml`, `backend/run-local.sh`.
