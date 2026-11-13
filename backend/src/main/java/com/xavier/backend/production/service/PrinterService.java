@@ -88,7 +88,7 @@ public class PrinterService {
         Printer printer = authorized(id);
         OptimisticLocking.requireVersion(Printer.class, id, printer.getVersion(), request.version());
         printer.update(request.code(), request.name(), request.host(), request.port(), request.codePage(),
-                request.profile(), request.active(), clock.instant());
+                request.profile(printer.profile()), request.active(), clock.instant());
         save(printer); // flush now: a concurrent writer fails here (409), and the response has the new version
         record("PRINTER_UPDATED", printer, Map.of("active", printer.isActive()));
         return printer.toView();

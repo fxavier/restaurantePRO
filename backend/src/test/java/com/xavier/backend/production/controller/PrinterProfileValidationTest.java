@@ -74,9 +74,7 @@ class PrinterProfileValidationTest {
 
     @Test
     void aFullProfileIsStoredListedAndEdited() throws Exception {
-        UUID printer = ProductionFixtures.id(create("""
-                "paperWidthMm": 80, "columns": 42, "codeTable": 17, "cutMode": "FULL", "feedLines": 6,
-                "statusProbe": true, "drawerPin": 1, "drawerPulseMs": 120""").andExpect(status().isCreated()));
+        UUID printer = ProductionFixtures.id(create(FULL_PROFILE).andExpect(status().isCreated()));
 
         mvc.perform(get(ProductionFixtures.PRINTERS).param("storeId", store.toString())
                         .with(inStore(store, Permission.PRODUCTION_MANAGE))).andExpect(status().isOk())
@@ -91,10 +89,46 @@ class PrinterProfileValidationTest {
                 "paperWidthMm": 58, "columns": 30, "cutMode": "PARTIAL\"""").andExpect(status().isOk())
                 .andExpect(jsonPath("$.profile.paperWidthMm").value(58))
                 .andExpect(jsonPath("$.profile.columns").value(30))
-                .andExpect(jsonPath("$.profile.codeTable").isEmpty())
-                .andExpect(jsonPath("$.profile.statusProbe").value(false))
-                .andExpect(jsonPath("$.profile.drawerPulseMs").value(100));
+                .andExpect(jsonPath("$.profile.cutMode").value("PARTIAL"))
+                .andExpect(jsonPath("$.profile.codeTable").value(17))
+                .andExpect(jsonPath("$.profile.feedLines").value(6))
+                .andExpect(jsonPath("$.profile.statusProbe").value(true))
+                .andExpect(jsonPath("$.profile.drawerPin").value(1))
+                .andExpect(jsonPath("$.profile.drawerPulseMs").value(120));
     }
+
+    /** PRD S59 (amended 2026-11-13): a PUT keeps every profile field it does not send. */
+    @Test
+    void aPutThatSendsOnlyThePrinterFieldsLeavesTheProfileUnchanged() throws Exception {
+        UUID printer = ProductionFixtures.id(create(FULL_PROFILE).andExpect(status().isCreated()));
+
+        update(printer, "").andExpect(status().isOk()).andExpect(jsonPath("$.name").value("Cozinha"))
+                .andExpect(jsonPath("$.profile.paperWidthMm").value(80))
+                .andExpect(jsonPath("$.profile.columns").value(42))
+                .andExpect(jsonPath("$.profile.codeTable").value(17))
+                .andExpect(jsonPath("$.profile.cutMode").value("FULL"))
+                .andExpect(jsonPath("$.profile.feedLines").value(6))
+                .andExpect(jsonPath("$.profile.statusProbe").value(true))
+                .andExpect(jsonPath("$.profile.drawerPin").value(1))
+                .andExpect(jsonPath("$.profile.drawerPulseMs").value(120));
+    }
+
+    /** An explicit null clears the optional table override and drawer pin; the rest is kept. */
+    @Test
+    void anExplicitNullClearsTheCodeTableAndTheDrawerPin() throws Exception {
+        UUID printer = ProductionFixtures.id(create(FULL_PROFILE).andExpect(status().isCreated()));
+
+        update(printer, """
+                "codeTable": null, "drawerPin": null""").andExpect(status().isOk())
+                .andExpect(jsonPath("$.profile.codeTable").isEmpty())
+                .andExpect(jsonPath("$.profile.drawerPin").isEmpty())
+                .andExpect(jsonPath("$.profile.columns").value(42))
+                .andExpect(jsonPath("$.profile.drawerPulseMs").value(120));
+    }
+
+    static final String FULL_PROFILE = """
+            "paperWidthMm": 80, "columns": 42, "codeTable": 17, "cutMode": "FULL", "feedLines": 6,
+            "statusProbe": true, "drawerPin": 1, "drawerPulseMs": 120""";
 
     @Test
     void columnsThatDoNotFitThePaperWidthAreRefused() throws Exception {
@@ -170,7 +204,8 @@ class PrinterProfileValidationTest {
                 .with(inStore(store, Permission.PRODUCTION_MANAGE)).with(csrf())
                 .contentType(MediaType.APPLICATION_JSON).content("""
                         {"code": "KIT", "name": "Cozinha", "host": "10.0.0.9", "port": 9100, "codePage": "CP850",
-                         "active": true, "version": %d, %s}""".formatted(fixtures.printerVersion(printer), profile)));
+                         "active": true, "version": %d%s}""".formatted(fixtures.printerVersion(printer),
+                        profile.isEmpty() ? "" : ", " + profile)));
     }
 
     private static void expectInvalid(ResultActions result) throws Exception {

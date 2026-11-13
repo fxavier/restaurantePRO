@@ -3,7 +3,7 @@ package com.xavier.backend.production.model.dto;
 import com.xavier.backend.production.model.CutMode;
 import com.xavier.backend.production.model.PrinterProfile;
 
-/** The profile fields of a printer request; an omitted one takes its D154 default. */
+/** The profile fields of a new printer; an omitted one takes its D154 default. */
 final class ProfileFields {
 
     private ProfileFields() {
