@@ -391,8 +391,9 @@ class R5AcceptanceTest {
 
         // a round: styled and wrapped for 80/48 (D155), after the status probe (D157)
         UUID cash = counterOrder("PREGO", "cash order round");
-        byte[] round = KITCHEN.awaitConnections(1, PRINTED).stream()
-                .filter(b -> new String(b, CP860).contains("Prego no pao")).findFirst().orElseThrow();
+        assertThat(KITCHEN.awaitPayloads(CP860, s -> s.contains("Prego no pao"), 1, PRINTED)).hasSize(1);
+        byte[] round = KITCHEN.received().stream().filter(b -> new String(b, CP860).contains("Prego no pao"))
+                .findFirst().orElseThrow();
         String text = new String(round, CP860);
         assertThat(HexFormat.of().formatHex(Arrays.copyOf(round, 8))).as("probe, then ESC @")
                 .isEqualTo("1004021004041b40");
@@ -425,7 +426,9 @@ class R5AcceptanceTest {
         assertThat(count("SELECT count(*) FROM event_publication WHERE event_type LIKE '%CashDrawerKickRequested'"))
                 .isEqualTo(1);
 
-        // paper out on the kitchen: nothing written, RETRY_WAIT PAPER_OUT, then a print-queue alert
+        // paper out on the kitchen: nothing written, RETRY_WAIT PAPER_OUT, then a print-queue alert (the card
+        // order's round printed first, so every later connection is the paper-out job's)
+        assertThat(KITCHEN.awaitPayloads(CP860, s -> s.contains("Agua 50cl"), 1, PRINTED)).hasSize(1);
         int before = KITCHEN.received().size();
         KITCHEN.answer(STATUS_OK, PAPER_END);
         UUID stuck = counterOrder("PREGO", "round while the kitchen is out of paper");
