@@ -1,0 +1,60 @@
+# Unit tests of alert-rules.yml: promtool test rules /etc/prometheus/alert-rules.test.yml (deploy/test-monitoring.sh,
+# step rules). Not loaded by Prometheus (prometheus.yml names alert-rules.yml only).
+rule_files:
+  - alert-rules.yml
+evaluation_interval: 1m
+
+tests:
+  # EXPORT_FAILED: the backend registers exports_total{outcome="failure"} at 0 for every kind (S61), so the first
+  # failure is an increase from 0 that the 24 h window catches.
+  - interval: 1m
+    input_series:
+      - series: 'exports_total{kind="report", outcome="failure"}'
+        values: '0 0 0 1 1 1'
+      - series: 'exports_total{kind="audit", outcome="failure"}'
+        values: '0 0 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: RestaurantProExportFailed
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: RestaurantProExportFailed
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              code: EXPORT_FAILED
+              kind: report
+            exp_annotations:
+              summary: "A report export failed in the last 24 h."
+
+  # BACKUP_MONITOR_STALE: the backend reports +Inf when the status file is configured but missing or unreadable.
+  - interval: 1m
+    input_series:
+      - series: 'backup_status_age_seconds'
+        values: '+Inf +Inf +Inf'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: RestaurantProBackupMonitorStale
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              code: BACKUP_MONITOR_STALE
+            exp_annotations:
+              summary: "The backup check has not reported for more than 45 minutes: is the verify-backups.sh cron or timer running?"
+  # A fresh status file (10 min old) does not alert; 46 min does.
+  - interval: 1m
+    input_series:
+      - series: 'backup_status_age_seconds'
+        values: '600 2760'
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: RestaurantProBackupMonitorStale
+        exp_alerts: []
+      - eval_time: 1m
+        alertname: RestaurantProBackupMonitorStale
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              code: BACKUP_MONITOR_STALE
+            exp_annotations:
+              summary: "The backup check has not reported for more than 45 minutes: is the verify-backups.sh cron or timer running?"

@@ -1,8 +1,10 @@
 # restaurantPRO — one stack per company installation (spec §2, §11; D32).
 #   cp .env.example .env   # fill in
-#   create secrets/db_password and secrets/admin_initial_password (README.md, "First install")
+#   create secrets/db_password, secrets/admin_initial_password, secrets/mfa_key, secrets/metrics_token and
+#   secrets/oidc_client_secret (README.md, "First install")
 #   docker compose up -d --build
-# PostgreSQL and the backend sit on an internal network with no published ports; only Caddy
+#   docker compose --profile monitoring up -d     # optional: Prometheus with the alert rules (D153, P58)
+# PostgreSQL, the backend and Prometheus sit on an internal network with no published ports; only Caddy
 # (HTTPS, tls internal) is reachable from the LAN.
 name: restaurantpro
 
@@ -105,9 +107,41 @@ services:
       # restaurantpro.inventory.reconcile-cron, D113).
       RESTAURANTPRO_DINING_NO_SHOW_INTERVAL: ${RESTAURANTPRO_DINING_NO_SHOW_INTERVAL:-PT1M}
       RESTAURANTPRO_INVENTORY_RECONCILE_CRON: "${RESTAURANTPRO_INVENTORY_RECONCILE_CRON:-0 20 4 * * *}"
+      # R5 second factor (D140, D142, D143). OFF keeps the R4 behaviour; .env.example sets SENSITIVE (P52).
+      RESTAURANTPRO_MFA_MODE: ${RESTAURANTPRO_MFA_MODE:-OFF}
+      RESTAURANTPRO_MFA_STEP_UP_MAX_AGE: ${RESTAURANTPRO_MFA_STEP_UP_MAX_AGE:-PT15M}
+      RESTAURANTPRO_MFA_KEY_FILE: /run/secrets/mfa_key # encrypts the TOTP secrets at rest
+      # Client addresses that count as the store LAN (D140): anything else is remote. Leave VPN pools out.
+      RESTAURANTPRO_LAN_CIDRS: ${RESTAURANTPRO_LAN_CIDRS:-127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7,fe80::/10}
+      # R5 optional OIDC federation (D144), off by default: no route, no outbound call. Enabling it also needs a
+      # route from the backend to the IdP, which the internal network does not give (README, "Single sign-on").
+      RESTAURANTPRO_OIDC_ENABLED: ${RESTAURANTPRO_OIDC_ENABLED:-false}
+      RESTAURANTPRO_OIDC_ISSUER_URI: ${RESTAURANTPRO_OIDC_ISSUER_URI:-}
+      RESTAURANTPRO_OIDC_CLIENT_ID: ${RESTAURANTPRO_OIDC_CLIENT_ID:-}
+      RESTAURANTPRO_OIDC_CLIENT_SECRET_FILE: /run/secrets/oidc_client_secret # may be empty (public client)
+      RESTAURANTPRO_OIDC_DISPLAY_NAME: ${RESTAURANTPRO_OIDC_DISPLAY_NAME:-SSO}
+      RESTAURANTPRO_OIDC_SCOPES: ${RESTAURANTPRO_OIDC_SCOPES:-openid}
+      RESTAURANTPRO_OIDC_TRUST_IDP_MFA: ${RESTAURANTPRO_OIDC_TRUST_IDP_MFA:-false}
+      RESTAURANTPRO_OIDC_POST_LOGIN_URI: ${RESTAURANTPRO_OIDC_POST_LOGIN_URI:-/backoffice/}
+      # R5 operational alerts (D149-D152): verify-backups.sh writes the status file into ./status (mounted below).
+      RESTAURANTPRO_ALERTS_BACKUP_STATUS_FILE: /run/restaurantpro/status/backup-status.json
+      RESTAURANTPRO_ALERTS_CASH_DIFFERENCE_THRESHOLD: ${RESTAURANTPRO_ALERTS_CASH_DIFFERENCE_THRESHOLD:-0}
+      RESTAURANTPRO_METRICS_TOKEN_FILE: /run/secrets/metrics_token # Prometheus scrape token (D152)
     secrets:
       - db_password
       - admin_initial_password
+      - mfa_key
+      - metrics_token
+      - oidc_client_secret
+    volumes:
+      # D151: the backup status file only (no secret, no path in it). A missing ./status is an error rather than a
+      # root-owned directory that verify-backups.sh could not write; it ships in the package (status/.gitkeep).
+      - type: bind
+        source: ./status
+        target: /run/restaurantpro/status
+        read_only: true
+        bind:
+          create_host_path: false
     networks:
       - internal
     healthcheck:
@@ -144,11 +178,44 @@ services:
       retries: 3
     logging: *logging
 
+  # Opt-in (D153, P58): docker compose --profile monitoring up -d, or COMPOSE_PROFILES=monitoring in .env.
+  # Scrapes the backend's management port with the metrics_token secret and evaluates monitoring/alert-rules.yml.
+  # Internal network only, no published port: open the UI through an SSH tunnel (README, "Alerts"). No
+  # Alertmanager: the notification channel is the installation's choice (monitoring/prometheus.yml).
+  prometheus:
+    image: prom/prometheus:v3.13.5 # pinned; the 3.13 long-term-support line
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${RESTAURANTPRO_PROMETHEUS_RETENTION:-30d}
+    secrets:
+      - metrics_token
+    volumes:
+      - ./monitoring:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9090/-/healthy >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging: *logging
+
 secrets:
   db_password:
     file: ./secrets/db_password
   admin_initial_password:
     file: ./secrets/admin_initial_password
+  mfa_key: # R5 (D143): openssl rand -base64 32
+    file: ./secrets/mfa_key
+  metrics_token: # R5 (D152): openssl rand -hex 32; read by the backend and by Prometheus
+    file: ./secrets/metrics_token
+  oidc_client_secret: # R5 (D144): the IdP client secret, or an empty file
+    file: ./secrets/oidc_client_secret
 
 networks:
   internal:
@@ -160,3 +227,4 @@ volumes:
   pg-wal-archive: # age-encrypted WAL since the oldest kept base backup (basebackup.sh prunes it; D98)
   caddy-data:
   caddy-config:
+  prometheus-data: # profile monitoring only

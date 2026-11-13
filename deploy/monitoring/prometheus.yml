@@ -1,0 +1,30 @@
+# Prometheus for one restaurantPRO installation (D153, P58): the opt-in Compose profile "monitoring"
+# (docker compose --profile monitoring up -d). Mounted read-only at /etc/prometheus. Prometheus sits on the
+# internal network only, with no published port: reach its UI through an SSH tunnel (README, "Alerts").
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+rule_files:
+  - /etc/prometheus/alert-rules.yml
+
+scrape_configs:
+  # The backend's management port (D33): never reachable from the LAN. The scrape token (D152) is the
+  # metrics_token Compose secret; it is valid for /actuator/prometheus only and grants nothing else.
+  - job_name: restaurantpro-backend
+    scheme: http
+    metrics_path: /actuator/prometheus
+    scrape_interval: 30s
+    authorization:
+      type: Bearer
+      credentials_file: /run/secrets/metrics_token
+    static_configs:
+      - targets: ["backend:8081"]
+
+# No Alertmanager ships with restaurantPRO: the notification channel (mail, chat, pager) is the installation's
+# choice, and the in-app alert list (GET /api/v1/backoffice/alerts) works without one. To notify, run an
+# Alertmanager the internal network can reach and uncomment (README, "Alerts"):
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ["alertmanager:9093"]

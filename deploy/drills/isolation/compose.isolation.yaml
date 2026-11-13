@@ -1,8 +1,25 @@
 # Override for the isolation drill (deploy/test-two-installations.sh): each installation reads its secrets
-# from its own directory, outside deploy/, instead of deploy/secrets/. A real installation has its own deploy/
-# copy, so its secrets/ is already its own; the drill runs two installations from one checkout.
+# from its own directory, outside deploy/, instead of deploy/secrets/, and mounts its own backup status directory
+# instead of deploy/status/. A real installation has its own deploy/ copy, so its secrets/ and status/ are already
+# its own; the drill runs two installations from one checkout.
+services:
+  backend:
+    volumes:
+      # Replaces compose.yaml's ./status mount (same target): never shared between installations.
+      - type: bind
+        source: ${RP_ISOLATION_STATUS:?the drill sets the installation's status directory}
+        target: /run/restaurantpro/status
+        read_only: true
+        bind:
+          create_host_path: false
 secrets:
   db_password:
     file: ${RP_ISOLATION_SECRETS:?the drill sets the installation's secret directory}/db_password
   admin_initial_password:
     file: ${RP_ISOLATION_SECRETS:?the drill sets the installation's secret directory}/admin_initial_password
+  mfa_key:
+    file: ${RP_ISOLATION_SECRETS:?the drill sets the installation's secret directory}/mfa_key
+  metrics_token:
+    file: ${RP_ISOLATION_SECRETS:?the drill sets the installation's secret directory}/metrics_token
+  oidc_client_secret:
+    file: ${RP_ISOLATION_SECRETS:?the drill sets the installation's secret directory}/oidc_client_secret
