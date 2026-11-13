@@ -68,8 +68,8 @@ public class PrintQueue {
     public List<Dispatch> claimDue(int limit) {
         Instant now = clock.instant();
         List<Dispatch> claimed = claimKicks(now, limit);
-        // the kicks just claimed are PROCESSING in the database now, so their printers send nothing else this run
-        jobs.flush();
+        // lockDue is a native query, so Hibernate flushes the kicks claimed above first: their printers are PROCESSING
+        // and send nothing else this run
         List<PrintJob> due = jobs.lockDue(now, limit - claimed.size());
         Map<UUID, Printer> printerById = printers.findAllById(due.stream().map(PrintJob::getPrinterId).toList())
                 .stream().collect(Collectors.toMap(Printer::getId, Function.identity()));

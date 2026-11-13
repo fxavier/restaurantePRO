@@ -8,6 +8,9 @@ import com.xavier.backend.production.DrawerKicks.Till;
 import com.xavier.backend.production.ProductionFixtures;
 import com.xavier.backend.production.ProductionModuleTest;
 import com.xavier.backend.production.TcpFakePrinter;
+import com.xavier.backend.production.model.PrintJob;
+import com.xavier.backend.production.repository.PrintJobRepository;
+import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
@@ -48,6 +51,9 @@ class DrawerKickOneSendPerPrinterTest {
     @Autowired
     JdbcClient jdbc;
 
+    @Autowired
+    PrintJobRepository jobs;
+
     @Test
     void aKickIsThePrintersOnlySendOfTheRun() throws Exception {
         Till till = kicks.till(stores.newStore(), "127.0.0.1", TcpFakePrinter.closedPort(), DrawerKicks.DRAWER);
@@ -84,6 +90,26 @@ class DrawerKickOneSendPerPrinterTest {
 
             assertThat(onPrinter(queue.claimDue(ALL), till.printer())).isEmpty();
             assertThat(fixtures.jobStatus(kicks.job(payment))).isEqualTo("QUEUED");
+        });
+    }
+
+    /**
+     * The queued-work query never takes a kick, even one that is its printer's oldest job (as one committed between
+     * the claim's two queries would be): the renderer would print it as text and no drawer would open.
+     */
+    @Test
+    void theQueuedWorkQueryNeverTakesAKick() throws Exception {
+        Till till = kicks.till(stores.newStore(), "127.0.0.1", TcpFakePrinter.closedPort(), DrawerKicks.DRAWER);
+        fixtures.mode(till.store(), till.printer(), "HOLD");
+
+        tx.executeWithoutResult(status -> {
+            status.setRollbackOnly();
+            jdbc.sql("UPDATE production.printer SET mode = 'NORMAL' WHERE id = ?").param(till.printer()).update();
+            UUID payment = UUID.randomUUID();
+            service.kick("PAYMENT", payment, till.store(), till.terminal());
+
+            assertThat(jobs.lockDue(Instant.now().plusSeconds(1), ALL)).extracting(PrintJob::getId)
+                    .doesNotContain(kicks.job(payment));
         });
     }
 
