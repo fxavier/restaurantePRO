@@ -1,5 +1,6 @@
 package com.xavier.backend.promotions.service;
 
+import static com.xavier.backend.catalog.Actors.inStore;
 import static com.xavier.backend.catalog.Actors.pos;
 import static com.xavier.backend.promotions.PromotionsFixtures.code;
 import static com.xavier.backend.promotions.PromotionsFixtures.id;
@@ -76,7 +77,23 @@ class PromotionScopeExclusionTest {
                 .extracting(PromotionReleaseError::code, PromotionReleaseError::promotionId)
                 .containsExactly(org.assertj.core.groups.Tuple.tuple("PROMOTION_SCOPE_ITEM_EXCLUDED", id(promotion)),
                         org.assertj.core.groups.Tuple.tuple("PROMOTION_SCOPE_ITEM_EXCLUDED", id(promotion)));
-        UUID release = id(fixtures.published(b.store()));
+        UUID release = id(json(fixtures.createRelease(b.store())));
+        mvc.perform(get(PromotionsFixtures.RELEASES + "/" + release)
+                        .with(inStore(b.store(), Permission.PROMOTION_MANAGE)))
+                .andExpect(jsonPath("$.validationWarnings").value(org.hamcrest.Matchers.nullValue()));
+        fixtures.validate(b.store(), release).andExpect(status().isOk())
+                .andExpect(jsonPath("$.validationWarnings.length()").value(2))
+                .andExpect(jsonPath("$.validationWarnings[0].code").value("PROMOTION_SCOPE_ITEM_EXCLUDED"))
+                .andExpect(jsonPath("$.validationWarnings[1].promotionId").value(id(promotion).toString()));
+        fixtures.publish(b.store(), release).andExpect(status().isOk())
+                .andExpect(jsonPath("$.validationWarnings.length()").value(2))
+                .andExpect(jsonPath("$.validationWarnings[0].code").value("PROMOTION_SCOPE_ITEM_EXCLUDED"));
+        mvc.perform(get(PromotionsFixtures.RELEASES + "/" + release)
+                        .with(inStore(b.store(), Permission.PROMOTION_MANAGE)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PUBLISHED"))
+                .andExpect(jsonPath("$.validationWarnings.length()").value(2))
+                .andExpect(jsonPath("$.validationWarnings[1].code").value("PROMOTION_SCOPE_ITEM_EXCLUDED"));
 
         mvc.perform(get("/api/v1/pos/promotions/current").with(pos(b.store(), Permission.CATALOG_VIEW)))
                 .andExpect(status().isOk())

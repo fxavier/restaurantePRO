@@ -9,6 +9,7 @@ import com.xavier.backend.promotions.exception.PromotionsNotFoundException;
 import com.xavier.backend.promotions.model.PromotionRelease;
 import com.xavier.backend.promotions.model.ReleaseStatus;
 import com.xavier.backend.promotions.model.dto.PromotionReleaseCreateRequest;
+import com.xavier.backend.promotions.model.dto.PromotionReleaseError;
 import com.xavier.backend.promotions.model.dto.PromotionReleaseView;
 import com.xavier.backend.promotions.model.event.PromotionsPublished;
 import com.xavier.backend.promotions.repository.PromotionReleaseRepository;
@@ -19,6 +20,7 @@ import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -68,7 +70,7 @@ public class PromotionReleaseService {
         PromotionRelease release = releases.saveAndFlush(
                 PromotionRelease.draft(request.storeId(), accessPolicy.current().userId(), clock.instant()));
         audit.record("PROMOTION_RELEASE_CREATED", "PromotionRelease", release.getId(), release.getStoreId(), Map.of());
-        return release.toView();
+        return view(release);
     }
 
     /** Checks the working copy now; on success the release is VALIDATED, otherwise a 422 lists every problem. */
@@ -76,11 +78,11 @@ public class PromotionReleaseService {
     public PromotionReleaseView validate(UUID releaseId) {
         PromotionRelease release = authorized(releaseId);
         release.requireValidatable();
-        requireNoErrors(workingCopy.of(release.getStoreId()));
-        release.markValidated(clock.instant());
+        PromotionWorkingCopy.View view = requireNoErrors(workingCopy.of(release.getStoreId()));
+        release.markValidated(clock.instant(), json.writeValueAsString(view.warnings()));
         releases.saveAndFlush(release);
         audit.record("PROMOTION_RELEASE_VALIDATED", "PromotionRelease", releaseId, release.getStoreId(), Map.of());
-        return release.toView();
+        return view(release);
     }
 
     /**
@@ -103,7 +105,7 @@ public class PromotionReleaseService {
         });
         long version = releases.maxVersionNo(storeId) + 1;
         release.publish(version, json.writeValueAsString(view.snapshot(releaseId, version)),
-                accessPolicy.current().userId(), now);
+                json.writeValueAsString(view.warnings()), accessPolicy.current().userId(), now);
         UniqueConstraints.saveAndFlush(releases, release,
                 () -> PromotionConflictException.releaseState(releaseId,
                         "another release of store " + storeId + " was published at the same time"),
@@ -116,18 +118,18 @@ public class PromotionReleaseService {
         audit.record("PROMOTION_RELEASE_PUBLISHED", "PromotionRelease", releaseId, storeId, details);
         events.publishEvent(new PromotionsPublished(storeId, releaseId, version));
         notifier.notifyAfterCommit(storeId, ChangeTopic.CATALOG, null); // store-wide: the POS re-reads its prices
-        return release.toView();
+        return view(release);
     }
 
     @Transactional(readOnly = true)
     public PromotionReleaseView get(UUID releaseId) {
-        return authorized(releaseId).toView();
+        return view(authorized(releaseId));
     }
 
     @Transactional(readOnly = true)
     public PageResponse<PromotionReleaseView> listForStore(UUID storeId, Pageable pageable) {
         accessPolicy.require(Permission.PROMOTION_MANAGE, storeId);
-        return PageResponse.from(releases.findAllByStoreId(storeId, pageable).map(PromotionRelease::toView));
+        return PageResponse.from(releases.findAllByStoreId(storeId, pageable).map(this::view));
     }
 
     /** D42 (b): the release's store alone (404), then the permission there (403), then the full row. */
@@ -136,6 +138,12 @@ public class PromotionReleaseService {
                 .orElseThrow(() -> PromotionsNotFoundException.release(releaseId));
         accessPolicy.require(Permission.PROMOTION_MANAGE, storeId);
         return releases.findById(releaseId).orElseThrow(() -> PromotionsNotFoundException.release(releaseId));
+    }
+
+    private PromotionReleaseView view(PromotionRelease release) {
+        String warnings = release.getValidationWarnings();
+        return release.toView(warnings == null ? null
+                : List.of(json.readValue(warnings, PromotionReleaseError[].class)));
     }
 
     private static PromotionWorkingCopy.View requireNoErrors(PromotionWorkingCopy.View view) {
