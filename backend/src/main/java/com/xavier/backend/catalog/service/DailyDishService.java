@@ -2,6 +2,7 @@ package com.xavier.backend.catalog.service;
 
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
+import com.xavier.backend.catalog.CatalogApi;
 import com.xavier.backend.catalog.exception.CatalogEntryNotFoundException;
 import com.xavier.backend.catalog.exception.CatalogRuleException;
 import com.xavier.backend.catalog.exception.InvalidCatalogEntryException;
@@ -41,6 +42,7 @@ public class DailyDishService {
 
     private final DailyDishRepository dishes;
     private final ConfigurationReleaseRepository releases;
+    private final CatalogApi catalogApi;
     private final OrganizationApi organization;
     private final AccessPolicy accessPolicy;
     private final CatalogAudit audit;
@@ -48,11 +50,12 @@ public class DailyDishService {
     private final JsonMapper json;
     private final Clock clock;
 
-    DailyDishService(DailyDishRepository dishes, ConfigurationReleaseRepository releases,
+    DailyDishService(DailyDishRepository dishes, ConfigurationReleaseRepository releases, CatalogApi catalogApi,
                      OrganizationApi organization, AccessPolicy accessPolicy, CatalogAudit audit,
                      ChangeNotifier notifier, JsonMapper json, Clock clock) {
         this.dishes = dishes;
         this.releases = releases;
+        this.catalogApi = catalogApi;
         this.organization = organization;
         this.accessPolicy = accessPolicy;
         this.audit = audit;
@@ -92,12 +95,15 @@ public class DailyDishService {
         return new DailyDishesView(storeId, day, List.copyOf(itemIds));
     }
 
-    /** The POS session's store ({@code CATALOG_VIEW}); {@code date} {@code null} = the store's business day now. */
+    /**
+     * The POS session's store ({@code CATALOG_VIEW}); {@code date} {@code null} = the store's business day now. Only
+     * dishes the current published release sells (D147).
+     */
     @Transactional(readOnly = true)
     public DailyDishesView forPos(LocalDate date) {
         UUID storeId = accessPolicy.requirePos(Permission.CATALOG_VIEW).storeId();
         LocalDate day = date != null ? date : today(storeId);
-        return new DailyDishesView(storeId, day, list(storeId, day));
+        return new DailyDishesView(storeId, day, catalogApi.dailyDishes(storeId, day));
     }
 
     private List<UUID> list(UUID storeId, LocalDate businessDate) {

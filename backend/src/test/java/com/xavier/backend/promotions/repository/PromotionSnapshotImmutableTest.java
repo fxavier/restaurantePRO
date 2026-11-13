@@ -66,6 +66,21 @@ class PromotionSnapshotImmutableTest {
                 .hasMessageContaining("promotion_release_frozen_ck");
     }
 
+    @Test
+    void theWarningsOfAPublishedOrRetiredReleaseCannotBeRewritten() {
+        UUID release = UUID.randomUUID();
+        insertPublished(UUID.randomUUID(), release, 1);
+        String change = "validation_warnings = '[{\"code\": \"X\"}]'";
+
+        assertThatThrownBy(() -> update(release, change))
+                .isInstanceOf(DataAccessException.class).hasMessageContaining("immutable");
+        update(release, "status = 'RETIRED', retired_at = now()");
+        assertThatThrownBy(() -> update(release, change))
+                .isInstanceOf(DataAccessException.class).hasMessageContaining("immutable");
+        assertThat(jdbc.sql("SELECT validation_warnings::text FROM promotions.promotion_release WHERE id = :id")
+                .param("id", release).query(String.class).single()).isEqualTo("[]");
+    }
+
     private void update(UUID release, String change) {
         jdbc.sql("UPDATE promotions.promotion_release SET " + change + " WHERE id = :id").param("id", release).update();
     }
@@ -73,8 +88,9 @@ class PromotionSnapshotImmutableTest {
     private void insertPublished(UUID store, UUID id, long version) {
         jdbc.sql("""
                         INSERT INTO promotions.promotion_release (id, store_id, status, version_no, snapshot, effective_at,
-                            published_by_account_id, created_by_account_id, created_at, version)
-                        VALUES (:id, :store, 'PUBLISHED', :version, :snapshot::jsonb, now(), :author, :author, now(), 0)""")
+                            published_by_account_id, created_by_account_id, created_at, version, validation_warnings)
+                        VALUES (:id, :store, 'PUBLISHED', :version, :snapshot::jsonb, now(), :author, :author, now(), 0,
+                                '[]')""")
                 .param("id", id).param("store", store).param("version", version).param("snapshot", FROZEN)
                 .param("author", UUID.randomUUID()).update();
     }

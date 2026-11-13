@@ -24,6 +24,7 @@ import com.xavier.backend.cash.exception.CashRule;
 import com.xavier.backend.cash.exception.CashRuleViolationException;
 import com.xavier.backend.cash.exception.ClosingStaleException;
 import com.xavier.backend.cash.exception.RefundMismatchException;
+import com.xavier.backend.catalog.exception.CatalogEntryNotFoundException;
 import com.xavier.backend.catalog.exception.CatalogRuleException;
 import com.xavier.backend.catalog.exception.ReleaseValidationFailedException;
 import com.xavier.backend.catalog.model.dto.ReleaseValidationError;
@@ -410,6 +411,12 @@ class CodedErrorContractTest {
                     "Item BURGER is STANDARD: only a MENU item has menu groups.")),
             Map.entry("menu-not-allowed", () -> CatalogRuleException.menuNotAllowed("LUNCH", "a macro")),
             Map.entry("item-not-published", () -> CatalogRuleException.itemNotPublished(OTHER, List.of(ID))),
+            // R5 catalog (S58): store exclusions
+            Map.entry("catalog-store-not-found", () -> CatalogEntryNotFoundException.store(ID)),
+            Map.entry("catalog-item-not-found", () -> CatalogEntryNotFoundException.item(ID)),
+            Map.entry("release-invalid-exclusions", () -> new ReleaseValidationFailedException(List.of(
+                    new ReleaseValidationError("QUICK_PAGE_ENTRY_EXCLUDED", ID, "X", "Quick page P names X"),
+                    new ReleaseValidationError("AUTOMATIC_ITEM_EXCLUDED", ID, "X", "An automatic item names X")))),
             // R4 inventory purchasing (S48)
             Map.entry("po-has-receipts", () -> PurchasingRuleException.hasReceipts(ID)),
             Map.entry("po-not-submitted", () -> PurchasingRuleException.notSubmitted(ID, "CLOSED")),
@@ -1058,6 +1065,17 @@ class CodedErrorContractTest {
                 "Item LUNCH is a MENU: a macro cannot name it, because a menu needs its component choices.", "");
         expect("item-not-published", 422, "ITEM_NOT_PUBLISHED", "Item(s) [" + ID
                 + "] are not in the published catalog of store " + OTHER + ".", ",\"itemIds\":[\"" + ID + "\"]");
+    }
+
+    @Test
+    void catalogR5StoreExclusions() throws Exception {
+        expect("catalog-store-not-found", 404, "STORE_NOT_FOUND", "Store " + ID + " does not exist.", "");
+        expect("catalog-item-not-found", 404, "ITEM_NOT_FOUND", "Item " + ID + " does not exist.", "");
+        expect("release-invalid-exclusions", 422, null, "The catalog cannot be published: 2 problem(s).",
+                ",\"errors\":[{\"code\":\"QUICK_PAGE_ENTRY_EXCLUDED\",\"itemId\":\"" + ID
+                        + "\",\"itemCode\":\"X\",\"message\":\"Quick page P names X\"},"
+                        + "{\"code\":\"AUTOMATIC_ITEM_EXCLUDED\",\"itemId\":\"" + ID
+                        + "\",\"itemCode\":\"X\",\"message\":\"An automatic item names X\"}]");
     }
 
     @Test

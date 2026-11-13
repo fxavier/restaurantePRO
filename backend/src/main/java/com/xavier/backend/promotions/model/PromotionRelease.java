@@ -1,6 +1,7 @@
 package com.xavier.backend.promotions.model;
 
 import com.xavier.backend.promotions.exception.PromotionConflictException;
+import com.xavier.backend.promotions.model.dto.PromotionReleaseError;
 import com.xavier.backend.promotions.model.dto.PromotionReleaseView;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -10,6 +11,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import org.hibernate.annotations.ColumnTransformer;
@@ -56,6 +58,11 @@ public class PromotionRelease {
 
     private Instant retiredAt;
 
+    /** The warnings of the last validation or of the publication (D147), a JSON array; null before validation. */
+    @Column(columnDefinition = "jsonb")
+    @ColumnTransformer(write = "CAST(? AS jsonb)")
+    private String validationWarnings;
+
     @Version
     private Long version;
 
@@ -82,14 +89,18 @@ public class PromotionRelease {
         requireStatus("publish", Set.of(ReleaseStatus.VALIDATED));
     }
 
-    public void markValidated(Instant now) {
+    /** @param warningsJson the validation's warnings as a JSON array (D147) */
+    public void markValidated(Instant now, String warningsJson) {
         requireValidatable();
         status = ReleaseStatus.VALIDATED;
         validatedAt = now;
+        validationWarnings = warningsJson;
     }
 
-    public void publish(long versionNo, String snapshot, UUID publishedBy, Instant now) {
+    /** @param warningsJson the warnings of the validation run at publication, replacing the stored ones */
+    public void publish(long versionNo, String snapshot, String warningsJson, UUID publishedBy, Instant now) {
         requirePublishable();
+        this.validationWarnings = warningsJson;
         this.versionNo = versionNo;
         this.snapshot = snapshot;
         this.publishedByAccountId = publishedBy;
@@ -111,9 +122,14 @@ public class PromotionRelease {
         }
     }
 
-    public PromotionReleaseView toView() {
+    /** {@code warnings}: the stored {@link #getValidationWarnings()}, parsed by the caller; null when none stored. */
+    public PromotionReleaseView toView(List<PromotionReleaseError> warnings) {
         return new PromotionReleaseView(id, storeId, status.name(), versionNo, effectiveAt, publishedByAccountId,
-                createdByAccountId, createdAt, validatedAt, retiredAt);
+                createdByAccountId, createdAt, validatedAt, retiredAt, warnings);
+    }
+
+    public String getValidationWarnings() {
+        return validationWarnings;
     }
 
     public UUID getId() {
