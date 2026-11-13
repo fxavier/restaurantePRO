@@ -15,10 +15,22 @@
 #     --accept-recipients-change, which is logged. Only an empty installation is recorded silently.
 #   - <dir>/LAST_OFFBOX_SYNC (offbox-sync.sh) is at most 30 minutes old
 #
+# Every run that gets past its arguments also writes the backup status file (D151, schema 1) that the backend
+# reads for its in-app alerts and metrics (BACKUP_MONITOR_STALE, BACKUP_LATE, BACKUP_PROBLEM, DISK_SPACE_LOW):
+# atomically (temporary file + mv), mode 0644 in a 0755 directory, also when the run fails (then "ok": false
+# with the problems). It holds instants and sizes only: problems are stripped of paths, fingerprints and keys.
+#   { "schemaVersion": 1, "checkedAt", "ok", "lastLogicalBackupAt", "lastBaseBackupAt", "lastOffboxSyncAt",
+#     "problems": [...], "filesystems": [{"name": "backups"|"docker", "totalBytes", "freeBytes"}] }
+# A missing instant is null; the docker entry is left out when Docker's root directory is not on this host's
+# filesystem (Docker Desktop, or Docker unreachable).
+#
 # Usage: deploy/verify-backups.sh [--accept-recipients-change] [--dir DIR] [--pitr-dir DIR]
-#                                 [--container NAME] [--recipients-file FILE]
-#   --dir       backup.sh's directory, copied off the box (default: $BACKUP_DIR or deploy/backups)
-#   --pitr-dir  basebackup.sh's directory (default: $PITR_DIR or <dir>/pitr)
+#                                 [--container NAME] [--recipients-file FILE] [--status-file FILE]
+#        deploy/verify-backups.sh --self-test   runs deploy/test-monitoring.sh --self-test (status file fixture)
+#   --dir          backup.sh's directory, copied off the box (default: $BACKUP_DIR or deploy/backups)
+#   --pitr-dir     basebackup.sh's directory (default: $PITR_DIR or <dir>/pitr)
+#   --status-file  the status file (default: $BACKUP_STATUS_FILE or deploy/status/backup-status.json, which
+#                  compose.yaml mounts read-only into the backend)
 # Prints a one-line summary on stderr when everything is fine.
 set -euo pipefail
 umask 077
@@ -28,7 +40,10 @@ DB_USER=restaurantpro
 MAX_WAIT_MIN=15
 MAX_BASE_AGE_MIN=$((26 * 60))
 MAX_OFFBOX_AGE_MIN=30
-die() { echo "verify-backups: $*" >&2; exit 1; }
+MAX_STATUS_PROBLEMS=20
+STATUS_SCHEMA_VERSION=1
+DIE_MSG=""
+die() { echo "verify-backups: $*" >&2; DIE_MSG="$*"; exit 1; }
 log() { echo "verify-backups: $*" >&2; }
 # shellcheck source=lib/common.sh
 . "$DEPLOY_DIR/lib/common.sh"
@@ -38,6 +53,8 @@ pitr="${PITR_DIR:-}"
 container=""
 recipients=""
 accept=false
+status_file="${BACKUP_STATUS_FILE:-$DEPLOY_DIR/status/backup-status.json}"
+if [[ "${1:-}" == --self-test ]]; then exec "$DEPLOY_DIR/test-monitoring.sh" --self-test; fi
 while (($#)); do
   case "$1" in
     --accept-recipients-change) accept=true; shift ;;
@@ -45,10 +62,104 @@ while (($#)); do
     --pitr-dir) pitr="${2:?--pitr-dir needs a value}"; shift 2 ;;
     --container) container="${2:?--container needs a value}"; shift 2 ;;
     --recipients-file) recipients="${2:?--recipients-file needs a value}"; shift 2 ;;
+    --status-file) status_file="${2:?--status-file needs a value}"; shift 2 ;;
     -h | --help) awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0" >&2; exit 0 ;;
     *) die "unknown argument: $1" ;;
   esac
 done
+
+# The status file (D151), written on every run from here on, whatever happens.
+iso_of_stamp() { sed -nE 's/^([0-9]{4})([0-9]{2})([0-9]{2})T([0-9]{2})([0-9]{2})([0-9]{2})Z$/\1-\2-\3T\4:\5:\6Z/p'; }
+json_str() { printf '"%s"' "$(printf '%s' "$1" | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')"; }
+json_instant() { if [[ -n "$1" ]]; then json_str "$1"; else printf null; fi; }
+redact() { # $1 a problem: no path, host path, fingerprint or key in the status file; at most 300 characters
+  local s
+  s="$(printf '%s' "$1" | tr '\n' ' ' | sed -E 's#[^[:space:]]*/([^/[:space:]]*)#\1#g; s#/# #g; s/[0-9a-fA-F]{64}/<fingerprint>/g; s/age1[02-9ac-hj-np-z]{58}/<recipient>/g; s/AGE-SECRET-KEY-1[02-9AC-HJ-NP-Z]{58}/<identity>/g')"
+  printf '%s' "${s:0:300}"
+}
+newest_logical() { # the newest backup.sh archive, from its name
+  find "$dir" -maxdepth 1 -type f \( -name 'restaurantpro-[0-9]*T[0-9]*Z.tar' -o -name 'restaurantpro-[0-9]*T[0-9]*Z.tar.age' \) 2>/dev/null \
+    | sed -nE 's#^.*/restaurantpro-([0-9]{8}T[0-9]{6}Z)\.tar(\.age)?$#\1#p' | sort | tail -1 | iso_of_stamp
+}
+newest_base() { # the newest base backup, from its name
+  find "${pitr:-$dir/pitr}/base" -maxdepth 1 -type f -name 'restaurantpro-base-*.tar*' ! -name '*.sha256' 2>/dev/null \
+    | sed -nE 's#^.*/restaurantpro-base-([0-9]{8}T[0-9]{6}Z)-.*\.tar(\.age)?$#\1#p' | sort | tail -1 | iso_of_stamp
+}
+last_offbox() { # the instant offbox-sync.sh recorded
+  cut -d' ' -f2 "$dir/LAST_OFFBOX_SYNC" 2>/dev/null | head -1 | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$' || true
+}
+filesystem_json() { # $1 name, $2 path: {"name","totalBytes","freeBytes"} of the filesystem holding $2, or nothing
+  local sizes
+  [[ -n "$2" && -e "$2" ]] || return 0
+  sizes="$(df -Pk "$2" 2>/dev/null | awk 'NR == 2 && $2 ~ /^[0-9]+$/ && $4 ~ /^[0-9]+$/ { printf "%.0f %.0f", $2 * 1024, $4 * 1024 }')" || return 0
+  [[ -n "$sizes" ]] || return 0
+  printf '{ "name": "%s", "totalBytes": %s, "freeBytes": %s }' "$1" "${sizes% *}" "${sizes#* }"
+}
+docker_root() { # Docker's root directory (db-data and pg-wal-archive live there), when Docker answers
+  docker info -f '{{.DockerRootDir}}' 2>/dev/null | head -1 || true
+}
+write_status() { # $1 the run's exit status; writes $status_file atomically; returns non-zero if it could not
+  local code=$1 ok=false sdir tmp p n=0 sep="" fs fss=() root
+  ((code == 0)) && ok=true
+  sdir="$(dirname "$status_file")"
+  mkdir -p "$sdir" && chmod 0755 "$sdir" || return 1
+  tmp="$(mktemp "$status_file.tmp.XXXXXX")" || return 1
+  {
+    printf '{ "schemaVersion": %s,\n' "$STATUS_SCHEMA_VERSION"
+    printf '  "checkedAt": "%s",\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf '  "ok": %s,\n' "$ok"
+    printf '  "lastLogicalBackupAt": %s,\n' "$(json_instant "$(newest_logical)")"
+    printf '  "lastBaseBackupAt": %s,\n' "$(json_instant "$(newest_base)")"
+    printf '  "lastOffboxSyncAt": %s,\n' "$(json_instant "$(last_offbox)")"
+    printf '  "problems": ['
+    for p in ${problems[@]+"${problems[@]}"}; do
+      n=$((n + 1))
+      if ((n > MAX_STATUS_PROBLEMS)); then
+        printf '%s%s' "$sep" "$(json_str "and $((${#problems[@]} - MAX_STATUS_PROBLEMS)) more problem(s): see the output of verify-backups.sh")"
+        break
+      fi
+      printf '%s%s' "$sep" "$(json_str "$(redact "$p")")"
+      sep=", "
+    done
+    printf '],\n'
+    fs="$(filesystem_json backups "$dir")"
+    if [[ -n "$fs" ]]; then fss+=("$fs"); fi
+    root="$(docker_root)"
+    fs="$(filesystem_json docker "$root")"
+    if [[ -n "$fs" ]]; then
+      fss+=("$fs")
+    else
+      log "the docker filesystem is left out of the status file: Docker's root directory (${root:-Docker unreachable}) is not on this host"
+    fi
+    sep=""
+    printf '  "filesystems": ['
+    for fs in ${fss[@]+"${fss[@]}"}; do printf '%s%s' "$sep" "$fs"; sep=", "; done
+    printf '] }\n'
+  } >"$tmp" && chmod 0644 "$tmp" && mv -f "$tmp" "$status_file" && return 0
+  rm -f "$tmp"
+  return 1
+}
+problems=()
+on_exit() {
+  local code=$?
+  trap - EXIT
+  set +e
+  remove_partials
+  if ((code != 0)); then
+    if [[ -n "$DIE_MSG" ]]; then
+      problems+=("$DIE_MSG")
+    elif ((${#problems[@]} == 0)); then
+      problems+=("verify-backups.sh stopped unexpectedly (exit $code)")
+    fi
+  fi
+  if ! write_status "$code"; then
+    echo "verify-backups: PROBLEM: could not write the status file $status_file: the backend will report BACKUP_MONITOR_STALE" >&2
+    code=1
+  fi
+  exit "$code"
+}
+trap on_exit EXIT
+
 env_mode
 pitr="${pitr:-$dir/pitr}"
 recipients="${recipients:-$(recipients_file)}"
@@ -57,7 +168,6 @@ if [[ -z "$container" ]]; then
   container="$(docker compose -f "$DEPLOY_DIR/compose.yaml" ps -q postgres 2>/dev/null || true)"
 fi
 
-problems=()
 problem() { problems+=("$*"); }
 check() { # runs a die-style check in a subshell; its message becomes a problem
   local out
