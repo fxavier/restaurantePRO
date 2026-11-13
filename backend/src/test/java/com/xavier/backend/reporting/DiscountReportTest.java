@@ -273,7 +273,8 @@ class DiscountReportTest {
                 .andExpect(status().isOk()); // t2
         kitchen.voidLine(live.sale(), three, "1", false).andExpect(status().isCreated()); // t3, at list price
         discount(three, "\"kind\": \"OFFER\"", Permission.ORDER_OFFER, true).andExpect(status().isOk()); // t4
-        kitchen.awaitRows("discount_record", live.store(), 6);
+        // the 3 of the day, the round's promotion, the offer t1, the reversal t2 and the offer t4 (the void adds none)
+        kitchen.awaitRows("discount_record", live.store(), 7);
         closeTheOrder(2);
 
         assertThat(rows(reporting.report("discounts", live.store(), day, day, "groupBy", "origin")))
