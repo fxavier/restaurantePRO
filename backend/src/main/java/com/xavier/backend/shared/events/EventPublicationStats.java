@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -94,6 +95,20 @@ public class EventPublicationStats {
             spec = spec.param("instant" + i, instantFields.get(i));
         }
         return spec.query(Long.class).single();
+    }
+
+    /**
+     * When the oldest publication still waiting for its listener was published: not completed, and not given up on
+     * ({@code failed}). Empty when there is none. Reads the pending rows of the partial index of V1006.
+     */
+    @Transactional(readOnly = true)
+    public Optional<Instant> oldestIncomplete() {
+        return jdbc.sql("""
+                        SELECT publication_date FROM event_publication
+                        WHERE completion_date IS NULL AND NOT (%s)
+                        ORDER BY publication_date LIMIT 1""".formatted(EXHAUSTED))
+                .param("maxAttempts", maxAttempts)
+                .query(Timestamp.class).optional().map(Timestamp::toInstant);
     }
 
     /** The publications in {@code state}, oldest first. The page's sort is ignored. */

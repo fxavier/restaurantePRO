@@ -8,6 +8,7 @@ import io.micrometer.core.instrument.Tags;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -39,6 +40,11 @@ class InDoubtGauge {
     private final MultiGauge overdue;
     private final Set<UUID> stores = new HashSet<>();
     private final Set<UUID> warned = new HashSet<>();
+    private volatile List<OverdueInStore> lastOverdue = List.of();
+
+    /** A store's attempts that were overdue at the last refresh, and when the oldest of them was created. */
+    record OverdueInStore(UUID storeId, long attempts, Instant oldestCreatedAt) {
+    }
 
     InDoubtGauge(MeterRegistry meters, PaymentAttemptRepository attempts, Clock clock) {
         this.attempts = attempts;
@@ -58,10 +64,19 @@ class InDoubtGauge {
         stores.addAll(perStore.keySet());
         inDoubt.register(rows(perStore), true);
         overdue.register(rows(perStore(late)), true);
+        lastOverdue = late.stream().collect(Collectors.groupingBy(InDoubtAttempt::storeId)).entrySet().stream()
+                .map(store -> new OverdueInStore(store.getKey(), store.getValue().size(), store.getValue().stream()
+                        .map(InDoubtAttempt::createdAt).min(Comparator.naturalOrder()).orElseThrow()))
+                .toList();
         warned.retainAll(late.stream().map(InDoubtAttempt::id).collect(Collectors.toSet()));
         late.stream().filter(a -> warned.add(a.id())).forEach(a -> log.warn(
                 "Payment attempt {} of store {} has been in doubt since {} (over {}): query the provider or resolve "
                         + "it (D81)", a.id(), a.storeId(), a.createdAt(), ALERT_AFTER));
+    }
+
+    /** The overdue attempts per store as of the last {@link #refresh}, without a query. */
+    List<OverdueInStore> overdueAtLastRefresh() {
+        return lastOverdue;
     }
 
     private static Map<UUID, Long> perStore(List<InDoubtAttempt> attempts) {
