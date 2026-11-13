@@ -17,5 +17,11 @@ public enum ProductionRule {
     /** An UNROUTED ticket still has no route or terminal printer to go to (D89 (1)). */
     STILL_UNROUTED,
     /** A printer profile outside D154's ranges: columns for the paper width, drawer pulse, table, feed or pin. */
-    PRINTER_PROFILE_INVALID
+    PRINTER_PROFILE_INVALID,
+    /** The manual drawer kick (D158) needs a reason. */
+    REASON_REQUIRED,
+    /** The session's terminal has no receipt printer, so no drawer to open (D158). */
+    NO_RECEIPT_PRINTER,
+    /** The terminal's receipt printer has no cash drawer ({@code drawer_pin} unset, D158). */
+    NO_CASH_DRAWER
 }

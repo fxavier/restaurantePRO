@@ -3,11 +3,14 @@ package com.xavier.backend.production.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.xavier.backend.fiscal.FiscalFixtures;
+import com.xavier.backend.production.DrawerKicks;
+import com.xavier.backend.production.DrawerKicks.Till;
 import com.xavier.backend.production.ProductionFixtures;
 import com.xavier.backend.production.ProductionModuleTest;
 import com.xavier.backend.production.TcpFakePrinter;
 import com.xavier.backend.shared.ops.AlertSeverity;
 import com.xavier.backend.shared.ops.OperationalAlert;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -23,7 +26,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * D150, A63 (print queue half): {@code PRINT_JOBS_ATTENTION} counts a store's FAILED or UNKNOWN jobs with no
  * resolution created in the last 24 h; {@code PRINT_QUEUE_STALLED} is a QUEUED or RETRY_WAIT job older than 5 min on
  * a NORMAL printer. Both are WARNINGs of the store, and the gauges {@code print_jobs_unresolved{store}} and
- * {@code print_jobs_oldest_waiting_seconds{store}} move with them. Jobs sit on HOLD printers, so no worker changes
+ * {@code print_jobs_oldest_waiting_seconds{store}} move with them. Drawer kicks count in neither (D158): a missed
+ * kick is the cashier's to see, not a print alert. Jobs sit on HOLD printers, so no worker changes
  * them; a printer turns NORMAL only inside a rolled-back transaction.
  */
 @ProductionModuleTest
@@ -46,6 +50,12 @@ class PrintQueueAlertSourceTest {
 
     @Autowired
     MeterRegistry meters;
+
+    @Autowired
+    DrawerKicks kicks;
+
+    @Autowired
+    DrawerKickService drawerKicks;
 
     UUID store;
     UUID printer;
@@ -121,6 +131,47 @@ class PrintQueueAlertSourceTest {
 
             assertThat(storeAlerts()).extracting(OperationalAlert::code).containsExactly("PRINT_QUEUE_STALLED");
         });
+    }
+
+    @Test
+    void drawerKicksNeverRaiseAPrintAlertNorMoveTheGauges() throws Exception {
+        Till till = kicks.till(store, "127.0.0.1", TcpFakePrinter.closedPort(), DrawerKicks.DRAWER);
+        fixtures.mode(store, till.printer(), "HOLD");
+        tx.executeWithoutResult(status -> {
+            UUID payment = kick(till, "1 hour");
+            jdbc.sql("UPDATE production.print_job SET status = 'FAILED', started_at = now(), "
+                    + "last_error = 'PRINTER_NOT_NORMAL' "
+                    + "WHERE id = ?").param(kicks.job(payment)).update();
+        });
+
+        assertThat(storeAlerts()).as("an unresolved failed kick").isEmpty();
+        assertThat(gaugeOrZero("print_jobs_unresolved")).isZero();
+
+        tx.executeWithoutResult(status -> {
+            status.setRollbackOnly();
+            jdbc.sql("UPDATE production.printer SET mode = 'NORMAL' WHERE id = ?").param(till.printer()).update();
+            kick(till, "6 minutes");
+
+            assertThat(storeAlerts()).as("a kick waiting on a NORMAL printer").isEmpty();
+            assertThat(gaugeOrZero("print_jobs_oldest_waiting_seconds")).isZero();
+        });
+    }
+
+    /** A cash payment's kick on the till, created {@code age} ago, in the caller's transaction; its source. */
+    private UUID kick(Till till, String age) {
+        UUID payment = UUID.randomUUID();
+        drawerKicks.kick("PAYMENT", payment, till.store(), till.terminal());
+        jdbc.sql("""
+                UPDATE production.print_job SET created_at = now() - CAST(? AS interval)
+                WHERE ticket_id IN (SELECT id FROM production.production_ticket WHERE source_id = ?)""")
+                .param(age).param(payment).update();
+        return payment;
+    }
+
+    /** The store's gauge, or 0 while the store has never had a counted job. */
+    private double gaugeOrZero(String name) {
+        Gauge gauge = meters.find(name).tag("store", store.toString()).gauge();
+        return gauge == null ? 0 : gauge.value();
     }
 
     private List<OperationalAlert> storeAlerts() {

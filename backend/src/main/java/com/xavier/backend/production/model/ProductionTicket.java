@@ -106,7 +106,7 @@ public class ProductionTicket {
         Printout printout = draft.printout();
         ticket.contentFormat = printout.format();
         ticket.content = switch (printout.format()) {
-            case PLAIN -> String.join("\n", printout.plainText());
+            case PLAIN, KICK -> String.join("\n", printout.plainText());
             case STYLED_V1 -> StyledContent.toJson(printout.lines());
         };
         ticket.qrPayload = printout.qrPayload();
@@ -119,6 +119,7 @@ public class ProductionTicket {
         return switch (contentFormat) {
             case PLAIN -> Printout.plain(List.of(content.split("\n", -1)), qrPayload);
             case STYLED_V1 -> new Printout(ContentFormat.STYLED_V1, StyledContent.fromJson(content), qrPayload);
+            case KICK -> Printout.kick(content);
         };
     }
 

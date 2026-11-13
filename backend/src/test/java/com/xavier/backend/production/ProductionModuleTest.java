@@ -35,7 +35,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
         "fiscal", "identity", "customers", "promotions"})
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, DiningFixtures.class, OrdersFixtures.class, FiscalFixtures.class,
-        ProductionFixtures.class, CustomersFixtures.class, OrdersCatalog.class})
+        ProductionFixtures.class, CustomersFixtures.class, OrdersCatalog.class, DrawerKicks.class})
 @TestPropertySource(properties = {
         "restaurantpro.bootstrap.company.name=Test Company",
         "restaurantpro.bootstrap.company.tax-id=TEST-TAX-ID",

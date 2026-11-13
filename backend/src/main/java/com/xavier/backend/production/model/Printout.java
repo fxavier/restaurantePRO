@@ -16,6 +16,11 @@ public record Printout(ContentFormat format, List<PrintLine> lines, String qrPay
         return new Printout(ContentFormat.PLAIN, lines.stream().<PrintLine>map(PrintLine::text).toList(), qrPayload);
     }
 
+    /** A drawer kick (D158): its one line names it; the bytes come from the printer's profile at send time. */
+    public static Printout kick(String label) {
+        return new Printout(ContentFormat.KICK, List.of(PrintLine.text(label)), null);
+    }
+
     public static Printout styled(List<PrintLine> lines) {
         return new Printout(ContentFormat.STYLED_V1, lines, null);
     }
