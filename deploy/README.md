@@ -7,6 +7,7 @@ One stack per company (spec §2): Caddy (HTTPS on the LAN), the backend, and Pos
 | PostgreSQL | `restaurantpro-postgres:18.6-r1`, built from `postgres/Dockerfile`: `postgres:18.6-alpine` (D4, same as the tests) plus `age=1.3.2-r1` (D98) |
 | Caddy | `caddy:2.11.7-alpine` |
 | Backend | built from `../backend`: `eclipse-temurin:25.0.5_8-jdk-alpine` → `eclipse-temurin:25.0.5_8-jre-alpine`, user uid 10001 |
+| Prometheus (optional, profile `monitoring`) | `prom/prometheus:v3.13.5` (the 3.13 long-term-support line), user `nobody` |
 
 ## First install
 
@@ -18,10 +19,14 @@ One stack per company (spec §2): Caddy (HTTPS on the LAN), the backend, and Pos
    mkdir -m 700 secrets backups logs   # backups/ holds only ciphertext; the cron logs go to logs/
    openssl rand -base64 32 | tr -d '\n' > secrets/db_password
    printf '%s' 'choose-a-strong-initial-password' > secrets/admin_initial_password
+   openssl rand -base64 32 | tr -d '\n' > secrets/mfa_key       # encrypts the TOTP secrets (R5, "Second factor (MFA)")
+   openssl rand -hex 32 | tr -d '\n' > secrets/metrics_token    # Prometheus scrape token (R5, "Alerts")
+   : > secrets/oidc_client_secret                               # empty unless you enable single sign-on
    chmod 644 secrets/*           # readable inside the containers; the 700 directory protects them on the host
+   ls -ld status                 # ships with the package, mode 755; if missing: mkdir -m 755 status
    ```
 
-   Then create `backup-recipients.txt` with the two public keys and pin the off-box host key, as described in "Backup encryption (production)" below. In production PostgreSQL refuses to start without that file. `.env`, `secrets/`, `backup-recipients.txt` and `offbox_known_hosts` are git-ignored. Never commit them. The `RESTAURANTPRO_BOOTSTRAP_*` values and `secrets/admin_initial_password` are consumed once, at the first start against an empty database (D30). After that, edit the company profile in the BackOffice. The admin must change the initial password at first login. After that login you may empty `secrets/admin_initial_password`, but keep the file: Compose needs it to start.
+   Then create `backup-recipients.txt` with the two public keys and pin the off-box host key, as described in "Backup encryption (production)" below. In production PostgreSQL refuses to start without that file. `.env`, `secrets/`, `status/` (except its `.gitkeep`), `backup-recipients.txt` and `offbox_known_hosts` are git-ignored. Never commit them. Compose refuses to start the backend if `status/` is missing, rather than letting Docker create it owned by root, where `verify-backups.sh` could not write. The `RESTAURANTPRO_BOOTSTRAP_*` values and `secrets/admin_initial_password` are consumed once, at the first start against an empty database (D30). After that, edit the company profile in the BackOffice. The admin must change the initial password at first login. After that login you may empty `secrets/admin_initial_password`, but keep the file: Compose needs it to start.
 3. Start: `docker compose up -d --build`, then wait until `docker compose ps` shows all three services `healthy`. Then start the point-in-time recovery chain once with `./basebackup.sh --new-cluster`, run `./offbox-sync.sh --check-append-only` and `./verify-backups.sh` once by hand, and schedule the jobs in "Backup encryption (production)" below.
 
    **Fiscal adapter (B4).** This release has only a NON-CERTIFIED fiscal adapter: with the default `RESTAURANTPRO_FISCAL_ALLOW_NON_CERTIFIED=false` the backend refuses to start (its log says why) and never becomes healthy. Set it to `true` in `.env` only for a pilot without fiscal obligations, until a certified adapter for your market exists. Every document is then printed as `DOCUMENTO NÃO FISCAL`, and the health check reports the component `fiscal: NON_CERTIFIED` while the overall status stays `UP`: `docker compose exec backend wget -qO- http://127.0.0.1:8081/actuator/health`.
@@ -264,6 +269,8 @@ Do the same for `--wal-only` + `offbox-sync` (`OnCalendar=*:0/5`), the nightly b
 - the modes, the recipients and their fingerprint, no identity on the server;
 - `LAST_OFFBOX_SYNC` is at most 30 min old.
 
+Every run also writes `status/backup-status.json` (D151), which the backend reads for its alerts (see "Alerts"). It writes it atomically, mode 0644 in the 0755 `status/` directory, on every run, including the failing ones (`"ok": false`). The file holds instants, problem sentences and free space only: no path, host name, key or recipient. If the cron or the timer stops, the file ages and the backend raises `BACKUP_MONITOR_STALE` after 45 minutes. `--status-file FILE` (or `BACKUP_STATUS_FILE`) writes it elsewhere, for tests. `./verify-backups.sh --self-test` runs `./test-monitoring.sh --self-test` (see "Alerts").
+
 ### Restore checks
 
 - **Weekly, on a restore host** (never the server; it needs only Docker and a checkout of `deploy/`). Pull the off-box copy down, then run `./verify-restore.sh --from <copy> --identity /dev/shm/operational.key`. It checks that the key is one of the current recipients, taken from the newest `RECIPIENTS-<UTC>-<fingerprint>`, whose keys must match its name. It uses the newest `pitr-<system id>/` tree. It restores the newest base backup with all copied WAL (`pitr-restore.sh --target-time latest`, with `pg_verifybackup` before the start) into an isolated container, and checks that recovery reached the newest copied segment, that `pg_amcheck --all` is clean, and the Flyway history. It does the same for the newest `backup.sh` archive with `restore.sh` in a scratch container. It writes `drill-<UTC>.json` (base, WAL reached, RTO, key) and removes what it created. A non-zero exit is an alert.
@@ -350,6 +357,106 @@ docker compose up -d --build
 
 `--force` replaces the whole database, so the tables, schemas and Flyway history rows of the newer migration are gone. Starting the previous image alone does not undo a migration. Data entered after the backup is lost.
 
+### Upgrade to R5
+
+R5 adds three Compose secrets and a read-only mount. Compose refuses to start the backend until they exist, so do this **before** `docker compose up -d --build` (step 2 above):
+
+```bash
+openssl rand -base64 32 | tr -d '\n' > secrets/mfa_key
+openssl rand -hex 32 | tr -d '\n' > secrets/metrics_token
+: > secrets/oidc_client_secret
+chmod 644 secrets/mfa_key secrets/metrics_token secrets/oidc_client_secret   # as the other secrets, in the 700 directory
+[ -d status ] || mkdir -m 755 status
+```
+
+An `.env` from before R5 keeps the R4 behaviour: no second factor (`RESTAURANTPRO_MFA_MODE` defaults to `OFF` in Compose), no single sign-on. To turn on the second factor, set `RESTAURANTPRO_MFA_MODE=SENSITIVE` and your `RESTAURANTPRO_LAN_CIDRS` in `.env` and run `docker compose up -d`, then have every administrator enrol from the LAN before working from outside (from outside, enrolment needs an enrolment code; see "Second factor (MFA)"). Keep `secrets/mfa_key` as carefully as the database password: it is in every `backup.sh` archive (`secrets/`), and without it no enrolled factor can be read, so every account must be reset. Never change it on a running installation. After the upgrade, run `./verify-backups.sh` once by hand so the status file exists.
+
+## Second factor (MFA)
+
+BackOffice accounts can prove a second factor with a TOTP app (any RFC 6238 app: Google Authenticator, Microsoft Authenticator, FreeOTP, 1Password…). POS sessions (employee PIN) and POS approvals are never asked for one. The mode is a deployment setting in `.env`, not data, so an administrator session cannot switch it off (D140):
+
+| `RESTAURANTPRO_MFA_MODE` | at login (password or single sign-on) | before a sensitive action |
+| --- | --- | --- |
+| `OFF` (Compose default) | no second factor, as in R4 | nothing |
+| `SENSITIVE` (`.env.example`, recommended) | a code when the request comes from **outside** the LAN, and always for a support account | a code no older than `RESTAURANTPRO_MFA_STEP_UP_MAX_AGE` (default `PT15M`), wherever the user is |
+| `ALL_BACKOFFICE` | a code at every BackOffice login | the same |
+
+The sensitive actions are those of the permissions that change who can do what, money routing or fiscal data: company, users, roles, employees, terminals, support access, fiscal settings, catalog publication, promotions, cash closing approval and adjustments, credit limits, payment methods, report and audit exports. The BackOffice asks for a code when one is needed and then repeats the action.
+
+**LAN and remote access.** A request is *remote* when its client address (as Caddy forwards it; Caddy replaces any `X-Forwarded-For` a client sends) is not in `RESTAURANTPRO_LAN_CIDRS`, a comma-separated list of CIDRs. When unset it is every private range, which is rarely what you want: narrow it to the store LANs. **Leave VPN address pools out of it.** A VPN client inside the list counts as local and logs in with a password alone. A session that never proved a second factor is refused (403 `MFA_REQUIRED`) the moment it is used from outside, so a cookie taken on the LAN is useless outside it.
+
+**Enrolment.** Each user enrols in the BackOffice: the current password, then the QR code in the app, then one code to confirm. The confirmation shows **10 recovery codes once**: print them or keep them in a password manager. From the LAN, an account that must have a second factor and has none is sent to enrolment right after login. From outside, enrolment needs a one-time **enrolment code** (valid 24 hours) from an administrator, so a stolen password cannot enrol the thief's phone. A support account always enrols with an enrolment code.
+
+**Recovery.** A recovery code works once, in place of a TOTP code, at login or for a sensitive action. A user who still has access can replace all recovery codes, after entering a fresh code. A user who lost both the phone and the codes asks an administrator (`USER_MANAGE`) for a **reset** of their second factor, with a reason: it revokes the factor and the recovery codes, ends the user's sessions, is audited (`MFA_RESET`) and returns an enrolment code. Give it to the user out of band (phone, in person), never by the same e-mail as the password. No one can reset their own account: use a recovery code.
+
+**Break-glass.** When the last administrator lost the phone and the codes, the infrastructure administrator, with a shell on the server, runs:
+
+```bash
+./mfa-break-glass.sh <username> "<reason>"
+```
+
+It revokes that account's factor and writes a system audit row (`MFA_BREAK_GLASS_RESET`) in one transaction, through `docker exec … psql`. The account then enrols again from the LAN. Anyone with a shell on the server and Docker can do this, which is why that access is a separate, smaller group (spec §10). `./mfa-break-glass.sh --self-test` checks the script.
+
+## Single sign-on (optional)
+
+Off by default: with `RESTAURANTPRO_OIDC_ENABLED` unset or `false`, the backend makes no call to any identity provider and the single sign-on routes answer 404. When on, BackOffice users can log in through **one** OpenID Connect provider for the installation (Keycloak, Microsoft Entra ID, Google Workspace or any other) (D144):
+
+- **Authentication only.** The provider proves who the user is. It never creates an account, and its groups, roles and claims are ignored: what a user may do in which store stays in restaurantPRO's own roles. A provider identity that is not linked to an account, an inactive account, and a support account are refused, and the refusal is audited (`OIDC_LOGIN_REFUSED`).
+- **Linking.** An administrator creates the account as today. The user logs in once with the password (and a second factor when the mode is not `OFF`), then links the provider identity from their own account settings: the provider's login page opens and the link is saved for that account. One link per account. Administrators with `USER_MANAGE` can see and remove a user's link.
+- **Password fallback.** The password keeps working. If the provider is down or unreachable, single sign-on answers "unavailable" and users log in with the password; the backend starts and runs without the provider.
+- **Second factor.** A single sign-on login is a first factor: the MFA mode applies on top of it. With `RESTAURANTPRO_OIDC_TRUST_IDP_MFA=true`, a provider that reports its own MFA in the ID token (`amr` with `mfa`, `otp`, `hwk` or `swk`) counts as the second factor instead (P55: off by default, because restaurantPRO cannot verify that claim).
+
+To enable it:
+
+1. Register a confidential web client at the provider, with the authorization-code flow, PKCE, and the redirect URI **`https://<RESTAURANTPRO_HOSTNAME>/api/v1/auth/oidc/callback`**. Scope `openid` is enough.
+2. Put the client secret in `secrets/oidc_client_secret` (no newline: `printf '%s' '<secret>' > secrets/oidc_client_secret`, mode 644 like the other secrets), and in `.env`: `RESTAURANTPRO_OIDC_ENABLED=true`, `RESTAURANTPRO_OIDC_ISSUER_URI` (the issuer exactly as the provider's discovery document states it), `RESTAURANTPRO_OIDC_CLIENT_ID`, and optionally `RESTAURANTPRO_OIDC_DISPLAY_NAME` (the button text), `RESTAURANTPRO_OIDC_SCOPES`, `RESTAURANTPRO_OIDC_POST_LOGIN_URI` (default `/backoffice/`).
+3. Give the backend a route to the provider. The backend sits on the `internal` network, which has **no route** to the LAN or the Internet, so as shipped it cannot reach any provider. Add an override that attaches it to a network with a route, for example `compose.override.yaml` next to `compose.yaml` (Compose reads it automatically):
+
+   ```yaml
+   services:
+     backend:
+       networks: [internal, egress]
+   networks:
+     egress: {}
+   ```
+
+   This gives the backend outbound access to the LAN and the Internet; restrict it on the host firewall to the provider's address if you can. Then `docker compose up -d`.
+4. Link your own administrator account first, log out, and log in with the provider's button.
+
+## Alerts
+
+The spec §12 alerts (late backups, disk space, the print queue, failed events, payments in doubt, cash differences, failed exports) reach operators in two ways (D149):
+
+- **In the BackOffice** alert list (`GET /api/v1/backoffice/alerts`), for every installation, with nothing to configure: users with `SYSTEM_MONITOR` see the installation-wide alerts if their grant is installation-wide, and the store alerts of their stores. The list is refreshed at most every 30 seconds. An alert never makes the backend unhealthy: `docker compose ps` stays `healthy`, and `/actuator/health` shows the component `operationalAlerts` with status `ALERT`.
+- **In Prometheus**, when you turn on the optional `monitoring` profile (below), which evaluates `monitoring/alert-rules.yml`.
+
+The backup and disk alerts come from `status/backup-status.json`, which `verify-backups.sh` writes every 15 minutes (see "Schedule") and Compose mounts read-only into the backend. The backend has no access to the backups themselves. Without that file (the cron or timer stopped, or `status/` was emptied), the backend raises `BACKUP_MONITOR_STALE` once the last check is 45 minutes old. A cash closing raises `CASH_DISCREPANCY` when the sum of its absolute differences exceeds `RESTAURANTPRO_ALERTS_CASH_DIFFERENCE_THRESHOLD` (default 0: any difference).
+
+**Prometheus (optional).** `docker compose --profile monitoring up -d` starts a pinned Prometheus on the internal network, or set `COMPOSE_PROFILES=monitoring` in `.env` to start it with every `docker compose up`. It scrapes `backend:8081/actuator/prometheus` every 30 seconds with the token in `secrets/metrics_token` (the token opens that endpoint only and nothing else; every other Actuator endpoint still needs a `SYSTEM_MONITOR` session), keeps its data in the `prometheus-data` volume for `RESTAURANTPRO_PROMETHEUS_RETENTION` (default `30d`), and publishes no port. To see what fires, from the server:
+
+```bash
+docker compose exec prometheus wget -qO- http://127.0.0.1:9090/api/v1/alerts   # firing and pending alerts, JSON
+docker compose exec prometheus wget -qO- 'http://127.0.0.1:9090/api/v1/query?query=up'   # 1 = the scrape works
+```
+
+For the web UI, forward a port over SSH from your workstation to Prometheus's address on the internal network, which `docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $(docker compose ps -q prometheus)` prints on the server: `ssh -L 9090:<that address>:9090 <server>`, then browse `http://localhost:9090/alerts`.
+
+`monitoring/alert-rules.yml` holds one rule per alert, with the thresholds of the BackOffice list, plus `RestaurantProBackendDown` (no scrape for 2 minutes, also a wrong token). Every rule carries `severity` (`critical` or `warning`) and `code` (the BackOffice alert code) labels. restaurantPRO ships **no Alertmanager**: how to notify (mail, chat, pager) is your choice. Run an Alertmanager the internal network can reach, then uncomment `alerting.alertmanagers` at the end of `monitoring/prometheus.yml` with its address, and `docker compose --profile monitoring restart prometheus`. To rotate the scrape token, replace `secrets/metrics_token`, then `docker compose up -d --force-recreate backend prometheus`.
+
+`./test-monitoring.sh` checks the package without starting anything: every deploy script is shellcheck-clean, Compose renders with and without the profile and with the R5 wiring, `promtool check config` and `promtool check rules` pass through the pinned image, the rules use only the frozen metric names, and `verify-backups.sh` writes a valid status file, also when it fails, against a test fixture. `./test-monitoring.sh --self-test` also injects a fault into each step (`MONITORING_FAULT=<step>`) and checks that the step catches it.
+
+## Printers
+
+Each printer has a **profile** (D154), set in the BackOffice printer settings (`PRODUCTION_MANAGE`). The profile describes the ESC/POS common subset of Epson TM-compatible printers:
+
+- **Paper and width:** 80 mm (36 to 64 columns, default 48) or 58 mm (24 to 35 columns).
+- **Code page:** CP850 by default for a new printer (every Portuguese letter), CP860, CP437, WPC1252 or CP858; a *code table* number only for a vendor whose numbering differs from Epson's. No UTF-8.
+- **Cut:** partial, full or none; **feed lines** before the cut.
+- **Status probe:** on, the backend asks the printer for cover-open and paper-out before sending, and holds the job (retried, then failed) instead of printing into the void. Turn it off for a printer that does not answer.
+- **Cash drawer:** the pin (2 or 5) and the pulse length, on the terminal's receipt printer. The drawer then opens once per cash payment or cash refund, and from the POS "open drawer" command (audited, with a reason). A drawer kick is never retried or held.
+
+Presets (`EPSON_TM_80`, `GENERIC_80_42`, `GENERIC_58`) only fill the form: the saved fields are authoritative. After setting a printer up, print the printer's **test page** from the BackOffice: a ruler of the configured width, a line of accents (`ÁÉÍÓÚ ÂÊÔ ÃÕ Ç àç ãõ`), and bold, double and tall lines. A ruler that wraps or stops short means a wrong column count; wrong accents mean a wrong code page or code table. Before go-live, run the printer hardware checklist for each model ([`docs/qa/test-plans/printer-hardware-b5.md`](../docs/qa/test-plans/printer-hardware-b5.md)): test page, kitchen round, 58 mm receipt, each cut mode, paper out, cover open, power off mid-job, drawer kick and network unplugged.
+
 ## Two installations on one host (isolation)
 
 Spec §14 #1: each company is its own installation, with its own processes, database, volumes and secrets. Credentials of A do not open B, and restoring A does not change B. One installation is one Compose project: its name (`COMPOSE_PROJECT_NAME` in its `.env`, else `name:` in `compose.yaml`) prefixes every container, volume and network, so give each installation its own `deploy/` copy, `.env`, `secrets/`, `backup-recipients.txt`, backup directory and ports.
@@ -423,3 +530,5 @@ Measured in S54 on one laptop, with the backend jar, PostgreSQL and the 10 clien
 - A base backup is tied to the PostgreSQL major version (18). After a major upgrade, take a new base backup at once; older ones restore only with the old image.
 - `backup.sh` does not include the `caddy-data` volume (Caddy's local CA). Back it up by hand if replacing the server without re-trusting clients matters.
 - The Caddy container runs as root (image default) to bind ports 80 and 443.
+- Single sign-on needs a network route from the backend to the provider, which the shipped Compose file does not give (see "Single sign-on (optional)").
+- The `docker` filesystem is left out of the backup status file when Docker's root directory is not on the host's filesystem (Docker Desktop): the disk alert then covers the backup directory and the backend's own disk only.
