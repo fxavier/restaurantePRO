@@ -8,12 +8,14 @@ import com.xavier.backend.catalog.model.Item;
 import com.xavier.backend.catalog.model.ItemVariant;
 import com.xavier.backend.catalog.model.ReleaseStatus;
 import com.xavier.backend.catalog.model.SoldOutFlag;
+import com.xavier.backend.catalog.model.StoreItemExclusion;
 import com.xavier.backend.catalog.model.dto.CatalogSnapshot;
 import com.xavier.backend.catalog.repository.ConfigurationReleaseRepository;
 import com.xavier.backend.catalog.repository.DailyDishRepository;
 import com.xavier.backend.catalog.repository.ItemRepository;
 import com.xavier.backend.catalog.repository.ItemVariantRepository;
 import com.xavier.backend.catalog.repository.SoldOutFlagRepository;
+import com.xavier.backend.catalog.repository.StoreItemExclusionRepository;
 import java.time.LocalDate;
 import java.util.Collection;
 import java.util.Comparator;
@@ -42,15 +44,18 @@ public class CatalogApi {
     private final ItemVariantRepository variants;
     private final SoldOutFlagRepository soldOutFlags;
     private final DailyDishRepository dailyDishes;
+    private final StoreItemExclusionRepository exclusions;
     private final JsonMapper json;
 
     CatalogApi(ConfigurationReleaseRepository releases, ItemRepository items, ItemVariantRepository variants,
-               SoldOutFlagRepository soldOutFlags, DailyDishRepository dailyDishes, JsonMapper json) {
+               SoldOutFlagRepository soldOutFlags, DailyDishRepository dailyDishes,
+               StoreItemExclusionRepository exclusions, JsonMapper json) {
         this.releases = releases;
         this.items = items;
         this.variants = variants;
         this.soldOutFlags = soldOutFlags;
         this.dailyDishes = dailyDishes;
+        this.exclusions = exclusions;
         this.json = json;
     }
 
@@ -101,6 +106,15 @@ public class CatalogApi {
     }
 
     /**
+     * The items the store excludes from its releases (D146), as configured now: a release published after the
+     * exclusion leaves them out. Use {@link #items} for their variants.
+     */
+    public Set<UUID> excludedItems(UUID storeId) {
+        return exclusions.findAllByIdStoreId(storeId).stream().map(StoreItemExclusion::getItemId)
+                .collect(Collectors.toUnmodifiableSet());
+    }
+
+    /**
      * The sold-out keys of the store now (D109, operational: outside any release). An item-level key
      * ({@code variantId} null) covers every variant of the item.
      */
@@ -109,10 +123,16 @@ public class CatalogApi {
                 .collect(Collectors.toUnmodifiableSet());
     }
 
-    /** The daily dishes of the store for {@code businessDate}, in order (D109); empty when none were set. */
+    /**
+     * The daily dishes of the store for {@code businessDate}, in order (D109); empty when none were set. A dish whose
+     * item the current published release no longer sells (a republish left it out, D147) is dropped.
+     */
     public List<UUID> dailyDishes(UUID storeId, LocalDate businessDate) {
+        Set<UUID> published = findCurrentSnapshot(storeId)
+                .map(snapshot -> snapshot.items().stream().map(CatalogSnapshot.Item::id).collect(Collectors.toSet()))
+                .orElse(Set.of());
         return dailyDishes.findAllByIdStoreIdAndIdBusinessDateOrderByPosition(storeId, businessDate).stream()
-                .map(DailyDish::getItemId).toList();
+                .map(DailyDish::getItemId).filter(published::contains).toList();
     }
 
     private CatalogSnapshot parse(ConfigurationRelease release) {

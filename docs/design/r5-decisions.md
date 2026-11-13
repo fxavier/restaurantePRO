@@ -186,7 +186,7 @@ The **integration path** is D144: an installation that already has an IdP links 
 | Automatic item **of this store** naming an excluded item | Error | `AUTOMATIC_ITEM_EXCLUDED` |
 | Daily dish (D109) | Already validated against the published snapshot at `PUT` (422 `ITEM_NOT_PUBLISHED`). `GET /pos/catalog/daily-dishes` and `CatalogApi.dailyDishes` now also drop ids absent from the current snapshot (a dish set before a republish that excluded it). | — |
 | Delivery zone fee item (D128) | **No change.** A zone may be set up before the catalog is published, so the check stays at delivery opening: 422 `FEE_ITEM_NOT_PUBLISHED` covers an excluded fee item. | — |
-| Promotions scope (S39) | No change: validated against the store's published catalog; an excluded item simply never matches. | — |
+| Promotions scope (S39) | **(amended 2026-11-13, S58 review)** A scope item, or a variant of it, absent from the store's published catalog **because the store excludes the item** does not apply in that store: it is left out of the frozen promotion scope and the promotion release gets a warning. Anything else the published catalog lacks still fails with `SCOPE_NOT_IN_CATALOG`. Promotions read exclusions through `CatalogApi.excludedItems`. | warning `PROMOTION_SCOPE_ITEM_EXCLUDED` |
 | Recipes (inventory) | No change: company-wide; an excluded item is never sold in that store. | — |
 | Inactive item referenced anywhere | Unchanged (existing errors: `…_NOT_IN_RELEASE`). | — |
 
