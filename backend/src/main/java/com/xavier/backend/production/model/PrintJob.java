@@ -128,10 +128,13 @@ public class PrintJob {
         lastError = null;
     }
 
-    /** Nothing was written: wait 2^attempts seconds, or FAILED after {@link #MAX_ATTEMPTS}. */
-    public void recordNotConnected(Instant now) {
-        require("record a refused connection", PrintJobStatus.PROCESSING);
-        lastError = "NOT_CONNECTED";
+    /**
+     * Nothing was written ({@code cause}: NOT_CONNECTED, or what the status probe found, D157): wait 2^attempts
+     * seconds, or FAILED after {@link #MAX_ATTEMPTS}.
+     */
+    public void recordNothingWritten(Instant now, String cause) {
+        require("record a send that wrote nothing", PrintJobStatus.PROCESSING);
+        lastError = Objects.requireNonNull(cause, "cause");
         if (attempts >= MAX_ATTEMPTS) {
             status = PrintJobStatus.FAILED;
             return;

@@ -62,7 +62,7 @@ class BatchTicketsTest {
             assertThat(ticket).containsEntry("source_type", "BATCH").containsEntry("destination", "BAR")
                     .containsEntry("printer_id", printer).containsEntry("suppressed", false)
                     .containsEntry("order_id", round.order());
-            assertThat((String) ticket.get("content")).contains("BAR", "Mesa M1 - Pedido #" + round.orderNumber(),
+            assertThat(ProductionFixtures.text(ticket)).contains("BAR", "Mesa M1 - Pedido #" + round.orderNumber(),
                     "Ronda 1", "2 x Coca-Cola 33cl");
         });
         assertThat(fixtures.jobsOfSource(round.batch())).singleElement().satisfies(job -> assertThat(job)
@@ -79,7 +79,7 @@ class BatchTicketsTest {
                 terminal, "3");
 
         await(() -> fixtures.tickets(second.batch()).size() == 1, "second round ticket");
-        String content = (String) fixtures.tickets(second.batch()).getFirst().get("content");
+        String content = ProductionFixtures.text(fixtures.tickets(second.batch()).getFirst());
         assertThat(content).contains("Ronda 2", "3 x Coca-Cola 33cl").doesNotContain("2 x Coca-Cola 33cl");
         assertThat(fixtures.tickets(first.batch())).hasSize(1);
     }

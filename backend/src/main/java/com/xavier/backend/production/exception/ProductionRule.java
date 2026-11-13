@@ -15,5 +15,7 @@ public enum ProductionRule {
     /** The store does not exist. */
     UNKNOWN_STORE,
     /** An UNROUTED ticket still has no route or terminal printer to go to (D89 (1)). */
-    STILL_UNROUTED
+    STILL_UNROUTED,
+    /** A printer profile outside D154's ranges: columns for the paper width, drawer pulse, table, feed or pin. */
+    PRINTER_PROFILE_INVALID
 }

@@ -2,6 +2,7 @@ package com.xavier.backend.production.model;
 
 import com.xavier.backend.production.exception.ProductionRule;
 import com.xavier.backend.production.exception.ProductionRuleViolationException;
+import com.xavier.backend.production.model.dto.PrinterProfileView;
 import com.xavier.backend.production.model.dto.PrinterView;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -55,6 +56,36 @@ public class Printer {
 
     private UUID redirectPrinterId;
 
+    @Column(nullable = false)
+    private short paperWidthMm;
+
+    @Column(nullable = false)
+    private short columns;
+
+    private Short codeTable;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 8)
+    private CutMode cutMode;
+
+    @Column(nullable = false)
+    private short feedLines;
+
+    @Column(nullable = false)
+    private boolean statusProbe;
+
+    private Short drawerPin;
+
+    @Column(nullable = false)
+    private short drawerPulseMs;
+
+    /** Written by the print worker with a query of its own, never through this entity (it would move the version). */
+    @Column(insertable = false, updatable = false, length = 20)
+    private String lastStatus;
+
+    @Column(insertable = false, updatable = false)
+    private Instant lastStatusAt;
+
     @Version
     private Long version;
 
@@ -69,24 +100,38 @@ public class Printer {
     }
 
     public static Printer create(UUID storeId, String code, String name, String host, int port, CodePage codePage,
-                                 Instant now) {
+                                 PrinterProfile profile, Instant now) {
         Printer printer = new Printer();
         printer.storeId = Objects.requireNonNull(storeId, "storeId");
         printer.mode = PrinterMode.NORMAL;
         printer.createdAt = now;
-        printer.update(code, name, host, port, codePage, true, now);
+        printer.update(code, name, host, port, codePage, profile, true, now);
         return printer;
     }
 
-    public void update(String code, String name, String host, int port, CodePage codePage, boolean active,
-                       Instant now) {
+    public void update(String code, String name, String host, int port, CodePage codePage, PrinterProfile profile,
+                       boolean active, Instant now) {
         this.code = code.strip();
         this.name = name.strip();
         this.host = host.strip();
         this.port = port;
         this.codePage = Objects.requireNonNull(codePage, "codePage");
         this.active = active;
+        this.paperWidthMm = (short) profile.paperWidthMm();
+        this.columns = (short) profile.columns();
+        this.codeTable = profile.codeTable() == null ? null : profile.codeTable().shortValue();
+        this.cutMode = profile.cutMode();
+        this.feedLines = (short) profile.feedLines();
+        this.statusProbe = profile.statusProbe();
+        this.drawerPin = profile.drawerPin() == null ? null : profile.drawerPin().shortValue();
+        this.drawerPulseMs = (short) profile.drawerPulseMs();
         this.updatedAt = now;
+    }
+
+    /** How this printer lays out and ends a ticket (D154). */
+    public PrinterProfile profile() {
+        return new PrinterProfile(paperWidthMm, columns, codeTable == null ? null : codeTable.intValue(), cutMode,
+                feedLines, statusProbe, drawerPin == null ? null : drawerPin.intValue(), drawerPulseMs);
     }
 
     /**
@@ -131,7 +176,7 @@ public class Printer {
 
     public PrinterView toView() {
         return new PrinterView(id, storeId, code, name, host, port, codePage, active, mode, redirectPrinterId,
-                version);
+                version, PrinterProfileView.from(profile()), lastStatus, lastStatusAt);
     }
 
     public UUID getId() {

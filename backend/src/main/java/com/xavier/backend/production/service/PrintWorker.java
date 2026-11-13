@@ -1,7 +1,7 @@
 package com.xavier.backend.production.service;
 
 import com.xavier.backend.production.adapter.PrinterTransport;
-import com.xavier.backend.production.adapter.SendOutcome;
+import com.xavier.backend.production.adapter.SendResult;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Semaphore;
@@ -68,8 +68,8 @@ public class PrintWorker implements DisposableBean {
 
     private void deliver(Dispatch dispatch) {
         try {
-            SendOutcome outcome = transport.send(dispatch.address(), dispatch.payload());
-            queue.record(dispatch.jobId(), outcome);
+            SendResult result = transport.send(dispatch.address(), dispatch.payload(), dispatch.probeStatus());
+            queue.record(dispatch.jobId(), result);
         } catch (RuntimeException e) {
             // the job stays PROCESSING; its lease turns it UNKNOWN for a person to resolve
             log.error("Print job {} was not recorded after its send", dispatch.jobId(), e);

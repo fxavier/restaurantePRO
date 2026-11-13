@@ -58,7 +58,7 @@ class R3PublicationCompatTest {
         assertThat(r3.lines().getFirst().components()).isNull();
         Map<String, Object> kitchen = fixtures.tickets(round.batch()).stream()
                 .filter(ticket -> "KITCHEN".equals(ticket.get("destination"))).findFirst().orElseThrow();
-        assertThat((String) kitchen.get("content")).contains("Mesa M1 - Pedido #" + round.orderNumber(), "1 x Sopa");
+        assertThat(ProductionFixtures.text(kitchen)).contains("Mesa M1 - Pedido #" + round.orderNumber(), "1 x Sopa");
         assertThat(fixtures.batchStatus(round.batch())).isEqualTo("DISPATCHED");
     }
 
@@ -79,7 +79,7 @@ class R3PublicationCompatTest {
         assertThat(r3.line().components()).isNull();
         assertThat(fixtures.tickets(voidId)).singleElement().satisfies(ticket -> {
             assertThat(ticket).containsEntry("destination", "KITCHEN").containsEntry("routing", "UNROUTED");
-            assertThat((String) ticket.get("content")).isEqualTo(String.join("\n", TicketLayouts.VOID_TITLE,
+            assertThat(ProductionFixtures.text(ticket)).isEqualTo(String.join("\n", TicketLayouts.VOID_TITLE,
                     "KITCHEN", "Mesa M1 - Pedido #31", "04/11/2026 12:05", TicketLayouts.RULE, "-1 x Sopa",
                     "Motivo: engano"));
         });

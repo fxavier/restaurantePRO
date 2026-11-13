@@ -82,7 +82,7 @@ class DeliverySlipOnceTest {
             assertThat(ticket).containsEntry("source_type", "DELIVERY_SLIP").containsEntry("routing", "ROUTED")
                     .containsEntry("printer_id", printer).containsEntry("order_id", order)
                     .containsEntry("terminal_id", terminal);
-            assertThat((String) ticket.get("content")).contains(TicketLayouts.DELIVERY_SLIP_TITLE,
+            assertThat(ProductionFixtures.text(ticket)).contains(TicketLayouts.DELIVERY_SLIP_TITLE,
                     "ENTREGA #" + PosRequests.orderNumber(jdbc, order), "Tel: " + d.phone(), "Rua da Entrega 7",
                     "Notas: portão azul", "1 x Taxa de entrega", "1 x Coca-Cola 33cl", "A PAGAR 15.50 MZN");
         });

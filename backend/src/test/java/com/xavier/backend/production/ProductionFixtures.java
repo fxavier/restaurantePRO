@@ -9,6 +9,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.orders.OrdersFixtures;
 import com.xavier.backend.orders.OrdersFixtures.Shop;
+import com.xavier.backend.production.model.PrintLine;
+import com.xavier.backend.production.model.StyledContent;
 import com.xavier.backend.production.service.PrintWorker;
 import java.time.Duration;
 import java.util.List;
@@ -59,6 +61,26 @@ public class ProductionFixtures {
                 .contentType(MediaType.APPLICATION_JSON).content("""
                         {"storeId": "%s", "code": "%s", "name": "Impressora %s", "host": "%s", "port": %d,
                          "codePage": "CP860"}""".formatted(store, code, code, host, port)));
+    }
+
+    /** A printer with profile fields (D154), e.g. {@code "paperWidthMm": 58, "statusProbe": true}. */
+    public UUID printer(UUID store, String code, String host, int port, String profileFields) throws Exception {
+        return id(mvc.perform(post(PRINTERS).with(inStore(store, Permission.PRODUCTION_MANAGE)).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content("""
+                        {"storeId": "%s", "code": "%s", "name": "Impressora %s", "host": "%s", "port": %d,
+                         "codePage": "CP860", %s}""".formatted(store, code, code, host, port, profileFields)))
+                .andExpect(status().isCreated()));
+    }
+
+    /** A test page queued on {@code printer} (D156); its job id. */
+    public UUID testPage(UUID store, UUID printer) throws Exception {
+        return id(mvc.perform(post(PRINTERS + "/" + printer + "/test").header("Idempotency-Key",
+                        UUID.randomUUID().toString()).with(csrf()).with(inStore(store, Permission.PRODUCTION_MANAGE)))
+                .andExpect(status().isCreated()));
+    }
+
+    public Map<String, Object> printerRow(UUID printer) {
+        return jdbc.sql("SELECT * FROM production.printer WHERE id = ?").param(printer).query().singleRow();
     }
 
     public UUID printer(UUID store, String code, String host, int port) throws Exception {
@@ -127,6 +149,17 @@ public class ProductionFixtures {
     public List<Map<String, Object>> tickets(UUID sourceId) {
         return jdbc.sql("SELECT * FROM production.production_ticket WHERE source_id = ? ORDER BY created_at")
                 .param(sourceId).query().listOfRows();
+    }
+
+    /**
+     * A ticket row's printout as plain text lines joined by LF, whatever its stored format (D155): a STYLED_V1 rule
+     * reads as 32 dashes and an amount line as "left right", as the R4 text did.
+     */
+    public static String text(Map<String, Object> ticket) {
+        String content = (String) ticket.get("content");
+        return "STYLED_V1".equals(ticket.get("content_format"))
+                ? String.join("\n", StyledContent.fromJson(content).stream().map(PrintLine::plainText).toList())
+                : content;
     }
 
     public List<Map<String, Object>> jobsOfSource(UUID sourceId) {

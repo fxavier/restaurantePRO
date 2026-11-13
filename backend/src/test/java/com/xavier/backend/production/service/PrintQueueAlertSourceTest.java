@@ -1,0 +1,149 @@
+package com.xavier.backend.production.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.xavier.backend.fiscal.FiscalFixtures;
+import com.xavier.backend.production.ProductionFixtures;
+import com.xavier.backend.production.ProductionModuleTest;
+import com.xavier.backend.production.TcpFakePrinter;
+import com.xavier.backend.shared.ops.AlertSeverity;
+import com.xavier.backend.shared.ops.OperationalAlert;
+import io.micrometer.core.instrument.MeterRegistry;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.transaction.support.TransactionTemplate;
+
+/**
+ * D150, A63 (print queue half): {@code PRINT_JOBS_ATTENTION} counts a store's FAILED or UNKNOWN jobs with no
+ * resolution created in the last 24 h; {@code PRINT_QUEUE_STALLED} is a QUEUED or RETRY_WAIT job older than 5 min on
+ * a NORMAL printer. Both are WARNINGs of the store, and the gauges {@code print_jobs_unresolved{store}} and
+ * {@code print_jobs_oldest_waiting_seconds{store}} move with them. Jobs sit on HOLD printers, so no worker changes
+ * them; a printer turns NORMAL only inside a rolled-back transaction.
+ */
+@ProductionModuleTest
+class PrintQueueAlertSourceTest {
+
+    @Autowired
+    PrintQueueAlertSource source;
+
+    @Autowired
+    ProductionFixtures fixtures;
+
+    @Autowired
+    FiscalFixtures stores;
+
+    @Autowired
+    JdbcClient jdbc;
+
+    @Autowired
+    TransactionTemplate tx;
+
+    @Autowired
+    MeterRegistry meters;
+
+    UUID store;
+    UUID printer;
+
+    @BeforeEach
+    void heldPrinter() throws Exception {
+        store = stores.newStore();
+        printer = fixtures.printer(store, "H" + UUID.randomUUID().toString().substring(0, 6), "127.0.0.1",
+                TcpFakePrinter.closedPort());
+        fixtures.mode(store, printer, "HOLD");
+    }
+
+    @Test
+    void unresolvedFailedAndUnknownJobsOfTheLast24HoursNeedAttention() throws Exception {
+        UUID failed = job("FAILED", "1 hour", null);
+        job("UNKNOWN", "10 minutes", null);
+        job("FAILED", "2 hours", "RETRIED");
+        job("UNKNOWN", "3 hours", "CONFIRMED_PRINTED");
+        job("FAILED", "25 hours", null);
+
+        assertThat(storeAlerts()).singleElement().satisfies(alert -> {
+            assertThat(alert.code()).isEqualTo("PRINT_JOBS_ATTENTION");
+            assertThat(alert.severity()).isEqualTo(AlertSeverity.WARNING);
+            assertThat(alert.count()).isEqualTo(2);
+            assertThat(alert.since()).isEqualTo(createdAt(failed));
+            assertThat(alert.summary()).doesNotContain(failed.toString());
+        });
+        assertThat(gauge("print_jobs_unresolved")).isEqualTo(2);
+    }
+
+    @Test
+    void theAlertClearsOnceTheJobsAreResolved() throws Exception {
+        UUID failed = job("FAILED", "1 hour", null);
+        assertThat(storeAlerts()).extracting(OperationalAlert::code).containsExactly("PRINT_JOBS_ATTENTION");
+
+        jdbc.sql("UPDATE production.print_job SET resolution = 'RETRIED' WHERE id = ?").param(failed).update();
+
+        assertThat(storeAlerts()).isEmpty();
+        assertThat(gauge("print_jobs_unresolved")).isZero();
+    }
+
+    @Test
+    void aJobWaitingOverFiveMinutesOnANormalPrinterIsAStalledQueue() throws Exception {
+        UUID waiting = job("QUEUED", "6 minutes", null);
+        assertThat(storeAlerts()).as("on HOLD, waiting is intended").isEmpty();
+
+        tx.executeWithoutResult(status -> {
+            status.setRollbackOnly();
+            jdbc.sql("UPDATE production.printer SET mode = 'NORMAL' WHERE id = ?").param(printer).update();
+
+            assertThat(storeAlerts()).singleElement().satisfies(alert -> {
+                assertThat(alert.code()).isEqualTo("PRINT_QUEUE_STALLED");
+                assertThat(alert.severity()).isEqualTo(AlertSeverity.WARNING);
+                assertThat(alert.count()).isEqualTo(1);
+                assertThat(alert.since()).isEqualTo(createdAt(waiting));
+            });
+            assertThat(gauge("print_jobs_oldest_waiting_seconds")).isBetween(355.0, 3600.0);
+
+            jdbc.sql("UPDATE production.print_job SET created_at = now() - interval '4 minutes' WHERE id = ?")
+                    .param(waiting).update();
+            assertThat(storeAlerts()).as("4 minutes is not stalled").isEmpty();
+            assertThat(gauge("print_jobs_oldest_waiting_seconds")).isBetween(235.0, 300.0);
+        });
+    }
+
+    @Test
+    void aRetryWaitJobCountsAsWaiting() throws Exception {
+        job("RETRY_WAIT", "7 minutes", null);
+
+        tx.executeWithoutResult(status -> {
+            status.setRollbackOnly();
+            jdbc.sql("UPDATE production.printer SET mode = 'NORMAL' WHERE id = ?").param(printer).update();
+
+            assertThat(storeAlerts()).extracting(OperationalAlert::code).containsExactly("PRINT_QUEUE_STALLED");
+        });
+    }
+
+    private List<OperationalAlert> storeAlerts() {
+        return source.alerts().stream().filter(alert -> store.equals(alert.storeId())).toList();
+    }
+
+    private double gauge(String name) {
+        return meters.get(name).tag("store", store.toString()).gauge().value();
+    }
+
+    /** A job of a test ticket on the held printer, in {@code status}, created {@code age} ago. */
+    private UUID job(String status, String age, String resolution) throws Exception {
+        UUID job = fixtures.testPage(store, printer);
+        jdbc.sql("""
+                UPDATE production.print_job SET status = ?, attempts = CASE WHEN ? = 'QUEUED' THEN 0 ELSE 1 END,
+                    started_at = CASE WHEN ? = 'QUEUED' THEN NULL ELSE now() END, resolution = ?,
+                    created_at = now() - CAST(? AS interval)
+                WHERE id = ?""").param(status).param(status).param(status).param(resolution).param(age).param(job)
+                .update();
+        return job;
+    }
+
+    private Instant createdAt(UUID job) {
+        return ((Timestamp) fixtures.job(job).get("created_at")).toInstant();
+    }
+}
