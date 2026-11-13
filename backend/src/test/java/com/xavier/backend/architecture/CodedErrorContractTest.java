@@ -296,6 +296,8 @@ class CodedErrorContractTest {
                             + "open.")),
             Map.entry("no-cash-drawer", () -> new ProductionRuleViolationException(ProductionRule.NO_CASH_DRAWER,
                     "The receipt printer CX1 has no cash drawer.")),
+            Map.entry("kick-not-repeatable", () -> new ProductionRuleViolationException(
+                    ProductionRule.KICK_NOT_REPEATABLE, "A cash drawer opens only through the manual open command.")),
             // R3 audit (S26): the query and export guards
             Map.entry("audit-range-too-large", () -> AuditQueryException.rangeTooLarge(92)),
             Map.entry("audit-export-too-large", () -> AuditQueryException.exportTooLarge(150_001, 150_000)),
@@ -845,6 +847,8 @@ class CodedErrorContractTest {
         expect("no-receipt-printer", 422, "NO_RECEIPT_PRINTER", "This terminal has no receipt printer, so no cash "
                 + "drawer to open.", "");
         expect("no-cash-drawer", 422, "NO_CASH_DRAWER", "The receipt printer CX1 has no cash drawer.", "");
+        expect("kick-not-repeatable", 422, "KICK_NOT_REPEATABLE",
+                "A cash drawer opens only through the manual open command.", "");
     }
 
     @Test

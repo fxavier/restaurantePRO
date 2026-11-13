@@ -23,5 +23,7 @@ public enum ProductionRule {
     /** The session's terminal has no receipt printer, so no drawer to open (D158). */
     NO_RECEIPT_PRINTER,
     /** The terminal's receipt printer has no cash drawer ({@code drawer_pin} unset, D158). */
-    NO_CASH_DRAWER
+    NO_CASH_DRAWER,
+    /** A drawer kick is never retried or reprinted; the manual open command is the only repeat (D158). */
+    KICK_NOT_REPEATABLE
 }

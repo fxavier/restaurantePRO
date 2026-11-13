@@ -117,6 +117,7 @@ public class PrintJobService {
                 .orElseThrow(() -> new ProductionNotFoundException(TICKET, ticketId));
         accessPolicy.requireSessionStore(pos, storeId, TICKET, ticketId);
         ProductionTicket ticket = tickets.findById(ticketId).orElseThrow();
+        requireNotKick(ticket);
         if (ticket.getSourceType() == TicketSource.DOCUMENT) {
             throw new ProductionRuleViolationException(ProductionRule.DOCUMENT_REPRINT_THROUGH_FISCAL,
                     "A document copy is reprinted through the document (fiscal), which numbers its copies");
@@ -149,6 +150,7 @@ public class PrintJobService {
 
     private PrintJobView retry(UUID jobId) {
         PrintJob job = jobs.findById(jobId).orElseThrow();
+        requireNotKick(tickets.findById(job.getTicketId()).orElseThrow());
         Printer printer = printing(job.getPrinterId());
         PrintJob retry = job.retry(printer.getId(), clock.instant());
         jobs.saveAndFlush(job); // a concurrent retry or acknowledge of the same job fails here (409)
@@ -158,6 +160,14 @@ public class PrintJobService {
                 Map.of("retryJobId", retry.getId().toString(), "status", job.getStatus().name()));
         notifier.notifyAfterCommit(job.getStoreId(), ChangeTopic.PRINT_JOBS, retry.getId());
         return retry.toView(tickets.findById(job.getTicketId()).orElseThrow());
+    }
+
+    /** D158: a drawer kick is never repeated by retry or reprint; only the audited manual open command opens it. */
+    private static void requireNotKick(ProductionTicket ticket) {
+        if (ticket.getSourceType() == TicketSource.DRAWER_KICK) {
+            throw new ProductionRuleViolationException(ProductionRule.KICK_NOT_REPEATABLE,
+                    "A cash drawer opens only through the manual open command.");
+        }
     }
 
     private PrintJobView acknowledge(UUID jobId) {
