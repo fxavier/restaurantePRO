@@ -22,6 +22,7 @@ import com.xavier.backend.settlement.model.Refund;
 import com.xavier.backend.settlement.model.TargetType;
 import com.xavier.backend.settlement.model.dto.RefundRequest;
 import com.xavier.backend.settlement.model.dto.RefundView;
+import com.xavier.backend.settlement.model.event.CashDrawerKickRequested;
 import com.xavier.backend.settlement.model.event.RefundRecorded;
 import com.xavier.backend.settlement.repository.PaymentAttemptRepository;
 import com.xavier.backend.settlement.repository.PaymentRepository;
@@ -48,7 +49,8 @@ import org.springframework.transaction.annotation.Transactional;
  * {@link Refund} → the refunder's {@code cash_session}: a {@code REFUND} OUT movement of the payment's own method
  * (cash, or a terminal's refund whose reference the operator gives, so the closing compares terminal totals, D52)
  * and, for a debt payment, {@code CustomersApi.reverseCredit}, which reopens the debt. It publishes
- * {@link RefundRecorded}. R3 has no integrated refund API (P10): an integrated payment is refunded at the provider's
+ * {@link RefundRecorded}, and for a CASH-kind payment {@link CashDrawerKickRequested} for the refunder's terminal
+ * (D158). R3 has no integrated refund API (P10): an integrated payment is refunded at the provider's
  * portal and recorded here like a terminal's.
  *
  * <p>What may be refunded: the payment less its earlier refunds; and, when an ISSUED document covers the payment's
@@ -137,7 +139,8 @@ public class RefundService {
         if (payment.getTargetType() != TargetType.CREDIT_ACCOUNT) {
             requireNotInvoiced(payment, amount);
         }
-        requireReferenceUnlessCash(payment, request.externalReference());
+        PaymentMethodKind kind = attempts.findById(payment.getAttemptId()).orElseThrow().getMethodKind();
+        requireReferenceUnlessCash(kind, payment.getMethodCode(), request.externalReference());
         OpenSessionView session = cash.openSessionOf(pos.storeId(), pos.employeeId())
                 .orElseThrow(SettlementRuleException::noOpenSession);
         cash.lockSession(session.id());
@@ -153,6 +156,10 @@ public class RefundService {
                 pos.employeeId()));
         audit.refund(refund, details(refund));
         events.publishEvent(new RefundRecorded(refund.getId(), refund.getStoreId()));
+        if (kind == PaymentMethodKind.CASH) {
+            events.publishEvent(new CashDrawerKickRequested("REFUND", refund.getId(), refund.getStoreId(),
+                    refund.getTerminalId()));
+        }
         return refund.toView();
     }
 
@@ -223,10 +230,10 @@ public class RefundService {
     }
 
     /** D77: a terminal's or provider's refund is made there first; its reference ties the two (D52, D78). */
-    private void requireReferenceUnlessCash(Payment payment, String externalReference) {
-        PaymentMethodKind kind = attempts.findById(payment.getAttemptId()).orElseThrow().getMethodKind();
+    private static void requireReferenceUnlessCash(PaymentMethodKind kind, String methodCode,
+                                                   String externalReference) {
         if (kind != PaymentMethodKind.CASH && (externalReference == null || externalReference.isBlank())) {
-            throw SettlementRuleException.externalReferenceRequired(payment.getMethodCode());
+            throw SettlementRuleException.externalReferenceRequired(methodCode);
         }
     }
 
