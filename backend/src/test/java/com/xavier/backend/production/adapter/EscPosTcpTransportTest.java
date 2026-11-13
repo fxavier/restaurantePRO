@@ -38,6 +38,13 @@ class EscPosTcpTransportTest {
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("lease");
     }
 
+    /** D157 option (a): a silent probe reconnects, so the budget is connect + probe + connect + write. */
+    @Test
+    void theSecondConnectionAfterASilentProbeCountsAgainstTheJobLease() {
+        assertThatThrownBy(() -> new EscPosTcpTransport(Duration.ofSeconds(2), Duration.ofSeconds(55)))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("lease");
+    }
+
     @Test
     void aListeningPrinterReceivesTheBytes() throws Exception {
         try (TcpFakePrinter printer = TcpFakePrinter.accepting()) {

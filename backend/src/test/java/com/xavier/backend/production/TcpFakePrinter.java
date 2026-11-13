@@ -34,14 +34,21 @@ public final class TcpFakePrinter implements AutoCloseable {
     private volatile ServerSocket server;
     /** The replies to DLE EOT 2 and DLE EOT 4; {@code null}: never replies. */
     private final byte[] status;
+    /** How long a reply waits; past the sender's probe timeout it arrives too late. */
+    private final Duration answerDelay;
+    /** Closes its sending side (FIN) as soon as it accepts, and keeps reading. */
+    private final boolean hangUp;
 
     private TcpFakePrinter(Mode mode, int port) throws IOException {
-        this(mode, port, null);
+        this(mode, port, null, Duration.ZERO, false);
     }
 
-    private TcpFakePrinter(Mode mode, int port, byte[] status) throws IOException {
+    private TcpFakePrinter(Mode mode, int port, byte[] status, Duration answerDelay, boolean hangUp)
+            throws IOException {
         this.mode = mode;
         this.status = status;
+        this.answerDelay = answerDelay;
+        this.hangUp = hangUp;
         listen(port);
         this.port = server.getLocalPort();
     }
@@ -52,7 +59,18 @@ public final class TcpFakePrinter implements AutoCloseable {
 
     /** Replies {@code offlineStatus} to {@code 10 04 02} and {@code paperStatus} to {@code 10 04 04}. */
     public static TcpFakePrinter answering(byte offlineStatus, byte paperStatus) throws IOException {
-        return new TcpFakePrinter(Mode.ACCEPT, 0, new byte[] {offlineStatus, paperStatus});
+        return new TcpFakePrinter(Mode.ACCEPT, 0, new byte[] {offlineStatus, paperStatus}, Duration.ZERO, false);
+    }
+
+    /** As {@link #answering}, but each reply comes only after {@code delay} (longer than the probe's read timeout). */
+    public static TcpFakePrinter answeringLate(byte offlineStatus, byte paperStatus, Duration delay)
+            throws IOException {
+        return new TcpFakePrinter(Mode.ACCEPT, 0, new byte[] {offlineStatus, paperStatus}, delay, false);
+    }
+
+    /** Accepts, then hangs up its side at once: a status read gets end of stream. Keeps what it reads. */
+    public static TcpFakePrinter hangingUp() throws IOException {
+        return new TcpFakePrinter(Mode.ACCEPT, 0, null, Duration.ZERO, true);
     }
 
     /** Reads everything and never answers a status request (a printer without DLE EOT). */
@@ -143,6 +161,9 @@ public final class TcpFakePrinter implements AutoCloseable {
     private void readAll(Socket connection) {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         try (connection; InputStream in = connection.getInputStream()) {
+            if (hangUp) {
+                connection.shutdownOutput();
+            }
             if (status == null) {
                 in.transferTo(bytes);
             } else {
@@ -163,11 +184,23 @@ public final class TcpFakePrinter implements AutoCloseable {
         for (int b = in.read(); b != -1; b = in.read()) {
             bytes.write(b);
             if (beforeLast == 0x10 && last == 0x04 && (b == 0x02 || b == 0x04)) {
+                pause(answerDelay);
                 connection.getOutputStream().write(status[b == 0x02 ? 0 : 1]);
                 connection.getOutputStream().flush();
             }
             beforeLast = last;
             last = b;
+        }
+    }
+
+    private static void pause(Duration delay) {
+        if (delay.isZero()) {
+            return;
+        }
+        try {
+            Thread.sleep(delay);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 

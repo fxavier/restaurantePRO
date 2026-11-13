@@ -93,17 +93,42 @@ class StatusProbeTest {
         }
     }
 
-    /** A printer without DLE EOT must still print: no answer within 500 ms sends. */
+    /**
+     * A printer without DLE EOT must still print: no answer within 500 ms sends. The probe's connection is closed and
+     * the ticket goes on a fresh one, so a late answer can never sit unread under the ticket (D157, option (a)).
+     */
     @Test
-    void aSilentPrinterStillGetsThePayload() throws Exception {
+    void aSilentPrinterGetsThePayloadOnAFreshConnection() throws Exception {
         try (TcpFakePrinter printer = TcpFakePrinter.silent()) {
             long started = System.nanoTime();
 
             SendResult result = transport.send(address(printer), PAYLOAD, true);
 
             assertThat(result).isEqualTo(new SendResult(SendOutcome.ACCEPTED, false));
-            assertThat(received(printer)).endsWith(hex(PAYLOAD)).startsWith(PROBE_OFFLINE);
             assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofSeconds(2));
+            assertThat(connections(printer, 2)).containsExactlyInAnyOrder(PROBE_OFFLINE, hex(PAYLOAD));
+        }
+    }
+
+    /** An answer after the timeout is no answer: nothing of the ticket goes on the probe's connection. */
+    @Test
+    void aLateAnswerSendsThePayloadInFullOnASecondConnection() throws Exception {
+        try (TcpFakePrinter printer = TcpFakePrinter.answeringLate(COVER_OPEN, READY, Duration.ofMillis(1500))) {
+            SendResult result = transport.send(address(printer), PAYLOAD, true);
+
+            assertThat(result).isEqualTo(new SendResult(SendOutcome.ACCEPTED, false));
+            assertThat(connections(printer, 2)).containsExactlyInAnyOrder(PROBE_OFFLINE, hex(PAYLOAD));
+        }
+    }
+
+    /** End of stream during the probe: the printer hung up; only status requests went out, so retry safely. */
+    @Test
+    void aPrinterThatHangsUpDuringTheProbeIsNotConnected() throws Exception {
+        try (TcpFakePrinter printer = TcpFakePrinter.hangingUp()) {
+            SendResult result = transport.send(address(printer), PAYLOAD, true);
+
+            assertThat(result).isEqualTo(SendResult.of(SendOutcome.NOT_CONNECTED));
+            assertThat(received(printer)).isEqualTo(PROBE_OFFLINE);
         }
     }
 
@@ -134,6 +159,11 @@ class StatusProbeTest {
         List<byte[]> connections = printer.awaitConnections(1, Duration.ofSeconds(5));
         assertThat(connections).hasSize(1);
         return hex(connections.getFirst());
+    }
+
+    /** The raw bytes of {@code count} closed connections, in no order. */
+    private static List<String> connections(TcpFakePrinter printer, int count) throws InterruptedException {
+        return printer.awaitConnections(count, Duration.ofSeconds(5)).stream().map(StatusProbeTest::hex).toList();
     }
 
     private static String hex(byte[] bytes) {

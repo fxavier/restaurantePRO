@@ -13,6 +13,7 @@ import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.HexFormat;
 import java.util.List;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -79,6 +80,56 @@ class EscPosRendererGoldenTest {
                 "1b6100", "1b6404", cut(cut));
 
         assertThat(hex(render(58, 32, cut))).isEqualTo(hex(expected));
+    }
+
+    /**
+     * Text is data, never commands: a C0 or C1 control character in an item, a note or a fiscal line prints as a
+     * space, so it cannot inject ESC, GS or DLE sequences. The QR payload is binary-safe inside {@code GS ( k}.
+     */
+    @Test
+    void controlCharactersInTextPrintAsSpaces() {
+        byte[] bytes = renderer.render(Printout.plain(List.of("A\u001bB\u001dC\u0010D\u0000E\u007fF\u0085G\u009fH"),
+                null), PrinterProfile.DEFAULT, CodePage.CP850, false);
+
+        assertThat(hex(bytes)).isEqualTo(hex(bytes("1b40", "1b7402", "A B C D E F G H", "0a", "1b6404",
+                hex(CUT_PARTIAL))));
+    }
+
+    /** D155: an amount line needs one space between its texts; with none left it goes on a line of its own. */
+    @Test
+    void anAmountLineKeepsAtLeastOneSpaceAtTheWidth() {
+        PrinterProfile narrow = new PrinterProfile(58, 24, null, CutMode.NONE, 0, false, null, 100);
+
+        byte[] bytes = renderer.render(Printout.styled(List.of(
+                new PrintLine.LeftRight("Bacalhau 1x", "1234.00 MZN", Style.NORMAL),
+                new PrintLine.LeftRight("Bacalhau 12x", "1234.00 MZN", Style.NORMAL),
+                new PrintLine.LeftRight("Bacalhau 1234", "1234.00 MZN", Style.NORMAL))), narrow, CodePage.CP850,
+                false);
+
+        assertThat(hex(bytes)).isEqualTo(hex(bytes("1b40", "1b7402",
+                "Bacalhau 1x" + "  " + "1234.00 MZN", "0a",
+                "Bacalhau 12x" + " " + "1234.00 MZN", "0a",
+                "Bacalhau 1234", "0a", " ".repeat(13) + "1234.00 MZN", "0a",
+                "1b6400")));
+    }
+
+    /**
+     * D155: the continuation is indented after "qty x " only while that prefix is under half the width; a longer one
+     * would leave too little room, so the continuation starts at the margin.
+     */
+    @Test
+    void aPrefixOfHalfTheWidthOrMoreIsNotIndented() {
+        PrinterProfile narrow = new PrinterProfile(58, 24, null, CutMode.NONE, 0, false, null, 100);
+
+        byte[] longPrefix = renderer.render(Printout.plain(List.of("123456789 x Bacalhau com natas"), null), narrow,
+                CodePage.CP850, false);
+        byte[] shortPrefix = renderer.render(Printout.plain(List.of("12345678 x Bacalhau com natas"), null), narrow,
+                CodePage.CP850, false);
+
+        assertThat(hex(longPrefix)).isEqualTo(hex(bytes("1b40", "1b7402", "123456789 x Bacalhau com", "0a",
+                "natas", "0a", "1b6400")));
+        assertThat(hex(shortPrefix)).isEqualTo(hex(bytes("1b40", "1b7402", "12345678 x Bacalhau com", "0a",
+                " ".repeat(11) + "natas", "0a", "1b6400")));
     }
 
     private byte[] render(int width, int columns, CutMode cut) {

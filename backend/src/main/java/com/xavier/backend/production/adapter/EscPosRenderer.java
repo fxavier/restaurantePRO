@@ -130,9 +130,20 @@ public class EscPosRenderer {
         }
 
         private void text(String line) {
-            out.writeBytes(codePage.encode(line));
+            out.writeBytes(codePage.encode(printable(line)));
             out.write(LF);
         }
+    }
+
+    /**
+     * Text is data: a C0 (U+0000-U+001F) or C1 (U+007F-U+009F) control character becomes a space, so no ticket text
+     * can carry an ESC, GS or DLE command to the printer. The QR payload is not text (it is length-framed).
+     */
+    static String printable(String text) {
+        StringBuilder printable = new StringBuilder(text.length());
+        text.codePoints().forEach(codePoint -> printable.appendCodePoint(
+                codePoint <= 0x1F || codePoint >= 0x7F && codePoint <= 0x9F ? ' ' : codePoint));
+        return printable.toString();
     }
 
     /**
