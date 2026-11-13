@@ -15,6 +15,6 @@ Rejected: timestamps. They still collide in order when branches merge.
 ## Consequences
 
 - Slices that touch different modules never collide on a version. Flyway compares versions numerically, so `V10001` sorts after `V9999`.
-- Out-of-order application is not needed: each block only grows, and slices merge one at a time.
+- Out-of-order application is required (amendment 2026-11-13; the original text said it was not needed): a release adds versions to low blocks below the head of an installed database, so `spring.flyway.out-of-order: true` (proven by `FlywayUpgradeTest`).
 - As built, identity used `V3005`–`V3009` in R2 (permissions, terminal-session store, `must_change_pin`, login throttle), all inside its block.
 - `spring.jpa.hibernate.ddl-auto=validate` checks on every context start that the entities match the migrations.

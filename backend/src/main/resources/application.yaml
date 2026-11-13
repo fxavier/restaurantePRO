@@ -27,6 +27,10 @@ spring:
   flyway:
     # Scanned recursively: db/migration/<module>/V<block>__<module>_<what>.sql (D5 version blocks).
     locations: classpath:db/migration
+    # ADR 0001 (amended 2026-11-13): one version block per module, so a release adds versions below the head of an
+    # installed database (e.g. identity V3013 under reporting V14005). Without out-of-order, validate-on-migrate
+    # rejects them as ignored and the upgrade cannot start (FlywayUpgradeTest).
+    out-of-order: true
   modulith:
     events:
       # D19 / spec §7: deliver again, at startup, every publication whose listener did not complete
