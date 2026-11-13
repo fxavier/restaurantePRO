@@ -16,30 +16,38 @@ import java.util.UUID;
  * @param permissions   exactly {@code Actor.authorities()}: {@code PERM_X} or {@code PERM_X@storeId}; empty while
  *                      {@code mustChangePassword} or {@code mustChangePin}
  * @param sessionHandle the opaque handle of this session, as in {@code GET /backoffice/users/{id}/sessions}
+ * @param mfa           the session's second factor (D141); {@code NONE} for a POS session. While it is
+ *                      {@code PENDING} or {@code ENROLMENT_REQUIRED}, {@code permissions} is empty
  */
 public record SessionView(ActorKind kind, UUID userId, UUID employeeId, UUID terminalId, UUID storeId, String name,
                           boolean mustChangePassword, boolean mustChangePin, Set<String> permissions,
-                          String sessionHandle) {
+                          String sessionHandle, MfaSessionView mfa) {
 
     public SessionView {
         permissions = Set.copyOf(permissions);
+        mfa = mfa == null ? MfaSessionView.NONE : mfa;
     }
 
     /** A BackOffice session; {@code name} is the username. */
     public static SessionView account(Actor actor, String name, boolean mustChangePassword) {
         return new SessionView(actor.kind(), actor.userId(), actor.employeeId(), actor.terminalId(), actor.storeId(),
-                name, mustChangePassword, false, actor.authorities(), null);
+                name, mustChangePassword, false, actor.authorities(), null, MfaSessionView.NONE);
     }
 
     /** A POS session; {@code name} is the employee's. */
     public static SessionView employee(Actor actor, String name, boolean mustChangePin) {
         return new SessionView(actor.kind(), actor.userId(), actor.employeeId(), actor.terminalId(), actor.storeId(),
-                name, false, mustChangePin, actor.authorities(), null);
+                name, false, mustChangePin, actor.authorities(), null, MfaSessionView.NONE);
     }
 
     public SessionView withSessionHandle(String handle) {
         return new SessionView(kind, userId, employeeId, terminalId, storeId, name, mustChangePassword, mustChangePin,
-                permissions, handle);
+                permissions, handle, mfa);
+    }
+
+    public SessionView withMfa(MfaSessionView newMfa) {
+        return new SessionView(kind, userId, employeeId, terminalId, storeId, name, mustChangePassword, mustChangePin,
+                permissions, sessionHandle, newMfa);
     }
 
     public Actor toActor() {

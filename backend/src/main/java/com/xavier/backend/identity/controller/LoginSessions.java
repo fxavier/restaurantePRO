@@ -2,15 +2,19 @@ package com.xavier.backend.identity.controller;
 
 import com.xavier.backend.access.Actor;
 import com.xavier.backend.access.ActorKind;
+import com.xavier.backend.identity.model.dto.MfaState;
 import com.xavier.backend.identity.model.dto.SessionView;
 import com.xavier.backend.identity.service.LoginAudit;
+import com.xavier.backend.identity.service.MfaSessionAttributes;
 import com.xavier.backend.identity.service.SessionPrincipals;
 import com.xavier.backend.identity.service.SupportGrantService;
 import com.xavier.backend.identity.service.TerminalSessionService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -47,7 +51,10 @@ import org.springframework.stereotype.Component;
  *   <li>a POS session is recorded against its terminal and store, so revoking the terminal or deactivating the
  *       store ends it;</li>
  *   <li>a support account's session records its grant and that grant's end, which {@code SupportSessionFilter}
- *       checks on every request, and may stay idle at most for the rest of the grant (D83).</li>
+ *       checks on every request, and may stay idle at most for the rest of the grant (D83);</li>
+ *   <li>a BackOffice session records its second-factor state, when it proved the factor, and when a pending login
+ *       started ({@link MfaSessionAttributes}, D141), which {@code MustChangeCredentialFilter},
+ *       {@code MfaRemoteFilter} and the step-up check read.</li>
  * </ol>
  */
 @Component
@@ -74,15 +81,27 @@ class LoginSessions {
     private final TerminalSessionService terminalSessions;
     private final LoginAudit audit;
     private final SupportGrantService supportGrants;
+    private final Clock clock;
 
-    LoginSessions(TerminalSessionService terminalSessions, LoginAudit audit, SupportGrantService supportGrants) {
+    LoginSessions(TerminalSessionService terminalSessions, LoginAudit audit, SupportGrantService supportGrants,
+                  Clock clock) {
         this.terminalSessions = terminalSessions;
         this.audit = audit;
         this.supportGrants = supportGrants;
+        this.clock = clock;
     }
 
-    /** @return the id of the session that now holds the actor */
+    /** A session that has not proved a second factor (or a POS session). @return the new session's id */
     String start(SessionView view, HttpServletRequest request, HttpServletResponse response) {
+        return start(view, null, request, response);
+    }
+
+    /**
+     * @param secondFactorAt when the session proved its second factor ({@code null}: not yet)
+     * @return the id of the session that now holds the actor
+     */
+    String start(SessionView view, Instant secondFactorAt, HttpServletRequest request,
+                 HttpServletResponse response) {
         Actor actor = view.toActor();
         Authentication authentication = UsernamePasswordAuthenticationToken.authenticated(actor, null,
                 actor.authorities().stream().map(SimpleGrantedAuthority::new).toList());
@@ -95,6 +114,7 @@ class LoginSessions {
         session.setAttribute(FindByIndexNameSessionRepository.PRINCIPAL_NAME_INDEX_NAME, SessionPrincipals.of(actor));
         flag(session, MUST_CHANGE_PASSWORD, view.mustChangePassword());
         flag(session, MUST_CHANGE_PIN, view.mustChangePin());
+        recordSecondFactor(session, view.mfa().state(), secondFactorAt);
         session.removeAttribute(SUPPORT_GRANT_ID);
         session.removeAttribute(SUPPORT_VALID_UNTIL);
         if (actor.kind() == ActorKind.ACCOUNT) {
@@ -115,6 +135,28 @@ class LoginSessions {
             terminalSessions.register(session.getId(), actor.terminalId(), actor.storeId(), actor.employeeId());
         }
         return session.getId();
+    }
+
+    private void recordSecondFactor(HttpSession session, MfaState state, Instant secondFactorAt) {
+        set(session, MfaSessionAttributes.MFA_STATE, state == MfaState.NONE ? null : state.name());
+        set(session, MfaSessionAttributes.MFA_SECOND_FACTOR_AT, secondFactorAt);
+        set(session, MfaSessionAttributes.MFA_PENDING_SINCE, state == MfaState.PENDING ? clock.instant() : null);
+    }
+
+    /** Step-up (D142): the session proved its second factor again, now. */
+    void steppedUp(HttpServletRequest request, Instant secondFactorAt) {
+        HttpSession session = request.getSession(false);
+        if (session != null) {
+            session.setAttribute(MfaSessionAttributes.MFA_SECOND_FACTOR_AT, secondFactorAt);
+        }
+    }
+
+    private static void set(HttpSession session, String attribute, Object value) {
+        if (value == null) {
+            session.removeAttribute(attribute);
+        } else {
+            session.setAttribute(attribute, value);
+        }
     }
 
     /** At least one second: zero would mean "never times out" to the servlet API. */

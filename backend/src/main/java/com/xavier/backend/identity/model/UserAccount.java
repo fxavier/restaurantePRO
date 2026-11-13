@@ -112,9 +112,10 @@ public class UserAccount {
         updatedAt = now;
     }
 
-    public UserSummary toSummary() {
+    /** @param mfaEnrolled whether the account has an active second factor (kept on {@code MfaFactor}) */
+    public UserSummary toSummary(boolean mfaEnrolled) {
         return new UserSummary(id, username, employeeId, Set.copyOf(roleIds), active, mustChangePassword, support,
-                getVersion());
+                getVersion(), mfaEnrolled);
     }
 
     public UUID getId() {

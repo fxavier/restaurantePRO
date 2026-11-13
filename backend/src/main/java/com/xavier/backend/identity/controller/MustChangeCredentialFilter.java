@@ -1,5 +1,6 @@
 package com.xavier.backend.identity.controller;
 
+import com.xavier.backend.identity.service.MfaSessionAttributes;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -15,8 +16,9 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * While a session's account must change its password (D30), or its employee must replace a PIN a manager set
- * (r2-decisions §12), only {@code /api/v1/auth/**} is served (change it, read the session, log out, log in as
- * someone else); everything else gets a 403 that says why.
+ * (r2-decisions §12), or its login waits for a second factor or an enrolment (D141: {@code MFA_PENDING},
+ * {@code MFA_ENROLMENT_REQUIRED}), only {@code /api/v1/auth/**} is served (change it, verify, enrol, read the session,
+ * log out, log in as someone else); everything else gets a 403 that says why.
  *
  * <p>Defence in depth: such a session also holds no permission at all (see {@code LoginService.sessionOf} and
  * {@code PosLoginService}), so every use case and the actuator rule refuse it anyway; this filter only gives the
@@ -29,6 +31,10 @@ class MustChangeCredentialFilter extends OncePerRequestFilter {
     static final String PASSWORD_DETAIL =
             "You must change your password before continuing (POST /api/v1/auth/password).";
     static final String PIN_DETAIL = "You must change your PIN before continuing (POST /api/v1/auth/pos-pin).";
+    static final String MFA_PENDING_DETAIL =
+            "Confirm your second factor before continuing (POST /api/v1/auth/mfa/verify).";
+    static final String MFA_ENROLMENT_DETAIL =
+            "Set up a second factor before continuing (POST /api/v1/auth/mfa/enrolment).";
 
     private final JsonMapper json;
 
@@ -56,7 +62,14 @@ class MustChangeCredentialFilter extends OncePerRequestFilter {
         if (Boolean.TRUE.equals(session.getAttribute(LoginSessions.MUST_CHANGE_PASSWORD))) {
             return PASSWORD_DETAIL;
         }
-        return Boolean.TRUE.equals(session.getAttribute(LoginSessions.MUST_CHANGE_PIN)) ? PIN_DETAIL : null;
+        if (Boolean.TRUE.equals(session.getAttribute(LoginSessions.MUST_CHANGE_PIN))) {
+            return PIN_DETAIL;
+        }
+        return switch (MfaSessionAttributes.state(session)) {
+            case PENDING -> MFA_PENDING_DETAIL;
+            case ENROLMENT_REQUIRED -> MFA_ENROLMENT_DETAIL;
+            case NONE, VERIFIED -> null;
+        };
     }
 
     private static boolean isAuthRoute(HttpServletRequest request) {
