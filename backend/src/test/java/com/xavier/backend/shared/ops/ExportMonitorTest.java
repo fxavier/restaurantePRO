@@ -108,6 +108,19 @@ class ExportMonitorTest {
         assertThat(monitor.alerts()).isEmpty();
     }
 
+    /** A download the client cancelled is neither a failure nor a success of the export. */
+    @Test
+    void anAbortedDownloadIsRethrownWithoutCountingOrAlerting() {
+        RuntimeException aborted = ExportMonitor.aborted(new java.io.IOException("connection reset"));
+
+        assertThatThrownBy(() -> monitor.monitor(ExportMonitor.AUDIT_CSV, () -> {
+            throw aborted;
+        })).isSameAs(aborted).isInstanceOf(java.io.UncheckedIOException.class);
+
+        assertThat(total()).isZero();
+        assertThat(monitor.alerts()).isEmpty();
+    }
+
     static Stream<RuntimeException> refusals() {
         return Stream.of(new AccessDeniedException("no"), new BusinessRuleException("RANGE_TOO_LARGE", "too large"),
                 new NotFoundException("missing"), new ConflictException("changed"));

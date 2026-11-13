@@ -121,8 +121,9 @@ restaurantpro:
       step-up-max-age: ${RESTAURANTPRO_MFA_STEP_UP_MAX_AGE:PT15M}
       # file of the secret mfa_key; required unless the mode is OFF
       key-file: ${RESTAURANTPRO_MFA_KEY_FILE:}
-    # D140: comma-separated CIDRs of the restaurant's LAN (a VPN pool counts as remote unless listed)
-    lan-cidrs: ${RESTAURANTPRO_LAN_CIDRS:}
+    # D140: comma-separated CIDRs of the restaurant's LAN; unset = the D140 private and loopback ranges. Narrow it to
+    # the store LANs and leave VPN pools out, or a VPN user counts as local.
+    lan-cidrs: "${RESTAURANTPRO_LAN_CIDRS:127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7,fe80::/10}"
     oidc:
       # D144/P55: one optional OpenID Connect provider; off unless enabled
       enabled: ${RESTAURANTPRO_OIDC_ENABLED:false}

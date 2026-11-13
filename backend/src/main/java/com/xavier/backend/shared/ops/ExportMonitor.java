@@ -5,6 +5,8 @@ import com.xavier.backend.shared.exception.ConflictException;
 import com.xavier.backend.shared.exception.NotFoundException;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -66,7 +68,8 @@ public class ExportMonitor implements AlertSource {
         T result;
         try {
             result = export.get();
-        } catch (AccessDeniedException | BusinessRuleException | NotFoundException | ConflictException refusal) {
+        } catch (AccessDeniedException | BusinessRuleException | NotFoundException | ConflictException
+                 | ExportAborted refusal) {
             throw refusal;
         } catch (RuntimeException e) {
             lastFailure.merge(kind, clock.instant(), (a, b) -> a.isAfter(b) ? a : b);
@@ -75,6 +78,22 @@ public class ExportMonitor implements AlertSource {
         }
         count(kind, "success");
         return result;
+    }
+
+    /**
+     * The exception for a download the client cancelled (its writer failed): {@link #monitor} rethrows it without
+     * counting or alerting, as it is neither a failure nor a success of the export.
+     */
+    public static RuntimeException aborted(IOException cause) {
+        return new ExportAborted(cause);
+    }
+
+    /** A cancelled download; still an {@link UncheckedIOException} for the caller. */
+    private static final class ExportAborted extends UncheckedIOException {
+
+        private ExportAborted(IOException cause) {
+            super(cause);
+        }
     }
 
     /** One installation-wide WARNING per kind whose last failure is at most 24 h before {@code now}, in no order. */

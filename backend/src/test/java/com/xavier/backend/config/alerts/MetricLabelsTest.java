@@ -85,15 +85,17 @@ class MetricLabelsTest {
         rogue.counter("print_retries", "status", UUID.randomUUID().toString()).increment();
         rogue.counter("jvm.custom", "id", UUID.randomUUID().toString()).increment();
         rogue.counter("payments", "store", UUID.randomUUID().toString()).increment();
+        rogue.counter("disk.free", "path", "/builds/" + UUID.randomUUID() + "/backend/.").increment();
 
         assertThat(violations(rogue)).hasSize(4).anyMatch(v -> v.contains("orders_confirmed") && v.contains("order"))
                 .anyMatch(v -> v.contains("print_retries")).anyMatch(v -> v.contains("jvm.custom"))
-                .noneMatch(v -> v.startsWith("payments"));
+                .noneMatch(v -> v.startsWith("payments"))
+                .as("a checkout path is not an id").noneMatch(v -> v.startsWith("disk.free"));
     }
 
     /**
      * Every application meter's tag keys are among {@link #APPLICATION_KEYS}; only a {@code store} tag may hold an
-     * id-shaped value, on any meter.
+     * id-shaped value, on any meter (Spring's {@code disk.*} {@code path} is a directory, which may hold a UUID).
      */
     static List<String> violations(MeterRegistry registry) {
         List<String> violations = new ArrayList<>();
@@ -104,7 +106,8 @@ class MetricLabelsTest {
                 if (!framework && !APPLICATION_KEYS.contains(tag.getKey())) {
                     violations.add(name + ": key " + tag.getKey() + " is not an allowed label");
                 }
-                if (!tag.getKey().equals("store") && UUID_SHAPED.matcher(tag.getValue()).find()) {
+                boolean checkoutPath = name.startsWith("disk.") && tag.getKey().equals("path");
+                if (!tag.getKey().equals("store") && !checkoutPath && UUID_SHAPED.matcher(tag.getValue()).find()) {
                     violations.add(name + ": " + tag.getKey() + " holds an id");
                 }
             }

@@ -1,6 +1,7 @@
 package com.xavier.backend.config.alerts;
 
 import com.xavier.backend.TestcontainersConfiguration;
+import com.xavier.backend.audit.repository.AuditEventRepository;
 import com.xavier.backend.cash.CashFixtures;
 import com.xavier.backend.customers.CustomersFixtures;
 import com.xavier.backend.dining.DiningFixtures;
@@ -34,8 +35,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 /**
  * One cached full-application context for the S61 alert, health, scrape and metric-label tests: a real server with
  * the management port, the scrape token file of {@code src/test/resources/config/metrics-token.txt}, the settlement
- * and production fixtures (to seed an order, a payment, a print job and a document), spies on the report and
- * inventory reads (to force an export failure), and three test alert sources: fixed alerts of two stores and of the
+ * and production fixtures (to seed an order, a payment, a print job and a document), spies on the report,
+ * inventory and audit reads (to force an export failure), and three test alert sources: fixed alerts of two stores and of the
  * installation, a source that always fails, and one that counts its calls. The clock is {@link SettlementTestClock}.
  */
 @Target(ElementType.TYPE)
@@ -63,7 +64,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
         OrdersFixtures.class, CashFixtures.class, FiscalFixtures.class, CustomersFixtures.class,
         SettlementFixtures.class, ProductionFixtures.class, SettlementTestClock.Config.class,
         FakePaymentProvider.Config.class})
-@MockitoSpyBean(types = {ReportService.class, InventoryQueries.class})
+@MockitoSpyBean(types = {ReportService.class, InventoryQueries.class, AuditEventRepository.class})
 public @interface AlertsIntegrationTest {
 
     String STORE_A = "0190a000-0000-7000-8000-0000000061aa";

@@ -66,7 +66,8 @@ class FrozenConfigurationNamesTest {
         assertThat(environment.getProperty("restaurantpro.security.mfa.mode")).isEqualTo("OFF");
         assertThat(environment.getProperty("restaurantpro.security.mfa.step-up-max-age")).isEqualTo("PT15M");
         assertThat(environment.getProperty("restaurantpro.security.mfa.key-file")).isEmpty();
-        assertThat(environment.getProperty("restaurantpro.security.lan-cidrs")).isEmpty();
+        assertThat(environment.getProperty("restaurantpro.security.lan-cidrs")).as("the D140 list")
+                .isEqualTo("127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7,fe80::/10");
         assertThat(environment.getProperty("restaurantpro.security.oidc.enabled")).isEqualTo("false");
         assertThat(environment.getProperty("restaurantpro.security.oidc.issuer-uri")).isEmpty();
         assertThat(environment.getProperty("restaurantpro.security.oidc.client-id")).isEmpty();

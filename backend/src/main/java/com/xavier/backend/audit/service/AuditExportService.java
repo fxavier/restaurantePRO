@@ -8,7 +8,6 @@ import com.xavier.backend.audit.model.dto.AuditFilter;
 import com.xavier.backend.audit.repository.AuditEventRepository;
 import com.xavier.backend.shared.ops.ExportMonitor;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.io.Writer;
 import java.time.Clock;
 import java.time.Instant;
@@ -78,7 +77,8 @@ public class AuditExportService {
 
     /**
      * RFC 4180 CSV (CRLF, quoted where needed), newest first; a field that a spreadsheet would run is defused. Counted
-     * by {@link ExportMonitor} (kind {@code audit_csv}, D150): a download that breaks is a failed export.
+     * by {@link ExportMonitor} (kind {@code audit_csv}, D150): a failure reading the rows counts; a download the
+     * client cancelled (the writer fails) does not.
      */
     @Transactional(readOnly = true)
     public void writeCsv(AuditExport export, Writer out) {
@@ -90,7 +90,7 @@ public class AuditExportService {
                 }
                 out.flush();
             } catch (IOException e) {
-                throw new UncheckedIOException(e);
+                throw ExportMonitor.aborted(e); // only the response writer throws it: the client went away
             }
             return null;
         });

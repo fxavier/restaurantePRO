@@ -104,6 +104,20 @@ class CashDiscrepancyAlertSourceTest {
     }
 
     @Test
+    void aRejectedClosingIsNotCounted() throws Exception {
+        UUID closing = fixtures.submittedClosing(operator, register, day);
+        mvc.perform(idem(post(CashFixtures.BO_CLOSINGS + "/" + closing + "/reject"))
+                        .with(CashFixtures.account(store, Permission.CASH_CLOSING_APPROVE))
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"reason": "recount the coins"}"""))
+                .andExpect(status().isOk());
+
+        source.refresh();
+
+        assertThat(ofStore(source.alerts())).isEmpty();
+    }
+
+    @Test
     void aDraftIsNotCounted() throws Exception {
         mvc.perform(idem(post(CashFixtures.POS_CLOSINGS)).with(operator.with(Permission.CASH_OPERATE))
                         .contentType(MediaType.APPLICATION_JSON)

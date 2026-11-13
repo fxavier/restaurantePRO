@@ -3,11 +3,13 @@ package com.xavier.backend.config.alerts;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.doThrow;
 
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.WithActor;
 import com.xavier.backend.audit.model.dto.AuditFilter;
+import com.xavier.backend.audit.repository.AuditEventRepository;
 import com.xavier.backend.audit.service.AuditExport;
 import com.xavier.backend.audit.service.AuditExportService;
 import com.xavier.backend.cash.CashFixtures;
@@ -23,6 +25,7 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.io.StringWriter;
 import java.io.Writer;
 import java.time.Clock;
 import java.time.Duration;
@@ -37,7 +40,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 /**
  * A63, D150 EXPORT_FAILED: a failure in each of the three CSV exports (report, audit, inventory) is counted in
  * {@code exports_total{kind, outcome="failure"}} and raises the installation-wide warning naming its kind. The report
- * and inventory reads are spies made to throw; the audit download gets a writer that breaks.
+ * inventory and audit reads are spies made to throw. A download the client cancels is not a failure.
  */
 @AlertsIntegrationTest
 @WithActor(permissions = {Permission.REPORT_EXPORT, Permission.REPORT_VIEW, Permission.INVENTORY_VIEW,
@@ -58,6 +61,9 @@ class ExportFailureAlertTest {
 
     @Autowired
     AuditExportService auditExports;
+
+    @Autowired
+    AuditEventRepository auditEvents;
 
     @Autowired
     ExportMonitor monitor;
@@ -107,15 +113,31 @@ class ExportFailureAlertTest {
 
     @Test
     void aFailedAuditExportIsCountedAndAlerted() {
-        AuditExport export = auditExports.start(new AuditFilter(store, clock.instant().minus(Duration.ofHours(1)),
-                clock.instant(), null, null, null, null, null));
+        doThrow(new IllegalStateException("forced")).when(auditEvents).streamMatching(any(), any(), anyBoolean(),
+                any(), any(), any(), any(), any(), any());
+        AuditExport export = auditExports.start(lastHour());
+        double before = failures(ExportMonitor.AUDIT_CSV);
+
+        assertThatThrownBy(() -> auditExports.writeCsv(export, new StringWriter())).hasMessageContaining("forced");
+
+        assertThat(failures(ExportMonitor.AUDIT_CSV)).isEqualTo(before + 1);
+        assertAlerted(ExportMonitor.AUDIT_CSV);
+    }
+
+    @Test
+    void aDownloadTheClientCancelledIsNotAFailedExport() {
+        AuditExport export = auditExports.start(lastHour());
         double before = failures(ExportMonitor.AUDIT_CSV);
 
         assertThatThrownBy(() -> auditExports.writeCsv(export, new BrokenWriter()))
                 .isInstanceOf(UncheckedIOException.class);
 
-        assertThat(failures(ExportMonitor.AUDIT_CSV)).isEqualTo(before + 1);
-        assertAlerted(ExportMonitor.AUDIT_CSV);
+        assertThat(failures(ExportMonitor.AUDIT_CSV)).isEqualTo(before);
+    }
+
+    private AuditFilter lastHour() {
+        return new AuditFilter(store, clock.instant().minus(Duration.ofHours(1)), clock.instant(), null, null, null,
+                null, null);
     }
 
     private void assertAlerted(String kind) {
