@@ -1,7 +1,9 @@
 package com.xavier.backend.catalog.model;
 
 import com.xavier.backend.catalog.exception.IllegalReleaseStateException;
+import com.xavier.backend.catalog.model.dto.ExcludedItem;
 import com.xavier.backend.catalog.model.dto.ReleaseSummary;
+import com.xavier.backend.catalog.model.dto.ReleaseValidationWarning;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -10,6 +12,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import org.hibernate.annotations.ColumnTransformer;
@@ -56,6 +59,11 @@ public class ConfigurationRelease {
 
     private Instant retiredAt;
 
+    /** The warnings of the last validation (D147), a JSON array; {@code null} before the first one. */
+    @Column(columnDefinition = "jsonb")
+    @ColumnTransformer(write = "CAST(? AS jsonb)")
+    private String validationWarnings;
+
     @Version
     private Long lockVersion;
 
@@ -82,11 +90,16 @@ public class ConfigurationRelease {
         requireStatus("publish", Set.of(ReleaseStatus.VALIDATED));
     }
 
-    /** The working copy passed validation. Allowed again on a VALIDATED release after more edits. */
-    public void markValidated(Instant now) {
+    /**
+     * The working copy passed validation. Allowed again on a VALIDATED release after more edits.
+     *
+     * @param warningsJson the validation's warnings as a JSON array (D147)
+     */
+    public void markValidated(Instant now, String warningsJson) {
         requireValidatable();
         status = ReleaseStatus.VALIDATED;
         validatedAt = now;
+        validationWarnings = warningsJson;
     }
 
     public void publish(long catalogVersion, String snapshot, UUID publishedBy, Instant now) {
@@ -112,9 +125,14 @@ public class ConfigurationRelease {
         }
     }
 
-    public ReleaseSummary toSummary() {
+    /** {@code warnings}: the stored {@link #getValidationWarnings()}, parsed by the caller. */
+    public ReleaseSummary toSummary(List<ExcludedItem> excludedItems, List<ReleaseValidationWarning> warnings) {
         return new ReleaseSummary(id, storeId, status.name(), catalogVersion, effectiveAt, publishedBy, createdBy,
-                createdAt, validatedAt, retiredAt);
+                createdAt, validatedAt, retiredAt, excludedItems, warnings);
+    }
+
+    public String getValidationWarnings() {
+        return validationWarnings;
     }
 
     public UUID getId() {

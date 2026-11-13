@@ -27,7 +27,7 @@ class ConfigurationReleaseTest {
     @Test
     void publishingAValidatedReleaseFreezesSnapshotVersionInstantAndAuthor() {
         ConfigurationRelease release = ConfigurationRelease.draft(STORE, AUTHOR, T0);
-        release.markValidated(T0.plusSeconds(1));
+        release.markValidated(T0.plusSeconds(1), "[]");
         UUID publisher = UUID.randomUUID();
 
         release.publish(3, "{\"items\":[]}", publisher, T0.plusSeconds(2));
@@ -52,9 +52,9 @@ class ConfigurationReleaseTest {
     @Test
     void aValidatedReleaseCanBeValidatedAgainAfterTheWorkingCopyChanged() {
         ConfigurationRelease release = ConfigurationRelease.draft(STORE, AUTHOR, T0);
-        release.markValidated(T0);
+        release.markValidated(T0, "[]");
 
-        release.markValidated(T0.plusSeconds(5));
+        release.markValidated(T0.plusSeconds(5), "[]");
 
         assertThat(release.getStatus()).isEqualTo(ReleaseStatus.VALIDATED);
     }
@@ -68,7 +68,7 @@ class ConfigurationReleaseTest {
         assertThat(release.getStatus()).isEqualTo(ReleaseStatus.RETIRED);
         assertThat(release.getSnapshot()).isEqualTo("{}"); // the frozen facts stay
         assertThatThrownBy(() -> release.retire(T0)).isInstanceOf(IllegalReleaseStateException.class);
-        assertThatThrownBy(() -> release.markValidated(T0)).isInstanceOf(IllegalReleaseStateException.class);
+        assertThatThrownBy(() -> release.markValidated(T0, "[]")).isInstanceOf(IllegalReleaseStateException.class);
         assertThatThrownBy(() -> release.publish(9, "{}", AUTHOR, T0)).isInstanceOf(IllegalReleaseStateException.class);
         assertThatThrownBy(() -> ConfigurationRelease.draft(STORE, AUTHOR, T0).retire(T0))
                 .isInstanceOf(IllegalReleaseStateException.class);
@@ -78,7 +78,7 @@ class ConfigurationReleaseTest {
     void aPublishedReleaseCannotBeValidatedOrPublishedAgain() {
         ConfigurationRelease release = published();
 
-        assertThatThrownBy(() -> release.markValidated(T0)).isInstanceOf(IllegalReleaseStateException.class);
+        assertThatThrownBy(() -> release.markValidated(T0, "[]")).isInstanceOf(IllegalReleaseStateException.class);
         assertThatThrownBy(() -> release.publish(2, "{\"other\":1}", AUTHOR, T0))
                 .isInstanceOf(IllegalReleaseStateException.class);
         assertThat(release.getSnapshot()).isEqualTo("{}");
@@ -86,7 +86,7 @@ class ConfigurationReleaseTest {
 
     private static ConfigurationRelease published() {
         ConfigurationRelease release = ConfigurationRelease.draft(STORE, AUTHOR, T0);
-        release.markValidated(T0);
+        release.markValidated(T0, "[]");
         release.publish(1, "{}", AUTHOR, T0);
         return release;
     }

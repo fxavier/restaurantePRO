@@ -12,6 +12,7 @@ import com.xavier.backend.catalog.model.dto.PublishRequest;
 import com.xavier.backend.catalog.model.dto.ReleaseCreateRequest;
 import com.xavier.backend.catalog.model.dto.ReleaseSummary;
 import com.xavier.backend.catalog.model.dto.ReleaseValidationError;
+import com.xavier.backend.catalog.model.dto.ReleaseValidationWarning;
 import com.xavier.backend.catalog.model.event.CatalogPublished;
 import com.xavier.backend.catalog.repository.ConfigurationReleaseRepository;
 import com.xavier.backend.organization.OrganizationApi;
@@ -72,21 +73,25 @@ public class ReleaseService {
         ConfigurationRelease release = releases.saveAndFlush(
                 ConfigurationRelease.draft(request.storeId(), accessPolicy.current().userId(), clock.instant()));
         audit.record("CATALOG_RELEASE_CREATED", "ConfigurationRelease", release.getId(), release.getStoreId(), Map.of());
-        return release.toSummary();
+        return summary(release);
     }
 
-    /** Checks the working copy now; on success the release is VALIDATED, otherwise a 422 lists every problem. */
+    /**
+     * Checks the working copy now; on success the release is VALIDATED with the validation's warnings stored on it
+     * (D147), and the response lists the items the store excludes. Otherwise a 422 lists every problem.
+     */
     @Transactional
     public ReleaseSummary validate(UUID releaseId) {
         ConfigurationRelease release = release(releaseId);
         accessPolicy.require(Permission.CATALOG_MANAGE, release.getStoreId());
         release.requireValidatable();
         Instant now = clock.instant();
-        requireNoErrors(workingCopy.of(release.getStoreId(), now).errors());
-        release.markValidated(now);
+        WorkingCopy.View view = workingCopy.of(release.getStoreId(), now);
+        requireNoErrors(view.errors());
+        release.markValidated(now, json.writeValueAsString(view.warnings()));
         releases.saveAndFlush(release);
         audit.record("CATALOG_RELEASE_VALIDATED", "ConfigurationRelease", releaseId, release.getStoreId(), Map.of());
-        return release.toSummary();
+        return release.toSummary(view.excluded(), view.warnings());
     }
 
     /**
@@ -121,20 +126,20 @@ public class ReleaseService {
         auditPublication(release, previous, request);
         events.publishEvent(new CatalogPublished(storeId, releaseId, version, now));
         notifier.notifyAfterCommit(storeId, ChangeTopic.CATALOG, null); // store-wide: the POS re-reads its catalog
-        return release.toSummary();
+        return summary(release);
     }
 
     @Transactional(readOnly = true)
     public ReleaseSummary get(UUID releaseId) {
         ConfigurationRelease release = release(releaseId);
         accessPolicy.require(Permission.CATALOG_MANAGE, release.getStoreId());
-        return release.toSummary();
+        return summary(release);
     }
 
     @Transactional(readOnly = true)
     public PageResponse<ReleaseSummary> listForStore(UUID storeId, Pageable pageable) {
         accessPolicy.require(Permission.CATALOG_MANAGE, storeId);
-        return PageResponse.from(releases.findAllByStoreId(storeId, pageable).map(ConfigurationRelease::toSummary));
+        return PageResponse.from(releases.findAllByStoreId(storeId, pageable).map(this::summary));
     }
 
     private static void requireNoErrors(List<ReleaseValidationError> errors) {
@@ -153,6 +158,12 @@ public class ReleaseService {
             details.put("note", request.note());
         }
         audit.record("CATALOG_RELEASE_PUBLISHED", "ConfigurationRelease", release.getId(), release.getStoreId(), details);
+    }
+
+    private ReleaseSummary summary(ConfigurationRelease release) {
+        String warnings = release.getValidationWarnings();
+        return release.toSummary(List.of(), warnings == null ? List.of()
+                : List.of(json.readValue(warnings, ReleaseValidationWarning[].class)));
     }
 
     private ConfigurationRelease release(UUID id) {
