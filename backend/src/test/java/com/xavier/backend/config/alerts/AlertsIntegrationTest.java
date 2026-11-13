@@ -55,9 +55,16 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
         "restaurantpro.settlement.sweep-interval=PT1H",
         "restaurantpro.settlement.credit-sweep-interval=PT1H",
         "restaurantpro.settlement.in-doubt-poll-interval=PT1H",
-        // this context stays cached for the rest of the suite: its event recovery job must not resubmit other
-        // contexts' publications from the shared database (it first runs one interval after the start)
-        "restaurantpro.events.resubmit-interval=PT1H"
+        // this context stays cached for the rest of the suite, and full contexts run production scheduling: no job of
+        // it may claim, sweep or delete rows that other contexts' tests own in the shared database. Interval jobs
+        // first run one interval after the start (or are pushed to an hour); cron jobs are disabled with "-".
+        "restaurantpro.events.resubmit-interval=PT1H",
+        "restaurantpro.events.purge-cron=-",
+        "restaurantpro.production.worker.poll=PT1H",
+        "restaurantpro.dining.no-show-interval=PT1H",
+        "restaurantpro.idempotency.retention-cron=-",
+        "restaurantpro.identity.support-expiry-cron=-",
+        "restaurantpro.inventory.reconcile-cron=-"
 })
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, AlertsIntegrationTest.Sources.class, DiningFixtures.class,
