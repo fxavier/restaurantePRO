@@ -82,6 +82,18 @@ class ArchitectureTests {
         ArchitectureRules.onlySettlementCallsOrdersVoidLine("com.xavier.backend").check(PRODUCTION);
     }
 
+    /** D137: federation is identity's; config wires the filter chain. Nothing else imports OAuth2. */
+    @Test
+    void onlyIdentityAndConfigUseOAuth2() {
+        ArchitectureRules.onlyIdentityAndConfigUseOAuth2("com.xavier.backend").check(PRODUCTION);
+    }
+
+    /** D137: shared.ops is open to every module, so it depends on none. */
+    @Test
+    void sharedOpsDependsOnNoModule() {
+        ArchitectureRules.sharedOpsDependsOnNoModule("com.xavier.backend").check(PRODUCTION);
+    }
+
     /**
      * D35: orders ↛ settlement, production; cash ↛ orders, settlement; nothing → production. D65: fiscal ↛ customers;
      * customers ↛ orders, settlement, fiscal, cash, production; nothing → reporting. D99: promotions ↛ orders,

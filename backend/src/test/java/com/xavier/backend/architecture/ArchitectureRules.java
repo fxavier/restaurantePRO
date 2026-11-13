@@ -267,6 +267,32 @@ final class ArchitectureRules {
                         + "under order_settlement just before (D97)");
     }
 
+    /**
+     * D137/D144: federation (the only OAuth2 use) is an identity concern and config wires the filter chain, so no
+     * other class imports {@code org.springframework.security.oauth2..}.
+     */
+    static ArchRule onlyIdentityAndConfigUseOAuth2(String root) {
+        return noClasses()
+                .that().resideOutsideOfPackages(root + ".identity..", root + ".config..")
+                .should().dependOnClassesThat().resideInAPackage("org.springframework.security.oauth2..")
+                .as("only identity and config use OAuth2")
+                .because("federation is authentication only and lives in identity; config wires the filter chain "
+                        + "(D137, D144)");
+    }
+
+    /**
+     * D137/D149: {@code shared.ops} is in the OPEN kernel so every module can contribute an alert without a new edge;
+     * that only holds while it depends on no module (the shared kernel itself is fine).
+     */
+    static ArchRule sharedOpsDependsOnNoModule(String root) {
+        return noClasses()
+                .that().resideInAPackage(root + ".shared.ops..")
+                .should().dependOnClassesThat(resideInAPackage(root + "..")
+                        .and(DescribedPredicate.not(resideInAPackage(root + ".shared.."))))
+                .as("shared.ops depends on no module")
+                .because("every module implements AlertSource; a module type here would be a cycle (D137, D149)");
+    }
+
     private static boolean isFacadeOfAnotherModule(String root, String caller, JavaClass owner) {
         String rootPackage = owner.getPackageName();
         if (!rootPackage.startsWith(root + ".")) {

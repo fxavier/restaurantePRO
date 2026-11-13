@@ -1,20 +1,29 @@
 package com.xavier.backend.config;
 
+import com.xavier.backend.access.StepUpRequiredException;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.access.AccessDeniedHandler;
-import org.springframework.stereotype.Component;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Writes 401/403 decided by the security filter chain (before any controller runs) in the same
  * RFC 9457 shape the {@code GlobalExceptionHandler} uses for everything else (D22).
+ *
+ * <p>It also renders the D142 step-up refusal, wherever it is thrown: {@code shared}'s handler cannot know
+ * {@code access} types, so this advice runs before it ({@link Ordered#HIGHEST_PRECEDENCE}) for
+ * {@link StepUpRequiredException} only, and every other 403 keeps the plain shape.
  */
-@Component
+@RestControllerAdvice
+@Order(Ordered.HIGHEST_PRECEDENCE)
 class ProblemDetailResponder {
 
     private final JsonMapper json;
@@ -24,16 +33,30 @@ class ProblemDetailResponder {
     }
 
     AuthenticationEntryPoint unauthorized() {
-        return (request, response, e) -> write(response, HttpStatus.UNAUTHORIZED, "Authentication is required.");
+        return (request, response, e) -> write(response,
+                ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, "Authentication is required."));
     }
 
     AccessDeniedHandler forbidden() {
-        return (request, response, e) -> write(response, HttpStatus.FORBIDDEN, "You are not allowed to do this.");
+        return (request, response, e) -> write(response, e instanceof StepUpRequiredException stepUp
+                ? stepUpRequired(stepUp)
+                : ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "You are not allowed to do this."));
     }
 
-    private void write(HttpServletResponse response, HttpStatus status, String detail) throws IOException {
-        response.setStatus(status.value());
+    /** 403 with the stable {@code code} and, when stepping up can help, where to do it ({@code stepUpUri}). */
+    @ExceptionHandler(StepUpRequiredException.class)
+    ProblemDetail stepUpRequired(StepUpRequiredException e) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, e.getMessage());
+        problem.setProperty("code", e.code());
+        if (e.stepUpUri() != null) {
+            problem.setProperty("stepUpUri", e.stepUpUri());
+        }
+        return problem;
+    }
+
+    private void write(HttpServletResponse response, ProblemDetail problem) throws IOException {
+        response.setStatus(problem.getStatus());
         response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
-        json.writeValue(response.getOutputStream(), ProblemDetail.forStatusAndDetail(status, detail));
+        json.writeValue(response.getOutputStream(), problem);
     }
 }

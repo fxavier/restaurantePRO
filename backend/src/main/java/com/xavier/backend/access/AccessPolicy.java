@@ -1,5 +1,7 @@
 package com.xavier.backend.access;
 
+import java.time.Clock;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
@@ -39,6 +41,12 @@ import org.springframework.web.context.request.RequestContextHolder;
  *
  * <p>Company-wide data (customers, P38) uses {@link #requireInAnyStore}; a query that filters rows by store (audit,
  * reports) asks {@link #scopeOf} where the actor holds the permission.
+ *
+ * <p>Step-up (D142): {@code require}, {@code requireAny}, {@code requireInAnyStore} and {@code scopeOf}, after the
+ * permission check succeeds, refuse a BackOffice account whose granting permission is {@linkplain
+ * Permission#sensitive() sensitive} (for {@code requireAny}: every granting one) unless {@link AuthenticationAssurance}
+ * reports a second factor proved within its max age: {@link StepUpRequiredException} (403 {@code MFA_STEP_UP_REQUIRED}
+ * or {@code MFA_ENROLMENT_REQUIRED}). A missing permission is still the plain 403 first. POS sessions are never asked.
  */
 @Component
 public class AccessPolicy {
@@ -46,11 +54,17 @@ public class AccessPolicy {
     private static final Logger log = LoggerFactory.getLogger(AccessPolicy.class);
     private static final String ANY_STORE = "(any store)";
     private static final String ACTIVE_STORE_ATTRIBUTE = AccessPolicy.class.getName() + ".activeStore.";
+    private static final String ASSURANCE_ATTRIBUTE = AccessPolicy.class.getName() + ".assurance";
 
     private final ObjectProvider<StoreActivity> storeActivity;
+    private final ObjectProvider<AuthenticationAssurance> assurance;
+    private final Clock clock;
 
-    AccessPolicy(ObjectProvider<StoreActivity> storeActivity) {
+    AccessPolicy(ObjectProvider<StoreActivity> storeActivity, ObjectProvider<AuthenticationAssurance> assurance,
+                 Clock clock) {
         this.storeActivity = storeActivity;
+        this.assurance = assurance;
+        this.clock = clock;
     }
 
     public Actor current() {
@@ -74,12 +88,13 @@ public class AccessPolicy {
         return Optional.of(actor);
     }
 
-    /** Requires an installation-wide grant of {@code permission}. */
+    /** Requires an installation-wide grant of {@code permission}, then the step-up of D142 when it is sensitive. */
     public void require(Permission permission) {
         Actor actor = current();
         if (!actor.authorities().contains(permission.authority())) {
             throw denied(actor, permission, null);
         }
+        requireFreshSecondFactor(actor, permission.sensitive(), permission);
     }
 
     /** Requires {@code permission} in {@code storeId}, either store-scoped or installation-wide. */
@@ -90,6 +105,7 @@ public class AccessPolicy {
                 && !actor.authorities().contains(permission.authority(storeId))) {
             throw denied(actor, permission, storeId);
         }
+        requireFreshSecondFactor(actor, permission.sensitive(), permission);
     }
 
     /**
@@ -102,11 +118,14 @@ public class AccessPolicy {
             throw new IllegalArgumentException("at least one permission");
         }
         Actor actor = current();
-        boolean granted = Arrays.stream(permissions).anyMatch(p ->
-                actor.authorities().contains(p.authority()) || actor.authorities().contains(p.authority(storeId)));
-        if (!granted) {
+        List<Permission> granting = Arrays.stream(permissions)
+                .filter(p -> actor.authorities().contains(p.authority())
+                        || actor.authorities().contains(p.authority(storeId)))
+                .toList();
+        if (granting.isEmpty()) {
             throw denied(actor, permissions.length == 1 ? permissions[0] : List.of(permissions), storeId);
         }
+        requireFreshSecondFactor(actor, granting.stream().allMatch(Permission::sensitive), granting);
     }
 
     /**
@@ -134,6 +153,7 @@ public class AccessPolicy {
         if (!global && stores.isEmpty()) {
             throw denied(actor, permission, ANY_STORE, " in any store");
         }
+        requireFreshSecondFactor(actor, permission.sensitive(), permission);
         return new AccessScope(global, stores);
     }
 
@@ -216,6 +236,57 @@ public class AccessPolicy {
             throw new AccessDeniedException("Store " + storeId + " is inactive");
         }
         return new PosContext(actor.employeeId(), actor.terminalId(), storeId);
+    }
+
+    /**
+     * D142: after a successful check, a BackOffice account whose granting permission is sensitive needs a second
+     * factor proved within {@link AssuranceState#maxAge()}, when {@link AuthenticationAssurance} enforces it. A POS
+     * (PIN) session reaching a sensitive permission here, outside the POS gate, is refused while step-up is enforced
+     * (D142 amended, S55 review): it cannot prove a second factor. {@code requirePos*} never comes here, so POS use
+     * cases and approver PINs are unchanged.
+     */
+    private void requireFreshSecondFactor(Actor actor, boolean sensitive, Object permission) {
+        if (!sensitive) {
+            return;
+        }
+        AssuranceState state = assurance();
+        if (!state.enforced()) {
+            return;
+        }
+        if (actor.kind() != ActorKind.ACCOUNT) {
+            log.warn("Access denied: a POS session used a sensitive permission: employee={} terminal={} "
+                    + "permission={}", actor.employeeId(), actor.terminalId(), permission);
+            throw StepUpRequiredException.accountRequired();
+        }
+        if (!state.enrolled()) {
+            log.info("Step-up refused: no second factor enrolled: user={} permission={}", actor.userId(), permission);
+            throw StepUpRequiredException.enrolmentRequired();
+        }
+        Instant provedAt = state.secondFactorAt();
+        if (provedAt == null || provedAt.plus(state.maxAge()).isBefore(clock.instant())) {
+            log.info("Step-up required: user={} permission={} secondFactorAt={}", actor.userId(), permission,
+                    provedAt);
+            throw StepUpRequiredException.stepUpRequired();
+        }
+    }
+
+    /** The session's assurance, asked once per request; no {@link AuthenticationAssurance} bean = not enforced. */
+    private AssuranceState assurance() {
+        AuthenticationAssurance source = assurance.getIfAvailable();
+        if (source == null) {
+            return AssuranceState.NOT_ENFORCED;
+        }
+        RequestAttributes request = RequestContextHolder.getRequestAttributes();
+        if (request == null) {
+            return source.current();
+        }
+        Object cached = request.getAttribute(ASSURANCE_ATTRIBUTE, RequestAttributes.SCOPE_REQUEST);
+        if (cached instanceof AssuranceState known) {
+            return known;
+        }
+        AssuranceState state = source.current();
+        request.setAttribute(ASSURANCE_ATTRIBUTE, state, RequestAttributes.SCOPE_REQUEST);
+        return state;
     }
 
     private boolean storeIsActive(UUID storeId) {
