@@ -10,12 +10,14 @@ import com.xavier.backend.identity.exception.RoleNotFoundException;
 import com.xavier.backend.identity.exception.SupportAccountLinkedException;
 import com.xavier.backend.identity.exception.UserNotFoundException;
 import com.xavier.backend.identity.exception.UsernameTakenException;
+import com.xavier.backend.identity.model.MfaFactorStatus;
 import com.xavier.backend.identity.model.Role;
 import com.xavier.backend.identity.model.UserAccount;
 import com.xavier.backend.identity.model.dto.UserCreateRequest;
 import com.xavier.backend.identity.model.dto.UserSummary;
 import com.xavier.backend.identity.model.dto.UserUpdateRequest;
 import com.xavier.backend.identity.repository.EmployeeRepository;
+import com.xavier.backend.identity.repository.MfaFactorRepository;
 import com.xavier.backend.identity.repository.RoleRepository;
 import com.xavier.backend.identity.repository.UserAccountRepository;
 import com.xavier.backend.shared.persistence.OptimisticLocking;
@@ -29,6 +31,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -49,11 +52,13 @@ public class UserAccountService {
     private final AuditLog auditLog;
     private final SessionTermination sessions;
     private final EmployeeControl employeeControl;
+    private final MfaFactorRepository factors;
     private final Clock clock;
 
     UserAccountService(UserAccountRepository accounts, RoleRepository roles, EmployeeRepository employees,
                        PasswordEncoder encoder, AccessPolicy accessPolicy, AuditLog auditLog,
-                       SessionTermination sessions, EmployeeControl employeeControl, Clock clock) {
+                       SessionTermination sessions, EmployeeControl employeeControl, MfaFactorRepository factors,
+                       Clock clock) {
         this.accounts = accounts;
         this.roles = roles;
         this.employees = employees;
@@ -62,6 +67,7 @@ public class UserAccountService {
         this.auditLog = auditLog;
         this.sessions = sessions;
         this.employeeControl = employeeControl;
+        this.factors = factors;
         this.clock = clock;
     }
 
@@ -81,7 +87,7 @@ public class UserAccountService {
                 ? supportAccount(username, hash, request)
                 : UserAccount.open(username, hash, request.employeeId(), request.roleIds(), clock.instant()));
         audit("USER_CREATED", account);
-        return account.toSummary();
+        return account.toSummary(false);
     }
 
     @Transactional
@@ -109,19 +115,26 @@ public class UserAccountService {
         if (authoritiesMayShrink) {
             sessions.endAccountSessions(account.getId()); // its sessions hold the authorities resolved at login
         }
-        return account.toSummary();
+        return summary(account);
     }
 
     @Transactional(readOnly = true)
     public UserSummary get(UUID id) {
         accessPolicy.require(Permission.USER_MANAGE);
-        return account(id).toSummary();
+        return summary(account(id));
     }
 
     @Transactional(readOnly = true)
     public PageResponse<UserSummary> list(Pageable pageable) {
         accessPolicy.require(Permission.USER_MANAGE);
-        return PageResponse.from(accounts.findAll(pageable).map(UserAccount::toSummary));
+        Page<UserAccount> page = accounts.findAll(pageable);
+        Set<UUID> enrolled = page.isEmpty() ? Set.of()
+                : factors.findEnrolledAmong(page.map(UserAccount::getId).toList());
+        return PageResponse.from(page.map(account -> account.toSummary(enrolled.contains(account.getId()))));
+    }
+
+    private UserSummary summary(UserAccount account) {
+        return account.toSummary(factors.existsByAccountIdAndStatus(account.getId(), MfaFactorStatus.ACTIVE));
     }
 
     /** Support accounts are an administrator's matter (D83): creating one needs {@code SUPPORT_ACCESS_MANAGE}. */

@@ -8,11 +8,15 @@ import com.xavier.backend.identity.model.dto.SessionView;
 import com.xavier.backend.identity.service.LoginService;
 import com.xavier.backend.identity.service.PasswordService;
 import com.xavier.backend.identity.service.PinChangeService;
+import com.xavier.backend.identity.service.MfaSessionAttributes;
 import com.xavier.backend.identity.service.PosLoginService;
+import com.xavier.backend.identity.service.RemoteAddresses;
 import com.xavier.backend.identity.service.SessionHandles;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
+import java.time.Instant;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -34,20 +38,23 @@ class AuthController {
     private final PasswordService passwords;
     private final PinChangeService pins;
     private final LoginSessions sessions;
+    private final RemoteAddresses addresses;
 
     AuthController(LoginService logins, PosLoginService posLogins, PasswordService passwords, PinChangeService pins,
-                   LoginSessions sessions) {
+                   LoginSessions sessions, RemoteAddresses addresses) {
         this.logins = logins;
         this.posLogins = posLogins;
         this.passwords = passwords;
         this.pins = pins;
         this.sessions = sessions;
+        this.addresses = addresses;
     }
 
     @PostMapping("/login")
     SessionView login(@Valid @RequestBody LoginRequest body, HttpServletRequest request,
                       HttpServletResponse response) {
-        SessionView session = logins.passwordLogin(body.username(), body.password(), request.getRemoteAddr());
+        SessionView session = logins.passwordLogin(body.username(), body.password(), request.getRemoteAddr(),
+                addresses.isRemote(request), body.enrolmentCode());
         return session.withSessionHandle(SessionHandles.of(sessions.start(session, request, response)));
     }
 
@@ -60,13 +67,20 @@ class AuthController {
         return session.withSessionHandle(SessionHandles.of(sessions.start(session, request, response)));
     }
 
-    /** The account's other sessions end; this one is restarted (new id) with the account's real authorities. */
+    /**
+     * The account's other sessions end; this one is restarted (new id) with the account's real authorities, or in the
+     * second-factor state the installation asks for (D141). A proved second factor carries over.
+     */
     @PostMapping("/password")
     SessionView changePassword(@Valid @RequestBody PasswordChangeRequest body, HttpServletRequest request,
                                HttpServletResponse response) {
+        HttpSession current = request.getSession(false);
+        Instant secondFactorAt = MfaSessionAttributes.secondFactorAt(current);
         SessionView session = passwords.change(body.currentPassword(), body.newPassword(),
-                request.getSession(false) == null ? null : request.getSession(false).getId());
-        return session.withSessionHandle(SessionHandles.of(sessions.start(session, request, response)));
+                current == null ? null : current.getId(), MfaSessionAttributes.state(current),
+                addresses.isRemote(request), secondFactorAt);
+        return session.withSessionHandle(SessionHandles.of(sessions.start(session, secondFactorAt, request,
+                response)));
     }
 
     /** After a manager's PIN reset: this POS session is restarted (new id) with the employee's authorities. */

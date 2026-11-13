@@ -128,10 +128,12 @@ final class ArchitectureRules {
     /**
      * Coded errors (stable {@code code}, extra properties) extend the shared NotFound/Conflict/BusinessRule
      * exceptions, which the GlobalExceptionHandler renders; module-local ErrorResponseException workarounds drifted
-     * (S7b). The one exception is a status that is none of 404/409/422 and needs a header: the 429 login throttle.
+     * (S7b). The exceptions are statuses that are none of 404/409/422: the 429 login throttle, and the second-factor
+     * refusals of R5 S56 (401, 403, 429 with {@code Retry-After}), one class with one factory per code.
      */
     static final ArchRule CODED_ERRORS_USE_THE_SHARED_EXCEPTIONS = noClasses()
             .that().doNotHaveFullyQualifiedName("com.xavier.backend.identity.exception.LoginThrottledException")
+            .and().doNotHaveFullyQualifiedName("com.xavier.backend.identity.exception.MfaRefusedException")
             .should().beAssignableTo(org.springframework.web.ErrorResponseException.class)
             .because("extend shared BusinessRuleException/ConflictException/NotFoundException with a code (S7b)");
 

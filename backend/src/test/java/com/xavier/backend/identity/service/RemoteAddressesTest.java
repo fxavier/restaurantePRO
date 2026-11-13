@@ -91,7 +91,7 @@ class RemoteAddressesTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"192.168.1.0/33", "fe80::/129", "192.168.1.0", "lan.example/24", "192.168.1.0/-1",
-            "192.168.1.0/x", ""})
+            "192.168.1.0/x"})
     void aMalformedRangeFailsAtStartup(String cidr) {
         assertThatThrownBy(() -> new RemoteAddresses(new LanProperties(List.of(cidr))))
                 .isInstanceOf(IllegalArgumentException.class);
@@ -107,6 +107,39 @@ class RemoteAddressesTest {
                 .withPropertyValues("restaurantpro.security.lan-cidrs=192.168.1.0/24")
                 .run(context -> assertThat(context.getBean(RemoteAddresses.class).isRemote(from("10.0.0.1")))
                         .isTrue());
+    }
+
+    @Test
+    void anEmptyValueMeansTheDefaultListNotNothing() {
+        // S61 maps RESTAURANTPRO_LAN_CIDRS with an empty default in application.yaml
+        new ApplicationContextRunner().withUserConfiguration(AddressesOnly.class)
+                .withPropertyValues("restaurantpro.security.lan-cidrs=")
+                .run(context -> {
+                    assertThat(context.getBean(LanProperties.class).lanCidrs())
+                            .isEqualTo(LanProperties.DEFAULT_LAN_CIDRS);
+                    assertThat(context.getBean(RemoteAddresses.class).isRemote(from("192.168.7.7"))).isFalse();
+                });
+        assertThat(new LanProperties(List.of(" ", "")).lanCidrs()).isEqualTo(LanProperties.DEFAULT_LAN_CIDRS);
+        assertThat(new LanProperties(null).lanCidrs()).isEqualTo(LanProperties.DEFAULT_LAN_CIDRS);
+    }
+
+    @Test
+    void theMfaPropertiesBindFromThePrdNames() {
+        new ApplicationContextRunner().withUserConfiguration(MfaPropertiesOnly.class)
+                .withPropertyValues("restaurantpro.security.mfa.mode=ALL_BACKOFFICE",
+                        "restaurantpro.security.mfa.step-up-max-age=PT5M",
+                        "restaurantpro.security.mfa.key-file=/run/secrets/mfa_key")
+                .run(context -> {
+                    var properties = context.getBean(com.xavier.backend.identity.mfa.MfaProperties.class);
+                    assertThat(properties.mode()).isEqualTo(com.xavier.backend.identity.mfa.MfaMode.ALL_BACKOFFICE);
+                    assertThat(properties.stepUpMaxAge()).isEqualTo(java.time.Duration.ofMinutes(5));
+                    assertThat(properties.keyFile()).hasToString("/run/secrets/mfa_key");
+                });
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    @EnableConfigurationProperties(com.xavier.backend.identity.mfa.MfaProperties.class)
+    static class MfaPropertiesOnly {
     }
 
     @Configuration(proxyBeanMethods = false)

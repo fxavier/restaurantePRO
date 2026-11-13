@@ -126,6 +126,24 @@ class SecretCipherTest {
                 });
     }
 
+    @Test
+    void emptyPlaceholdersMeanTheDefaults() {
+        // application.yaml (S61) maps RESTAURANTPRO_MFA_* with empty defaults
+        new ApplicationContextRunner().withUserConfiguration(CipherOnly.class)
+                .withPropertyValues("restaurantpro.security.mfa.mode=", "restaurantpro.security.mfa.step-up-max-age=",
+                        "restaurantpro.security.mfa.key-file=")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    MfaProperties properties = context.getBean(MfaProperties.class);
+                    assertThat(properties.mode()).isEqualTo(MfaMode.OFF);
+                    assertThat(properties.stepUpMaxAge()).isEqualTo(Duration.ofMinutes(15));
+                    assertThat(properties.keyFile()).isNull();
+                });
+        new ApplicationContextRunner().withUserConfiguration(CipherOnly.class)
+                .withPropertyValues("restaurantpro.security.mfa.mode=SENSITIVE", "restaurantpro.security.mfa.key-file=")
+                .run(context -> assertThat(context).hasFailed());
+    }
+
     @Configuration(proxyBeanMethods = false)
     @EnableConfigurationProperties(MfaProperties.class)
     @Import(SecretCipher.class)
