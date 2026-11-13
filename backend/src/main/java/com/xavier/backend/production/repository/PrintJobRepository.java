@@ -58,6 +58,33 @@ public interface PrintJobRepository extends JpaRepository<PrintJob, UUID>, JpaSp
     @Query("select j.status as status, count(j) as jobs from PrintJob j group by j.status")
     List<StatusCount> countGroupedByStatus();
 
+    /**
+     * D150 {@code PRINT_JOBS_ATTENTION}: per store, the FAILED or UNKNOWN jobs nobody resolved, created since
+     * {@code since} (the partial index {@code print_job_unresolved_ix}).
+     */
+    @Query("""
+            select new com.xavier.backend.production.repository.StoreJobCount(j.storeId, count(j), 0L, min(j.createdAt))
+            from PrintJob j
+            where j.status in (com.xavier.backend.production.model.PrintJobStatus.FAILED,
+                               com.xavier.backend.production.model.PrintJobStatus.UNKNOWN)
+              and j.resolution is null and j.createdAt >= :since
+            group by j.storeId""")
+    List<StoreJobCount> countUnresolvedSince(@Param("since") Instant since);
+
+    /**
+     * D150 {@code PRINT_QUEUE_STALLED}: per store, the QUEUED or RETRY_WAIT jobs on a NORMAL printer (on HOLD or
+     * IGNORE, waiting is intended), and how many of them were created before {@code lateBefore}.
+     */
+    @Query("""
+            select new com.xavier.backend.production.repository.StoreJobCount(j.storeId, count(j),
+                sum(case when j.createdAt < :lateBefore then 1L else 0L end), min(j.createdAt))
+            from PrintJob j, Printer p
+            where p.id = j.printerId and p.mode = com.xavier.backend.production.model.PrinterMode.NORMAL
+              and j.status in (com.xavier.backend.production.model.PrintJobStatus.QUEUED,
+                               com.xavier.backend.production.model.PrintJobStatus.RETRY_WAIT)
+            group by j.storeId""")
+    List<StoreJobCount> countWaitingOnNormalPrinters(@Param("lateBefore") Instant lateBefore);
+
     interface StatusCount {
 
         PrintJobStatus getStatus();
