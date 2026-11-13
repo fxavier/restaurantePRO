@@ -41,6 +41,10 @@ import com.xavier.backend.identity.exception.LoginThrottledException;
 import com.xavier.backend.identity.exception.MfaConflictException;
 import com.xavier.backend.identity.exception.MfaRefusedException;
 import com.xavier.backend.identity.exception.MfaRuleException;
+import com.xavier.backend.identity.oidc.exception.ExternalIdentityExistsException;
+import com.xavier.backend.identity.oidc.exception.ExternalIdentityNotFoundException;
+import com.xavier.backend.identity.oidc.exception.OidcUnavailableException;
+import com.xavier.backend.identity.oidc.exception.SupportAccountCannotLinkException;
 import com.xavier.backend.inventory.count.exception.CountConflictException;
 import com.xavier.backend.inventory.count.exception.CountRuleException;
 import com.xavier.backend.inventory.consumption.exception.ConsumptionConflictException;
@@ -156,6 +160,11 @@ class CodedErrorContractTest {
             Map.entry("mfa-enrolment-code-invalid", MfaRuleException::enrolmentCodeInvalid),
             Map.entry("mfa-self-reset", MfaRuleException::selfReset),
             Map.entry("mfa-reason-required", MfaRuleException::reasonRequired),
+            // R5 identity (S57): OIDC federation
+            Map.entry("oidc-unavailable", OidcUnavailableException::new),
+            Map.entry("external-identity-exists", ExternalIdentityExistsException::new),
+            Map.entry("support-account-cannot-link", SupportAccountCannotLinkException::new),
+            Map.entry("external-identity-not-found", () -> new ExternalIdentityNotFoundException(ID)),
             Map.entry("cash-rule", () -> new CashRuleViolationException(CashRule.DAY_NOT_OPEN,
                     "The cash day is not open.")),
             Map.entry("fiscal-pending", () -> new FiscalIssueFailedException(ID,
@@ -579,6 +588,19 @@ class CodedErrorContractTest {
         expect("mfa-self-reset", 422, "MFA_SELF_RESET",
                 "You cannot reset your own second factor. Use a recovery code instead.", "");
         expect("mfa-reason-required", 422, "REASON_REQUIRED", "A reason is required.", "");
+    }
+
+    /** R5 S57 (D144): OIDC federation. */
+    @Test
+    void oidcFederation() throws Exception {
+        expect("oidc-unavailable", 503, "OIDC_UNAVAILABLE",
+                "The identity provider cannot be reached. Try again later, or log in with your password.", "");
+        expect("external-identity-exists", 409, "EXTERNAL_IDENTITY_EXISTS",
+                "An identity-provider link already exists for this account or this identity. Remove it first.", "");
+        expect("support-account-cannot-link", 422, "SUPPORT_ACCOUNT_CANNOT_LINK",
+                "A support account cannot be linked to an identity provider.", "");
+        expect("external-identity-not-found", 404, "EXTERNAL_IDENTITY_NOT_FOUND",
+                "Account " + ID + " has no identity-provider link.", ",\"accountId\":\"" + ID + "\"");
     }
 
     /** D142 (amended, S55 review): a PIN session cannot step up, so its refusal names no step-up URI. */

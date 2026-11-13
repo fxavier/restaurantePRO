@@ -111,10 +111,22 @@ public class LoginService {
     }
 
     /**
+     * A login whose first factor an OpenID Provider proved (D144): the same second-factor rule as a password login
+     * ({@link MfaGate}, D140, D141), without an enrolment code (an OIDC callback carries none). The caller has already
+     * refused unlinked, inactive and support accounts.
+     *
+     * @throws com.xavier.backend.identity.exception.MfaRefusedException 403 {@code MFA_NOT_ENROLLED} where enrolling
+     *                                                                   needs an enrolment code
+     */
+    public SessionView federatedSession(UserAccount account, boolean remote) {
+        return mfaGate.atLogin(account, sessionOf(account), remote, null);
+    }
+
+    /**
      * The session a BackOffice account gets. While it must change its password it holds no permission at all:
      * every use case refuses it, and so does the actuator rule.
      */
-    SessionView sessionOf(UserAccount account) {
+    public SessionView sessionOf(UserAccount account) {
         Set<String> granted = account.isMustChangePassword() ? Set.of() : authorities.ofAccount(account);
         return SessionView.account(Actor.account(account.getId(), granted), account.getUsername(),
                 account.isMustChangePassword());
