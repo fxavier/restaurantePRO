@@ -6,6 +6,7 @@ import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.organization.OrganizationApi;
 import com.xavier.backend.production.exception.ProductionConflictException;
 import com.xavier.backend.production.exception.ProductionNotFoundException;
+import com.xavier.backend.production.model.PrintJob;
 import com.xavier.backend.production.model.PrintJobStatus;
 import com.xavier.backend.production.model.Printer;
 import com.xavier.backend.production.model.PrinterMode;
@@ -121,6 +122,9 @@ public class PrinterService {
         PrinterMode from = printer.getMode();
         printer.changeMode(request.mode(), target, clock.instant());
         printers.saveAndFlush(printer);
+        if (request.mode() != PrinterMode.NORMAL) {
+            failQueuedKicks(printer);
+        }
         int moved = target == null ? 0 : jobs.moveJobs(id, target.getId(),
                 EnumSet.of(PrintJobStatus.QUEUED, PrintJobStatus.RETRY_WAIT, PrintJobStatus.FAILED));
         Map<String, Object> details = new HashMap<>();
@@ -133,6 +137,18 @@ public class PrinterService {
         record("PRINTER_MODE_CHANGED", printer, details);
         notifier.notifyAfterCommit(storeId, ChangeTopic.PRINT_JOBS, null);
         return printer.toView();
+    }
+
+    /**
+     * D158 (amended 2026-11-13, S60 review): a printer leaving NORMAL fails its queued drawer kicks at once, before
+     * a REDIRECT moves anything: a kick is never held or sent to another till's drawer. A worker claiming one
+     * meanwhile makes this a version conflict (409).
+     */
+    private void failQueuedKicks(Printer printer) {
+        for (PrintJob kick : jobs.findQueuedKicks(printer.getId())) {
+            kick.failUnsent(clock.instant(), "PRINTER_NOT_NORMAL");
+            jobs.saveAndFlush(kick);
+        }
     }
 
     /** D42 (b): the printer's store only (404), then the permission (403), then the printer. */
