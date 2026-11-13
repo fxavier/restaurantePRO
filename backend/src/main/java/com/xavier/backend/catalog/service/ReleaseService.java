@@ -163,7 +163,7 @@ public class ReleaseService {
 
     private ReleaseSummary summary(ConfigurationRelease release) {
         String warnings = release.getValidationWarnings();
-        return release.toSummary(null, warnings == null ? List.of()
+        return release.toSummary(null, warnings == null ? null
                 : List.of(json.readValue(warnings, ReleaseValidationWarning[].class)));
     }
 

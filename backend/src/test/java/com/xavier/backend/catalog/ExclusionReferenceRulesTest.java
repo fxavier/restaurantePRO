@@ -153,7 +153,9 @@ class ExclusionReferenceRulesTest {
         JsonNode y = fixtures().item();
         priceAll(b, x, y);
         macro(x, y);
-        UUID release = id(publications().createDraft(b.store()));
+        JsonNode draft = publications().createDraft(b.store());
+        assertThat(draft.get("validationWarnings").isNull()).as("not validated yet").isTrue();
+        UUID release = id(draft);
         validate(b.store(), release).andExpect(status().isOk())
                 .andExpect(jsonPath("$.excludedItems.length()").value(0))
                 .andExpect(jsonPath("$.validationWarnings.length()").value(0));

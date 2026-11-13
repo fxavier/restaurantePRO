@@ -79,11 +79,29 @@ class ConfigurationReleaseConstraintsTest {
                 .isInstanceOf(DataAccessException.class).hasMessageContaining("immutable");
     }
 
+    @Test
+    void theWarningsOfAPublishedOrRetiredReleaseCannotBeRewritten() {
+        UUID release = UUID.randomUUID();
+        insertPublished(UUID.randomUUID(), release, 1);
+        String change = "UPDATE catalog.configuration_release SET validation_warnings = '[{\"code\": \"X\"}]'"
+                + " WHERE id = :id";
+
+        assertThatThrownBy(() -> jdbc.sql(change).param("id", release).update())
+                .isInstanceOf(DataAccessException.class).hasMessageContaining("immutable");
+        jdbc.sql("UPDATE catalog.configuration_release SET status = 'RETIRED', retired_at = now() WHERE id = :id")
+                .param("id", release).update();
+        assertThatThrownBy(() -> jdbc.sql(change).param("id", release).update())
+                .isInstanceOf(DataAccessException.class).hasMessageContaining("immutable");
+        assertThat(jdbc.sql("SELECT validation_warnings::text FROM catalog.configuration_release WHERE id = :id")
+                .param("id", release).query(String.class).single()).isEqualTo("[]");
+    }
+
     private void insertPublished(UUID store, UUID id, long version) {
         jdbc.sql("""
                         INSERT INTO catalog.configuration_release (id, store_id, status, catalog_version, snapshot,
-                            effective_at, published_by, created_by, created_at, lock_version)
-                        VALUES (:id, :store, 'PUBLISHED', :version, '{"items": []}', now(), :author, :author, now(), 0)""")
+                            effective_at, published_by, created_by, created_at, lock_version, validation_warnings)
+                        VALUES (:id, :store, 'PUBLISHED', :version, '{"items": []}', now(), :author, :author, now(), 0,
+                                '[]')""")
                 .param("id", id).param("store", store).param("version", version).param("author", UUID.randomUUID())
                 .update();
     }
