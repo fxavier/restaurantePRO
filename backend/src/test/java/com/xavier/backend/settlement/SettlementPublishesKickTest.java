@@ -12,17 +12,21 @@ import com.xavier.backend.customers.CustomersFixtures;
 import com.xavier.backend.identity.ApproverVerifier;
 import com.xavier.backend.settlement.SettlementFixtures.Sale;
 import com.xavier.backend.settlement.model.event.CashDrawerKickRequested;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.event.ApplicationEvents;
 import org.springframework.test.context.event.RecordApplicationEvents;
 
 /**
  * D158, P59, A66 (settlement half): a payment or a refund of a CASH-kind method recorded on a terminal publishes one
- * {@link CashDrawerKickRequested} with its own id as the source, in the recording transaction. A card (external
+ * {@link CashDrawerKickRequested} with its own id as the source and its recording time as {@code requestedAt}, in the
+ * recording transaction. A card (external
  * terminal) payment or refund and a credit sale publish none.
  */
 @SettlementModuleTest
@@ -41,6 +45,9 @@ class SettlementPublishesKickTest {
     @Autowired
     ApplicationEvents events;
 
+    @Autowired
+    JdbcClient jdbc;
+
     Sale sale;
 
     @BeforeEach
@@ -57,7 +64,7 @@ class SettlementPublishesKickTest {
         UUID payment = fixtures.paymentOf(sale.order());
 
         assertThat(kicksOf(sale.store())).singleElement().isEqualTo(new CashDrawerKickRequested("PAYMENT", payment,
-                sale.store(), sale.cashier().terminalId()));
+                sale.store(), sale.cashier().terminalId(), confirmedAt("payment", payment)));
     }
 
     @Test
@@ -91,8 +98,10 @@ class SettlementPublishesKickTest {
                 .andExpect(status().isCreated()));
 
         assertThat(kicksOf(sale.store())).containsExactly(
-                new CashDrawerKickRequested("PAYMENT", payment, sale.store(), sale.cashier().terminalId()),
-                new CashDrawerKickRequested("REFUND", refund, sale.store(), refunder.terminalId()));
+                new CashDrawerKickRequested("PAYMENT", payment, sale.store(), sale.cashier().terminalId(),
+                        confirmedAt("payment", payment)),
+                new CashDrawerKickRequested("REFUND", refund, sale.store(), refunder.terminalId(),
+                        confirmedAt("refund", refund)));
     }
 
     @Test
@@ -107,6 +116,12 @@ class SettlementPublishesKickTest {
                 UUID.randomUUID().toString()).andExpect(status().isCreated());
 
         assertThat(kicksOf(sale.store())).isEmpty();
+    }
+
+    /** When the payment or refund was recorded: the kick's {@code requestedAt} (D158 amended, S60 review). */
+    private Instant confirmedAt(String table, UUID id) {
+        return jdbc.sql("SELECT confirmed_at FROM settlement." + table + " WHERE id = ?").param(id)
+                .query(Timestamp.class).single().toInstant();
     }
 
     private java.util.List<CashDrawerKickRequested> kicksOf(UUID store) {

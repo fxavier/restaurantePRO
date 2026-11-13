@@ -19,6 +19,6 @@ public class DrawerKickListener {
 
     @ApplicationModuleListener
     public void on(CashDrawerKickRequested event) {
-        kicks.kick(event.sourceType(), event.sourceId(), event.storeId(), event.terminalId());
+        kicks.kick(event.sourceType(), event.sourceId(), event.storeId(), event.terminalId(), event.requestedAt());
     }
 }

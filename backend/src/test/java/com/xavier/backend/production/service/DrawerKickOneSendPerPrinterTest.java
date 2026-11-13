@@ -63,8 +63,8 @@ class DrawerKickOneSendPerPrinterTest {
         tx.executeWithoutResult(status -> {
             status.setRollbackOnly();
             jdbc.sql("UPDATE production.printer SET mode = 'NORMAL' WHERE id = ?").param(till.printer()).update();
-            service.kick("PAYMENT", UUID.randomUUID(), till.store(), till.terminal());
-            service.kick("REFUND", UUID.randomUUID(), till.store(), till.terminal());
+            service.kick("PAYMENT", UUID.randomUUID(), till.store(), till.terminal(), Instant.now());
+            service.kick("REFUND", UUID.randomUUID(), till.store(), till.terminal(), Instant.now());
 
             List<Dispatch> sends = onPrinter(queue.claimDue(ALL), till.printer());
 
@@ -86,7 +86,7 @@ class DrawerKickOneSendPerPrinterTest {
             jdbc.sql("UPDATE production.print_job SET status = 'PROCESSING', attempts = 1, started_at = now() "
                     + "WHERE id = ?").param(page).update();
             UUID payment = UUID.randomUUID();
-            service.kick("PAYMENT", payment, till.store(), till.terminal());
+            service.kick("PAYMENT", payment, till.store(), till.terminal(), Instant.now());
 
             assertThat(onPrinter(queue.claimDue(ALL), till.printer())).isEmpty();
             assertThat(fixtures.jobStatus(kicks.job(payment))).isEqualTo("QUEUED");
@@ -106,7 +106,7 @@ class DrawerKickOneSendPerPrinterTest {
             status.setRollbackOnly();
             jdbc.sql("UPDATE production.printer SET mode = 'NORMAL' WHERE id = ?").param(till.printer()).update();
             UUID payment = UUID.randomUUID();
-            service.kick("PAYMENT", payment, till.store(), till.terminal());
+            service.kick("PAYMENT", payment, till.store(), till.terminal(), Instant.now());
 
             assertThat(jobs.lockDue(Instant.now().plusSeconds(1), ALL)).extracting(PrintJob::getId)
                     .doesNotContain(kicks.job(payment));

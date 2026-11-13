@@ -16,6 +16,7 @@ import com.xavier.backend.production.ProductionFixtures;
 import com.xavier.backend.production.ProductionModuleTest;
 import com.xavier.backend.production.TcpFakePrinter;
 import com.xavier.backend.production.service.DrawerKickService;
+import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -98,7 +99,7 @@ class KickNotRepeatableTest {
     private UUID kickIn(Till till, String status) {
         UUID payment = UUID.randomUUID();
         tx.executeWithoutResult(s -> {
-            service.kick("PAYMENT", payment, till.store(), till.terminal());
+            service.kick("PAYMENT", payment, till.store(), till.terminal(), Instant.now());
             jdbc.sql("UPDATE production.print_job SET status = ?, attempts = 1, started_at = now(), "
                             + "last_error = 'NOT_CONNECTED' WHERE ticket_id IN "
                             + "(SELECT id FROM production.production_ticket WHERE source_id = ?)")

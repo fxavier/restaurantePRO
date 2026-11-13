@@ -57,7 +57,7 @@ class ManualDrawerKickTest {
             Till till = kicks.till(stores.newStore(), fake.host(), fake.port(), DrawerKicks.DRAWER);
             UUID employee = UUID.randomUUID();
 
-            UUID job = ProductionFixtures.id(open(till, employee, "{\"reason\": \"troco inicial\"}",
+            UUID job = ProductionFixtures.id(open(till, employee, "{\"reason\": \"  troco  \"}",
                     UUID.randomUUID().toString(), Permission.CASH_OPERATE)
                     .andExpect(status().isCreated())
                     .andExpect(jsonPath("$.printerId").value(till.printer().toString()))
@@ -70,7 +70,7 @@ class ManualDrawerKickTest {
                             SELECT * FROM audit.audit_event WHERE action = 'DRAWER_OPENED_MANUALLY' AND store_id = ?""")
                     .param(till.store()).query().singleRow();
             assertThat(audit).containsEntry("actor_id", employee).containsEntry("terminal_id", till.terminal())
-                    .containsEntry("reason", "troco inicial").containsEntry("entity_id", job.toString());
+                    .containsEntry("reason", "troco").containsEntry("entity_id", job.toString());
         }
     }
 

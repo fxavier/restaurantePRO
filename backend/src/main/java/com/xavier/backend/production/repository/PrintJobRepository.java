@@ -58,6 +58,14 @@ public interface PrintJobRepository extends JpaRepository<PrintJob, UUID>, JpaSp
             FOR UPDATE OF j SKIP LOCKED""", nativeQuery = true)
     List<PrintJob> lockDueKicks(@Param("limit") int limit);
 
+    /** D158: the QUEUED drawer kicks of a printer, which fail when it leaves NORMAL. */
+    @Query("""
+            select j from PrintJob j, ProductionTicket t
+            where t.id = j.ticketId and j.printerId = :printerId
+              and j.status = com.xavier.backend.production.model.PrintJobStatus.QUEUED
+              and t.sourceType = com.xavier.backend.production.model.TicketSource.DRAWER_KICK""")
+    List<PrintJob> findQueuedKicks(@Param("printerId") UUID printerId);
+
     /** PROCESSING jobs whose send started before {@code startedBefore}: a crash during the send. */
     @Query(value = """
             SELECT * FROM production.print_job
@@ -115,11 +123,16 @@ public interface PrintJobRepository extends JpaRepository<PrintJob, UUID>, JpaSp
         long getJobs();
     }
 
-    /** REDIRECT (D56): the undelivered jobs of {@code from} go to {@code to}; the version moves like an edit. */
+    /**
+     * REDIRECT (D56): the undelivered jobs of {@code from} go to {@code to}; the version moves like an edit. Never a
+     * drawer kick (D158): it opens only its own till's drawer.
+     */
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("""
             update PrintJob j set j.printerId = :to, j.version = j.version + 1
-            where j.printerId = :from and j.status in :statuses""")
+            where j.printerId = :from and j.status in :statuses
+              and not exists (select 1 from ProductionTicket t where t.id = j.ticketId
+                              and t.sourceType = com.xavier.backend.production.model.TicketSource.DRAWER_KICK)""")
     int moveJobs(@Param("from") UUID from, @Param("to") UUID to,
                  @Param("statuses") Collection<PrintJobStatus> statuses);
 }

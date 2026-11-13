@@ -2,6 +2,8 @@ package com.xavier.backend.production;
 
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.xavier.backend.settlement.model.event.CashDrawerKickRequested;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -9,7 +11,6 @@ import org.springframework.boot.test.context.TestComponent;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.transaction.support.TransactionTemplate;
-import com.xavier.backend.settlement.model.event.CashDrawerKickRequested;
 
 /**
  * Drawer-kick helpers (D158): a store whose terminal prints on a printer with a cash drawer, the kick event as
@@ -49,10 +50,10 @@ public class DrawerKicks {
         return new Till(store, terminal, printer);
     }
 
-    /** Settlement's event for a cash {@code sourceType} on the till, published and committed. */
+    /** Settlement's event for a cash {@code sourceType} recorded now on the till, published and committed. */
     public void requested(Till till, String sourceType, UUID sourceId) {
         tx.executeWithoutResult(status -> events.publishEvent(new CashDrawerKickRequested(sourceType, sourceId,
-                till.store(), till.terminal())));
+                till.store(), till.terminal(), Instant.now())));
     }
 
     /** Deliveries of the kick event about {@code sourceId} that the drawer-kick listener completed. */

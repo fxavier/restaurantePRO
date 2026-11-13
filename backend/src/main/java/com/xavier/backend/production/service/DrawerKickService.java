@@ -70,10 +70,13 @@ public class DrawerKickService {
 
     /**
      * Settlement's request for a cash payment or refund ({@code sourceType} PAYMENT or REFUND). A terminal with no
-     * printer, or a printer with no drawer, gets nothing (logged at INFO): a kick is never kept for later.
+     * printer, or a printer with no drawer, gets nothing (logged at INFO): a kick is never kept for later. Its 30 s
+     * window runs from {@code requestedAt}, the payment's or refund's recording (D158 amended, S60 review), so an
+     * event delivered late leaves a FAILED {@code KICK_EXPIRED} job and sends nothing; a publication stored without
+     * {@code requestedAt} ({@code null}) is expired at once.
      */
     @Transactional
-    public void kick(String sourceType, UUID sourceId, UUID storeId, UUID terminalId) {
+    public void kick(String sourceType, UUID sourceId, UUID storeId, UUID terminalId, Instant requestedAt) {
         if (tickets.existsBySourceTypeAndSourceIdAndDestination(TicketSource.DRAWER_KICK, sourceId, DESTINATION)) {
             return;
         }
@@ -88,7 +91,7 @@ public class DrawerKickService {
                     printer.get().getCode());
             return;
         }
-        issue(sourceType, sourceId, storeId, terminalId, printer.get());
+        issue(sourceType, sourceId, storeId, terminalId, printer.get(), requestedAt);
     }
 
     /**
@@ -111,7 +114,7 @@ public class DrawerKickService {
             throw new ProductionRuleViolationException(ProductionRule.NO_CASH_DRAWER,
                     "The receipt printer " + printer.getCode() + " has no cash drawer.");
         }
-        Kick kick = issue(MANUAL, UUID.randomUUID(), pos.storeId(), pos.terminalId(), printer);
+        Kick kick = issue(MANUAL, UUID.randomUUID(), pos.storeId(), pos.terminalId(), printer, clock.instant());
         auditLog.recordAsCurrentActor("DRAWER_OPENED_MANUALLY", "PrintJob", kick.job().getId().toString(),
                 pos.storeId(), null, reason.strip(), Map.of("printerId", printer.getId().toString()));
         return kick.job().toView(kick.ticket());
@@ -132,8 +135,12 @@ public class DrawerKickService {
     private record Kick(ProductionTicket ticket, PrintJob job) {
     }
 
-    /** The ticket and its job, on the terminal's own printer whatever its mode: the queue fails it if not NORMAL. */
-    private Kick issue(String sourceType, UUID sourceId, UUID storeId, UUID terminalId, Printer printer) {
+    /**
+     * The ticket and its job, on the terminal's own printer whatever its mode: the queue fails it if not NORMAL. The
+     * job is created as of {@code requestedAt}, which the queue's expiry measures from.
+     */
+    private Kick issue(String sourceType, UUID sourceId, UUID storeId, UUID terminalId, Printer printer,
+                       Instant requestedAt) {
         Instant now = clock.instant();
         TicketDraft draft = new TicketDraft(storeId, TicketSource.DRAWER_KICK, sourceId, DESTINATION,
                 JobKind.ORIGINAL, null, terminalId, Printout.kick("DRAWER KICK " + sourceType));
@@ -141,8 +148,12 @@ public class DrawerKickService {
                 ProductionTicket.create(draft, printer.getId(), false, now),
                 () -> ProductionConflictException.ticketExists(TicketSource.DRAWER_KICK, sourceId),
                 "production_ticket_source_uk");
-        PrintJob job = jobs.saveAndFlush(PrintJob.first(ticket.getId(), storeId, printer.getId(), JobKind.ORIGINAL,
-                now));
+        PrintJob job = PrintJob.first(ticket.getId(), storeId, printer.getId(), JobKind.ORIGINAL,
+                requestedAt != null ? requestedAt : now);
+        if (requestedAt == null) {
+            job.failUnsent(now, "KICK_EXPIRED");
+        }
+        job = jobs.saveAndFlush(job);
         notifier.notifyAfterCommit(storeId, ChangeTopic.PRINT_JOBS, job.getId());
         return new Kick(ticket, job);
     }

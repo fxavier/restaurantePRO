@@ -158,7 +158,7 @@ public class RefundService {
         events.publishEvent(new RefundRecorded(refund.getId(), refund.getStoreId()));
         if (kind == PaymentMethodKind.CASH) {
             events.publishEvent(new CashDrawerKickRequested("REFUND", refund.getId(), refund.getStoreId(),
-                    refund.getTerminalId()));
+                    refund.getTerminalId(), refund.getConfirmedAt()));
         }
         return refund.toView();
     }

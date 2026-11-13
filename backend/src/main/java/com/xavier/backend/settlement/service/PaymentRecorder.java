@@ -81,7 +81,7 @@ class PaymentRecorder {
         if (succeeded.getMethodKind() == PaymentMethodKind.CASH) {
             // an attempt always has its terminal (PaymentAttempt.start requires it)
             events.publishEvent(new CashDrawerKickRequested("PAYMENT", payment.getId(), payment.getStoreId(),
-                    succeeded.getTerminalId()));
+                    succeeded.getTerminalId(), payment.getConfirmedAt()));
         }
         if (payment.getTargetType() == TargetType.CREDIT_ACCOUNT) {
             events.publishEvent(new ReceiptSlipRequested(payment.getId(), payment.getStoreId(),

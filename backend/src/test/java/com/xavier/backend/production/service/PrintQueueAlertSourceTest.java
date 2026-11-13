@@ -160,7 +160,7 @@ class PrintQueueAlertSourceTest {
     /** A cash payment's kick on the till, created {@code age} ago, in the caller's transaction; its source. */
     private UUID kick(Till till, String age) {
         UUID payment = UUID.randomUUID();
-        drawerKicks.kick("PAYMENT", payment, till.store(), till.terminal());
+        drawerKicks.kick("PAYMENT", payment, till.store(), till.terminal(), Instant.now());
         jdbc.sql("""
                 UPDATE production.print_job SET created_at = now() - CAST(? AS interval)
                 WHERE ticket_id IN (SELECT id FROM production.production_ticket WHERE source_id = ?)""")

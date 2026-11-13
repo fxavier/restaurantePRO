@@ -8,6 +8,7 @@ import com.xavier.backend.production.DrawerKicks.Till;
 import com.xavier.backend.production.ProductionFixtures;
 import com.xavier.backend.production.ProductionModuleTest;
 import com.xavier.backend.production.TcpFakePrinter;
+import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -72,7 +73,7 @@ class DrawerKickExpiredAtClaimTest {
             Till till = kicks.till(stores.newStore(), fake.host(), fake.port(), DrawerKicks.DRAWER);
             UUID payment = UUID.randomUUID();
             tx.executeWithoutResult(status -> {
-                service.kick("PAYMENT", payment, till.store(), till.terminal());
+                service.kick("PAYMENT", payment, till.store(), till.terminal(), Instant.now());
                 jdbc.sql("UPDATE production.printer SET drawer_pin = NULL WHERE id = ?").param(till.printer())
                         .update();
             });
@@ -88,7 +89,7 @@ class DrawerKickExpiredAtClaimTest {
     private UUID agedKick(Till till, String age) {
         UUID payment = UUID.randomUUID();
         tx.executeWithoutResult(status -> {
-            service.kick("PAYMENT", payment, till.store(), till.terminal());
+            service.kick("PAYMENT", payment, till.store(), till.terminal(), Instant.now());
             jdbc.sql("""
                     UPDATE production.print_job SET created_at = created_at - CAST(? AS interval),
                         next_attempt_at = next_attempt_at - CAST(? AS interval)
