@@ -2,10 +2,12 @@ package com.xavier.backend.production.service;
 
 import com.xavier.backend.production.adapter.EscPosRenderer;
 import com.xavier.backend.production.adapter.SendOutcome;
+import com.xavier.backend.production.adapter.SendResult;
 import com.xavier.backend.production.model.PrintJob;
 import com.xavier.backend.production.model.PrintJobStatus;
 import com.xavier.backend.production.model.Printer;
 import com.xavier.backend.production.model.PrinterMode;
+import com.xavier.backend.production.model.PrinterProfile;
 import com.xavier.backend.production.model.ProductionTicket;
 import com.xavier.backend.production.repository.PrintJobRepository;
 import com.xavier.backend.production.repository.PrinterRepository;
@@ -72,10 +74,10 @@ public class PrintQueue {
             } else {
                 ProductionTicket ticket = tickets.findById(job.getTicketId()).orElseThrow();
                 job.claim(now);
+                PrinterProfile profile = printer.profile();
                 claimed.add(new Dispatch(job.getId(), printer.getId(), printer.address(), renderer.render(
-                        com.xavier.backend.production.model.Printout.plain(ticket.lines(), ticket.getQrPayload()),
-                        com.xavier.backend.production.model.PrinterProfile.DEFAULT, printer.getCodePage(),
-                        ticket.printsCopyMarkFor(job.getKind()))));
+                        ticket.printout(), profile, printer.getCodePage(), ticket.printsCopyMarkFor(job.getKind())),
+                        profile.statusProbe()));
             }
         }
         jobs.flush();
@@ -95,18 +97,27 @@ public class PrintQueue {
         return lost.size();
     }
 
+    /**
+     * The send's outcome, and what it learnt about the printer ({@code last_status}, D157; written without moving the
+     * printer's version, so it never conflicts with a BackOffice edit). A send that wrote nothing (refused, or the
+     * printer not ready) waits and retries; an interrupted one is UNKNOWN.
+     */
     @Transactional
-    public void record(UUID jobId, SendOutcome outcome) {
+    public void record(UUID jobId, SendResult result) {
         PrintJob job = jobs.findById(jobId).orElseThrow();
+        Instant now = clock.instant();
+        printers.recordStatus(job.getPrinterId(), result.printerStatus(), now);
+        SendOutcome outcome = result.outcome();
         if (job.getStatus() != PrintJobStatus.PROCESSING) {
             log.warn("Print job {} is {} already; its {} outcome is not recorded", jobId, job.getStatus(), outcome);
             return;
         }
-        Instant now = clock.instant();
-        switch (outcome) {
-            case ACCEPTED -> job.recordSent(now);
-            case NOT_CONNECTED -> job.recordNotConnected(now);
-            case INTERRUPTED_AFTER_WRITE -> job.recordInterrupted();
+        if (outcome == SendOutcome.ACCEPTED) {
+            job.recordSent(now);
+        } else if (outcome.nothingWritten()) {
+            job.recordNothingWritten(now, outcome.printerStatus());
+        } else {
+            job.recordInterrupted();
         }
         jobs.saveAndFlush(job);
         if (job.getStatus() == PrintJobStatus.FAILED || job.getStatus() == PrintJobStatus.UNKNOWN) {

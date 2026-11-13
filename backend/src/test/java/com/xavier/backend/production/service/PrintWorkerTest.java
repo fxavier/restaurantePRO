@@ -78,7 +78,7 @@ class PrintWorkerTest {
                 payloads.put(id, "job " + i);
                 printerOf.put(id, printer);
                 pendingByPrinter.computeIfAbsent(printer, p -> new ArrayDeque<>())
-                        .add(new Dispatch(id, printer, ADDRESS, payloads.get(id).getBytes()));
+                        .add(new Dispatch(id, printer, ADDRESS, payloads.get(id).getBytes(), false));
                 ids.add(id);
             }
             return ids;
@@ -107,7 +107,7 @@ class PrintWorkerTest {
         }
 
         @Override
-        public synchronized void record(UUID jobId, SendOutcome outcome) {
+        public synchronized void record(UUID jobId, SendResult result) {
             inFlight.remove(printerOf.get(jobId));
         }
     }

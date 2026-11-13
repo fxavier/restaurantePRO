@@ -9,7 +9,9 @@ import com.xavier.backend.production.exception.ProductionNotFoundException;
 import com.xavier.backend.production.model.PrintJobStatus;
 import com.xavier.backend.production.model.Printer;
 import com.xavier.backend.production.model.PrinterMode;
+import com.xavier.backend.production.model.PrinterProfile;
 import com.xavier.backend.production.model.dto.PrinterCreateRequest;
+import com.xavier.backend.production.model.dto.PrinterPresetView;
 import com.xavier.backend.production.model.dto.PrinterModeRequest;
 import com.xavier.backend.production.model.dto.PrinterUpdateRequest;
 import com.xavier.backend.production.model.dto.PrinterView;
@@ -63,6 +65,12 @@ public class PrinterService {
         return PageResponse.from(printers.findByStoreId(storeId, pageable).map(Printer::toView));
     }
 
+    /** The presets of D154; they only fill the form. */
+    public List<PrinterPresetView> presets() {
+        accessPolicy.requireInAnyStore(Permission.PRODUCTION_MANAGE);
+        return PrinterProfile.presets().stream().map(PrinterPresetView::from).toList();
+    }
+
     @Transactional
     public PrinterView create(PrinterCreateRequest request) {
         accessPolicy.require(Permission.PRODUCTION_MANAGE, request.storeId());
@@ -70,7 +78,7 @@ public class PrinterService {
             throw new ProductionNotFoundException("Store", request.storeId());
         }
         Printer printer = save(Printer.create(request.storeId(), request.code(), request.name(), request.host(),
-                request.port(), request.codePage(), clock.instant()));
+                request.port(), request.codePage(), request.profile(), clock.instant()));
         record("PRINTER_CREATED", printer, Map.of());
         return printer.toView();
     }
@@ -80,7 +88,7 @@ public class PrinterService {
         Printer printer = authorized(id);
         OptimisticLocking.requireVersion(Printer.class, id, printer.getVersion(), request.version());
         printer.update(request.code(), request.name(), request.host(), request.port(), request.codePage(),
-                request.active(), clock.instant());
+                request.profile(), request.active(), clock.instant());
         save(printer); // flush now: a concurrent writer fails here (409), and the response has the new version
         record("PRINTER_UPDATED", printer, Map.of("active", printer.isActive()));
         return printer.toView();

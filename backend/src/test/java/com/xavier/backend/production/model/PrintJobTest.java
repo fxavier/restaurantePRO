@@ -63,7 +63,7 @@ class PrintJobTest {
         Instant now = T0;
         for (long wait : new long[] {2, 4, 8, 16}) {
             job.claim(now);
-            job.recordNotConnected(now);
+            job.recordNothingWritten(now, "NOT_CONNECTED");
             assertThat(job.getStatus()).isEqualTo(PrintJobStatus.RETRY_WAIT);
             assertThat(job.getNextAttemptAt()).isEqualTo(now.plusSeconds(wait));
             assertThat(job.getLastError()).isEqualTo("NOT_CONNECTED");
@@ -71,7 +71,7 @@ class PrintJobTest {
         }
 
         job.claim(now);
-        job.recordNotConnected(now);
+        job.recordNothingWritten(now, "NOT_CONNECTED");
 
         assertThat(job.getAttempts()).isEqualTo(PrintJob.MAX_ATTEMPTS).isEqualTo(5);
         assertThat(job.getStatus()).isEqualTo(PrintJobStatus.FAILED);
@@ -161,7 +161,7 @@ class PrintJobTest {
                         job -> job.claim(T0)),
                 "sent", new Command(EnumSet.of(PrintJobStatus.PROCESSING), job -> job.recordSent(T0)),
                 "notConnected", new Command(EnumSet.of(PrintJobStatus.PROCESSING),
-                        job -> job.recordNotConnected(T0)),
+                        job -> job.recordNothingWritten(T0, "NOT_CONNECTED")),
                 "interrupted", new Command(EnumSet.of(PrintJobStatus.PROCESSING), job -> job.recordInterrupted()),
                 "lease", new Command(EnumSet.of(PrintJobStatus.PROCESSING), job -> job.expireLease()),
                 "acknowledge", new Command(EnumSet.of(PrintJobStatus.UNKNOWN), PrintJob::acknowledgePrinted),
@@ -197,14 +197,14 @@ class PrintJobTest {
             }
             case RETRY_WAIT -> {
                 PrintJob job = processing();
-                job.recordNotConnected(T0);
+                job.recordNothingWritten(T0, "NOT_CONNECTED");
                 yield job;
             }
             case FAILED -> {
                 PrintJob job = queued();
                 for (int i = 0; i < PrintJob.MAX_ATTEMPTS; i++) {
                     job.claim(T0);
-                    job.recordNotConnected(T0);
+                    job.recordNothingWritten(T0, "NOT_CONNECTED");
                 }
                 yield job;
             }
