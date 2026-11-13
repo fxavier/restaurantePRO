@@ -2,6 +2,7 @@ package com.xavier.backend.config;
 
 import com.xavier.backend.access.Permission;
 import jakarta.servlet.DispatcherType;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.health.actuate.endpoint.HealthEndpoint;
 import org.springframework.boot.security.autoconfigure.actuate.web.servlet.EndpointRequest;
@@ -9,6 +10,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.web.SecurityFilterChain;
 
@@ -29,6 +31,9 @@ import org.springframework.security.web.SecurityFilterChain;
  *   <li>Actuator (management port): {@code health} open, the rest needs {@link Permission#SYSTEM_MONITOR}.</li>
  *   <li>{@code ASYNC} and {@code ERROR} dispatches are permitted: the original request was already authorized
  *       (the SSE change stream, D60, completes on an async dispatch).</li>
+ *   <li>Optional OIDC federation (D144): when {@code restaurantpro.security.oidc.enabled=true}, identity contributes
+ *       an {@link AbstractHttpConfigurer} (its {@code oauth2Login} under the open {@code /api/v1/auth/oidc/**}),
+ *       applied to the API chain only. Otherwise there is none and no OIDC filter exists.</li>
  * </ul>
  */
 @Configuration(proxyBeanMethods = false)
@@ -50,8 +55,10 @@ class SecurityConfig {
     @Bean
     @Order(2)
     SecurityFilterChain apiSecurity(HttpSecurity http, ProblemDetailResponder problems,
-                                    @Value("${restaurantpro.dev.open-api-docs:false}") boolean openApiDocs)
+                                    @Value("${restaurantpro.dev.open-api-docs:false}") boolean openApiDocs,
+                                    ObjectProvider<AbstractHttpConfigurer<?, HttpSecurity>> federatedLogin)
             throws Exception {
+        federatedLogin.orderedStream().forEach(configurer -> applyTo(http, configurer));
         return commonDefaults(http, problems)
                 .authorizeHttpRequests(requests -> {
                     // the async re-dispatch of an SSE stream (D60) and error dispatches were authorized on the
@@ -64,6 +71,10 @@ class SecurityConfig {
                     requests.anyRequest().authenticated();
                 })
                 .build();
+    }
+
+    private static <C extends AbstractHttpConfigurer<?, HttpSecurity>> void applyTo(HttpSecurity http, C configurer) {
+        http.with(configurer, Customizer.withDefaults());
     }
 
     private static HttpSecurity commonDefaults(HttpSecurity http, ProblemDetailResponder problems) throws Exception {

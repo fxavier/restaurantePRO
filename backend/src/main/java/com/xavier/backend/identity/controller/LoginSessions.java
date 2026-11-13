@@ -58,7 +58,7 @@ import org.springframework.stereotype.Component;
  * </ol>
  */
 @Component
-class LoginSessions {
+public class LoginSessions {
 
     /** Session attribute: set while the account must change its password (see {@code MustChangeCredentialFilter}). */
     static final String MUST_CHANGE_PASSWORD = "identity.mustChangePassword";
@@ -100,8 +100,8 @@ class LoginSessions {
      * @param secondFactorAt when the session proved its second factor ({@code null}: not yet)
      * @return the id of the session that now holds the actor
      */
-    String start(SessionView view, Instant secondFactorAt, HttpServletRequest request,
-                 HttpServletResponse response) {
+    public String start(SessionView view, Instant secondFactorAt, HttpServletRequest request,
+                        HttpServletResponse response) {
         Actor actor = view.toActor();
         Authentication authentication = UsernamePasswordAuthenticationToken.authenticated(actor, null,
                 actor.authorities().stream().map(SimpleGrantedAuthority::new).toList());
