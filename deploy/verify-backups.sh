@@ -100,9 +100,11 @@ docker_root() { # Docker's root directory (db-data and pg-wal-archive live there
 }
 write_status() { # $1 the run's exit status; writes $status_file atomically; returns non-zero if it could not
   local code=$1 ok=false sdir tmp p n=0 sep="" fs fss=() root
-  ((code == 0)) && ok=true
+  if ((code == 0 && ${#problems[@]} == 0)); then ok=true; fi
   sdir="$(dirname "$status_file")"
-  mkdir -p "$sdir" && chmod 0755 "$sdir" || return 1
+  if [[ ! -d "$sdir" ]]; then # a new directory is 0755; an existing one keeps the installer's mode and owner
+    mkdir -p "$sdir" && chmod 0755 "$sdir" || return 1
+  fi
   tmp="$(mktemp "$status_file.tmp.XXXXXX")" || return 1
   {
     printf '{ "schemaVersion": %s,\n' "$STATUS_SCHEMA_VERSION"
@@ -148,6 +150,8 @@ on_exit() {
   if ((code != 0)); then
     if [[ -n "$DIE_MSG" ]]; then
       problems+=("$DIE_MSG")
+    elif ((code == 129 || code == 130 || code == 143)); then
+      problems+=("verify-backups.sh was stopped by a signal (exit $code) before it finished its checks")
     elif ((${#problems[@]} == 0)); then
       problems+=("verify-backups.sh stopped unexpectedly (exit $code)")
     fi
@@ -159,6 +163,11 @@ on_exit() {
   exit "$code"
 }
 trap on_exit EXIT
+# A signal ends the run with a non-zero status, so the status file says "ok": false (bash would otherwise run the
+# EXIT trap with the last command's status, often 0).
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 env_mode
 pitr="${pitr:-$dir/pitr}"

@@ -9,7 +9,7 @@
 #               published port, with the metrics_token secret and ./monitoring read-only
 #   config      promtool check config (prometheus.yml and the rule files it names): scrapes backend:8081
 #               /actuator/prometheus every 30 s with authorization.credentials_file = the metrics_token secret
-#   rules       promtool check rules; one rule per D150 code plus RestaurantProBackendDown; every rule has a
+#   rules       promtool check rules and promtool test rules (monitoring/alert-rules.test.yml); one rule per D150 code plus RestaurantProBackendDown; every rule has a
 #               severity (critical | warning) and a summary that templates no store label; every metric a rule
 #               uses is one of the names frozen in D150 (and every frozen name is used)
 #   status      verify-backups.sh in test mode against a fixture (backup directories, and a fake docker on PATH that
@@ -18,7 +18,7 @@
 #               filesystems, ok = no problems, no "/" in any value, mode 0644 in a 0755 directory, no temp file
 #   failure     a failing run (no off-box record, archiving off, many malformed files) exits non-zero and still
 #               writes "ok": false with path-free problems capped at 21 entries; a run that dies early (missing
-#               backup directory) still writes "ok": false
+#               backup directory), or that is killed by SIGTERM, still writes "ok": false
 #
 # Usage: deploy/test-monitoring.sh                    the checks (about a minute)
 #        MONITORING_FAULT=<step> deploy/test-monitoring.sh
@@ -201,6 +201,8 @@ rules="$WORK/monitoring/alert-rules.yml"
 if faulty; then sed -i.bak 's/^        expr: backup_problems > 0$/        expr: backup_problems >/' "$rules"; fi
 out="$(promtool -v "$WORK/monitoring:/etc/prometheus:ro" -- check rules /etc/prometheus/alert-rules.yml 2>&1)" \
   || fail "promtool check rules: $out"
+out="$(promtool -v "$WORK/monitoring:/etc/prometheus:ro" -- test rules /etc/prometheus/alert-rules.test.yml 2>&1)" \
+  || fail "promtool test rules: $(grep -vE '^\s*$' <<<"$out" | head -12 | tr '\n' ' ')"
 # One record per rule: alert<TAB>severity<TAB>code<TAB>summary<TAB>expr (multi-line expressions joined).
 awk '
   function flush() { if (alert != "") printf "%s\t%s\t%s\t%s\t%s\n", alert, sev, code, summary, expr; alert = sev = code = summary = expr = ""; inexpr = 0 }
@@ -237,7 +239,7 @@ unknown="$(comm -23 "$WORK/used.txt" "$WORK/frozen.txt" | tr '\n' ' ')"
 [[ -z "$unknown" ]] || fail "the rules use metrics outside the D150 table: $unknown"
 unused="$(comm -13 "$WORK/used.txt" "$WORK/frozen.txt" | tr '\n' ' ')"
 [[ -z "$unused" ]] || fail "D150 metrics no rule uses: $unused"
-ok "$(grep -m1 SUCCESS <<<"$out" | sed 's/^ *//'); every D150 code, severities, summaries, and only the $(wc -l <"$WORK/frozen.txt" | tr -d ' ') frozen metric names"
+ok "check rules and test rules pass; every D150 code, severities, summaries, and only the $(wc -l <"$WORK/frozen.txt" | tr -d ' ') frozen metric names"
 
 # ---------------------------------------------------------------------------------------------------------------
 # The fixture: backup.sh and basebackup.sh directories with fake ciphertext and sidecars (key-free checks only
@@ -274,7 +276,10 @@ case "${1:-}" in
       psql)
         sql="${!#}"
         case "$sql" in
-          "SHOW archive_mode") echo "${FAKE_ARCHIVE_MODE:-on}" ;;
+          "SHOW archive_mode")
+            # FAKE_HANG_PIDFILE: hang here (the pid is this process, the sleep after exec) until the test kills it.
+            if [[ -n "${FAKE_HANG_PIDFILE:-}" ]]; then echo "$$" >"$FAKE_HANG_PIDFILE"; exec sleep 300; fi
+            echo "${FAKE_ARCHIVE_MODE:-on}" ;;
           *archive_timeout*) echo t ;;
           *last_failed_wal*) ;;
           *failed_count*) echo 0 ;;
@@ -338,6 +343,12 @@ jq -e '.ok == true and .problems == [] and .lastLogicalBackupAt == "2026-11-11T0
   and .lastBaseBackupAt == "2026-11-11T04:00:00Z" and .lastOffboxSyncAt == "2026-11-12T10:00:00Z"
   and ([.filesystems[].name] | sort) == ["backups", "docker"]' "$status_file" >/dev/null \
   || fail "unexpected content for a healthy fixture: $(jq -c . "$status_file")"
+# An existing status directory keeps its mode and owner (the installer's chown); only a new one is made 0755.
+mkdir -m 750 "$WORK/ok/kept"
+verify "$WORK/ok" --dir "$WORK/ok/backups" --status-file "$WORK/ok/kept/backup-status.json" 2>"$WORK/verify.err" \
+  || fail "verify-backups.sh failed on a healthy fixture with an existing status directory"
+[[ "$(mode_of "$WORK/ok/kept")" == 750 ]] || fail "verify-backups.sh changed an existing status directory to mode $(mode_of "$WORK/ok/kept")"
+[[ "$(mode_of "$WORK/ok/kept/backup-status.json")" == 644 ]] || fail "the status file in an existing directory is not 0644"
 ok "a healthy run writes a schema-1 status file: $(jq -c '{ok, lastLogicalBackupAt, lastBaseBackupAt, lastOffboxSyncAt, filesystems: [.filesystems[].name]}' "$status_file")"
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -375,5 +386,24 @@ problem="$(status_problem "$status_file" | head -1)"
 jq -e '.ok == false and .problems == ["backup directory not found: missing"] and .lastLogicalBackupAt == null' "$status_file" >/dev/null \
   || fail "unexpected content after an early exit: $(jq -c . "$status_file")"
 ok "a run that dies early (exit $status) still writes ok false: $(jq -c .problems "$status_file")"
+# A run killed by a signal (the cron's timeout, a reboot) on an otherwise healthy fixture: never "ok": true.
+status_file="$WORK/ok/status-term/backup-status.json"
+hang="$WORK/hang.pid"
+env PATH="$WORK/bin:$PATH" FAKE_DOCKER_ROOT="$WORK/ok/docker-root" FAKE_HANG_PIDFILE="$hang" RESTAURANTPRO_ENVIRONMENT=test \
+  BACKUP_AGE_RECIPIENTS_FILE=/dev/null "$DEPLOY_DIR/verify-backups.sh" --container fake-postgres --dir "$WORK/ok/backups" \
+  --status-file "$status_file" 2>"$WORK/verify.err" &
+vpid=$!
+for _ in $(seq 1 300); do [[ -s "$hang" ]] && break; sleep 0.1; done # until the fake docker hangs
+[[ -s "$hang" ]] || { kill -KILL "$vpid" 2>/dev/null || true; fail "the run never reached the hanging fake docker"; }
+kill -TERM "$vpid"
+kill -TERM "$(cat "$hang")" 2>/dev/null || true # the hanging child, so the shell can act on the signal
+status=0
+wait "$vpid" || status=$?
+((status != 0)) || fail "verify-backups.sh exited 0 after SIGTERM"
+problem="$(status_problem "$status_file" | head -1)"
+[[ -z "$problem" ]] || fail "after SIGTERM: $problem"
+jq -e '.ok == false and (.problems | length) > 0' "$status_file" >/dev/null \
+  || fail "a run killed by SIGTERM wrote: $(jq -c '{ok, problems}' "$status_file")"
+ok "a run killed by SIGTERM (exit $status) writes ok false: $(jq -c .problems "$status_file")"
 
 echo "PASS: monitoring checks${fault:+ (MONITORING_FAULT=$fault was not caught)}" >&2

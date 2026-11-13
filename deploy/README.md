@@ -24,6 +24,7 @@ One stack per company (spec §2): Caddy (HTTPS on the LAN), the backend, and Pos
    : > secrets/oidc_client_secret                               # empty unless you enable single sign-on
    chmod 644 secrets/*           # 644, not 600: the containers read them as non-root users; the 700 directory protects them on the host
    ls -ld status                 # ships with the package, mode 755; if missing: mkdir -m 755 status
+   chown <backup user> status    # verify-backups.sh (run as the backup user) writes the status file there
    ```
 
    Then create `backup-recipients.txt` with the two public keys and pin the off-box host key, as described in "Backup encryption (production)" below. In production PostgreSQL refuses to start without that file. `.env`, `secrets/`, `status/` (except its `.gitkeep`), `backup-recipients.txt` and `offbox_known_hosts` are git-ignored. Never commit them. Compose refuses to start the backend if `status/` is missing, rather than letting Docker create it owned by root, where `verify-backups.sh` could not write. The `RESTAURANTPRO_BOOTSTRAP_*` values and `secrets/admin_initial_password` are consumed once, at the first start against an empty database (D30). After that, edit the company profile in the BackOffice. The admin must change the initial password at first login. After that login you may empty `secrets/admin_initial_password`, but keep the file: Compose needs it to start.
@@ -269,7 +270,7 @@ Do the same for `--wal-only` + `offbox-sync` (`OnCalendar=*:0/5`), the nightly b
 - the modes, the recipients and their fingerprint, no identity on the server;
 - `LAST_OFFBOX_SYNC` is at most 30 min old.
 
-Every run also writes `status/backup-status.json` (D151), which the backend reads for its alerts (see "Alerts"). It writes it atomically, mode 0644 in the 0755 `status/` directory, on every run, including the failing ones (`"ok": false`). The file holds instants, problem sentences and free space only: no path, host name, key or recipient. If the cron or the timer stops, the file ages and the backend raises `BACKUP_MONITOR_STALE` after 45 minutes. `--status-file FILE` (or `BACKUP_STATUS_FILE`) writes it elsewhere, for tests. `./verify-backups.sh --self-test` runs `./test-monitoring.sh --self-test` (see "Alerts").
+Every run also writes `status/backup-status.json` (D151), which the backend reads for its alerts (see "Alerts"). It writes it atomically, mode 0644, on every run, including the failing ones and a run stopped by a signal (`"ok": false`). It creates `status/` with mode 0755 only when it is missing; an existing one keeps its mode and owner, so give it to the backup user (`chown`, "First install"). The file holds instants, problem sentences and free space only: no path, host name, key or recipient. If the cron or the timer stops, the file ages and the backend raises `BACKUP_MONITOR_STALE` after 45 minutes. `--status-file FILE` (or `BACKUP_STATUS_FILE`) writes it elsewhere, for tests. `./verify-backups.sh --self-test` runs `./test-monitoring.sh --self-test` (see "Alerts").
 
 ### Restore checks
 
@@ -367,6 +368,7 @@ openssl rand -hex 32 | tr -d '\n' > secrets/metrics_token
 : > secrets/oidc_client_secret
 chmod 644 secrets/mfa_key secrets/metrics_token secrets/oidc_client_secret   # as the other secrets, in the 700 directory
 [ -d status ] || mkdir -m 755 status
+chown <backup user> status    # e.g. restaurantpro: verify-backups.sh writes status/backup-status.json there
 ```
 
 An `.env` from before R5 keeps the R4 behaviour: no second factor (`RESTAURANTPRO_MFA_MODE` defaults to `OFF` in Compose), no single sign-on. To turn on the second factor, set `RESTAURANTPRO_MFA_MODE=SENSITIVE` and your `RESTAURANTPRO_LAN_CIDRS` in `.env` and run `docker compose up -d`, then have every administrator enrol from the LAN before working from outside (from outside, enrolment needs an enrolment code; see "Second factor (MFA)"). Keep `secrets/mfa_key` as carefully as the database password: it is in every `backup.sh` archive (`secrets/`), and without it no enrolled factor can be read, so every account must be reset. Never change it on a running installation. After the upgrade, run `./verify-backups.sh` once by hand so the status file exists.

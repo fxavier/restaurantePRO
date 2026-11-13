@@ -40,6 +40,7 @@ PITR_NAME="$RUN_ID-restored"
 SSHD="$RUN_ID-sshd"
 SSHD_IMAGE="restaurantpro-drill-sshd:$RUN_ID"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/rp-crypt-drill.XXXXXX")"
+export BACKUP_STATUS_FILE="$WORK/status/backup-status.json" # verify-backups.sh never writes the checkout's deploy/status
 KEYS="$WORK/keys"
 BACKUPS="$WORK/backups"
 
