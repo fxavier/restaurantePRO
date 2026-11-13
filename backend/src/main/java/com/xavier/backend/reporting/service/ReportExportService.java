@@ -13,6 +13,7 @@ import com.xavier.backend.reporting.model.dto.SalesRow;
 import com.xavier.backend.reporting.model.dto.TaxRow;
 import com.xavier.backend.reporting.model.dto.VoidsRow;
 import com.xavier.backend.shared.Money;
+import com.xavier.backend.shared.ops.ExportMonitor;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -30,7 +31,8 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * A report as a CSV file (D86, P37): the same rows as its {@code GET} (with labels), then a {@code TOTAL} row. It
  * needs {@code REPORT_EXPORT} in the store, and {@code REPORT_VIEW} as the report itself does; each export is audited
- * {@code REPORT_EXPORTED} with its parameters and row count, committed with the export (§10).
+ * {@code REPORT_EXPORTED} with its parameters and row count, committed with the export (§10). Every export is counted
+ * by {@link ExportMonitor} (kind {@code report_csv}, D150).
  */
 @Service
 public class ReportExportService {
@@ -42,15 +44,21 @@ public class ReportExportService {
     private final AccessPolicy access;
     private final ReportService reports;
     private final AuditLog auditLog;
+    private final ExportMonitor exportMonitor;
 
-    ReportExportService(AccessPolicy access, ReportService reports, AuditLog auditLog) {
+    ReportExportService(AccessPolicy access, ReportService reports, AuditLog auditLog, ExportMonitor exportMonitor) {
         this.access = access;
         this.reports = reports;
         this.auditLog = auditLog;
+        this.exportMonitor = exportMonitor;
     }
 
     @Transactional
     public ReportFile export(ExportRequest request) {
+        return exportMonitor.monitor(ExportMonitor.REPORT_CSV, () -> csv(request));
+    }
+
+    private ReportFile csv(ExportRequest request) {
         Map<String, String> params = request.params();
         UUID storeId = parse(params, "storeId", UUID::fromString);
         access.require(Permission.REPORT_EXPORT, storeId);

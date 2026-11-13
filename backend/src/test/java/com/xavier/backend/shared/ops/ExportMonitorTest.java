@@ -52,7 +52,7 @@ class ExportMonitorTest {
 
         assertThat(csv).isEqualTo("a;b");
         assertThat(count("report_csv", "success")).isEqualTo(1.0);
-        assertThat(meters.find("exports").tag("outcome", "failure").counter()).isNull();
+        assertThat(count("report_csv", "failure")).isZero();
         assertThat(monitor.alerts()).isEmpty();
     }
 
@@ -65,7 +65,7 @@ class ExportMonitorTest {
         })).isSameAs(failure);
 
         assertThat(count("audit_csv", "failure")).isEqualTo(1.0);
-        assertThat(meters.find("exports").tag("outcome", "success").counter()).isNull();
+        assertThat(count("audit_csv", "success")).isZero();
         assertThat(monitor.alerts()).containsExactly(new OperationalAlert("EXPORT_FAILED", AlertSeverity.WARNING,
                 null, 1, T0, "The last audit_csv export failed."));
     }
@@ -104,7 +104,7 @@ class ExportMonitorTest {
             throw refusal;
         })).isSameAs(refusal);
 
-        assertThat(meters.find("exports").counters()).isEmpty();
+        assertThat(total()).isZero();
         assertThat(monitor.alerts()).isEmpty();
     }
 
@@ -135,7 +135,28 @@ class ExportMonitorTest {
         })).isInstanceOf(IllegalArgumentException.class);
 
         assertThat(ran).isFalse();
-        assertThat(meters.find("exports").counters()).isEmpty();
+        assertThat(meters.find("exports").counters()).extracting(counter -> counter.getId().getTag("kind"))
+                .doesNotContain("orders_of_customer_42");
+        assertThat(total()).isZero();
+    }
+
+    /**
+     * Prometheus's {@code increase()} needs a series to exist before its first increment, or the first failure after
+     * a restart is never seen: every kind × outcome is registered at 0 when the monitor is built.
+     */
+    @Test
+    void everyKindAndOutcomeExistsAtZeroFromTheStart() {
+        assertThat(meters.find("exports").counters())
+                .extracting(counter -> counter.getId().getTag("kind"), counter -> counter.getId().getTag("outcome"),
+                        Counter::count)
+                .containsExactlyInAnyOrder(
+                        tuple("report_csv", "success", 0.0), tuple("report_csv", "failure", 0.0),
+                        tuple("audit_csv", "success", 0.0), tuple("audit_csv", "failure", 0.0),
+                        tuple("inventory_csv", "success", 0.0), tuple("inventory_csv", "failure", 0.0));
+    }
+
+    private double total() {
+        return meters.find("exports").counters().stream().mapToDouble(Counter::count).sum();
     }
 
     private void fail(String kind) {

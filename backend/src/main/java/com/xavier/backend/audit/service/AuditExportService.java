@@ -6,6 +6,7 @@ import com.xavier.backend.audit.exception.AuditQueryException;
 import com.xavier.backend.audit.model.dto.AuditEventView;
 import com.xavier.backend.audit.model.dto.AuditFilter;
 import com.xavier.backend.audit.repository.AuditEventRepository;
+import com.xavier.backend.shared.ops.ExportMonitor;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.io.Writer;
@@ -40,14 +41,17 @@ public class AuditExportService {
     private final AuditLog auditLog;
     private final Clock clock;
     private final long maxRows;
+    private final ExportMonitor exportMonitor;
 
     AuditExportService(AuditEventRepository events, AuditAccess access, AuditLog auditLog, Clock clock,
-                       @Value("${restaurantpro.audit.export.max-rows:100000}") long maxRows) {
+                       @Value("${restaurantpro.audit.export.max-rows:100000}") long maxRows,
+                       ExportMonitor exportMonitor) {
         this.events = events;
         this.access = access;
         this.auditLog = auditLog;
         this.clock = clock;
         this.maxRows = maxRows;
+        this.exportMonitor = exportMonitor;
     }
 
     /**
@@ -72,18 +76,24 @@ public class AuditExportService {
         return new AuditExport(criteria);
     }
 
-    /** RFC 4180 CSV (CRLF, quoted where needed), newest first; a field that a spreadsheet would run is defused. */
+    /**
+     * RFC 4180 CSV (CRLF, quoted where needed), newest first; a field that a spreadsheet would run is defused. Counted
+     * by {@link ExportMonitor} (kind {@code audit_csv}, D150): a download that breaks is a failed export.
+     */
     @Transactional(readOnly = true)
     public void writeCsv(AuditExport export, Writer out) {
-        try (Stream<AuditEventView> rows = export.criteria.stream(events)) {
-            out.write(HEADER + LINE_END);
-            for (Iterator<AuditEventView> it = rows.iterator(); it.hasNext(); ) {
-                out.write(line(it.next()));
+        exportMonitor.monitor(ExportMonitor.AUDIT_CSV, () -> {
+            try (Stream<AuditEventView> rows = export.criteria.stream(events)) {
+                out.write(HEADER + LINE_END);
+                for (Iterator<AuditEventView> it = rows.iterator(); it.hasNext(); ) {
+                    out.write(line(it.next()));
+                }
+                out.flush();
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
             }
-            out.flush();
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
+            return null;
+        });
     }
 
     private static String line(AuditEventView row) {
