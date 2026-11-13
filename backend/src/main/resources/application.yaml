@@ -27,6 +27,10 @@ spring:
   flyway:
     # Scanned recursively: db/migration/<module>/V<block>__<module>_<what>.sql (D5 version blocks).
     locations: classpath:db/migration
+    # ADR 0001 (amended 2026-11-13): one version block per module, so a release adds versions below the head of an
+    # installed database (e.g. identity V3013 under reporting V14005). Without out-of-order, validate-on-migrate
+    # rejects them as ignored and the upgrade cannot start (FlywayUpgradeTest).
+    out-of-order: true
   modulith:
     events:
       # D19 / spec §7: deliver again, at startup, every publication whose listener did not complete
@@ -107,3 +111,36 @@ restaurantpro:
     max-attempts: 10
     completed-retention: P30D
     purge-cron: "0 45 3 * * *"
+  # R5: the environment names below are frozen by the R5 PRD (deploy/compose.yaml, S62). Spring's relaxed binding
+  # would not map them (RESTAURANTPRO_MFA_MODE is not restaurantpro.security.mfa.mode), so each is bound explicitly.
+  # FrozenConfigurationNamesTest proves every one. An empty value means "not set".
+  security:
+    mfa:
+      # D138/D142: OFF, SENSITIVE or ALL_BACKOFFICE (deploy/.env.example sets SENSITIVE, P52)
+      mode: ${RESTAURANTPRO_MFA_MODE:OFF}
+      step-up-max-age: ${RESTAURANTPRO_MFA_STEP_UP_MAX_AGE:PT15M}
+      # file of the secret mfa_key; required unless the mode is OFF
+      key-file: ${RESTAURANTPRO_MFA_KEY_FILE:}
+    # D140: comma-separated CIDRs of the restaurant's LAN; unset = the D140 private and loopback ranges. Narrow it to
+    # the store LANs and leave VPN pools out, or a VPN user counts as local.
+    lan-cidrs: "${RESTAURANTPRO_LAN_CIDRS:127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7,fe80::/10}"
+    oidc:
+      # D144/P55: one optional OpenID Connect provider; off unless enabled
+      enabled: ${RESTAURANTPRO_OIDC_ENABLED:false}
+      issuer-uri: ${RESTAURANTPRO_OIDC_ISSUER_URI:}
+      client-id: ${RESTAURANTPRO_OIDC_CLIENT_ID:}
+      client-secret-file: ${RESTAURANTPRO_OIDC_CLIENT_SECRET_FILE:}
+      display-name: ${RESTAURANTPRO_OIDC_DISPLAY_NAME:SSO}
+      scopes: ${RESTAURANTPRO_OIDC_SCOPES:openid}
+      trust-idp-mfa: ${RESTAURANTPRO_OIDC_TRUST_IDP_MFA:false}
+      post-login-uri: ${RESTAURANTPRO_OIDC_POST_LOGIN_URI:/backoffice/}
+  alerts:
+    # D151: the backup status file written by deploy/verify-backups.sh (Compose mounts it read-only at
+    # /run/restaurantpro/status/backup-status.json). Empty = no backup alerts (developer stacks).
+    backup-status-file: ${RESTAURANTPRO_ALERTS_BACKUP_STATUS_FILE:}
+    # D150 CASH_DISCREPANCY: a closing counts when its Σ |difference| exceeds this amount (0 = any difference)
+    cash-difference-threshold: ${RESTAURANTPRO_ALERTS_CASH_DIFFERENCE_THRESHOLD:0}
+  metrics:
+    # D152: file of the Prometheus scrape token (secret metrics_token). Empty = /actuator/prometheus needs a
+    # SYSTEM_MONITOR session, as every other Actuator endpoint.
+    token-file: ${RESTAURANTPRO_METRICS_TOKEN_FILE:}
