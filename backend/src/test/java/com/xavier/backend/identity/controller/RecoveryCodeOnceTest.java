@@ -15,6 +15,7 @@ import com.xavier.backend.identity.MfaTest;
 import com.xavier.backend.identity.MutableClock;
 import com.xavier.backend.identity.SwitchableMfaPolicy;
 import com.xavier.backend.identity.mfa.MfaMode;
+import com.xavier.backend.identity.mfa.SecretCipher;
 import jakarta.servlet.http.Cookie;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -42,6 +43,9 @@ class RecoveryCodeOnceTest {
 
     @Autowired
     JdbcClient jdbc;
+
+    @Autowired
+    SecretCipher cipher;
 
     MfaFixtures mfa;
     MfaFixtures.Enrolled enrolled;
@@ -73,6 +77,27 @@ class RecoveryCodeOnceTest {
         assertThat(jdbc.sql("SELECT count(*) FROM audit.audit_event WHERE action = 'MFA_RECOVERY_CODE_USED' "
                 + "AND entity_id = ? AND (details ->> 'recoveryCodesLeft')::int = 9")
                 .param(enrolled.user().id().toString()).query(Long.class).single()).isEqualTo(1);
+    }
+
+    /** D139 amended (S56 review): a dump alone cannot test guesses; the hash needs the MFA key. */
+    @Test
+    void storedHashesAreKeyedAndNameTheirKey() throws Exception {
+        String code = enrolled.recoveryCodes().getFirst();
+        List<java.util.Map<String, Object>> rows = jdbc.sql("""
+                        SELECT c.code_hash, c.key_id FROM identity.mfa_recovery_code c
+                        JOIN identity.mfa_factor f ON f.id = c.factor_id
+                        WHERE f.account_id = ? AND f.status = 'ACTIVE'""")
+                .param(enrolled.user().id()).query().listOfRows();
+
+        assertThat(rows).hasSize(10).allSatisfy(row -> assertThat(row.get("key_id")).isEqualTo(cipher.keyId()));
+        assertThat(rows).extracting(row -> ((String) row.get("code_hash")).strip())
+                .contains(cipher.codeHash(SecretCipher.CodePurpose.RECOVERY_CODE, code))
+                .doesNotContain(plainSha256(code.replace("-", "")), plainSha256(code));
+    }
+
+    static String plainSha256(String text) throws Exception {
+        return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                .digest(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
     }
 
     @Test

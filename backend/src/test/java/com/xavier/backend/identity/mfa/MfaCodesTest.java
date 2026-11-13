@@ -31,13 +31,9 @@ class MfaCodesTest {
     }
 
     @Test
-    void theHashIgnoresCaseDashesAndSpaces() {
-        String hash = MfaCodes.hash("ABCDE-FGHIJ");
-
-        assertThat(hash).matches("[0-9a-f]{64}");
-        assertThat(MfaCodes.hash("abcdefghij")).isEqualTo(hash);
-        assertThat(MfaCodes.hash(" abcde fghij ")).isEqualTo(hash);
-        assertThat(MfaCodes.hash("ABCDE-FGHIK")).isNotEqualTo(hash);
+    void normalizingIgnoresCaseDashesAndSpaces() {
+        assertThat(MfaCodes.normalize("ABCDE-FGHIJ")).isEqualTo("ABCDEFGHIJ");
+        assertThat(MfaCodes.normalize(" abcde fghij ")).isEqualTo("ABCDEFGHIJ");
     }
 
     @Test

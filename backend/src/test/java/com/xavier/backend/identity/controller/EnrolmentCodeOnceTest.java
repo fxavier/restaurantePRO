@@ -3,6 +3,7 @@ package com.xavier.backend.identity.controller;
 import static com.xavier.backend.identity.MfaFixtures.from;
 import static com.xavier.backend.identity.MfaFixtures.loginWithCode;
 import static com.xavier.backend.identity.MfaTest.REMOTE_ADDRESS;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -13,6 +14,7 @@ import com.xavier.backend.identity.MfaTest;
 import com.xavier.backend.identity.MutableClock;
 import com.xavier.backend.identity.SwitchableMfaPolicy;
 import com.xavier.backend.identity.mfa.MfaMode;
+import com.xavier.backend.identity.mfa.SecretCipher;
 import jakarta.servlet.http.Cookie;
 import java.time.Duration;
 import java.util.Set;
@@ -34,6 +36,12 @@ class EnrolmentCodeOnceTest {
 
     @Autowired
     SwitchableMfaPolicy policy;
+
+    @Autowired
+    org.springframework.jdbc.core.simple.JdbcClient jdbc;
+
+    @Autowired
+    SecretCipher cipher;
 
     IdentityFixtures fixtures;
     MfaFixtures mfa;
@@ -66,6 +74,18 @@ class EnrolmentCodeOnceTest {
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("MFA_ENROLMENT_CODE_INVALID"));
         remoteLogin(user, code).andExpect(status().isUnprocessableContent());
+    }
+
+    /** D139 amended (S56 review): the enrolment code is stored as a keyed hash with its key id. */
+    @Test
+    void theStoredHashIsKeyed() throws Exception {
+        java.util.Map<String, Object> row = jdbc.sql("SELECT code_hash, key_id FROM identity.mfa_enrolment_code "
+                + "WHERE account_id = ? AND used_at IS NULL").param(user.id()).query().singleRow();
+
+        assertThat(row.get("key_id")).isEqualTo(cipher.keyId());
+        assertThat(((String) row.get("code_hash")).strip())
+                .isEqualTo(cipher.codeHash(SecretCipher.CodePurpose.ENROLMENT_CODE, code))
+                .isNotEqualTo(RecoveryCodeOnceTest.plainSha256(code.replace("-", "")));
     }
 
     @Test

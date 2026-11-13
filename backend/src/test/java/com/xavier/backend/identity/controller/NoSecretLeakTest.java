@@ -21,6 +21,7 @@ import com.xavier.backend.identity.SwitchableMfaPolicy;
 import com.xavier.backend.identity.mfa.Base32;
 import com.xavier.backend.identity.mfa.MfaCodes;
 import com.xavier.backend.identity.mfa.MfaMode;
+import com.xavier.backend.identity.mfa.SecretCipher;
 import jakarta.servlet.http.Cookie;
 import java.util.ArrayList;
 import java.util.List;
@@ -56,6 +57,9 @@ class NoSecretLeakTest {
 
     @Autowired
     JdbcClient jdbc;
+
+    @Autowired
+    SecretCipher cipher;
 
     @AfterEach
     void resetMode() {
@@ -103,7 +107,9 @@ class NoSecretLeakTest {
         for (String value : secrets) {
             forbidden.add(value);
             forbidden.add(value.replace("-", ""));
-            forbidden.add(MfaCodes.hash(value));
+            forbidden.add(cipher.codeHash(SecretCipher.CodePurpose.RECOVERY_CODE, value));
+            forbidden.add(cipher.codeHash(SecretCipher.CodePurpose.ENROLMENT_CODE, value));
+            forbidden.add(RecoveryCodeOnceTest.plainSha256(MfaCodes.normalize(value)));
         }
         String audit = jdbc.sql("SELECT coalesce(string_agg(details::text || ' ' || coalesce(reason, ''), '\n'), '') "
                 + "FROM audit.audit_event").query(String.class).single();

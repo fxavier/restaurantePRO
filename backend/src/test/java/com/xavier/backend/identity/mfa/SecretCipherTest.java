@@ -126,6 +126,55 @@ class SecretCipherTest {
                 });
     }
 
+    // --- keyed code hashes (D139 amended 2026-11-13, S56 review) ---
+
+    @Test
+    void aCodeHashIsKeyedSoPlainSha256OfTheCodeDoesNotMatchIt() throws Exception {
+        SecretCipher cipher = new SecretCipher(properties(MfaMode.SENSITIVE, keyFile(TEST_KEY)));
+
+        String hash = cipher.codeHash(SecretCipher.CodePurpose.RECOVERY_CODE, "ABCDE-FGHIJ");
+
+        assertThat(hash).matches("[0-9a-f]{64}");
+        assertThat(hash).isNotEqualTo(sha256Hex("ABCDEFGHIJ")).isNotEqualTo(sha256Hex("ABCDE-FGHIJ"));
+    }
+
+    @Test
+    void theHashDependsOnTheKeyAndThePurposeButNotOnHowTheCodeIsTyped() throws Exception {
+        SecretCipher cipher = new SecretCipher(properties(MfaMode.SENSITIVE, keyFile(TEST_KEY)));
+        byte[] otherKey = TEST_KEY.clone();
+        otherKey[0] ^= 1;
+        SecretCipher other = new SecretCipher(properties(MfaMode.SENSITIVE, keyFile(otherKey)));
+        String hash = cipher.codeHash(SecretCipher.CodePurpose.RECOVERY_CODE, "ABCDE-FGHIJ");
+
+        assertThat(cipher.codeHash(SecretCipher.CodePurpose.RECOVERY_CODE, " abcde fghij ")).isEqualTo(hash);
+        assertThat(cipher.codeHash(SecretCipher.CodePurpose.ENROLMENT_CODE, "ABCDE-FGHIJ")).isNotEqualTo(hash);
+        assertThat(other.codeHash(SecretCipher.CodePurpose.RECOVERY_CODE, "ABCDE-FGHIJ")).isNotEqualTo(hash);
+    }
+
+    @Test
+    void aStoredHashIsComparedWithTheGivenCode() throws Exception {
+        SecretCipher cipher = new SecretCipher(properties(MfaMode.SENSITIVE, keyFile(TEST_KEY)));
+        String stored = cipher.codeHash(SecretCipher.CodePurpose.ENROLMENT_CODE, "ABCD-EFGH-IJKL");
+
+        assertThat(cipher.matches(SecretCipher.CodePurpose.ENROLMENT_CODE, "abcdefghijkl", stored)).isTrue();
+        assertThat(cipher.matches(SecretCipher.CodePurpose.ENROLMENT_CODE, "ABCD-EFGH-IJKM", stored)).isFalse();
+        assertThat(cipher.matches(SecretCipher.CodePurpose.RECOVERY_CODE, "ABCD-EFGH-IJKL", stored)).isFalse();
+        assertThat(cipher.matches(SecretCipher.CodePurpose.ENROLMENT_CODE, "ABCD-EFGH-IJKL", "not hex")).isFalse();
+    }
+
+    @Test
+    void withoutAKeyNoCodeIsHashed() {
+        SecretCipher cipher = new SecretCipher(properties(MfaMode.OFF, null));
+
+        assertThatThrownBy(() -> cipher.codeHash(SecretCipher.CodePurpose.RECOVERY_CODE, "ABCDE-FGHIJ"))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    private static String sha256Hex(String text) throws Exception {
+        return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                .digest(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+    }
+
     @Test
     void emptyPlaceholdersMeanTheDefaults() {
         // application.yaml (S61) maps RESTAURANTPRO_MFA_* with empty defaults

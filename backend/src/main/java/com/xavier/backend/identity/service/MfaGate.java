@@ -3,13 +3,11 @@ package com.xavier.backend.identity.service;
 import com.xavier.backend.access.Actor;
 import com.xavier.backend.identity.exception.MfaRefusedException;
 import com.xavier.backend.identity.exception.MfaRuleException;
-import com.xavier.backend.identity.mfa.MfaCodes;
 import com.xavier.backend.identity.model.MfaFactorStatus;
 import com.xavier.backend.identity.model.UserAccount;
 import com.xavier.backend.identity.model.dto.MfaSessionView;
 import com.xavier.backend.identity.model.dto.MfaState;
 import com.xavier.backend.identity.model.dto.SessionView;
-import com.xavier.backend.identity.repository.MfaEnrolmentCodeRepository;
 import com.xavier.backend.identity.repository.MfaFactorRepository;
 import java.time.Clock;
 import java.time.Instant;
@@ -31,10 +29,10 @@ class MfaGate {
 
     private final MfaPolicy policy;
     private final MfaFactorRepository factors;
-    private final MfaEnrolmentCodeRepository enrolmentCodes;
+    private final EnrolmentCodes enrolmentCodes;
     private final Clock clock;
 
-    MfaGate(MfaPolicy policy, MfaFactorRepository factors, MfaEnrolmentCodeRepository enrolmentCodes, Clock clock) {
+    MfaGate(MfaPolicy policy, MfaFactorRepository factors, EnrolmentCodes enrolmentCodes, Clock clock) {
         this.policy = policy;
         this.factors = factors;
         this.enrolmentCodes = enrolmentCodes;
@@ -69,7 +67,11 @@ class MfaGate {
         return gated(account, full, requirement(account, remote));
     }
 
+    /** Mode OFF needs nothing, so it reads nothing: an R4 login makes no extra query. */
     private MfaPolicy.LoginRequirement requirement(UserAccount account, boolean remote) {
+        if (!policy.enforced()) {
+            return MfaPolicy.LoginRequirement.NONE;
+        }
         return policy.atLogin(remote, account.isSupport(),
                 factors.existsByAccountIdAndStatus(account.getId(), MfaFactorStatus.ACTIVE));
     }
@@ -94,8 +96,7 @@ class MfaGate {
                     account.getId());
             throw MfaRefusedException.notEnrolledAtLogin();
         }
-        if (!enrolmentCodes.existsByAccountIdAndCodeHashAndUsedAtIsNullAndExpiresAtAfter(account.getId(),
-                MfaCodes.hash(enrolmentCode), clock.instant())) {
+        if (enrolmentCodes.open(account.getId(), enrolmentCode, clock.instant()).isEmpty()) {
             log.warn("BackOffice login of user {} refused: the enrolment code is not valid", account.getId());
             throw MfaRuleException.enrolmentCodeInvalid();
         }

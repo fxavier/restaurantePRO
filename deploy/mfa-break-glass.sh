@@ -2,10 +2,13 @@
 # Break-glass second-factor reset (D143): the last administrator lost the phone and the recovery codes. Run on the
 # server, by whoever administers it (it needs a shell and Docker, the infrastructure administrator's separate risk,
 # spec §10). In ONE psql transaction it runs
-#   identity.mfa_break_glass_reset(<username>, <reason>)   revokes the account's ACTIVE second factor (V3013)
+#   identity.mfa_break_glass_reset(<username>, <reason>)   revokes the account's ACTIVE second factor and drops a
+#                                                          pending enrolment and any open enrolment code (V3013)
+#   shared.end_account_sessions(<account id>)              ends every session of the account (V1007)
 #   audit.record_console_event('MFA_BREAK_GLASS_RESET', 'UserAccount', <account id>, <reason>)
 #                                                          one audit row by the system, details {"via":"console"} (V1105)
-# so the factor is revoked and audited, or neither. Each module's schema is written only by its own function (D6).
+# so the factor is revoked, the sessions end and it is audited, or nothing happens. Each module's schema is written
+# only by its own function (D6); none of the three is executable by PUBLIC.
 # The account then logs in without a factor and enrols again (from the LAN, or with an administrator's code).
 # The username and the reason travel as psql variables, never inside the SQL text. The script reads and prints no
 # secret: only the account id that was reset.
@@ -29,6 +32,7 @@ log() { echo "mfa-break-glass: $*" >&2; }
 SQL_TRANSACTION="\\set ON_ERROR_STOP on
 BEGIN;
 SELECT identity.mfa_break_glass_reset(:'username', :'reason') AS account_id \\gset
+SELECT shared.end_account_sessions(:'account_id') AS sessions_ended \\gset
 SELECT audit.record_console_event('MFA_BREAK_GLASS_RESET', 'UserAccount', :'account_id', :'reason') AS audit_id \\gset
 COMMIT;
 \\echo :account_id"
@@ -61,8 +65,8 @@ break_glass() {
     || die "nothing was changed (the transaction rolled back): see the PostgreSQL message above"
   out="$(tail -1 <<<"$out")"
   [[ "$out" =~ ^[0-9a-f-]{36}$ ]] || die "unexpected answer from the database; check the audit trail"
-  log "the second factor of account $out is revoked and the reset is audited (MFA_BREAK_GLASS_RESET)."
-  log "Its sessions stay until they expire; it now logs in without a factor and enrols again."
+  log "the second factor of account $out is revoked, its sessions ended, and the reset audited (MFA_BREAK_GLASS_RESET)."
+  log "It now logs in without a factor and enrols again."
 }
 
 # --- self-test: no Docker, no database ---
@@ -133,10 +137,11 @@ FAKE
     echo "FAIL: self-test: a value leaked into the SQL text" >&2; problems=$((problems + 1))
   fi
   if [[ "$(grep -c '^BEGIN;$' "$work/stdin")" == 1 && "$(grep -c '^COMMIT;$' "$work/stdin")" == 1 ]] \
-    && awk '/^BEGIN;$/ {b=NR} /mfa_break_glass_reset/ {r=NR} /record_console_event/ {a=NR} /^COMMIT;$/ {c=NR}
-            END { exit !(b && r > b && a > r && c > a) }' "$work/stdin" \
+    && awk '/^BEGIN;$/ {b=NR} /mfa_break_glass_reset/ {r=NR} /end_account_sessions/ {e=NR}
+            /record_console_event/ {a=NR} /^COMMIT;$/ {c=NR}
+            END { exit !(b && r > b && e > r && a > e && c > a) }' "$work/stdin" \
     && grep -q 'ON_ERROR_STOP on' "$work/stdin"; then
-    echo "PASS: self-test: one transaction: BEGIN, reset, audit, COMMIT, stopping at the first error" >&2
+    echo "PASS: self-test: one transaction: BEGIN, reset, end sessions, audit, COMMIT, stopping at the first error" >&2
   else
     echo "FAIL: self-test: the psql transaction: $(tr '\n' ' ' <"$work/stdin")" >&2; problems=$((problems + 1))
   fi

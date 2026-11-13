@@ -13,8 +13,8 @@ import org.hibernate.type.SqlTypes;
 
 /**
  * A one-time enrolment code (D143): issued by an administrator's reset, valid 24 hours, handed over out of band, and
- * needed to enrol from a remote address or as a support account. Only its SHA-256 is kept. Using it, or a newer reset,
- * sets {@code used_at}; at most one open code per account (partial unique index).
+ * needed to enrol from a remote address or as a support account. Using it, or a newer reset,
+ * sets {@code used_at}; at most one open code per account (partial unique index). Kept only as a keyed hash.
  */
 @Entity
 @Table(schema = "identity", name = "mfa_enrolment_code")
@@ -32,6 +32,10 @@ public class MfaEnrolmentCode {
     @Column(nullable = false, updatable = false, length = 64)
     @JdbcTypeCode(SqlTypes.CHAR)
     private String codeHash;
+
+    /** The MFA key the hash was made with, for a later rotation. */
+    @Column(nullable = false, updatable = false, length = 20)
+    private String keyId;
 
     @Column(nullable = false, updatable = false)
     private Instant expiresAt;
@@ -51,10 +55,12 @@ public class MfaEnrolmentCode {
         // JPA
     }
 
-    public static MfaEnrolmentCode issue(UUID accountId, String codeHash, UUID issuedBy, String reason, Instant now) {
+    public static MfaEnrolmentCode issue(UUID accountId, String codeHash, String keyId, UUID issuedBy, String reason,
+                                         Instant now) {
         MfaEnrolmentCode code = new MfaEnrolmentCode();
         code.accountId = accountId;
         code.codeHash = codeHash;
+        code.keyId = keyId;
         code.issuedByAccountId = issuedBy;
         code.reason = reason;
         code.createdAt = now;
@@ -62,7 +68,19 @@ public class MfaEnrolmentCode {
         return code;
     }
 
+    public UUID getId() {
+        return id;
+    }
+
+    public String getCodeHash() {
+        return codeHash;
+    }
+
     public Instant getExpiresAt() {
         return expiresAt;
+    }
+
+    public boolean isOpen(Instant now) {
+        return usedAt == null && now.isBefore(expiresAt);
     }
 }

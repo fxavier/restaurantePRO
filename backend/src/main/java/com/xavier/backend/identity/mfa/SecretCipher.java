@@ -6,11 +6,16 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
+import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
+import java.util.Arrays;
 import java.util.Base64;
+import java.util.EnumMap;
 import java.util.HexFormat;
+import java.util.Map;
 import java.util.UUID;
 import javax.crypto.Cipher;
+import javax.crypto.Mac;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
@@ -20,7 +25,8 @@ import org.springframework.stereotype.Component;
  * Seals TOTP secrets at rest (D139): AES-256-GCM, a fresh 96-bit nonce per secret, the account id as associated data
  * (a sealed secret copied onto another account does not open), and the key from {@code mfa.key-file}. A database dump
  * alone then cannot generate codes. The installation does not start when MFA is on and the key is missing or not 32
- * bytes, nor when a key file is configured but unreadable. Never logs a secret or the key.
+ * bytes, nor when a key file is configured but unreadable. The same key, through per-purpose sub-keys, keys the hashes
+ * of recovery and enrolment codes ({@link #codeHash}). Never logs a secret or the key.
  */
 @Component
 public class SecretCipher {
@@ -29,7 +35,23 @@ public class SecretCipher {
     public record Sealed(byte[] ciphertext, byte[] nonce, String keyId) {
     }
 
+    /**
+     * What a code is for. Each purpose hashes with its own sub-key, {@code HMAC-SHA256(key, label)}, so a recovery
+     * code's hash never matches as an enrolment code's and the AES key itself is never used as a MAC key.
+     */
+    public enum CodePurpose {
+        RECOVERY_CODE("restaurantpro/mfa/recovery-code/v1"),
+        ENROLMENT_CODE("restaurantpro/mfa/enrolment-code/v1");
+
+        private final String label;
+
+        CodePurpose(String label) {
+            this.label = label;
+        }
+    }
+
     private static final String TRANSFORMATION = "AES/GCM/NoPadding";
+    private static final String HMAC = "HmacSHA256";
     private static final int KEY_BYTES = 32;
     private static final int NONCE_BYTES = 12;
     private static final int TAG_BITS = 128;
@@ -38,6 +60,7 @@ public class SecretCipher {
     private final SecureRandom random = new SecureRandom();
     private final SecretKey key;
     private final String keyId;
+    private final Map<CodePurpose, SecretKeySpec> codeKeys = new EnumMap<>(CodePurpose.class);
 
     public SecretCipher(MfaProperties properties) {
         Path file = properties.keyFile();
@@ -53,6 +76,31 @@ public class SecretCipher {
         byte[] bytes = read(file);
         key = new SecretKeySpec(bytes, "AES");
         keyId = idOf(bytes);
+        for (CodePurpose purpose : CodePurpose.values()) {
+            codeKeys.put(purpose, new SecretKeySpec(hmac(new SecretKeySpec(bytes, HMAC),
+                    purpose.label.getBytes(StandardCharsets.UTF_8)), HMAC));
+        }
+        Arrays.fill(bytes, (byte) 0);
+    }
+
+    /**
+     * The stored form of a recovery or enrolment code (D139 amended 2026-11-13, S56 review): HMAC-SHA256 of the
+     * normalized code ({@link MfaCodes#normalize}) under the purpose's sub-key, hex. A database dump alone cannot test
+     * guesses against it. Store {@link #keyId()} with it.
+     */
+    public String codeHash(CodePurpose purpose, String code) {
+        requireKey();
+        return HexFormat.of().formatHex(hmac(codeKeys.get(purpose),
+                MfaCodes.normalize(code).getBytes(StandardCharsets.UTF_8)));
+    }
+
+    /** Whether {@code code} is the code behind {@code storedHash}; compared in constant time. */
+    public boolean matches(CodePurpose purpose, String code, String storedHash) {
+        if (storedHash == null) {
+            return false;
+        }
+        return MessageDigest.isEqual(codeHash(purpose, code).getBytes(StandardCharsets.US_ASCII),
+                storedHash.strip().getBytes(StandardCharsets.US_ASCII));
     }
 
     /** Whether a key is loaded; without one (MFA {@code OFF}, no key file) nobody can enrol. */
@@ -92,6 +140,16 @@ public class SecretCipher {
             return cipher.doFinal(sealed.ciphertext());
         } catch (GeneralSecurityException e) {
             throw new IllegalStateException("A second-factor secret does not open: tampered or another key", e);
+        }
+    }
+
+    private static byte[] hmac(SecretKeySpec macKey, byte[] message) {
+        try {
+            Mac mac = Mac.getInstance(HMAC);
+            mac.init(macKey);
+            return mac.doFinal(message);
+        } catch (GeneralSecurityException e) {
+            throw new IllegalStateException(HMAC + " is not available", e);
         }
     }
 

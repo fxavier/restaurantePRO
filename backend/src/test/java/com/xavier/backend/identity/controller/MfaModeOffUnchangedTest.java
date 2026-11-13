@@ -67,6 +67,18 @@ class MfaModeOffUnchangedTest {
         mvc.perform(get("/api/v1/backoffice/users").with(IdentityFixtures.admin())).andExpect(status().isOk());
     }
 
+    /** Without a key (mode OFF) no code can be hashed, so a reset issues none: a clear 409, nothing changed. */
+    @Test
+    void withoutAKeyAResetIsNotConfigured() throws Exception {
+        IdentityFixtures fixtures = new IdentityFixtures(mvc);
+        IdentityFixtures.User admin = fixtures.user(Set.of(IdentityFixtures.ADMINISTRATOR), null);
+        IdentityFixtures.User user = fixtures.user(Set.of(IdentityFixtures.WAITER), null);
+
+        mvc.perform(com.xavier.backend.identity.MfaFixtures.reset(user.id(), "lost phone")
+                        .with(com.xavier.backend.identity.MfaFixtures.asAdministrator(admin.id())))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("MFA_NOT_CONFIGURED"));
+    }
+
     @Test
     void aPosSessionKeepsItsSensitiveBackOfficeGrant() throws Exception {
         IdentityFixtures fixtures = new IdentityFixtures(mvc);

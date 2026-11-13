@@ -11,14 +11,11 @@ import org.springframework.data.repository.query.Param;
 
 public interface MfaEnrolmentCodeRepository extends JpaRepository<MfaEnrolmentCode, UUID> {
 
-    boolean existsByAccountIdAndCodeHashAndUsedAtIsNullAndExpiresAtAfter(UUID accountId, String codeHash,
-                                                                         Instant now);
-
-    /** Compare-and-set: 1 when the account's open, unexpired code with this hash is now used (D143: once). */
+    /** Compare-and-set: 1 when this code was open and unexpired and is now used (D143: once). */
     @Modifying(flushAutomatically = true)
-    @Query("update MfaEnrolmentCode c set c.usedAt = :now where c.accountId = :accountId "
-            + "and c.codeHash = :codeHash and c.usedAt is null and c.expiresAt > :now")
-    int consume(@Param("accountId") UUID accountId, @Param("codeHash") String codeHash, @Param("now") Instant now);
+    @Query("update MfaEnrolmentCode c set c.usedAt = :now where c.id = :id and c.usedAt is null "
+            + "and c.expiresAt > :now")
+    int consume(@Param("id") UUID id, @Param("now") Instant now);
 
     /** A newer reset voids the account's open code. */
     @Modifying(flushAutomatically = true)

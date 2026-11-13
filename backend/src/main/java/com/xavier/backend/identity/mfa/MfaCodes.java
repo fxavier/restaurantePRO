@@ -2,18 +2,15 @@ package com.xavier.backend.identity.mfa;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.security.GeneralSecurityException;
-import java.security.MessageDigest;
 import java.security.SecureRandom;
-import java.util.HexFormat;
 import java.util.Locale;
 
 /**
  * The random material of second factors (D139, D143) and how codes are stored: a TOTP secret is 160 random bits; a
- * recovery code 10 and an enrolment code 12 base32 characters (5 bits each), shown in groups for reading; codes are
- * kept only as the SHA-256 (hex) of their normalized form (high entropy, so an adaptive hash adds nothing, like
- * terminal tokens). Normalizing drops separators and spaces and ignores case, so a code typed as shown, or without the
- * dashes, matches. Nothing here logs.
+ * recovery code 10 and an enrolment code 12 base32 characters (5 bits each), shown in groups for reading. Codes are
+ * kept only as a keyed hash of their normalized form ({@link SecretCipher#codeHash}, D139 amended): 50 bits fall to
+ * an offline search of an unkeyed hash. Normalizing drops separators and spaces and ignores case, so a code typed as
+ * shown, or without the dashes, matches. Nothing here logs.
  */
 public final class MfaCodes {
 
@@ -43,15 +40,9 @@ public final class MfaCodes {
         return grouped(random(ENROLMENT_CODE_LENGTH), 4);
     }
 
-    /** SHA-256 hex of the code without separators, upper case. */
-    public static String hash(String code) {
-        String normalized = code.replaceAll("[\\s-]", "").toUpperCase(Locale.ROOT);
-        try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-                    .digest(normalized.getBytes(StandardCharsets.UTF_8)));
-        } catch (GeneralSecurityException e) {
-            throw new IllegalStateException("SHA-256 is not available", e);
-        }
+    /** The code without separators or spaces, upper case: what is hashed ({@link SecretCipher#codeHash}). */
+    public static String normalize(String code) {
+        return code.replaceAll("[\\s-]", "").toUpperCase(Locale.ROOT);
     }
 
     /**

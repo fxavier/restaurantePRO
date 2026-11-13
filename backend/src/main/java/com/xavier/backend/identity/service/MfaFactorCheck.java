@@ -3,11 +3,11 @@ package com.xavier.backend.identity.service;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.identity.exception.MfaConflictException;
 import com.xavier.backend.identity.exception.MfaRefusedException;
-import com.xavier.backend.identity.mfa.MfaCodes;
 import com.xavier.backend.identity.mfa.SecretCipher;
 import com.xavier.backend.identity.mfa.Totp;
 import com.xavier.backend.identity.model.MfaFactor;
 import com.xavier.backend.identity.model.MfaFactorStatus;
+import com.xavier.backend.identity.model.MfaRecoveryCode;
 import com.xavier.backend.identity.model.dto.MfaCodeRequest;
 import com.xavier.backend.identity.repository.MfaFactorRepository;
 import com.xavier.backend.identity.repository.MfaRecoveryCodeRepository;
@@ -15,6 +15,7 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -112,8 +113,13 @@ class MfaFactorCheck {
         return step.isPresent() && factor.acceptStep(step.getAsLong(), now);
     }
 
+    /** Compares with each unused code in constant time (at most 10), then uses the match once. */
     private boolean acceptRecoveryCode(MfaFactor factor, MfaCodeRequest proof, Instant now) {
-        if (recoveryCodes.consume(factor.getId(), MfaCodes.hash(proof.recoveryCode()), now) != 1) {
+        Optional<MfaRecoveryCode> match = recoveryCodes.findByFactorIdAndUsedAtIsNull(factor.getId()).stream()
+                .filter(code -> cipher.matches(SecretCipher.CodePurpose.RECOVERY_CODE, proof.recoveryCode(),
+                        code.getCodeHash()))
+                .findFirst();
+        if (match.isEmpty() || recoveryCodes.consume(match.get().getId(), now) != 1) {
             return false;
         }
         factor.succeeded();

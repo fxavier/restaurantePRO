@@ -6,13 +6,13 @@ import com.xavier.backend.access.Permission;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.identity.exception.MfaRuleException;
 import com.xavier.backend.identity.exception.UserNotFoundException;
-import com.xavier.backend.identity.mfa.MfaCodes;
 import com.xavier.backend.identity.model.MfaEnrolmentCode;
 import com.xavier.backend.identity.model.MfaFactor;
 import com.xavier.backend.identity.model.MfaFactorStatus;
 import com.xavier.backend.identity.model.dto.MfaResetView;
 import com.xavier.backend.identity.model.dto.UserMfaView;
 import com.xavier.backend.identity.repository.MfaEnrolmentCodeRepository;
+import com.xavier.backend.identity.service.EnrolmentCodes.IssuedCode;
 import com.xavier.backend.identity.repository.MfaFactorRepository;
 import com.xavier.backend.identity.repository.MfaRecoveryCodeRepository;
 import com.xavier.backend.identity.repository.UserAccountRepository;
@@ -36,18 +36,20 @@ public class MfaResetService {
     private final MfaFactorRepository factors;
     private final MfaRecoveryCodeRepository recoveryCodes;
     private final MfaEnrolmentCodeRepository enrolmentCodes;
+    private final EnrolmentCodes codes;
     private final SessionTermination sessions;
     private final AuditLog auditLog;
     private final Clock clock;
 
     MfaResetService(AccessPolicy accessPolicy, UserAccountRepository accounts, MfaFactorRepository factors,
                     MfaRecoveryCodeRepository recoveryCodes, MfaEnrolmentCodeRepository enrolmentCodes,
-                    SessionTermination sessions, AuditLog auditLog, Clock clock) {
+                    EnrolmentCodes codes, SessionTermination sessions, AuditLog auditLog, Clock clock) {
         this.accessPolicy = accessPolicy;
         this.accounts = accounts;
         this.factors = factors;
         this.recoveryCodes = recoveryCodes;
         this.enrolmentCodes = enrolmentCodes;
+        this.codes = codes;
         this.sessions = sessions;
         this.auditLog = auditLog;
         this.clock = clock;
@@ -80,14 +82,11 @@ public class MfaResetService {
             factors.saveAndFlush(factor);
         });
         factors.deletePending(accountId);
-        enrolmentCodes.voidOpen(accountId, now);
-        String code = MfaCodes.newEnrolmentCode();
-        MfaEnrolmentCode issued = enrolmentCodes.saveAndFlush(
-                MfaEnrolmentCode.issue(accountId, MfaCodes.hash(code), admin.userId(), reason.strip(), now));
+        IssuedCode issued = codes.issue(accountId, admin.userId(), reason.strip(), now);
         int ended = sessions.endAccountSessions(accountId);
         auditLog.recordAsCurrentActor("MFA_RESET", "UserAccount", accountId.toString(), null, null, reason.strip(),
                 Map.of("factorRevoked", active.isPresent(), "sessionsEnded", ended));
-        return new MfaResetView(code, issued.getExpiresAt());
+        return new MfaResetView(issued.code(), issued.expiresAt());
     }
 
     @Transactional(readOnly = true)

@@ -22,7 +22,6 @@ import com.xavier.backend.identity.model.dto.MfaSessionView;
 import com.xavier.backend.identity.model.dto.MfaState;
 import com.xavier.backend.identity.model.dto.MfaStatusView;
 import com.xavier.backend.identity.model.dto.SessionView;
-import com.xavier.backend.identity.repository.MfaEnrolmentCodeRepository;
 import com.xavier.backend.identity.repository.MfaFactorRepository;
 import com.xavier.backend.identity.repository.MfaRecoveryCodeRepository;
 import com.xavier.backend.identity.repository.UserAccountRepository;
@@ -61,7 +60,7 @@ public class MfaEnrolmentService {
     private final UserAccountRepository accounts;
     private final MfaFactorRepository factors;
     private final MfaRecoveryCodeRepository recoveryCodes;
-    private final MfaEnrolmentCodeRepository enrolmentCodes;
+    private final EnrolmentCodes enrolmentCodes;
     private final MfaFactorCheck check;
     private final SecretCipher cipher;
     private final PasswordEncoder encoder;
@@ -72,7 +71,7 @@ public class MfaEnrolmentService {
     private final Clock clock;
 
     MfaEnrolmentService(AccessPolicy accessPolicy, UserAccountRepository accounts, MfaFactorRepository factors,
-                        MfaRecoveryCodeRepository recoveryCodes, MfaEnrolmentCodeRepository enrolmentCodes,
+                        MfaRecoveryCodeRepository recoveryCodes, EnrolmentCodes enrolmentCodes,
                         MfaFactorCheck check, SecretCipher cipher, PasswordEncoder encoder, LoginService logins,
                         MfaPolicy policy, OrganizationApi organization, AuditLog auditLog, Clock clock) {
         this.accessPolicy = accessPolicy;
@@ -205,7 +204,8 @@ public class MfaEnrolmentService {
             String code = MfaCodes.newRecoveryCode();
             if (!codes.contains(code)) {
                 codes.add(code);
-                rows.add(new MfaRecoveryCode(factor.getId(), MfaCodes.hash(code)));
+                rows.add(new MfaRecoveryCode(factor.getId(),
+                        cipher.codeHash(SecretCipher.CodePurpose.RECOVERY_CODE, code), cipher.keyId()));
             }
         }
         recoveryCodes.saveAllAndFlush(rows);
@@ -216,7 +216,7 @@ public class MfaEnrolmentService {
         if (enrolmentCode == null || enrolmentCode.isBlank()) {
             throw MfaRefusedException.enrolmentCodeRequired();
         }
-        if (enrolmentCodes.consume(accountId, MfaCodes.hash(enrolmentCode), now) != 1) {
+        if (!enrolmentCodes.use(accountId, enrolmentCode, now)) {
             log.warn("MFA enrolment refused for user {}: the enrolment code is not valid", accountId);
             throw MfaRuleException.enrolmentCodeInvalid();
         }

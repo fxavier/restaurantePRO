@@ -15,3 +15,6 @@ BEGIN
     RETURN v_id;
 END;
 $$;
+-- A console function only: not callable by every database role (S56 review); see identity.mfa_break_glass_reset.
+REVOKE EXECUTE ON FUNCTION audit.record_console_event(text, text, text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION audit.record_console_event(text, text, text, text) TO CURRENT_USER;
