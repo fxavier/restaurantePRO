@@ -3,7 +3,8 @@
 Owner: QA. The release gate: every §14 row `covered` and passing, no open bug of severity Critical or High, the restore test run against the release candidate, and, for fiscal use in production, the country's fiscal validation (§14 #10).
 
 - **Branch:** `s33-integrate` (feat/backend-stage3 `6da5d81` + S33). Backend only: no frontend exists yet, so the §8.5 flows are proven over the HTTP API (`e2e`), not with Playwright.
-- **Last run:** 2026-11-06, `rtk mvn clean test`: 1742 tests, 0 failures, 0 errors, 0 skipped (macOS 15.3 x86_64, 16 CPUs, Java 25.0.4.1, PostgreSQL 18.6 in Docker). Deploy drills the same day, all in production mode with throwaway keys: `test-backup-encryption.sh` PASS (63 checks, incl. the key-recovery drill), `test-backup-restore.sh` PASS, `test-pitr.sh --quick` PASS, `test-pitr.sh` (full) PASS with RPO 273 s and RTO 4 s, `test/real-schema-drill.sh` PASS (81 migrations, R3 rows in every table).
+- **R5 run:** 2026-11-13 on branch `s63-integrate` (main `4354e4e` + S63), `./mvnw -q clean test`: 3098 tests in 522 classes, 0 failures, 0 errors, 0 skipped. Deploy drills were not rerun by S63.
+- **Last run (R3 gate):** 2026-11-06, `rtk mvn clean test`: 1742 tests, 0 failures, 0 errors, 0 skipped (macOS 15.3 x86_64, 16 CPUs, Java 25.0.4.1, PostgreSQL 18.6 in Docker). Deploy drills the same day, all in production mode with throwaway keys: `test-backup-encryption.sh` PASS (63 checks, incl. the key-recovery drill), `test-backup-restore.sh` PASS, `test-pitr.sh --quick` PASS, `test-pitr.sh` (full) PASS with RPO 273 s and RTO 4 s, `test/real-schema-drill.sh` PASS (81 migrations, R3 rows in every table).
 - **Statuses:** `covered` (proven and passing), `partial` (part of the criterion is proven; the rest is named), `missing` (no test), `failing` (a test proves a defect; bug linked), `n/a` (not in any release built so far).
 
 ## Release verdict (2026-11-06): **NOT READY**
