@@ -110,6 +110,36 @@ public final class MfaFixtures {
         }
     }
 
+    /** Every permission installation-wide, as the real account {@code accountId} (FKs need a real account). */
+    public static RequestPostProcessor asAdministrator(UUID accountId) {
+        com.xavier.backend.access.Actor actor = com.xavier.backend.access.Actor.account(accountId,
+                java.util.Arrays.stream(com.xavier.backend.access.Permission.values())
+                        .map(com.xavier.backend.access.Permission::authority)
+                        .collect(java.util.stream.Collectors.toSet()));
+        return org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors
+                .authentication(org.springframework.security.authentication.UsernamePasswordAuthenticationToken
+                        .authenticated(actor, null, actor.authorities().stream()
+                                .map(org.springframework.security.core.authority.SimpleGrantedAuthority::new)
+                                .toList()));
+    }
+
+    public static MockHttpServletRequestBuilder reset(UUID accountId, String reason) throws Exception {
+        return post("/api/v1/backoffice/users/" + accountId + "/mfa/reset").with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content(json("reason", reason));
+    }
+
+    /** An administrator's reset of {@code accountId} (call while the mode is OFF); returns the enrolment code. */
+    public String resetBy(UUID administratorId, UUID accountId) throws Exception {
+        return body(mvc.perform(reset(accountId, "lost phone").with(asAdministrator(administratorId)))
+                .andExpect(status().isOk())).get("enrolmentCode").asString();
+    }
+
+    public static MockHttpServletRequestBuilder loginWithCode(String username, String password, String code)
+            throws Exception {
+        return post("/api/v1/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content(json("username", username, "password", password, "enrolmentCode", code));
+    }
+
     public static RequestPostProcessor from(String address) {
         return request -> {
             request.setRemoteAddr(address);

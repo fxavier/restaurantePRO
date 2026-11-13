@@ -15,7 +15,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** An administrator's view and reset of an account's second factor (D143). No Idempotency-Key: the reset returns a code. */
+/**
+ * An administrator's view and reset of an account's second factor (D143). No Idempotency-Key: the reset returns an
+ * enrolment code, which must never be stored.
+ */
 @RestController
 @RequestMapping("/api/v1/backoffice/users/{id}/mfa")
 class UserMfaController {

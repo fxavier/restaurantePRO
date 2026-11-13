@@ -66,7 +66,9 @@ class MfaLoginFlowTest {
                 .andReturn().getResponse();
         Cookie pending = login.getCookie("SESSION");
 
-        mvc.perform(get("/api/v1/backoffice/users").cookie(pending)).andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/backoffice/users").cookie(pending)).andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.detail").value(MustChangeCredentialFilter.MFA_PENDING_DETAIL));
+        mvc.perform(get("/api/v1/backoffice/stores").cookie(pending)).andExpect(status().isForbidden());
         mvc.perform(get("/api/v1/auth/session").cookie(pending))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.mfa.state").value("PENDING"))

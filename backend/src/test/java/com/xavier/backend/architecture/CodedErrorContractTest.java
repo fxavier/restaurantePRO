@@ -37,6 +37,9 @@ import com.xavier.backend.fiscal.FiscalIssueFailedException;
 import com.xavier.backend.fiscal.exception.DraftMismatchException;
 import com.xavier.backend.fiscal.exception.PaymentSnapshotMismatchException;
 import com.xavier.backend.identity.exception.LoginThrottledException;
+import com.xavier.backend.identity.exception.MfaConflictException;
+import com.xavier.backend.identity.exception.MfaRefusedException;
+import com.xavier.backend.identity.exception.MfaRuleException;
 import com.xavier.backend.inventory.count.exception.CountConflictException;
 import com.xavier.backend.inventory.count.exception.CountRuleException;
 import com.xavier.backend.inventory.consumption.exception.ConsumptionConflictException;
@@ -136,6 +139,22 @@ class CodedErrorContractTest {
             Map.entry("mfa-step-up-required", StepUpRequiredException::stepUpRequired),
             Map.entry("mfa-enrolment-required", StepUpRequiredException::enrolmentRequired),
             Map.entry("mfa-account-required", StepUpRequiredException::accountRequired),
+            // R5 identity (S56): second factors
+            Map.entry("mfa-invalid-code", MfaRefusedException::invalidCode),
+            Map.entry("mfa-pending-expired", MfaRefusedException::pendingExpired),
+            Map.entry("mfa-wrong-current-password", MfaRefusedException::wrongCurrentPassword),
+            Map.entry("mfa-locked", () -> MfaRefusedException.locked(Duration.ofMinutes(15))),
+            Map.entry("mfa-required", MfaRefusedException::required),
+            Map.entry("mfa-not-enrolled-at-login", MfaRefusedException::notEnrolledAtLogin),
+            Map.entry("mfa-enrolment-code-required", MfaRefusedException::enrolmentCodeRequired),
+            Map.entry("mfa-not-pending", MfaConflictException::notPending),
+            Map.entry("mfa-not-enrolled", MfaConflictException::notEnrolled),
+            Map.entry("mfa-already-enrolled", MfaConflictException::alreadyEnrolled),
+            Map.entry("mfa-no-pending-enrolment", MfaConflictException::noPendingEnrolment),
+            Map.entry("mfa-not-configured", MfaConflictException::notConfigured),
+            Map.entry("mfa-enrolment-code-invalid", MfaRuleException::enrolmentCodeInvalid),
+            Map.entry("mfa-self-reset", MfaRuleException::selfReset),
+            Map.entry("mfa-reason-required", MfaRuleException::reasonRequired),
             Map.entry("cash-rule", () -> new CashRuleViolationException(CashRule.DAY_NOT_OPEN,
                     "The cash day is not open.")),
             Map.entry("fiscal-pending", () -> new FiscalIssueFailedException(ID,
@@ -505,6 +524,41 @@ class CodedErrorContractTest {
                 ",\"stepUpUri\":\"/api/v1/auth/mfa/step-up\"");
         expect("mfa-enrolment-required", 403, "MFA_ENROLMENT_REQUIRED", "Set up a second factor to continue.",
                 ",\"stepUpUri\":\"/api/v1/auth/mfa/step-up\"");
+    }
+
+    /** R5 S56 (D139-D143): the second-factor refusals that are not 404/409/422. */
+    @Test
+    void secondFactorRefusals() throws Exception {
+        expect("mfa-invalid-code", 401, "MFA_INVALID_CODE", "The code is not valid.", "");
+        expect("mfa-pending-expired", 401, "MFA_PENDING_EXPIRED",
+                "The login waited too long for its second factor. Log in again.", "");
+        expect("mfa-wrong-current-password", 401, "WRONG_CURRENT_PASSWORD", "The current password is not correct.",
+                "");
+        expect("mfa-locked", 429, "MFA_LOCKED", "Too many wrong codes. Try again later.", "");
+        mvc.perform(get(PATH + "mfa-locked")).andExpect(header().string("Retry-After", "900"));
+        expect("mfa-required", 403, "MFA_REQUIRED",
+                "Confirm your second factor before using this session from outside the store network.", "");
+        expect("mfa-not-enrolled-at-login", 403, "MFA_NOT_ENROLLED",
+                "This account has no second factor. Ask an administrator for an enrolment code.", "");
+        expect("mfa-enrolment-code-required", 403, "MFA_ENROLMENT_CODE_REQUIRED",
+                "Enrolling from here needs an enrolment code from an administrator.", "");
+    }
+
+    /** R5 S56: second-factor conflicts (409) and rules (422). */
+    @Test
+    void secondFactorConflictsAndRules() throws Exception {
+        expect("mfa-not-pending", 409, "MFA_NOT_PENDING", "This session is not waiting for a second factor.", "");
+        expect("mfa-not-enrolled", 409, "MFA_NOT_ENROLLED", "This account has no second factor.", "");
+        expect("mfa-already-enrolled", 409, "MFA_ALREADY_ENROLLED", "This account already has a second factor.", "");
+        expect("mfa-no-pending-enrolment", 409, "MFA_NO_PENDING_ENROLMENT",
+                "There is no enrolment to confirm. Start the enrolment again.", "");
+        expect("mfa-not-configured", 409, "MFA_NOT_CONFIGURED",
+                "Second factors are not configured on this installation.", "");
+        expect("mfa-enrolment-code-invalid", 422, "MFA_ENROLMENT_CODE_INVALID", "The enrolment code is not valid.",
+                "");
+        expect("mfa-self-reset", 422, "MFA_SELF_RESET",
+                "You cannot reset your own second factor. Use a recovery code instead.", "");
+        expect("mfa-reason-required", 422, "REASON_REQUIRED", "A reason is required.", "");
     }
 
     /** D142 (amended, S55 review): a PIN session cannot step up, so its refusal names no step-up URI. */
@@ -1092,6 +1146,7 @@ class CodedErrorContractTest {
 
     private void expect(String name, int status, String code, String detail, String extra) throws Exception {
         String title = switch (status) {
+            case 401 -> "Unauthorized";
             case 403 -> "Forbidden";
             case 404 -> "Not Found";
             case 409 -> "Conflict";
