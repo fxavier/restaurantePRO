@@ -33,6 +33,9 @@ DB=restaurantpro
 DB_USER=restaurantpro
 RUN_ID="rp-crypt-drill-$$-$(date +%s)"
 LEGACY_ID="$RUN_ID-legacy"
+# The S44 guard (require_own_installation) lets the backup scripts touch only this installation's Compose project,
+# which they read from COMPOSE_PROJECT_NAME: the drill's project, then the legacy one from step 9 on.
+export COMPOSE_PROJECT_NAME="$RUN_ID"
 PITR_NAME="$RUN_ID-restored"
 SSHD="$RUN_ID-sshd"
 SSHD_IMAGE="restaurantpro-drill-sshd:$RUN_ID"
@@ -489,6 +492,7 @@ broken "a base backup older than 26 h" 'newest base backup is older than 26 h' \
   "touch -t $(date -v-27H +%Y%m%d%H%M 2>/dev/null || date -d '-27 hours' +%Y%m%d%H%M) pitr/base/*"
 
 step "9. dev mode, then the upgrade of an S27-style plaintext installation"
+export COMPOSE_PROJECT_NAME="$LEGACY_ID" # every script below acts on the legacy project only
 LEGACY="$WORK/legacy"
 mkdir -m 700 "$LEGACY"
 RESTAURANTPRO_ENVIRONMENT=test BACKUP_AGE_RECIPIENTS_FILE=/dev/null legacy up -d --no-build postgres >/dev/null 2>&1 \
