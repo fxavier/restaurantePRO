@@ -89,7 +89,7 @@ Every policy slice: one migration per module calling the V1008 helpers (no hand-
 **Tests:** `InventoryRowLevelSecurityTest`; `InterStoreTransferUnderRlsTest` (A76); plan tests: `stock_balance` by warehouse, valuation by store, movements by store and day; `InventoryActorlessScopeTest` (consumption listeners, reconcile job). The D132 deadlock ITs stay green. **Acceptance:** A71, A72, A76.
 
 ### S69 — Catalog, promotions, reporting, audit
-**Write scope:** `catalog/`, `promotions/`, `reporting/`, `audit/` (probe methods, tests); `db/migration/catalog/V5007`, `promotions/V12005`, `reporting/V14006`, `audit/V1106`.
+**Write scope:** `catalog/`, `promotions/`, `reporting/`, `audit/` (probe methods, tests); `db/migration/catalog/V5007`, `promotions/V12023`, `reporting/V14006`, `audit/V1106`.
 **Migrations:** catalog: 5 STORE (with R5's `store_item_exclusion`), 2 STORE_OR_ALL, 2 CHILD, 11 registered; promotions: 2 STORE, 10 registered; reporting: 12 STORE; audit: `audit_event` SPECIAL, revoke `EXECUTE` on `audit.record_console_event` from `PUBLIC`.
 **Tests:** `CatalogRowLevelSecurityTest` (a store-A manager cannot change store B's prices even through a seam: §14 #9), `PromotionsRowLevelSecurityTest`, `ReportingRowLevelSecurityTest`, `AuditRowLevelSecurityTest` (login audited with no actor; store-less rows only for all stores); `ReportPlanTest`, `LoyaltyBalancePlanTest` as the application role; plan tests for the release of a store and audit by store and action; `ReportingActorlessScopeTest` (projection and cost-of-goods listeners, rebuild runner). **Acceptance:** A71, A72, A77 (plans).
 
@@ -121,7 +121,7 @@ R5 S63 merged
 | group | slices (parallel) | why the write sets are disjoint |
 |---|---|---|
 | 0 | S64 alone | `access/`, `config/persistence/**`, `shared/persistence/**`, the exception handler, annotations at the entry points, four registration migrations, `application.yaml`, the test harness, `provision-roles.sql` |
-| 1 | S65 ∥ S66 ∥ S67 ∥ S68 ∥ S69 | `deploy/` and the dev compose; `orders/`+`dining/`+`production/`+V6030/V4007/V7010; `settlement/`+`cash/`+`fiscal/`+V9060/V8011/V10012; `inventory/`+V13080/V13081; `catalog/`+`promotions/`+`reporting/`+`audit/`+V5007/V12005/V14006/V1106. Each adds tests only in its own module packages. |
+| 1 | S65 ∥ S66 ∥ S67 ∥ S68 ∥ S69 | `deploy/` and the dev compose; `orders/`+`dining/`+`production/`+V6030/V4007/V7010; `settlement/`+`cash/`+`fiscal/`+V9060/V8011/V10012; `inventory/`+V13080/V13081; `catalog/`+`promotions/`+`reporting/`+`audit/`+V5007/V12023/V14006/V1106. Each adds tests only in its own module packages. |
 | 2 | S70 alone | e2e tests, coverage strict mode, docs, ADR status, load plan |
 
 Rules: only S64 edits the shared infrastructure listed above; only S65 edits `deploy/`; slices code against the frozen names and never read another module's tables; the R5 rules stay in force.

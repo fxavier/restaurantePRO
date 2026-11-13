@@ -321,7 +321,7 @@ Slices (PRD): **S64** prefactor alone; **Group 1** in parallel: **S65** deploy, 
 | cash | `V8011` (`V8010` stays reserved for R5's S61) | S67 | 8 tables |
 | settlement | `V9060` | S67 | 12 protected, 2 registered |
 | fiscal | `V10012` | S67 | 6 tables |
-| promotions | `V12005` | S69 | 2 protected, 10 registered |
+| promotions | `V12023` | S69 | 2 protected, 10 registered |
 | inventory | `V13080` (`stock_balance.store_id` backfill + composite FK), `V13081` (policies) | S68 | 24 protected, 10 registered |
 | reporting | `V14006` | S69 | 12 tables |
 
