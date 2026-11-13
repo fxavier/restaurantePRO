@@ -1,6 +1,6 @@
 # 0008. Two login flows, one identity model
 
-Status: Accepted, 2026-11-04 (D26; R1 follow-ups built in S10). Source: [backend-decisions.md](../design/backend-decisions.md) D26, [r2-decisions.md](../design/r2-decisions.md) §12; spec §3, §5, §10.
+Status: Accepted, 2026-11-04 (D26; R1 follow-ups built in S10). MFA part superseded by [0035](0035-native-totp-mfa-and-step-up.md) (2026-11-12). Source: [backend-decisions.md](../design/backend-decisions.md) D26, [r2-decisions.md](../design/r2-decisions.md) §12; spec §3, §5, §10.
 
 ## Context
 

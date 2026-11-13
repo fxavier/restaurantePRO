@@ -1,6 +1,6 @@
 # 0038. ESC/POS driver: printer profiles, styled tickets, status probe and drawer kick
 
-Status: Proposed 2026-11-12 (D154–D158; P59, P60). Source: [r5-decisions.md](../design/r5-decisions.md) §6; spec §4, §8.6, §12, §15. Amends, once accepted, D57's single fixed-width rendering. S63 sets it to Accepted after approval.
+Status: Accepted 2026-11-12 (R5 approval, D154–D158; P59, P60); built in S59 and S60, integrated in S63 (2026-11-13); D158 amended 2026-11-13 (S60 and S63). Source: [r5-decisions.md](../design/r5-decisions.md) §6; spec §4, §8.6, §12, §15. Amends D57's single fixed-width rendering. Hardware validation is the human checkpoint A67 ([B5 checklist](../qa/test-plans/printer-hardware-b5.md)).
 
 ## Context
 

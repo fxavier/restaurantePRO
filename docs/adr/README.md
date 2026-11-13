@@ -11,7 +11,7 @@ Each ADR records a decision as built, with its context and consequences. The ful
 | [0005](0005-synchronous-audit.md) | Audit is written synchronously, in the caller's transaction | D20, D41 | Accepted 2026-11-04 |
 | [0006](0006-idempotency-key.md) | One shared Idempotency-Key mechanism | D24 | Accepted 2026-11-04 |
 | [0007](0007-server-side-sessions.md) | Server-side sessions with Spring Session JDBC | D25 | Accepted 2026-11-04 |
-| [0008](0008-two-login-flows.md) | Two login flows, one identity model | D26 | Accepted 2026-11-04 |
+| [0008](0008-two-login-flows.md) | Two login flows, one identity model | D26 | Accepted 2026-11-04; MFA part superseded by 0035 |
 | [0009](0009-rbac-and-access-policy.md) | RBAC with code-defined permissions, checked by `AccessPolicy` | D27, D42 | Accepted 2026-11-04 |
 | [0010](0010-catalog-frozen-release.md) | Catalog working copy plus a frozen published release | D31, D58 | Accepted 2026-11-04 |
 | [0011](0011-r2-module-dependencies.md) | R2 module dependencies (three amendments to D13) | D35 ★, D36, D37 | Accepted 2026-11-04 |
@@ -37,11 +37,11 @@ Each ADR records a decision as built, with its context and consequences. The ful
 | [0031](0031-stock-ledger-and-moving-average.md) | Stock: a movement ledger, a balance projection and a weighted moving average | D113 ★ + amendment | Accepted 2026-11-06, amended 2026-11-07 |
 | [0032](0032-consumption-by-event-triggered-pull.md) | Consumption: an event-triggered, idempotent pull from the confirmed round | D116 ★ | Accepted 2026-11-06 |
 | [0033](0033-delivery-as-an-order-mode.md) | Delivery is an order mode plus a `Delivery` lifecycle in orders | D127 ★, D128–D130 | Accepted 2026-11-06 |
-| [0034](0034-keycloak-not-core-idp-oidc-federation.md) | Keycloak is not the core IdP; optional OIDC federation is the integration path | D138 ★, D144 ★ | Proposed 2026-11-12 |
-| [0035](0035-native-totp-mfa-and-step-up.md) | Native TOTP second factor, per-installation policy, step-up in AccessPolicy | D139 ★, D140–D143, D145 | Proposed 2026-11-12 |
-| [0036](0036-store-item-exclusion.md) | Per-store catalog availability through an explicit exclusion | D146 ★, D147, D148 | Proposed 2026-11-12 |
-| [0037](0037-operational-alerts.md) | Operational alerts: AlertSource, metrics, in-app list, backup status file | D149 ★, D150–D153 | Proposed 2026-11-12 |
-| [0038](0038-escpos-printer-profiles.md) | ESC/POS driver: printer profiles, styled tickets, status probe, drawer kick | D154 ★, D155–D158 | Proposed 2026-11-12 |
+| [0034](0034-keycloak-not-core-idp-oidc-federation.md) | Keycloak is not the core IdP; optional OIDC federation is the integration path | D138 ★, D144 ★ | Accepted 2026-11-12 (R5) |
+| [0035](0035-native-totp-mfa-and-step-up.md) | Native TOTP second factor, per-installation policy, step-up in AccessPolicy | D139 ★, D140–D143, D145 | Accepted 2026-11-12 (R5) |
+| [0036](0036-store-item-exclusion.md) | Per-store catalog availability through an explicit exclusion | D146 ★, D147, D148 | Accepted 2026-11-12 (R5) |
+| [0037](0037-operational-alerts.md) | Operational alerts: AlertSource, metrics, in-app list, backup status file | D149 ★, D150–D153 | Accepted 2026-11-12 (R5) |
+| [0038](0038-escpos-printer-profiles.md) | ESC/POS driver: printer profiles, styled tickets, status probe, drawer kick | D154 ★, D155–D158 | Accepted 2026-11-12 (R5) |
 | [0039](0039-row-level-security-on-store-id.md) | PostgreSQL row-level security on store_id as defence in depth: three database roles, scope set at connection checkout | D162 ★, D163 ★, D165 ★, D164, D166–D173 | Proposed 2026-11-13 |
 
 ## Where the code deviates from a decision text
@@ -58,3 +58,4 @@ Recorded in the ADRs above, plus one decision without an ADR:
 - S10 login throttle: a fixed 15-minute window; the per-pair counter counts attempts (reset on success), the per-address counter counts failures; not a sliding per-username window (ADR 0008).
 - D78: a statement's period is computed from calendar midnights, not from the store's business-day cutoff (BUG-0002, ADR 0022). Fixed in 8c1bd64.
 - D97: the em dash of the payment breakdown prints as `?` on every printer table except WPC1252 (BUG-0001, ADR 0026). Fixed in ef16b3d: an ASCII hyphen fallback.
+- D158: the 30 s kick window runs from the payment's `requestedAt`, not the job's creation, and a kick past its window is saved FAILED `KICK_EXPIRED` when issued (amended in S60 review and S63; ADR 0038).
