@@ -87,12 +87,14 @@ class RoleSeedTest {
 
     @Test
     void administratorOnlyPermissionsStayWithTheAdministrator() {
-        // D62, D92, D134: an empty column means administrator only
+        // D62, D92, D134: an empty column means administrator only. Seeded roles only: tests of the shared database
+        // create roles of their own (e.g. one per sensitive permission in StepUpTest).
         assertThat(jdbc.sql("""
                         SELECT r.name FROM identity.role_permission rp JOIN identity.role r ON r.id = rp.role_id
                         WHERE rp.permission IN ('PAYMENT_METHOD_MANAGE', 'FISCAL_MANAGE', 'REPORT_REBUILD',
                                                 'SUPPORT_ACCESS_MANAGE', 'LOYALTY_PROGRAM_MANAGE',
-                                                'INVENTORY_REBUILD')""")
+                                                'INVENTORY_REBUILD')
+                          AND r.id::text LIKE '01900000-0000-7000-8000-0000000003%'""")
                 .query(String.class).list()).containsOnly("Administrador");
     }
 

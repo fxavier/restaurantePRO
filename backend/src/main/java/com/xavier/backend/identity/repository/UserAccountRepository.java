@@ -1,11 +1,14 @@
 package com.xavier.backend.identity.repository;
 
 import com.xavier.backend.identity.model.UserAccount;
+import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface UserAccountRepository extends JpaRepository<UserAccount, UUID> {
 
@@ -22,4 +25,9 @@ public interface UserAccountRepository extends JpaRepository<UserAccount, UUID> 
 
     @Query("select a.id from UserAccount a join a.roleIds r where r = :roleId")
     List<UUID> findIdsHoldingRole(UUID roleId);
+
+    /** The account row, locked: second-factor enrolment, confirmation and reset of one account are serialized. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select a from UserAccount a where a.id = :id")
+    Optional<UserAccount> lockById(@Param("id") UUID id);
 }

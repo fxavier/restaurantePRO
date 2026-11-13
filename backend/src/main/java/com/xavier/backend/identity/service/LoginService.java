@@ -5,9 +5,12 @@ import com.xavier.backend.access.Actor;
 import com.xavier.backend.access.ActorKind;
 import com.xavier.backend.identity.exception.InvalidCredentialsException;
 import com.xavier.backend.identity.model.UserAccount;
+import com.xavier.backend.identity.model.dto.MfaSessionView;
+import com.xavier.backend.identity.model.dto.MfaState;
 import com.xavier.backend.identity.model.dto.SessionView;
 import com.xavier.backend.identity.repository.EmployeeRepository;
 import com.xavier.backend.identity.repository.UserAccountRepository;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -22,7 +25,8 @@ import org.springframework.transaction.annotation.Transactional;
  * BackOffice login (username + password, D26) and the description of the current session. Every refusal is the
  * same {@link InvalidCredentialsException} (401); the reason goes to a WARN log line, never the password. Password
  * guessing is throttled per username and client address ({@link LoginThrottling}, 429). A support account logs in
- * only while it holds a usable support grant (D83); without one it gets the same 401 as a wrong password.
+ * only while it holds a usable support grant (D83); without one it gets the same 401 as a wrong password. A right
+ * password then meets the second-factor rule of the installation ({@link MfaGate}, D140, D141).
  */
 @Service
 public class LoginService {
@@ -37,12 +41,14 @@ public class LoginService {
     private final LoginAudit audit;
     private final LoginThrottling throttling;
     private final SupportGrantService supportGrants;
+    private final MfaGate mfaGate;
+    private final MfaPolicy mfaPolicy;
     /** Checked against when the username is unknown, so the answer takes as long as for a wrong password. */
     private final String unknownAccountHash;
 
     LoginService(UserAccountRepository accounts, EmployeeRepository employees, AuthorityResolver authorities,
                  PasswordEncoder encoder, AccessPolicy accessPolicy, LoginAudit audit, LoginThrottling throttling,
-                 SupportGrantService supportGrants) {
+                 SupportGrantService supportGrants, MfaGate mfaGate, MfaPolicy mfaPolicy) {
         this.accounts = accounts;
         this.employees = employees;
         this.authorities = authorities;
@@ -51,6 +57,8 @@ public class LoginService {
         this.audit = audit;
         this.throttling = throttling;
         this.supportGrants = supportGrants;
+        this.mfaGate = mfaGate;
+        this.mfaPolicy = mfaPolicy;
         this.unknownAccountHash = encoder.encode("no such account");
     }
 
@@ -59,8 +67,12 @@ public class LoginService {
      * holds no connection.
      *
      * @param clientAddress where the attempt comes from, for throttling
+     * @param remote        the request is from outside {@code lan-cidrs} (D140)
+     * @param enrolmentCode optional: lets an account without a factor log in to enrol where that needs a code (D143)
+     * @return the session; in {@code MFA_PENDING} or {@code MFA_ENROLMENT_REQUIRED} it holds no authority
      */
-    public SessionView passwordLogin(String username, String password, String clientAddress) {
+    public SessionView passwordLogin(String username, String password, String clientAddress, boolean remote,
+                                     String enrolmentCode) {
         String normalized = UserAccount.normalize(username);
         UserAccount account = accounts.findByUsername(normalized).orElse(null);
         throttling.countAttempt(normalized, clientAddress, account == null ? null : account.getId());
@@ -76,9 +88,13 @@ public class LoginService {
             throw refused(username, refusal);
         }
         throttling.succeeded(normalized, clientAddress);
-        SessionView session = sessionOf(account);
-        audit.loggedIn(session.toActor(), supportGrant.map(id -> Map.<String, Object>of("supportGrantId", id))
-                .orElse(Map.of()));
+        SessionView session = mfaGate.atLogin(account, sessionOf(account), remote, enrolmentCode);
+        Map<String, Object> details = new LinkedHashMap<>();
+        supportGrant.ifPresent(id -> details.put("supportGrantId", id));
+        if (session.mfa().state() != MfaState.NONE) {
+            details.put("mfa", session.mfa().state().name());
+        }
+        audit.loggedIn(session.toActor(), details);
         return session;
     }
 
@@ -104,6 +120,7 @@ public class LoginService {
                 account.isMustChangePassword());
     }
 
+    /** The caller's session, with its second-factor state read from the HTTP session (D141). */
     @Transactional(readOnly = true)
     public SessionView currentSession() {
         Actor actor = accessPolicy.current();
@@ -112,9 +129,14 @@ public class LoginService {
                     .map(employee -> SessionView.employee(actor, employee.getName(), employee.isMustChangePin()))
                     .orElseGet(() -> SessionView.employee(actor, null, false));
         }
+        MfaSessionView mfa = MfaSessionAttributes.current()
+                .map(session -> MfaSessionView.of(MfaSessionAttributes.state(session),
+                        MfaSessionAttributes.secondFactorAt(session), mfaPolicy.stepUpMaxAge()))
+                .orElse(MfaSessionView.NONE);
         return accounts.findById(actor.userId())
                 .map(account -> SessionView.account(actor, account.getUsername(), account.isMustChangePassword()))
-                .orElseGet(() -> SessionView.account(actor, null, false));
+                .orElseGet(() -> SessionView.account(actor, null, false))
+                .withMfa(mfa);
     }
 
     private static InvalidCredentialsException refused(String username, String reason) {
