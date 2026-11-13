@@ -183,16 +183,34 @@ public class CostKitchen {
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
     }
 
-    /** Waits until the store's cost projections hold {@code rows} rows of {@code table} (by store). */
+    /**
+     * Waits until the store's cost projections hold {@code rows} rows of {@code table} (by store), and checks they
+     * still do once no event publication naming the store is pending: the count only grows while listeners run, so
+     * an expected count below the final one used to pass on a transient state and fail when the projections were
+     * quicker than the first poll (T1: DiscountReportTest waited for 6 of its 7 discount rows).
+     */
     public void awaitRows(String table, UUID store, long rows) {
         try {
-            ReportingFixtures.await(rows + " rows of " + table, () -> jdbc.sql(
-                            "SELECT count(*) FROM reporting." + table + " WHERE store_id = ?").param(store)
-                    .query(Long.class).single() == rows);
+            ReportingFixtures.await(rows + " rows of " + table, () -> rows(table, store) == rows);
+            ReportingFixtures.await("no event publication pending for store " + store, () -> jdbc.sql(
+                            "SELECT count(*) FROM event_publication WHERE completion_date IS NULL "
+                                    + "AND serialized_event LIKE ?").param("%" + store + "%")
+                    .query(Long.class).single() == 0);
         } catch (AssertionError timedOut) {
             dump(table, store);
             throw timedOut;
         }
+        long settled = rows(table, store);
+        if (settled != rows) {
+            dump(table, store);
+            throw new AssertionError("expected " + rows + " rows of " + table + " once nothing is pending, got "
+                    + settled);
+        }
+    }
+
+    private long rows(String table, UUID store) {
+        return jdbc.sql("SELECT count(*) FROM reporting." + table + " WHERE store_id = ?").param(store)
+                .query(Long.class).single();
     }
 
     /**

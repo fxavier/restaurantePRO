@@ -32,6 +32,9 @@ public class PrintJob {
     /** A PROCESSING job older than this was lost in a crash during its send: UNKNOWN. */
     public static final Duration LEASE = Duration.ofSeconds(60);
 
+    /** D158: a drawer kick claimed later than this after its creation is not sent (a late drawer is a risk). */
+    public static final Duration KICK_TTL = Duration.ofSeconds(30);
+
     private static final Duration FIRST_BACKOFF = Duration.ofSeconds(2);
 
     @Id
@@ -141,6 +144,25 @@ public class PrintJob {
         }
         status = PrintJobStatus.RETRY_WAIT;
         nextAttemptAt = now.plus(FIRST_BACKOFF.multipliedBy(1L << (attempts - 1)));
+    }
+
+    /** D158: as a drawer kick, too late to send at {@code now}. */
+    public boolean kickExpired(Instant now) {
+        return createdAt.plus(KICK_TTL).isBefore(now);
+    }
+
+    /**
+     * D158: a drawer kick gets one attempt and is never held: FAILED with {@code cause} instead of waiting (the
+     * printer not NORMAL, the kick expired) or retrying (its send wrote nothing). One never attempted is stamped
+     * as started when the queue decided ({@code print_job_started_ck}).
+     */
+    public void failUnsent(Instant now, String cause) {
+        require("fail unsent", PrintJobStatus.QUEUED, PrintJobStatus.PROCESSING);
+        status = PrintJobStatus.FAILED;
+        if (startedAt == null) {
+            startedAt = now;
+        }
+        lastError = Objects.requireNonNull(cause, "cause");
     }
 
     /** Bytes may have reached the printer: the outcome is unknown and needs a person (spec §4). */

@@ -297,6 +297,16 @@ class CodedErrorContractTest {
             // R5 production (S59): a printer profile outside D154's ranges
             Map.entry("printer-profile-invalid", () -> new ProductionRuleViolationException(
                     ProductionRule.PRINTER_PROFILE_INVALID, "A 58 mm printer has 24-35 columns")),
+            // R5 production (S60): the manual drawer kick
+            Map.entry("drawer-reason-required", () -> new ProductionRuleViolationException(
+                    ProductionRule.REASON_REQUIRED, "Opening the drawer by hand needs a reason.")),
+            Map.entry("no-receipt-printer", () -> new ProductionRuleViolationException(
+                    ProductionRule.NO_RECEIPT_PRINTER, "This terminal has no receipt printer, so no cash drawer to "
+                            + "open.")),
+            Map.entry("no-cash-drawer", () -> new ProductionRuleViolationException(ProductionRule.NO_CASH_DRAWER,
+                    "The receipt printer CX1 has no cash drawer.")),
+            Map.entry("kick-not-repeatable", () -> new ProductionRuleViolationException(
+                    ProductionRule.KICK_NOT_REPEATABLE, "A cash drawer opens only through the manual open command.")),
             // R3 audit (S26): the query and export guards
             Map.entry("audit-range-too-large", () -> AuditQueryException.rangeTooLarge(92)),
             Map.entry("audit-export-too-large", () -> AuditQueryException.exportTooLarge(150_001, 150_000)),
@@ -851,6 +861,16 @@ class CodedErrorContractTest {
     @Test
     void productionPrinterProfile() throws Exception {
         expect("printer-profile-invalid", 422, "PRINTER_PROFILE_INVALID", "A 58 mm printer has 24-35 columns", "");
+    }
+
+    @Test
+    void productionManualDrawerKick() throws Exception {
+        expect("drawer-reason-required", 422, "REASON_REQUIRED", "Opening the drawer by hand needs a reason.", "");
+        expect("no-receipt-printer", 422, "NO_RECEIPT_PRINTER", "This terminal has no receipt printer, so no cash "
+                + "drawer to open.", "");
+        expect("no-cash-drawer", 422, "NO_CASH_DRAWER", "The receipt printer CX1 has no cash drawer.", "");
+        expect("kick-not-repeatable", 422, "KICK_NOT_REPEATABLE",
+                "A cash drawer opens only through the manual open command.", "");
     }
 
     @Test

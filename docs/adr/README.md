@@ -1,6 +1,6 @@
 # Architecture decision records
 
-Each ADR records a decision as built, with its context and consequences. The full decision texts, with ids, are in [backend-decisions.md](../design/backend-decisions.md) (R1, D1–D33), [r2-decisions.md](../design/r2-decisions.md) (R2, D34–D63) and [r3-decisions.md](../design/r3-decisions.md) (R3, D64–D98), [r4-decisions.md](../design/r4-decisions.md) (R4, D99–D136) and [r5-decisions.md](../design/r5-decisions.md) (R5, D137–D161, proposed). Those documents stay the record for decisions without an ADR here. Supersede an ADR with a new one; do not edit a decision in place.
+Each ADR records a decision as built, with its context and consequences. The full decision texts, with ids, are in [backend-decisions.md](../design/backend-decisions.md) (R1, D1–D33), [r2-decisions.md](../design/r2-decisions.md) (R2, D34–D63) and [r3-decisions.md](../design/r3-decisions.md) (R3, D64–D98), [r4-decisions.md](../design/r4-decisions.md) (R4, D99–D136) and [r5-decisions.md](../design/r5-decisions.md) (R5, D137–D161) and [rls-decisions.md](../design/rls-decisions.md) (RLS, D162–D173, proposed). Those documents stay the record for decisions without an ADR here. Supersede an ADR with a new one; do not edit a decision in place.
 
 | ADR | Title | Decision | Status |
 |---|---|---|---|
@@ -42,6 +42,7 @@ Each ADR records a decision as built, with its context and consequences. The ful
 | [0036](0036-store-item-exclusion.md) | Per-store catalog availability through an explicit exclusion | D146 ★, D147, D148 | Proposed 2026-11-12 |
 | [0037](0037-operational-alerts.md) | Operational alerts: AlertSource, metrics, in-app list, backup status file | D149 ★, D150–D153 | Proposed 2026-11-12 |
 | [0038](0038-escpos-printer-profiles.md) | ESC/POS driver: printer profiles, styled tickets, status probe, drawer kick | D154 ★, D155–D158 | Proposed 2026-11-12 |
+| [0039](0039-row-level-security-on-store-id.md) | PostgreSQL row-level security on store_id as defence in depth: three database roles, scope set at connection checkout | D162 ★, D163 ★, D165 ★, D164, D166–D173 | Proposed 2026-11-13 |
 
 ## Where the code deviates from a decision text
 

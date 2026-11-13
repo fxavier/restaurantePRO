@@ -6,7 +6,9 @@ import com.xavier.backend.cash.SessionView;
 import com.xavier.backend.settlement.model.Payment;
 import com.xavier.backend.settlement.model.PaymentAllocation;
 import com.xavier.backend.settlement.model.PaymentAttempt;
+import com.xavier.backend.settlement.model.PaymentMethodKind;
 import com.xavier.backend.settlement.model.TargetType;
+import com.xavier.backend.settlement.model.event.CashDrawerKickRequested;
 import com.xavier.backend.settlement.model.event.ReceiptSlipRequested;
 import com.xavier.backend.customers.CustomersApi;
 import com.xavier.backend.settlement.model.event.PaymentRecorded;
@@ -27,7 +29,8 @@ import org.springframework.transaction.annotation.Transactional;
  * D69) and its cash receipt ({@code UNIQUE source}), and publishes {@link PaymentRecorded} (D84), in the caller's
  * transaction, under its target's lock. A debt payment (D75) also posts the customer's CREDIT
  * ({@code CustomersApi.postCredit}, before the receipt: D76) and requests its non-fiscal slip
- * ({@link ReceiptSlipRequested}), once with the payment. Every confirmed payment is a {@code PAYMENT_RECEIPT} of its
+ * ({@link ReceiptSlipRequested}), once with the payment. A CASH-kind payment on a terminal also opens its drawer
+ * ({@link CashDrawerKickRequested}, D158). Every confirmed payment is a {@code PAYMENT_RECEIPT} of its
  * method in the attempt's session (D52), so the closing compares card totals too. Nothing else creates a receipt
  * (§7.7: issuing a document never does).
  */
@@ -75,6 +78,11 @@ class PaymentRecorder {
                 succeeded.getTerminalId(), null, null, Map.of("paymentId", payment.getId().toString(),
                         "methodCode", payment.getMethodCode(), "amount", payment.amount().amount().toPlainString()));
         events.publishEvent(new PaymentRecorded(payment.getId(), succeeded.getStoreId()));
+        if (succeeded.getMethodKind() == PaymentMethodKind.CASH) {
+            // an attempt always has its terminal (PaymentAttempt.start requires it)
+            events.publishEvent(new CashDrawerKickRequested("PAYMENT", payment.getId(), payment.getStoreId(),
+                    succeeded.getTerminalId(), payment.getConfirmedAt()));
+        }
         if (payment.getTargetType() == TargetType.CREDIT_ACCOUNT) {
             events.publishEvent(new ReceiptSlipRequested(payment.getId(), payment.getStoreId(),
                     payment.getTerminalId(), slips.lines(payment, customers.debtOf(payment.getCreditAccountId()))));
