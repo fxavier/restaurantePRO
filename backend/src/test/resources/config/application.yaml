@@ -4,3 +4,20 @@ restaurantpro:
     # B4 / D54: tests run the NON-CERTIFIED internal adapter. Production defaults keep this false, so a real
     # installation refuses to start with it (FiscalStartupGuardTest).
     allow-non-certified: true
+  events:
+    # T1: the event-publication recovery job (D88) never fires by itself in a test JVM. Production runs one instance
+    # per database (D19); the test JVM runs its cached Spring contexts on the one shared database, each with its own
+    # clock, and the job sweeps the whole event_publication table. Fired at a wall-clock minute with a context's
+    # (often moved) clock, it claimed publications of the test that was running (another context's: "Listener ... not
+    # found", left FAILED, one attempt more and a last resubmission from that clock), so attempts and status changed
+    # under the test. Tests that prove the job call it directly (EventPublicationRecoveryTest, RestartMatrixTest (f));
+    # a test may still set its own interval. The event_publications gauge shares the interval: the tests that read it
+    # refresh it themselves. Startup republishing stays on (D19), as in production.
+    resubmit-interval: P3650D
+spring:
+  modulith:
+    events:
+      staleness:
+        # T1: same reason: Modulith's staleness monitor (FAILED after resubmitted: PT10M) runs once at start, then not
+        # by itself; EventPublicationRecoveryTest calls it directly.
+        check-interval: P3650D

@@ -224,8 +224,8 @@ class R2AcceptanceTest {
                     Browser.idem(), "subtotal print");
             assertThat(money(subtotal.get("due"))).isEqualByComparingTo("360.00");
             assertThat(awaitPrinted(COUNTER, header, s -> s.contains("SUBTOTAL")).getFirst())
-                    .contains("NÃO SERVE DE FATURA").contains("2 x Prego no pao 150.00 = 300.00")
-                    .contains("TOTAL 360.00 MZN").doesNotContain("Agua");
+                    .contains("NÃO SERVE DE FATURA").containsPattern("2 x Prego no pao +150\\.00 = 300\\.00")
+                    .containsPattern("TOTAL +360\\.00 MZN").doesNotContain("Agua");
 
             // ---- 4. pay in cash with change, the rest by card, issue the document, close the order ----
             office.command(POS + "/payment-attempts", Map.of("orderId", order, "methodCode", "CASH",

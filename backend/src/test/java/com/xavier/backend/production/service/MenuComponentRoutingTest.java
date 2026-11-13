@@ -86,10 +86,10 @@ class MenuComponentRoutingTest {
         Map<Object, Map<String, Object>> tickets = byDestination(batch);
         assertThat(tickets).containsOnlyKeys("KITCHEN", "BAR");
         assertThat(tickets.get("KITCHEN")).containsEntry("printer_id", kitchen).containsEntry("routing", "ROUTED");
-        assertThat((String) tickets.get("KITCHEN").get("content")).contains("2 x MENU item\n   + 2 x Sopa do dia")
+        assertThat(ProductionFixtures.text(tickets.get("KITCHEN"))).contains("2 x MENU item\n   + 2 x Sopa do dia")
                 .doesNotContain("Sumo de laranja", "Pão da casa");
         assertThat(tickets.get("BAR")).containsEntry("printer_id", bar).containsEntry("routing", "ROUTED");
-        assertThat((String) tickets.get("BAR").get("content")).contains("2 x MENU item\n   + 2 x Sumo de laranja")
+        assertThat(ProductionFixtures.text(tickets.get("BAR"))).contains("2 x MENU item\n   + 2 x Sumo de laranja")
                 .doesNotContain("Sopa do dia", "Pão da casa");
         assertThat(fixtures.jobsOfSource(batch)).extracting(job -> job.get("printer_id"))
                 .containsExactlyInAnyOrder(kitchen, bar);
@@ -106,7 +106,7 @@ class MenuComponentRoutingTest {
         await(() -> fixtures.tickets(batch).size() == 2, "a kitchen and a bar ticket");
         Map<Object, Map<String, Object>> tickets = byDestination(batch);
         assertThat(tickets.get("KITCHEN")).containsEntry("routing", "UNROUTED").containsEntry("printer_id", null);
-        assertThat((String) tickets.get("KITCHEN").get("content")).contains("+ 1 x Sopa do dia");
+        assertThat(ProductionFixtures.text(tickets.get("KITCHEN"))).contains("+ 1 x Sopa do dia");
         assertThat(tickets.get("BAR")).containsEntry("routing", "ROUTED");
         assertThat(fixtures.jobsOfSource(batch)).singleElement()
                 .satisfies(job -> assertThat(job).containsEntry("printer_id", bar));
@@ -133,10 +133,10 @@ class MenuComponentRoutingTest {
         await(() -> fixtures.tickets(voidId).size() == 2, "a kitchen and a bar void ticket");
         Map<Object, Map<String, Object>> voids = byDestination(voidId);
         assertThat(voids.get("KITCHEN")).containsEntry("source_type", "VOID").containsEntry("printer_id", kitchen);
-        assertThat((String) voids.get("KITCHEN").get("content")).contains(TicketLayouts.VOID_TITLE,
+        assertThat(ProductionFixtures.text(voids.get("KITCHEN"))).contains(TicketLayouts.VOID_TITLE,
                 "-2 x MENU item\n   + -2 x Sopa do dia").doesNotContain("Sumo de laranja", "Pão da casa");
         assertThat(voids.get("BAR")).containsEntry("printer_id", bar);
-        assertThat((String) voids.get("BAR").get("content")).contains("-2 x MENU item\n   + -2 x Sumo de laranja")
+        assertThat(ProductionFixtures.text(voids.get("BAR"))).contains("-2 x MENU item\n   + -2 x Sumo de laranja")
                 .doesNotContain("Sopa do dia", "Pão da casa");
     }
 
@@ -157,8 +157,8 @@ class MenuComponentRoutingTest {
         UUID voidId = PosRequests.voided(mvc, jdbc, shop.store(), target, copy, "1", approver());
 
         await(() -> fixtures.tickets(voidId).size() == 2, "a kitchen and a bar void ticket");
-        assertThat((String) byDestination(voidId).get("KITCHEN").get("content")).contains("+ -1 x Sopa do dia");
-        assertThat((String) byDestination(voidId).get("BAR").get("content")).contains("+ -1 x Sumo de laranja");
+        assertThat(ProductionFixtures.text(byDestination(voidId).get("KITCHEN"))).contains("+ -1 x Sopa do dia");
+        assertThat(ProductionFixtures.text(byDestination(voidId).get("BAR"))).contains("+ -1 x Sumo de laranja");
     }
 
     private IdentityFixtures.Employee approver() throws Exception {

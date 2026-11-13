@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.xavier.backend.production.adapter.PrinterTransport;
 import com.xavier.backend.production.adapter.SendOutcome;
+import com.xavier.backend.production.adapter.SendResult;
 import com.xavier.backend.production.model.PrinterAddress;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -77,7 +78,7 @@ class PrintWorkerTest {
                 payloads.put(id, "job " + i);
                 printerOf.put(id, printer);
                 pendingByPrinter.computeIfAbsent(printer, p -> new ArrayDeque<>())
-                        .add(new Dispatch(id, printer, ADDRESS, payloads.get(id).getBytes()));
+                        .add(new Dispatch(id, printer, ADDRESS, payloads.get(id).getBytes(), false));
                 ids.add(id);
             }
             return ids;
@@ -106,7 +107,7 @@ class PrintWorkerTest {
         }
 
         @Override
-        public synchronized void record(UUID jobId, SendOutcome outcome) {
+        public synchronized void record(UUID jobId, SendResult result) {
             inFlight.remove(printerOf.get(jobId));
         }
     }
@@ -124,14 +125,14 @@ class PrintWorkerTest {
         }
 
         @Override
-        public SendOutcome send(PrinterAddress address, byte[] payload) {
+        public SendResult send(PrinterAddress address, byte[] payload, boolean probeStatus) {
             sent.add(new String(payload));
             if (firstStarted.getCount() > 0) {
                 firstStarted.countDown();
                 awaitRelease();
             }
             allSent.countDown();
-            return SendOutcome.ACCEPTED;
+            return SendResult.of(SendOutcome.ACCEPTED);
         }
 
         private void awaitRelease() {

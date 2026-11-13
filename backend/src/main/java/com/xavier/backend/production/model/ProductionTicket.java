@@ -16,7 +16,7 @@ import org.hibernate.annotations.UuidGenerator;
 
 /**
  * The logical ticket per source × destination (spec §4): a fact. Its text is fixed when it is created, so a copy or
- * a retry prints the same thing. {@code suppressed} means the printer was in IGNORE: there is no job, and the ticket
+ * a retry prints the same thing; its layout (width, wrap) is made at send time for the printer that prints it (D155). {@code suppressed} means the printer was in IGNORE: there is no job, and the ticket
  * shows that the work was suppressed, not lost (§8.6). An UNROUTED ticket had no printer to go to (D89 (1)): it has
  * no printer and no job until it is routed, the one change a ticket takes (a compare-and-set in the repository, which
  * the table's trigger also allows only that way).
@@ -63,6 +63,10 @@ public class ProductionTicket {
     @Column(nullable = false)
     private String content;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 10)
+    private ContentFormat contentFormat;
+
     private String qrPayload;
 
     @Column(nullable = false)
@@ -99,14 +103,28 @@ public class ProductionTicket {
         ticket.kind = draft.kind();
         ticket.orderId = draft.orderId();
         ticket.terminalId = draft.terminalId();
-        ticket.content = String.join("\n", draft.lines());
-        ticket.qrPayload = draft.qrPayload();
+        Printout printout = draft.printout();
+        ticket.contentFormat = printout.format();
+        ticket.content = switch (printout.format()) {
+            case PLAIN -> String.join("\n", printout.plainText());
+            case STYLED_V1 -> StyledContent.toJson(printout.lines());
+        };
+        ticket.qrPayload = printout.qrPayload();
         ticket.createdAt = now;
         return ticket;
     }
 
+    /** What it prints, laid out later for the printer that prints it (D155). */
+    public Printout printout() {
+        return switch (contentFormat) {
+            case PLAIN -> Printout.plain(List.of(content.split("\n", -1)), qrPayload);
+            case STYLED_V1 -> new Printout(ContentFormat.STYLED_V1, StyledContent.fromJson(content), qrPayload);
+        };
+    }
+
+    /** The printout as plain text lines (a styled rule reads as 32 dashes, an amount line as "left right"). */
     public List<String> lines() {
-        return List.of(content.split("\n", -1));
+        return printout().plainText();
     }
 
     /** A COPY job prints the copy mark, except on a document: fiscal's copy printout carries its own (§8.4). */

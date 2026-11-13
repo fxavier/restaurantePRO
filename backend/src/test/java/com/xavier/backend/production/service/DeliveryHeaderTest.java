@@ -54,7 +54,7 @@ class DeliveryHeaderTest {
 
         UUID batch = PosRequests.lastBatch(jdbc, order);
         await(() -> fixtures.tickets(batch).size() == 1, "the round's BAR ticket");
-        assertThat((String) fixtures.tickets(batch).getFirst().get("content"))
+        assertThat(ProductionFixtures.text(fixtures.tickets(batch).getFirst()))
                 .contains("ENTREGA #" + PosRequests.orderNumber(jdbc, order), "1 x Coca-Cola 33cl")
                 .doesNotContain("Pedido #");
     }
@@ -72,7 +72,7 @@ class DeliveryHeaderTest {
                 orders.employee(d.shop(), IdentityFixtures.MANAGER));
 
         await(() -> fixtures.tickets(voidId).size() == 1, "the void's BAR ticket");
-        assertThat((String) fixtures.tickets(voidId).getFirst().get("content")).contains(TicketLayouts.VOID_TITLE,
+        assertThat(ProductionFixtures.text(fixtures.tickets(voidId).getFirst())).contains(TicketLayouts.VOID_TITLE,
                 "ENTREGA #" + PosRequests.orderNumber(jdbc, order), "-1 x Coca-Cola 33cl").doesNotContain("Pedido #");
     }
 
@@ -88,7 +88,7 @@ class DeliveryHeaderTest {
 
         UUID batch = PosRequests.lastBatch(jdbc, order);
         await(() -> fixtures.tickets(batch).size() == 1, "the round's BAR ticket");
-        assertThat((String) fixtures.tickets(batch).getFirst().get("content"))
+        assertThat(ProductionFixtures.text(fixtures.tickets(batch).getFirst()))
                 .contains("TAKEAWAY #" + PosRequests.orderNumber(jdbc, order), "2 x Coca-Cola 33cl")
                 .doesNotContain("Pedido #");
     }

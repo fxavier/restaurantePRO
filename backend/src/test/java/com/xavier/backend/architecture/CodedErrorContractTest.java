@@ -265,6 +265,9 @@ class CodedErrorContractTest {
                     "Production ticket " + ID + " still has no printer to go to: add its route or its terminal's "
                             + "printer first")),
             Map.entry("ticket-already-routed", () -> ProductionConflictException.ticketAlreadyRouted(ID)),
+            // R5 production (S59): a printer profile outside D154's ranges
+            Map.entry("printer-profile-invalid", () -> new ProductionRuleViolationException(
+                    ProductionRule.PRINTER_PROFILE_INVALID, "A 58 mm printer has 24-35 columns")),
             // R3 audit (S26): the query and export guards
             Map.entry("audit-range-too-large", () -> AuditQueryException.rangeTooLarge(92)),
             Map.entry("audit-export-too-large", () -> AuditQueryException.exportTooLarge(150_001, 150_000)),
@@ -760,6 +763,11 @@ class CodedErrorContractTest {
                 + "to: add its route or its terminal's printer first", "");
         expect("ticket-already-routed", 409, "TICKET_ALREADY_ROUTED", "Production ticket " + ID
                 + " is already routed", "");
+    }
+
+    @Test
+    void productionPrinterProfile() throws Exception {
+        expect("printer-profile-invalid", 422, "PRINTER_PROFILE_INVALID", "A 58 mm printer has 24-35 columns", "");
     }
 
     @Test

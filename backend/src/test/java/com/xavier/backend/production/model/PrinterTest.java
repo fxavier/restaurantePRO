@@ -58,7 +58,8 @@ class PrinterTest {
     }
 
     static Printer printer(UUID store, String code) {
-        Printer printer = Printer.create(store, code, "Impressora " + code, "127.0.0.1", 9100, CodePage.CP860, NOW);
+        Printer printer = Printer.create(store, code, "Impressora " + code, "127.0.0.1", 9100, CodePage.CP860,
+                PrinterProfile.DEFAULT, NOW);
         try {
             Field id = Printer.class.getDeclaredField("id");
             id.setAccessible(true);

@@ -16,6 +16,7 @@ import com.xavier.backend.production.model.JobKind;
 import com.xavier.backend.production.model.PrintJob;
 import com.xavier.backend.production.model.Printer;
 import com.xavier.backend.production.model.PrinterMode;
+import com.xavier.backend.production.model.Printout;
 import com.xavier.backend.production.model.ProductionTicket;
 import com.xavier.backend.production.model.TicketDraft;
 import com.xavier.backend.production.model.TicketRouting;
@@ -96,9 +97,9 @@ public class TicketService {
     private void printBatch(OrderBatchConfirmed event) {
         for (String destination : TicketLayouts.destinations(event.lines())) {
             routed(event.storeId(), destination, new TicketDraft(event.storeId(), TicketSource.BATCH, event.batchId(),
-                    destination, JobKind.ORIGINAL, event.orderId(), event.terminalId(), TicketLayouts.batch(
-                    destination, event.orderNumber(), event.tableCode(), event.mode(), event.batchNo(),
-                    event.confirmedAt(), zone(event.storeId()), event.lines()), null));
+                    destination, JobKind.ORIGINAL, event.orderId(), event.terminalId(), Printout.styled(
+                    TicketLayouts.batch(destination, event.orderNumber(), event.tableCode(), event.mode(),
+                            event.batchNo(), event.confirmedAt(), zone(event.storeId()), event.lines()))));
         }
     }
 
@@ -110,32 +111,32 @@ public class TicketService {
     public void printVoid(OrderLinesVoided event) {
         for (String destination : TicketLayouts.destinations(List.of(event.line()))) {
             routed(event.storeId(), destination, new TicketDraft(event.storeId(), TicketSource.VOID, event.voidId(),
-                    destination, JobKind.ORIGINAL, event.orderId(), event.terminalId(), TicketLayouts.voided(
-                    destination, event.orderNumber(), event.tableCode(), event.mode(), event.at(),
-                    zone(event.storeId()), event.line(), event.quantity(), event.reason()), null));
+                    destination, JobKind.ORIGINAL, event.orderId(), event.terminalId(), Printout.styled(
+                    TicketLayouts.voided(destination, event.orderNumber(), event.tableCode(), event.mode(),
+                            event.at(), zone(event.storeId()), event.line(), event.quantity(), event.reason()))));
         }
     }
 
     /**
      * On the terminal's printer, one ticket per subtotal request (D89 (2)): the request id is the ticket's source, so
      * a redelivery is a no-op and a deliberate second subtotal prints. A publication stored by R2 has no request id;
-     * its key is the order and a digest of what it prints, as in R2.
+     * its key is the order and a digest of what it prints as plain text, as in R2 (the styled lines read as R2's).
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public void printSubtotal(SubtotalRequested event) {
-        List<String> lines = TicketLayouts.subtotal(event.orderNumber(), event.tableCode(), event.lines(),
-                event.due());
+        Printout printout = Printout.styled(TicketLayouts.subtotal(event.orderNumber(), event.tableCode(),
+                event.lines(), event.due()));
         TicketDraft draft = event.requestId() != null
-                ? subtotalDraft(event, event.requestId(), SUBTOTAL, lines)
-                : subtotalDraft(event, event.orderId(),
-                        SUBTOTAL + "-" + digest(event.terminalId() + "\n" + String.join("\n", lines)), lines);
+                ? subtotalDraft(event, event.requestId(), SUBTOTAL, printout)
+                : subtotalDraft(event, event.orderId(), SUBTOTAL + "-" + digest(event.terminalId() + "\n"
+                        + String.join("\n", printout.plainText())), printout);
         onTerminal(event.storeId(), event.terminalId(), draft);
     }
 
     private static TicketDraft subtotalDraft(SubtotalRequested event, UUID sourceId, String destination,
-                                             List<String> lines) {
+                                             Printout printout) {
         return new TicketDraft(event.storeId(), TicketSource.SUBTOTAL, sourceId, destination, JobKind.ORIGINAL,
-                event.orderId(), event.terminalId(), lines, null);
+                event.orderId(), event.terminalId(), printout);
     }
 
     /** A document printout (fiscal lays it out and marks a copy), on the printer of the terminal it ran on. */
@@ -145,17 +146,18 @@ public class TicketService {
         boolean copy = copyNo > 0;
         onTerminal(storeId, terminalId, new TicketDraft(storeId, TicketSource.DOCUMENT, documentId,
                 copy ? "COPY-" + copyNo : "ORIGINAL", copy ? JobKind.COPY : JobKind.ORIGINAL, null, terminalId,
-                printout.lines(), printout.qrPayload()));
+                Printout.plain(printout.lines(), printout.qrPayload())));
     }
 
     /**
      * A debt payment's non-fiscal slip (D75), on the printer of the terminal it was paid at; one per payment (the
-     * payment id is the ticket's source), UNROUTED when that terminal has no printer.
+     * payment id is the ticket's source), UNROUTED when that terminal has no printer. Settlement lays it out, so it
+     * stays PLAIN, like a fiscal printout.
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public void printReceiptSlip(UUID paymentId, UUID storeId, UUID terminalId, List<String> lines) {
         onTerminal(storeId, terminalId, new TicketDraft(storeId, TicketSource.RECEIPT_SLIP, paymentId, "ORIGINAL",
-                JobKind.ORIGINAL, null, terminalId, lines, null));
+                JobKind.ORIGINAL, null, terminalId, Printout.plain(lines, null)));
     }
 
     /**
@@ -168,7 +170,7 @@ public class TicketService {
         DeliverySlip slip = orders.deliverySlip(event.orderId());
         onTerminal(event.storeId(), event.terminalId(), new TicketDraft(event.storeId(), TicketSource.DELIVERY_SLIP,
                 event.deliveryEventId(), "ORIGINAL", JobKind.ORIGINAL, event.orderId(), event.terminalId(),
-                TicketLayouts.deliverySlip(slip, clock.instant(), zone(event.storeId())), null));
+                Printout.styled(TicketLayouts.deliverySlip(slip, clock.instant(), zone(event.storeId())))));
     }
 
     /** A test page straight to {@code printer}, whatever its mode routes (HOLD still holds it). */
@@ -176,8 +178,8 @@ public class TicketService {
     public Issued printTest(Printer printer) {
         Instant now = clock.instant();
         TicketDraft draft = new TicketDraft(printer.getStoreId(), TicketSource.TEST, UUID.randomUUID(),
-                printer.getCode(), JobKind.ORIGINAL, null, null,
-                TicketLayouts.test(printer.getCode(), now, zone(printer.getStoreId())), null);
+                printer.getCode(), JobKind.ORIGINAL, null, null, Printout.styled(TicketLayouts.test(printer.getCode(),
+                now, zone(printer.getStoreId()), printer.profile().columns())));
         ProductionTicket ticket = save(ProductionTicket.create(draft, printer.getId(), false, now));
         return new Issued(ticket, queue(ticket, printer.getId(), now));
     }

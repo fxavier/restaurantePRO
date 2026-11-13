@@ -3,6 +3,9 @@ package com.xavier.backend.production.adapter;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.xavier.backend.production.model.CodePage;
+import com.xavier.backend.production.model.CutMode;
+import com.xavier.backend.production.model.PrinterProfile;
+import com.xavier.backend.production.model.Printout;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -16,6 +19,8 @@ import org.junit.jupiter.params.provider.EnumSource;
 class PaymentBreakdownCodePageTest {
 
     private static final String BREAKDOWN = "Pagamento misto — Numerário: 20.00; A crédito: 30.00";
+    /** Wide enough that the 53-character breakdown is not wrapped (D155 wraps a fiscal line to the width). */
+    private static final PrinterProfile WIDE = new PrinterProfile(80, 64, null, CutMode.PARTIAL, 4, false, null, 100);
     private static final String TYPOGRAPHIC = "Mesa 1–4 “VIP” ‘a’ obrigado…";
 
     @ParameterizedTest
@@ -41,7 +46,7 @@ class PaymentBreakdownCodePageTest {
     }
 
     private static String printed(String line, CodePage table) {
-        byte[] escPos = new EscPosRenderer().render(List.of(line), null, false, table);
+        byte[] escPos = new EscPosRenderer().render(Printout.plain(List.of(line), null), WIDE, table, false);
         return new String(escPos, table.charset());
     }
 }

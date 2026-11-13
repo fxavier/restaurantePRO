@@ -810,10 +810,15 @@ class RestartMatrixTest {
         return publication(document, "completion_date") != null;
     }
 
+    /**
+     * The column of the document's one projection publication, or {@code null} when it is null ({@code completion_date}
+     * while a delivery is still running). {@code singleValue()} throws on a null value, so a poll that caught the
+     * publication RESUBMITTED (its delivery not finished yet) failed the test instead of polling again.
+     */
     private Object publication(UUID document, String column) {
         return jdbc.sql("SELECT " + column + " FROM event_publication WHERE serialized_event LIKE ? "
                         + "AND listener_id LIKE '%ProjectionListeners%' AND event_type LIKE '%FiscalDocumentIssued'")
-                .param("%" + document + "%").query().singleValue();
+                .param("%" + document + "%").query().singleRow().get(column);
     }
 
     private String chargeStatus(UUID order) {

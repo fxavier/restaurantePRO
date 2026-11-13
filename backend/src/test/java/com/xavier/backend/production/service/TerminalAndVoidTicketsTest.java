@@ -154,7 +154,7 @@ class TerminalAndVoidTicketsTest {
         assertThat(fixtures.tickets(request)).singleElement().satisfies(ticket -> {
             assertThat(ticket).containsEntry("source_type", "SUBTOTAL").containsEntry("printer_id", counter)
                     .containsEntry("order_id", order);
-            assertThat((String) ticket.get("content")).contains("SUBTOTAL", "2 x Coca-Cola 33cl 12.50 = 25.00",
+            assertThat(ProductionFixtures.text(ticket)).contains("SUBTOTAL", "2 x Coca-Cola 33cl 12.50 = 25.00",
                     "TOTAL 25.00 MZN");
         });
         assertThat(fixtures.jobsOfSource(request)).hasSize(1);
@@ -175,7 +175,7 @@ class TerminalAndVoidTicketsTest {
         Thread.sleep(500);
         assertThat(fixtures.tickets(voidId)).singleElement().satisfies(ticket -> {
             assertThat(ticket).containsEntry("source_type", "VOID").containsEntry("printer_id", bar);
-            assertThat((String) ticket.get("content")).contains("ANULAÇÃO", "-1 x Coca-Cola 33cl",
+            assertThat(ProductionFixtures.text(ticket)).contains("ANULAÇÃO", "-1 x Coca-Cola 33cl",
                     "Motivo: cliente desistiu");
         });
         assertThat(fixtures.jobsOfSource(voidId)).hasSize(1);

@@ -297,7 +297,7 @@ class R3AcceptanceTest {
         assertThat(docB.get("buyer").get("name").asString()).isEqualTo("Joana Mucavele");
         String printedB = awaitPrinted(COUNTER, WPC1252, "Documento de venda FR/" + docB.get("number").asLong(),
                 s -> true);
-        assertThat(printedB).contains("Pagamento misto" + DASH + "Numerário: 100.00; A crédito: 50.00")
+        assertThat(printedB).contains("Pagamento misto" + DASH + "Numerário: 100.00; A crédito:\n50.00")
                 .doesNotContain("A CRÉDITO").doesNotContain("Saldo em aberto");
         // A20: the credit share is no cash movement and no Payment
         assertThat(count("""
