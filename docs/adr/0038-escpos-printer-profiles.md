@@ -12,7 +12,7 @@ D57 renders plain text lines with a per-printer code page, a QR code, a feed and
 - Production's own tickets are stored **styled** (`STYLED_V1` JSON lines: bold, double, tall, alignment, rules, left/right amounts) and laid out at send time for the printer that prints them, with word wrap at its width. R4 tickets and fiscal printouts stay `PLAIN` and are only wrapped.
 - **Single-byte code pages only** (default CP850 offered for new printers); no UTF-8.
 - **Status probe before sending** (`DLE EOT 2` and `4`, 500 ms each): cover open, paper end or error sends nothing and retries like an unreachable printer; no answer sends. **No post-send acknowledgement**: `DLE EOT` is answered before the buffered job prints, and the alternatives are vendor-specific; §4 already accepts that physical exactly-once is not guaranteed.
-- **Cash-drawer kick** as a print job of its own (`ESC p`), requested by settlement through the event `CashDrawerKickRequested` for cash payments and refunds, plus a manual audited command; one attempt, never held, redirected or retried, expired after 30 s.
+- **Cash-drawer kick** as a print job of its own (`ESC p`), requested by settlement through the event `CashDrawerKickRequested` for cash payments and refunds, plus a manual audited command; one attempt, never held, redirected or retried, expired 30 s after the payment or refund was recorded (D158 amended).
 
 ## Alternatives considered
 
