@@ -135,7 +135,86 @@ class OidcLinkFlowTest {
         MockHttpServletResponse callback = flow.callback(authorization,
                 StubIdp.Grant.of(subject, authorization.nonce(), authorization.codeChallenge()));
 
+        assertThat(callback.getRedirectedUrl()).isEqualTo("/backoffice/login?error=oidc");
+        assertThat(linkedAccount(subject)).isNull();
+    }
+
+    /** S57 review: a password-only re-login as the same account in the same browser cannot finish the owner's link. */
+    @Test
+    void aLinkRequestDoesNotSurviveAPendingReLoginAsTheSameAccount() throws Exception {
+        MfaFixtures.Enrolled enrolled = mfa.enrolledUser(Set.of(IdentityFixtures.MANAGER));
+        policy.set(MfaMode.ALL_BACKOFFICE);
+        mvc.perform(OidcLinks.startLink(enrolled.session())).andExpect(status().isOk());
+        Cookie pending = mvc.perform(IdentityFixtures.loginRequest(enrolled.user().username(),
+                        IdentityFixtures.STRONG_PASSWORD).cookie(enrolled.session()))
+                .andExpect(jsonPath("$.mfa.state").value("PENDING")).andReturn().getResponse().getCookie("SESSION");
+
+        assertNothingLinkedBy(pending);
+    }
+
+    @Test
+    void aLinkRequestDoesNotSurviveALanReLoginWithoutAFreshFactor() throws Exception {
+        MfaFixtures.Enrolled enrolled = mfa.enrolledUser(Set.of(IdentityFixtures.MANAGER));
+        policy.set(MfaMode.SENSITIVE);
+        mvc.perform(OidcLinks.startLink(enrolled.session())).andExpect(status().isOk());
+        Cookie lan = mvc.perform(IdentityFixtures.loginRequest(enrolled.user().username(),
+                        IdentityFixtures.STRONG_PASSWORD).cookie(enrolled.session()).with(from(MfaTest.LAN_ADDRESS)))
+                .andExpect(jsonPath("$.mfa.state").value("NONE")).andReturn().getResponse().getCookie("SESSION");
+
+        assertNothingLinkedBy(lan);
+    }
+
+    /** A link request belongs to the login that made it, even when the new login could have asked itself. */
+    @Test
+    void aLinkRequestDoesNotSurviveAnyNewLogin() throws Exception {
+        IdentityFixtures.User user = identity.user(Set.of(IdentityFixtures.MANAGER), null);
+        Cookie session = identity.login(user.username(), IdentityFixtures.STRONG_PASSWORD);
+        mvc.perform(OidcLinks.startLink(session)).andExpect(status().isOk());
+        Cookie again = mvc.perform(IdentityFixtures.loginRequest(user.username(), IdentityFixtures.STRONG_PASSWORD)
+                .cookie(session)).andExpect(status().isOk()).andReturn().getResponse().getCookie("SESSION");
+
+        assertNothingLinkedBy(again);
+    }
+
+    /** The callback checks the session again: a second factor that went stale meanwhile does not link. */
+    @Test
+    void aSecondFactorThatWentStaleBeforeTheCallbackDoesNotLink() throws Exception {
+        MfaFixtures.Enrolled enrolled = mfa.enrolledUser(Set.of(IdentityFixtures.MANAGER));
+        policy.set(MfaMode.SENSITIVE);
+        clock.advance(policy.stepUpMaxAge().minus(Duration.ofMinutes(1)));
+        mvc.perform(OidcLinks.startLink(enrolled.session())).andExpect(status().isOk());
+        clock.advance(Duration.ofMinutes(2));
+        String subject = OidcFlow.newSubject();
+
+        OidcFlow.Authorization authorization = flow.authorize(enrolled.session());
+        MockHttpServletResponse callback = flow.callback(authorization,
+                StubIdp.Grant.of(subject, authorization.nonce(), authorization.codeChallenge()));
+
         assertThat(callback.getRedirectedUrl()).isEqualTo("/backoffice/?error=oidc-link");
+        assertThat(linkedAccount(subject)).isNull();
+    }
+
+    /** S57 review: a failed callback (here a foreign state) uses the request up; a later good one does not link. */
+    @Test
+    void aFailedCallbackDropsTheLinkRequest() throws Exception {
+        IdentityFixtures.User user = identity.user(Set.of(IdentityFixtures.MANAGER), null);
+        Cookie session = identity.login(user.username(), IdentityFixtures.STRONG_PASSWORD);
+        mvc.perform(OidcLinks.startLink(session)).andExpect(status().isOk());
+        OidcFlow.Authorization first = flow.authorize(session);
+
+        MockHttpServletResponse failed = flow.callback(first.session(), "code-" + UUID.randomUUID(), "not-the-state");
+        assertThat(failed.getRedirectedUrl()).isEqualTo("/backoffice/login?error=oidc");
+
+        assertNothingLinkedBy(first.session());
+    }
+
+    /** The IdP round trip on {@code session}: it is a login attempt of an unlinked identity, refused, and links nothing. */
+    private void assertNothingLinkedBy(Cookie session) throws Exception {
+        String subject = OidcFlow.newSubject();
+        OidcFlow.Authorization authorization = flow.authorize(session);
+        MockHttpServletResponse callback = flow.callback(authorization,
+                StubIdp.Grant.of(subject, authorization.nonce(), authorization.codeChallenge()));
+        assertThat(callback.getRedirectedUrl()).isEqualTo("/backoffice/login?error=oidc");
         assertThat(linkedAccount(subject)).isNull();
     }
 

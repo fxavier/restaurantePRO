@@ -70,6 +70,10 @@ public final class StubIdp implements AutoCloseable {
     private final Set<String> redeemed = ConcurrentHashMap.newKeySet();
     private volatile HttpServer server;
     private volatile int port;
+    /** While set, a discovery request is accepted and never answered (a black hole), until {@link #answer()}. */
+    private volatile java.util.concurrent.CountDownLatch hold;
+    private volatile String announcedIssuer;
+    private volatile java.util.concurrent.CountDownLatch holdToken;
 
     private StubIdp() {
         try {
@@ -109,7 +113,37 @@ public final class StubIdp implements AutoCloseable {
         return redeemed.contains(code);
     }
 
+    /** From now on, discovery requests are accepted and never answered. */
+    public void blackHole() {
+        hold = new java.util.concurrent.CountDownLatch(1);
+    }
+
+    /** From now on, token requests are accepted and never answered, until {@link #answer()}. */
+    public void blackHoleToken() {
+        holdToken = new java.util.concurrent.CountDownLatch(1);
+    }
+
+    /** Held requests get their answer (by now the client has given up), and later ones are answered at once. */
+    public void answer() {
+        java.util.concurrent.CountDownLatch held = hold;
+        java.util.concurrent.CountDownLatch heldToken = holdToken;
+        hold = null;
+        holdToken = null;
+        if (held != null) {
+            held.countDown();
+        }
+        if (heldToken != null) {
+            heldToken.countDown();
+        }
+    }
+
+    /** The discovery document names this issuer instead of the stub's own. */
+    public void announceIssuer(String issuer) {
+        announcedIssuer = issuer;
+    }
+
     public void stop() {
+        answer();
         server.stop(0);
     }
 
@@ -127,6 +161,7 @@ public final class StubIdp implements AutoCloseable {
         try {
             HttpServer http = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), onPort), 0);
             http.createContext("/", this::handle);
+            http.setExecutor(java.util.concurrent.Executors.newCachedThreadPool()); // held requests do not block others
             http.start();
             server = http;
             port = http.getAddress().getPort();
@@ -140,9 +175,21 @@ public final class StubIdp implements AutoCloseable {
         requests.add(path);
         try (exchange) {
             switch (path) {
-                case "/realm/.well-known/openid-configuration" -> json(exchange, 200, discovery());
+                case "/realm/.well-known/openid-configuration" -> {
+                    java.util.concurrent.CountDownLatch held = hold;
+                    if (held != null) {
+                        held.await();
+                    }
+                    json(exchange, 200, discovery());
+                }
                 case "/realm/jwks" -> json(exchange, 200, new JWKSet(key.toPublicJWK()).toJSONObject());
-                case "/realm/token" -> token(exchange);
+                case "/realm/token" -> {
+                    java.util.concurrent.CountDownLatch held = holdToken;
+                    if (held != null) {
+                        held.await();
+                    }
+                    token(exchange);
+                }
                 default -> json(exchange, 404, Map.of("error", "not_found"));
             }
         } catch (Exception e) {
@@ -153,7 +200,7 @@ public final class StubIdp implements AutoCloseable {
     private Map<String, Object> discovery() {
         String issuer = issuer();
         Map<String, Object> document = new LinkedHashMap<>();
-        document.put("issuer", issuer);
+        document.put("issuer", announcedIssuer != null ? announcedIssuer : issuer);
         document.put("authorization_endpoint", issuer + "/authorize");
         document.put("token_endpoint", issuer + "/token");
         document.put("jwks_uri", issuer + "/jwks");

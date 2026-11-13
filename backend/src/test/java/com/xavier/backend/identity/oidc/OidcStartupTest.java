@@ -42,4 +42,24 @@ class OidcStartupTest {
                             .hasMessageContaining("restaurantpro.security.oidc.client-id is required");
                 });
     }
+
+    /** S57 review: one reading of enabled. A value Spring would read as true ("yes") but the condition would not. */
+    @Test
+    void anEnabledValueOtherThanTrueOrFalseStopsStartup() {
+        for (String value : new String[] {"yes", "on", "1", "enabled"}) {
+            runner.withPropertyValues("restaurantpro.security.oidc.enabled=" + value)
+                    .run(context -> {
+                        assertThat(context).hasFailed();
+                        assertThat(context.getStartupFailure()).rootCause()
+                                .hasMessageContaining("restaurantpro.security.oidc.enabled must be true or false");
+                    });
+        }
+    }
+
+    @Test
+    void trueInAnyCaseIsEnabledForTheBeansAndTheProperties() {
+        runner.withPropertyValues("restaurantpro.security.oidc.enabled=TRUE")
+                .run(context -> assertThat(context.getStartupFailure()).rootCause()
+                        .hasMessageContaining("restaurantpro.security.oidc.issuer-uri is required"));
+    }
 }

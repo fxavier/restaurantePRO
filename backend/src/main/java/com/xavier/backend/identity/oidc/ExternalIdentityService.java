@@ -3,12 +3,11 @@ package com.xavier.backend.identity.oidc;
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Actor;
 import com.xavier.backend.access.ActorKind;
-import com.xavier.backend.access.AssuranceState;
-import com.xavier.backend.access.AuthenticationAssurance;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.StepUpRequiredException;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.identity.exception.UserNotFoundException;
+import com.xavier.backend.identity.model.MfaFactorStatus;
 import com.xavier.backend.identity.model.UserAccount;
 import com.xavier.backend.identity.model.dto.MfaState;
 import com.xavier.backend.identity.oidc.exception.ExternalIdentityExistsException;
@@ -17,8 +16,11 @@ import com.xavier.backend.identity.oidc.exception.SupportAccountCannotLinkExcept
 import com.xavier.backend.identity.oidc.model.ExternalIdentity;
 import com.xavier.backend.identity.oidc.model.dto.ExternalIdentityView;
 import com.xavier.backend.identity.oidc.repository.ExternalIdentityRepository;
+import com.xavier.backend.identity.repository.MfaFactorRepository;
 import com.xavier.backend.identity.repository.UserAccountRepository;
+import com.xavier.backend.identity.service.MfaPolicy;
 import com.xavier.backend.identity.service.MfaSessionAttributes;
+import com.xavier.backend.identity.service.PendingOidcLink;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
 import jakarta.servlet.http.HttpSession;
 import java.time.Clock;
@@ -42,24 +44,23 @@ import org.springframework.transaction.annotation.Transactional;
 @ConditionalOnOidcEnabled
 public class ExternalIdentityService {
 
-    /** Session attribute: the account ({@code UUID}) whose session asked to link the next IdP identity. */
-    static final String PENDING_LINK = "identity.oidc.pendingLink";
-    /** Session attribute: when ({@code Instant}); a link not completed within {@link #LINK_VALIDITY} is dropped. */
-    static final String PENDING_LINK_AT = "identity.oidc.pendingLinkAt";
+    /** A link request not completed within this is dropped. */
     static final Duration LINK_VALIDITY = Duration.ofMinutes(10);
 
     private final AccessPolicy accessPolicy;
-    private final AuthenticationAssurance assurance;
+    private final MfaPolicy mfaPolicy;
+    private final MfaFactorRepository factors;
     private final UserAccountRepository accounts;
     private final ExternalIdentityRepository identities;
     private final AuditLog auditLog;
     private final Clock clock;
 
-    ExternalIdentityService(AccessPolicy accessPolicy, AuthenticationAssurance assurance,
+    ExternalIdentityService(AccessPolicy accessPolicy, MfaPolicy mfaPolicy, MfaFactorRepository factors,
                             UserAccountRepository accounts, ExternalIdentityRepository identities,
                             AuditLog auditLog, Clock clock) {
         this.accessPolicy = accessPolicy;
-        this.assurance = assurance;
+        this.mfaPolicy = mfaPolicy;
+        this.factors = factors;
         this.accounts = accounts;
         this.identities = identities;
         this.auditLog = auditLog;
@@ -76,40 +77,35 @@ public class ExternalIdentityService {
      */
     @Transactional(readOnly = true)
     public void startLink(HttpSession session) {
-        UserAccount account = ownAccount(session);
-        if (account.isSupport()) {
-            throw new SupportAccountCannotLinkException();
-        }
-        requireFreshSecondFactor();
+        UserAccount account = linkableAccount(currentAccountId(), session);
         if (identities.existsByAccountId(account.getId())) {
             throw new ExternalIdentityExistsException();
         }
-        session.setAttribute(PENDING_LINK, account.getId());
-        session.setAttribute(PENDING_LINK_AT, clock.instant());
+        PendingOidcLink.mark(session, account.getId(), clock.instant());
     }
 
     /**
      * The account a callback should link to, if this session asked for it in the last 10 minutes; the request is
-     * consumed either way.
+     * consumed either way (also by a failed callback, {@code OidcLoginHandlers}).
      */
     Optional<UUID> takePendingLink(HttpSession session) {
-        if (session == null || !(session.getAttribute(PENDING_LINK) instanceof UUID accountId)) {
-            return Optional.empty();
-        }
-        Instant since = session.getAttribute(PENDING_LINK_AT) instanceof Instant at ? at : Instant.MIN;
-        session.removeAttribute(PENDING_LINK);
-        session.removeAttribute(PENDING_LINK_AT);
-        return since.plus(LINK_VALIDITY).isAfter(clock.instant()) ? Optional.of(accountId) : Optional.empty();
+        return PendingOidcLink.take(session)
+                .filter(request -> request.requestedAt().plus(LINK_VALIDITY).isAfter(clock.instant()))
+                .map(PendingOidcLink.Request::accountId);
     }
 
     /**
-     * Links {@code (issuer, subject)} to {@code linker}'s own account; audited {@code OIDC_LINKED}. The database
-     * decides duplicates, also in a race: {@code UNIQUE (account_id)} and {@code UNIQUE (issuer, subject)}.
+     * Links {@code (issuer, subject)} to {@code linker}'s own account; audited {@code OIDC_LINKED}. The session must
+     * still meet the rule {@link #startLink} checked (D144, amended 2026-11-13): it is read again here, since the
+     * owner may have been away for up to 10 minutes. The database decides duplicates, also in a race:
+     * {@code UNIQUE (account_id)} and {@code UNIQUE (issuer, subject)}.
      *
+     * @throws StepUpRequiredException         the session is no longer a finished login with a fresh second factor
      * @throws ExternalIdentityExistsException the account has a link, or the identity is linked to another account
      */
     @Transactional
-    public ExternalIdentityView link(Actor linker, String issuer, String subject) {
+    public ExternalIdentityView link(Actor linker, HttpSession session, String issuer, String subject) {
+        linkableAccount(linker.userId(), session);
         ExternalIdentity saved = UniqueConstraints.saveAndFlush(identities,
                 ExternalIdentity.link(linker.userId(), issuer, subject, clock.instant()),
                 ExternalIdentityExistsException::new,
@@ -150,7 +146,7 @@ public class ExternalIdentityService {
     /** The caller's own link (a real session, not a pending one). */
     @Transactional(readOnly = true)
     public ExternalIdentityView ownLink(HttpSession session) {
-        UUID accountId = ownAccount(session).getId();
+        UUID accountId = ownAccount(currentAccountId(), session).getId();
         return identities.findByAccountId(accountId).map(ExternalIdentity::toView)
                 .orElseThrow(() -> new ExternalIdentityNotFoundException(accountId));
     }
@@ -158,7 +154,7 @@ public class ExternalIdentityService {
     /** Removes the caller's own link; audited {@code OIDC_UNLINKED}. Password login stays (P56). */
     @Transactional
     public void unlinkOwn(HttpSession session) {
-        unlink(ownAccount(session).getId());
+        unlink(ownAccount(currentAccountId(), session).getId());
     }
 
     @Transactional(readOnly = true)
@@ -183,15 +179,30 @@ public class ExternalIdentityService {
                 Map.of());
     }
 
-    /**
-     * The caller's account, from a session that finished logging in: not waiting for a second factor or an enrolment
-     * (D141), and not waiting for a password change (D30).
-     */
-    private UserAccount ownAccount(HttpSession session) {
+    private UUID currentAccountId() {
         Actor actor = accessPolicy.current();
         if (actor.kind() != ActorKind.ACCOUNT) {
             throw new AccessDeniedException("Only a BackOffice account can be linked to an identity provider.");
         }
+        return actor.userId();
+    }
+
+    /**
+     * D144 linking rule, at the start and again at the callback: the account's own finished login (not waiting for a
+     * second factor or an enrolment, D141, nor for a password change, D30), not a support account (D145), and a fresh
+     * second factor while MFA is not OFF (the D142 test). Read from the session and the factor table, not the security
+     * context: during the callback that holds Spring's OAuth2 token.
+     */
+    private UserAccount linkableAccount(UUID accountId, HttpSession session) {
+        UserAccount account = ownAccount(accountId, session);
+        if (account.isSupport()) {
+            throw new SupportAccountCannotLinkException();
+        }
+        requireFreshSecondFactor(accountId, session);
+        return account;
+    }
+
+    private UserAccount ownAccount(UUID accountId, HttpSession session) {
         MfaState state = MfaSessionAttributes.state(session);
         if (state == MfaState.PENDING) {
             throw StepUpRequiredException.stepUpRequired();
@@ -199,25 +210,22 @@ public class ExternalIdentityService {
         if (state == MfaState.ENROLMENT_REQUIRED) {
             throw StepUpRequiredException.enrolmentRequired();
         }
-        UserAccount account = accounts.findById(actor.userId())
-                .orElseThrow(() -> new UserNotFoundException(actor.userId()));
+        UserAccount account = accounts.findById(accountId).orElseThrow(() -> new UserNotFoundException(accountId));
         if (account.isMustChangePassword()) {
             throw new AccessDeniedException("Change your password first.");
         }
         return account;
     }
 
-    /** D144: "with a fresh second factor when MFA is not OFF", the same test as a sensitive permission (D142). */
-    private void requireFreshSecondFactor() {
-        AssuranceState state = assurance.current();
-        if (!state.enforced()) {
+    private void requireFreshSecondFactor(UUID accountId, HttpSession session) {
+        if (!mfaPolicy.enforced()) {
             return;
         }
-        if (!state.enrolled()) {
+        if (!factors.existsByAccountIdAndStatus(accountId, MfaFactorStatus.ACTIVE)) {
             throw StepUpRequiredException.enrolmentRequired();
         }
-        Instant at = state.secondFactorAt();
-        if (at == null || at.plus(state.maxAge()).isBefore(clock.instant())) {
+        Instant at = MfaSessionAttributes.secondFactorAt(session);
+        if (at == null || at.plus(mfaPolicy.stepUpMaxAge()).isBefore(clock.instant())) {
             throw StepUpRequiredException.stepUpRequired();
         }
     }

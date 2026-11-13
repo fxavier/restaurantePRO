@@ -13,6 +13,7 @@ import java.util.concurrent.Callable;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.PlatformTransactionManager;
 
@@ -80,7 +81,7 @@ class ExternalIdentityLinkRaceTest {
     private Callable<String> link(Actor actor, String subject) {
         return () -> {
             try {
-                identities.link(actor, ISSUER, subject);
+                identities.link(actor, new MockHttpSession(), ISSUER, subject);
                 return "LINKED";
             } catch (ExternalIdentityExistsException e) {
                 return e.code();

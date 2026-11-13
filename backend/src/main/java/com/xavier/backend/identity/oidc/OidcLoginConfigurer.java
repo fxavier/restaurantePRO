@@ -18,6 +18,7 @@ import org.springframework.security.web.context.RequestAttributeSecurityContextR
  *       with {@code state}, {@code nonce} and PKCE ({@code S256}) kept in the session by Spring;</li>
  *   <li>{@code GET /api/v1/auth/oidc/callback} is the redirection endpoint, where Spring checks all of them and the
  *       ID token's signature, issuer, audience and expiry;</li>
+ *   <li>the token endpoint is called with {@link OidcHttp}'s timeouts;</li>
  *   <li>the authorized client (access, refresh and ID tokens) is never stored ({@link #NO_TOKENS_KEPT});</li>
  *   <li>Spring's OAuth2 authentication never reaches the session: {@link OidcLoginService} starts the same session a
  *       password login gets, or leaves a linking session as it was;</li>
@@ -69,6 +70,7 @@ public class OidcLoginConfigurer extends AbstractHttpConfigurer<OidcLoginConfigu
                 .authorizedClientRepository(NO_TOKENS_KEPT)
                 .authorizationEndpoint(endpoint -> endpoint
                         .authorizationRequestResolver(new FixedRouteAuthorizationRequestResolver(registrations)))
+                .tokenEndpoint(endpoint -> endpoint.accessTokenResponseClient(OidcHttp.tokenClient()))
                 .redirectionEndpoint(endpoint -> endpoint.baseUri(OidcRoutes.CALLBACK))
                 .loginProcessingUrl(OidcRoutes.CALLBACK)
                 .loginPage(OidcRoutes.LOGIN_PAGE)

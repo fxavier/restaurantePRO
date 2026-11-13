@@ -146,6 +146,26 @@ class OidcLoginTest {
                 .andExpect(jsonPath("$.status").value(401));
     }
 
+    /** D144 (amended, S57 review): must-change-password is not exempt for a federated login. */
+    @Test
+    void anAccountThatMustChangeItsPasswordGetsTheSameRestrictedSession() throws Exception {
+        IdentityFixtures.User fresh = new IdentityFixtures(mvc).newUser("initial password 1",
+                Set.of(IdentityFixtures.MANAGER));
+        String freshSubject = OidcFlow.newSubject();
+        // linking needs a changed password; this row stands for a link made before an administrator reset it
+        jdbc.sql("INSERT INTO identity.external_identity (id, account_id, issuer, subject, linked_at, "
+                        + "linked_by_account_id) VALUES (?, ?, ?, ?, now(), ?)")
+                .params(java.util.UUID.randomUUID(), fresh.id(), OidcTest.IDP.issuer(), freshSubject, fresh.id())
+                .update();
+
+        Cookie session = flow.login(freshSubject, List.of("pwd"), Map.of()).getCookie("SESSION");
+
+        mvc.perform(get("/api/v1/auth/session").cookie(session)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.mustChangePassword").value(true))
+                .andExpect(jsonPath("$.permissions").isEmpty());
+        mvc.perform(get("/api/v1/backoffice/stores").cookie(session)).andExpect(status().isForbidden());
+    }
+
     @Test
     void theStatusShowsTheButton() throws Exception {
         mvc.perform(get(OidcRoutes.BASE)).andExpect(status().isOk())

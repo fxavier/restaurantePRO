@@ -6,6 +6,7 @@ import com.xavier.backend.identity.model.dto.MfaState;
 import com.xavier.backend.identity.model.dto.SessionView;
 import com.xavier.backend.identity.service.LoginAudit;
 import com.xavier.backend.identity.service.MfaSessionAttributes;
+import com.xavier.backend.identity.service.PendingOidcLink;
 import com.xavier.backend.identity.service.SessionPrincipals;
 import com.xavier.backend.identity.service.SupportGrantService;
 import com.xavier.backend.identity.service.TerminalSessionService;
@@ -54,7 +55,8 @@ import org.springframework.stereotype.Component;
  *       checks on every request, and may stay idle at most for the rest of the grant (D83);</li>
  *   <li>a BackOffice session records its second-factor state, when it proved the factor, and when a pending login
  *       started ({@link MfaSessionAttributes}, D141), which {@code MustChangeCredentialFilter},
- *       {@code MfaRemoteFilter} and the step-up check read.</li>
+ *       {@code MfaRemoteFilter} and the step-up check read;</li>
+ *   <li>an OIDC link request of the session's earlier login is dropped ({@link PendingOidcLink}, D144 amended).</li>
  * </ol>
  */
 @Component
@@ -115,6 +117,7 @@ public class LoginSessions {
         flag(session, MUST_CHANGE_PASSWORD, view.mustChangePassword());
         flag(session, MUST_CHANGE_PIN, view.mustChangePin());
         recordSecondFactor(session, view.mfa().state(), secondFactorAt);
+        PendingOidcLink.clear(session); // a link request belongs to the login that made it (D144, amended)
         session.removeAttribute(SUPPORT_GRANT_ID);
         session.removeAttribute(SUPPORT_VALID_UNTIL);
         if (actor.kind() == ActorKind.ACCOUNT) {

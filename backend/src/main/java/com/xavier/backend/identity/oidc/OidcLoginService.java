@@ -8,6 +8,7 @@ import com.xavier.backend.identity.model.dto.MfaSessionView;
 import com.xavier.backend.identity.model.dto.MfaState;
 import com.xavier.backend.identity.model.dto.SessionView;
 import com.xavier.backend.identity.oidc.exception.ExternalIdentityExistsException;
+import com.xavier.backend.identity.oidc.exception.SupportAccountCannotLinkException;
 import com.xavier.backend.identity.service.LoginService;
 import com.xavier.backend.identity.service.MfaPolicy;
 import com.xavier.backend.identity.service.RemoteAddresses;
@@ -22,6 +23,7 @@ import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
@@ -118,9 +120,14 @@ public class OidcLoginService {
             return;
         }
         try {
-            identities.link(linker, issuer, subject);
-        } catch (ExternalIdentityExistsException e) {
+            identities.link(linker, session, issuer, subject);
+        } catch (ExternalIdentityExistsException | SupportAccountCannotLinkException e) {
             log.warn("OIDC link of user {} to {} refused: {}", accountId, issuer, e.code());
+            response.sendRedirect(linkError());
+            return;
+        } catch (AccessDeniedException e) {
+            // D144 amended: the session is no longer the finished, freshly proved login that asked
+            log.warn("OIDC link of user {} to {} refused: {}", accountId, issuer, e.getMessage());
             response.sendRedirect(linkError());
             return;
         }

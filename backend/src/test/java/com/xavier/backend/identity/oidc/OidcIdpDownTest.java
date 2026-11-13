@@ -8,6 +8,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.xavier.backend.identity.IdentityFixtures;
 import com.xavier.backend.identity.MfaTest;
+import com.xavier.backend.identity.MutableClock;
+import java.time.Duration;
+import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.Set;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
@@ -20,7 +28,8 @@ import org.springframework.test.web.servlet.MockMvc;
 
 /**
  * A61 / §11: OIDC enabled and the IdP unreachable from the start. The backend starts (discovery is lazy), the OIDC
- * routes answer 503 {@code OIDC_UNAVAILABLE}, password login works (P56), and the IdP is retried once it is back.
+ * routes answer 503 {@code OIDC_UNAVAILABLE}, password login works (P56), a black-hole IdP holds no request long,
+ * and the IdP is retried 30 s after a failure.
  */
 @MfaTest
 @ContextConfiguration(initializers = OidcIdpDownTest.Down.class)
@@ -31,6 +40,9 @@ class OidcIdpDownTest {
     @Autowired
     MockMvc mvc;
 
+    @Autowired
+    MutableClock clock;
+
     @AfterAll
     static void stop() {
         IDP.stop();
@@ -38,9 +50,7 @@ class OidcIdpDownTest {
 
     @Test
     void theBackendStartsAuthorizeIs503AndPasswordLoginWorksThenTheIdpIsRetried() throws Exception {
-        mvc.perform(get(OidcRoutes.AUTHORIZE))
-                .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.code").value("OIDC_UNAVAILABLE"));
+        expectUnavailable();
         mvc.perform(get(OidcRoutes.BASE)).andExpect(status().isOk()).andExpect(jsonPath("$.enabled").value(true));
 
         IdentityFixtures identity = new IdentityFixtures(mvc);
@@ -48,10 +58,44 @@ class OidcIdpDownTest {
         mvc.perform(IdentityFixtures.loginRequest(user.username(), IdentityFixtures.STRONG_PASSWORD))
                 .andExpect(status().isOk());
 
+        // the IdP is back, but the failure is remembered for 30 s: 503 at once, no call
         IDP.restart();
+        expectUnavailable();
+        assertThat(IDP.requests()).isEmpty();
+
+        // S57 review: an IdP that accepts and never answers holds no request long, and requests do not queue
+        IDP.blackHole();
+        clock.advance(LazyClientRegistrationRepository.FAILURE_MEMORY);
+        ExecutorService pool = Executors.newFixedThreadPool(3);
+        try {
+            long started = System.nanoTime();
+            List<Future<Integer>> calls = pool.invokeAll(List.<Callable<Integer>>of(this::authorizeStatus,
+                    this::authorizeStatus, this::authorizeStatus), 30, TimeUnit.SECONDS);
+            for (Future<Integer> call : calls) {
+                assertThat(call.get()).isEqualTo(503);
+            }
+            assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofSeconds(10));
+        } finally {
+            pool.shutdownNow();
+        }
+        long again = System.nanoTime();
+        expectUnavailable();
+        assertThat(Duration.ofNanos(System.nanoTime() - again)).isLessThan(Duration.ofSeconds(1));
+
+        IDP.answer();
+        clock.advance(LazyClientRegistrationRepository.FAILURE_MEMORY);
         mvc.perform(get(OidcRoutes.AUTHORIZE)).andExpect(status().isFound())
                 .andExpect(header().string("Location", org.hamcrest.Matchers.startsWith(IDP.issuer() + "/authorize?")));
-        assertThat(IDP.requests()).containsExactly("/realm/.well-known/openid-configuration");
+    }
+
+    private void expectUnavailable() throws Exception {
+        mvc.perform(get(OidcRoutes.AUTHORIZE))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("OIDC_UNAVAILABLE"));
+    }
+
+    private Integer authorizeStatus() throws Exception {
+        return mvc.perform(get(OidcRoutes.AUTHORIZE)).andReturn().getResponse().getStatus();
     }
 
     static class Down implements ApplicationContextInitializer<ConfigurableApplicationContext> {

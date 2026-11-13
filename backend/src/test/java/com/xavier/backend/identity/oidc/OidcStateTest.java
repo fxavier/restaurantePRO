@@ -94,6 +94,27 @@ class OidcStateTest {
         assertThat(OidcTest.IDP.redeemed(code)).isFalse();
     }
 
+    /** S57 review: a token endpoint that accepts and never answers fails the callback within the read timeout. */
+    @Test
+    void aBlackHoleTokenEndpointFailsTheCallbackQuickly() throws Exception {
+        OidcFlow.Authorization authorization = flow.authorize(null);
+        OidcTest.IDP.blackHoleToken();
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            long started = System.nanoTime();
+            MockHttpServletResponse callback = pool.submit(() -> flow.callback(authorization,
+                            StubIdp.Grant.of(subject, authorization.nonce(), authorization.codeChallenge())))
+                    .get(20, java.util.concurrent.TimeUnit.SECONDS);
+
+            assertThat(java.time.Duration.ofNanos(System.nanoTime() - started))
+                    .isLessThan(java.time.Duration.ofSeconds(10));
+            assertRefused(callback);
+        } finally {
+            OidcTest.IDP.answer();
+            pool.shutdownNow();
+        }
+    }
+
     private void assertRefused(MockHttpServletResponse callback) throws Exception {
         assertThat(callback.getRedirectedUrl()).isEqualTo("/backoffice/login?error=oidc");
         if (callback.getCookie("SESSION") != null) {

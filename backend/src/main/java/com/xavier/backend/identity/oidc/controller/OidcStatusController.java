@@ -21,6 +21,6 @@ class OidcStatusController {
 
     @GetMapping(OidcRoutes.BASE)
     OidcStatusView status() {
-        return new OidcStatusView(properties.enabled(), properties.enabled() ? properties.displayName() : null);
+        return new OidcStatusView(properties.isEnabled(), properties.isEnabled() ? properties.displayName() : null);
     }
 }

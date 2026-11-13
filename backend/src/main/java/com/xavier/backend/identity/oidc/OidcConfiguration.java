@@ -1,5 +1,6 @@
 package com.xavier.backend.identity.oidc;
 
+import java.time.Clock;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -23,8 +24,8 @@ class OidcConfiguration {
         }
 
         @Bean
-        LazyClientRegistrationRepository oidcClientRegistrations(OidcProperties properties) {
-            return new LazyClientRegistrationRepository(properties);
+        LazyClientRegistrationRepository oidcClientRegistrations(OidcProperties properties, Clock clock) {
+            return new LazyClientRegistrationRepository(properties, clock);
         }
 
         @Bean

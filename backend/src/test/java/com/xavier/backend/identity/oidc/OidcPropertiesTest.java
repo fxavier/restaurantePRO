@@ -28,7 +28,7 @@ class OidcPropertiesTest {
                 "client-secret-file", "", "display-name", "", "scopes", "", "trust-idp-mfa", "",
                 "post-login-uri", ""));
 
-        assertThat(properties.enabled()).isFalse();
+        assertThat(properties.isEnabled()).isFalse();
         assertThat(properties.issuerUri()).isNull();
         assertThat(properties.clientId()).isNull();
         assertThat(properties.clientSecretFile()).isNull();
