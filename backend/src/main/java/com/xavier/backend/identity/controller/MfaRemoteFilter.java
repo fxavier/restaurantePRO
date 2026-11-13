@@ -3,6 +3,7 @@ package com.xavier.backend.identity.controller;
 import com.xavier.backend.access.Actor;
 import com.xavier.backend.access.ActorKind;
 import com.xavier.backend.identity.exception.MfaRefusedException;
+import com.xavier.backend.identity.model.dto.MfaState;
 import com.xavier.backend.identity.service.MfaPolicy;
 import com.xavier.backend.identity.service.MfaSessionAttributes;
 import com.xavier.backend.identity.service.RemoteAddresses;
@@ -64,12 +65,21 @@ class MfaRemoteFilter extends OncePerRequestFilter {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (session == null || authentication == null || !(authentication.getPrincipal() instanceof Actor actor)
                 || actor.kind() != ActorKind.ACCOUNT || MfaSessionAttributes.secondFactorAt(session) != null
-                || !addresses.isRemote(request)) {
+                || restrictedLogin(session) || !addresses.isRemote(request)) {
             return false;
         }
         log.warn("Remote request refused: session of user {} never proved a second factor: {} {}", actor.userId(),
                 request.getMethod(), request.getRequestURI());
         return true;
+    }
+
+    /**
+     * A login still waiting for its factor or enrolment is {@link MustChangeCredentialFilter}'s to refuse, with the
+     * step that completes it; left to it so the answer does not depend on the order of the two filters.
+     */
+    private static boolean restrictedLogin(HttpSession session) {
+        MfaState state = MfaSessionAttributes.state(session);
+        return state == MfaState.PENDING || state == MfaState.ENROLMENT_REQUIRED;
     }
 
     private static boolean isAuthRoute(HttpServletRequest request) {
