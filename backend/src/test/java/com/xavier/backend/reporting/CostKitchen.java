@@ -185,8 +185,29 @@ public class CostKitchen {
 
     /** Waits until the store's cost projections hold {@code rows} rows of {@code table} (by store). */
     public void awaitRows(String table, UUID store, long rows) {
-        ReportingFixtures.await(rows + " rows of " + table, () -> jdbc.sql(
-                        "SELECT count(*) FROM reporting." + table + " WHERE store_id = ?").param(store)
-                .query(Long.class).single() == rows);
+        try {
+            ReportingFixtures.await(rows + " rows of " + table, () -> jdbc.sql(
+                            "SELECT count(*) FROM reporting." + table + " WHERE store_id = ?").param(store)
+                    .query(Long.class).single() == rows);
+        } catch (AssertionError timedOut) {
+            dump(table, store);
+            throw timedOut;
+        }
+    }
+
+    /**
+     * T1: what a timed-out {@link #awaitRows} saw, for a failure seen once under load (DiscountReportTest, 6 rows of
+     * discount_record never came while every listener thread was idle): the store's rows of {@code table} and the
+     * event publications that name the store.
+     */
+    private void dump(String table, UUID store) {
+        System.out.println("awaitRows timed out: reporting." + table + " of store " + store + ": " + jdbc.sql(
+                        "SELECT * FROM reporting." + table + " WHERE store_id = ?").param(store)
+                .query().listOfRows());
+        System.out.println("awaitRows timed out: event publications of store " + store + ": " + jdbc.sql("""
+                        SELECT listener_id, event_type, status, completion_attempts, publication_date,
+                               last_resubmission_date, completion_date
+                        FROM event_publication WHERE serialized_event LIKE ? ORDER BY publication_date""")
+                .param("%" + store + "%").query().listOfRows());
     }
 }
