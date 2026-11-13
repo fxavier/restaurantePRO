@@ -33,7 +33,7 @@ public final class TcpFakePrinter implements AutoCloseable {
     private volatile Mode mode;
     private volatile ServerSocket server;
     /** The replies to DLE EOT 2 and DLE EOT 4; {@code null}: never replies. */
-    private final byte[] status;
+    private volatile byte[] status;
     /** How long a reply waits; past the sender's probe timeout it arrives too late. */
     private final Duration answerDelay;
     /** Closes its sending side (FIN) as soon as it accepts, and keeps reading. */
@@ -95,6 +95,11 @@ public final class TcpFakePrinter implements AutoCloseable {
 
     public String host() {
         return "127.0.0.1";
+    }
+
+    /** From the next connection on, replies {@code offlineStatus} and {@code paperStatus} (e.g. paper ran out). */
+    public void answer(byte offlineStatus, byte paperStatus) {
+        status = new byte[] {offlineStatus, paperStatus};
     }
 
     public void down() throws IOException {
@@ -164,10 +169,11 @@ public final class TcpFakePrinter implements AutoCloseable {
             if (hangUp) {
                 connection.shutdownOutput();
             }
-            if (status == null) {
+            byte[] replies = status;
+            if (replies == null) {
                 in.transferTo(bytes);
             } else {
-                answerWhileReading(connection, in, bytes);
+                answerWhileReading(connection, in, bytes, replies);
             }
         } catch (IOException e) {
             // a broken connection is the sender's outcome to report
@@ -177,7 +183,7 @@ public final class TcpFakePrinter implements AutoCloseable {
     }
 
     /** Byte by byte, so a status request is answered as soon as its third byte arrives. */
-    private void answerWhileReading(Socket connection, InputStream in, ByteArrayOutputStream bytes)
+    private void answerWhileReading(Socket connection, InputStream in, ByteArrayOutputStream bytes, byte[] replies)
             throws IOException {
         int beforeLast = -1;
         int last = -1;
@@ -185,7 +191,7 @@ public final class TcpFakePrinter implements AutoCloseable {
             bytes.write(b);
             if (beforeLast == 0x10 && last == 0x04 && (b == 0x02 || b == 0x04)) {
                 pause(answerDelay);
-                connection.getOutputStream().write(status[b == 0x02 ? 0 : 1]);
+                connection.getOutputStream().write(replies[b == 0x02 ? 0 : 1]);
                 connection.getOutputStream().flush();
             }
             beforeLast = last;
