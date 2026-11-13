@@ -9,6 +9,7 @@ import com.xavier.backend.inventory.model.dto.RotationRow;
 import com.xavier.backend.inventory.model.dto.ValuationRow;
 import com.xavier.backend.inventory.model.dto.WasteRow;
 import com.xavier.backend.inventory.repository.InventoryQueries;
+import com.xavier.backend.shared.ops.ExportMonitor;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -36,13 +37,15 @@ public class InventoryReportService {
     private final InventoryScope scope;
     private final AccessPolicy accessPolicy;
     private final AuditLog auditLog;
+    private final ExportMonitor exportMonitor;
 
     InventoryReportService(InventoryQueries queries, InventoryScope scope, AccessPolicy accessPolicy,
-                           AuditLog auditLog) {
+                           AuditLog auditLog, ExportMonitor exportMonitor) {
         this.queries = queries;
         this.scope = scope;
         this.accessPolicy = accessPolicy;
         this.auditLog = auditLog;
+        this.exportMonitor = exportMonitor;
     }
 
     @Transactional(readOnly = true)
@@ -71,9 +74,16 @@ public class InventoryReportService {
         return report(storeId, from, to, queries.rotation(storeId, from, to), RotationRow::consumptionCost);
     }
 
-    /** The report as RFC 4180 CSV with a header line; audited with its parameters and row count. */
+    /**
+     * The report as RFC 4180 CSV with a header line; audited with its parameters and row count, and counted by
+     * {@link ExportMonitor} (kind {@code inventory_csv}, D150).
+     */
     @Transactional
     public String csv(String report, UUID storeId, LocalDate from, LocalDate to) {
+        return exportMonitor.monitor(ExportMonitor.INVENTORY_CSV, () -> exportCsv(report, storeId, from, to));
+    }
+
+    private String exportCsv(String report, UUID storeId, LocalDate from, LocalDate to) {
         accessPolicy.require(Permission.REPORT_EXPORT, storeId);
         List<List<String>> lines = switch (report) {
             case "valuation" -> table(List.of("warehouseCode", "code", "name", "baseUnit", "quantity",

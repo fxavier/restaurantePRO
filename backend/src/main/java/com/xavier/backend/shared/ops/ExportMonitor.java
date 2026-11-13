@@ -5,6 +5,8 @@ import com.xavier.backend.shared.exception.ConflictException;
 import com.xavier.backend.shared.exception.NotFoundException;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -20,6 +22,7 @@ import org.springframework.stereotype.Component;
  * The {@code EXPORT_FAILED} alert of D150. Every CSV export runs through {@link #monitor}: it counts
  * {@code exports_total{kind, outcome=success|failure}} and remembers, in memory, the last failure per kind. A failure
  * in the last 24 h is an installation-wide WARNING; a restart forgets it (the counter's history is in Prometheus).
+ * The six series (kind × outcome) are registered at 0 when the monitor is built.
  * Kinds are a closed set so the {@code kind} label stays bounded (§12).
  */
 @Component
@@ -33,6 +36,7 @@ public class ExportMonitor implements AlertSource {
     static final String ALERT_CODE = "EXPORT_FAILED";
     static final Duration WINDOW = Duration.ofHours(24);
     private static final Set<String> KINDS = Set.of(REPORT_CSV, AUDIT_CSV, INVENTORY_CSV);
+    private static final List<String> OUTCOMES = List.of("success", "failure");
 
     private final MeterRegistry meters;
     private final Clock clock;
@@ -41,6 +45,12 @@ public class ExportMonitor implements AlertSource {
     ExportMonitor(MeterRegistry meters, Clock clock) {
         this.meters = meters;
         this.clock = clock;
+        // every series exists at 0 from the start, so Prometheus's increase() sees the first failure after a restart
+        for (String kind : KINDS) {
+            for (String outcome : OUTCOMES) {
+                counter(kind, outcome);
+            }
+        }
     }
 
     /**
@@ -58,7 +68,8 @@ public class ExportMonitor implements AlertSource {
         T result;
         try {
             result = export.get();
-        } catch (AccessDeniedException | BusinessRuleException | NotFoundException | ConflictException refusal) {
+        } catch (AccessDeniedException | BusinessRuleException | NotFoundException | ConflictException
+                 | ExportAborted refusal) {
             throw refusal;
         } catch (RuntimeException e) {
             lastFailure.merge(kind, clock.instant(), (a, b) -> a.isAfter(b) ? a : b);
@@ -67,6 +78,22 @@ public class ExportMonitor implements AlertSource {
         }
         count(kind, "success");
         return result;
+    }
+
+    /**
+     * The exception for a download the client cancelled (its writer failed): {@link #monitor} rethrows it without
+     * counting or alerting, as it is neither a failure nor a success of the export.
+     */
+    public static RuntimeException aborted(IOException cause) {
+        return new ExportAborted(cause);
+    }
+
+    /** A cancelled download; still an {@link UncheckedIOException} for the caller. */
+    private static final class ExportAborted extends UncheckedIOException {
+
+        private ExportAborted(IOException cause) {
+            super(cause);
+        }
     }
 
     /** One installation-wide WARNING per kind whose last failure is at most 24 h before {@code now}, in no order. */
@@ -85,11 +112,14 @@ public class ExportMonitor implements AlertSource {
     }
 
     private void count(String kind, String outcome) {
-        Counter.builder(METRIC)
+        counter(kind, outcome).increment();
+    }
+
+    private Counter counter(String kind, String outcome) {
+        return Counter.builder(METRIC)
                 .description("CSV exports by kind and outcome")
                 .tag("kind", kind)
                 .tag("outcome", outcome)
-                .register(meters)
-                .increment();
+                .register(meters);
     }
 }

@@ -3,6 +3,8 @@ package com.xavier.backend.cash.repository;
 import com.xavier.backend.cash.model.CashClosing;
 import com.xavier.backend.cash.model.CashClosingStatus;
 import jakarta.persistence.LockModeType;
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
@@ -46,6 +48,20 @@ public interface CashClosingRepository extends JpaRepository<CashClosing, UUID> 
             and (:dayId is null or c.cashDayId = :dayId) and (:status is null or c.status = :status)""")
     Page<CashClosing> search(@Param("storeId") UUID storeId, @Param("dayId") UUID dayId,
                              @Param("status") CashClosingStatus status, Pageable pageable);
+
+    /**
+     * D150 CASH_DISCREPANCY, per store: the closings in {@code statuses} submitted or decided at or after {@code from}
+     * whose Σ |difference| over their lines exceeds {@code threshold}.
+     */
+    @Query("""
+            select new com.xavier.backend.cash.repository.StoreCashDiscrepancy(c.storeId, count(c), min(c.submittedAt))
+            from CashClosing c
+            where c.status in :statuses and (c.submittedAt >= :from or c.decidedAt >= :from)
+            and (select sum(abs(l.differenceAmount)) from CashClosingLine l where l.closing = c) > :threshold
+            group by c.storeId""")
+    List<StoreCashDiscrepancy> discrepanciesSince(@Param("statuses") Collection<CashClosingStatus> statuses,
+                                                  @Param("from") Instant from,
+                                                  @Param("threshold") BigDecimal threshold);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select c from CashClosing c where c.id = :id")
