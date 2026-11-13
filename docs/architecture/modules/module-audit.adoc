@@ -8,4 +8,5 @@
 * `c.x.b.a.AuditLog`
 |Bean references
 |* `c.x.b.a.AccessPolicy` (in Access)
+* `c.x.b.s.ops.ExportMonitor` (in Shared kernel)
 |===

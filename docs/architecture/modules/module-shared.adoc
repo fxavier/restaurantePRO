@@ -12,5 +12,7 @@
 
 _Others_
 
+* `c.x.b.s.ops.AlertSource` (via `c.x.b.s.events.EventPublicationAlertSource`)
+* `c.x.b.s.ops.AlertSource` (via `c.x.b.s.ops.ExportMonitor`)
 * `c.x.b.s.web.GlobalExceptionHandler`
 |===

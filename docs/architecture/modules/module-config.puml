@@ -25,12 +25,12 @@ System_Boundary("BackendApplication_boundary", "BackendApplication", $tags="") {
 
 }
 
-Rel(BackendApplication.BackendApplication.Audit, BackendApplication.BackendApplication.Access, "uses", $techn="", $tags="", $link="")
-Rel(BackendApplication.BackendApplication.Access, BackendApplication.BackendApplication.Sharedkernel, "uses", $techn="", $tags="", $link="")
 Rel(BackendApplication.BackendApplication.Configuration, BackendApplication.BackendApplication.Access, "uses", $techn="", $tags="", $link="")
 Rel(BackendApplication.BackendApplication.Configuration, BackendApplication.BackendApplication.Sharedkernel, "uses", $techn="", $tags="", $link="")
 Rel(BackendApplication.BackendApplication.Configuration, BackendApplication.BackendApplication.Audit, "uses", $techn="", $tags="", $link="")
-Rel(BackendApplication.BackendApplication.Audit, BackendApplication.BackendApplication.Sharedkernel, "depends on", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Audit, BackendApplication.BackendApplication.Access, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Audit, BackendApplication.BackendApplication.Sharedkernel, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Access, BackendApplication.BackendApplication.Sharedkernel, "uses", $techn="", $tags="", $link="")
 
 SHOW_LEGEND(true)
 hide stereotypes

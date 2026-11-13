@@ -14,6 +14,7 @@
 * `c.x.b.a.AuditLog` (in Audit)
 * `c.x.b.c.CatalogApi` (in Catalog)
 * `c.x.b.s.events.EventPublicationStats` (in Shared kernel)
+* `c.x.b.s.ops.ExportMonitor` (in Shared kernel)
 |Events listened to
 |* `c.x.b.o.model.event.OrderBatchConfirmed` (async) 
 * `c.x.b.o.model.event.OrderLinesVoided` (async) 
