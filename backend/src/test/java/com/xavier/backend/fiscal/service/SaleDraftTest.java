@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.xavier.backend.access.Permission;
+import com.xavier.backend.access.StoreScopes;
 import com.xavier.backend.fiscal.FiscalApi;
 import com.xavier.backend.fiscal.FiscalFixtures;
 import com.xavier.backend.fiscal.FiscalModuleTest;
@@ -56,6 +57,9 @@ class SaleDraftTest {
 
     @Autowired
     OrganizationApi organization;
+
+    @Autowired
+    StoreScopes scopes;
 
     @Test
     void aDraftNeedsTheCallersTransaction() {
@@ -134,7 +138,9 @@ class SaleDraftTest {
         Callable<String> draft = () -> {
             start.await();
             try {
-                return tx.execute(s -> fiscal.createSaleDraft(saleDraft(store, order, null))).id().toString();
+                // a pool thread has no fixture fallback: the store's scope, as settlement's caller would have
+                return scopes.callForStore(store, "test:SaleDraftTest", () -> tx.execute(s ->
+                        fiscal.createSaleDraft(saleDraft(store, order, null)))).id().toString();
             } catch (RuntimeException e) {
                 return e.getClass().getSimpleName();
             }

@@ -44,6 +44,7 @@ public class CashDayService {
 
     static final String ENTITY = "CashDay";
 
+    private final CashStoreProbe stores;
     private final CashDayRepository days;
     private final CashDayReopeningRepository reopenings;
     private final CashSessionRepository sessions;
@@ -56,9 +57,10 @@ public class CashDayService {
     private final CashAudit audit;
     private final Clock clock;
 
-    CashDayService(CashDayRepository days, CashDayReopeningRepository reopenings, CashSessionRepository sessions,
+    CashDayService(CashStoreProbe stores, CashDayRepository days, CashDayReopeningRepository reopenings, CashSessionRepository sessions,
                    CashMovementRepository movements, ClosingRounds rounds, OrganizationApi organization, ApproverVerifier approvers,
                    AccessPolicy accessPolicy, RowLocks locks, CashAudit audit, Clock clock) {
+        this.stores = stores;
         this.days = days;
         this.locks = locks;
         this.reopenings = reopenings;
@@ -183,11 +185,11 @@ public class CashDayService {
     }
 
     private UUID storeOf(UUID id) {
-        return storeOf(days, id);
+        return storeOf(stores, id);
     }
 
     /** D42: the day's store only, 404 if the day does not exist (also behind {@code CashApi.storeOfDay}). */
-    static UUID storeOf(CashDayRepository days, UUID id) {
-        return days.findStoreIdById(id).orElseThrow(() -> new CashNotFoundException(ENTITY, id));
+    static UUID storeOf(CashStoreProbe stores, UUID id) {
+        return stores.day(id).orElseThrow(() -> new CashNotFoundException(ENTITY, id));
     }
 }

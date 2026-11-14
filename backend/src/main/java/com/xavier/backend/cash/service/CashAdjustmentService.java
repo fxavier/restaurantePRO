@@ -28,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class CashAdjustmentService {
 
+    private final CashStoreProbe stores;
     private final CashSessionRepository sessions;
     private final CashMovementRepository movements;
     private final CashSessionCountRepository counts;
@@ -37,9 +38,10 @@ public class CashAdjustmentService {
     private final CashAudit audit;
     private final Clock clock;
 
-    CashAdjustmentService(CashSessionRepository sessions, CashMovementRepository movements,
+    CashAdjustmentService(CashStoreProbe stores, CashSessionRepository sessions, CashMovementRepository movements,
                           CashSessionCountRepository counts, ClosingRounds rounds, AccessPolicy accessPolicy,
                           RowLocks locks, CashAudit audit, Clock clock) {
+        this.stores = stores;
         this.counts = counts;
         this.rounds = rounds;
         this.sessions = sessions;
@@ -60,7 +62,7 @@ public class CashAdjustmentService {
      */
     @Transactional
     public MovementView adjust(UUID sessionId, AdjustmentRequest request) {
-        UUID storeId = sessions.findStoreIdById(sessionId)
+        UUID storeId = stores.session(sessionId)
                 .orElseThrow(() -> new CashNotFoundException(CashSessionService.ENTITY, sessionId));
         accessPolicy.require(Permission.CASH_ADJUST, storeId);
         CashSession session = sessions.findById(sessionId).orElseThrow();

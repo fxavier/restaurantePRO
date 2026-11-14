@@ -4,7 +4,6 @@ import com.xavier.backend.settlement.reconciliation.model.EntryKind;
 import com.xavier.backend.settlement.reconciliation.model.ReconciliationEntry;
 import java.util.Collection;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -13,10 +12,6 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface ReconciliationEntryRepository extends JpaRepository<ReconciliationEntry, UUID> {
-
-    /** Only the entry's store, read alone before authorizing on it (D42). */
-    @Query("select e.storeId from ReconciliationEntry e where e.id = :id")
-    Optional<UUID> findStoreIdById(@Param("id") UUID id);
 
     /** Which of {@code paymentIds} an earlier batch already matched (MATCHED or AMOUNT_MISMATCH). */
     @Query("""

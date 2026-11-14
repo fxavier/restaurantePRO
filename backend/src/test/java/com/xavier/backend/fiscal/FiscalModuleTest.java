@@ -17,11 +17,14 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
  * Boots the fiscal module with the modules it calls (organization for the company and store snapshots and the
  * StoreActivity that requirePos needs; shared, access, audit) on the shared Testcontainers PostgreSQL. Every fiscal
  * test uses this one annotation so they share one cached context. Never assume empty tables.
+ * {@code config} brings the store-scope hook and advisor (ADR 0039, {@code StoreScopeConfiguration}): a module test
+ * drops the definitions of a module it does not include, even an imported one, and without the hook no connection
+ * carries a store scope, so every table with a policy raises {@code RS001}.
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
-@ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization"})
+@ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization", "config"})
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, FiscalFixtures.class, NanoClock.Config.class})
 @TestPropertySource(properties = {

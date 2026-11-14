@@ -72,10 +72,6 @@ public interface FiscalDocumentRepository extends JpaRepository<FiscalDocument, 
                                     @Param("to") Instant to, @Param("orderId") UUID orderId,
                                     @Param("customerId") UUID customerId, Pageable pageable);
 
-    /** Only the store, for the D42 check order: 404 if absent, then authorize, then load. */
-    @Query("select d.storeId from FiscalDocument d where d.id = :id")
-    Optional<UUID> findStoreIdById(@Param("id") UUID id);
-
     long countByStoreIdAndStatus(UUID storeId, DocumentStatus status);
 
     /** The document lock (D50 §7.6, D51): taken before the series lock. */
