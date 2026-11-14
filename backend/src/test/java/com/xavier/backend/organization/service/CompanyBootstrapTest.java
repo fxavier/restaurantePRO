@@ -12,6 +12,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.util.AopTestUtils;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.modulith.test.AssertablePublishedEvents;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -60,10 +61,15 @@ class CompanyBootstrapTest {
         assertThat(events.ofType(CompanyBootstrapped.class)).isEmpty();
     }
 
+    /**
+     * The runner's target, inside the rolled-back transaction: its proxy applies the BOOTSTRAP scope, which cannot
+     * start inside a transaction (D165); that scope is ActorlessStoreScopeTest's.
+     */
     @Test
     void theStartupRunnerBootstrapsFromTheConfiguredSettings(@Autowired CompanyBootstrapRunner runner) {
+        CompanyBootstrapRunner target = AopTestUtils.getUltimateTargetObject(runner);
         inRolledBackTransactionWithoutCompany(() -> {
-            assertThatCode(() -> runner.run(null)).doesNotThrowAnyException();
+            assertThatCode(() -> target.run(null)).doesNotThrowAnyException();
             entityManager.flush();
 
             assertThat(jdbc.sql("SELECT name, tax_id, country, currency FROM organization.company_profile")
