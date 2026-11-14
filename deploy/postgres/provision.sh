@@ -51,10 +51,12 @@ secret() { # $1 file: its content without the trailing newline; refuses a missin
   printf '%s' "$value"
 }
 
-# The script psql reads on stdin: the two passwords from its environment, logging off, then the provisioning file.
+# The script psql reads on stdin: the two passwords from its environment, then every setting that could log a statement
+# text off for this session (statement, error-statement, duration and sampled logging), then the provisioning file.
 script() {
   printf '%s\n' '\set ON_ERROR_STOP on' '\getenv owner_password RP_OWNER_PASSWORD' '\getenv app_password RP_APP_PASSWORD' \
-    "SET log_statement = 'none';" "SET log_min_error_statement = 'panic';"
+    "SET log_statement = 'none';" "SET log_min_error_statement = 'panic';" "SET log_min_duration_statement = -1;" \
+    "SET log_min_duration_sample = -1;" "SET log_transaction_sample_rate = 0;" "SET log_duration = off;"
   cat "$SQL"
 }
 
@@ -149,7 +151,8 @@ SQL
   docker network create "$net" >/dev/null
   openssl rand -hex 16 | tr -d '\n' >"$work/db_password"
   POSTGRES_PASSWORD="$(cat "$work/db_password")" docker run -d --name "$pg" --network "$net" -e POSTGRES_PASSWORD \
-    -e POSTGRES_USER="$DB_USER" -e POSTGRES_DB="$db" "$image" >/dev/null
+    -e POSTGRES_USER="$DB_USER" -e POSTGRES_DB="$db" "$image" \
+    postgres -c log_statement=all -c log_min_duration_statement=0 -c log_transaction_sample_rate=1 >/dev/null # log all
   local ready=false
   for _ in $(seq 1 60); do
     if docker exec "$pg" pg_isready -q -h 127.0.0.1 -U "$DB_USER" -d "$db" 2>/dev/null; then ready=true; break; fi
@@ -296,7 +299,7 @@ SQL
   ok "roles_problems is clean after provisioning and reports CREATE on a schema, a policy without RLS, membership in the owner and a write on the Flyway history"
 
   if docker logs "$pg" >"$work/server.log" 2>&1; then no_secret_in "$work/server.log" "$work/s1"; no_secret_in "$work/server.log" "$work/wrong"; fi
-  ok "no password in the server log"
+  ok "no password in the server log, although it is started to log every statement and its duration"
   echo "PASS: provision.sh self-test" >&2
 }
 
