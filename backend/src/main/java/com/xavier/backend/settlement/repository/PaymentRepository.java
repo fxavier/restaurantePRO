@@ -13,10 +13,6 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID> {
 
     boolean existsByOrderId(UUID orderId);
 
-    /** Only the payment's store, read alone before authorizing a command on it (D42). */
-    @Query("select p.storeId from Payment p where p.id = :id")
-    java.util.Optional<UUID> findStoreIdById(@Param("id") UUID id);
-
     boolean existsByAttemptId(UUID attemptId);
 
     boolean existsByPartitionId(UUID partitionId);

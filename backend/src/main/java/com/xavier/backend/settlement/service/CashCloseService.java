@@ -87,7 +87,7 @@ public class CashCloseService {
     @Transactional
     public SessionView forceCloseSession(UUID sessionId, ForceCloseSessionRequest request) {
         PosContext pos = accessPolicy.requirePos(Permission.CASH_SESSION_FORCE_CLOSE);
-        UUID storeId = cash.storeOfDay(cash.sessionDay(sessionId).cashDayId());
+        UUID storeId = cash.storeOfSession(sessionId);
         accessPolicy.requireSessionStore(pos, storeId, SESSION, sessionId);
         SessionView session = lockedWithNothingInDoubt(sessionId);
         cash.closeSessionForced(sessionId, request.version(), counts(session, request.counts()), pos.employeeId(),

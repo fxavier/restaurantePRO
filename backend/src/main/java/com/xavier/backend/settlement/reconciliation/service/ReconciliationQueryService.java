@@ -1,5 +1,6 @@
 package com.xavier.backend.settlement.reconciliation.service;
 
+import com.xavier.backend.shared.persistence.StoreProbe;
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.settlement.model.AttemptStatus;
@@ -39,6 +40,7 @@ public class ReconciliationQueryService {
     /** D81: the attempts a person may have to reconcile by hand. */
     static final Set<AttemptStatus> IN_DOUBT = Set.of(AttemptStatus.PENDING, AttemptStatus.UNKNOWN);
 
+    private final StoreProbe storeProbe;
     private final AccessPolicy accessPolicy;
     private final ReconciliationBatchRepository batches;
     private final ReconciliationEntryRepository entries;
@@ -46,10 +48,11 @@ public class ReconciliationQueryService {
     private final PaymentAttemptRepository attempts;
     private final Clock clock;
 
-    ReconciliationQueryService(AccessPolicy accessPolicy, ReconciliationBatchRepository batches,
+    ReconciliationQueryService(StoreProbe storeProbe, AccessPolicy accessPolicy, ReconciliationBatchRepository batches,
                                ReconciliationEntryRepository entries,
                                ReconciliationResolutionRepository resolutions, PaymentAttemptRepository attempts,
                                Clock clock) {
+        this.storeProbe = storeProbe;
         this.accessPolicy = accessPolicy;
         this.batches = batches;
         this.entries = entries;
@@ -73,7 +76,7 @@ public class ReconciliationQueryService {
     /** A batch's entries in line order; {@code kind} and {@code open} filter when given. */
     @Transactional(readOnly = true)
     public PageResponse<EntryView> entries(UUID batchId, EntryKind kind, Boolean open, Pageable pageable) {
-        UUID storeId = batches.findStoreIdById(batchId)
+        UUID storeId = storeProbe.storeOf("settlement.reconciliation_batch", batchId)
                 .orElseThrow(() -> new ReconciliationNotFoundException("ReconciliationBatch", batchId));
         accessPolicy.require(Permission.RECONCILIATION_VIEW, storeId);
         ReconciliationBatch batch = batches.findById(batchId).orElseThrow();

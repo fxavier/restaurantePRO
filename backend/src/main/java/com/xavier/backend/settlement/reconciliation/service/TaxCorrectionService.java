@@ -1,5 +1,6 @@
 package com.xavier.backend.settlement.reconciliation.service;
 
+import com.xavier.backend.shared.persistence.StoreProbe;
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Actor;
 import com.xavier.backend.access.Permission;
@@ -37,6 +38,7 @@ public class TaxCorrectionService {
     static final String ENTITY = "TaxCorrection";
     static final String RESOLVED = "TAX_CORRECTION_RESOLVED";
 
+    private final StoreProbe storeProbe;
     private final AccessPolicy accessPolicy;
     private final OrganizationApi organization;
     private final TaxRoundingAdjustmentRepository adjustments;
@@ -44,9 +46,10 @@ public class TaxCorrectionService {
     private final AuditLog audit;
     private final Clock clock;
 
-    TaxCorrectionService(AccessPolicy accessPolicy, OrganizationApi organization,
+    TaxCorrectionService(StoreProbe storeProbe, AccessPolicy accessPolicy, OrganizationApi organization,
                          TaxRoundingAdjustmentRepository adjustments, TaxCorrectionResolutionRepository resolutions,
                          AuditLog audit, Clock clock) {
+        this.storeProbe = storeProbe;
         this.accessPolicy = accessPolicy;
         this.organization = organization;
         this.adjustments = adjustments;
@@ -76,7 +79,7 @@ public class TaxCorrectionService {
      */
     @Transactional
     public TaxRoundingAdjustmentView resolve(UUID adjustmentId, TaxCorrectionRequest request) {
-        UUID storeId = adjustments.findStoreIdById(adjustmentId)
+        UUID storeId = storeProbe.storeOf("settlement.tax_rounding_adjustment", adjustmentId)
                 .orElseThrow(() -> new ReconciliationNotFoundException("TaxRoundingAdjustment", adjustmentId));
         accessPolicy.require(Permission.RECONCILIATION_MANAGE, storeId);
         TaxRoundingAdjustment adjustment = adjustments.findById(adjustmentId).orElseThrow();

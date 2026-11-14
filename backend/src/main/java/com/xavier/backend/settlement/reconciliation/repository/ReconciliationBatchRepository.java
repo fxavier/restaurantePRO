@@ -15,10 +15,6 @@ public interface ReconciliationBatchRepository extends JpaRepository<Reconciliat
 
     Page<ReconciliationBatch> findByStoreIdOrderByImportedAtDescIdDesc(UUID storeId, Pageable page);
 
-    /** Only the batch's store, read alone before authorizing on it (D42). */
-    @Query("select b.storeId from ReconciliationBatch b where b.id = :id")
-    Optional<UUID> findStoreIdById(@Param("id") UUID id);
-
     /**
      * Serializes the imports of one payment method until the transaction ends (a transaction-level advisory lock), so
      * a second statement sees what the first matched (its DUPLICATE_LINEs) instead of racing it.

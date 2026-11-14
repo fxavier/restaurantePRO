@@ -1,5 +1,6 @@
 package com.xavier.backend.settlement.service;
 
+import com.xavier.backend.shared.persistence.StoreProbe;
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.PosContext;
@@ -52,6 +53,7 @@ public class PaymentAttemptService {
     static final String ORDER = "Order";
     static final String CUSTOMER = "customer";
 
+    private final StoreProbe storeProbe;
     private final AccessPolicy accessPolicy;
     private final SettlementLocks locks;
     private final Bills bills;
@@ -67,11 +69,12 @@ public class PaymentAttemptService {
     private final CustomersApi customers;
     private final Clock clock;
 
-    PaymentAttemptService(AccessPolicy accessPolicy, SettlementLocks locks, Bills bills,
+    PaymentAttemptService(StoreProbe storeProbe, AccessPolicy accessPolicy, SettlementLocks locks, Bills bills,
                           PaymentMethodRepository methods, PaymentAttemptRepository attempts,
                           PaymentRecorder recorder, OrdersApi orders, CashApi cash, SettlementAudit audit,
                           PaymentLocks paymentLocks, PaymentProviders providers, PaymentSubmitter submitter,
                           CustomersApi customers, Clock clock) {
+        this.storeProbe = storeProbe;
         this.customers = customers;
         this.accessPolicy = accessPolicy;
         this.locks = locks;
@@ -269,11 +272,12 @@ public class PaymentAttemptService {
         return attempts.findById(attemptId).orElseThrow();
     }
 
+    /** D42: the attempt's store across every store (D168), 404 then 403, before its ref is read. */
     private AttemptRef authorized(PosContext pos, UUID attemptId) {
-        AttemptRef ref = attempts.findRefById(attemptId)
+        UUID storeId = storeProbe.storeOf("settlement.payment_attempt", attemptId)
                 .orElseThrow(() -> new SettlementNotFoundException(SettlementAudit.ATTEMPT, attemptId));
-        accessPolicy.requireSessionStore(pos, ref.storeId(), SettlementAudit.ATTEMPT, attemptId);
-        return ref;
+        accessPolicy.requireSessionStore(pos, storeId, SettlementAudit.ATTEMPT, attemptId);
+        return attempts.findRefById(attemptId).orElseThrow();
     }
 
     /** An active method whose provider (for an integrated one) is installed (D53). */
