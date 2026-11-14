@@ -34,12 +34,15 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
  * step fail after it committed (D63); the orders, cash and fiscal facades, so a test can prove what was not read (D42);
  * {@link ApproverVerifier} is a mock (identity proves the PIN check itself).
  * The database is shared by the whole test JVM: never assume empty tables.
+ * {@code config} brings the store-scope hook and advisor (ADR 0039, {@code StoreScopeConfiguration}): a module test
+ * drops the definitions of a module it does not include, even an imported one, and without the hook no connection
+ * carries a store scope, so every table with a policy raises {@code RS001}.
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
 @ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization", "dining", "catalog", "orders",
-        "cash", "fiscal", "identity", "customers", "promotions"})
+        "cash", "fiscal", "identity", "customers", "promotions", "config"})
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, DiningFixtures.class, OrdersFixtures.class, CashFixtures.class,
         FiscalFixtures.class, CustomersFixtures.class, SettlementFixtures.class, SettlementTestClock.Config.class,

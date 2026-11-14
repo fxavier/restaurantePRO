@@ -16,11 +16,14 @@ import org.springframework.test.context.TestPropertySource;
  * identity (approver checks for the day reopen), plus shared, access and audit, on the shared Testcontainers
  * PostgreSQL. The clock is {@link CashTestClock}, which tests may set. One annotation, one cached context.
  * The database is shared by the whole test JVM: never assume empty tables.
+ * {@code config} brings the store-scope hook and advisor (ADR 0039, {@code StoreScopeConfiguration}): a module test
+ * drops the definitions of a module it does not include, even an imported one, and without the hook no connection
+ * carries a store scope, so every table with a policy raises {@code RS001}.
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
-@ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization", "identity"})
+@ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization", "identity", "config"})
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, CashTestClock.Config.class, CashFixtures.class})
 @TestPropertySource(properties = {
