@@ -16,6 +16,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,7 +31,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * kick is the cashier's to see, not a print alert. Jobs sit on HOLD printers, so no worker changes
  * them; when a printer turns NORMAL its jobs are not due before tomorrow, so no worker claims them either. The source
  * reads in its own system scope (D166), which cannot start inside a transaction: every change it must see is
- * committed.
+ * committed, and every printer of the test's store goes back to HOLD after each test.
  */
 @ProductionModuleTest
 class PrintQueueAlertSourceTest {
@@ -154,6 +155,16 @@ class PrintQueueAlertSourceTest {
     /** NORMAL in the database directly (no audit, no notice): its jobs stay not yet due, see {@link #job}. */
     private void normal(UUID printerId) {
         jdbc.sql("UPDATE production.printer SET mode = 'NORMAL' WHERE id = ?").param(printerId).update();
+    }
+
+    /**
+     * Back to HOLD, so a NORMAL printer with an old waiting job left by a test raises no PRINT_QUEUE_STALLED and moves
+     * no {@code print_jobs_oldest_waiting_seconds} gauge for the rest of the test JVM (those count NORMAL printers).
+     */
+    @AfterEach
+    void holdTheStoresPrintersAgain() {
+        jdbc.sql("UPDATE production.printer SET mode = 'HOLD', redirect_printer_id = NULL WHERE store_id = ?")
+                .param(store).update();
     }
 
     /** A cash payment's kick on the till, created {@code age} ago, in the caller's transaction; its source. */
