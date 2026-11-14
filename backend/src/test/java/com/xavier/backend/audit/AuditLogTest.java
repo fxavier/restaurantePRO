@@ -23,8 +23,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.modulith.test.ApplicationModuleTest;
 import org.springframework.transaction.support.TransactionTemplate;
 
-// "config": the store-scope hook (ADR 0039); a module test drops the configuration of modules it does not include
-@ApplicationModuleTest(extraIncludes = {"shared", "access", "config"})
+@ApplicationModuleTest(extraIncludes = {"shared", "access"})
 @Import(TestcontainersConfiguration.class)
 class AuditLogTest {
 
