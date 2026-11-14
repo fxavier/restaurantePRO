@@ -1,16 +1,10 @@
 package com.xavier.backend;
 
-import com.xavier.backend.access.FixtureFreeRequests;
-import com.xavier.backend.access.StoreScopeFallback;
-import com.xavier.backend.access.StoreScopeTestSupport;
-import com.xavier.backend.config.persistence.StoreScopeConfiguration;
 import org.flywaydb.core.Flyway;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.flyway.autoconfigure.FlywayConnectionDetails;
 import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
@@ -31,12 +25,10 @@ import org.testcontainers.utility.DockerImageName;
  * <p>Roles (ADR 0039, D163, D171): the container is provisioned with {@code deploy/postgres/provision-roles.sql}, the
  * production file, with passwords generated per JVM. Every context's pool connects as {@value #APP_ROLE} (row-level
  * security binds it) and Flyway as {@value #OWNER_ROLE}. Privileged fixtures ({@code TRUNCATE}, {@code DISABLE TRIGGER},
- * {@code ANALYZE}, DDL) go through {@link OwnerDatabase}. The store-scope hook is imported here so module tests get it
- * too, and the {@link StoreScopeFallback} gives fixture code on the JUnit thread all stores ({@link
- * StoreScopeTestSupport}).
+ * {@code ANALYZE}, DDL) go through {@link OwnerDatabase}. The store-scope hook, the advisor and the fixture fallback
+ * reach every context, module tests included, through {@link StoreScopeTestAutoConfiguration}.
  */
 @TestConfiguration(proxyBeanMethods = false)
-@Import(StoreScopeConfiguration.class)
 public class TestcontainersConfiguration {
 
     public static final String APP_ROLE = DatabaseRoles.APP_ROLE;
@@ -91,19 +83,6 @@ public class TestcontainersConfiguration {
     /** The owner role's password in every container of this JVM. */
     public static String ownerPassword() {
         return DatabaseRoles.ownerPassword();
-    }
-
-    /** Fixture SQL on the JUnit thread sees every store; any other thread, and a strict test, gets production's. */
-    @Bean
-    @Primary
-    StoreScopeFallback testFixtureStoreScopeFallback() {
-        return StoreScopeTestSupport.FIXTURE_FALLBACK;
-    }
-
-    /** A request dispatched by MockMvc on the JUnit thread does not inherit the fixture fallback. */
-    @Bean
-    FixtureFreeRequests fixtureFreeRequests() {
-        return new FixtureFreeRequests();
     }
 
     @Bean
