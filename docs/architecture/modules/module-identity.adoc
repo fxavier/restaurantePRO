@@ -9,8 +9,8 @@
 * `c.x.b.i.EmployeeDirectory`
 |Bean references
 |* `c.x.b.a.IdempotentRequests` (in Access)
-* `c.x.b.a.AuditLog` (in Audit)
 * `c.x.b.a.AccessPolicy` (in Access)
+* `c.x.b.a.AuditLog` (in Audit)
 * `c.x.b.o.OrganizationApi` (in Organization)
 |Events listened to
 |* `c.x.b.o.model.event.CompanyBootstrapped` (async) 

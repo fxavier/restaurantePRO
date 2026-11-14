@@ -1,16 +1,19 @@
-# Flyway versions shipped by the last release (main at 12885fc, before R5). One per line; append a release's
-# versions when it ships. MigrationNumberingTest: a migration not listed here must be above its block's highest
-# listed version. FlywayUpgradeTest installs this set, then upgrades to the current one (ADR 0001).
+# Flyway versions shipped by the last release (R5: main at 4354e4e plus S63, every migration on that branch). One
+# per line; append a release's versions when it ships. MigrationNumberingTest: a migration not listed here must be
+# above its block's highest listed version. FlywayUpgradeTest installs this set, then upgrades to the current one
+# (ADR 0001).
 1001
 1002
 1003
 1004
 1005
 1006
+1007
 1101
 1102
 1103
 1104
+1105
 2001
 2002
 2003
@@ -26,6 +29,8 @@
 3010
 3011
 3012
+3013
+3014
 4001
 4002
 4003
@@ -37,6 +42,7 @@
 5003
 5004
 5005
+5006
 6001
 6002
 6003
@@ -58,6 +64,8 @@
 7005
 7006
 7007
+7008
+7009
 8001
 8002
 8003
@@ -100,6 +108,7 @@
 12003
 12020
 12021
+12022
 13001
 13002
 13003

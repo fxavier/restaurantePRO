@@ -14,6 +14,12 @@ Canonical terms from spec §8.1. Code uses the English name; the Portuguese term
 | Role | Função | identity | Named, editable set of Permissions. |
 | Permission | Permissão | access | Code-defined capability (enum), append-only, checked server-side by `AccessPolicy`. |
 | Approver | Aprovador | identity | Second employee whose credentials authorize a critical action; recorded in audit. |
+| Second factor / TOTP | Segundo fator | identity | A time-based one-time code (RFC 6238, 6 digits, 30 s) from the account's authenticator app, proved after the password. One ACTIVE factor per account; its secret is stored encrypted. Asked at login per the installation's MFA mode (OFF, SENSITIVE, ALL_BACKOFFICE) and at every step-up. Never on the POS. |
+| Recovery code | Código de recuperação | identity | One of ten single-use codes shown once at enrolment, accepted instead of a TOTP code. Stored hashed; a new set replaces the old. |
+| Enrolment code | Código de ativação | identity | A one-time code an administrator issues with an MFA reset (24 h): it lets the account enrol from outside the LAN. Not a recovery code. |
+| Step-up | Reautenticação | access, identity | A fresh second factor (default 15 min old at most) that a BackOffice account must prove before using a sensitive permission (D142); the refusal is 403 `MFA_STEP_UP_REQUIRED`. |
+| Remote access | Acesso remoto | identity | A BackOffice request whose client address is outside `restaurantpro.security.lan-cidrs`; in mode SENSITIVE it needs a second factor at login. |
+| External identity | Identidade externa | identity | The link of one local account to one subject of the installation's OIDC provider. Federation only proves who logs in; authorities stay local RBAC. |
 | RoomArea | Área / sala | dining | Dining room, terrace, counter. |
 | RestaurantTable | Mesa | dining | Physical table in a RoomArea. |
 | TableOccupation | Ocupação de mesa | dining | One use of a table by one Order: OPEN → CLOSED (reason ORDER_CLOSED, ORDER_CANCELLED or MOVED). At most one open per table. |
@@ -111,12 +117,15 @@ Canonical terms from spec §8.1. Code uses the English name; the Portuguese term
 | Automatic item | Artigo automático | catalog, orders | An item the release adds as an automatic draft when a table or order opens (a cover charge per guest), or a delivery zone's fee line (kind FEE). |
 | Sold-out | Esgotado | catalog | An operational flag per store × item or variant, outside the release; a sold-out item is refused at confirmation (`ITEM_SOLD_OUT`). |
 | Daily dish | Prato do dia | catalog | An operational list of published items per store × business date, outside the release. |
+| StoreItemExclusion | Artigo não disponível na loja | catalog | A store × item row: the item is left out of that store's releases (no price needed there); a macro, menu option or automatic item referring to it is omitted or refused at validation. |
 | Reservation | Reserva | dining | A booking with contact, party size, start and tables: BOOKED → SEATED, CANCELLED or NO_SHOW (automatic after the grace). Informative: it never blocks a table or a sale. |
 | Delivery | Entrega | orders | The lifecycle of a DELIVERY order: PENDING → OUT_FOR_DELIVERY → DELIVERED, or RETURNED → re-dispatch or cancel. Separate from the order's lifecycle, financial and fiscal states; the order closes only once DELIVERED. |
 | DeliveryZone | Zona de entrega | orders | A store's delivery area with its fee item, added as an automatic FEE line when a delivery order opens. |
 | DeliveryEvent | Evento de entrega | orders | A fact: one delivery transition (dispatch, delivered, returned, cancel), with who and when. The delivery history. |
 | Courier | Estafeta | orders, identity | The employee, assigned to the store, a delivery is dispatched to. Their cash is recorded by a cashier in the cashier's own session. |
 | Delivery slip | Guia de entrega | production | A non-fiscal ticket (`DELIVERY_SLIP`) printed at dispatch: customer, phone, address, items, amount due. A re-dispatch prints a new one. |
+| Printer profile | Perfil de impressora | production | A printer's stored ESC/POS settings: paper width and columns, code page (and table override), cut mode, feed lines, status probe, drawer pin and pulse. Presets only fill the form. |
+| Drawer kick | Abertura de gaveta | production | An `ESC p` job on the terminal's receipt printer after a cash payment or refund, or a manual open with a reason: one attempt, never held, retried or redirected; a late kick is FAILED `KICK_EXPIRED` at issue, or at claim if its 30 s pass while it is queued. |
 | Warehouse | Armazém | inventory | A store's stock location (kitchen, bar store-room), with its negative-stock policy (ALLOW or REFUSE_MANUAL). |
 | StockItem | Artigo de stock | inventory | A company-wide ingredient or prepared item (PURCHASED or PREPARED) with a base unit and packs. Distinct from a catalog item. |
 | StockMovement | Movimento de stock | inventory | The record of reference: a signed quantity and value per warehouse × stock item, with its source. Immutable; unique per source. |
@@ -143,3 +152,5 @@ Canonical terms from spec §8.1. Code uses the English name; the Portuguese term
 | AuditEvent | Evento de auditoria | audit | Append-only record: actor, approver, action, entity, store, terminal, instant, reason. |
 | Money | Valor monetário | shared | BigDecimal + Currency, HALF_UP at line level, largest-remainder allocation. |
 | IdempotencyRecord | Chave de idempotência | shared | Stored (scope, key, request hash, response) for repeatable commands. |
+| Operational alert | Alerta operacional | shared.ops, config | A condition of spec §12 (backup, disk, print queue, events, payments in doubt, cash difference, export) reported by an `AlertSource` next to its data, listed by `GET /backoffice/alerts` and exposed as a metric for Prometheus. Never marks the backend unhealthy. |
+| Backup status file | Ficheiro de estado das cópias | config, deploy | `backup-status.json`, written by `verify-backups.sh` every run (schema 1: last check, last backups, problems, free space) and read by the backend for the backup and disk alerts. |

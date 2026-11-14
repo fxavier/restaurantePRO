@@ -1,6 +1,6 @@
 # 0038. ESC/POS driver: printer profiles, styled tickets, status probe and drawer kick
 
-Status: Proposed 2026-11-12 (D154–D158; P59, P60). Source: [r5-decisions.md](../design/r5-decisions.md) §6; spec §4, §8.6, §12, §15. Amends, once accepted, D57's single fixed-width rendering. S63 sets it to Accepted after approval.
+Status: Accepted 2026-11-12 (R5 approval, D154–D158; P59, P60); built in S59 and S60, integrated in S63 (2026-11-13); D158 amended 2026-11-13 (S60 and S63). Source: [r5-decisions.md](../design/r5-decisions.md) §6; spec §4, §8.6, §12, §15. Amends D57's single fixed-width rendering. Hardware validation is the human checkpoint A67 ([B5 checklist](../qa/test-plans/printer-hardware-b5.md)).
 
 ## Context
 
@@ -12,7 +12,7 @@ D57 renders plain text lines with a per-printer code page, a QR code, a feed and
 - Production's own tickets are stored **styled** (`STYLED_V1` JSON lines: bold, double, tall, alignment, rules, left/right amounts) and laid out at send time for the printer that prints them, with word wrap at its width. R4 tickets and fiscal printouts stay `PLAIN` and are only wrapped.
 - **Single-byte code pages only** (default CP850 offered for new printers); no UTF-8.
 - **Status probe before sending** (`DLE EOT 2` and `4`, 500 ms each): cover open, paper end or error sends nothing and retries like an unreachable printer; no answer sends. **No post-send acknowledgement**: `DLE EOT` is answered before the buffered job prints, and the alternatives are vendor-specific; §4 already accepts that physical exactly-once is not guaranteed.
-- **Cash-drawer kick** as a print job of its own (`ESC p`), requested by settlement through the event `CashDrawerKickRequested` for cash payments and refunds, plus a manual audited command; one attempt, never held, redirected or retried, expired after 30 s.
+- **Cash-drawer kick** as a print job of its own (`ESC p`), requested by settlement through the event `CashDrawerKickRequested` for cash payments and refunds, plus a manual audited command; one attempt, never held, redirected or retried, expired 30 s after the payment or refund was recorded (D158 amended).
 
 ## Alternatives considered
 

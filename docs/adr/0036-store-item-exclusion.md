@@ -1,6 +1,6 @@
 # 0036. Per-store catalog availability through an explicit exclusion
 
-Status: Proposed 2026-11-12 (D146–D148; P57). Source: [r5-decisions.md](../design/r5-decisions.md) §4; spec §5 ("disponibilidade"), §8.3, §14 #7. Amends, once accepted, the R1 release rule of [0010](0010-catalog-frozen-release.md) that every active item has a price in every store. S63 sets it to Accepted after approval.
+Status: Accepted 2026-11-12 (R5 approval, D146–D148; P57); built in S58, integrated in S63 (2026-11-13). Source: [r5-decisions.md](../design/r5-decisions.md) §4; spec §5 ("disponibilidade"), §8.3, §14 #7. Amends the R1 release rule of [0010](0010-catalog-frozen-release.md) that every active item has a price in every store.
 
 ## Context
 

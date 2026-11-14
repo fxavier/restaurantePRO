@@ -1,6 +1,6 @@
 # 0034. Keycloak is not the core identity provider; optional OIDC federation is the integration path
 
-Status: Proposed 2026-11-12 (D138, D144; P55, P56). Source: [r5-decisions.md](../design/r5-decisions.md) §3; spec §2, §3, §10, §11. S63 sets it to Accepted after approval.
+Status: Accepted 2026-11-12 (R5 approval, D138, D144; P55, P56); built in S55 and S57, integrated in S63 (2026-11-13). Source: [r5-decisions.md](../design/r5-decisions.md) §3; spec §2, §3, §10, §11.
 
 ## Context
 

@@ -1,6 +1,6 @@
 # 0037. Operational alerts: one AlertSource contract, metrics for Prometheus, an in-app list, a backup status file
 
-Status: Proposed 2026-11-12 (D149–D153; P58). Source: [r5-decisions.md](../design/r5-decisions.md) §5; spec §11, §12. Amends, once accepted, D33 (scrape token for `/actuator/prometheus`). S63 sets it to Accepted after approval.
+Status: Accepted 2026-11-12 (R5 approval, D149–D153; P58); built in S55, S59, S61 and S62, integrated in S63 (2026-11-13). Source: [r5-decisions.md](../design/r5-decisions.md) §5; spec §11, §12. Amends D33 (scrape token for `/actuator/prometheus`).
 
 ## Context
 

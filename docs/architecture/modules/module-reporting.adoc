@@ -16,15 +16,16 @@
 * `c.x.b.s.SettlementFacts` (in Settlement)
 * `c.x.b.a.AccessPolicy` (in Access)
 * `c.x.b.a.AuditLog` (in Audit)
+* `c.x.b.s.ops.ExportMonitor` (in Shared kernel)
 |Events listened to
-|* `c.x.b.o.model.event.OrderClosed` (async) 
-* `c.x.b.i.model.event.ConsumptionWasteRecorded` (async) 
+|* `c.x.b.o.model.event.LineDiscountsRecorded` (async) 
 * `c.x.b.i.model.event.StockMovementsPosted` (async) 
-* `c.x.b.o.model.event.LineDiscountsRecorded` (async) 
-* `c.x.b.s.model.event.PaymentRecorded` (async) 
-* `c.x.b.s.model.event.RefundRecorded` (async) 
-* `c.x.b.f.model.event.FiscalDocumentIssued` (async) 
+* `c.x.b.i.model.event.ConsumptionWasteRecorded` (async) 
+* `c.x.b.o.model.event.OrderClosed` (async) 
 * `c.x.b.o.model.event.OrderLinesVoided` (async) 
+* `c.x.b.s.model.event.RefundRecorded` (async) 
+* `c.x.b.s.model.event.PaymentRecorded` (async) 
 * `c.x.b.s.model.event.CreditChargePosted` (async) 
+* `c.x.b.f.model.event.FiscalDocumentIssued` (async) 
 * `org.springframework.boot.context.event.ApplicationReadyEvent` 
 |===

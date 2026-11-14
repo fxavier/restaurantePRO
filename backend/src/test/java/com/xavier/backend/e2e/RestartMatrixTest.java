@@ -18,6 +18,7 @@ import com.xavier.backend.fiscal.FiscalApi;
 import com.xavier.backend.inventory.consumption.service.RoundConsumption;
 import com.xavier.backend.inventory.purchasing.service.GoodsReceiptService;
 import com.xavier.backend.orders.OrdersProductionApi;
+import com.xavier.backend.production.service.DrawerKickService;
 import com.xavier.backend.production.TcpFakePrinter;
 import com.xavier.backend.reporting.service.Projections;
 import com.xavier.backend.settlement.FakePaymentProvider;
@@ -34,6 +35,7 @@ import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -92,6 +94,11 @@ import tools.jackson.databind.JsonNode;
  *       EARN;</li>
  *   <li>(k) a goods receipt confirm that dies inside its transaction (D125): nothing is left; B's retry with the same
  *       key confirms it → one receipt, one set of RECEIPT movements; a replay adds none.</li>
+ *   <li>(l) a cash payment committed, its drawer kick not issued (D158): B delivers the kick request at start; the
+ *       payment was recorded more than 30 s before, so the kick is FAILED {@code KICK_EXPIRED} and never sent; a
+ *       forced redelivery adds no second kick. This proves D158's promise across a restart: a late redelivered kick
+ *       is never sent and never doubles. That the expiry happens at issue (not at claim) is proven by
+ *       {@code DrawerKickRequestedAtTest}.</li>
  * </ol>
  *
  * <p>For (i)–(k) the store is live in inventory (activated at setup) with one warehouse on the default route, the
@@ -107,7 +114,8 @@ import tools.jackson.databind.JsonNode;
         "restaurantpro.idempotency.step-lease=PT3S"})
 @Import({Installation.FreshDatabase.class, FakePaymentProvider.Config.class, SettlementTestClock.Config.class})
 @MockitoSpyBean(types = {OrdersProductionApi.class, CreditSaleSteps.class, FiscalApi.class, SettlementIssuer.class,
-        Projections.class, RoundConsumption.class, OrderSettlementSteps.class, GoodsReceiptService.class})
+        Projections.class, RoundConsumption.class, OrderSettlementSteps.class, GoodsReceiptService.class,
+        DrawerKickService.class})
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class RestartMatrixTest {
 
@@ -184,11 +192,16 @@ class RestartMatrixTest {
     @Autowired
     GoodsReceiptService receipts;
 
+    @Autowired
+    DrawerKickService kicks;
+
     private final List<String> journey = new ArrayList<>();
 
     Browser office;
     Browser cashier;
     UUID store;
+    UUID terminal;
+    UUID counter;
     UUID area;
     UUID customer;
     String managerCode;
@@ -213,6 +226,7 @@ class RestartMatrixTest {
             Crash k = receiptConfirmDiesInItsTransaction();
             Crash i = roundCommittedConsumptionNotFinished();
             Crash j = closeWithEarningCommittedResponseNeverSent();
+            Crash l = cashPaymentCommittedKickNotIssued();
 
             // ---- phase 2, instance B: a second application on the same database ----
             try (ConfigurableApplicationContext restarted = restart()) {
@@ -228,6 +242,7 @@ class RestartMatrixTest {
                 recoveredH(h, pos);
                 recoveredJ(j, pos);
                 recoveredK(k, bo);
+                recoveredL(l, restarted.getBean(DrawerKickService.class));
                 recoveredD(d, bo, c, g, h); // last: B has printed the later documents by then
             }
 
@@ -249,14 +264,14 @@ class RestartMatrixTest {
         office = new Browser("backoffice", port, journey);
         Installation.firstLogin(office, INITIAL_PASSWORD, NEW_PASSWORD);
         store = Installation.store(office, "R");
-        UUID terminal = terminal(office, store, "POS1");
+        terminal = terminal(office, store, "POS1");
         String cashierCode = employee(office, store, "CX1", "Carla", CASHIER_PIN, CASHIER_ROLE);
         managerCode = employee(office, store, "GR1", "Gil", MANAGER_PIN, MANAGER_ROLE);
         area = id(office.post(BO + "/areas", Map.of("storeId", store, "code", "SALA", "name", "Sala"), 201));
         items = Installation.publishTwoRateCatalog(office, store);
         UUID kitchen = printer("COZ", KITCHEN, "CP860");
         UUID bar = printer("BAR", BAR, "CP860");
-        UUID counter = printer("BALCAO", COUNTER, "WPC1252");
+        counter = printer("BALCAO", COUNTER, "WPC1252");
         office.put(BO + "/production-routes", Map.of("storeId", store, "routes", List.of(
                 Map.of("destinationCode", "COZINHA", "printerId", kitchen),
                 Map.of("destinationCode", "BAR", "printerId", bar))), 200, "routes");
@@ -598,6 +613,60 @@ class RestartMatrixTest {
         restartedConsumption.consume(batch); // a forced redelivery
         assertThat(saleConsumption(batch)).isEqualTo(1);
         journey.add("(i) B delivered the round to inventory at start: 1 SALE_CONSUMPTION; a redelivery added none");
+    }
+
+    // ---- (l) ----
+
+    private Crash cashPaymentCommittedKickNotIssued() throws Exception {
+        // the counter printer gets its drawer only now, so the earlier cases' cash payments kicked nothing
+        long version = jdbc.sql("SELECT version FROM production.printer WHERE id = ?").param(counter)
+                .query(Long.class).single();
+        office.put(BO + "/printers/" + counter, Map.of("code", "BALCAO", "name", "Impressora BALCAO", "host",
+                COUNTER.host(), "port", COUNTER.port(), "codePage", "WPC1252", "active", true, "version", version,
+                "drawerPin", 0), 200, "(l) a drawer on the counter printer");
+        UUID order = order("Ml");
+        confirm(order, List.of(line(order, "AGUA", "1")), "(l) round");
+        DrawerKickService spy = AopTestUtils.getUltimateTargetObject(kicks);
+        doThrow(new IllegalStateException("crash before the kick")).when(spy).kick(any(), any(), any(), any(), any());
+        UUID payment;
+        try {
+            // recorded 5 min before the restart, as a payment whose kick was lost before an outage
+            clock.advance(Duration.ofMinutes(-5));
+            try {
+                pay(order, null, "37.00", "(l) cash payment");
+            } finally {
+                clock.advance(Duration.ofMinutes(5));
+            }
+            payment = jdbc.sql("SELECT id FROM settlement.payment WHERE order_id = ?").param(order).query(UUID.class)
+                    .single();
+            Awaitility.await().atMost(RECOVERED).until(() -> "FAILED".equals(kickPublication(payment, "status")));
+        } finally {
+            reset(spy);
+        }
+        assertThat(count("SELECT count(*) FROM production.production_ticket WHERE source_id = ?", payment)).isZero();
+        return new Crash(order, payment, null, null, null, null);
+    }
+
+    private void recoveredL(Crash l, DrawerKickService restartedKicks) {
+        UUID payment = l.subject();
+        Awaitility.await().atMost(RECOVERED).until(() -> kickPublication(payment, "completion_date") != null);
+        String kickJobs = """
+                SELECT j.status || '|' || j.last_error || '|' || j.attempts || '|' || (j.sent_at IS NULL)
+                FROM production.print_job j JOIN production.production_ticket t ON t.id = j.ticket_id
+                WHERE t.source_type = 'DRAWER_KICK' AND t.source_id = ?""";
+        assertThat(jdbc.sql(kickJobs).param(payment).query(String.class).list()).as("one kick, expired, never sent")
+                .containsExactly("FAILED|KICK_EXPIRED|0|true");
+        restartedKicks.kick("PAYMENT", payment, store, terminal, Instant.now()); // a forced, fresh redelivery
+        assertThat(jdbc.sql(kickJobs).param(payment).query(String.class).list()).as("never two")
+                .containsExactly("FAILED|KICK_EXPIRED|0|true");
+        journey.add("(l) B delivered the kick request at start: one kick, FAILED KICK_EXPIRED, unsent; a redelivery "
+                + "added none");
+    }
+
+    private Object kickPublication(UUID payment, String column) {
+        return jdbc.sql("SELECT " + column + " FROM event_publication WHERE serialized_event LIKE ? "
+                        + "AND listener_id LIKE '%DrawerKickListener%'").param("%" + payment + "%").query().singleRow()
+                .get(column);
     }
 
     // ---- (j) ----

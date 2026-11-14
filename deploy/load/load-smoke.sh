@@ -40,6 +40,13 @@
 # LOAD_ADMIN_PASSWORD_FILE (never from the command line or the environment), the account (LOAD_ADMIN_USERNAME,
 # default admin) must have completed its first login, and the employees' PINs are random per run and never printed.
 #
+# MFA (R5, D142): the seed uses sensitive permissions (terminals, employees, catalog publish, the fiscal series, a
+# credit limit, the promotion release), which a stack with RESTAURANTPRO_MFA_MODE other than OFF refuses without a
+# fresh second factor (403 MFA_ENROLMENT_REQUIRED or MFA_STEP_UP_REQUIRED). This program does not compute TOTP
+# codes, so run it against a test or staging stack started with RESTAURANTPRO_MFA_MODE=OFF. The measured loop needs
+# no step-up: the POS never asks for a second factor, and the BackOffice tab only reads reports (REPORT_VIEW is not
+# sensitive; REPORT_EXPORT, which is, is not called).
+#
 # Usage: deploy/load/load-smoke.sh [--base-url URL] [--terminals 10] [--seconds 60] [--items 300]
 #                                  [--cacert FILE] [--timezone UTC] [--report-dir DIR] [--no-gate]
 #                                  [--printer-host 127.0.0.1] [--printer-port 9] [--seed]

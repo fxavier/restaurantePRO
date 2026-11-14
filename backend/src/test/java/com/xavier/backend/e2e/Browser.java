@@ -36,6 +36,8 @@ final class Browser {
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     private final Map<String, String> cookies = new LinkedHashMap<>();
     private final Map<String, String> lastSetCookie = new LinkedHashMap<>();
+    /** The client address Caddy would forward ({@code X-Forwarded-For}); {@code null}: none, loopback. */
+    private volatile String clientAddress;
 
     Browser(String name, int port, List<String> journey) {
         this.name = name;
@@ -48,16 +50,29 @@ final class Browser {
         return Map.of("Idempotency-Key", UUID.randomUUID().toString());
     }
 
-    /** Another tab against the same server, recording into the same journey (its own cookie jar). */
+    /** Another tab against the same server, recording into the same journey (its own cookie jar), same address. */
     Browser sibling(String siblingName) {
-        return new Browser(siblingName, port, journey);
+        Browser sibling = new Browser(siblingName, port, journey);
+        sibling.clientAddress = clientAddress;
+        return sibling;
     }
 
     /** The same tab (cookies and all) against another server: the client of a restarted instance. */
     Browser movedTo(int otherPort) {
         Browser moved = new Browser(name, otherPort, journey);
         moved.cookies.putAll(cookies);
+        moved.clientAddress = clientAddress;
         return moved;
+    }
+
+    /**
+     * From now on this tab is at {@code address}, as Caddy reports it in {@code X-Forwarded-For}; the server must
+     * run with {@code server.forward-headers-strategy=native} (as in Compose), whose RemoteIpValve trusts the
+     * loopback proxy. {@code null}: no header, the loopback address.
+     */
+    Browser at(String address) {
+        clientAddress = address;
+        return this;
     }
 
     String name() {
@@ -138,6 +153,9 @@ final class Browser {
         }
         if (csrf == Csrf.SEND && cookies.containsKey("XSRF-TOKEN")) {
             request.header("X-XSRF-TOKEN", cookies.get("XSRF-TOKEN"));
+        }
+        if (clientAddress != null) {
+            request.header("X-Forwarded-For", clientAddress);
         }
         headers.forEach(request::header);
         HttpResponse<String> response = http.send(request.build(), HttpResponse.BodyHandlers.ofString());

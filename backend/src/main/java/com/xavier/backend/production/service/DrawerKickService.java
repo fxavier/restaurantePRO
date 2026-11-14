@@ -71,9 +71,10 @@ public class DrawerKickService {
     /**
      * Settlement's request for a cash payment or refund ({@code sourceType} PAYMENT or REFUND). A terminal with no
      * printer, or a printer with no drawer, gets nothing (logged at INFO): a kick is never kept for later. Its 30 s
-     * window runs from {@code requestedAt}, the payment's or refund's recording (D158 amended, S60 review), so an
-     * event delivered late leaves a FAILED {@code KICK_EXPIRED} job and sends nothing; a publication stored without
-     * {@code requestedAt} ({@code null}) is expired at once.
+     * window runs from {@code min(requestedAt, now)}, {@code requestedAt} being the payment's or refund's recording
+     * (D158 amended, S60 review and S63), so an event delivered late leaves a FAILED {@code KICK_EXPIRED} job, saved
+     * so at issue, and sends nothing; a publication stored without {@code requestedAt} ({@code null}) is expired at
+     * once.
      */
     @Transactional
     public void kick(String sourceType, UUID sourceId, UUID storeId, UUID terminalId, Instant requestedAt) {
@@ -137,7 +138,10 @@ public class DrawerKickService {
 
     /**
      * The ticket and its job, on the terminal's own printer whatever its mode: the queue fails it if not NORMAL. The
-     * job is created as of {@code requestedAt}, which the queue's expiry measures from.
+     * job is created as of {@code min(requestedAt, now)}, which the queue's expiry measures from, so a settlement
+     * clock running ahead cannot lengthen the window. A kick already past its window ({@code requestedAt} missing or
+     * older than {@link PrintJob#KICK_TTL}) is saved FAILED {@code KICK_EXPIRED}, so its cause is always the
+     * lateness, whatever the printer's mode.
      */
     private Kick issue(String sourceType, UUID sourceId, UUID storeId, UUID terminalId, Printer printer,
                        Instant requestedAt) {
@@ -148,10 +152,11 @@ public class DrawerKickService {
                 ProductionTicket.create(draft, printer.getId(), false, now),
                 () -> ProductionConflictException.ticketExists(TicketSource.DRAWER_KICK, sourceId),
                 "production_ticket_source_uk");
-        PrintJob job = PrintJob.first(ticket.getId(), storeId, printer.getId(), JobKind.ORIGINAL,
-                requestedAt != null ? requestedAt : now);
-        if (requestedAt == null) {
+        Instant createdAt = requestedAt == null || requestedAt.isAfter(now) ? now : requestedAt;
+        PrintJob job = PrintJob.first(ticket.getId(), storeId, printer.getId(), JobKind.ORIGINAL, createdAt);
+        if (requestedAt == null || job.kickExpired(now)) {
             job.failUnsent(now, "KICK_EXPIRED");
+            log.warn("Drawer kick for {} {} expired at issue (requested at {})", sourceType, sourceId, requestedAt);
         }
         job = jobs.saveAndFlush(job);
         notifier.notifyAfterCommit(storeId, ChangeTopic.PRINT_JOBS, job.getId());
