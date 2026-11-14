@@ -14,11 +14,14 @@ import org.junit.jupiter.api.Test;
 /**
  * D169/D171 plans of the hot orders reads under row-level security, as the application role in one store's scope:
  * the policy is an InitPlan filter on top, and each query's own index still drives the scan. The open orders of a
- * store ({@code findByStoreIdAndLifecycleOrderByOpenedAt}, the POS order list) stay on
- * {@code order_header_store_lifecycle_ix}; the lines of one order ({@code findByOrderIdOrderById}, every order view)
- * stay on {@code order_line_order_status_ix}, with the CHILD policy probing the order by its primary key.
- * Deterministic seed (20 stores × 200 closed orders of 2020 × 3 lines, plus one open order per store), then
- * {@code ANALYZE} as the owner and {@code EXPLAIN} in one transaction with {@code enable_seqscan = off}.
+ * store ({@code findByStoreIdAndLifecycleOrderByOpenedAt}, the POS order list) are read through an index led by
+ * {@code store_id} (which of the two store indexes is the planner's call), never through every open order of the
+ * installation ({@code order_header_open_table_uk}) or a sequential scan; the lines of one order
+ * ({@code findByOrderIdOrderById}, every order view) stay on {@code order_line_order_status_ix}, with the CHILD policy
+ * probing the order by its primary key. Deterministic seed (20 stores × 201 orders of 2020 × 3 lines; the store
+ * under test has one open order, the 19 others 101 each, so the installation's open orders far outnumber the
+ * store's), then {@code ANALYZE} as the owner and {@code EXPLAIN} in one transaction with
+ * {@code enable_seqscan = off}.
  */
 class OrdersPlanTest {
 
@@ -38,12 +41,13 @@ class OrdersPlanTest {
                         lifecycle, billing_lock, business_day, currency, opened_at, opened_by_employee_id,
                         next_batch_no, version, closed_at, closed_by_employee_id)
                     SELECT uuidv7(), s.store, gen_random_uuid(), nextval('orders.order_number_seq'), 'COUNTER', NULL,
-                        CASE WHEN n = 1 THEN 'OPEN' ELSE 'CLOSED' END, 'NONE', DATE '2020-01-01', 'MZN',
+                        CASE WHEN o.open THEN 'OPEN' ELSE 'CLOSED' END, 'NONE', DATE '2020-01-01', 'MZN',
                         TIMESTAMPTZ '2020-01-01 12:00Z' + n * interval '1 minute', gen_random_uuid(), 1, 0,
-                        CASE WHEN n > 1 THEN TIMESTAMPTZ '2020-01-01 23:00Z' END,
-                        CASE WHEN n > 1 THEN gen_random_uuid() END
-                    FROM unnest(CAST(:stores AS uuid[])) AS s(store), generate_series(1, 201) AS n""")
-                    .param("stores", seeded.toArray(UUID[]::new)).update();
+                        CASE WHEN NOT o.open THEN TIMESTAMPTZ '2020-01-01 23:00Z' END,
+                        CASE WHEN NOT o.open THEN gen_random_uuid() END
+                    FROM unnest(CAST(:stores AS uuid[])) AS s(store), generate_series(1, 201) AS n,
+                        LATERAL (SELECT n = 1 OR (s.store <> :first AND n <= 101) AS open) AS o""")
+                    .param("stores", seeded.toArray(UUID[]::new)).param("first", seeded.getFirst()).update();
             owner.sql("""
                     INSERT INTO orders.order_line (id, order_id, status, item_id, quantity, created_at,
                         created_by_employee_id, version)
@@ -65,15 +69,15 @@ class OrdersPlanTest {
     }
 
     @Test
-    void theOpenOrdersOfAStoreStayOnTheStoreAndLifecycleIndex() {
+    void theOpenOrdersOfAStoreAreReadThroughAStoreIndex() {
         String plan = explain("""
                 SELECT * FROM orders.order_header
                 WHERE store_id = :store AND lifecycle = 'OPEN' ORDER BY opened_at""");
 
         assertThat(plan).as("the store_scope policy, once per statement").contains("InitPlan")
-                .containsPattern(INDEX_NODE + "order_header_store_lifecycle_ix")
-                .containsPattern("Index Cond: \\(\\(store_id = '[0-9a-f-]+'::uuid\\) AND \\(\\(lifecycle\\)::text = "
-                        + "'OPEN'::text\\)\\)");
+                .doesNotContain("Seq Scan")
+                .containsPattern(INDEX_NODE + "order_header_store_\\w+_ix")
+                .containsPattern("Index Cond: \\(\\(?store_id = '[0-9a-f-]+'::uuid\\)");
     }
 
     @Test
