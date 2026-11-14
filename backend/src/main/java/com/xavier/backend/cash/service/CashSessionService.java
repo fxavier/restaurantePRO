@@ -44,6 +44,7 @@ public class CashSessionService {
 
     static final String ENTITY = "CashSession";
 
+    private final CashStoreProbe stores;
     private final CashSessionRepository sessions;
     private final CashRegisterRepository registers;
     private final CashDayRepository days;
@@ -56,10 +57,11 @@ public class CashSessionService {
     private final CashAudit audit;
     private final Clock clock;
 
-    CashSessionService(CashSessionRepository sessions, CashRegisterRepository registers, CashDayRepository days,
+    CashSessionService(CashStoreProbe stores, CashSessionRepository sessions, CashRegisterRepository registers, CashDayRepository days,
                        CashMovementRepository movements, CashClosingRepository closings,
                        CashDayReopeningRepository reopenings, OrganizationApi organization, AccessPolicy accessPolicy, RowLocks locks, CashAudit audit,
                        Clock clock) {
+        this.stores = stores;
         this.sessions = sessions;
         this.locks = locks;
         this.registers = registers;
@@ -83,7 +85,7 @@ public class CashSessionService {
     @Transactional
     public SessionDetails open(OpenSessionRequest request) {
         PosContext pos = accessPolicy.requirePos(Permission.CASH_OPERATE);
-        StoreScope.requireSameStore(pos.storeId(), registers.findStoreIdById(request.registerId())
+        StoreScope.requireSameStore(pos.storeId(), stores.register(request.registerId())
                         .orElseThrow(() -> new CashNotFoundException(CashRegisterService.ENTITY, request.registerId())),
                 CashRegisterService.ENTITY, request.registerId());
         CashRegister register = registers.findById(request.registerId()).orElseThrow();
@@ -140,7 +142,7 @@ public class CashSessionService {
     public SessionDetails get(UUID id) {
         PosContext pos = accessPolicy.requirePos(Permission.CASH_VIEW);
         StoreScope.requireSameStore(pos.storeId(),
-                sessions.findStoreIdById(id).orElseThrow(() -> new CashNotFoundException(ENTITY, id)), ENTITY, id);
+                stores.session(id).orElseThrow(() -> new CashNotFoundException(ENTITY, id)), ENTITY, id);
         CashSession session = sessions.findById(id).orElseThrow(() -> new CashNotFoundException(ENTITY, id));
         return details(session);
     }

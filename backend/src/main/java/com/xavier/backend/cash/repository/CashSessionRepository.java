@@ -34,7 +34,4 @@ public interface CashSessionRepository extends JpaRepository<CashSession, UUID> 
 
     @Query("select distinct s.registerId from CashSession s where s.cashDayId = :dayId")
     List<UUID> findRegisterIdsByCashDayId(@Param("dayId") UUID dayId);
-
-    @Query("select x.storeId from CashSession x where x.id = :id")
-    Optional<UUID> findStoreIdById(@Param("id") UUID id);
 }

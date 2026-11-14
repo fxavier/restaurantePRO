@@ -107,6 +107,15 @@ public class CashApi {
         return coordination.storeOfDay(dayId);
     }
 
+    /**
+     * Only the session's store, for D42 (b), read across every store (D168): another store's session is found (then
+     * 403), never mistaken for absent; 404 if the session does not exist.
+     */
+    @Transactional(readOnly = true)
+    public UUID storeOfSession(UUID sessionId) {
+        return coordination.storeOfSession(sessionId);
+    }
+
     /** The cash day of the session (D85); 404 if the session does not exist. */
     @Transactional(readOnly = true)
     public SessionDay sessionDay(UUID sessionId) {

@@ -35,6 +35,7 @@ public class CashMovementService {
 
     private static final Logger log = LoggerFactory.getLogger(CashMovementService.class);
 
+    private final CashStoreProbe stores;
     private final CashSessionRepository sessions;
     private final CashMovementRepository movements;
     private final AccessPolicy accessPolicy;
@@ -43,8 +44,9 @@ public class CashMovementService {
     private final CashAudit audit;
     private final Clock clock;
 
-    CashMovementService(CashSessionRepository sessions, CashMovementRepository movements, AccessPolicy accessPolicy,
+    CashMovementService(CashStoreProbe stores, CashSessionRepository sessions, CashMovementRepository movements, AccessPolicy accessPolicy,
                         ApproverVerifier approvers, RowLocks locks, CashAudit audit, Clock clock) {
+        this.stores = stores;
         this.approvers = approvers;
         this.sessions = sessions;
         this.locks = locks;
@@ -91,7 +93,7 @@ public class CashMovementService {
             throw new IllegalArgumentException("An expense, and only an expense, has an approver");
         }
         PosContext pos = accessPolicy.requirePos(Permission.CASH_OPERATE);
-        UUID sessionStore = sessions.findStoreIdById(request.sessionId())
+        UUID sessionStore = stores.session(request.sessionId())
                 .orElseThrow(() -> new CashNotFoundException(CashSessionService.ENTITY, request.sessionId()));
         StoreScope.requireSameStore(pos.storeId(), sessionStore, CashSessionService.ENTITY, request.sessionId());
         CashSession session = locks.sessionForShare(request.sessionId());
