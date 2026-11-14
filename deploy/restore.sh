@@ -25,7 +25,8 @@
 #   --identity   age identity file, needed for .age archives (default: $BACKUP_AGE_IDENTITY). It must be
 #                yours, mode 0600 or 0400, and outside deploy/ and the archive's directory (D98 rule 2):
 #                restores of encrypted backups belong on the restore host, never on the server
-#   --secrets    directory with db_owner_password and db_app_password (default: deploy/secrets): the restore
+#   --secrets    directory with db_owner_password and db_app_password (default: deploy/secrets; required with
+#                --other-installation, which must name that installation's own): the restore
 #                provisions the database roles (ADR 0039, D163) with deploy/postgres/provision.sh before pg_restore
 #                (the dump grants to restaurantpro_app) and after it (the restored objects, owned by the superuser,
 #                go to restaurantpro_owner). On a scratch container, any throwaway pair will do
@@ -41,6 +42,7 @@ other_installation=""
 container=""
 identity="${BACKUP_AGE_IDENTITY:-}"
 secrets="$DEPLOY_DIR/secrets"
+secrets_given=false
 archive=""
 
 die() { echo "restore: $*" >&2; exit 1; }
@@ -50,6 +52,8 @@ sha256_check() { if command -v sha256sum >/dev/null; then sha256sum -c --quiet "
 . "$DEPLOY_DIR/lib/common.sh"
 # shellcheck source=lib/age.sh
 . "$DEPLOY_DIR/lib/age.sh"
+# shellcheck source=lib/roles.sh
+. "$DEPLOY_DIR/lib/roles.sh"
 
 while (($#)); do
   case "$1" in
@@ -58,7 +62,7 @@ while (($#)); do
     --other-installation) other_installation="${2:?--other-installation needs a value}"; shift 2 ;;
     --db) db="${2:?--db needs a value}"; shift 2 ;;
     --identity) identity="${2:?--identity needs a value}"; shift 2 ;;
-    --secrets) secrets="${2:?--secrets needs a value}"; shift 2 ;;
+    --secrets) secrets="${2:?--secrets needs a value}"; secrets_given=true; shift 2 ;;
     -h | --help) awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0" >&2; exit 0 ;;
     -*) die "unknown option: $1" ;;
     *) [[ -z "$archive" ]] || die "only one archive allowed"; archive="$1"; shift ;;
@@ -79,6 +83,11 @@ if [[ "$archive" == *.age ]]; then
   elif production; then
     die "no sidecar $sidecar next to $archive: copy it too (production restores check it)"
   fi
+fi
+# The restore sets the role passwords of the target's cluster: this installation's own secrets would hand them to the
+# other installation (its backend could no longer log in, and this installation's passwords would open it).
+if [[ -n "$other_installation" ]] && ! $secrets_given; then
+  die "--other-installation needs --secrets with $other_installation's own db_owner_password and db_app_password: the restore sets the role passwords of the target cluster"
 fi
 for f in db_owner_password db_app_password; do
   [[ -s "$secrets/$f" ]] || die "role secret $secrets/$f not found or empty: the restore provisions the roles with it (deploy/README.md, \"Database roles\"; --secrets)"
@@ -146,10 +155,12 @@ restore_into() {
   provision_roles "$1" || return 1
   docker exec -i "$container" pg_restore -U "$DB_USER" -d "$1" --no-owner --exit-on-error --single-transaction <"$work/db.dump" \
     || return 1
-  provision_roles "$1" && return 0
-  [[ -n "$staging" ]] && die "provisioning the roles after pg_restore failed (see above); target left unchanged"
-  die "restored into $1, but provisioning the roles failed (see above): its objects still belong to the superuser and the
-  backend refuses to start until $DEPLOY_DIR/postgres/provision.sh --container $container --db $1 succeeds"
+  local problems
+  if provision_roles "$1" && problems="$(roles_problems "$container" "$1")" && [[ -z "$problems" ]]; then return 0; fi
+  [[ -z "${problems:-}" ]] || log "the restored database's roles are not as D163: $(head -5 <<<"$problems" | tr '\n' ';')"
+  [[ -n "$staging" ]] && die "provisioning or the role check after pg_restore failed (see above); target left unchanged"
+  die "restored into $1, but provisioning or the role check failed (see above): the backend refuses to start until
+  $DEPLOY_DIR/postgres/provision.sh --container $container --db $1 succeeds and the roles are as D163"
 }
 
 objects="$(psql_in "$db" -c "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace

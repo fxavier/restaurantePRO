@@ -15,7 +15,7 @@
 #   - --force replaces the target while a client holds a session on it, and removes objects
 #     created after the backup (rollback after an upgrade)
 #   - a --force restore that fails mid-way leaves the target unchanged and no staging or old
-#     database behind
+#     database behind; so does one whose restored roles break D163 after provisioning (checked before the swap)
 #   - the database roles (ADR 0039, D163): the source is provisioned as an installation is; restore.sh provisions the
 #     target with its own role secrets (refused, target untouched, when they are missing), so after a restore and a
 #     --force restore restaurantpro_owner owns every object, restaurantpro_app owns nothing, has data privileges only,
@@ -250,6 +250,20 @@ HOLDER=""
 same_as_source "$DST" "--force restore"
 roles_hold_on_dst "--force restore"
 [[ -z "$(leftover_dbs "$DST")" ]] || fail "--force left databases behind: $(leftover_dbs "$DST")"
+
+step "a --force restore whose roles break D163 after provisioning leaves the target unchanged"
+# A grant that provisioning does not take back (CREATE on a schema for the pool), carried by a dump whose privileges
+# are kept: restore.sh checks the staging database before the swap and fails closed.
+psql_in "$SRC" -c "GRANT CREATE ON SCHEMA organization TO restaurantpro_app"
+lax_archive="$("$DEPLOY_DIR/backup.sh" --container "$SRC" --dir "$WORK/lax" --keep 1 2>/dev/null)"
+psql_in "$SRC" -c "REVOKE CREATE ON SCHEMA organization FROM restaurantpro_app"
+if restore --container "$DST" --force "$lax_archive" 2>"$WORK/lax.err"; then
+  fail "restore.sh --force swapped in a database whose roles break D163"
+fi
+grep -q 'restaurantpro_app can CREATE in schema organization' "$WORK/lax.err" || fail "not refused by the role check: $(tail -3 "$WORK/lax.err")"
+same_as_source "$DST" "after a --force refused by the role check"
+roles_hold_on_dst "after a --force refused by the role check"
+[[ -z "$(leftover_dbs "$DST")" ]] || fail "the refused --force left databases behind: $(leftover_dbs "$DST")"
 
 step "a --force restore that fails mid-way leaves the target unchanged"
 # A grant to a role that exists only in the source cluster: pg_restore fails at the ACL step,
