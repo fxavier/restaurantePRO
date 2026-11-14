@@ -414,7 +414,7 @@ Back up the new secrets with the others: `backup.sh` copies `secrets/` into ever
 
 ### Rollback to R5
 
-Besides the rollback by restore above, an installation upgraded to row-level security can go back to the R5 release **without** a restore, keeping the data entered since: the R5 backend connects as the superuser, which row-level security never binds, and nothing in the database has to be undone. R5's Flyway, though, refuses to start on the migrated database, because the row-level security migrations sit below its newest version (one version block per module, ADR 0001) and it reports them as applied but missing. Start R5 with the override this release ships, which tells it to accept exactly that:
+Besides the rollback by restore above, an installation upgraded to row-level security can go back to the R5 release **without** a restore, keeping the data entered since: the R5 backend connects as the superuser, which row-level security never binds, and nothing in the database has to be undone. R5's Flyway, though, refuses to start on the migrated database: the row-level security migrations below its newest version (one version block per module, ADR 0001) are applied but missing to it, and those above it (for example reporting `V14006` over R5's `V14005`) are future. Start R5 with the override this release ships, which tells it to accept exactly those two kinds (`*:missing,*:future`):
 
 ```bash
 docker compose stop backend caddy
@@ -423,6 +423,8 @@ docker compose -f compose.yaml -f <this release>/deploy/compose.rollback-r5.yaml
 ```
 
 The roles stay in the cluster unused, and the next upgrade picks up where this one left off (nothing to migrate again). Leave `compose.rollback-r5.yaml` out once you upgrade again.
+
+**This holds only until the inventory migration `V13080` is applied** (it backfills `stock_balance.store_id` and makes it `NOT NULL`, and R5 does not write that column). Once an installation has `V13080` (`SELECT 1 FROM flyway_schema_history WHERE version = '13080'`), roll back to R5 only by restoring the pre-upgrade backup, as in "To roll back" above.
 
 `./test-upgrade-roles.sh --r5-ref <R5 release tag>` is the drill (A69): it builds both releases' backend images, starts the R5 stack as a throwaway project, upgrades it with the steps above, and checks that the backend is healthy with `restaurantpro_app` as its only pool role and no `db_password`, that the roles are as D163 (no write on the Flyway history), that the new migrations were applied by `restaurantpro_owner` and the R5 data kept, that a second `up` changes no owner or privilege, and that the backend refuses a superuser, a `BYPASSRLS` role or the owner as its pool. Then it rolls back: R5 alone is refused by its Flyway, R5 with `compose.rollback-r5.yaml` is healthy. It needs Docker and git, ports 38443 and 38080 free, about 5–8 minutes, and leaves nothing behind but the two images.
 

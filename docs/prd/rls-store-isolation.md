@@ -69,7 +69,8 @@ Every policy slice: one migration per module calling the V1008 helpers (no hand-
 **Write scope:** `deploy/compose.yaml`, `deploy/postgres/provision.sh` (new), `deploy/backend-entrypoint.sh`, `deploy/restore.sh`, `deploy/verify-restore.sh`, `deploy/test-backup-restore.sh`, `deploy/test-pitr.sh`, `deploy/test-two-installations.sh`, `deploy/drills/isolation/**`, `deploy/README.md`, `deploy/.env.example` (comment only), `backend/compose.yaml`, `backend/run-local.sh`.
 - Compose: secrets `db_owner_password`, `db_app_password`; one-shot `db-provision` (pinned postgres image, `restart: "no"`, internal network, secrets `db_password`, `db_owner_password`, `db_app_password`, mounts `provision.sh` and `provision-roles.sql` read-only); `backend` drops `db_password`, gets the two new secrets and the frozen env, and `depends_on: db-provision: condition: service_completed_successfully`.
 - `provision.sh`: `PGPASSWORD` from the superuser file, `\getenv` for the two passwords, `SET log_statement = 'none'`, `\i provision-roles.sql`; `--self-test` against a throwaway container (twice: the second run changes nothing).
-- `restore.sh`: `pg_restore --no-owner --no-privileges`, then provisioning; `verify-restore.sh` the same.
+- `restore.sh`: provisioning, `pg_restore --no-owner` (privileges kept), provisioning, then the D163 check before the swap (fail closed); `verify-restore.sh` the same; `--other-installation` requires `--secrets`. *(Amended 2026-11-14, S65, user-approved: `--no-privileges` would return console-function `EXECUTE` to `PUBLIC`.)*
+- Rollback to R5: R5's `compose.yaml` with `deploy/compose.rollback-r5.yaml` (`*:missing,*:future`), without a restore only until `V13080` is applied *(amended 2026-11-14, S65)*.
 - README: "Database roles" (what each is for), first install and upgrade steps (create two secrets, `up`), the `PERMISSIVE` runbook (D170), rollback to the R5 image.
 **Tests:** `provision.sh --self-test`; `test-backup-restore.sh`, `test-pitr.sh --quick`, `test-two-installations.sh` extended per D171. **Acceptance:** A69 (deploy part), A79.
 
@@ -130,7 +131,7 @@ Rules: only S64 edits the shared infrastructure listed above; only S65 edits `de
 
 | criterion (rls-decisions §4) | slices |
 |---|---|
-| A69 | S64, S65, S70 |
+| A69 (rollback amended 2026-11-14: with `compose.rollback-r5.yaml`, until `V13080`) | S64, S65, S70 |
 | A70, A73 | S64, S70 |
 | A71, A72 | S66, S67, S68, S69, S70 |
 | A74 | S64, S66–S69, S70 |
