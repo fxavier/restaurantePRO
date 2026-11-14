@@ -2,7 +2,7 @@ package com.xavier.backend.inventory.count.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.xavier.backend.inventory.ScopedPool;
+import com.xavier.backend.inventory.StoreTasks;
 import com.xavier.backend.access.StoreScopes;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.inventory.InventoryFixtures;
@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -101,14 +102,14 @@ class CountApprovalSaleDeadlockTest {
         CountDownLatch saleHoldsFirst = new CountDownLatch(1);
         CountDownLatch saleMayContinue = new CountDownLatch(1);
         AtomicInteger salePid = new AtomicInteger();
-        try (ExecutorService pool = ScopedPool.of(scopes, 2)) {
-            Future<?> sale = pool.submit(() -> tx.executeWithoutResult(status -> {
+        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+            Future<?> sale = pool.submit(StoreTasks.inStore(scopes, store, () -> tx.executeWithoutResult(status -> {
                 ledger.post(List.of(sale(first)));
                 salePid.set(jdbc.sql("SELECT pg_backend_pid()").query(Integer.class).single());
                 saleHoldsFirst.countDown();
                 await(saleMayContinue);
                 ledger.post(List.of(sale(second)));
-            }));
+            })));
             await(saleHoldsFirst);
             Future<Integer> approval = pool.submit(() -> counts.approve(store, count).andReturn().getResponse()
                     .getStatus());
@@ -131,7 +132,7 @@ class CountApprovalSaleDeadlockTest {
     @Test
     void approvalsAndReverseOrderSalesStartedTogetherAllCommit() throws Exception {
         int rounds = 5;
-        try (ExecutorService pool = ScopedPool.of(scopes, 2)) {
+        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
             for (int i = 0; i < rounds; i++) {
                 UUID count = submittedCount();
                 CountDownLatch start = new CountDownLatch(1);
@@ -139,10 +140,10 @@ class CountApprovalSaleDeadlockTest {
                     await(start);
                     return counts.approve(store, count).andReturn().getResponse().getStatus();
                 });
-                Future<?> sale = pool.submit(() -> {
+                Future<?> sale = pool.submit(StoreTasks.inStore(scopes, store, () -> {
                     await(start);
                     tx.executeWithoutResult(status -> ledger.post(List.of(sale(second), sale(first))));
-                });
+                }));
                 start.countDown();
                 assertThat(approval.get(60, TimeUnit.SECONDS)).isEqualTo(200);
                 sale.get(60, TimeUnit.SECONDS);

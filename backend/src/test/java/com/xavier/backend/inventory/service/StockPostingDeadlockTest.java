@@ -6,7 +6,7 @@ import static com.xavier.backend.inventory.service.Concurrency.someoneBlockedBy;
 import static com.xavier.backend.inventory.service.Concurrency.waitUntil;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.xavier.backend.inventory.ScopedPool;
+import com.xavier.backend.inventory.StoreTasks;
 import com.xavier.backend.access.StoreScopes;
 import com.xavier.backend.inventory.InventoryFixtures;
 import com.xavier.backend.inventory.InventoryModuleTest;
@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -56,13 +57,15 @@ class StockPostingDeadlockTest {
     @Autowired
     JdbcClient jdbc;
 
+    UUID store;
     UUID warehouse;
     UUID first;
     UUID second;
 
     @BeforeEach
     void twoItemsInLockOrder() throws Exception {
-        warehouse = fixtures.newWarehouse(fixtures.newStore(), "ALLOW");
+        store = fixtures.newStore();
+        warehouse = fixtures.newWarehouse(store, "ALLOW");
         List<BalanceKey> keys = new ArrayList<>(List.of(new BalanceKey(warehouse, fixtures.newStockItem("un")),
                 new BalanceKey(warehouse, fixtures.newStockItem("un"))));
         keys.sort(BalanceKey.LOCK_ORDER);
@@ -81,17 +84,17 @@ class StockPostingDeadlockTest {
         CountDownLatch aHoldsFirst = new CountDownLatch(1);
         CountDownLatch aMayContinue = new CountDownLatch(1);
         AtomicInteger aPid = new AtomicInteger();
-        try (ExecutorService pool = ScopedPool.of(scopes, 2)) {
-            Future<?> a = pool.submit(() -> tx.executeWithoutResult(status -> {
+        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+            Future<?> a = pool.submit(StoreTasks.inStore(scopes, store, () -> tx.executeWithoutResult(status -> {
                 ledger.post(List.of(sale(first)));
                 aPid.set(backendPid(jdbc));
                 aHoldsFirst.countDown();
                 await(aMayContinue);
                 ledger.post(List.of(sale(second)));
-            }));
+            })));
             await(aHoldsFirst);
-            Future<?> b = pool.submit(() -> tx.executeWithoutResult(status ->
-                    ledger.post(List.of(sale(second), sale(first)))));
+            Future<?> b = pool.submit(StoreTasks.inStore(scopes, store, () -> tx.executeWithoutResult(status ->
+                    ledger.post(List.of(sale(second), sale(first))))));
             try {
                 waitUntil(() -> b.isDone() || someoneBlockedBy(jdbc, aPid.get()));
                 assertThat(b.isDone()).as("B waits for A's lock on the first row").isFalse();
@@ -112,17 +115,17 @@ class StockPostingDeadlockTest {
     @Test
     void oppositeOrdersStartedTogetherAllCommit() throws Exception {
         int rounds = 20;
-        try (ExecutorService pool = ScopedPool.of(scopes, 2)) {
+        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
             for (int i = 0; i < rounds; i++) {
                 CountDownLatch start = new CountDownLatch(1);
-                Future<?> forward = pool.submit(() -> {
+                Future<?> forward = pool.submit(StoreTasks.inStore(scopes, store, () -> {
                     await(start);
                     tx.executeWithoutResult(status -> ledger.post(List.of(sale(first), sale(second))));
-                });
-                Future<?> backward = pool.submit(() -> {
+                }));
+                Future<?> backward = pool.submit(StoreTasks.inStore(scopes, store, () -> {
                     await(start);
                     tx.executeWithoutResult(status -> ledger.post(List.of(sale(second), sale(first))));
-                });
+                }));
                 start.countDown();
                 forward.get(60, TimeUnit.SECONDS);
                 backward.get(60, TimeUnit.SECONDS);

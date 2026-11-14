@@ -11,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.xavier.backend.inventory.ScopedPool;
+import com.xavier.backend.inventory.StoreTasks;
 import com.xavier.backend.access.StoreScopes;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.inventory.InventoryModuleTest;
@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -62,13 +63,14 @@ class SaleAndTransferLockTest extends ConsumptionTestBase {
         CountDownLatch holding = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         AtomicInteger holder = new AtomicInteger();
-        try (ExecutorService pool = ScopedPool.of(scopes, 2)) {
-            Future<?> sale = pool.submit(() -> tx.executeWithoutResult(status -> {
-                consumption.consume(round.batchId());
-                holder.set(jdbc.sql("SELECT pg_backend_pid()").query(Integer.class).single());
-                holding.countDown();
-                await(release);
-            }));
+        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+            Future<?> sale = pool.submit(StoreTasks.inStore(scopes, kitchen.store,
+                    () -> tx.executeWithoutResult(status -> {
+                        consumption.consume(round.batchId());
+                        holder.set(jdbc.sql("SELECT pg_backend_pid()").query(Integer.class).single());
+                        holding.countDown();
+                        await(release);
+                    })));
             await(holding);
             Future<Integer> ship = pool.submit(() -> ship(transfer));
             try {
@@ -86,15 +88,15 @@ class SaleAndTransferLockTest extends ConsumptionTestBase {
 
     @Test
     void salesAndTransfersStartedTogetherAllCommit() throws Exception {
-        try (ExecutorService pool = ScopedPool.of(scopes, 2)) {
+        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
             for (int i = 0; i < 10; i++) {
                 BatchFacts round = kitchen.round(clock.instant(), OrderMode.DINE_IN, line(pizza, "1", "KITCHEN"));
                 UUID transfer = draft();
                 CountDownLatch start = new CountDownLatch(1);
-                Future<?> sale = pool.submit(() -> {
+                Future<?> sale = pool.submit(StoreTasks.inStore(scopes, kitchen.store, () -> {
                     await(start);
                     consumption.consume(round.batchId());
-                });
+                }));
                 Future<Integer> ship = pool.submit(() -> {
                     await(start);
                     return ship(transfer);
