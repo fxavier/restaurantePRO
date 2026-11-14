@@ -1,5 +1,6 @@
 package com.xavier.backend.settlement.reconciliation;
 
+import com.xavier.backend.OwnerDatabase;
 import static com.xavier.backend.settlement.reconciliation.ReconciliationRequests.cardMethod;
 import static com.xavier.backend.settlement.reconciliation.ReconciliationRequests.cardPayment;
 import static com.xavier.backend.settlement.reconciliation.ReconciliationRequests.confirmedAt;
@@ -66,13 +67,16 @@ class ReconciliationNeverWritesMoneyTest {
         card = cardMethod(fixtures);
     }
 
+    /** The probe is DDL, which the pool may not run: the owner installs and removes it. */
+    final JdbcClient owner = OwnerDatabase.shared().jdbc();
+
     @AfterEach
     void removeTheProbe() {
         for (String table : MONEY_TABLES) {
-            jdbc.sql("DROP TRIGGER IF EXISTS reconciliation_write_probe ON " + table).update();
+            owner.sql("DROP TRIGGER IF EXISTS reconciliation_write_probe ON " + table).update();
         }
-        jdbc.sql("DROP FUNCTION IF EXISTS public.reconciliation_write_probe()").update();
-        jdbc.sql("DROP TABLE IF EXISTS public.reconciliation_write_probe_log").update();
+        owner.sql("DROP FUNCTION IF EXISTS public.reconciliation_write_probe()").update();
+        owner.sql("DROP TABLE IF EXISTS public.reconciliation_write_probe_log").update();
     }
 
     @Test
@@ -121,8 +125,8 @@ class ReconciliationNeverWritesMoneyTest {
     }
 
     private void installProbe() {
-        jdbc.sql("CREATE TABLE public.reconciliation_write_probe_log (tbl TEXT, op TEXT, store_id UUID)").update();
-        jdbc.sql("""
+        owner.sql("CREATE TABLE public.reconciliation_write_probe_log (tbl TEXT, op TEXT, store_id UUID)").update();
+        owner.sql("""
                 CREATE FUNCTION public.reconciliation_write_probe() RETURNS trigger LANGUAGE plpgsql AS $$
                 BEGIN
                     INSERT INTO public.reconciliation_write_probe_log
@@ -131,7 +135,7 @@ class ReconciliationNeverWritesMoneyTest {
                     RETURN NULL;
                 END $$""").update();
         for (String table : MONEY_TABLES) {
-            jdbc.sql("CREATE TRIGGER reconciliation_write_probe AFTER INSERT OR UPDATE OR DELETE ON " + table
+            owner.sql("CREATE TRIGGER reconciliation_write_probe AFTER INSERT OR UPDATE OR DELETE ON " + table
                     + " FOR EACH ROW EXECUTE FUNCTION public.reconciliation_write_probe()").update();
         }
     }

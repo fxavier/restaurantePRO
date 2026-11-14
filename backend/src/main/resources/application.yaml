@@ -12,9 +12,11 @@ spring:
     exclude: org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration
   datasource:
     # Dev defaults match backend/compose.yaml. The password is never committed (spec §10):
-    # export RESTAURANTPRO_DB_PASSWORD before running. Tests use Testcontainers (@ServiceConnection).
+    # export RESTAURANTPRO_DB_PASSWORD before running. Tests use Testcontainers (TestcontainersConfiguration).
+    # ADR 0039 (D163): the pool is the application role, which owns nothing and is bound by row-level security; the
+    # superuser never connects from the backend (StoreScopeStartupCheck refuses it).
     url: ${RESTAURANTPRO_DB_URL:jdbc:postgresql://localhost:5432/restaurantpro}
-    username: ${RESTAURANTPRO_DB_USERNAME:restaurantpro}
+    username: ${RESTAURANTPRO_DB_USERNAME:restaurantpro_app}
     password: ${RESTAURANTPRO_DB_PASSWORD:}
     hikari:
       # D40: 10 POS terminals (spec §12); approver verification commits on its own connection before the use case.
@@ -25,6 +27,10 @@ spring:
       # Flyway owns the schema (D5); Hibernate only checks entities against it.
       ddl-auto: validate
   flyway:
+    # D163: migrations run as the owner of every application object (BYPASSRLS), on their own connection; the
+    # password comes from RESTAURANTPRO_FLYWAY_PASSWORD_FILE in deploy/backend-entrypoint.sh.
+    user: ${RESTAURANTPRO_FLYWAY_USERNAME:restaurantpro_owner}
+    password: ${RESTAURANTPRO_FLYWAY_PASSWORD:}
     # Scanned recursively: db/migration/<module>/V<block>__<module>_<what>.sql (D5 version blocks).
     locations: classpath:db/migration
     # ADR 0001 (amended 2026-11-13): one version block per module, so a release adds versions below the head of an
@@ -93,6 +99,10 @@ management:
         include: health,info,metrics,prometheus
 
 restaurantpro:
+  store-scope:
+    # D170: ENFORCE, or PERMISSIVE in an emergency (every checkout is all stores; logged, alerted and audited at
+    # startup; restore with a restart on ENFORCE). Runbook in deploy/README.md; deliberately not in .env.example.
+    enforcement: ${RESTAURANTPRO_STORE_SCOPE_ENFORCEMENT:ENFORCE}
   idempotency:
     # D47.4: completed Idempotency-Key records are deleted after this period (daily job, 03:30 server time).
     retention: P90D

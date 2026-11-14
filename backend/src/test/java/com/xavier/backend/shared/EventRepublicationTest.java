@@ -1,5 +1,6 @@
 package com.xavier.backend.shared;
 
+import com.xavier.backend.DatabaseRoles;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.xavier.backend.BackendApplication;
@@ -44,7 +45,7 @@ class EventRepublicationTest {
     void anIncompletePublicationIsDeliveredAgainAfterARestart() {
         UUID id = UUID.randomUUID();
         ProbeListener.failing.set(true);
-        transaction.executeWithoutResult(tx -> events.publishEvent(new ProbeHappened(id)));
+        transaction.executeWithoutResult(tx -> events.publishEvent(new ProbeHappened(id, UUID.randomUUID())));
         awaitTrue(() -> ProbeListener.attempts.get() > 0 && incomplete(id), "first delivery attempted and failed");
 
         ProbeListener.failing.set(false);
@@ -60,8 +61,11 @@ class EventRepublicationTest {
                 .properties(
                         // application.yaml reads these placeholders; builder properties have the lowest precedence
                         "RESTAURANTPRO_DB_URL=" + postgres.getJdbcUrl(),
-                        "RESTAURANTPRO_DB_USERNAME=" + postgres.getUsername(),
-                        "RESTAURANTPRO_DB_PASSWORD=" + postgres.getPassword(),
+                        // ADR 0039: the pool as the application role, Flyway as the owner (DatabaseRoles)
+                        "RESTAURANTPRO_DB_USERNAME=" + DatabaseRoles.APP_ROLE,
+                        "RESTAURANTPRO_DB_PASSWORD=" + DatabaseRoles.appPassword(),
+                        "RESTAURANTPRO_FLYWAY_USERNAME=" + DatabaseRoles.OWNER_ROLE,
+                        "RESTAURANTPRO_FLYWAY_PASSWORD=" + DatabaseRoles.ownerPassword(),
                         "RESTAURANTPRO_MANAGEMENT_PORT=0",
                         "server.port=0")
                 .run();
@@ -91,7 +95,8 @@ class EventRepublicationTest {
         assertThat(condition.getAsBoolean()).as(what).isTrue();
     }
 
-    public record ProbeHappened(UUID id) {
+    /** Carries a store, as every production event of a store listener does (D166: the listener runs in it). */
+    public record ProbeHappened(UUID id, UUID storeId) {
     }
 
     static class ProbeListener {

@@ -1,5 +1,6 @@
 package com.xavier.backend.settlement.repository;
 
+import com.xavier.backend.OwnerDatabase;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -66,8 +67,12 @@ class TaxRoundingAdjustmentImmutableTest {
         assertThatThrownBy(() -> resolution(absorbed, "NC-3")).hasMessageContaining("PENDING_CORRECTION");
     }
 
+    /** {@code TRUNCATE} as the owner: the pool has no TRUNCATE privilege, so only the trigger can stop the owner. */
     private void assertRefused(String sql) {
-        assertThatThrownBy(() -> jdbc.sql(sql).update()).isInstanceOf(DataAccessException.class)
+        Runnable statement = sql.startsWith("TRUNCATE")
+                ? () -> OwnerDatabase.shared().rolledBack(owner -> owner.sql(sql).update())
+                : () -> jdbc.sql(sql).update();
+        assertThatThrownBy(statement::run).isInstanceOf(DataAccessException.class)
                 .hasMessageContaining("append-only");
     }
 

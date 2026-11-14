@@ -41,7 +41,7 @@ class EventPublicationStatsTest {
 
         UUID failing = UUID.randomUUID();
         FlakyListener.failures.put(failing, new AtomicInteger(Integer.MAX_VALUE));
-        transaction.executeWithoutResult(tx -> events.publishEvent(new ProbeHappened(failing)));
+        transaction.executeWithoutResult(tx -> events.publishEvent(new ProbeHappened(failing, UUID.randomUUID())));
 
         assertThat(stats.pendingFor(FlakyListener.class.getName())).isEqualTo(before + 1);
         assertThat(stats.pendingFor("com.xavier.backend.shared.events.")).isGreaterThanOrEqualTo(before + 1);

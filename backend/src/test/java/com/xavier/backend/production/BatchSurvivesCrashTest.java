@@ -1,5 +1,6 @@
 package com.xavier.backend.production;
 
+import com.xavier.backend.DatabaseRoles;
 import static com.xavier.backend.production.ProductionFixtures.await;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -89,8 +90,11 @@ class BatchSurvivesCrashTest {
                 .properties(
                         // application.yaml reads these placeholders; builder properties have the lowest precedence
                         "RESTAURANTPRO_DB_URL=" + postgres.getJdbcUrl(),
-                        "RESTAURANTPRO_DB_USERNAME=" + postgres.getUsername(),
-                        "RESTAURANTPRO_DB_PASSWORD=" + postgres.getPassword(),
+                        // ADR 0039: the pool as the application role, Flyway as the owner (DatabaseRoles)
+                        "RESTAURANTPRO_DB_USERNAME=" + DatabaseRoles.APP_ROLE,
+                        "RESTAURANTPRO_DB_PASSWORD=" + DatabaseRoles.appPassword(),
+                        "RESTAURANTPRO_FLYWAY_USERNAME=" + DatabaseRoles.OWNER_ROLE,
+                        "RESTAURANTPRO_FLYWAY_PASSWORD=" + DatabaseRoles.ownerPassword(),
                         "RESTAURANTPRO_MANAGEMENT_PORT=0",
                         "server.port=0")
                 .run();

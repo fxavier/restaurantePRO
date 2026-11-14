@@ -1,5 +1,6 @@
 package com.xavier.backend.settlement.reconciliation;
 
+import com.xavier.backend.OwnerDatabase;
 import static com.xavier.backend.settlement.reconciliation.ReconciliationRequests.BASE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -29,8 +30,6 @@ import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 
 /**
@@ -65,8 +64,6 @@ class DocumentsControlTest {
     @Autowired
     SettlementTestClock clock;
 
-    @Autowired
-    PlatformTransactionManager transactionManager;
 
     @BeforeEach
     void aManagerApproves() {
@@ -122,11 +119,12 @@ class DocumentsControlTest {
         Sale sale = fixtures.sale("2");
         invoicedAloneAndClosed(sale);
         // a bug's doing, written past the services and the fact trigger: the adjustment row is gone
-        new TransactionTemplate(transactionManager).executeWithoutResult(tx -> {
-            jdbc.sql("ALTER TABLE settlement.tax_rounding_adjustment DISABLE TRIGGER tax_rounding_adjustment_append_only")
+        // (as the owner: disabling a trigger is DDL, which the pool may not run)
+        OwnerDatabase.shared().tx(owner -> {
+            owner.sql("ALTER TABLE settlement.tax_rounding_adjustment DISABLE TRIGGER tax_rounding_adjustment_append_only")
                     .update();
-            jdbc.sql("DELETE FROM settlement.tax_rounding_adjustment WHERE order_id = ?").param(sale.order()).update();
-            jdbc.sql("ALTER TABLE settlement.tax_rounding_adjustment ENABLE TRIGGER tax_rounding_adjustment_append_only")
+            owner.sql("DELETE FROM settlement.tax_rounding_adjustment WHERE order_id = ?").param(sale.order()).update();
+            owner.sql("ALTER TABLE settlement.tax_rounding_adjustment ENABLE TRIGGER tax_rounding_adjustment_append_only")
                     .update();
         });
 
@@ -196,11 +194,12 @@ class DocumentsControlTest {
                 UUID.randomUUID().toString()).andExpect(status().isOk());
         assertThat(kinds(control(sale))).isEmpty();
         // a bug's doing, written past the services and the charge's trigger: the posted credit moved after issue
-        new TransactionTemplate(transactionManager).executeWithoutResult(tx -> {
-            jdbc.sql("ALTER TABLE settlement.credit_charge DISABLE TRIGGER credit_charge_immutable").update();
-            jdbc.sql("UPDATE settlement.credit_charge SET amount = 20.00 WHERE order_id = ?").param(sale.order())
+        // (as the owner: disabling a trigger is DDL, which the pool may not run)
+        OwnerDatabase.shared().tx(owner -> {
+            owner.sql("ALTER TABLE settlement.credit_charge DISABLE TRIGGER credit_charge_immutable").update();
+            owner.sql("UPDATE settlement.credit_charge SET amount = 20.00 WHERE order_id = ?").param(sale.order())
                     .update();
-            jdbc.sql("ALTER TABLE settlement.credit_charge ENABLE TRIGGER credit_charge_immutable").update();
+            owner.sql("ALTER TABLE settlement.credit_charge ENABLE TRIGGER credit_charge_immutable").update();
         });
 
         assertThat(kinds(control(sale))).containsExactlyInAnyOrder("SNAPSHOT_CREDIT_MISMATCH", "DOCUMENT_UNPAID");

@@ -1,5 +1,8 @@
 package com.xavier.backend.e2e;
 
+import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
+import org.springframework.boot.flyway.autoconfigure.FlywayConnectionDetails;
+import com.xavier.backend.DatabaseRoles;
 import com.xavier.backend.TestcontainersConfiguration;
 import com.xavier.backend.e2e.Browser.Csrf;
 import java.io.IOException;
@@ -16,7 +19,6 @@ import java.util.Map;
 import java.util.UUID;
 import org.awaitility.Awaitility;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -43,10 +45,25 @@ final class Installation {
     static class FreshDatabase {
 
         @Bean
-        @ServiceConnection
         PostgreSQLContainer freshPostgres() {
-            return new PostgreSQLContainer(TestcontainersConfiguration.POSTGRES_IMAGE_NAME)
+            PostgreSQLContainer postgres = new PostgreSQLContainer(TestcontainersConfiguration.POSTGRES_IMAGE_NAME)
                     .withUrlParam("sslmode", "disable");
+            postgres.start();
+            // ADR 0039 (D163): the roles exist before Flyway and the pool connect, as db-provision does in production
+            DatabaseRoles.provision(postgres);
+            return postgres;
+        }
+
+        /** The pool as the application role. */
+        @Bean
+        JdbcConnectionDetails freshPostgresConnection(PostgreSQLContainer freshPostgres) {
+            return DatabaseRoles.applicationConnection(freshPostgres);
+        }
+
+        /** Flyway as the owner. */
+        @Bean
+        FlywayConnectionDetails freshPostgresFlyway(PostgreSQLContainer freshPostgres) {
+            return DatabaseRoles.ownerConnection(freshPostgres);
         }
     }
 

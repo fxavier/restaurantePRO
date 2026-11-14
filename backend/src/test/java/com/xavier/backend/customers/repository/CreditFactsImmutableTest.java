@@ -1,5 +1,6 @@
 package com.xavier.backend.customers.repository;
 
+import com.xavier.backend.OwnerDatabase;
 import static com.xavier.backend.customers.CustomersFixtures.mzn;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -92,7 +93,13 @@ class CreditFactsImmutableTest {
                 + "WHERE customer_id = ? AND status = 'RELEASED'");
     }
 
+    /** {@code TRUNCATE} as the owner: the pool has no TRUNCATE privilege, so only the trigger can stop the owner. */
     private void assertRefused(String sql) {
+        if (sql.startsWith("TRUNCATE")) {
+            assertThatThrownBy(() -> OwnerDatabase.shared().rolledBack(owner -> owner.sql(sql).update()))
+                    .isInstanceOf(DataAccessException.class).hasMessageContaining("not allowed");
+            return;
+        }
         assertThatThrownBy(() -> {
             var statement = jdbc.sql(sql);
             if (sql.contains("?")) {

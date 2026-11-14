@@ -1,5 +1,8 @@
 package com.xavier.backend.e2e;
 
+import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
+import org.springframework.boot.flyway.autoconfigure.FlywayConnectionDetails;
+import com.xavier.backend.DatabaseRoles;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
@@ -21,7 +24,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -60,10 +62,25 @@ class R1AcceptanceTest {
 
         /** Stopped when this test's context closes (Spring Boot manages a container bean's lifecycle). */
         @Bean
-        @ServiceConnection
         PostgreSQLContainer freshPostgres() {
-            return new PostgreSQLContainer(TestcontainersConfiguration.POSTGRES_IMAGE_NAME)
+            PostgreSQLContainer postgres = new PostgreSQLContainer(TestcontainersConfiguration.POSTGRES_IMAGE_NAME)
                     .withUrlParam("sslmode", "disable");
+            postgres.start();
+            // ADR 0039 (D163): the roles exist before Flyway and the pool connect, as db-provision does in production
+            DatabaseRoles.provision(postgres);
+            return postgres;
+        }
+
+        /** The pool as the application role. */
+        @Bean
+        JdbcConnectionDetails freshPostgresConnection(PostgreSQLContainer freshPostgres) {
+            return DatabaseRoles.applicationConnection(freshPostgres);
+        }
+
+        /** Flyway as the owner. */
+        @Bean
+        FlywayConnectionDetails freshPostgresFlyway(PostgreSQLContainer freshPostgres) {
+            return DatabaseRoles.ownerConnection(freshPostgres);
         }
     }
 
