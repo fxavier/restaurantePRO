@@ -1,0 +1,2 @@
+# D171: an application started or closed by a test body runs its startup and shutdown with production semantics.
+org.springframework.boot.SpringApplicationRunListener=com.xavier.backend.access.ApplicationLifecycleMarks

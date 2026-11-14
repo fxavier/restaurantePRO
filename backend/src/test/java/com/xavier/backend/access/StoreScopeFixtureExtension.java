@@ -13,6 +13,8 @@ import org.junit.platform.commons.support.AnnotationSupport;
  * ({@code junit-platform.properties}); a {@link StrictStoreScope} class is never marked. Static fixtures of
  * {@code @BeforeAll} use {@code OwnerDatabase} or an explicit scope. An Awaitility condition polled by a test gets
  * the test thread's mark and actor ({@link StoreScopeTestSupport#propagateToAwaitilityPollThreads}).
+ * An application a test body starts or closes itself (a simulated restart) runs its startup and shutdown unmarked
+ * ({@link ApplicationLifecycleMarks}).
  */
 public class StoreScopeFixtureExtension implements BeforeEachCallback, AfterEachCallback {
 
