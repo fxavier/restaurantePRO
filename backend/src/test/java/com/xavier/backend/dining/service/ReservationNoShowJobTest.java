@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.xavier.backend.access.Permission;
+import com.xavier.backend.access.StoreScopes;
 import com.xavier.backend.dining.DiningFixtures;
 import com.xavier.backend.dining.DiningModuleTest;
 import com.xavier.backend.dining.repository.ReservationRepository;
@@ -55,6 +56,9 @@ class ReservationNoShowJobTest {
 
     @Autowired
     MockMvc mvc;
+
+    @Autowired
+    StoreScopes scopes;
 
     final Instant startsAt = Instant.now().plus(Duration.ofDays(3)).truncatedTo(ChronoUnit.MINUTES);
     UUID store;
@@ -113,12 +117,15 @@ class ReservationNoShowJobTest {
         CountDownLatch release = new CountDownLatch(1);
         TransactionTemplate tx = new TransactionTemplate(transactionManager);
         try (ExecutorService pool = Executors.newSingleThreadExecutor()) {
-            Future<?> holder = pool.submit(() -> tx.executeWithoutResult(status -> {
-                jdbc.sql("SELECT id FROM dining.reservation WHERE id = :id FOR UPDATE").param("id", reservation)
-                        .query(UUID.class).single();
-                locked.countDown();
-                await(release);
-            }));
+            // a request of the reservation's store, on a thread of its own (no fixture fallback there)
+            Future<?> holder = pool.submit(() -> scopes.callForStore(store, "test:holder",
+                    () -> tx.execute(status -> {
+                        jdbc.sql("SELECT id FROM dining.reservation WHERE id = :id FOR UPDATE")
+                                .param("id", reservation).query(UUID.class).single();
+                        locked.countDown();
+                        await(release);
+                        return null;
+                    })));
             assertThat(locked.await(30, TimeUnit.SECONDS)).isTrue();
 
             jobAt(Duration.ofMinutes(31)).markDue(); // would block here without SKIP LOCKED

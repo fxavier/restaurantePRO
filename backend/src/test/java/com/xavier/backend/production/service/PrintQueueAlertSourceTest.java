@@ -28,7 +28,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  * a NORMAL printer. Both are WARNINGs of the store, and the gauges {@code print_jobs_unresolved{store}} and
  * {@code print_jobs_oldest_waiting_seconds{store}} move with them. Drawer kicks count in neither (D158): a missed
  * kick is the cashier's to see, not a print alert. Jobs sit on HOLD printers, so no worker changes
- * them; a printer turns NORMAL only inside a rolled-back transaction.
+ * them; when a printer turns NORMAL its jobs are not due before tomorrow, so no worker claims them either. The source
+ * reads in its own system scope (D166), which cannot start inside a transaction: every change it must see is
+ * committed.
  */
 @ProductionModuleTest
 class PrintQueueAlertSourceTest {
@@ -102,35 +104,29 @@ class PrintQueueAlertSourceTest {
         UUID waiting = job("QUEUED", "6 minutes", null);
         assertThat(storeAlerts()).as("on HOLD, waiting is intended").isEmpty();
 
-        tx.executeWithoutResult(status -> {
-            status.setRollbackOnly();
-            jdbc.sql("UPDATE production.printer SET mode = 'NORMAL' WHERE id = ?").param(printer).update();
+        normal(printer);
 
-            assertThat(storeAlerts()).singleElement().satisfies(alert -> {
-                assertThat(alert.code()).isEqualTo("PRINT_QUEUE_STALLED");
-                assertThat(alert.severity()).isEqualTo(AlertSeverity.WARNING);
-                assertThat(alert.count()).isEqualTo(1);
-                assertThat(alert.since()).isEqualTo(createdAt(waiting));
-            });
-            assertThat(gauge("print_jobs_oldest_waiting_seconds")).isBetween(355.0, 3600.0);
-
-            jdbc.sql("UPDATE production.print_job SET created_at = now() - interval '4 minutes' WHERE id = ?")
-                    .param(waiting).update();
-            assertThat(storeAlerts()).as("4 minutes is not stalled").isEmpty();
-            assertThat(gauge("print_jobs_oldest_waiting_seconds")).isBetween(235.0, 300.0);
+        assertThat(storeAlerts()).singleElement().satisfies(alert -> {
+            assertThat(alert.code()).isEqualTo("PRINT_QUEUE_STALLED");
+            assertThat(alert.severity()).isEqualTo(AlertSeverity.WARNING);
+            assertThat(alert.count()).isEqualTo(1);
+            assertThat(alert.since()).isEqualTo(createdAt(waiting));
         });
+        assertThat(gauge("print_jobs_oldest_waiting_seconds")).isBetween(355.0, 3600.0);
+
+        jdbc.sql("UPDATE production.print_job SET created_at = now() - interval '4 minutes' WHERE id = ?")
+                .param(waiting).update();
+        assertThat(storeAlerts()).as("4 minutes is not stalled").isEmpty();
+        assertThat(gauge("print_jobs_oldest_waiting_seconds")).isBetween(235.0, 300.0);
     }
 
     @Test
     void aRetryWaitJobCountsAsWaiting() throws Exception {
         job("RETRY_WAIT", "7 minutes", null);
 
-        tx.executeWithoutResult(status -> {
-            status.setRollbackOnly();
-            jdbc.sql("UPDATE production.printer SET mode = 'NORMAL' WHERE id = ?").param(printer).update();
+        normal(printer);
 
-            assertThat(storeAlerts()).extracting(OperationalAlert::code).containsExactly("PRINT_QUEUE_STALLED");
-        });
+        assertThat(storeAlerts()).extracting(OperationalAlert::code).containsExactly("PRINT_QUEUE_STALLED");
     }
 
     @Test
@@ -147,14 +143,17 @@ class PrintQueueAlertSourceTest {
         assertThat(storeAlerts()).as("an unresolved failed kick").isEmpty();
         assertThat(gaugeOrZero("print_jobs_unresolved")).isZero();
 
-        tx.executeWithoutResult(status -> {
-            status.setRollbackOnly();
-            jdbc.sql("UPDATE production.printer SET mode = 'NORMAL' WHERE id = ?").param(till.printer()).update();
-            kick(till, "6 minutes");
+        // a worker may claim and fail this kick meanwhile (kicks are taken whatever is due): it never counts either
+        normal(till.printer());
+        tx.executeWithoutResult(status -> kick(till, "6 minutes"));
 
-            assertThat(storeAlerts()).as("a kick waiting on a NORMAL printer").isEmpty();
-            assertThat(gaugeOrZero("print_jobs_oldest_waiting_seconds")).isZero();
-        });
+        assertThat(storeAlerts()).as("a kick waiting on a NORMAL printer").isEmpty();
+        assertThat(gaugeOrZero("print_jobs_oldest_waiting_seconds")).isZero();
+    }
+
+    /** NORMAL in the database directly (no audit, no notice): its jobs stay not yet due, see {@link #job}. */
+    private void normal(UUID printerId) {
+        jdbc.sql("UPDATE production.printer SET mode = 'NORMAL' WHERE id = ?").param(printerId).update();
     }
 
     /** A cash payment's kick on the till, created {@code age} ago, in the caller's transaction; its source. */
@@ -182,13 +181,16 @@ class PrintQueueAlertSourceTest {
         return meters.get(name).tag("store", store.toString()).gauge().value();
     }
 
-    /** A job of a test ticket on the held printer, in {@code status}, created {@code age} ago. */
+    /**
+     * A job of a test ticket on the held printer, in {@code status}, created {@code age} ago, not due before
+     * tomorrow (so no worker claims it once the printer is NORMAL).
+     */
     private UUID job(String status, String age, String resolution) throws Exception {
         UUID job = fixtures.testPage(store, printer);
         jdbc.sql("""
                 UPDATE production.print_job SET status = ?, attempts = CASE WHEN ? = 'QUEUED' THEN 0 ELSE 1 END,
                     started_at = CASE WHEN ? = 'QUEUED' THEN NULL ELSE now() END, resolution = ?,
-                    created_at = now() - CAST(? AS interval)
+                    created_at = now() - CAST(? AS interval), next_attempt_at = now() + interval '1 day'
                 WHERE id = ?""").param(status).param(status).param(status).param(resolution).param(age).param(job)
                 .update();
         return job;

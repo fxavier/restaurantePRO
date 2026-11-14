@@ -7,6 +7,8 @@ import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
 import com.xavier.backend.access.Permission;
+import com.xavier.backend.access.StoreScopes;
+import com.xavier.backend.access.SystemScope;
 import com.xavier.backend.fiscal.FiscalActors;
 import com.xavier.backend.orders.OrdersFixtures.Shop;
 import com.xavier.backend.production.ProductionFixtures;
@@ -54,6 +56,9 @@ class PrintQueueTest {
 
     @Autowired
     PrintWorker worker;
+
+    @Autowired
+    StoreScopes scopes;
 
     @Autowired
     PrintQueue queue;
@@ -275,17 +280,21 @@ class PrintQueueTest {
         UUID job = awaitJob(fixtures.confirmedRound(shop, employee, terminal, "1"));
         CountDownLatch locked = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
-        CompletableFuture<Void> holder = CompletableFuture.runAsync(() -> tx.executeWithoutResult(s -> {
-            jdbc.sql("SELECT id FROM production.print_job WHERE id = ? FOR UPDATE").param(job).query().listOfRows();
-            locked.countDown();
-            waitFor(release);
-        }));
+        // a request of the store holding the job, on a thread of its own (no fixture fallback there)
+        CompletableFuture<Void> holder = CompletableFuture.runAsync(() -> scopes.callForStore(shop.store(),
+                "test:holder", () -> tx.execute(s -> {
+                    jdbc.sql("SELECT id FROM production.print_job WHERE id = ? FOR UPDATE").param(job).query()
+                            .listOfRows();
+                    locked.countDown();
+                    waitFor(release);
+                    return null;
+                })));
         assertThat(locked.await(10, TimeUnit.SECONDS)).isTrue();
         try {
             fixtures.mode(shop.store(), bar, "NORMAL"); // the locked job is due for every claimer now
 
-            List<Dispatch> claimed = CompletableFuture.supplyAsync(() -> queue.claimDue(PrintWorker.MAX_CLAIM))
-                    .get(5, TimeUnit.SECONDS);
+            List<Dispatch> claimed = CompletableFuture.supplyAsync(() -> scopes.call(SystemScope.PRINT_WORKER,
+                    () -> queue.claimDue(PrintWorker.MAX_CLAIM))).get(5, TimeUnit.SECONDS);
 
             assertThat(claimed).extracting(Dispatch::jobId).doesNotContain(job);
             assertThat(fixtures.jobStatus(job)).isEqualTo("QUEUED");

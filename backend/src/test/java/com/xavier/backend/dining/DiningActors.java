@@ -45,13 +45,16 @@ public final class DiningActors {
 
     /**
      * Runs {@code action} on this thread as a POS employee of {@code storeId}: what a POS request of the calling
-     * module (orders) has in its security context when it calls {@code DiningApi}.
+     * module (orders) has in its security context when it calls {@code DiningApi}. The employee holds an authority
+     * there, as an orders POS session does, so its store scope is the store (D164: a session holding none sees no
+     * store rows).
      */
     public static <T> T runAsPos(UUID storeId, UUID employeeId, Supplier<T> action) {
         SecurityContext previous = SecurityContextHolder.getContext();
         SecurityContext context = SecurityContextHolder.createEmptyContext();
         context.setAuthentication(UsernamePasswordAuthenticationToken.authenticated(
-                Actor.employee(employeeId, TERMINAL_ID, storeId, Set.of()), null, List.of()));
+                Actor.employee(employeeId, TERMINAL_ID, storeId, Set.of(Permission.ORDER_EDIT.authority())), null,
+                List.of()));
         SecurityContextHolder.setContext(context);
         try {
             return action.get();
