@@ -7,7 +7,6 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -15,7 +14,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 /**
  * D171: an Awaitility condition is test code evaluated on Awaitility's poll thread for the test, so it gets what the
  * test thread has, as {@code pollInSameThread()} would give it: the fixture mark and the security context (so an
- * actor's poll is scoped to the actor). Threads of the application keep production semantics.
+ * actor's poll is scoped to the actor). Threads of the application keep production semantics; a strict test's poll
+ * stays unset ({@link AwaitilityStrictScopeTest}).
  */
 class AwaitilityFixtureScopeTest {
 
@@ -52,22 +52,5 @@ class AwaitilityFixtureScopeTest {
         });
 
         assertThat(seen.get()).isEqualTo("account:" + account);
-    }
-
-    @Nested
-    @StrictStoreScope
-    class Strict {
-
-        @Test
-        void aConditionOfAStrictTestIsUnset() {
-            AtomicReference<StoreScope> seen = new AtomicReference<>();
-
-            Awaitility.await().until(() -> {
-                seen.set(SCOPES.current());
-                return true;
-            });
-
-            assertThat(seen.get()).isEqualTo(StoreScope.UNSET);
-        }
     }
 }
