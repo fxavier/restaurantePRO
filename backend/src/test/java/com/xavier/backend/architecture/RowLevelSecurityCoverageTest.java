@@ -92,6 +92,29 @@ public class RowLevelSecurityCoverageTest {
         }
     }
 
+    /** Both registries are written by migrations only: the pool may read them, never add or remove a row. */
+    @Test
+    void theApplicationRoleCannotChangeTheRegistries() throws Exception {
+        try (java.sql.Connection connection = java.sql.DriverManager.getConnection(
+                TestcontainersConfiguration.postgres().getJdbcUrl(), TestcontainersConfiguration.APP_ROLE,
+                TestcontainersConfiguration.appPassword())) {
+            JdbcClient app = JdbcClient.create(new org.springframework.jdbc.datasource.SingleConnectionDataSource(
+                    connection, true));
+            for (String registry : List.of("shared.rls_protected_table", "shared.rls_unscoped_table")) {
+                // readable (rls_protected_table is still empty before the policy slices)
+                long before = app.sql("SELECT count(*) FROM " + registry).query(Long.class).single();
+                String insert = registry.endsWith("unscoped_table")
+                        ? "INSERT INTO " + registry + " VALUES ('organization.store', 'hidden by a bug')"
+                        : "INSERT INTO " + registry + " VALUES ('organization.store')";
+
+                assertThatThrownBy(() -> app.sql(insert).update()).as(insert).rootCause()
+                        .hasMessageContaining("violates row-level security policy");
+                assertThat(app.sql("DELETE FROM " + registry).update()).as("DELETE FROM %s", registry).isZero();
+                assertThat(app.sql("SELECT count(*) FROM " + registry).query(Long.class).single()).isEqualTo(before);
+            }
+        }
+    }
+
     /** The helper is red-capable: an unclassified table, a table no longer forced and a hand-written policy fail. */
     @Test
     void theHelperCatchesAnUnclassifiedTableAMissingForceAndANonCanonicalPolicy() {
