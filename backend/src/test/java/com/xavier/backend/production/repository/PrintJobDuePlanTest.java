@@ -7,6 +7,8 @@ import com.xavier.backend.dining.AppRoleSession;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -16,10 +18,10 @@ import org.springframework.data.jpa.repository.Query;
 /**
  * D169/D171 plan of the print worker's due work under row-level security: {@link PrintJobRepository#lockDue}, read
  * from the repository's own annotation, as the application role in the worker's all-stores scope
- * ({@code PRINT_WORKER}, D166). The policy's InitPlan does not stop the due jobs being found through the partial index
- * {@code print_job_due_ix} (only QUEUED and RETRY_WAIT jobs), not the whole job history. Deterministic seed: 4 000 SENT
- * jobs on a HOLD printer of a fresh store (never due work for another test's worker), then {@code ANALYZE} as the
- * owner and {@code EXPLAIN} in one transaction with {@code enable_seqscan = off}.
+ * ({@code PRINT_WORKER}, D166): the due jobs are found through the partial index {@code print_job_due_ix} (only
+ * QUEUED and RETRY_WAIT jobs), not the whole job history, and that scan carries print_job's own policy filter.
+ * Deterministic seed: 4 000 SENT jobs on a HOLD printer of a fresh store (never due work for another test's worker),
+ * then {@code ANALYZE} as the owner and {@code EXPLAIN} in one transaction with {@code enable_seqscan = off}.
  */
 class PrintJobDuePlanTest {
 
@@ -64,8 +66,40 @@ class PrintJobDuePlanTest {
                     .param("limit", 10).query(String.class).list());
         });
 
-        assertThat(plan).as("the store_scope policy, once per statement").contains("InitPlan")
-                .containsPattern("(Index Scan using|Index Only Scan using|Bitmap Index Scan on) "
-                        + "print_job_due_ix");
+        assertThat(plan).containsPattern("(Index Scan using|Index Only Scan using|Bitmap Index Scan on) "
+                + "print_job_due_ix");
+        assertThat(dueScans(plan)).as("print_job's own store_scope policy filters every due-index scan:\n%s", plan)
+                .isNotEmpty().allSatisfy(details -> assertThat(details).containsPattern(POLICY_FILTER));
+    }
+
+    /** The V1008 canonical VIS(store_id) as EXPLAIN prints it: two InitPlans, evaluated once per statement. */
+    static final String POLICY_FILTER =
+            "Filter: .*\\(InitPlan \\d+\\)\\.col1 OR \\(store_id = ANY \\(\\(InitPlan \\d+\\)\\.col1\\)\\)";
+
+    /**
+     * For each print_job scan that uses {@code print_job_due_ix}, its detail lines (Index Cond, Filter, Recheck): of
+     * that node itself, or of the Bitmap Heap Scan above a Bitmap Index Scan. Other tables' policies (printer, ticket)
+     * sit on other nodes, so a missing print_job policy shows here.
+     */
+    static List<String> dueScans(String plan) {
+        List<String> lines = plan.lines().toList();
+        List<String> scans = new ArrayList<>();
+        for (int i = 0; i < lines.size(); i++) {
+            if (!lines.get(i).contains("print_job_due_ix")) {
+                continue;
+            }
+            int node = i;
+            if (lines.get(i).contains("Bitmap Index Scan")) {
+                while (!lines.get(node).contains("Bitmap Heap Scan on print_job")) {
+                    node--;
+                }
+            }
+            StringBuilder details = new StringBuilder();
+            for (int k = node + 1; k < lines.size() && !lines.get(k).contains("->"); k++) {
+                details.append(lines.get(k).strip()).append('\n');
+            }
+            scans.add(details.toString());
+        }
+        return scans;
     }
 }
