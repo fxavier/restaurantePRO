@@ -136,7 +136,11 @@ class AuditRowLevelSecurityTest {
                 .query(Long.class).single()).isEqualTo(1);
     }
 
-    /** D42 (b) under row-level security: a row of another store or of no store is 403 to a store auditor. */
+    /**
+     * D42 (b) under row-level security: a row of another store or of no store is 403 to a store auditor. Accepted
+     * contract: {@code store_of} cannot tell a store-less row from no row, so an unknown id is 403 to a store auditor
+     * too, and 404 only to an installation-wide one.
+     */
     @Test
     void oneRowOfAnotherStoreIsForbiddenNotMissing() throws Exception {
         RequestPostProcessor auditorOfA = AuditFixtures.account(Permission.AUDIT_VIEW.authority(storeA));
@@ -144,6 +148,7 @@ class AuditRowLevelSecurityTest {
         mvc.perform(get(EVENTS + "/" + inA).with(auditorOfA)).andExpect(status().isOk());
         mvc.perform(get(EVENTS + "/" + inB).with(auditorOfA)).andExpect(status().isForbidden());
         mvc.perform(get(EVENTS + "/" + storeLess).with(auditorOfA)).andExpect(status().isForbidden());
+        mvc.perform(get(EVENTS + "/" + UUID.randomUUID()).with(auditorOfA)).andExpect(status().isForbidden());
         mvc.perform(get(EVENTS + "/" + UUID.randomUUID())
                         .with(AuditFixtures.account(Permission.AUDIT_VIEW.authority())))
                 .andExpect(status().isNotFound());

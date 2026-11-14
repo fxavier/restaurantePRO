@@ -27,6 +27,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * index condition. The SQL is {@code AuditEventRepository.MATCHING} as Hibernate binds it for one store and one action
  * (the unused filters bound to null). Deterministic: a fixed seed of 12 stores × 8 actions × 150 rows, then
  * {@code ANALYZE} (as the owner) and {@code EXPLAIN} in one transaction with {@code enable_seqscan = off}.
+ * {@link #MATCHING} is a hand copy of {@code AuditEventRepository.MATCHING} (JPQL), so keep the two in step. The seed is
+ * append-only audit rows, dated 2019 so no other audit test's range sees them, left in the shared database.
  */
 @SpringBootTest
 @AutoConfigureMockMvc // the audit suite's one context

@@ -179,9 +179,12 @@ class CatalogRowLevelSecurityTest {
         assertThatThrownBy(this::listsOfTheTwoStores).hasMessageContaining("store scope not set");
     }
 
-    /** STORE_OR_ALL: a company-wide quick page is read in every scope and written only by an all-stores one. */
+    /**
+     * STORE_OR_ALL: a company-wide quick page is read in every scope and inserted or updated only by an all-stores one
+     * (a store scope's DELETE is not refused yet: a V1008 helper gap scheduled for S70).
+     */
     @Test
-    void aCompanyWideQuickPageIsReadEverywhereAndWrittenOnlyByAllStores() {
+    void aCompanyWideQuickPageIsReadEverywhereAndInsertedOrUpdatedOnlyByAllStores() {
         UUID companyWide = quickPage(null);
         UUID ofB = quickPage(storeB);
 
@@ -209,7 +212,7 @@ class CatalogRowLevelSecurityTest {
 
     /** The entries of an every-store page follow their page (D168 special): read by every scope, written by all. */
     @Test
-    void theEntriesOfACompanyWidePageAreReadInEveryStoreAndWrittenOnlyByAllStores() {
+    void theEntriesOfACompanyWidePageAreReadInEveryStoreAndInsertedOnlyByAllStores() {
         UUID companyWide = quickPage(null);
         UUID ofB = quickPage(storeB);
         for (UUID page : List.of(companyWide, ofB)) {

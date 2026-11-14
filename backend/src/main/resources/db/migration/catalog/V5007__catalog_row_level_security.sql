@@ -1,6 +1,7 @@
 -- Row-level security (ADR 0039, D167, D168). A store's price list, catalog releases, operational availability, daily
 -- dishes and exclusions belong to that store; a quick page or an automatic item with no store is for every store
--- (read in every scope, written only by an all-stores one); an item price and a quick-page entry follow their list and
+-- (read in every scope, inserted and updated only by an all-stores one; a store scope can still DELETE it, a gap of
+-- the V1008 helper scheduled for S70); an item price and a quick-page entry follow their list and
 -- page. The working copy (items, families, units, taxes, menus, macros) is company-wide.
 SELECT shared.rls_protect_store_table('catalog.price_list');
 SELECT shared.rls_protect_store_table('catalog.configuration_release');
@@ -18,8 +19,8 @@ ALTER TABLE catalog.item_price
     ADD CONSTRAINT item_price_list_fk FOREIGN KEY (price_list_id) REFERENCES catalog.price_list (id);
 SELECT shared.rls_protect_child_table('catalog.item_price', 'price_list_id', 'catalog.price_list', 'id');
 
--- An entry of an every-store page (store_id NULL) is read in every scope, as its page is, and written only by an
--- all-stores scope. The canonical CHILD policy would hide those entries from every store scope (VIS(NULL) is false),
+-- An entry of an every-store page (store_id NULL) is read in every scope, as its page is, and inserted or updated only
+-- by an all-stores scope (DELETE follows the read rule, as for its page: pending S70). The canonical CHILD policy would hide those entries from every store scope (VIS(NULL) is false),
 -- so a store's release would silently lose them; this policy follows its STORE_OR_ALL parent instead (D168 special).
 DO
 $$
