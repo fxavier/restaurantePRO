@@ -29,6 +29,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class QuickPageService {
 
+    private static final String TABLE = "catalog.quick_page";
+
     private final QuickPageRepository pages;
     private final ItemLines itemLines;
     private final ItemVariantRepository variants;
@@ -58,7 +60,7 @@ public class QuickPageService {
 
     @Transactional(readOnly = true)
     public QuickPageSummary get(UUID id) {
-        access.requireExisting(pages.findScopeById(id), "Quick page", id);
+        access.requireExisting(pages.findStoreById(id), TABLE, "Quick page", id);
         return page(id).toSummary();
     }
 
@@ -73,7 +75,7 @@ public class QuickPageService {
 
     @Transactional
     public QuickPageSummary update(UUID id, QuickPageUpdateRequest request) {
-        access.requireExisting(pages.findScopeById(id), "Quick page", id);
+        access.requireExisting(pages.findStoreById(id), TABLE, "Quick page", id);
         QuickPage page = page(id);
         OptimisticLocking.requireVersion(QuickPage.class, id, page.getVersion(), request.version());
         page.update(request.code(), request.name(), request.position(), entries(request.entries()), clock.instant());
@@ -84,7 +86,7 @@ public class QuickPageService {
 
     @Transactional
     public void delete(UUID id, long version) {
-        access.requireExisting(pages.findScopeById(id), "Quick page", id);
+        access.requireExisting(pages.findStoreById(id), TABLE, "Quick page", id);
         QuickPage page = page(id);
         OptimisticLocking.requireVersion(QuickPage.class, id, page.getVersion(), version);
         pages.delete(page);

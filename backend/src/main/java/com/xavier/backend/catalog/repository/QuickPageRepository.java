@@ -16,5 +16,6 @@ public interface QuickPageRepository extends JpaRepository<QuickPage, UUID> {
 
     List<QuickPage> findAllByStoreIdIsNullOrderByPositionAscCodeAsc();
 
-    Optional<StoreScope> findScopeById(UUID id);
+    @Query("SELECT new com.xavier.backend.catalog.repository.EntryStore(p.storeId) FROM QuickPage p WHERE p.id = :id")
+    Optional<EntryStore> findStoreById(@Param("id") UUID id);
 }

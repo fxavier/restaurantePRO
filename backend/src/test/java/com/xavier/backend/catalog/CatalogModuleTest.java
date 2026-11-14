@@ -15,12 +15,14 @@ import org.springframework.test.context.TestPropertySource;
  * Boots the catalog module with its real dependencies (shared, access, audit, organization) on the shared
  * Testcontainers PostgreSQL. Organization needs bootstrap settings so the company (and its currency) exists;
  * stores are created through its HTTP API. One annotation keeps every catalog test on one cached context.
- * The database is shared by the whole test JVM: never assume empty tables.
+ * The database is shared by the whole test JVM: never assume empty tables. {@code config} is included for the
+ * store-scope hook and advisor (ADR 0039): an {@code @ApplicationModuleTest} drops the configuration classes of modules
+ * it does not include, also when imported, so without it the pool would run with no store scope (RS001).
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
-@ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization"})
+@ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization", "config"})
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
 @TestPropertySource(properties = {
