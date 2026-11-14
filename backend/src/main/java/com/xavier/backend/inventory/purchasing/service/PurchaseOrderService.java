@@ -47,6 +47,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class PurchaseOrderService {
 
     static final String ENTITY = "PurchaseOrder";
+    static final String TABLE = "inventory.purchase_order";
 
     private final PurchaseOrderRepository orders;
     private final GoodsReceiptRepository receipts;
@@ -161,7 +162,7 @@ public class PurchaseOrderService {
     }
 
     private UUID storeOf(UUID id) {
-        return orders.storeOf(id).orElseThrow(() -> new InventoryNotFoundException(ENTITY, id));
+        return scope.storeOf(TABLE, ENTITY, id);
     }
 
     /** {@code PURCHASE_MANAGE} in the order's store (found by its id alone first), then the row FOR UPDATE. */

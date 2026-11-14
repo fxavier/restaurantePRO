@@ -44,6 +44,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class StockCountService {
 
     static final String ENTITY = "StockCount";
+    static final String TABLE = "inventory.stock_count";
 
     private final StockCountRepository counts;
     private final CountLedgerQueries ledgerQueries;
@@ -97,8 +98,8 @@ public class StockCountService {
      */
     @Transactional
     public CountView start(UUID id) {
+        accessPolicy.require(Permission.INVENTORY_COUNT, storeOf(id));
         CountRef ref = counts.refOf(id).orElseThrow(() -> new InventoryNotFoundException(ENTITY, id));
-        accessPolicy.require(Permission.INVENTORY_COUNT, ref.storeId());
         boolean opening = ref.kind() == CountKind.OPENING;
         if (opening) {
             accessPolicy.require(Permission.INVENTORY_MANAGE, ref.storeId());
@@ -206,7 +207,7 @@ public class StockCountService {
     }
 
     private UUID storeOf(UUID id) {
-        return counts.storeOf(id).orElseThrow(() -> new InventoryNotFoundException(ENTITY, id));
+        return scope.storeOf(TABLE, ENTITY, id);
     }
 
     private StockItem item(UUID id) {

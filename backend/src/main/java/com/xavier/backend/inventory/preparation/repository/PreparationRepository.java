@@ -10,9 +10,6 @@ import org.springframework.data.jpa.repository.Query;
 
 public interface PreparationRepository extends JpaRepository<Preparation, UUID> {
 
-    @Query("SELECT p.storeId FROM Preparation p WHERE p.id = :id")
-    Optional<UUID> storeOf(UUID id);
-
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT p FROM Preparation p WHERE p.id = :id")
     Optional<Preparation> lockById(UUID id);

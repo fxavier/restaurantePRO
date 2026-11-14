@@ -71,7 +71,7 @@ public class ConsumptionExceptionService {
 
     @Transactional
     public ReprocessView reprocess(UUID id) {
-        UUID storeId = exceptions.storeOf(id).orElseThrow(() -> new InventoryNotFoundException(ENTITY, id));
+        UUID storeId = scope.storeOf("inventory.consumption_exception", ENTITY, id);
         accessPolicy.require(Permission.INVENTORY_REBUILD, storeId);
         ConsumptionException exception = exceptions.lockById(id)
                 .orElseThrow(() -> new InventoryNotFoundException(ENTITY, id));

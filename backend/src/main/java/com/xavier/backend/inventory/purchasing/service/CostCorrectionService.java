@@ -98,8 +98,7 @@ public class CostCorrectionService {
      */
     @Transactional
     public CostCorrectionView correct(UUID receiptId, UUID lineId, CostCorrectionRequest request) {
-        UUID storeId = receipts.refOf(receiptId)
-                .orElseThrow(() -> new InventoryNotFoundException(GoodsReceiptService.ENTITY, receiptId)).storeId();
+        UUID storeId = receiptService.storeOf(receiptId);
         accessPolicy.require(Permission.GOODS_RECEIVE, storeId);
         if (request.reason() == null || request.reason().isBlank()) {
             throw PurchasingRuleException.reasonRequired("cost correction");
@@ -153,8 +152,7 @@ public class CostCorrectionService {
 
     @Transactional(readOnly = true)
     public List<CostCorrectionView> list(UUID receiptId) {
-        UUID storeId = receipts.refOf(receiptId)
-                .orElseThrow(() -> new InventoryNotFoundException(GoodsReceiptService.ENTITY, receiptId)).storeId();
+        UUID storeId = receiptService.storeOf(receiptId);
         accessPolicy.requireAny(storeId, Permission.GOODS_RECEIVE, Permission.INVENTORY_VIEW);
         return corrections.findByReceiptIdOrderByAtAscSeqAsc(receiptId).stream().map(CostCorrectionService::view)
                 .toList();

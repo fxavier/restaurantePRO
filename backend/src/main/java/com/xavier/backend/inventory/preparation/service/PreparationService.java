@@ -186,7 +186,7 @@ public class PreparationService {
     }
 
     private UUID storeOf(UUID id) {
-        return preparations.storeOf(id).orElseThrow(() -> new InventoryNotFoundException(ENTITY, id));
+        return scope.storeOf("inventory.preparation", ENTITY, id);
     }
 
     private Preparation require(UUID id) {

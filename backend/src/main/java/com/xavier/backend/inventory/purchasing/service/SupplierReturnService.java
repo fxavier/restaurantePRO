@@ -112,6 +112,11 @@ public class SupplierReturnService {
         GoodsReceipt receipt = null;
         UUID supplierId = request.supplierId();
         if (request.goodsReceiptId() != null) {
+            // probed across stores: another store's receipt is this rule's 422, not an absent receipt (D42, D162)
+            if (!receiptService.storeOf(request.goodsReceiptId()).equals(storeId)) {
+                throw PurchasingRuleException.referenceMismatch("Goods receipt " + request.goodsReceiptId()
+                        + " was received in another store: return it from there.");
+            }
             receipt = receipts.findById(request.goodsReceiptId()).orElseThrow(() -> new InventoryNotFoundException(
                     GoodsReceiptService.ENTITY, request.goodsReceiptId()));
             receipt.requireConfirmed();
@@ -138,8 +143,8 @@ public class SupplierReturnService {
 
     @Transactional
     public SupplierReturnView update(UUID id, SupplierReturnUpdateRequest request) {
+        accessPolicy.require(Permission.GOODS_RECEIVE, storeOf(id));
         ReceiptRef ref = refOf(id);
-        accessPolicy.require(Permission.GOODS_RECEIVE, ref.storeId());
         GoodsReceipt receipt = ref.sourceId() == null ? null
                 : receipts.findById(ref.sourceId()).orElseThrow();
         List<SupplierReturnLine> lines = lines(receipt, request.lines()); // checked before the lock
@@ -159,8 +164,8 @@ public class SupplierReturnService {
      */
     @Transactional
     public SupplierReturnView confirm(UUID id) {
+        accessPolicy.require(Permission.GOODS_RECEIVE, storeOf(id));
         ReceiptRef ref = refOf(id);
-        accessPolicy.require(Permission.GOODS_RECEIVE, ref.storeId());
         if (activations.activeFrom(ref.storeId()).isEmpty()) {
             throw InventoryRuleException.notActive(ref.storeId());
         }
@@ -208,7 +213,7 @@ public class SupplierReturnService {
 
     @Transactional
     public SupplierReturnView cancel(UUID id) {
-        accessPolicy.require(Permission.GOODS_RECEIVE, refOf(id).storeId());
+        accessPolicy.require(Permission.GOODS_RECEIVE, storeOf(id));
         SupplierReturn supplierReturn = lock(id);
         supplierReturn.cancel(clock.instant());
         SupplierReturn saved = returns.saveAndFlush(supplierReturn);
@@ -218,7 +223,7 @@ public class SupplierReturnService {
 
     @Transactional(readOnly = true)
     public SupplierReturnView get(UUID id) {
-        accessPolicy.requireAny(refOf(id).storeId(), Permission.GOODS_RECEIVE, Permission.INVENTORY_VIEW);
+        accessPolicy.requireAny(storeOf(id), Permission.GOODS_RECEIVE, Permission.INVENTORY_VIEW);
         return view(returns.findById(id).orElseThrow(() -> new InventoryNotFoundException(ENTITY, id)));
     }
 
@@ -258,6 +263,12 @@ public class SupplierReturnService {
         return lines;
     }
 
+    /** D42 (b): the return's store, whatever the caller's store scope (404 when there is no such return). */
+    private UUID storeOf(UUID id) {
+        return scope.storeOf("inventory.supplier_return", ENTITY, id);
+    }
+
+    /** The store and receipt of a return the caller was authorized for. */
     private ReceiptRef refOf(UUID id) {
         return returns.refOf(id).orElseThrow(() -> new InventoryNotFoundException(ENTITY, id));
     }

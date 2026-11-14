@@ -11,7 +11,7 @@ import org.springframework.data.jpa.repository.Query;
 
 public interface SupplierReturnRepository extends JpaRepository<SupplierReturn, UUID> {
 
-    /** The store and receipt (or {@code null}) of a return alone, to authorize and lock in order (D42). */
+    /** The store and receipt (or {@code null}) of a return alone, read once its store is authorized (D42). */
     @Query("SELECT new com.xavier.backend.inventory.purchasing.repository.ReceiptRef(s.storeId, s.goodsReceiptId) "
             + "FROM SupplierReturn s WHERE s.id = :id")
     Optional<ReceiptRef> refOf(UUID id);
