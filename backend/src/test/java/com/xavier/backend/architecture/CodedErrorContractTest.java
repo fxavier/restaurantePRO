@@ -485,7 +485,17 @@ class CodedErrorContractTest {
             Map.entry("delivery-in-progress", () -> DeliveryRuleException.inProgress(ID)),
             Map.entry("address-frozen", () -> DeliveryRuleException.addressFrozen(ID)),
             Map.entry("fee-line-locked", () -> DeliveryRuleException.feeLineLocked(ID)),
-            Map.entry("zone-fee-confirmed", () -> DeliveryRuleException.zoneFeeConfirmed(ID)));
+            Map.entry("zone-fee-confirmed", () -> DeliveryRuleException.zoneFeeConfirmed(ID)),
+            // RLS (S64, D170): a refusal by row-level security is a bug, a coded 500 without internals
+            Map.entry("store-scope-missing", () -> new org.springframework.dao.DataAccessResourceFailureException(
+                    "could not execute statement", new java.sql.SQLException(
+                    "store scope not set (origin listener:X.on)", "RS001"))),
+            Map.entry("store-scope-violation", () -> new org.springframework.dao.PermissionDeniedDataAccessException(
+                    "could not execute statement", new java.sql.SQLException(
+                    "new row violates row-level security policy for table \"order_header\"", "42501"))),
+            Map.entry("store-change-refused", () -> new org.springframework.orm.jpa.JpaSystemException(
+                    new RuntimeException(new java.sql.SQLException(
+                            "store change refused on orders.order_header (origin account:" + ID + ")", "RS002")))));
 
     @Autowired
     MockMvc mvc;
@@ -1212,6 +1222,15 @@ class CodedErrorContractTest {
                 "The delivery fee is already confirmed: void it before changing the zone.", "");
     }
 
+    @Test
+    void storeScopeRefusalsAreCoded500sWithoutInternals() throws Exception {
+        expect("store-scope-missing", 500, "STORE_SCOPE_MISSING", "Unexpected error: no store scope.", "");
+        expect("store-scope-violation", 500, "STORE_SCOPE_VIOLATION",
+                "Unexpected error: a row outside the store scope was refused.", "");
+        expect("store-change-refused", 500, "STORE_CHANGE_REFUSED",
+                "Unexpected error: a row cannot move to another store.", "");
+    }
+
     private void expect(String name, int status, String code, String detail, String extra) throws Exception {
         String title = switch (status) {
             case 401 -> "Unauthorized";
@@ -1220,6 +1239,7 @@ class CodedErrorContractTest {
             case 409 -> "Conflict";
             case 422 -> "Unprocessable Content";
             case 429 -> "Too Many Requests";
+            case 500 -> "Internal Server Error";
             case 503 -> "Service Unavailable";
             default -> throw new IllegalArgumentException("status " + status);
         };
