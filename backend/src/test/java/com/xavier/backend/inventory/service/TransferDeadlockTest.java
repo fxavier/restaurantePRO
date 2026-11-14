@@ -12,6 +12,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.xavier.backend.inventory.ScopedPool;
+import com.xavier.backend.access.StoreScopes;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.inventory.InventoryFixtures;
 import com.xavier.backend.inventory.InventoryModuleTest;
@@ -26,7 +28,6 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -48,6 +49,9 @@ class TransferDeadlockTest {
 
     static final LocalDate DAY = LocalDate.parse("2026-11-06");
     static final Instant AT = Instant.parse("2026-11-06T10:00:00Z");
+
+    @Autowired
+    StoreScopes scopes;
 
     @Autowired
     MockMvc mvc;
@@ -91,7 +95,7 @@ class TransferDeadlockTest {
         CountDownLatch holding = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         AtomicInteger holder = new AtomicInteger();
-        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+        try (ExecutorService pool = ScopedPool.of(scopes, 2)) {
             Future<?> hold = pool.submit(() -> tx.executeWithoutResult(status -> {
                 ledger.post(List.of(sale(low)));
                 holder.set(backendPid(jdbc));
@@ -114,7 +118,7 @@ class TransferDeadlockTest {
 
     @Test
     void oppositeTransfersStartedTogetherAllSucceed() throws Exception {
-        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+        try (ExecutorService pool = ScopedPool.of(scopes, 2)) {
             for (int i = 0; i < 10; i++) {
                 UUID forward = draft(low, high);
                 UUID backward = draft(high, low);
@@ -137,7 +141,7 @@ class TransferDeadlockTest {
 
     @Test
     void aTransferAndASortedPostingOnTheSameRowsAllSucceed() throws Exception {
-        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+        try (ExecutorService pool = ScopedPool.of(scopes, 2)) {
             for (int i = 0; i < 10; i++) {
                 UUID transfer = draft(high, low);
                 CountDownLatch start = new CountDownLatch(1);

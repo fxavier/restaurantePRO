@@ -28,13 +28,13 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
  * to be paid and closed (cash, fiscal, identity, settlement, customers), on the shared Testcontainers PostgreSQL:
  * rounds, transfers, voids and closes are real, made through the POS APIs (settlement's fixtures). Spy:
  * {@link RoundConsumption}, so a test can hold or crash a consumption. The clock is {@link SettlementTestClock}.
- * Never assume empty tables; every test uses fresh stores.
+ * Never assume empty tables; every test uses fresh stores. {@code config} brings the store-scope hook (ADR 0039).
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
 @ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization", "dining", "catalog", "orders",
-        "cash", "fiscal", "identity", "settlement", "customers", "promotions"})
+        "cash", "fiscal", "identity", "settlement", "customers", "promotions", "config"})
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, DiningFixtures.class, OrdersFixtures.class, CashFixtures.class,
         FiscalFixtures.class, SettlementFixtures.class, SettlementTestClock.Config.class,

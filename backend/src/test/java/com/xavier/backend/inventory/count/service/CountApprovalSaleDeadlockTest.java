@@ -2,6 +2,8 @@ package com.xavier.backend.inventory.count.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.xavier.backend.inventory.ScopedPool;
+import com.xavier.backend.access.StoreScopes;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.inventory.InventoryFixtures;
 import com.xavier.backend.inventory.InventoryModuleTest;
@@ -22,7 +24,6 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -44,6 +45,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  */
 @InventoryModuleTest
 class CountApprovalSaleDeadlockTest {
+
+    @Autowired
+    StoreScopes scopes;
 
     @Autowired
     MockMvc mvc;
@@ -97,7 +101,7 @@ class CountApprovalSaleDeadlockTest {
         CountDownLatch saleHoldsFirst = new CountDownLatch(1);
         CountDownLatch saleMayContinue = new CountDownLatch(1);
         AtomicInteger salePid = new AtomicInteger();
-        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+        try (ExecutorService pool = ScopedPool.of(scopes, 2)) {
             Future<?> sale = pool.submit(() -> tx.executeWithoutResult(status -> {
                 ledger.post(List.of(sale(first)));
                 salePid.set(jdbc.sql("SELECT pg_backend_pid()").query(Integer.class).single());
@@ -127,7 +131,7 @@ class CountApprovalSaleDeadlockTest {
     @Test
     void approvalsAndReverseOrderSalesStartedTogetherAllCommit() throws Exception {
         int rounds = 5;
-        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+        try (ExecutorService pool = ScopedPool.of(scopes, 2)) {
             for (int i = 0; i < rounds; i++) {
                 UUID count = submittedCount();
                 CountDownLatch start = new CountDownLatch(1);

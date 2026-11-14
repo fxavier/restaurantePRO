@@ -6,6 +6,8 @@ import static com.xavier.backend.inventory.service.Concurrency.someoneBlockedBy;
 import static com.xavier.backend.inventory.service.Concurrency.waitUntil;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.xavier.backend.inventory.ScopedPool;
+import com.xavier.backend.access.StoreScopes;
 import com.xavier.backend.inventory.InventoryFixtures;
 import com.xavier.backend.inventory.InventoryModuleTest;
 import com.xavier.backend.inventory.model.MovementType;
@@ -21,7 +23,6 @@ import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -41,6 +42,9 @@ class AverageCostConcurrencyTest {
 
     static final LocalDate DAY = LocalDate.parse("2026-11-06");
     static final Instant AT = Instant.parse("2026-11-06T10:00:00Z");
+
+    @Autowired
+    StoreScopes scopes;
 
     @Autowired
     StockLedger ledger;
@@ -70,7 +74,7 @@ class AverageCostConcurrencyTest {
         CountDownLatch received = new CountDownLatch(1);
         CountDownLatch mayCommit = new CountDownLatch(1);
         AtomicInteger receiver = new AtomicInteger();
-        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+        try (ExecutorService pool = ScopedPool.of(scopes, 2)) {
             Future<?> receipt = pool.submit(() -> tx.executeWithoutResult(status -> {
                 ledger.post(List.of(receipt("10", "12")));
                 receiver.set(backendPid(jdbc));
@@ -108,7 +112,7 @@ class AverageCostConcurrencyTest {
         int perThread = 20;
         CountDownLatch start = new CountDownLatch(1);
         List<Future<?>> done = new ArrayList<>();
-        try (ExecutorService pool = Executors.newFixedThreadPool(threads)) {
+        try (ExecutorService pool = ScopedPool.of(scopes, threads)) {
             for (int t = 0; t < threads; t++) {
                 Random random = new Random(42L + t);
                 done.add(pool.submit(() -> {

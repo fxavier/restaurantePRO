@@ -6,6 +6,8 @@ import static com.xavier.backend.inventory.service.Concurrency.someoneBlockedBy;
 import static com.xavier.backend.inventory.service.Concurrency.waitUntil;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.xavier.backend.inventory.ScopedPool;
+import com.xavier.backend.access.StoreScopes;
 import com.xavier.backend.inventory.InventoryFixtures;
 import com.xavier.backend.inventory.InventoryModuleTest;
 import com.xavier.backend.inventory.model.BalanceKey;
@@ -19,7 +21,6 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -39,6 +40,9 @@ class StockPostingDeadlockTest {
 
     static final LocalDate DAY = LocalDate.parse("2026-11-06");
     static final Instant AT = Instant.parse("2026-11-06T10:00:00Z");
+
+    @Autowired
+    StoreScopes scopes;
 
     @Autowired
     StockLedger ledger;
@@ -77,7 +81,7 @@ class StockPostingDeadlockTest {
         CountDownLatch aHoldsFirst = new CountDownLatch(1);
         CountDownLatch aMayContinue = new CountDownLatch(1);
         AtomicInteger aPid = new AtomicInteger();
-        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+        try (ExecutorService pool = ScopedPool.of(scopes, 2)) {
             Future<?> a = pool.submit(() -> tx.executeWithoutResult(status -> {
                 ledger.post(List.of(sale(first)));
                 aPid.set(backendPid(jdbc));
@@ -108,7 +112,7 @@ class StockPostingDeadlockTest {
     @Test
     void oppositeOrdersStartedTogetherAllCommit() throws Exception {
         int rounds = 20;
-        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+        try (ExecutorService pool = ScopedPool.of(scopes, 2)) {
             for (int i = 0; i < rounds; i++) {
                 CountDownLatch start = new CountDownLatch(1);
                 Future<?> forward = pool.submit(() -> {
