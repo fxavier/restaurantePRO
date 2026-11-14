@@ -164,6 +164,24 @@ class SupplierReturnCostTest {
         assertThat(returnMovement(returned)).isEqualTo("SUPPLIER_RETURN|-2.000000|11.000000|-22.0000|10.000000");
     }
 
+    /**
+     * A return in store B naming store A's receipt is refused by the reference rule (422), as before row-level
+     * security made A's receipt invisible to B's buyer: its store is probed across stores first (D42, D162).
+     */
+    @Test
+    void aReturnNamingAnotherStoresReceiptIsAReferenceMismatch() throws Exception {
+        UUID otherStore = fixtures.newActiveStore();
+        UUID otherRoom = fixtures.newWarehouse(otherStore, "ALLOW");
+
+        mvc.perform(idem(post(BO + "/supplier-returns")).with(buyer(otherStore))
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"warehouseId": "%s", "goodsReceiptId": "%s", "reason": "damaged",
+                                 "lines": [{"stockItemId": "%s", "quantity": 1}]}""".formatted(otherRoom, receiptAt10,
+                                item)))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("PURCHASE_REFERENCE_MISMATCH"));
+    }
+
     private UUID linkedReturn(String quantity) throws Exception {
         return id(newReturn(warehouse, receiptAt10, """
                 {"receiptLineId": "%s", "stockItemId": "%s", "quantity": %s}""".formatted(lineAt10, item, quantity))

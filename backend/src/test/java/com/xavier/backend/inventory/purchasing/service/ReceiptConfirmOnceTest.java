@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.xavier.backend.inventory.StoreTasks;
+import com.xavier.backend.access.StoreScopes;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.inventory.InventoryFixtures;
 import com.xavier.backend.inventory.InventoryModuleTest;
@@ -32,6 +34,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  */
 @InventoryModuleTest
 class ReceiptConfirmOnceTest {
+
+    @Autowired
+    StoreScopes scopes;
 
     @Autowired
     MockMvc mvc;
@@ -184,12 +189,12 @@ class ReceiptConfirmOnceTest {
         CountDownLatch release = new CountDownLatch(1);
         List<Future<String>> confirmations = new ArrayList<>();
         try (ExecutorService pool = Executors.newFixedThreadPool(3)) {
-            Future<?> lock = pool.submit(() -> tx.executeWithoutResult(status -> {
+            Future<?> lock = pool.submit(StoreTasks.inStore(scopes, store, () -> tx.executeWithoutResult(status -> {
                 jdbc.sql("SELECT id FROM inventory.goods_receipt WHERE id = ? FOR UPDATE").param(receipt)
                         .query(UUID.class).single();
                 locked.countDown();
                 Locks.await(release);
-            }));
+            })));
             Locks.await(locked);
             for (int i = 0; i < 2; i++) {
                 confirmations.add(pool.submit(() -> {

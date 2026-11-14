@@ -17,9 +17,6 @@ public interface ConsumptionExceptionRepository extends JpaRepository<Consumptio
     Page<ConsumptionException> findByStoreIdAndResolvedAtIsNullOrderByCreatedAtAscIdAsc(UUID storeId,
                                                                                         Pageable pageable);
 
-    @Query("SELECT e.storeId FROM ConsumptionException e WHERE e.id = :id")
-    Optional<UUID> storeOf(UUID id);
-
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT e FROM ConsumptionException e WHERE e.id = :id")
     Optional<ConsumptionException> lockById(UUID id);

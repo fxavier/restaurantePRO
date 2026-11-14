@@ -42,7 +42,9 @@ public class LedgerStore {
     /**
      * Creates the missing balance rows (zero), in the order given, which callers keep to the lock order. Only keys
      * with no row are inserted: an existing row is never touched here (an insert that conflicts with a row another
-     * transaction has updated would wait for it), so existing rows are reached only by {@link #lock}, in order.
+     * transaction has updated would wait for it), so existing rows are reached only by {@link #lock}, in order. A
+     * balance's store is its warehouse's (D167; the composite foreign key holds them together), read from the
+     * warehouse, which every scope reads; a balance in a store outside the scope is refused by row-level security.
      */
     public void ensureBalances(List<BalanceKey> keys, Instant now) {
         String values = keys.stream().map(key -> "(?::uuid, ?::uuid, ?::int)").collect(Collectors.joining(", "));
@@ -54,10 +56,11 @@ public class LedgerStore {
         }
         params.add(Timestamp.from(now));
         jdbc.sql("""
-                        INSERT INTO inventory.stock_balance (warehouse_id, stock_item_id, quantity, value, average_cost,
-                            last_posting_seq, updated_at)
-                        SELECT k.warehouse_id, k.stock_item_id, 0, 0, 0, 0, t.now
+                        INSERT INTO inventory.stock_balance (warehouse_id, store_id, stock_item_id, quantity, value,
+                            average_cost, last_posting_seq, updated_at)
+                        SELECT k.warehouse_id, w.store_id, k.stock_item_id, 0, 0, 0, 0, t.now
                         FROM (VALUES %s) k (warehouse_id, stock_item_id, ord)
+                        JOIN inventory.warehouse w ON w.id = k.warehouse_id
                         CROSS JOIN (SELECT ?::timestamptz AS now) t
                         WHERE NOT EXISTS (SELECT 1 FROM inventory.stock_balance b
                                           WHERE b.warehouse_id = k.warehouse_id AND b.stock_item_id = k.stock_item_id)

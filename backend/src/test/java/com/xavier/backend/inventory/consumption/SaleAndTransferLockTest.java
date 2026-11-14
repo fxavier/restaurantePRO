@@ -11,6 +11,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.xavier.backend.inventory.StoreTasks;
+import com.xavier.backend.access.StoreScopes;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.inventory.InventoryModuleTest;
 import com.xavier.backend.inventory.model.BalanceKey;
@@ -62,12 +64,13 @@ class SaleAndTransferLockTest extends ConsumptionTestBase {
         CountDownLatch release = new CountDownLatch(1);
         AtomicInteger holder = new AtomicInteger();
         try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
-            Future<?> sale = pool.submit(() -> tx.executeWithoutResult(status -> {
-                consumption.consume(round.batchId());
-                holder.set(jdbc.sql("SELECT pg_backend_pid()").query(Integer.class).single());
-                holding.countDown();
-                await(release);
-            }));
+            Future<?> sale = pool.submit(StoreTasks.inStore(scopes, kitchen.store,
+                    () -> tx.executeWithoutResult(status -> {
+                        consumption.consume(round.batchId());
+                        holder.set(jdbc.sql("SELECT pg_backend_pid()").query(Integer.class).single());
+                        holding.countDown();
+                        await(release);
+                    })));
             await(holding);
             Future<Integer> ship = pool.submit(() -> ship(transfer));
             try {
@@ -90,10 +93,10 @@ class SaleAndTransferLockTest extends ConsumptionTestBase {
                 BatchFacts round = kitchen.round(clock.instant(), OrderMode.DINE_IN, line(pizza, "1", "KITCHEN"));
                 UUID transfer = draft();
                 CountDownLatch start = new CountDownLatch(1);
-                Future<?> sale = pool.submit(() -> {
+                Future<?> sale = pool.submit(StoreTasks.inStore(scopes, kitchen.store, () -> {
                     await(start);
                     consumption.consume(round.batchId());
-                });
+                }));
                 Future<Integer> ship = pool.submit(() -> {
                     await(start);
                     return ship(transfer);
