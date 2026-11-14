@@ -52,6 +52,8 @@ step() { echo "--- $*" >&2; }
 . "$DEPLOY_DIR/lib/common.sh"
 # shellcheck source=lib/age.sh
 . "$DEPLOY_DIR/lib/age.sh"
+# shellcheck source=lib/roles.sh
+. "$DEPLOY_DIR/lib/roles.sh"
 # shellcheck source=test/keys.sh
 . "$DEPLOY_DIR/test/keys.sh"
 
@@ -75,6 +77,10 @@ mkdir -m 700 "$KEYS" "$WORK/secrets" "$WORK/ssh"
 openssl rand -hex 16 >"$WORK/secrets/db_password"
 openssl rand -hex 16 >"$WORK/secrets/admin_initial_password"
 chmod 644 "$WORK/secrets/"*
+# The role secrets restore.sh provisions a target with (ADR 0039, D163); throwaway, as everything here.
+ROLE_SECRETS="$WORK/role-secrets"
+mkdir -m 700 "$ROLE_SECRETS"
+make_role_secrets "$ROLE_SECRETS"
 cat >"$WORK/drill.override.yaml" <<YAML
 secrets:
   db_password:
@@ -274,7 +280,7 @@ if "$DEPLOY_DIR/pitr-restore.sh" --target-time latest --name "$PITR_NAME" --wal-
   --identity "$KEYS/loose.key" "$base" 2>"$WORK/loose.err" >/dev/null; then fail "pitr-restore.sh accepted a 0644 identity"; fi
 grep -q 'must be 0600 or 0400' "$WORK/loose.err" || fail "unexpected: $(cat "$WORK/loose.err")"
 docker volume inspect "$PITR_NAME-data" >/dev/null 2>&1 && fail "the refused restore created a volume"
-if "$DEPLOY_DIR/restore.sh" --container "$SRC" --identity "$KEYS/loose.key" "$logical" 2>"$WORK/loose.err"; then
+if "$DEPLOY_DIR/restore.sh" --secrets "$ROLE_SECRETS" --container "$SRC" --identity "$KEYS/loose.key" "$logical" 2>"$WORK/loose.err"; then
   fail "restore.sh accepted a 0644 identity"
 fi
 grep -q 'must be 0600 or 0400' "$WORK/loose.err" || fail "unexpected: $(cat "$WORK/loose.err")"
@@ -298,7 +304,7 @@ t0=$SECONDS
 [[ "$(rows "$PITR_NAME")" == "1,2" && "$(fingerprint "$PITR_NAME")" == "$at_t" ]] || fail "recovery-key restore differs from T"
 ok "recovery key alone: the same fingerprint at T in $((SECONDS - t0))s"
 docker exec "$PITR_NAME" createdb -U "$DB_USER" logical_check
-"$DEPLOY_DIR/restore.sh" --container "$PITR_NAME" --db logical_check --identity "$KEYS/recovery-only.key" "$logical" 2>/dev/null \
+"$DEPLOY_DIR/restore.sh" --secrets "$ROLE_SECRETS" --container "$PITR_NAME" --db logical_check --identity "$KEYS/recovery-only.key" "$logical" 2>/dev/null \
   || fail "restore.sh of the logical archive with the recovery key failed"
 [[ "$(docker exec "$PITR_NAME" psql -X -At -U "$DB_USER" -d logical_check -c 'SELECT count(*) FROM drill.pitr_event')" == 3 ]] \
   || fail "logical restore with the recovery key has the wrong rows"
@@ -312,7 +318,7 @@ if "$DEPLOY_DIR/pitr-restore.sh" --target-time latest --name "$PITR_NAME" --wal-
 grep -q 'cannot decrypt' "$WORK/wrong.err" || fail "unexpected: $(tail -5 "$WORK/wrong.err")"
 docker container inspect "$PITR_NAME" >/dev/null 2>&1 && fail "the failed restore left container $PITR_NAME"
 docker volume inspect "$PITR_NAME-data" >/dev/null 2>&1 && fail "the failed restore left volume $PITR_NAME-data"
-if "$DEPLOY_DIR/restore.sh" --container "$SRC" --identity "$KEYS/wrong.key" "$logical" 2>"$WORK/wrong.err"; then fail "restore.sh succeeded with a wrong key"; fi
+if "$DEPLOY_DIR/restore.sh" --secrets "$ROLE_SECRETS" --container "$SRC" --identity "$KEYS/wrong.key" "$logical" 2>"$WORK/wrong.err"; then fail "restore.sh succeeded with a wrong key"; fi
 grep -q 'cannot decrypt' "$WORK/wrong.err" || fail "unexpected: $(tail -3 "$WORK/wrong.err")"
 ok "wrong key: $(grep -m1 'cannot decrypt' "$WORK/wrong.err" | cut -c1-100); no container or volume left"
 mkdir -m 700 "$WORK/tampered"
@@ -336,7 +342,7 @@ ok "plaintext WAL next to an encrypted base in production: refused"
 mkdir -m 700 "$WORK/nosidecar" "$WORK/nosidecar/base"
 cp -p "$logical" "$WORK/nosidecar/"
 cp -p "$base" "$WORK/nosidecar/base/"
-if "$DEPLOY_DIR/restore.sh" --container "$SRC" --identity "$KEYS/operational.key" "$WORK/nosidecar/$(basename "$logical")" 2>"$WORK/nosidecar.err"; then
+if "$DEPLOY_DIR/restore.sh" --secrets "$ROLE_SECRETS" --container "$SRC" --identity "$KEYS/operational.key" "$WORK/nosidecar/$(basename "$logical")" 2>"$WORK/nosidecar.err"; then
   fail "restore.sh accepted an archive without its sidecar in production"
 fi
 grep -q 'no sidecar' "$WORK/nosidecar.err" || fail "unexpected: $(cat "$WORK/nosidecar.err")"
@@ -519,7 +525,7 @@ grep -q 'WARNING' "$WORK/dev.err" || fail "dev mode backup.sh did not warn about
 docker run -d --name "$RUN_ID-dev" --network none -e POSTGRES_PASSWORD=dev -e POSTGRES_USER="$DB_USER" -e POSTGRES_DB="$DB" \
   --label restaurantpro.drill="$RUN_ID" "$RP_AGE_IMAGE" >/dev/null
 wait_ready "$RUN_ID-dev"
-dev "$DEPLOY_DIR/restore.sh" --container "$RUN_ID-dev" "$old_logical" 2>/dev/null || fail "dev mode restore.sh failed"
+dev "$DEPLOY_DIR/restore.sh" --secrets "$ROLE_SECRETS" --container "$RUN_ID-dev" "$old_logical" 2>/dev/null || fail "dev mode restore.sh failed"
 [[ "$(rows "$RUN_ID-dev")" == "1,2,3" ]] || fail "dev mode restore has rows $(rows "$RUN_ID-dev")"
 docker rm -f -v "$RUN_ID-dev" >/dev/null
 [[ -n "$(docker exec "$OLD" sh -c 'ls /wal-archive | grep -E "^[0-9A-F]{24}$"')" ]] || fail "dev mode did not archive plaintext WAL"

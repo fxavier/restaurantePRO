@@ -3,8 +3,8 @@
 #
 # Steps: check the ciphertext against its .sha256 sidecar (required in production), decrypt (.age, through
 # lib/age.sh into a private temporary directory), check the plaintext against the sidecar, check SHA256SUMS, check the dump with pg_restore --list, refuse a
-# target database that already holds user objects unless --force, then pg_restore in a single
-# transaction (all or nothing). With --force the archive is restored into a staging database
+# target database that already holds user objects unless --force, then provision the roles and pg_restore in a single
+# transaction (all or nothing; objects owned by the superuser, privileges kept), then provision again. With --force the archive is restored into a staging database
 # which then replaces the target, so nothing created after the backup survives (rollback after
 # an upgrade: newer schemas, tables and Flyway history rows all go). The swap closes the
 # target's connections and is made of reversible renames:
@@ -14,7 +14,7 @@
 # (see deploy/README.md, "Restore drill").
 #
 # Usage: deploy/restore.sh [--force] [--container NAME] [--other-installation PROJECT] [--db NAME]
-#                          [--identity AGE_KEY_FILE] ARCHIVE
+#                          [--identity AGE_KEY_FILE] [--secrets DIR] ARCHIVE
 #   --force      replace a non-empty target database entirely (drops it, open connections included)
 #   --container  postgres container (default: the compose service "postgres" of deploy/compose.yaml)
 #   --other-installation  the target container belongs to Compose project PROJECT, another installation than
@@ -25,6 +25,10 @@
 #   --identity   age identity file, needed for .age archives (default: $BACKUP_AGE_IDENTITY). It must be
 #                yours, mode 0600 or 0400, and outside deploy/ and the archive's directory (D98 rule 2):
 #                restores of encrypted backups belong on the restore host, never on the server
+#   --secrets    directory with db_owner_password and db_app_password (default: deploy/secrets): the restore
+#                provisions the database roles (ADR 0039, D163) with deploy/postgres/provision.sh before pg_restore
+#                (the dump grants to restaurantpro_app) and after it (the restored objects, owned by the superuser,
+#                go to restaurantpro_owner). On a scratch container, any throwaway pair will do
 # Exits non-zero on any failure; on failure before the swap the target is left as it was.
 set -euo pipefail
 umask 077
@@ -36,6 +40,7 @@ force=false
 other_installation=""
 container=""
 identity="${BACKUP_AGE_IDENTITY:-}"
+secrets="$DEPLOY_DIR/secrets"
 archive=""
 
 die() { echo "restore: $*" >&2; exit 1; }
@@ -53,12 +58,13 @@ while (($#)); do
     --other-installation) other_installation="${2:?--other-installation needs a value}"; shift 2 ;;
     --db) db="${2:?--db needs a value}"; shift 2 ;;
     --identity) identity="${2:?--identity needs a value}"; shift 2 ;;
+    --secrets) secrets="${2:?--secrets needs a value}"; shift 2 ;;
     -h | --help) awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0" >&2; exit 0 ;;
     -*) die "unknown option: $1" ;;
     *) [[ -z "$archive" ]] || die "only one archive allowed"; archive="$1"; shift ;;
   esac
 done
-[[ -n "$archive" ]] || die "usage: restore.sh [--force] [--container NAME] [--other-installation PROJECT] [--db NAME] [--identity FILE] ARCHIVE"
+[[ -n "$archive" ]] || die "usage: restore.sh [--force] [--container NAME] [--other-installation PROJECT] [--db NAME] [--identity FILE] [--secrets DIR] ARCHIVE"
 [[ -f "$archive" ]] || die "archive not found: $archive"
 env_mode
 sidecar="${archive%.age}"
@@ -74,6 +80,9 @@ if [[ "$archive" == *.age ]]; then
     die "no sidecar $sidecar next to $archive: copy it too (production restores check it)"
   fi
 fi
+for f in db_owner_password db_app_password; do
+  [[ -s "$secrets/$f" ]] || die "role secret $secrets/$f not found or empty: the restore provisions the roles with it (deploy/README.md, \"Database roles\"; --secrets)"
+done
 if [[ -z "$container" ]]; then
   container="$(docker compose -f "$DEPLOY_DIR/compose.yaml" ps -q postgres)"
   [[ -n "$container" ]] || die "postgres service is not running (start it or pass --container)"
@@ -127,8 +136,17 @@ tar -xf "$work/payload.tar" -C "$work" config 2>/dev/null || true
 (cd "$work" && sha256_check SHA256SUMS >&2) || die "checksum mismatch: archive is corrupted"
 docker exec -i "$container" pg_restore --list >/dev/null <"$work/db.dump" || die "dump is not a readable archive"
 
+provision_roles() { # $1 database: ADR 0039 (D163), with this installation's role secrets
+  "$DEPLOY_DIR/postgres/provision.sh" --container "$container" --db "$1" --secrets "$secrets"
+}
+# The roles first: the dump of a provisioned installation grants to restaurantpro_app, and its privileges are restored
+# (a console function's EXECUTE revoked from PUBLIC must stay revoked). Objects are restored owned by the superuser
+# (--no-owner), so the provisioning after hands them to restaurantpro_owner and grants the rest.
 restore_into() {
-  docker exec -i "$container" pg_restore -U "$DB_USER" -d "$1" --no-owner --exit-on-error --single-transaction <"$work/db.dump"
+  provision_roles "$1" || return 1
+  docker exec -i "$container" pg_restore -U "$DB_USER" -d "$1" --no-owner --exit-on-error --single-transaction <"$work/db.dump" \
+    || return 1
+  provision_roles "$1"
 }
 
 objects="$(psql_in "$db" -c "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace

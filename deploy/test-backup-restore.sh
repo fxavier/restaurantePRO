@@ -16,6 +16,11 @@
 #     created after the backup (rollback after an upgrade)
 #   - a --force restore that fails mid-way leaves the target unchanged and no staging or old
 #     database behind
+#   - the database roles (ADR 0039, D163): the source is provisioned as an installation is; restore.sh provisions the
+#     target with its own role secrets (refused, target untouched, when they are missing), so after a restore and a
+#     --force restore restaurantpro_owner owns every object, restaurantpro_app owns nothing, has data privileges only,
+#     cannot write the Flyway history nor run a console function, logs in with the target's password and is bound by
+#     row-level security; RLS and policies are as in the source
 # Exits non-zero on any mismatch.
 #
 # Usage: deploy/test-backup-restore.sh        (needs only Docker; leaves nothing behind)
@@ -52,10 +57,30 @@ step() { echo "--- $*" >&2; }
 . "$DEPLOY_DIR/lib/age.sh"
 # shellcheck source=test/keys.sh
 . "$DEPLOY_DIR/test/keys.sh"
+# shellcheck source=lib/roles.sh
+. "$DEPLOY_DIR/lib/roles.sh"
 KEYS="$WORK/keys"
 mkdir -m 700 "$KEYS"
 make_throwaway_keys "$KEYS"
-restore() { "$DEPLOY_DIR/restore.sh" --identity "$KEYS/operational.key" "$@"; }
+# Each cluster has its own role passwords: the source's installation and the restore target's.
+mkdir -m 700 "$WORK/src-secrets" "$WORK/dst-secrets" "$WORK/no-secrets"
+make_role_secrets "$WORK/src-secrets"
+make_role_secrets "$WORK/dst-secrets"
+restore() { "$DEPLOY_DIR/restore.sh" --identity "$KEYS/operational.key" --secrets "$WORK/dst-secrets" "$@"; }
+ip_of() { docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$1"; }
+as_app() { role_login bridge "$(ip_of "$DST")" restaurantpro_app "$WORK/dst-secrets/db_app_password" "$1"; }
+as_owner() { role_login bridge "$(ip_of "$DST")" restaurantpro_owner "$WORK/dst-secrets/db_owner_password" "$1"; }
+roles_hold_on_dst() { # $1 when
+  assert_roles "$DST" restaurantpro "$1"
+  [[ "$(rls_summary "$DST")" == "$source_rls" ]] || fail "$1: row-level security $(rls_summary "$DST"), source $source_rls"
+  [[ "$(as_app 'SELECT count(*) FROM organization.price_sample')" == 0 ]] \
+    || fail "$1: restaurantpro_app does not log in with the target's password, or row-level security does not bind it"
+  [[ "$(as_owner 'SELECT count(*) FROM organization.price_sample')" == 5000 ]] \
+    || fail "$1: restaurantpro_owner does not log in with the target's password, or does not see every row"
+  if role_login bridge "$(ip_of "$DST")" restaurantpro_app "$WORK/src-secrets/db_app_password" >/dev/null; then
+    fail "$1: the source installation's app password opens the target"
+  fi
+}
 
 start_pg() {
   local name=$1
@@ -124,6 +149,10 @@ psql_in "$SRC" <"$DEPLOY_DIR/test/sample.sql"
 before="$(fingerprint "$SRC")"
 grep -q '^organization.price_sample|5000|' <<<"$before" || fail "sample data not loaded as expected"
 grep -q '^shared.spring_session|3|' <<<"$before" || fail "sample sessions not loaded as expected"
+"$DEPLOY_DIR/postgres/provision.sh" --container "$SRC" --secrets "$WORK/src-secrets" 2>/dev/null \
+  || fail "provisioning the source failed"
+assert_roles "$SRC" restaurantpro "source, provisioned as an installation"
+source_rls="$(rls_summary "$SRC")"
 source_schema="$(schema_of "$SRC")"
 # Expected after restore: everything identical, except that session rows are not backed up.
 expected_fp="$(sed -E 's/^(shared\.spring_session(_attributes)?)\|[0-9]+\|[0-9a-f]+$/\1|0|d41d8cd98f00b204e9800998ecf8427e/' <<<"$before")"
@@ -170,9 +199,19 @@ grep -q 'checksum mismatch' "$WORK/corrupt.err" || fail "damaged payload not cau
 [[ "$(psql_in "$DST" -At -c "SELECT count(*) FROM pg_namespace WHERE nspname = 'organization'")" == 0 ]] \
   || fail "corrupted archive changed the target"
 
+step "a restore without the target's role secrets is refused before touching it"
+if "$DEPLOY_DIR/restore.sh" --identity "$KEYS/operational.key" --secrets "$WORK/no-secrets" --container "$DST" "$archive" \
+  2>"$WORK/no-secrets.err"; then
+  fail "restore.sh restored without the role secrets"
+fi
+grep -q 'db_owner_password' "$WORK/no-secrets.err" || fail "not refused for the role secrets: $(cat "$WORK/no-secrets.err")"
+[[ "$(psql_in "$DST" -At -c "SELECT count(*) FROM pg_namespace WHERE nspname = 'organization'")" == 0 ]] \
+  || fail "a restore refused for its secrets changed the target"
+
 step "restore into the fresh container"
 restore --container "$DST" "$archive"
 same_as_source "$DST" "restore"
+roles_hold_on_dst "restore"
 while IFS= read -r line; do echo "    $line" >&2; done <<<"$(fingerprint "$DST")"
 
 step "append-only trigger survived the restore"
@@ -209,6 +248,7 @@ restore --container "$DST" --force "$archive"
 wait "$HOLDER" 2>/dev/null || true # its session was terminated by the swap
 HOLDER=""
 same_as_source "$DST" "--force restore"
+roles_hold_on_dst "--force restore"
 [[ -z "$(leftover_dbs "$DST")" ]] || fail "--force left databases behind: $(leftover_dbs "$DST")"
 
 step "a --force restore that fails mid-way leaves the target unchanged"

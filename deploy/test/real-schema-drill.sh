@@ -23,6 +23,10 @@
 #   5. runs the backend against the restored database: the old session is gone, the admin logs in again
 #      with the changed password, and GET /backoffice/stores, the releases, the documents, the tax report and
 #      the customer statement answer the same.
+# The backend runs as an installation's does (ADR 0039, D163): each container is provisioned with
+# postgres/provision.sh (restore.sh does it for the target), the pool is restaurantpro_app and Flyway
+# restaurantpro_owner; after each start the drill checks that every pool session is restaurantpro_app and that the
+# roles are as D163 (the restored ones included).
 #
 # Usage: deploy/test/real-schema-drill.sh [BACKEND_JAR]
 #   BACKEND_JAR defaults to backend/target/backend-*.jar; build it first with
@@ -79,6 +83,8 @@ step() { echo "--- $*" >&2; }
 . "$DEPLOY_DIR/lib/age.sh"
 # shellcheck source=test/keys.sh
 . "$DEPLOY_DIR/test/keys.sh"
+# shellcheck source=lib/roles.sh
+. "$DEPLOY_DIR/lib/roles.sh"
 mkdir -m 700 "$WORK/keys"
 make_throwaway_keys "$WORK/keys"
 
@@ -103,6 +109,13 @@ wait_pg() {
 }
 
 psql_in() { docker exec -i "$1" psql -X -q -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB" "${@:2}"; }
+pool_is_app() { # $1 container: every session of the backend (JDBC) is restaurantpro_app, and D163 holds
+  local users
+  users="$(psql_in "$1" -At -c "SELECT string_agg(DISTINCT usename, ',') FROM pg_stat_activity WHERE application_name = 'PostgreSQL JDBC Driver'")"
+  [[ "$users" == restaurantpro_app ]] || fail "$1: the backend's sessions are '$users', not restaurantpro_app only"
+  assert_roles "$1" "$DB" "$1 with the backend up"
+  echo "    pool role restaurantpro_app; roles as D163" >&2
+}
 
 # Same fingerprint as test-backup-restore.sh: one line per table (rows + md5 of all rows) and per sequence.
 fingerprint() {
@@ -137,8 +150,10 @@ start_app() { # $1 container, $2 log name
   APP_PORT="$(free_port)"
   MGMT_PORT="$(free_port)"
   RESTAURANTPRO_DB_URL="jdbc:postgresql://127.0.0.1:$pg_port/$DB?sslmode=disable" \
-  RESTAURANTPRO_DB_USERNAME="$DB_USER" \
-  RESTAURANTPRO_DB_PASSWORD="$(cat "$WORK/db_password")" \
+  RESTAURANTPRO_DB_USERNAME=restaurantpro_app \
+  RESTAURANTPRO_DB_PASSWORD="$(cat "$WORK/roles/db_app_password")" \
+  RESTAURANTPRO_FLYWAY_USERNAME=restaurantpro_owner \
+  RESTAURANTPRO_FLYWAY_PASSWORD="$(cat "$WORK/roles/db_owner_password")" \
   RESTAURANTPRO_MANAGEMENT_PORT="$MGMT_PORT" \
   SERVER_PORT="$APP_PORT" \
   RESTAURANTPRO_BOOTSTRAP_COMPANY_NAME="Drill Company" \
@@ -152,7 +167,7 @@ start_app() { # $1 container, $2 log name
   APP_PID=$!
   local i
   for i in $(seq 1 120); do
-    if curl -fsS "http://127.0.0.1:$MGMT_PORT/actuator/health" 2>/dev/null | grep -q '"UP"'; then return 0; fi
+    if curl -fsS "http://127.0.0.1:$MGMT_PORT/actuator/health" 2>/dev/null | grep -q '"UP"'; then pool_is_app "$1"; return 0; fi
     kill -0 "$APP_PID" 2>/dev/null || { tail -40 "$WORK/$2.log" >&2; fail "backend exited during startup ($2)"; }
     sleep 1
   done
@@ -197,6 +212,8 @@ order_version() { expect 200 GET "/api/v1/pos/orders/$1" | json_field version; }
 stores_view() { python3 -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps(sorted(d["content"], key=lambda s: s["code"]), sort_keys=True)), print(d["totalElements"])'; }
 
 openssl rand -hex 16 | tr -d '\n' >"$WORK/db_password"
+mkdir -m 700 "$WORK/roles" # ADR 0039: the owner's and the pool's passwords, shared by both containers as db_password
+make_role_secrets "$WORK/roles"
 initial="initial-$(openssl rand -hex 12)"
 changed="changed-$(openssl rand -hex 12)"
 printf '%s\n' "$initial" >"$WORK/admin_initial_password"
@@ -207,6 +224,7 @@ start_pg "$SRC"
 start_pg "$DST"
 wait_pg "$SRC"
 wait_pg "$DST"
+"$DEPLOY_DIR/postgres/provision.sh" --container "$SRC" --secrets "$WORK/roles" 2>/dev/null || fail "provisioning $SRC failed"
 
 step "backend against $SRC: Flyway applies the real migrations, bootstrap creates company and admin"
 start_app "$SRC" app-src
@@ -403,7 +421,7 @@ archive="$("$DEPLOY_DIR/backup.sh" --container "$SRC" --dir "$WORK/backups" --ke
 assert_no_plaintext "$WORK/backups" || fail "plaintext in the backup directory"
 
 step "restore.sh into the fresh $DST and compare every table and the schema"
-"$DEPLOY_DIR/restore.sh" --container "$DST" --identity "$WORK/keys/operational.key" "$archive"
+"$DEPLOY_DIR/restore.sh" --container "$DST" --identity "$WORK/keys/operational.key" --secrets "$WORK/roles" "$archive"
 after="$(fingerprint "$DST")"
 if [[ "$after" != "$expected_fp" ]]; then
   diff <(echo "$expected_fp") <(echo "$after") >&2 || true

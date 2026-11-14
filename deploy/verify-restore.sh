@@ -8,8 +8,11 @@
 # Steps: the identity's public key must be one of the copied recipients (the newest RECIPIENTS-<UTC>-<sha256>,
 # whose keys must match its name); pitr-restore.sh --target-time latest of the newest base backup with all copied WAL
 # into an isolated container (it runs pg_verifybackup before the start); recovery must reach the newest copied
-# WAL segment; pg_amcheck --all must be clean; the Flyway history must have no failed row. Then restore.sh of
-# the newest backup.sh archive into a scratch container, with the same checks. Writes
+# WAL segment; pg_amcheck --all must be clean; the Flyway history must have no failed row; the database roles must be
+# as ADR 0039 (D163) leaves them (restaurantpro_owner owns every object, restaurantpro_app owns nothing, has data
+# privileges only, no write on the Flyway history, no console function; row-level security forced with its policies).
+# Then restore.sh of the newest backup.sh archive into a scratch container, with the same checks (restore.sh
+# provisions the scratch roles with throwaway passwords: the installation's secrets never come to the restore host). Writes
 # <report dir>/drill-<UTC>.json (base, WAL reached, RTO, key) and removes every container and volume it made.
 #
 # Usage: deploy/verify-restore.sh --from DIR --identity FILE [--key-recovery] [--retrieval-started TIME]
@@ -34,6 +37,8 @@ log() { echo "verify-restore: $*" >&2; }
 . "$DEPLOY_DIR/lib/common.sh"
 # shellcheck source=lib/age.sh
 . "$DEPLOY_DIR/lib/age.sh"
+# shellcheck source=lib/roles.sh
+. "$DEPLOY_DIR/lib/roles.sh"
 
 from=""
 identity=""
@@ -112,9 +117,11 @@ logical="$(find "$from" -maxdepth 1 -type f -name 'restaurantpro-*.tar.age' 2>/d
 newest_wal="$(find "$pitr_dir/wal" -maxdepth 1 -type f -name '*.age' 2>/dev/null | sed 's|.*/||' | grep -E '^[0-9A-F]{24}\.age$' | sort | tail -1 | cut -c1-24)"
 pitr_name="$prefix-pitr"
 scratch="$prefix-logical"
+role_secrets="$(mktemp -d "${TMPDIR:-/tmp}/rp-verify-roles.XXXXXX")"
 cleanup() {
   docker rm -f -v "$pitr_name" "$scratch" >/dev/null 2>&1 || true
   docker volume rm "$pitr_name-data" >/dev/null 2>&1 || true
+  rm -rf "$role_secrets"
 }
 trap cleanup EXIT
 in_db() { docker exec "$1" psql -X -At -v ON_ERROR_STOP=1 -U "$DB_USER" -d "${3:-$DB}" -c "$2"; }
@@ -124,6 +131,12 @@ check_restored() { # $1 container: sets AMCHECK (clean|failed) and FLYWAY (newes
   [[ "$(in_db "$1" "SELECT to_regclass('public.flyway_schema_history') IS NOT NULL")" == t ]] || return 0
   [[ "$(in_db "$1" 'SELECT count(*) FROM public.flyway_schema_history WHERE NOT success')" == 0 ]] || problem "$1: the Flyway history has a failed migration"
   FLYWAY="$(in_db "$1" "SELECT coalesce(max(version), 'none') FROM public.flyway_schema_history WHERE success AND version IS NOT NULL")"
+  local roles
+  roles="$(roles_problems "$1")" || { problem "$1: the role check could not run"; return 0; }
+  # A backup older than ADR 0039 has no roles yet (db-provision creates them at the next up): nothing to check.
+  if [[ -n "$roles" && "$roles" != *"role restaurantpro_owner missing"* ]]; then
+    problem "$1: database roles not as D163: $(head -5 <<<"$roles" | tr '\n' ';')"
+  fi
 }
 
 rto="" wal_reached="" pitr_amcheck="" pitr_flyway="" logical_amcheck="" logical_flyway="" logical_tables=""
@@ -163,7 +176,8 @@ else
   done
   if ! $ready; then
     problem "the scratch PostgreSQL did not start"
-  elif "$DEPLOY_DIR/restore.sh" --container "$scratch" --identity "$identity" "$logical"; then
+  elif make_role_secrets "$role_secrets" \
+    && "$DEPLOY_DIR/restore.sh" --container "$scratch" --identity "$identity" --secrets "$role_secrets" "$logical"; then
     logical_tables="$(in_db "$scratch" "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind IN ('r', 'p') AND n.nspname NOT IN ('pg_catalog', 'information_schema')")"
     ((logical_tables > 0)) || problem "the logical restore holds no tables"
     check_restored "$scratch"

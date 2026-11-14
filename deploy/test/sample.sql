@@ -100,3 +100,23 @@ FROM generate_series(1, 3) AS g;
 INSERT INTO shared.spring_session_attributes
 SELECT md5('p' || g)::uuid::text, 'SPRING_SECURITY_CONTEXT', '\xdeadbeef'::bytea
 FROM generate_series(1, 3) AS g;
+
+-- The row-level security shape of ADR 0039 (D163): a store table with RLS enabled and forced and a policy TO PUBLIC,
+-- a console-only function (EXECUTE revoked from PUBLIC, as V1007/V1105/V3013), and the Flyway history. Loaded by the
+-- superuser, as on an R5 installation; the drills then provision the roles (deploy/postgres/provision.sh).
+CREATE FUNCTION shared.end_sessions_console() RETURNS int LANGUAGE sql AS 'SELECT 0';
+REVOKE EXECUTE ON FUNCTION shared.end_sessions_console() FROM PUBLIC;
+
+ALTER TABLE organization.price_sample ENABLE ROW LEVEL SECURITY;
+ALTER TABLE organization.price_sample FORCE ROW LEVEL SECURITY;
+CREATE POLICY store_scope ON organization.price_sample
+    USING (current_setting('app.all_stores', true) = 'on')
+    WITH CHECK (current_setting('app.all_stores', true) = 'on');
+
+CREATE TABLE public.flyway_schema_history (
+    installed_rank int PRIMARY KEY,
+    version        varchar(50),
+    description    varchar(200) NOT NULL,
+    success        boolean NOT NULL
+);
+INSERT INTO public.flyway_schema_history VALUES (1, '1001', 'shared baseline', true);
