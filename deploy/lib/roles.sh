@@ -60,6 +60,17 @@ WHERE to_regclass('public.flyway_schema_history') IS NOT NULL
 SELECT 'restaurantpro_app can run the console function ' || f
 FROM unnest(:'functions'::text[]) f
 WHERE to_regprocedure(f) IS NOT NULL AND has_function_privilege('restaurantpro_app', to_regprocedure(f), 'EXECUTE');
+SELECT 'restaurantpro_app can CREATE in schema ' || n.nspname
+FROM pg_namespace n
+WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg\_%'
+  AND has_schema_privilege('restaurantpro_app', n.oid, 'CREATE')
+ORDER BY 1;
+SELECT format('restaurantpro_app is a member of %s', r) FROM unnest(ARRAY['restaurantpro_owner', 'restaurantpro']) r
+WHERE to_regrole(r) IS NOT NULL
+  AND (pg_has_role('restaurantpro_app', r, 'MEMBER') OR pg_has_role('restaurantpro_app', r, 'SET'));
+SELECT format('%s has a policy but row-level security is disabled', c.oid::regclass)
+FROM pg_class c
+WHERE NOT c.relrowsecurity AND EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid);
 SELECT format('%s has row-level security but %s', c.oid::regclass,
               CASE WHEN NOT c.relforcerowsecurity THEN 'not forced' ELSE 'no policy' END)
 FROM pg_class c

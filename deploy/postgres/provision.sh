@@ -270,6 +270,31 @@ SQL
   if login restaurantpro_app "$work/old_app_password" 'SELECT 1' >/dev/null; then fail "the old app password still logs in"; fi
   ok "after a new db_app_password, the next run makes it the only one that logs in"
 
+  echo "--- lib/roles.sh (the restore and drill check) passes the provisioned database and catches injected violations" >&2
+  # shellcheck source=lib/roles.sh
+  . "$SCRIPT_DIR/../lib/roles.sh"
+  local problems
+  problems="$(roles_problems "$pg" "$db")"
+  [[ -z "$problems" ]] || fail "roles_problems on a provisioned database: $problems"
+  caught() { # $1 violation sql, $2 revert sql, $3 expected text in roles_problems
+    q -c "$1" >/dev/null
+    problems="$(roles_problems "$pg" "$db")"
+    q -c "$2" >/dev/null
+    grep -qF "$3" <<<"$problems" || fail "roles_problems missed: $1 (got: ${problems:-nothing})"
+  }
+  caught 'GRANT CREATE ON SCHEMA module TO restaurantpro_app' 'REVOKE CREATE ON SCHEMA module FROM restaurantpro_app' \
+    'restaurantpro_app can CREATE in schema module'
+  caught 'GRANT CREATE ON SCHEMA public TO restaurantpro_app' 'REVOKE CREATE ON SCHEMA public FROM restaurantpro_app' \
+    'restaurantpro_app can CREATE in schema public'
+  caught 'ALTER TABLE module.thing DISABLE ROW LEVEL SECURITY' 'ALTER TABLE module.thing ENABLE ROW LEVEL SECURITY' \
+    'module.thing has a policy but row-level security is disabled'
+  caught 'GRANT restaurantpro_owner TO restaurantpro_app' 'REVOKE restaurantpro_owner FROM restaurantpro_app' \
+    'restaurantpro_app is a member of restaurantpro_owner'
+  caught 'GRANT INSERT ON public.flyway_schema_history TO restaurantpro_app' \
+    'REVOKE INSERT ON public.flyway_schema_history FROM restaurantpro_app' 'restaurantpro_app can INSERT public.flyway_schema_history'
+  [[ -z "$(roles_problems "$pg" "$db")" ]] || fail "a violation was not reverted"
+  ok "roles_problems is clean after provisioning and reports CREATE on a schema, a policy without RLS, membership in the owner and a write on the Flyway history"
+
   if docker logs "$pg" >"$work/server.log" 2>&1; then no_secret_in "$work/server.log" "$work/s1"; no_secret_in "$work/server.log" "$work/wrong"; fi
   ok "no password in the server log"
   echo "PASS: provision.sh self-test" >&2
