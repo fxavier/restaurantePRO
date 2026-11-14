@@ -3,6 +3,8 @@ package com.xavier.backend.reporting.repository;
 import com.xavier.backend.OwnerDatabase;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.xavier.backend.TestcontainersConfiguration;
+import com.xavier.backend.access.StoreScopes;
 import com.xavier.backend.reporting.ReportingModuleTest;
 import java.time.LocalDate;
 import java.util.List;
@@ -19,6 +21,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * fixed seed of 12 stores × 400 business days, then {@code ANALYZE} and {@code EXPLAIN} of the repository's own SQL
  * (bound parameters) in one transaction with {@code enable_seqscan = off}. The assertions name the index node and its
  * condition on store and business-date range, so a query that filtered by anything else (a UTC range, D85) fails.
+ * The plan is the production one (D171, D169): as the application role, in the store's scope, so the row-level security
+ * policy is applied on top and must leave the store and date predicates in the index condition.
  */
 @ReportingModuleTest
 class ReportPlanTest {
@@ -32,6 +36,9 @@ class ReportPlanTest {
 
     @Autowired
     TransactionTemplate tx;
+
+    @Autowired
+    StoreScopes scopes;
 
     UUID store;
 
@@ -118,17 +125,19 @@ class ReportPlanTest {
     }
 
     private String explain(String sql) {
-        return tx.execute(status -> {
+        return scopes.callForStore(store, "plan-test", () -> tx.execute(status -> {
             for (String table : List.of("sales_record", "sales_record_line", "sales_record_tax", "payment_record",
                     "credit_record", "void_record")) {
                 // ANALYZE needs the table owner: as the pool it is skipped with a warning (ADR 0039)
                 OwnerDatabase.shared().jdbc().sql("ANALYZE reporting." + table).update();
             }
+            assertThat(jdbc.sql("SELECT current_user").query(String.class).single())
+                    .isEqualTo(TestcontainersConfiguration.APP_ROLE);
             jdbc.sql("SET LOCAL enable_seqscan = off").update();
             List<String> lines = jdbc.sql("EXPLAIN " + sql).param("store", store)
                     .param("from", LocalDate.of(2026, 1, 1)).param("to", LocalDate.of(2026, 1, 31))
                     .param("limit", 20).query(String.class).list();
             return String.join("\n", lines);
-        });
+        }));
     }
 }
