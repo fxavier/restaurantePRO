@@ -23,16 +23,18 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
  * Boots production with the modules whose events and API it uses for real: orders (rounds, through dining, catalog,
  * organization and identity, whose ApproverVerifier orders' voids need) and fiscal (documents and their copies),
  * with the R4 fixtures for delivery customers and menus, plus shared, access and audit, on the shared
- * Testcontainers PostgreSQL. {@code config} is not included, so nothing is scheduled here: tests run the worker
- * with {@code PrintWorker.poll()}. Full-application contexts of other tests (cached, same database) do run it, so
- * tests wait for states and match printed content instead of assuming they are alone. One annotation, one cached
- * context.
+ * Testcontainers PostgreSQL. {@code config} is included for its store-scope plumbing (ADR 0039, D165, D166): a
+ * module test drops the bean definitions of modules it does not boot, so without {@code config} the pool would have
+ * no store-scope hook and listeners and jobs no scope, and every protected table would answer {@code RS001}. It
+ * schedules the worker too, like the full-application contexts of other tests (cached, same database), so tests
+ * wait for states and match printed content instead of assuming they are alone; they also run the worker with
+ * {@code PrintWorker.poll()}. One annotation, one cached context.
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
-@ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization", "dining", "catalog", "orders",
-        "fiscal", "identity", "customers", "promotions"})
+@ApplicationModuleTest(extraIncludes = {"config", "shared", "access", "audit", "organization", "dining", "catalog",
+        "orders", "fiscal", "identity", "customers", "promotions"})
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, DiningFixtures.class, OrdersFixtures.class, FiscalFixtures.class,
         ProductionFixtures.class, CustomersFixtures.class, OrdersCatalog.class, DrawerKicks.class})

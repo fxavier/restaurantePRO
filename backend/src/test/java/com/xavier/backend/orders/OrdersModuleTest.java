@@ -22,13 +22,16 @@ import org.springframework.test.context.TestPropertySource;
  * loyalty, R4), plus shared, access and audit, on the shared Testcontainers PostgreSQL. The clock is
  * {@link OrdersTestClock}.
  * Stores, catalogs and tables are built through those modules' HTTP APIs ({@link OrdersFixtures}). One annotation,
- * one cached context. The database is shared by the whole test JVM: never assume empty tables.
+ * one cached context. The database is shared by the whole test JVM: never assume empty tables. {@code config} is
+ * included for its store-scope plumbing (ADR 0039, D165, D166): a module test drops the bean definitions of modules
+ * it does not boot, so without it the pool would have no store-scope hook, listeners no scope, and every protected
+ * table would answer {@code RS001}.
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
-@ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization", "dining", "catalog", "identity",
-        "customers", "promotions"})
+@ApplicationModuleTest(extraIncludes = {"config", "shared", "access", "audit", "organization", "dining", "catalog",
+        "identity", "customers", "promotions"})
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, DiningFixtures.class, OrdersFixtures.class, OrderEventProbe.class,
         DiningChangeStream.Probe.class, OrdersTestClock.Config.class, PromotionsFixtures.class,
