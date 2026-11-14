@@ -13,7 +13,7 @@
 #   4. a second `up` (db-provision runs again) changes no owner or privilege
 #   5. the backend refuses to start with a superuser, a BYPASSRLS role or the owner as its pool role
 #   6. rollback: the R5 deploy/ and image refuse the migrated database alone (R5's Flyway reports the RLS migrations,
-#      below its newest version, as applied but missing), and start on it with compose.rollback-r5.yaml (README,
+#      below its newest version, as applied but missing, and a stand-in migration above it as future), and start on it with compose.rollback-r5.yaml (README,
 #      "Rollback to R5"): health UP, as the superuser, whom row-level security never binds; nothing in the database
 #      is undone
 # Leaves nothing behind but the two images (a build cache). Every credential is throwaway and never printed.
@@ -169,6 +169,12 @@ new up -d --no-build --wait --wait-timeout 300 >>"$WORK/up.log" 2>&1 || fail "th
 ok "the stack is back, as restaurantpro_app"
 
 step "6. rollback: the R5 deploy/ and image on the migrated database"
+# A later release's migration above R5's newest version (S69's V14006 over R5's V14005) is FUTURE to R5, not MISSING:
+# a stand-in row makes the rollback face both kinds, as on an installation that took the whole RLS run.
+psql_in -c "INSERT INTO flyway_schema_history (installed_rank, version, description, type, script, checksum, installed_by,
+              execution_time, success)
+            SELECT max(installed_rank) + 1, '99999', 'future stand-in', 'SQL', 'V99999__future_stand_in.sql', NULL,
+                   'restaurantpro_owner', 0, true FROM flyway_schema_history" >/dev/null
 new down >/dev/null 2>&1 || fail "the upgraded stack did not stop"
 if r5 up -d --no-build --wait --wait-timeout 180 >"$WORK/rollback.log" 2>&1; then
   fail "the R5 release started without compose.rollback-r5.yaml: the drill's premise changed, review the README rollback"

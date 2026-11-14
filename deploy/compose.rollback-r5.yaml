@@ -2,10 +2,13 @@
 # Use it with the R5 package's compose.yaml, never with this release's:
 #   cd <the R5 package>/deploy && docker compose -f compose.yaml -f <this release>/deploy/compose.rollback-r5.yaml up -d
 # The R5 backend connects as the superuser, whom row-level security never binds, so nothing is undone in the database.
-# Its Flyway would refuse the RLS migrations it does not know: they sit below its newest version (out-of-order
-# blocks, ADR 0001), so it reports them as applied but missing. This tells it to accept exactly that and apply
-# nothing; the next upgrade re-applies nothing either (they are applied).
+# Its Flyway would refuse the RLS migrations it does not know: those below its newest version (out-of-order blocks,
+# ADR 0001) are applied but missing to it, those above it (e.g. reporting V14006 over R5's V14005) are future. This
+# tells it to accept exactly those two kinds and apply nothing; the next upgrade re-applies nothing either. Setting the
+# patterns replaces Flyway's default ("*:future"), so both are listed.
+# Only until the inventory backfill V13080 (stock_balance.store_id NOT NULL) is applied: R5 does not write that
+# column, so after it roll back by restoring the pre-upgrade backup instead (README, "Rollback to R5").
 services:
   backend:
     environment:
-      SPRING_FLYWAY_IGNOREMIGRATIONPATTERNS: "*:missing"
+      SPRING_FLYWAY_IGNOREMIGRATIONPATTERNS: "*:missing,*:future"
