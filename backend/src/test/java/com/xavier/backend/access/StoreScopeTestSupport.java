@@ -10,8 +10,9 @@ import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 /**
- * The fixture fallback of D171. {@link StoreScopeFixtureExtension} marks the JUnit thread while a test class runs
- * (not for a {@link StrictStoreScope} class); on a marked thread with neither an actor nor an explicit scope,
+ * The fixture fallback of D171. {@link StoreScopeFixtureExtension} marks the JUnit thread around each test (not for a
+ * {@link StrictStoreScope} class, not during the context refresh, not while MockMvc dispatches a request:
+ * {@link FixtureFreeRequests}); on a marked thread with neither an actor nor an explicit scope,
  * {@link #FIXTURE_FALLBACK} answers all stores (origin {@value #ORIGIN}), so fixture SQL keeps working. Every other
  * thread (listeners, schedulers, executors) gets production's unset scope.
  */

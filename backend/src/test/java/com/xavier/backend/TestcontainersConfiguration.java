@@ -1,5 +1,6 @@
 package com.xavier.backend;
 
+import com.xavier.backend.access.FixtureFreeRequests;
 import com.xavier.backend.access.StoreScopeFallback;
 import com.xavier.backend.access.StoreScopeTestSupport;
 import com.xavier.backend.config.persistence.StoreScopeConfiguration;
@@ -97,6 +98,12 @@ public class TestcontainersConfiguration {
     @Primary
     StoreScopeFallback testFixtureStoreScopeFallback() {
         return StoreScopeTestSupport.FIXTURE_FALLBACK;
+    }
+
+    /** A request dispatched by MockMvc on the JUnit thread does not inherit the fixture fallback. */
+    @Bean
+    FixtureFreeRequests fixtureFreeRequests() {
+        return new FixtureFreeRequests();
     }
 
     @Bean
