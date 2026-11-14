@@ -495,6 +495,14 @@ if [[ "$a_after" != "$a_expected" ]]; then diff <(echo "$a_expected") <(echo "$a
 pass "restore.sh --force in A's environment: rp-a matches its backup ($(grep -vc '^sequence ' <<<"$a_after") tables; the changed row and the table created after the backup are gone)"
 assert_roles "$a_pg" "$DB" "rp-a after restore.sh --force"
 pass "rp-a's roles are as D163 after restore.sh --force (restaurantpro_owner owns every object; no write on the Flyway history)"
+# A79/D171: the restored installation serves again, as the application role (then quiet again for the checks below).
+compose a up -d --wait --wait-timeout 300 backend >>"$WORK/up-a.log" 2>&1 || { compose a logs --tail 40 backend >&2 || true; fail "rp-a's backend is not healthy after the restore"; }
+health="$(docker exec "$(service a backend)" wget -qO- http://127.0.0.1:8081/actuator/health)" || fail "rp-a's health endpoint does not answer after the restore"
+[[ "$health" == *'"status":"UP"'* ]] || fail "rp-a's health after the restore: $health"
+pool="$(psql_in a -c "SELECT string_agg(DISTINCT usename, ',') FROM pg_stat_activity WHERE application_name = 'PostgreSQL JDBC Driver'")"
+[[ "$pool" == restaurantpro_app ]] || fail "after the restore rp-a's backend sessions are '$pool', not restaurantpro_app only"
+compose a stop backend >/dev/null 2>&1 || fail "could not stop rp-a's backend again"
+pass "rp-a's backend after the restore: health UP, its sessions restaurantpro_app only"
 b_sum_after="$(dump_sum b)"
 b_fp_after="$(fingerprint b)"
 if [[ "$b_fp_after" != "$b_fp_before" ]]; then diff <(echo "$b_fp_before") <(echo "$b_fp_after") >&2 || true; fi
@@ -560,6 +568,18 @@ grep -q 'WARNING: --other-installation rp-b' "$WORK/r.err" || fail "restore.sh -
 grep -q 'is not empty' "$WORK/r.err" || fail "restore.sh --other-installation rp-b was not stopped by the non-empty guard: $(tail -2 "$WORK/r.err")"
 [[ "$(dump_sum b)" == "$b_sum_before" ]] || fail "restore.sh --other-installation rp-b without --force changed rp-b"
 pass "restore.sh --other-installation rp-b passes the installation guard with a WARNING, and without --force still refuses rp-b's non-empty database"
+# The restore sets the role passwords of the target cluster: from A's environment, with A's own (default) secrets, it
+# would hand A's passwords to rp-b. --other-installation needs the other installation's secrets, named explicitly.
+if as_operator a "$DEPLOY_DIR/restore.sh" --force --other-installation rp-b --container "$b_pg" --identity "$WORK/a/keys/operational.key" \
+  "$archive" 2>"$WORK/r.err"; then
+  fail "restore.sh --force --other-installation rp-b restored without --secrets"
+fi
+grep -q -- '--other-installation needs --secrets' "$WORK/r.err" || fail "restore.sh --other-installation without --secrets was not refused for it: $(tail -2 "$WORK/r.err")"
+[[ "$(dump_sum b)" == "$b_sum_before" ]] || fail "restore.sh --other-installation without --secrets changed rp-b"
+for role in restaurantpro_owner restaurantpro_app; do
+  if db_login b "$WORK/a/secrets/$(secret_of "$role")" "$role" >/dev/null; then fail "after the tooling checks A's $role password opens rp-b"; fi
+done
+pass "restore.sh --other-installation without --secrets is refused (it would set rp-b's role passwords to A's); A's role passwords still fail on rp-b"
 if backup_a --container "$b_pg" --dir "$WORK/a/other" >/dev/null; then fail "backup.sh in A's environment dumped rp-b's database"; fi
 refused_as_other || fail "backup.sh of rp-b from A's environment was not refused by the installation guard: $(tail -2 "$WORK/r.err")"
 if backup_a --other-installation rp-c --container "$b_pg" --dir "$WORK/a/other" >/dev/null; then fail "backup.sh --other-installation rp-c dumped rp-b"; fi
