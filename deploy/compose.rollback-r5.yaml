@@ -1,0 +1,11 @@
+# Rollback from a release with row-level security (ADR 0039) to the R5 release (deploy/README.md, "Rollback to R5").
+# Use it with the R5 package's compose.yaml, never with this release's:
+#   cd <the R5 package>/deploy && docker compose -f compose.yaml -f <this release>/deploy/compose.rollback-r5.yaml up -d
+# The R5 backend connects as the superuser, whom row-level security never binds, so nothing is undone in the database.
+# Its Flyway would refuse the RLS migrations it does not know: they sit below its newest version (out-of-order
+# blocks, ADR 0001), so it reports them as applied but missing. This tells it to accept exactly that and apply
+# nothing; the next upgrade re-applies nothing either (they are applied).
+services:
+  backend:
+    environment:
+      SPRING_FLYWAY_IGNOREMIGRATIONPATTERNS: "*:missing"
