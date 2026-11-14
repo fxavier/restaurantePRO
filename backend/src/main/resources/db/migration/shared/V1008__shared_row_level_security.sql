@@ -234,7 +234,7 @@ SELECT shared.rls_register_unscoped('public.event_publication',
 SELECT shared.rls_register_unscoped('public.event_publication_archive',
                                     'Spring Modulith event registry archive: as event_publication');
 SELECT shared.rls_register_unscoped('public.flyway_schema_history',
-                                    'Flyway migration history: schema metadata');
+                                    'Flyway migration history: schema metadata, read-only to the pool');
 SELECT shared.rls_register_unscoped('shared.idempotency_record',
                                     'Idempotency-Key records are keyed by the principal (D38); only a replay to '
                                         || 'the same principal reaches a client');
@@ -246,3 +246,27 @@ SELECT shared.rls_register_unscoped('shared.rls_unscoped_table',
 SELECT shared.rls_register_unscoped('shared.rls_protected_table',
                                     'The protected-table registry: read-only to the pool through its own read policy');
 
+-- The Flyway history is migration metadata: the pool may read it, never write it. The owner's default privileges gave
+-- the pool DML on it when Flyway created it; take every write privilege back from every grantee but the owner (no role
+-- is named, D163). No ALTER TABLE or trigger here: Flyway holds the history table open and writes it from a second
+-- connection during the migration, so a table lock would deadlock; a REVOKE takes none. provision-roles.sql revokes
+-- the same after its grants at every start.
+DO
+$$
+DECLARE
+    v_grantee regrole;
+BEGIN
+    FOR v_grantee IN
+        SELECT DISTINCT a.grantee::regrole
+        FROM pg_catalog.pg_class c,
+             LATERAL pg_catalog.aclexplode(c.relacl) a
+        WHERE c.oid = 'public.flyway_schema_history'::regclass
+          AND a.grantee <> c.relowner
+          AND a.grantee <> 0
+          AND a.privilege_type IN ('INSERT', 'UPDATE', 'DELETE', 'TRUNCATE')
+        LOOP
+            EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON public.flyway_schema_history FROM %s',
+                           v_grantee);
+        END LOOP;
+END;
+$$;

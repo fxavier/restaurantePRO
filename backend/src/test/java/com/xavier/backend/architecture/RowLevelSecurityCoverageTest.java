@@ -69,6 +69,29 @@ public class RowLevelSecurityCoverageTest {
                 .as("no TRUNCATE, REFERENCES, TRIGGER or MAINTAIN").isEmpty();
     }
 
+    /** The Flyway history is read-only to the pool, whatever the owner's default privileges granted it. */
+    @Test
+    void theApplicationRoleCannotWriteTheMigrationHistory() throws Exception {
+        try (java.sql.Connection connection = java.sql.DriverManager.getConnection(
+                TestcontainersConfiguration.postgres().getJdbcUrl(), TestcontainersConfiguration.APP_ROLE,
+                TestcontainersConfiguration.appPassword())) {
+            JdbcClient app = JdbcClient.create(new org.springframework.jdbc.datasource.SingleConnectionDataSource(
+                    connection, true));
+
+            assertThat(app.sql("SELECT count(*) FROM public.flyway_schema_history").query(Long.class).single())
+                    .as("readable").isPositive();
+            for (String write : List.of(
+                    "INSERT INTO public.flyway_schema_history (installed_rank, version, description, type, script, "
+                            + "installed_by, execution_time, success) VALUES (999999, '999999', 'x', 'SQL', 'x', "
+                            + "'x', 0, true)",
+                    "UPDATE public.flyway_schema_history SET success = success",
+                    "DELETE FROM public.flyway_schema_history WHERE version = '1008'")) {
+                assertThatThrownBy(() -> app.sql(write).update()).as(write)
+                        .rootCause().hasMessageContaining("permission denied for table flyway_schema_history");
+            }
+        }
+    }
+
     /** The helper is red-capable: an unclassified table, a table no longer forced and a hand-written policy fail. */
     @Test
     void theHelperCatchesAnUnclassifiedTableAMissingForceAndANonCanonicalPolicy() {

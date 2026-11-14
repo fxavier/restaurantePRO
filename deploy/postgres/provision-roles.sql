@@ -119,6 +119,12 @@ FROM provision_schema s
 ORDER BY s.nspname
 \gexec
 
+-- 5b. The Flyway history is read-only to the pool (the grants above, and the default privileges when Flyway created it,
+-- gave it DML; V1008 revokes those on a first install).
+SELECT 'REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON public.flyway_schema_history FROM restaurantpro_app'
+WHERE to_regclass('public.flyway_schema_history') IS NOT NULL
+\gexec
+
 -- 6. The same for what later migrations create (the owner runs them).
 ALTER DEFAULT PRIVILEGES FOR ROLE restaurantpro_owner GRANT USAGE ON SCHEMAS TO restaurantpro_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE restaurantpro_owner
