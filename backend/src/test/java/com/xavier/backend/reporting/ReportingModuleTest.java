@@ -37,12 +37,15 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
  * be stubbed until S29/S30 record them, and {@link Projections} and {@link CostProjections}, so a test can hold a
  * projection (freshness). The clock is {@link SettlementTestClock}. The database is shared by the whole test JVM:
  * never assume empty tables; every test uses fresh stores.
+ *
+ * {@code config} is included for the store-scope hook and advisor (ADR 0039): an {@code @ApplicationModuleTest} drops
+ * the configuration classes of modules it does not include, also when imported, so the pool would have no scope.
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
 @ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization", "dining", "catalog", "orders",
-        "cash", "fiscal", "identity", "settlement", "customers", "promotions", "inventory"})
+        "cash", "fiscal", "identity", "settlement", "customers", "promotions", "inventory", "config"})
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, DiningFixtures.class, OrdersFixtures.class, CashFixtures.class,
         FiscalFixtures.class, SettlementFixtures.class, SettlementTestClock.Config.class,

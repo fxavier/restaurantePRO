@@ -30,6 +30,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AutomaticItemService {
 
+    private static final String TABLE = "catalog.automatic_item";
+
     private final AutomaticItemRepository automaticItems;
     private final ItemLines itemLines;
     private final StoreScopedAccess access;
@@ -55,7 +57,7 @@ public class AutomaticItemService {
 
     @Transactional(readOnly = true)
     public AutomaticItemSummary get(UUID id) {
-        access.requireExisting(automaticItems.findScopeById(id), "Automatic item", id);
+        access.requireExisting(automaticItems.findStoreById(id), TABLE, "Automatic item", id);
         return automaticItem(id).toSummary();
     }
 
@@ -71,7 +73,7 @@ public class AutomaticItemService {
 
     @Transactional
     public AutomaticItemSummary update(UUID id, AutomaticItemUpdateRequest request) {
-        access.requireExisting(automaticItems.findScopeById(id), "Automatic item", id);
+        access.requireExisting(automaticItems.findStoreById(id), TABLE, "Automatic item", id);
         AutomaticItem automatic = automaticItem(id);
         OptimisticLocking.requireVersion(AutomaticItem.class, id, automatic.getVersion(), request.version());
         automatic.update(details(request.trigger(), request.mode(), request.itemId(), request.variantId(),
@@ -83,7 +85,7 @@ public class AutomaticItemService {
 
     @Transactional
     public void delete(UUID id, long version) {
-        access.requireExisting(automaticItems.findScopeById(id), "Automatic item", id);
+        access.requireExisting(automaticItems.findStoreById(id), TABLE, "Automatic item", id);
         AutomaticItem automatic = automaticItem(id);
         OptimisticLocking.requireVersion(AutomaticItem.class, id, automatic.getVersion(), version);
         automaticItems.delete(automatic);
