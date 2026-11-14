@@ -9,6 +9,7 @@ import com.xavier.backend.orders.exception.OrderRuleException;
 import com.xavier.backend.orders.exception.OrderNotFoundException;
 import com.xavier.backend.orders.model.Order;
 import com.xavier.backend.orders.repository.OrderRepository;
+import com.xavier.backend.shared.persistence.StoreProbe;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -24,11 +25,13 @@ public class OrderLookup {
 
     private final OrderRepository orders;
     private final AccessPolicy accessPolicy;
+    private final StoreProbe probe;
     private final DiningApi dining;
 
-    OrderLookup(OrderRepository orders, AccessPolicy accessPolicy, DiningApi dining) {
+    OrderLookup(OrderRepository orders, AccessPolicy accessPolicy, StoreProbe probe, DiningApi dining) {
         this.orders = orders;
         this.accessPolicy = accessPolicy;
+        this.probe = probe;
         this.dining = dining;
     }
 
@@ -39,7 +42,7 @@ public class OrderLookup {
 
     /** D42 (b) without loading the order: 404 when it does not exist, 403 when it is another store's. */
     public void requireSessionStore(PosContext pos, UUID orderId) {
-        UUID storeId = orders.findStoreIdById(orderId)
+        UUID storeId = probe.storeOf(OrderRepository.TABLE, orderId)
                 .orElseThrow(() -> new OrderNotFoundException(OrderChanges.ENTITY, orderId));
         accessPolicy.requireSessionStore(pos, storeId, OrderChanges.ENTITY, orderId);
     }

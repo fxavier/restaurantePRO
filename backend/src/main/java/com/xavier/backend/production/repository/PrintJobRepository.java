@@ -6,7 +6,6 @@ import com.xavier.backend.production.model.PrintJobStatus;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
@@ -75,8 +74,11 @@ public interface PrintJobRepository extends JpaRepository<PrintJob, UUID>, JpaSp
             FOR UPDATE SKIP LOCKED""", nativeQuery = true)
     List<PrintJob> lockExpiredLeases(@Param("startedBefore") Instant startedBefore);
 
-    @Query("select j.storeId from PrintJob j where j.id = :id")
-    Optional<UUID> findStoreIdById(@Param("id") UUID id);
+    /**
+     * The table, for the D42 store probe ({@code shared.persistence.StoreProbe}): it sees every store, so another
+     * store's row is found (403), not mistaken for absent (404) under row-level security.
+     */
+    String TABLE = "production.print_job";
 
     long countByTicketIdAndKindAndRetryOfIsNull(UUID ticketId, JobKind kind);
 

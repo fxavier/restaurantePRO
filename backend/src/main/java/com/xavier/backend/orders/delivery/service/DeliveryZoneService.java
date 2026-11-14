@@ -12,6 +12,7 @@ import com.xavier.backend.orders.delivery.model.dto.ZoneView;
 import com.xavier.backend.orders.delivery.repository.DeliveryZoneRepository;
 import com.xavier.backend.orders.exception.OrderNotFoundException;
 import com.xavier.backend.shared.persistence.OptimisticLocking;
+import com.xavier.backend.shared.persistence.StoreProbe;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
 import java.util.HashMap;
 import java.util.List;
@@ -32,11 +33,13 @@ public class DeliveryZoneService {
 
     private final DeliveryZoneRepository zones;
     private final AccessPolicy accessPolicy;
+    private final StoreProbe probe;
     private final AuditLog auditLog;
 
-    DeliveryZoneService(DeliveryZoneRepository zones, AccessPolicy accessPolicy, AuditLog auditLog) {
+    DeliveryZoneService(DeliveryZoneRepository zones, AccessPolicy accessPolicy, StoreProbe probe, AuditLog auditLog) {
         this.zones = zones;
         this.accessPolicy = accessPolicy;
+        this.probe = probe;
         this.auditLog = auditLog;
     }
 
@@ -86,7 +89,7 @@ public class DeliveryZoneService {
 
     /** D42 (b): the zone's store only (404), then the permission there (403). */
     private void requireManaged(UUID zoneId) {
-        UUID storeId = zones.findStoreIdById(zoneId)
+        UUID storeId = probe.storeOf(DeliveryZoneRepository.TABLE, zoneId)
                 .orElseThrow(() -> new OrderNotFoundException(DeliveryZones.ENTITY, zoneId));
         accessPolicy.require(Permission.DELIVERY_ZONE_MANAGE, storeId);
     }

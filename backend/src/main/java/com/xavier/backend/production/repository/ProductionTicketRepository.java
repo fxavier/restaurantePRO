@@ -3,7 +3,6 @@ package com.xavier.backend.production.repository;
 import com.xavier.backend.production.model.ProductionTicket;
 import com.xavier.backend.production.model.TicketRouting;
 import com.xavier.backend.production.model.TicketSource;
-import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -20,8 +19,11 @@ public interface ProductionTicketRepository extends JpaRepository<ProductionTick
 
     boolean existsBySourceTypeAndSourceIdAndDestination(TicketSource sourceType, UUID sourceId, String destination);
 
-    @Query("select t.storeId from ProductionTicket t where t.id = :id")
-    Optional<UUID> findStoreIdById(@Param("id") UUID id);
+    /**
+     * The table, for the D42 store probe ({@code shared.persistence.StoreProbe}): it sees every store, so another
+     * store's row is found (403), not mistaken for absent (404) under row-level security.
+     */
+    String TABLE = "production.production_ticket";
 
     /**
      * D89 (1): the compare-and-set UNROUTED -> ROUTED, the one change a ticket takes (the table's trigger allows no
