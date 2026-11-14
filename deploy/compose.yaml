@@ -85,6 +85,9 @@ services:
       postgres:
         condition: service_healthy
     entrypoint: ["bash", "/etc/restaurantpro/provision.sh"]
+    # The image declares a data volume; a tmpfs there keeps this one-shot from leaving an anonymous volume behind.
+    tmpfs:
+      - /var/lib/postgresql
     environment:
       PGHOST: postgres
     secrets:

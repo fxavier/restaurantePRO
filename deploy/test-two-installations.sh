@@ -9,15 +9,18 @@
 #   separation   containers, networks and volumes belong to one project only; no container shares another's
 #                network, PID or IPC namespace; no secret, recipients file or writable path is mounted in both
 #                (the read-only deploy/ scripts and Caddyfile are the only shared mounts; each installation has its
-#                own backup status directory)
-#   credentials  A's admin password and A's session cookie get 401 on B, and the reverse; A's database password
-#                fails authentication on B's PostgreSQL, and the reverse (each with a positive control); A's
-#                Caddy root certificate does not verify B
+#                own backup status directory); each backend holds no db_password and its pool sessions are
+#                restaurantpro_app only; each database's roles are as D163 (ADR 0039: the owner owns every object, the
+#                application role owns nothing and has no write on the Flyway history)
+#   credentials  A's admin password and A's session cookie get 401 on B, and the reverse; A's database passwords
+#                (the superuser's, the owner's and the application role's, ADR 0039) fail authentication on B's
+#                PostgreSQL, and the reverse (each with a positive control); A's Caddy root certificate does not
+#                verify B
 #   network      B's backend cannot resolve A's database container (getent) nor connect to it (a TCP probe in
 #                the backend's network namespace), while it reaches its own
 #   restore      back up A with backup.sh, change A, restore A with restore.sh --force (A's operator
 #                environment: COMPOSE_PROJECT_NAME and COMPOSE_ENV_FILES, no --container): A matches its backup;
-#                B's pg_dump checksum and per-table fingerprint are unchanged
+#                B's pg_dump checksum and per-table fingerprint are unchanged; A's roles are as D163 after the restore
 #   tooling      A's operator environment resolves to A's database only; pitr-restore.sh --force refuses B's
 #                container and volume by their Compose label; restore.sh (with and without --force) and backup.sh
 #                refuse B's container from A's environment, unless --other-installation names exactly rp-b
@@ -187,6 +190,8 @@ note() { echo "    $*" >&2; }
 . "$DEPLOY_DIR/lib/age.sh"
 # shellcheck source=test/keys.sh
 . "$DEPLOY_DIR/test/keys.sh"
+# shellcheck source=lib/roles.sh
+. "$DEPLOY_DIR/lib/roles.sh"
 
 env_of() { grep -E "^$2=" "$ISO_DIR/$1.env" | tail -1 | cut -d= -f2-; } # $1 installation, $2 name
 # ISOLATION_FAULT=separation: B is configured with A's secret directory.
@@ -245,11 +250,14 @@ api() { # $1 installation, $2 root certificate, $3 method, $4 path, [$5 json bod
 login_body() { printf '{"username":"admin","password":"%s"}' "$(cat "$1")"; }
 cookie_header() { awk -F'\t' 'NF == 7 { printf "%s%s=%s", sep, $6, $7; sep = "; " }' "$1"; } # every cookie of jar $1
 # psql from a throwaway container on installation $1's internal network to its "postgres", with the password in
-# file $2 (passed by variable name, never on a command line). Prints psql's output and error.
+# file $2 (passed by variable name, never on a command line), as role $3 (default the superuser). Prints psql's
+# output and error.
 db_login() {
   PGPASSWORD="$(cat "$2")" docker run --rm -e PGPASSWORD --network "rp-$1_internal" --label restaurantpro.drill="$RUN_ID" \
-    --entrypoint psql "$PG_IMAGE" -X -At -h postgres -U "$DB_USER" -d "$DB" -c 'SELECT 1' 2>&1
+    --entrypoint psql "$PG_IMAGE" -X -At -h postgres -U "${3:-$DB_USER}" -d "$DB" -c 'SELECT 1' 2>&1
 }
+# The secret file of each database role (ADR 0039).
+secret_of() { case "$1" in restaurantpro) echo db_password ;; restaurantpro_owner) echo db_owner_password ;; restaurantpro_app) echo db_app_password ;; esac; }
 # pg_isready from inside the network namespace of container $1 to host $2 port 5432: 0 accepting, 1 rejecting,
 # 2 no response (unreachable).
 tcp_probe() {
@@ -282,6 +290,7 @@ for i in $INSTALLATIONS; do
   mkdir -m 700 "$WORK/$i" "$WORK/$i/keys" "$WORK/$i/secrets" "$WORK/$i/wal-empty"
   make_throwaway_keys "$WORK/$i/keys"
   openssl rand -hex 24 | tr -d '\n' >"$WORK/$i/secrets/db_password"
+  make_role_secrets "$WORK/$i/secrets" # ADR 0039: db_owner_password, db_app_password
   printf 'initial-%s' "$(openssl rand -hex 12)" >"$WORK/$i/secrets/admin_initial_password"
   openssl rand -base64 32 | tr -d '\n' >"$WORK/$i/secrets/mfa_key" # R5 (D143)
   openssl rand -hex 32 | tr -d '\n' >"$WORK/$i/secrets/metrics_token" # R5 (D152)
@@ -325,7 +334,7 @@ for i in $INSTALLATIONS; do
   note "rp-$i networks: $(tr '\n' ' ' <"$WORK/$i.networks")"
 done
 for i in $INSTALLATIONS; do
-  [[ "$(wc -l <"$WORK/$i.containers" | tr -d ' ')" == 3 ]] || fail "rp-$i should run 3 containers (postgres, backend, caddy)"
+  [[ "$(wc -l <"$WORK/$i.containers" | tr -d ' ')" == 4 ]] || fail "rp-$i should have 4 containers (postgres, db-provision, backend, caddy)"
   [[ "$(wc -l <"$WORK/$i.volumes" | tr -d ' ')" == 4 ]] || fail "rp-$i should own 4 volumes"
   [[ "$(wc -l <"$WORK/$i.networks" | tr -d ' ')" == 2 ]] || fail "rp-$i should own 2 networks"
 done
@@ -358,10 +367,20 @@ for i in $INSTALLATIONS; do
         private=$((private + 1)) ;;
     esac
   done <"$WORK/$i.mounts"
-  # postgres: db_password and the recipients; backend: db_password, admin_initial_password, mfa_key,
-  # metrics_token, oidc_client_secret and the backup status directory.
-  ((private == 8)) || fail "rp-$i mounts $private secret, recipients or status paths, expected 8"
+  # postgres: db_password and the recipients; db-provision: db_password, db_owner_password, db_app_password;
+  # backend: db_owner_password, db_app_password, admin_initial_password, mfa_key, metrics_token,
+  # oidc_client_secret and the backup status directory.
+  ((private == 12)) || fail "rp-$i mounts $private secret, recipients or status paths, expected 12"
+  ! grep -q "^rp-$i-backend-1|.*|/run/secrets/db_password$" "$WORK/$i.mounts" || fail "rp-$i's backend holds the superuser's db_password"
+  grep -q "^rp-$i-backend-1|.*|/run/secrets/db_app_password$" "$WORK/$i.mounts" || fail "rp-$i's backend has no db_app_password (control)"
 done
+pass "each backend holds db_owner_password and db_app_password, never the superuser's db_password (ADR 0039)"
+for i in $INSTALLATIONS; do
+  pool="$(psql_in "$i" -c "SELECT string_agg(DISTINCT usename, ',') FROM pg_stat_activity WHERE application_name = 'PostgreSQL JDBC Driver'")"
+  [[ "$pool" == restaurantpro_app ]] || fail "rp-$i's backend sessions are '$pool', not restaurantpro_app only"
+  assert_roles "$(service "$i" postgres)" "$DB" "rp-$i after up"
+done
+pass "each backend's pool sessions are restaurantpro_app only; each database's roles are as D163 after a fresh up (no write on the Flyway history)"
 cut -d'|' -f2-3 "$WORK/a.mounts" | sort -u >"$WORK/a.sources"
 cut -d'|' -f2-3 "$WORK/b.mounts" | sort -u >"$WORK/b.sources"
 shared_code=0
@@ -406,11 +425,14 @@ done
 for pair in "a b" "b a"; do
   read -r own other <<<"$pair"
   OWN="$(tr '[:lower:]' '[:upper:]' <<<"$own")"
-  out="$(db_login "$other" "$WORK/$other/secrets/db_password")" || fail "rp-$other's own database password is refused (control): $out"
-  [[ "$out" == 1 ]] || fail "rp-$other's own database login printed: $out"
-  if out="$(db_login "$other" "$WORK/$own/secrets/db_password")"; then fail "$OWN's database password opens rp-$other's PostgreSQL"; fi
-  grep -q 'password authentication failed' <<<"$out" || fail "$OWN's database password on rp-$other failed for another reason: $out"
-  pass "$OWN's database password: psql on rp-$other's network fails with \"password authentication failed\""
+  for role in restaurantpro restaurantpro_owner restaurantpro_app; do
+    secret="$(secret_of "$role")"
+    out="$(db_login "$other" "$WORK/$other/secrets/$secret" "$role")" || fail "rp-$other's own $role password is refused (control): $out"
+    [[ "$out" == 1 ]] || fail "rp-$other's own $role login printed: $out"
+    if out="$(db_login "$other" "$WORK/$own/secrets/$secret" "$role")"; then fail "$OWN's $role password opens rp-$other's PostgreSQL"; fi
+    grep -q 'password authentication failed' <<<"$out" || fail "$OWN's $role password on rp-$other failed for another reason: $out"
+  done
+  pass "$OWN's database passwords (restaurantpro, restaurantpro_owner, restaurantpro_app): psql on rp-$other's network fails with \"password authentication failed\""
 done
 [[ "$(sha256_hex "$WORK/a/root.crt")" != "$(sha256_hex "$WORK/b/root.crt")" ]] || fail "rp-a and rp-b share Caddy's root certificate"
 JAR="$WORK/a/no-jar"
@@ -463,13 +485,16 @@ SQL
 [[ "$(fingerprint a)" != "$a_before" ]] || fail "the change to rp-a is not visible"
 if faulted; then
   note "fault: A's archive restored into rp-b's database (the installation guard bypassed with --other-installation rp-b)"
-  as_operator a "$DEPLOY_DIR/restore.sh" --force --other-installation rp-b --container "$b_pg" --identity "$WORK/a/keys/operational.key" "$archive" 2>>"$WORK/fault.err" || true
+  as_operator a "$DEPLOY_DIR/restore.sh" --force --other-installation rp-b --container "$b_pg" --identity "$WORK/a/keys/operational.key" \
+    --secrets "$WORK/a/secrets" "$archive" 2>>"$WORK/fault.err" || true
 fi
-as_operator a "$DEPLOY_DIR/restore.sh" --force --identity "$WORK/a/keys/operational.key" "$archive" 2>"$WORK/a-restore.err" \
-  || { cat "$WORK/a-restore.err" >&2; fail "restore.sh --force of rp-a failed"; }
+as_operator a "$DEPLOY_DIR/restore.sh" --force --identity "$WORK/a/keys/operational.key" --secrets "$WORK/a/secrets" "$archive" \
+  2>"$WORK/a-restore.err" || { cat "$WORK/a-restore.err" >&2; fail "restore.sh --force of rp-a failed"; }
 a_after="$(fingerprint a)"
 if [[ "$a_after" != "$a_expected" ]]; then diff <(echo "$a_expected") <(echo "$a_after") >&2 || true; fail "rp-a does not match its backup"; fi
 pass "restore.sh --force in A's environment: rp-a matches its backup ($(grep -vc '^sequence ' <<<"$a_after") tables; the changed row and the table created after the backup are gone)"
+assert_roles "$a_pg" "$DB" "rp-a after restore.sh --force"
+pass "rp-a's roles are as D163 after restore.sh --force (restaurantpro_owner owns every object; no write on the Flyway history)"
 b_sum_after="$(dump_sum b)"
 b_fp_after="$(fingerprint b)"
 if [[ "$b_fp_after" != "$b_fp_before" ]]; then diff <(echo "$b_fp_before") <(echo "$b_fp_after") >&2 || true; fi
@@ -518,7 +543,7 @@ if ! grep -q -- "--force: removing container $earlier" "$WORK/pitr.err" || ! gre
 fi
 ! docker container inspect "$earlier" >/dev/null 2>&1 || fail "the earlier pitr-restore.sh container $earlier is still there"
 pass "pitr-restore.sh --force replaces its own earlier container (Compose project/service labels inherited from the image) and volume"
-restore_a() { as_operator a "$DEPLOY_DIR/restore.sh" --identity "$WORK/a/keys/operational.key" "$@" 2>"$WORK/r.err"; }
+restore_a() { as_operator a "$DEPLOY_DIR/restore.sh" --identity "$WORK/a/keys/operational.key" --secrets "$WORK/a/secrets" "$@" 2>"$WORK/r.err"; }
 backup_a() { as_operator a "$DEPLOY_DIR/backup.sh" "$@" 2>"$WORK/r.err"; }
 refused_as_other() { grep -q "belongs to installation rp-b" "$WORK/r.err"; }
 for force in --force ""; do
@@ -556,7 +581,7 @@ backup_a --container "$inherited" --dir "$WORK/a/inherited" >/dev/null \
   || fail "backup.sh refused a container Compose did not create (only an inherited rp-b label): $(tail -2 "$WORK/r.err")"
 docker rm -f -v "$inherited" >/dev/null
 pass "a container Compose did not create, with an inherited com.docker.compose.project=rp-b label (as from a Compose-built image), is not taken for rp-b"
-if as_operator a "$DEPLOY_DIR/restore.sh" --force --identity "$WORK/a/keys/operational.key" "$b_backup" 2>"$WORK/r.err"; then
+if restore_a --force "$b_backup"; then
   fail "A's key decrypted and restored B's backup"
 fi
 grep -q 'cannot decrypt' "$WORK/r.err" || fail "B's backup with A's key failed for another reason: $(tail -2 "$WORK/r.err")"
