@@ -5,7 +5,13 @@ import com.xavier.backend.shared.exception.CodedException;
 import com.xavier.backend.shared.exception.ConflictException;
 import com.xavier.backend.shared.exception.NotFoundException;
 import com.xavier.backend.shared.exception.UnavailableException;
+import com.xavier.backend.shared.persistence.StoreScopeViolations;
+import com.xavier.backend.shared.persistence.StoreScopeViolations.Kind;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.hibernate.query.sqm.UnknownPathException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,13 +38,27 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
  * 400 validation (with {@code errors: [{field, message}]}) and unknown sort property, 401, 403, 404,
  * 409 conflict/stale version, 422 business rule, 500 without internals. A 404/409/422 from a shared exception
  * carries its stable {@code code} and extra properties ({@link CodedException}). Framework exceptions (405, 415, missing header…) keep
- * the {@link ResponseEntityExceptionHandler} defaults, which are already ProblemDetails.
+ * the {@link ResponseEntityExceptionHandler} defaults, which are already ProblemDetails. A refusal by row-level
+ * security (D170) is a coded 500 ({@code STORE_SCOPE_MISSING}, {@code STORE_SCOPE_VIOLATION},
+ * {@code STORE_CHANGE_REFUSED}), counted and logged with its scope origin; the body carries only the code (the
+ * correlation id is in the response header), never a store id or the SQL.
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
     private static final int MAX_ECHOED_PROPERTY = 64;
+    private static final Pattern ORIGIN = Pattern.compile("\\(origin ([^)]{1,200})\\)");
+    private static final Map<Kind, String> STORE_SCOPE_DETAIL = Map.of(
+            Kind.SCOPE_MISSING, "Unexpected error: no store scope.",
+            Kind.WRITE_REFUSED, "Unexpected error: a row outside the store scope was refused.",
+            Kind.STORE_CHANGE, "Unexpected error: a row cannot move to another store.");
+
+    private final StoreScopeViolations violations;
+
+    public GlobalExceptionHandler(StoreScopeViolations violations) {
+        this.violations = violations;
+    }
 
     /** One invalid field of a request; {@code errors} property of a 400 ProblemDetail. */
     public record FieldViolation(String field, String message) {
@@ -117,8 +137,32 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     ProblemDetail unexpected(Exception e) {
+        Optional<Kind> refusal = StoreScopeViolations.classify(e);
+        if (refusal.isPresent()) {
+            return storeScopeRefusal(refusal.get(), e);
+        }
         log.error("Unhandled exception", e);
         return ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, "Unexpected error.");
+    }
+
+    private ProblemDetail storeScopeRefusal(Kind kind, Exception e) {
+        violations.record(kind, originOf(e));
+        log.error("Row-level security refused the request ({})", kind.code(), e);
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR,
+                STORE_SCOPE_DETAIL.get(kind));
+        problem.setProperty("code", kind.code());
+        return problem;
+    }
+
+    /** The scope origin the database quotes in RS001/RS002 messages; a 42501 does not name it. */
+    private static String originOf(Throwable error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause() == cause ? null : cause.getCause()) {
+            Matcher origin = ORIGIN.matcher(String.valueOf(cause.getMessage()));
+            if (origin.find()) {
+                return origin.group(1);
+            }
+        }
+        return "request";
     }
 
     @Override

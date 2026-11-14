@@ -1,5 +1,6 @@
 package com.xavier.backend.customers.repository;
 
+import com.xavier.backend.OwnerDatabase;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.xavier.backend.customers.CustomersModuleTest;
@@ -68,8 +69,9 @@ class CustomerSearchPlanTest {
 
     private String explain(String sql, String firstName, String first, String secondName, String second) {
         return tx.execute(status -> {
-            jdbc.sql("ANALYZE customers.customer").update();
-            jdbc.sql("ANALYZE customers.customer_phone").update();
+            // ANALYZE needs the table owner: as the pool it is skipped with a warning (ADR 0039)
+            OwnerDatabase.shared().jdbc().sql("ANALYZE customers.customer").update();
+            OwnerDatabase.shared().jdbc().sql("ANALYZE customers.customer_phone").update();
             jdbc.sql("SET LOCAL enable_seqscan = off").update();
             List<String> lines = jdbc.sql("EXPLAIN " + sql).param(firstName, first).param(secondName, second)
                     .param("limit", 20).query(String.class).list();

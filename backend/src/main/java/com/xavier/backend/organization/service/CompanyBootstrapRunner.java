@@ -1,5 +1,7 @@
 package com.xavier.backend.organization.service;
 
+import com.xavier.backend.access.SystemScope;
+import com.xavier.backend.access.SystemScoped;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -18,6 +20,7 @@ class CompanyBootstrapRunner implements ApplicationRunner {
         this.settings = settings;
     }
 
+    @SystemScoped(SystemScope.BOOTSTRAP)
     @Override
     public void run(ApplicationArguments args) {
         bootstrap.bootstrap(settings);

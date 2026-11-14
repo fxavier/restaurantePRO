@@ -295,6 +295,148 @@ final class ArchitectureRules {
                 .because("every module implements AlertSource; a module type here would be a cycle (D137, D149)");
     }
 
+    // ---- ADR 0039 (S64): every database path of the application role has a store scope (D165, D166) ----
+
+    private static final String SYSTEM_SCOPED = "com.xavier.backend.access.SystemScoped";
+    private static final String STORE_SCOPES = "com.xavier.backend.access.StoreScopes";
+
+    /** D166: the three hand-made executors that never touch the database. */
+    static final Set<String> NON_DATABASE_EXECUTORS = Set.of("production.adapter.EscPosTcpTransport",
+            "settlement.service.ProviderCalls", "shared.notify.ChangeNotifier");
+
+    /**
+     * D166: an actor-less entry point has a named system scope, else its connections are unset and a protected table
+     * raises RS001: every {@code @Scheduled} method, {@code ApplicationRunner}/{@code CommandLineRunner.run} and
+     * {@code ApplicationReadyEvent} listener is {@code @SystemScoped}.
+     */
+    static ArchRule scheduledEntryPointsAreSystemScoped(String root) {
+        return methods()
+                .that().areDeclaredInClassesThat().resideInAPackage(root + "..")
+                .and(describe("@Scheduled, ApplicationRunner.run or an ApplicationReadyEvent listener",
+                        ArchitectureRules::isActorlessEntryPoint))
+                .should().beAnnotatedWith(SYSTEM_SCOPED)
+                .as("scheduled entry points are system scoped")
+                .because("a job, runner or readiness hook has no actor: without a named system scope its "
+                        + "connections are unset and row-level security fails closed (D166)");
+    }
+
+    /**
+     * D166: a module listener runs in its event's store, read from the event's {@code UUID storeId} record component;
+     * a listener of an event without one declares its system scope.
+     */
+    static ArchRule listenersHaveAStoreOrASystemScope(String root) {
+        return methods()
+                .that().areDeclaredInClassesThat().resideInAPackage(root + "..")
+                .and().areAnnotatedWith(org.springframework.modulith.events.ApplicationModuleListener.class)
+                .should(new com.tngtech.archunit.lang.ArchCondition<JavaMethod>(
+                        "take an event with a UUID storeId record component, or be @SystemScoped") {
+                    @Override
+                    public void check(JavaMethod method, com.tngtech.archunit.lang.ConditionEvents events) {
+                        if (method.isAnnotatedWith(SYSTEM_SCOPED) || hasStoreId(method)) {
+                            return;
+                        }
+                        events.add(com.tngtech.archunit.lang.SimpleConditionEvent.violated(method,
+                                method.getFullName() + " listens to an event without a storeId and has no "
+                                        + "@SystemScoped"));
+                    }
+                })
+                .as("listeners have a store or a system scope")
+                .because("the advisor scopes a listener to its event's store, or refuses it before its "
+                        + "transaction (D166)");
+    }
+
+    /**
+     * D166: a task handed to an executor runs on another thread, with no actor: the class submitting it wraps it in
+     * {@code StoreScopes.propagate} (or is one of the executors that never touch the database).
+     */
+    static ArchRule executorSubmissionsPropagateTheStoreScope(String root) {
+        Set<String> allowed = NON_DATABASE_EXECUTORS.stream().map(name -> root + "." + name)
+                .collect(java.util.stream.Collectors.toSet());
+        return classes()
+                .that().resideInAPackage(root + "..")
+                .should(new com.tngtech.archunit.lang.ArchCondition<JavaClass>(
+                        "wrap every executor submission in StoreScopes.propagate") {
+                    @Override
+                    public void check(JavaClass type, com.tngtech.archunit.lang.ConditionEvents events) {
+                        if (allowed.contains(outermost(type).getName()) || !submitsToAnExecutor(type)
+                                || propagatesInItselfOrAnEnclosingClass(type)) {
+                            return;
+                        }
+                        events.add(com.tngtech.archunit.lang.SimpleConditionEvent.violated(type,
+                                type.getName() + " submits to an executor without StoreScopes.propagate"));
+                    }
+                })
+                .as("executor submissions propagate the store scope")
+                .because("a task runs on a worker thread with no actor; it keeps the scope of its submitter "
+                        + "(D166)");
+    }
+
+    /** D165: the pool is reached only through the store-scope hook; only config touches Hikari. */
+    static ArchRule onlyConfigUsesHikari(String root) {
+        return noClasses()
+                .that().resideInAPackage(root + "..")
+                .and().resideOutsideOfPackage(root + ".config..")
+                .should().dependOnClassesThat().resideInAPackage("com.zaxxer.hikari..")
+                .as("only config uses Hikari")
+                .because("nothing else may obtain a connection past the store-scope hook (D165)");
+    }
+
+    private static boolean isActorlessEntryPoint(JavaMethod method) {
+        if (method.isAnnotatedWith(org.springframework.scheduling.annotation.Scheduled.class)) {
+            return true;
+        }
+        boolean runner = method.getName().equals("run") && method.getRawParameterTypes().size() == 1
+                && (method.getOwner().isAssignableTo(org.springframework.boot.ApplicationRunner.class)
+                || method.getOwner().isAssignableTo(org.springframework.boot.CommandLineRunner.class));
+        if (runner) {
+            return true;
+        }
+        if (!method.isAnnotatedWith(org.springframework.context.event.EventListener.class)) {
+            return false;
+        }
+        String ready = org.springframework.boot.context.event.ApplicationReadyEvent.class.getName();
+        org.springframework.context.event.EventListener listener = method.getAnnotationOfType(
+                org.springframework.context.event.EventListener.class);
+        return java.util.Arrays.stream(listener.classes()).anyMatch(type -> type.getName().equals(ready))
+                || java.util.Arrays.stream(listener.value()).anyMatch(type -> type.getName().equals(ready))
+                || method.getRawParameterTypes().stream().anyMatch(type -> type.getName().equals(ready));
+    }
+
+    private static boolean hasStoreId(JavaMethod method) {
+        if (method.getRawParameterTypes().isEmpty()) {
+            return false;
+        }
+        JavaClass event = method.getRawParameterTypes().getFirst();
+        return event.isRecord() && event.getAllFields().stream().anyMatch(field -> field.getName().equals("storeId")
+                && field.getRawType().getName().equals(java.util.UUID.class.getName()) && !field.getModifiers()
+                .contains(com.tngtech.archunit.core.domain.JavaModifier.STATIC));
+    }
+
+    private static boolean submitsToAnExecutor(JavaClass type) {
+        return type.getMethodCallsFromSelf().stream().anyMatch(call ->
+                (call.getTargetOwner().isAssignableTo(java.util.concurrent.Executor.class)
+                        && Set.of("execute", "submit", "schedule", "scheduleAtFixedRate", "scheduleWithFixedDelay",
+                        "invokeAll", "invokeAny").contains(call.getName())));
+    }
+
+    private static boolean propagatesInItselfOrAnEnclosingClass(JavaClass type) {
+        for (JavaClass current = type; current != null; current = current.getEnclosingClass().orElse(null)) {
+            if (current.getMethodCallsFromSelf().stream().anyMatch(call -> call.getTargetOwner().getName()
+                    .equals(STORE_SCOPES) && call.getName().equals("propagate"))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static JavaClass outermost(JavaClass type) {
+        JavaClass current = type;
+        while (current.getEnclosingClass().isPresent()) {
+            current = current.getEnclosingClass().get();
+        }
+        return current;
+    }
+
     private static boolean isFacadeOfAnotherModule(String root, String caller, JavaClass owner) {
         String rootPackage = owner.getPackageName();
         if (!rootPackage.startsWith(root + ".")) {

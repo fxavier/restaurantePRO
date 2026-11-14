@@ -1,5 +1,6 @@
 package com.xavier.backend.fiscal.repository;
 
+import com.xavier.backend.OwnerDatabase;
 import static com.xavier.backend.fiscal.FiscalFixtures.asEmployee;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -13,7 +14,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Confirmed facts are never edited (spec §8, A15): the database itself refuses to change an ISSUED document, its
@@ -31,8 +31,6 @@ class FiscalImmutabilityTest {
     @Autowired
     JdbcClient jdbc;
 
-    @Autowired
-    TransactionTemplate tx;
 
     @Test
     void anIssuedDocumentCannotBeUpdatedOrDeleted() throws Exception {
@@ -103,10 +101,10 @@ class FiscalImmutabilityTest {
     void theDocumentTablesCannotBeTruncated() {
         for (String table : List.of("fiscal_document", "fiscal_document_line", "fiscal_document_tax",
                 "fiscal_document_print")) {
-            assertThatThrownBy(() -> tx.executeWithoutResult(status -> {
-                status.setRollbackOnly();
-                jdbc.sql("TRUNCATE fiscal." + table + " CASCADE").update();
-            })).as(table).isInstanceOf(DataAccessException.class)
+            // as the owner (the pool has no TRUNCATE privilege), always rolled back
+            assertThatThrownBy(() -> OwnerDatabase.shared().rolledBack(owner ->
+                    owner.sql("TRUNCATE fiscal." + table + " CASCADE").update())).as(table)
+                    .isInstanceOf(DataAccessException.class)
                     .hasMessageContaining("TRUNCATE");
         }
     }

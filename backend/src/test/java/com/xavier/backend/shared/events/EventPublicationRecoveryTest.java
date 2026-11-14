@@ -166,7 +166,7 @@ class EventPublicationRecoveryTest {
     private UUID publish(int failures) {
         UUID id = UUID.randomUUID();
         FlakyListener.failures.put(id, new AtomicInteger(failures));
-        transaction.executeWithoutResult(tx -> events.publishEvent(new ProbeHappened(id)));
+        transaction.executeWithoutResult(tx -> events.publishEvent(new ProbeHappened(id, UUID.randomUUID())));
         return id;
     }
 
@@ -210,7 +210,8 @@ class EventPublicationRecoveryTest {
         }
     }
 
-    public record ProbeHappened(UUID id) {
+    /** Carries a store, as every production event of a store listener does (D166: the listener runs in it). */
+    public record ProbeHappened(UUID id, UUID storeId) {
     }
 
     /** Fails its first {@code failures} deliveries of an event, then succeeds. */

@@ -1,5 +1,8 @@
 package com.xavier.backend.production.service;
 
+import com.xavier.backend.access.StoreScopes;
+import com.xavier.backend.access.SystemScope;
+import com.xavier.backend.access.SystemScoped;
 import com.xavier.backend.production.adapter.PrinterTransport;
 import com.xavier.backend.production.adapter.SendResult;
 import java.util.List;
@@ -30,19 +33,22 @@ public class PrintWorker implements DisposableBean {
 
     private final PrintQueue queue;
     private final PrinterTransport transport;
+    private final StoreScopes scopes;
     private final Semaphore freeSenders;
     private final ThreadPoolExecutor senders;
 
-    PrintWorker(PrintQueue queue, PrinterTransport transport,
+    PrintWorker(PrintQueue queue, PrinterTransport transport, StoreScopes scopes,
                 @Value("${restaurantpro.production.worker.senders:4}") int senders) {
         this.queue = queue;
         this.transport = transport;
+        this.scopes = scopes;
         this.freeSenders = new Semaphore(senders);
         this.senders = new ThreadPoolExecutor(senders, senders, 0, TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<>(senders), Thread.ofPlatform().name("print-sender-", 0).daemon().factory());
     }
 
     /** One run; also what tests call. */
+    @SystemScoped(SystemScope.PRINT_WORKER)
     @Scheduled(fixedDelayString = "${restaurantpro.production.worker.poll:PT1S}")
     public int poll() {
         queue.expireLeases();
@@ -61,7 +67,8 @@ public class PrintWorker implements DisposableBean {
         List<Dispatch> claimed = queue.claimDue(Math.min(free, MAX_CLAIM));
         for (Dispatch dispatch : claimed) {
             freeSenders.acquireUninterruptibly();
-            senders.execute(() -> deliver(dispatch));
+            // the sender records its send in the claimer's scope (PRINT_WORKER), on the sender thread (D166)
+            senders.execute(scopes.propagate(() -> deliver(dispatch)));
         }
         return claimed.size();
     }

@@ -1,5 +1,6 @@
 package com.xavier.backend.promotions.loyalty.repository;
 
+import com.xavier.backend.OwnerDatabase;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.xavier.backend.promotions.loyalty.LoyaltyModuleTest;
@@ -33,7 +34,8 @@ class LoyaltyBalancePlanTest {
                 .query(UUID.class).single();
 
         String plan = tx.execute(status -> {
-            jdbc.sql("ANALYZE promotions.loyalty_point_entry").update();
+            // ANALYZE needs the table owner: as the pool it is skipped with a warning (ADR 0039)
+            OwnerDatabase.shared().jdbc().sql("ANALYZE promotions.loyalty_point_entry").update();
             jdbc.sql("SET LOCAL enable_seqscan = off").update();
             List<String> lines = jdbc.sql("EXPLAIN " + LoyaltyPointEntryRepository.BALANCE)
                     .param("customerId", member).query(String.class).list();

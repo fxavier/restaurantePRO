@@ -34,6 +34,10 @@ Module layout (D12): `model/`, `model/dto/`, `model/event/`, `repository/`, `ser
 | D99: an `inventory` call to another module's facade method (`audit` exempt) must be `@Transactional(readOnly = true)`, on the method or its class | `inventoryCallsOnlyReadOnlyFacadeMethods` |
 | D137/D144: no class outside `identity..` and `config..` depends on `org.springframework.security.oauth2..` (federation is identity's; config wires the filter chain) | `onlyIdentityAndConfigUseOAuth2` |
 | D137/D149: `shared.ops` (`AlertSource`, `OperationalAlert`, `ExportMonitor`) depends on no module, only on the shared kernel, so every module can implement `AlertSource` without a new edge | `sharedOpsDependsOnNoModule` |
+| D166 (ADR 0039): every `@Scheduled` method, `ApplicationRunner`/`CommandLineRunner.run` and `ApplicationReadyEvent` listener is `@SystemScoped` (a checked-in list in `SystemScopeRegistryTest`) | `scheduledEntryPointsAreSystemScoped` |
+| D166: every `@ApplicationModuleListener` takes an event with a `UUID storeId` record component (it runs in that store), or is `@SystemScoped` | `listenersHaveAStoreOrASystemScope` |
+| D166: a class calling `Executor.execute`, `ExecutorService.submit` or `schedule*` wraps the task in `StoreScopes.propagate` (allow-list: `EscPosTcpTransport`, `ProviderCalls`, `ChangeNotifier`, which never touch the database) | `executorSubmissionsPropagateTheStoreScope` |
+| D165: no class outside `config..` depends on `com.zaxxer.hikari..` (nothing obtains a connection past the store-scope hook) | `onlyConfigUsesHikari` |
 
 ## Shared contracts (S0)
 

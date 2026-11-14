@@ -47,6 +47,12 @@ class FrozenConfigurationNamesTest {
         FROZEN.put("RESTAURANTPRO_ALERTS_CASH_DIFFERENCE_THRESHOLD",
                 new String[] {"restaurantpro.alerts.cash-difference-threshold", "2.50"});
         FROZEN.put("RESTAURANTPRO_METRICS_TOKEN_FILE", new String[] {"restaurantpro.metrics.token-file", "/run/t"});
+        // RLS (ADR 0039, D163, D170)
+        FROZEN.put("RESTAURANTPRO_DB_USERNAME", new String[] {"spring.datasource.username", "pool_role"});
+        FROZEN.put("RESTAURANTPRO_FLYWAY_USERNAME", new String[] {"spring.flyway.user", "migration_role"});
+        FROZEN.put("RESTAURANTPRO_FLYWAY_PASSWORD", new String[] {"spring.flyway.password", "not-a-secret"});
+        FROZEN.put("RESTAURANTPRO_STORE_SCOPE_ENFORCEMENT",
+                new String[] {"restaurantpro.store-scope.enforcement", "PERMISSIVE"});
     }
 
     @Test
@@ -79,6 +85,12 @@ class FrozenConfigurationNamesTest {
         assertThat(environment.getProperty("restaurantpro.alerts.backup-status-file")).isEmpty();
         assertThat(environment.getProperty("restaurantpro.alerts.cash-difference-threshold")).isEqualTo("0");
         assertThat(environment.getProperty("restaurantpro.metrics.token-file")).isEmpty();
+        assertThat(environment.getProperty("spring.datasource.username")).as("D163: the pool is the application role")
+                .isEqualTo("restaurantpro_app");
+        assertThat(environment.getProperty("spring.flyway.user")).as("D163: Flyway runs as the owner")
+                .isEqualTo("restaurantpro_owner");
+        assertThat(environment.getProperty("spring.flyway.password")).isEmpty();
+        assertThat(environment.getProperty("restaurantpro.store-scope.enforcement")).isEqualTo("ENFORCE");
     }
 
     /** {@code application.yaml} over an environment holding only {@code variables}. */

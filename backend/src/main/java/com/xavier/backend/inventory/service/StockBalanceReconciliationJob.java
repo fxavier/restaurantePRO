@@ -1,5 +1,7 @@
 package com.xavier.backend.inventory.service;
 
+import com.xavier.backend.access.SystemScope;
+import com.xavier.backend.access.SystemScoped;
 import com.xavier.backend.inventory.repository.BalanceDrift;
 import com.xavier.backend.inventory.repository.BalanceProjection;
 import io.micrometer.core.instrument.Gauge;
@@ -51,6 +53,7 @@ public class StockBalanceReconciliationJob {
     }
 
     /** @return the drifting rows found (also logged and counted in the gauge) */
+    @SystemScoped(SystemScope.STOCK_RECONCILE)
     @Scheduled(cron = "${restaurantpro.inventory.reconcile-cron:0 20 4 * * *}")
     @Transactional
     public synchronized List<BalanceDrift> reconcile() {

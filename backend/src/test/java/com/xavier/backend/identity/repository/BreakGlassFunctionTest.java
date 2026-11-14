@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.xavier.backend.OwnerDatabase;
+import com.xavier.backend.TestcontainersConfiguration;
 import com.xavier.backend.identity.IdentityFixtures;
 import com.xavier.backend.identity.MfaFixtures;
 import com.xavier.backend.identity.MfaTest;
@@ -21,8 +23,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * D143 break-glass: {@code deploy/mfa-break-glass.sh} runs {@code identity.mfa_break_glass_reset},
@@ -49,8 +49,8 @@ class BreakGlassFunctionTest {
     @Autowired
     JdbcClient jdbc;
 
-    @Autowired
-    PlatformTransactionManager transactions;
+    /** deploy/mfa-break-glass.sh's connection: never the pool, which cannot execute the console functions (D168). */
+    final JdbcClient console = OwnerDatabase.shared().jdbc();
 
     MfaFixtures.Enrolled admin;
     String reason;
@@ -69,10 +69,10 @@ class BreakGlassFunctionTest {
     @Test
     void theScriptsTransactionRevokesTheFactorAndWritesOneSystemAuditRow() throws Exception {
         UUID returned = inOneTransaction(() -> {
-            UUID account = jdbc.sql(RESET).param("  " + admin.user().username().toUpperCase() + " ").param(reason)
+            UUID account = console.sql(RESET).param("  " + admin.user().username().toUpperCase() + " ").param(reason)
                     .query(UUID.class).single();
-            jdbc.sql(SESSIONS).param(account).query(Integer.class).single();
-            jdbc.sql(AUDIT).param(account.toString()).param(reason).query(UUID.class).single();
+            console.sql(SESSIONS).param(account).query(Integer.class).single();
+            console.sql(AUDIT).param(account.toString()).param(reason).query(UUID.class).single();
             return account;
         });
 
@@ -116,9 +116,9 @@ class BreakGlassFunctionTest {
                 .param(admin.user().id()).param(admin.user().id()).update();
 
         int ended = inOneTransaction(() -> {
-            UUID account = jdbc.sql(RESET).param(admin.user().username()).param(reason).query(UUID.class).single();
-            int count = jdbc.sql(SESSIONS).param(account).query(Integer.class).single();
-            jdbc.sql(AUDIT).param(account.toString()).param(reason).query(UUID.class).single();
+            UUID account = console.sql(RESET).param(admin.user().username()).param(reason).query(UUID.class).single();
+            int count = console.sql(SESSIONS).param(account).query(Integer.class).single();
+            console.sql(AUDIT).param(account.toString()).param(reason).query(UUID.class).single();
             return count;
         });
 
@@ -142,16 +142,19 @@ class BreakGlassFunctionTest {
                                 acldefault('f', p.proowner))) a
                             WHERE p.oid = ?::regprocedure AND a.grantee = 0 AND a.privilege_type = 'EXECUTE'""")
                     .param(function).query(Long.class).single()).as("PUBLIC EXECUTE on %s", function).isZero();
-            assertThat(jdbc.sql("SELECT has_function_privilege(current_user, ?::regprocedure, 'EXECUTE')")
+            assertThat(console.sql("SELECT has_function_privilege(current_user, ?::regprocedure, 'EXECUTE')")
                     .param(function).query(Boolean.class).single()).as("the script's role on %s", function).isTrue();
+            assertThat(jdbc.sql("SELECT has_function_privilege(?, ?::regprocedure, 'EXECUTE')")
+                    .param(TestcontainersConfiguration.APP_ROLE).param(function).query(Boolean.class).single())
+                    .as("the application role on %s", function).isFalse();
         }
     }
 
     @Test
     void anUnknownUsernameRollsBothBack() {
         assertThatThrownBy(() -> inOneTransaction(() -> {
-            jdbc.sql(AUDIT).param(UUID.randomUUID().toString()).param(reason).query(UUID.class).single();
-            return jdbc.sql(RESET).param("nobody-" + UUID.randomUUID()).param(reason).query(UUID.class).single();
+            console.sql(AUDIT).param(UUID.randomUUID().toString()).param(reason).query(UUID.class).single();
+            return console.sql(RESET).param("nobody-" + UUID.randomUUID()).param(reason).query(UUID.class).single();
         })).isInstanceOf(DataAccessException.class).hasMessageContaining("unknown username");
 
         assertThat(auditRows()).isZero();
@@ -160,8 +163,8 @@ class BreakGlassFunctionTest {
     @Test
     void aFailingAuditRowRollsTheRevocationBack() {
         assertThatThrownBy(() -> inOneTransaction(() -> {
-            UUID account = jdbc.sql(RESET).param(admin.user().username()).param(reason).query(UUID.class).single();
-            return jdbc.sql("SELECT audit.record_console_event('MFA_BREAK_GLASS_RESET', 'UserAccount', ' ', ?)")
+            UUID account = console.sql(RESET).param(admin.user().username()).param(reason).query(UUID.class).single();
+            return console.sql("SELECT audit.record_console_event('MFA_BREAK_GLASS_RESET', 'UserAccount', ' ', ?)")
                     .param(reason).query(UUID.class).single();
         })).isInstanceOf(DataAccessException.class);
 
@@ -178,9 +181,9 @@ class BreakGlassFunctionTest {
             throw new IllegalStateException(e);
         }
 
-        assertThatThrownBy(() -> jdbc.sql(RESET).param(plain.username()).param(reason).query(UUID.class).single())
+        assertThatThrownBy(() -> console.sql(RESET).param(plain.username()).param(reason).query(UUID.class).single())
                 .isInstanceOf(DataAccessException.class).hasMessageContaining("no active second factor");
-        assertThatThrownBy(() -> jdbc.sql(RESET).param(admin.user().username()).param("  ").query(UUID.class)
+        assertThatThrownBy(() -> console.sql(RESET).param(admin.user().username()).param("  ").query(UUID.class)
                 .single()).isInstanceOf(DataAccessException.class).hasMessageContaining("reason");
         assertThat(jdbc.sql("SELECT count(*) FROM identity.mfa_factor WHERE account_id = ? AND status = 'ACTIVE'")
                 .param(admin.user().id()).query(Long.class).single()).isEqualTo(1);
@@ -192,6 +195,6 @@ class BreakGlassFunctionTest {
     }
 
     private <T> T inOneTransaction(java.util.function.Supplier<T> statements) {
-        return new TransactionTemplate(transactions).execute(tx -> statements.get());
+        return OwnerDatabase.shared().call(owner -> statements.get());
     }
 }

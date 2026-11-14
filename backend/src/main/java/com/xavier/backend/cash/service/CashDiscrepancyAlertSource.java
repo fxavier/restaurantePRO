@@ -1,5 +1,7 @@
 package com.xavier.backend.cash.service;
 
+import com.xavier.backend.access.SystemScope;
+import com.xavier.backend.access.SystemScoped;
 import com.xavier.backend.cash.model.CashClosingStatus;
 import com.xavier.backend.cash.repository.CashClosingRepository;
 import com.xavier.backend.cash.repository.StoreCashDiscrepancy;
@@ -52,6 +54,7 @@ class CashDiscrepancyAlertSource implements AlertSource {
                         + "threshold").register(meters);
     }
 
+    @SystemScoped(SystemScope.ALERTS)
     @Scheduled(fixedDelayString = "PT1M")
     void refresh() {
         List<StoreCashDiscrepancy> current = closings.discrepanciesSince(COUNTED, clock.instant().minus(WINDOW),

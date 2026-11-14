@@ -1,5 +1,6 @@
 package com.xavier.backend.fiscal.service;
 
+import com.xavier.backend.OwnerDatabase;
 import static com.xavier.backend.fiscal.FiscalFixtures.asEmployee;
 import static com.xavier.backend.fiscal.FiscalFixtures.cash;
 import static com.xavier.backend.fiscal.FiscalFixtures.draft;
@@ -116,10 +117,10 @@ class PaymentSnapshotTest {
         assertRefused("""
                 INSERT INTO fiscal.fiscal_document_payment (document_id, position, method_code, label, amount)
                 VALUES (:id, 9, 'CASH', 'Numerário', 1)""", draft);
-        assertThatThrownBy(() -> tx.executeWithoutResult(status -> {
-            status.setRollbackOnly();
-            jdbc.sql("TRUNCATE fiscal.fiscal_document_payment").update();
-        })).isInstanceOf(DataAccessException.class).hasMessageContaining("TRUNCATE");
+        // as the owner (the pool has no TRUNCATE privilege), always rolled back
+        assertThatThrownBy(() -> OwnerDatabase.shared().rolledBack(owner ->
+                owner.sql("TRUNCATE fiscal.fiscal_document_payment").update()))
+                .isInstanceOf(DataAccessException.class).hasMessageContaining("TRUNCATE");
     }
 
     @Test

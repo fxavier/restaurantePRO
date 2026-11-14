@@ -1,5 +1,7 @@
 package com.xavier.backend.shared.events;
 
+import com.xavier.backend.access.SystemScope;
+import com.xavier.backend.access.SystemScoped;
 import com.xavier.backend.shared.web.PageResponse;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.MultiGauge;
@@ -136,6 +138,7 @@ public class EventPublicationStats {
     }
 
     /** Recounts the gauge rows. */
+    @SystemScoped(SystemScope.EVENT_MAINTENANCE)
     @Scheduled(fixedDelayString = "${restaurantpro.events.resubmit-interval:PT1M}")
     @Transactional(readOnly = true)
     void refresh() {

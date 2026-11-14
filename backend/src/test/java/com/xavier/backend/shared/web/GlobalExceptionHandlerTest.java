@@ -1,5 +1,6 @@
 package com.xavier.backend.shared.web;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
@@ -45,6 +46,28 @@ class GlobalExceptionHandlerTest {
 
     @Autowired
     MockMvc mvc;
+
+    @Autowired
+    io.micrometer.core.instrument.MeterRegistry registry;
+
+    @Autowired
+    com.xavier.backend.shared.persistence.StoreScopeViolations violations;
+
+    @Test
+    void aRowLevelSecurityRefusalIsCountedAndRemembered() throws Exception {
+        double before = registry.get("store_scope_violations").tag("kind", "store_change").counter().count();
+
+        mvc.perform(get("/api/v1/backoffice/test-probe/store-change"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.code").value("STORE_CHANGE_REFUSED"))
+                .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("order_header"))));
+
+        assertThat(registry.get("store_scope_violations").tag("kind", "store_change").counter().count())
+                .isEqualTo(before + 1);
+        assertThat(violations.lastDay()).containsKey(
+                com.xavier.backend.shared.persistence.StoreScopeViolations.Kind.STORE_CHANGE);
+    }
 
     @Test
     void notFoundBecomes404ProblemDetail() throws Exception {
@@ -189,6 +212,13 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/data-access-misuse")
         void dataAccessMisuse() {
             throw new InvalidDataAccessApiUsageException("a programming error");
+        }
+
+        @GetMapping("/store-change")
+        void storeChange() {
+            throw new org.springframework.dao.DataAccessResourceFailureException("could not execute statement",
+                    new java.sql.SQLException("store change refused on orders.order_header (origin listener:X.on)",
+                            "RS002"));
         }
 
         @GetMapping("/boom")

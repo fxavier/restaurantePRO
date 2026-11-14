@@ -1,5 +1,6 @@
 package com.xavier.backend.reporting.repository;
 
+import com.xavier.backend.OwnerDatabase;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.xavier.backend.reporting.ReportingModuleTest;
@@ -120,7 +121,8 @@ class ReportPlanTest {
         return tx.execute(status -> {
             for (String table : List.of("sales_record", "sales_record_line", "sales_record_tax", "payment_record",
                     "credit_record", "void_record")) {
-                jdbc.sql("ANALYZE reporting." + table).update();
+                // ANALYZE needs the table owner: as the pool it is skipped with a warning (ADR 0039)
+                OwnerDatabase.shared().jdbc().sql("ANALYZE reporting." + table).update();
             }
             jdbc.sql("SET LOCAL enable_seqscan = off").update();
             List<String> lines = jdbc.sql("EXPLAIN " + sql).param("store", store)

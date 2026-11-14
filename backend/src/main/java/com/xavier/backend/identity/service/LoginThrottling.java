@@ -1,5 +1,7 @@
 package com.xavier.backend.identity.service;
 
+import com.xavier.backend.access.SystemScope;
+import com.xavier.backend.access.SystemScoped;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.identity.exception.LoginThrottledException;
 import com.xavier.backend.identity.model.LoginThrottle;
@@ -108,6 +110,7 @@ class LoginThrottling {
      *
      * @return how many were deleted
      */
+    @SystemScoped(SystemScope.IDENTITY_MAINTENANCE)
     @Scheduled(cron = "0 7 * * * *")
     @Transactional
     public int purgeExpired() {

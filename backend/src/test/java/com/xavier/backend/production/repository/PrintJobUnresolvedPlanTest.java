@@ -1,5 +1,6 @@
 package com.xavier.backend.production.repository;
 
+import com.xavier.backend.OwnerDatabase;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.xavier.backend.fiscal.FiscalFixtures;
@@ -55,7 +56,8 @@ class PrintJobUnresolvedPlanTest {
         seed();
 
         String plan = tx.execute(status -> {
-            jdbc.sql("ANALYZE production.print_job").update();
+            // ANALYZE needs the table owner: as the pool it is skipped with a warning (ADR 0039)
+            OwnerDatabase.shared().jdbc().sql("ANALYZE production.print_job").update();
             jdbc.sql("SET LOCAL enable_seqscan = off").update();
             List<String> lines = jdbc.sql("EXPLAIN " + UNRESOLVED)
                     .param("since", Timestamp.from(Instant.now().minus(Duration.ofHours(24)))).query(String.class)
