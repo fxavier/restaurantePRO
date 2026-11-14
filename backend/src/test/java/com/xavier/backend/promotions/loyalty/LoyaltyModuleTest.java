@@ -17,11 +17,14 @@ import org.springframework.test.context.TestPropertySource;
  * Boots promotions with what loyalty calls: customers (members are customers, P38) and organization (company
  * currency, stores for POS sessions), plus catalog for the rest of promotions, and shared, access and audit, on the
  * shared Testcontainers PostgreSQL. One annotation, one cached context; never assume empty tables.
+ *
+ * {@code config} is included for the store-scope hook and advisor (ADR 0039): an {@code @ApplicationModuleTest} drops
+ * the configuration classes of modules it does not include, also when imported, so the pool would have no scope.
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
-@ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization", "customers", "catalog"})
+@ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization", "customers", "catalog", "config"})
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, MutableClock.Config.class, CustomersFixtures.class, LoyaltyFixtures.class})
 @TestPropertySource(properties = {

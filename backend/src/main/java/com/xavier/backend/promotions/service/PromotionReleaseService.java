@@ -15,6 +15,7 @@ import com.xavier.backend.promotions.model.event.PromotionsPublished;
 import com.xavier.backend.promotions.repository.PromotionReleaseRepository;
 import com.xavier.backend.shared.notify.ChangeNotifier;
 import com.xavier.backend.shared.notify.ChangeTopic;
+import com.xavier.backend.shared.persistence.StoreProbe;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
 import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
@@ -41,6 +42,7 @@ public class PromotionReleaseService {
     private final PromotionWorkingCopy workingCopy;
     private final OrganizationApi organization;
     private final AccessPolicy accessPolicy;
+    private final StoreProbe probe;
     private final PromotionsAudit audit;
     private final ApplicationEventPublisher events;
     private final ChangeNotifier notifier;
@@ -48,12 +50,14 @@ public class PromotionReleaseService {
     private final Clock clock;
 
     PromotionReleaseService(PromotionReleaseRepository releases, PromotionWorkingCopy workingCopy,
-                            OrganizationApi organization, AccessPolicy accessPolicy, PromotionsAudit audit,
-                            ApplicationEventPublisher events, ChangeNotifier notifier, JsonMapper json, Clock clock) {
+                            OrganizationApi organization, AccessPolicy accessPolicy, StoreProbe probe,
+                            PromotionsAudit audit, ApplicationEventPublisher events, ChangeNotifier notifier,
+                            JsonMapper json, Clock clock) {
         this.releases = releases;
         this.workingCopy = workingCopy;
         this.organization = organization;
         this.accessPolicy = accessPolicy;
+        this.probe = probe;
         this.audit = audit;
         this.events = events;
         this.notifier = notifier;
@@ -132,9 +136,12 @@ public class PromotionReleaseService {
         return PageResponse.from(releases.findAllByStoreId(storeId, pageable).map(this::view));
     }
 
-    /** D42 (b): the release's store alone (404), then the permission there (403), then the full row. */
+    /**
+     * D42 (b): the release's store alone (404), then the permission there (403), then the full row. The store is probed
+     * through {@code shared.store_of}: row-level security hides another store's release from a plain read.
+     */
     private PromotionRelease authorized(UUID releaseId) {
-        UUID storeId = releases.findStoreIdById(releaseId)
+        UUID storeId = probe.storeOf("promotions.promotion_release", releaseId)
                 .orElseThrow(() -> PromotionsNotFoundException.release(releaseId));
         accessPolicy.require(Permission.PROMOTION_MANAGE, storeId);
         return releases.findById(releaseId).orElseThrow(() -> PromotionsNotFoundException.release(releaseId));
