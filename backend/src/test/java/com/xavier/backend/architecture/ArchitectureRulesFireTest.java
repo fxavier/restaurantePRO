@@ -190,4 +190,50 @@ class ArchitectureRulesFireTest {
         assertThat(result.getFailureReport().getDetails())
                 .anySatisfy(line -> assertThat(line).contains("CashDrawer").contains("OrderTotals"));
     }
+
+    /** D166 (A74): an unscoped job, runner or readiness hook fails the build; a @SystemScoped job does not. */
+    @Test
+    void anActorlessEntryPointWithoutASystemScopeIsCaught() {
+        EvaluationResult result = ArchitectureRules.scheduledEntryPointsAreSystemScoped(FORBIDDEN_ROOT)
+                .evaluate(FORBIDDEN_FIXTURE);
+
+        assertThat(result.getFailureReport().getDetails())
+                .anySatisfy(line -> assertThat(line).contains("UnscopedJob.tick()"))
+                .anySatisfy(line -> assertThat(line).contains("UnscopedRunner.run("))
+                .anySatisfy(line -> assertThat(line).contains("UnscopedReadiness.ready()"))
+                .noneSatisfy(line -> assertThat(line).contains("ScopedJob.tick()"));
+    }
+
+    /** D166 (A74): a listener of an event without storeId fails the build unless it is @SystemScoped. */
+    @Test
+    void aListenerOfAStorelessEventWithoutASystemScopeIsCaught() {
+        EvaluationResult result = ArchitectureRules.listenersHaveAStoreOrASystemScope(FORBIDDEN_ROOT)
+                .evaluate(FORBIDDEN_FIXTURE);
+
+        assertThat(result.getFailureReport().getDetails())
+                .anySatisfy(line -> assertThat(line).contains("StorelessListener.on("))
+                .noneSatisfy(line -> assertThat(line).contains("$StoreListener.on("))
+                .noneSatisfy(line -> assertThat(line).contains("ScopedStorelessListener.on("));
+    }
+
+    /** D166: an executor submission without StoreScopes.propagate is caught; a propagated one is not. */
+    @Test
+    void anExecutorSubmissionWithoutPropagationIsCaught() {
+        EvaluationResult result = ArchitectureRules.executorSubmissionsPropagateTheStoreScope(FORBIDDEN_ROOT)
+                .evaluate(FORBIDDEN_FIXTURE);
+
+        assertThat(result.getFailureReport().getDetails())
+                .anySatisfy(line -> assertThat(line).contains("UnpropagatedSubmitter"))
+                .noneSatisfy(line -> assertThat(line).contains("PropagatedSubmitter submits"));
+    }
+
+    /** D165: Hikari outside config is caught; config's own use is not. */
+    @Test
+    void hikariOutsideConfigIsCaught() {
+        EvaluationResult result = ArchitectureRules.onlyConfigUsesHikari(FORBIDDEN_ROOT).evaluate(FORBIDDEN_FIXTURE);
+
+        assertThat(result.getFailureReport().getDetails())
+                .anySatisfy(line -> assertThat(line).contains("PoolOutsideConfig"))
+                .noneSatisfy(line -> assertThat(line).contains("PoolInConfig"));
+    }
 }

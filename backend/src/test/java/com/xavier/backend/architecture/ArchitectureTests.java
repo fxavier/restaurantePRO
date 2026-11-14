@@ -60,6 +60,30 @@ class ArchitectureTests {
         ArchitectureRules.CODED_ERRORS_USE_THE_SHARED_EXCEPTIONS.check(PRODUCTION);
     }
 
+    /** D166: every job, runner and readiness hook names its system scope. */
+    @Test
+    void scheduledEntryPointsAreSystemScoped() {
+        ArchitectureRules.scheduledEntryPointsAreSystemScoped("com.xavier.backend").check(PRODUCTION);
+    }
+
+    /** D166: every module listener has its event's store, or a system scope. */
+    @Test
+    void listenersHaveAStoreOrASystemScope() {
+        ArchitectureRules.listenersHaveAStoreOrASystemScope("com.xavier.backend").check(PRODUCTION);
+    }
+
+    /** D166: every hand-made executor submission carries its submitter's store scope. */
+    @Test
+    void executorSubmissionsPropagateTheStoreScope() {
+        ArchitectureRules.executorSubmissionsPropagateTheStoreScope("com.xavier.backend").check(PRODUCTION);
+    }
+
+    /** D165: no connection past the store-scope hook. */
+    @Test
+    void onlyConfigUsesHikari() {
+        ArchitectureRules.onlyConfigUsesHikari("com.xavier.backend").check(PRODUCTION);
+    }
+
     static ArchRule[] forbiddenModuleDependencies() {
         return ArchitectureRules.forbiddenModuleDependencies("com.xavier.backend");
     }
