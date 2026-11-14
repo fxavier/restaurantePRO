@@ -15,6 +15,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
+import org.awaitility.Awaitility;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -183,12 +184,10 @@ class SettlementActorlessScopeTest {
         assertThat(chargeStatus(sale)).isEqualTo("RESERVED");
     }
 
-    private void awaitStatus(UUID attempt, String expected) throws InterruptedException {
-        long deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
-        while (!expected.equals(status(attempt)) && System.nanoTime() < deadline) {
-            Thread.sleep(50);
-        }
-        assertThat(status(attempt)).isEqualTo(expected);
+    /** Polled on this (fixture) thread: the reads need the test's fallback scope. */
+    private void awaitStatus(UUID attempt, String expected) {
+        Awaitility.await().pollInSameThread().atMost(Duration.ofSeconds(15))
+                .untilAsserted(() -> assertThat(status(attempt)).isEqualTo(expected));
     }
 
     private String status(UUID attempt) {

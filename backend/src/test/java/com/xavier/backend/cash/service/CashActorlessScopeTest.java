@@ -44,6 +44,7 @@ class CashActorlessScopeTest {
             }
         });
         job.join(Duration.ofSeconds(60));
+        assertThat(job.isAlive()).as("the refresh finished").isFalse();
 
         assertThat(failure.get()).as("the refresh failed").isNull();
         assertThat(differences(a)).isEqualTo(1);
