@@ -146,7 +146,10 @@ restore_into() {
   provision_roles "$1" || return 1
   docker exec -i "$container" pg_restore -U "$DB_USER" -d "$1" --no-owner --exit-on-error --single-transaction <"$work/db.dump" \
     || return 1
-  provision_roles "$1"
+  provision_roles "$1" && return 0
+  [[ -n "$staging" ]] && die "provisioning the roles after pg_restore failed (see above); target left unchanged"
+  die "restored into $1, but provisioning the roles failed (see above): its objects still belong to the superuser and the
+  backend refuses to start until $DEPLOY_DIR/postgres/provision.sh --container $container --db $1 succeeds"
 }
 
 objects="$(psql_in "$db" -c "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
