@@ -1,24 +1,58 @@
 # Local development database only (PRD S0). The deploy stack lives in deploy/ (S5).
-# Usage (from backend/):
-#   export RESTAURANTPRO_DB_PASSWORD=<choose one locally>
-#   docker compose up -d
-# The password is read from your environment and never committed (spec §10).
+# Usage (from backend/): ./run-local.sh, which sets dev defaults for the three passwords below. By hand:
+#   export RESTAURANTPRO_DEV_SUPERUSER_PASSWORD=<choose> RESTAURANTPRO_FLYWAY_PASSWORD=<choose> RESTAURANTPRO_DB_PASSWORD=<choose>
+#   docker compose up -d --wait
+# ADR 0039 (D163): as in deploy/, db-provision runs deploy/postgres/provision-roles.sql at every up, so the backend runs
+# as restaurantpro_app (pool, RESTAURANTPRO_DB_PASSWORD) and restaurantpro_owner (Flyway, RESTAURANTPRO_FLYWAY_PASSWORD),
+# never as the superuser, and row-level security is on locally too. The passwords come from your environment and are
+# never committed (spec §10).
 services:
   postgres:
     image: postgres:18.6-alpine # same image as TestcontainersConfiguration (D4)
     environment:
       POSTGRES_DB: restaurantpro
       POSTGRES_USER: restaurantpro
-      POSTGRES_PASSWORD: ${RESTAURANTPRO_DB_PASSWORD:?set RESTAURANTPRO_DB_PASSWORD}
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
     ports:
       - "127.0.0.1:5432:5432" # never exposed beyond localhost (spec §10)
     volumes:
       - restaurantpro-dev-db:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U restaurantpro -d restaurantpro"]
+      # TCP, not the socket: during first-time init the image runs a socket-only server.
+      test: ["CMD-SHELL", "pg_isready -q -h 127.0.0.1 -U restaurantpro -d restaurantpro"]
       interval: 5s
       timeout: 3s
       retries: 10
+
+  db-provision:
+    image: postgres:18.6-alpine
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["bash", "/etc/restaurantpro/provision.sh"]
+    # The image declares a data volume; a tmpfs there keeps this one-shot from leaving an anonymous volume behind.
+    tmpfs:
+      - /var/lib/postgresql
+    environment:
+      PGHOST: postgres
+    secrets:
+      - db_password
+      - db_owner_password
+      - db_app_password
+    volumes:
+      - ../deploy/postgres/provision.sh:/etc/restaurantpro/provision.sh:ro
+      - ../deploy/postgres/provision-roles.sql:/etc/restaurantpro/provision-roles.sql:ro
+
+secrets:
+  db_password: # the superuser, which only db-provision and you (psql) use
+    environment: RESTAURANTPRO_DEV_SUPERUSER_PASSWORD
+  db_owner_password:
+    environment: RESTAURANTPRO_FLYWAY_PASSWORD
+  db_app_password:
+    environment: RESTAURANTPRO_DB_PASSWORD
 
 volumes:
   restaurantpro-dev-db:

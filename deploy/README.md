@@ -18,6 +18,8 @@ One stack per company (spec §2): Caddy (HTTPS on the LAN), the backend, and Pos
    cp .env.example .env          # edit: hostname, company data, admin username, OFFBOX_TARGET
    mkdir -m 700 secrets backups logs   # backups/ holds only ciphertext; the cron logs go to logs/
    openssl rand -base64 32 | tr -d '\n' > secrets/db_password
+   openssl rand -hex 24 > secrets/db_owner_password             # restaurantpro_owner: Flyway (ADR 0039, "Database roles")
+   openssl rand -hex 24 > secrets/db_app_password               # restaurantpro_app: the backend's pool
    printf '%s' 'choose-a-strong-initial-password' > secrets/admin_initial_password
    openssl rand -base64 32 | tr -d '\n' > secrets/mfa_key       # encrypts the TOTP secrets (R5, "Second factor (MFA)")
    openssl rand -hex 32 | tr -d '\n' > secrets/metrics_token    # Prometheus scrape token (R5, "Alerts")
@@ -28,7 +30,7 @@ One stack per company (spec §2): Caddy (HTTPS on the LAN), the backend, and Pos
    ```
 
    Then create `backup-recipients.txt` with the two public keys and pin the off-box host key, as described in "Backup encryption (production)" below. In production PostgreSQL refuses to start without that file. `.env`, `secrets/`, `status/` (except its `.gitkeep`), `backup-recipients.txt` and `offbox_known_hosts` are git-ignored. Never commit them. Compose refuses to start the backend if `status/` is missing, rather than letting Docker create it owned by root, where `verify-backups.sh` could not write. The `RESTAURANTPRO_BOOTSTRAP_*` values and `secrets/admin_initial_password` are consumed once, at the first start against an empty database (D30). After that, edit the company profile in the BackOffice. The admin must change the initial password at first login. After that login you may empty `secrets/admin_initial_password`, but keep the file: Compose needs it to start.
-3. Start: `docker compose up -d --build`, then wait until `docker compose ps` shows all three services `healthy`. Then start the point-in-time recovery chain once with `./basebackup.sh --new-cluster`, run `./offbox-sync.sh --check-append-only` and `./verify-backups.sh` once by hand, and schedule the jobs in "Backup encryption (production)" below.
+3. Start: `docker compose up -d --build`, then wait until `docker compose ps` shows `postgres`, `backend` and `caddy` `healthy` and `db-provision` `exited (0)` (it provisions the database roles at every start; see "Database roles"). Then start the point-in-time recovery chain once with `./basebackup.sh --new-cluster`, run `./offbox-sync.sh --check-append-only` and `./verify-backups.sh` once by hand, and schedule the jobs in "Backup encryption (production)" below.
 
    **Fiscal adapter (B4).** This release has only a NON-CERTIFIED fiscal adapter: with the default `RESTAURANTPRO_FISCAL_ALLOW_NON_CERTIFIED=false` the backend refuses to start (its log says why) and never becomes healthy. Set it to `true` in `.env` only for a pilot without fiscal obligations, until a certified adapter for your market exists. Every document is then printed as `DOCUMENTO NÃO FISCAL`, and the health check reports the component `fiscal: NON_CERTIFIED` while the overall status stays `UP`: `docker compose exec backend wget -qO- http://127.0.0.1:8081/actuator/health`.
 4. Trust the certificate. Caddy signs with its own local CA (`tls internal`). Install its root certificate once on each POS terminal and BackOffice browser:
@@ -49,6 +51,37 @@ docker compose logs -f backend    # logs (JSON; rotated at 5 x 20 MB per service
 ```
 
 Never run `docker compose down -v`: `-v` deletes the database volume.
+
+## Database roles
+
+Since row-level security (ADR 0039, D163) the database has three roles. The backend never connects as the superuser.
+
+| Role | What it is for | Password |
+| --- | --- | --- |
+| `restaurantpro` | The PostgreSQL superuser. Only for operations: `backup.sh`, `basebackup.sh`, `restore.sh`, `pitr-restore.sh`, `verify-*.sh`, `mfa-break-glass.sh`, `db-provision` and your own `psql`. Only the `postgres` and `db-provision` containers get its secret. | `secrets/db_password` |
+| `restaurantpro_owner` | Owns every schema, table, sequence and function of the application, and runs the Flyway migrations at backend startup. It has `BYPASSRLS`, so migrations and data fixes see every store. | `secrets/db_owner_password` |
+| `restaurantpro_app` | The backend's connection pool. It owns nothing, has only `SELECT`, `INSERT`, `UPDATE` and `DELETE` on the application's tables (no DDL, no `TRUNCATE`, no writes to the Flyway history) and is bound by row-level security: every connection sees only the stores of whoever it works for. | `secrets/db_app_password` |
+
+**`db-provision`** is a one-shot service that runs at every `docker compose up`, before the backend: `postgres/provision.sh` connects as the superuser and runs `postgres/provision-roles.sql`. It creates the two roles when they are missing, sets their attributes and their passwords from the secrets, hands every application object still owned by the superuser to `restaurantpro_owner`, and grants the application role its privileges (also on what later migrations create). Every step is a no-op when already done, so a second `up` changes nothing. The passwords travel from the secret files to `psql` through its environment, never on a command line, and statement logging is off while they are set, so they appear in no log. If it fails (a wrong `db_password`, a missing or empty secret file), the backend does not start; `docker compose logs db-provision` names the step.
+
+**The backend refuses to start** when its pool role is a superuser, has `BYPASSRLS`, or owns an application object, or when a store table lost its row-level security (for example a restore made without `restore.sh`). The backend log says `The backend refuses to start (row-level security, ADR 0039): ...` and why.
+
+**Change a role password:** write the new value to `secrets/db_owner_password` or `secrets/db_app_password`, then `docker compose up -d` (`db-provision` sets it) and `docker compose restart backend` (the backend reads its secret files at start). After a point-in-time recovery to a moment before a password change, the next `docker compose up -d` sets the current passwords again.
+
+`./postgres/provision.sh --self-test` checks the provisioning against a throwaway PostgreSQL: an R5-shaped database is provisioned twice by the `db-provision` path and once by the `--container` path that `restore.sh` uses; the second and third runs change no owner, privilege, default privilege, policy or role attribute; a missing secret and a wrong superuser password are refused without printing a password; a rotated password is the only one that logs in. It needs only Docker and leaves nothing behind.
+
+## Row-level security: the PERMISSIVE switch
+
+Row-level security is the second line of defence (D162): the application decides who may do what, and the database refuses a row of another store if the application ever gets that wrong. A refusal is always a bug. The API answers `500` with code `STORE_SCOPE_MISSING`, `STORE_SCOPE_VIOLATION` or `STORE_CHANGE_REFUSED` and a correlation id, the backend logs an ERROR with the origin, and the `STORE_SCOPE_VIOLATION` alert fires (see "Alerts").
+
+If such a false positive blocks sales and cannot wait for a fixed release (D170, spec §11):
+
+1. Add `RESTAURANTPRO_STORE_SCOPE_ENFORCEMENT=PERMISSIVE` to `.env` (it is deliberately not in `.env.example`), then `docker compose up -d backend`.
+2. Check: the backend log has the ERROR `Store-scope enforcement is PERMISSIVE`, the `STORE_SCOPE_PERMISSIVE` alert fires, and the audit log has `STORE_SCOPE_PERMISSIVE_STARTED`. Every connection now sees all stores. Permissions are unchanged: the application still decides who may do what in which store.
+3. Report the bug with the correlation id from the 500 response and the ERROR log line.
+4. As soon as a fixed release is installed, remove the line from `.env` and `docker compose up -d backend`. The default is `ENFORCE`.
+
+Nothing in the database changes in either direction: no policy is dropped, so a restart is all it takes.
 
 ## Backups
 
@@ -149,7 +182,7 @@ Everyone logs in again afterwards: `backup.sh` leaves out the session rows.
 
 ### Point-in-time recovery drill
 
-`./test-pitr.sh` is the automated PITR drill (A33). It needs only Docker and starts the `postgres` service of `compose.yaml` itself (throwaway project, secrets and volumes), so it tests the settings that ship. It runs in production mode with throwaway age keys, so every file it checks is encrypted, and it scans the backup directory and the volume for plaintext after each phase. It checks the WAL settings, loads `test/sample.sql` and writes W1. It checks that the first default `basebackup.sh` run refuses the unmarked archive, then takes the base backup with `--new-cluster`. It writes W2, notes a target time T and a fingerprint of every table, writes W3, archives and copies the WAL, then restores to T into an isolated container. W1 and W2 must be present, W3 absent, and every table equal to the fingerprint at T. It then checks that a second restore on the same name is refused without `--force`, that `--force` refuses a volume it did not create and the Compose postgres container, and that a target beyond the archived WAL fails and leaves nothing behind. It also checks that base backup names and both markers carry the system identifier, that no staging or partial files are left under the backup directory, and that `--wal-only` skips behind a live lock, clears a stale one (dead or reused pid), and fails behind a lock two hours old. Last, it writes W4 and waits, without forcing anything, until `archive_timeout` archives it (the measured RPO), deletes the database container and volume, and restores to `latest` from the `pg-wal-archive` volume: W1 to W4 must be present. Then it starts a brand-new cluster next to the old archive. `basebackup.sh` must refuse it and change nothing, and the new cluster's archiving must block on a name clash. `basebackup.sh --new-cluster` must move the old files aside and unblock archiving, and a restore of the new cluster to a time T2 must hold N1 and not N2. Last comes a third cluster next to an archive and backup directory whose markers were removed. The default run must refuse the unmarked archive, `--new-cluster` must move it aside, a second `--new-cluster` must be refused (markers match, archiving healthy), and a restore to T3 must hold M1 and not M2. It prints the measured RPO and RTO, removes everything it created, and exits non-zero on any mismatch. It takes about 7 minutes, because it waits for `archive_timeout`. `./test-pitr.sh --quick` forces the WAL switch instead and takes about 2 minutes, but does not measure the RPO.
+`./test-pitr.sh` is the automated PITR drill (A33). It needs only Docker and starts the `postgres` service of `compose.yaml` itself (throwaway project, secrets and volumes), so it tests the settings that ship. It runs in production mode with throwaway age keys, so every file it checks is encrypted, and it scans the backup directory and the volume for plaintext after each phase. It checks the WAL settings, loads `test/sample.sql` and writes W1. It checks that the first default `basebackup.sh` run refuses the unmarked archive, then takes the base backup with `--new-cluster`. It writes W2, notes a target time T and a fingerprint of every table, writes W3, archives and copies the WAL, then restores to T into an isolated container. W1 and W2 must be present, W3 absent, and every table equal to the fingerprint at T. It then checks that a second restore on the same name is refused without `--force`, that `--force` refuses a volume it did not create and the Compose postgres container, and that a target beyond the archived WAL fails and leaves nothing behind. It also checks that base backup names and both markers carry the system identifier, that no staging or partial files are left under the backup directory, and that `--wal-only` skips behind a live lock, clears a stale one (dead or reused pid), and fails behind a lock two hours old. Last, it writes W4 and waits, without forcing anything, until `archive_timeout` archives it (the measured RPO), deletes the database container and volume, and restores to `latest` from the `pg-wal-archive` volume: W1 to W4 must be present. Then it starts a brand-new cluster next to the old archive. `basebackup.sh` must refuse it and change nothing, and the new cluster's archiving must block on a name clash. `basebackup.sh --new-cluster` must move the old files aside and unblock archiving, and a restore of the new cluster to a time T2 must hold N1 and not N2. Last comes a third cluster next to an archive and backup directory whose markers were removed. The default run must refuse the unmarked archive, `--new-cluster` must move it aside, a second `--new-cluster` must be refused (markers match, archiving healthy), and a restore to T3 must hold M1 and not M2. For the database roles (ADR 0039) it provisions the source through `db-provision` after loading the sample data and rotates both role passwords after T. The restores to T and to `latest` must keep the roles, the ownership, the privileges and the row-level security policies. The restore to T brings back the password hashes from before the rotation, and `provision.sh` must re-sync them to the current secrets (what the next `up` does on a real installation). It prints the measured RPO and RTO, removes everything it created, and exits non-zero on any mismatch. It takes about 7 minutes, because it waits for `archive_timeout`. `./test-pitr.sh --quick` forces the WAL switch instead and takes about 2 minutes, but does not measure the RPO.
 
 ## Backup encryption (production)
 
@@ -300,7 +333,9 @@ Before D98, the `pg-wal-archive` volume and an unencrypted `backups/` held plain
 
 ## Restore
 
-`./restore.sh [--force] [--identity KEY_FILE] ARCHIVE` decrypts `.age` archives (with the private key file, mode 0600 or 0400, outside `deploy/` and the archive's directory), checks the sidecar, the checksums and the dump, then restores in a single transaction: either everything is restored or nothing changes. It refuses a database that already holds tables unless you pass `--force`. With `--force` it restores into a staging database, then closes the target's connections, renames the target aside, renames the staging database into its place, and drops the old one. Nothing created after the backup survives, which is what a rollback needs. If the restore fails or is interrupted before the swap, the target stays as it was. If it is killed during the swap, no data is lost: the next run of `restore.sh` names the leftover databases (`restaurantpro_old_<pid>`, `restaurantpro_restore_<pid>`) and tells you how to rename one back.
+`./restore.sh [--force] [--identity KEY_FILE] [--secrets DIR] ARCHIVE` decrypts `.age` archives (with the private key file, mode 0600 or 0400, outside `deploy/` and the archive's directory), checks the sidecar, the checksums and the dump, then restores in a single transaction: either everything is restored or nothing changes. It refuses a database that already holds tables unless you pass `--force`. With `--force` it restores into a staging database, then closes the target's connections, renames the target aside, renames the staging database into its place, and drops the old one. Nothing created after the backup survives, which is what a rollback needs. If the restore fails or is interrupted before the swap, the target stays as it was. If it is killed during the swap, no data is lost: the next run of `restore.sh` names the leftover databases (`restaurantpro_old_<pid>`, `restaurantpro_restore_<pid>`) and tells you how to rename one back.
+
+**Roles.** `restore.sh` provisions the database roles ("Database roles") with `secrets/db_owner_password` and `secrets/db_app_password` (or those in `--secrets DIR`) before `pg_restore`, because the dump grants privileges to `restaurantpro_app`, and again after it, because the restored objects belong to the superuser (`pg_restore --no-owner`) until provisioning hands them to `restaurantpro_owner`. It refuses to start, leaving the target untouched, when either file is missing. The privileges of the dump are kept on purpose: the console functions (`mfa-break-glass.sh` and the session and audit console calls) have `EXECUTE` revoked from everyone, and a restore without privileges would give it back to the backend's role. A restore made with `pg_restore` by hand, without the provisioning, leaves objects owned by the superuser, and the backend refuses to start until `./postgres/provision.sh --container <postgres container>` has run.
 
 Restore the live installation:
 
@@ -317,7 +352,7 @@ A=backups/restaurantpro-<timestamp>.tar.age    # the identity is on a tmpfs, nev
 K=/dev/shm/operational.key                     # mode 0600, from its custodian
 age -d -i "$K" "$A" | tar -xf - config         # no age here? docker run --rm -i --network none -v "$K:/k:ro" restaurantpro-postgres:18.6-r1 age -d -i /k < "$A" | tar -xf - config
 cp config/.env config/compose.yaml config/Caddyfile .
-mkdir -m 700 secrets && cp config/secrets/* secrets/
+mkdir -m 700 secrets && cp config/secrets/* secrets/      # db_owner_password and db_app_password included
 chmod 644 secrets/*                                   # postgres and the backend read them as non-root users
 rm -rf config
 # also put backup-recipients.txt back (from the custodians' public keys) before starting
@@ -329,13 +364,13 @@ shred -u "$K"
 
 `restore.sh` decrypts into a private temporary directory and deletes it when it finishes.
 
-The database password in `secrets/db_password` must be the one the new PostgreSQL volume was created with. On a new volume, PostgreSQL takes whatever the file holds at its first start.
+The database password in `secrets/db_password` must be the one the new PostgreSQL volume was created with. On a new volume, PostgreSQL takes whatever the file holds at its first start. The two role passwords are set from their secrets by `restore.sh` and at every `docker compose up`. An archive from before ADR 0039 has no `db_owner_password` or `db_app_password`: create them as in "Upgrade to row-level security" before `restore.sh`.
 
 ### Restore drill
 
-`./test-backup-restore.sh` is the automated drill (acceptance criterion 10). It needs only Docker and runs in production mode with throwaway age keys. It starts two throwaway PostgreSQL containers, loads `test/sample.sql`, runs `backup.sh`, restores into the second container with `restore.sh`, and compares per-table row counts and checksums and the sequence positions. It also compares the normalised schema (`pg_dump --schema-only`), and checks retention, that Spring Session rows are left out, the refusal without `--force`, that `--force` works while a client is still connected and removes objects created after the backup, that a `--force` restore failing mid-way leaves the target unchanged with no leftover databases, and that a corrupted archive is rejected (by age for damaged ciphertext, by the checksums for a damaged payload). It also checks that the archive is ciphertext with its sidecar, mode 0600 in a 0700 directory. It removes everything it created and exits non-zero on any mismatch.
+`./test-backup-restore.sh` is the automated drill (acceptance criterion 10). It needs only Docker and runs in production mode with throwaway age keys. It starts two throwaway PostgreSQL containers, loads `test/sample.sql`, runs `backup.sh`, restores into the second container with `restore.sh`, and compares per-table row counts and checksums and the sequence positions. It also compares the normalised schema (`pg_dump --schema-only`), and checks retention, that Spring Session rows are left out, the refusal without `--force`, that `--force` works while a client is still connected and removes objects created after the backup, that a `--force` restore failing mid-way leaves the target unchanged with no leftover databases, and that a corrupted archive is rejected (by age for damaged ciphertext, by the checksums for a damaged payload). It also checks that the archive is ciphertext with its sidecar, mode 0600 in a 0700 directory. For the database roles (ADR 0039) it provisions the source as an installation is, checks that a restore without the role secrets is refused before touching the target, and after the restore and the `--force` restore that `restaurantpro_owner` owns every object, that `restaurantpro_app` owns nothing, has data privileges only, cannot write the Flyway history nor run a console function and is bound by row-level security, that row-level security and the policies match the source, and that the target's role passwords log in and the source's do not. It removes everything it created and exits non-zero on any mismatch.
 
-`test/real-schema-drill.sh` runs the same round trip on the schema the application really creates. It starts a throwaway PostgreSQL and runs the backend jar against it, so Flyway applies the real migrations and the bootstrap creates the company and the admin. It then fills every module through the HTTP API, runs `backup.sh` (production mode, throwaway keys), and restores into a second fresh container with `restore.sh`. It checks that every table and the schema match, and that the Spring Session tables come back empty. Last, it runs the backend on the restored database and checks that `GET /backoffice/stores` and the release list answer the same. PostgreSQL rewrites some CHECK constraints with equivalent casts after a dump; the drill accepts only those differences and counts them. Build the jar first with `(cd ../backend && ./mvnw -q package -DskipTests)`, then run `test/real-schema-drill.sh [JAR]`. It needs Docker, Java 25, curl, openssl and python3, takes about 1–2 minutes, generates throwaway credentials and never prints them, and removes everything it created.
+`test/real-schema-drill.sh` runs the same round trip on the schema the application really creates. It starts a throwaway PostgreSQL and runs the backend jar against it, so Flyway applies the real migrations and the bootstrap creates the company and the admin. It then fills every module through the HTTP API, runs `backup.sh` (production mode, throwaway keys), and restores into a second fresh container with `restore.sh`. It checks that every table and the schema match, and that the Spring Session tables come back empty. Last, it runs the backend on the restored database and checks that `GET /backoffice/stores` and the release list answer the same. Both backends run as an installation's does: pool `restaurantpro_app`, Flyway `restaurantpro_owner`; after each start the drill checks that every pool session is `restaurantpro_app` and that the roles are as D163. PostgreSQL rewrites some CHECK constraints with equivalent casts after a dump; the drill accepts only those differences and counts them. Build the jar first with `(cd ../backend && ./mvnw -q package -DskipTests)`, then run `test/real-schema-drill.sh [JAR]`. It needs Docker, Java 25, curl, openssl and python3, takes about 1–2 minutes, generates throwaway credentials and never prints them, and removes everything it created.
 
 Spec §11 asks for restore tests. Run the drill after every upgrade. Also restore a real archive into a scratch server from time to time.
 
@@ -357,6 +392,41 @@ docker compose up -d --build
 ```
 
 `--force` replaces the whole database, so the tables, schemas and Flyway history rows of the newer migration are gone. Starting the previous image alone does not undo a migration. Data entered after the backup is lost.
+
+### Upgrade to row-level security (ADR 0039)
+
+The first release with row-level security changes who connects to the database ("Database roles"). The backend no longer gets `secrets/db_password`, and Compose refuses to start it until the two role secrets exist, so do this **before** `docker compose up -d --build` (step 2 above):
+
+```bash
+openssl rand -hex 24 > secrets/db_owner_password
+openssl rand -hex 24 > secrets/db_app_password
+chmod 644 secrets/db_owner_password secrets/db_app_password   # as the other secrets, in the 700 directory
+```
+
+Then `docker compose up -d --build`. `db-provision` creates `restaurantpro_owner` and `restaurantpro_app` and hands every object of the existing database, owned by the superuser until now, to `restaurantpro_owner`. The backend then starts as `restaurantpro_app`, and Flyway, as `restaurantpro_owner`, applies the row-level security migrations. Check that `docker compose ps` shows `db-provision` `exited (0)` and the other services `healthy`, then that the backend's sessions are the application role's:
+
+```bash
+docker compose exec postgres psql -U restaurantpro -d restaurantpro -c \
+  "SELECT DISTINCT usename FROM pg_stat_activity WHERE application_name = 'PostgreSQL JDBC Driver'"   # restaurantpro_app only
+```
+
+Back up the new secrets with the others: `backup.sh` copies `secrets/` into every archive.
+
+### Rollback to R5
+
+Besides the rollback by restore above, an installation upgraded to row-level security can go back to the R5 release **without** a restore, keeping the data entered since: the R5 backend connects as the superuser, which row-level security never binds, and nothing in the database has to be undone. R5's Flyway, though, refuses to start on the migrated database: the row-level security migrations below its newest version (one version block per module, ADR 0001) are applied but missing to it, and those above it (for example reporting `V14006` over R5's `V14005`) are future. Start R5 with the override this release ships, which tells it to accept exactly those two kinds (`*:missing,*:future`):
+
+```bash
+docker compose stop backend caddy
+cd <the R5 package>/deploy                        # its compose.yaml, secrets/ and .env (secrets/db_password unchanged)
+docker compose -f compose.yaml -f <this release>/deploy/compose.rollback-r5.yaml up -d --build
+```
+
+The roles stay in the cluster unused, and the next upgrade picks up where this one left off (nothing to migrate again). Leave `compose.rollback-r5.yaml` out once you upgrade again.
+
+**This holds only until the inventory migration `V13080` is applied** (it backfills `stock_balance.store_id` and makes it `NOT NULL`, and R5 does not write that column). Once an installation has `V13080` (`SELECT 1 FROM flyway_schema_history WHERE version = '13080'`), roll back to R5 only by restoring the pre-upgrade backup, as in "To roll back" above.
+
+`./test-upgrade-roles.sh --r5-ref <R5 release tag>` is the drill (A69): it builds both releases' backend images, starts the R5 stack as a throwaway project, upgrades it with the steps above, and checks that the backend is healthy with `restaurantpro_app` as its only pool role and no `db_password`, that the roles are as D163 (no write on the Flyway history), that the new migrations were applied by `restaurantpro_owner` and the R5 data kept, that a second `up` changes no owner or privilege, and that the backend refuses a superuser, a `BYPASSRLS` role or the owner as its pool. Then it rolls back: R5 alone is refused by its Flyway, R5 with `compose.rollback-r5.yaml` is healthy. It needs Docker and git, ports 38443 and 38080 free, about 5–8 minutes, and leaves nothing behind but the two images.
 
 ### Upgrade to R5
 
@@ -466,18 +536,21 @@ Spec §14 #1: each company is its own installation, with its own processes, data
 **The installation guard.** `backup.sh` and `restore.sh` refuse a `--container` that Docker Compose manages for another project than this installation's. This holds with or without `--force`, so a mistyped container name can never back up or overwrite another company's database. A container Compose did not create (a throwaway one, or one made by `pitr-restore.sh`) is allowed. `pitr-restore.sh --force` replaces only what an earlier `pitr-restore.sh` with the same `--name` created, and refuses every Compose-managed container and volume. If you really mean to act on the other installation, from this one, name it exactly:
 
 ```bash
-./restore.sh --force --container rp-b-postgres-1 --other-installation rp-b --identity /dev/shm/b-operational.key ARCHIVE
+./restore.sh --force --container rp-b-postgres-1 --other-installation rp-b --identity /dev/shm/b-operational.key \
+  --secrets /path/to/rp-b/deploy/secrets ARCHIVE
 ```
+
+`--secrets` is required with `--other-installation`, and must be the **other** installation's directory: the restore sets the role passwords of the target cluster from it ("Database roles"). With this installation's own secrets, B's backend could no longer log in and this installation's passwords would open B, so `restore.sh` refuses to guess.
 
 `--other-installation PROJECT` accepts only that exact project, never this installation's own, and prints a WARNING naming both. It does not lift any other check: without `--force` the restore still stops at a non-empty database, and an archive still needs the identity of the installation it was encrypted for. Prefer running the scripts from the other installation's own `deploy/` directory and environment.
 
 **The isolation drill (A55).** `./test-two-installations.sh` brings up Compose projects `rp-a` and `rp-b` from `drills/isolation/a.env` and `b.env`, with their own secret directories (`drills/isolation/compose.isolation.yaml`), throwaway age keys and generated credentials (production mode, never printed). It fails on the first miss:
 
-1. **separation:** no container, network or volume is shared, and no secret, recipients file or writable path is mounted in both.
-2. **credentials:** A's admin password and session cookie get 401 on B, and the reverse. A's database password fails on B's PostgreSQL, and A's Caddy root certificate does not verify B.
+1. **separation:** no container, network or volume is shared, and no secret, recipients file or writable path is mounted in both. Each backend holds the two role secrets and never `db_password`, its pool sessions are `restaurantpro_app` only, and each database's roles are as D163.
+2. **credentials:** A's admin password and session cookie get 401 on B, and the reverse. A's database passwords (the superuser's, `restaurantpro_owner`'s and `restaurantpro_app`'s) fail on B's PostgreSQL, and A's Caddy root certificate does not verify B.
 3. **network:** B's backend can neither resolve nor connect to A's database.
-4. **restore:** back up A, change A, restore A. A matches its backup, and B's `pg_dump` checksum and per-table fingerprint are unchanged.
-5. **tooling:** A's operator environment reaches only A. `restore.sh`, `backup.sh` and `pitr-restore.sh` refuse B's container from A's environment unless `--other-installation rp-b` is given, A's key cannot decrypt B's backup, and B is unchanged.
+4. **restore:** back up A, change A, restore A. A matches its backup, its roles are as D163, its backend comes back healthy with `restaurantpro_app` as its only pool role, and B's `pg_dump` checksum and per-table fingerprint are unchanged.
+5. **tooling:** A's operator environment reaches only A. `restore.sh`, `backup.sh` and `pitr-restore.sh` refuse B's container from A's environment unless `--other-installation rp-b` is given (for `restore.sh`, with B's `--secrets`; without them it is refused and A's role passwords still fail on B), A's key cannot decrypt B's backup, and B is unchanged.
 6. **teardown:** both stacks are removed with their volumes, and nothing of either is left.
 
 It writes `drills/isolation/drill-isolation-<UTC>.json` and exits non-zero on any violation. It needs Docker, curl and openssl, and ports 18443, 18080, 28443 and 28080 free, and takes about 3–5 minutes. `ISOLATION_FAULT=<step> ./test-two-installations.sh` injects a real violation at that step, and the drill must fail there. `./test-two-installations.sh --self-test` runs shellcheck, the clean drill and then every fault in turn. Run the drill after an upgrade that touches `compose.yaml` or the backup scripts, and before putting a second company on a host. S54 ran it on the R4 schema (backend image built from the integration branch, 155 tables per installation): PASS, 26 checks, exit 0, nothing left behind.
@@ -534,4 +607,5 @@ Measured in S54 on one laptop, with the backend jar, PostgreSQL and the 10 clien
 - The Caddy container runs as root (image default) to bind ports 80 and 443.
 - Single sign-on needs a network route from the backend to the provider, which the shipped Compose file does not give (see "Single sign-on (optional)").
 - Single sign-on: the discovery and token calls to the provider have bounded timeouts (3 s connect, 5 s read), but the fetch of the provider's signing keys (JWKS), made by Spring Security when it checks the first ID token and again when the key id changes, has none. A provider that accepts the connection and never answers can hold that callback request (one request thread) indefinitely; password login and the POS are not affected. Follow-up: give the ID token decoder a client with the same timeouts.
+- `test/real-schema-drill.sh` predates R4: its HTTP journey writes only the R1-R3 tables, so the check that every table holds rows fails on the R4 and R5 tables, and its schema normaliser does not yet accept two re-deparsed expressions of R4 (a `CASE` with a cast array and regrouped `AND`s in a `CHECK`). The role checks it gained with ADR 0039 pass when those two checks are relaxed. **Open, for S70:** extend the journey to R4/R5 and the normaliser; until then the drill is red for these two pre-existing reasons. The restore half of A79 (a restored installation serves as `restaurantpro_app`) is proven by `test-two-installations.sh` (step 4).
 - The `docker` filesystem is left out of the backup status file when Docker's root directory is not on the host's filesystem (Docker Desktop): the disk alert then covers the backup directory and the backend's own disk only.

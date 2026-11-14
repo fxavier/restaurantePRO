@@ -26,6 +26,11 @@
 #  11. an unmarked archive and backup directory (another cluster's files, no marker): refused;
 #      --new-cluster moves them aside; a second --new-cluster is refused (markers match, archiving
 #      healthy); a restore of the new base to T3 works
+# Database roles (ADR 0039, D163; A79): compose's db-provision provisions the source after step 2; the role passwords
+# are rotated after T (4b). The restore to T (6) and to latest (9) keep the roles, the ownership, the grants (no
+# write on the Flyway history), row-level security and the policies; the restore to T brings back the password hashes
+# from before the rotation, and provision.sh re-syncs them to the current secrets (6, checked in 6b by logging in
+# with a copy of the re-synced verifier); 6b's restore.sh provisions its target.
 # Also: base backup names carry the cluster's system identifier, no plaintext staging or partial
 # files are left in the backup directory, every file in it and in the pg-wal-archive volume is age
 # ciphertext with its sidecar (or a marker), --wal-only skips behind a live lock, clears a stale one
@@ -79,6 +84,8 @@ step() { echo "--- $*" >&2; }
 . "$DEPLOY_DIR/lib/age.sh"
 # shellcheck source=test/keys.sh
 . "$DEPLOY_DIR/test/keys.sh"
+# shellcheck source=lib/roles.sh
+. "$DEPLOY_DIR/lib/roles.sh"
 KEYS="$WORK/keys"
 mkdir -m 700 "$KEYS"
 age_image_ready
@@ -89,11 +96,16 @@ pitr_restore() { "$DEPLOY_DIR/pitr-restore.sh" --identity "$KEYS/operational.key
 mkdir "$WORK/secrets"
 openssl rand -hex 16 >"$WORK/secrets/db_password"
 openssl rand -hex 16 >"$WORK/secrets/admin_initial_password"
+make_role_secrets "$WORK/secrets"
 chmod 644 "$WORK/secrets/"*
 cat >"$WORK/drill.override.yaml" <<YAML
 secrets:
   db_password:
     file: $WORK/secrets/db_password
+  db_owner_password:
+    file: $WORK/secrets/db_owner_password
+  db_app_password:
+    file: $WORK/secrets/db_app_password
   admin_initial_password:
     file: $WORK/secrets/admin_initial_password
 YAML
@@ -103,6 +115,9 @@ export RESTAURANTPRO_HOSTNAME=drill.invalid RESTAURANTPRO_BOOTSTRAP_COMPANY_NAME
 
 psql_in() { docker exec -i "$1" psql -X -q -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB" "${@:2}"; }
 q() { psql_in "$1" -At -c "$2"; }
+verifier() { q "$1" "SELECT rolpassword FROM pg_authid WHERE rolname = '$2'"; } # a SCRAM verifier: never printed
+provision_by_compose() { compose run --rm db-provision >"$WORK/provision.log" 2>&1 || { cat "$WORK/provision.log" >&2; fail "db-provision failed"; }; }
+login_on_src() { role_login "${RUN_ID}_internal" postgres "$1" "$2"; } # $1 role, $2 password file
 
 # One line per user table ("schema.table|rows|md5 of all rows in a stable order"), as test-backup-restore.sh.
 fingerprint() {
@@ -176,6 +191,15 @@ q "$SRC" "CREATE SCHEMA drill; CREATE TABLE drill.pitr_event (id int PRIMARY KEY
 w1="$(write "$SRC" 1 'W1 before the base backup')"
 ok "W1 committed at $w1"
 
+step "2b. the roles, provisioned by compose's db-provision"
+provision_by_compose
+assert_roles "$SRC" "$DB" "source after db-provision"
+source_rls="$(rls_summary "$SRC")"
+app_verifier_at_t="$(verifier "$SRC" restaurantpro_app)"
+owner_verifier_at_t="$(verifier "$SRC" restaurantpro_owner)"
+[[ -n "$app_verifier_at_t" && -n "$owner_verifier_at_t" ]] || fail "the roles have no password"
+ok "db-provision: roles as D163 ($source_rls)"
+
 step "3. base backup"
 # A new installation has archived WAL before its first base backup: the default run refuses that unmarked
 # archive, and the documented first run is --new-cluster.
@@ -199,6 +223,17 @@ target="$(q "$SRC" "SELECT to_char(clock_timestamp() AT TIME ZONE 'UTC', 'YYYY-M
 w3="$(write "$SRC" 3 'W3 after T')"
 [[ "$w2" < "$target" && "$target" < "$w3" ]] || fail "T is not between W2 and W3 ($w2 / $target / $w3)"
 ok "W2 at $w2 < T = $target < W3 at $w3"
+
+step "4b. the role passwords are rotated after T"
+cp "$WORK/secrets/db_app_password" "$WORK/old_app_password"
+make_role_secrets "$WORK/secrets" # new db_owner_password and db_app_password, as an operator rotating them
+provision_by_compose
+[[ "$(verifier "$SRC" restaurantpro_app)" != "$app_verifier_at_t" && "$(verifier "$SRC" restaurantpro_owner)" != "$owner_verifier_at_t" ]] \
+  || fail "db-provision did not re-set the passwords"
+[[ "$(login_on_src restaurantpro_app "$WORK/secrets/db_app_password")" == 1 ]] || fail "the new app password does not log in"
+if login_on_src restaurantpro_app "$WORK/old_app_password" >/dev/null; then fail "the old app password still logs in"; fi
+app_verifier_latest="$(verifier "$SRC" restaurantpro_app)"
+ok "new db_owner_password and db_app_password: db-provision re-set both; only the new app password logs in"
 
 step "5. archive the segment holding W3 and copy the archive"
 w3_wal="$(q "$SRC" 'SELECT pg_walfile_name(pg_current_wal_insert_lsn())')"
@@ -256,6 +291,14 @@ q "$PITR_NAME" "SHOW restore_command" | grep -q . && fail "restore_command left 
 q "$PITR_NAME" "CREATE TEMP TABLE drill_probe (i int); INSERT INTO drill_probe VALUES (1)" >/dev/null \
   || fail "restored server does not accept writes"
 ok "isolated (network none), promoted, writable, recovery settings removed; restore took ${rto}s"
+assert_roles "$PITR_NAME" "$DB" "PITR to T"
+[[ "$(rls_summary "$PITR_NAME")" == "$source_rls" ]] || fail "PITR to T: row-level security $(rls_summary "$PITR_NAME"), source $source_rls"
+[[ "$(verifier "$PITR_NAME" restaurantpro_app)" == "$app_verifier_at_t" ]] || fail "PITR to T did not bring back the hashes from T"
+"$DEPLOY_DIR/postgres/provision.sh" --container "$PITR_NAME" --secrets "$WORK/secrets" 2>/dev/null || fail "provisioning the PITR copy failed"
+resynced_verifier="$(verifier "$PITR_NAME" restaurantpro_app)"
+[[ "$resynced_verifier" != "$app_verifier_at_t" ]] || fail "provision.sh did not re-sync the restored password"
+assert_roles "$PITR_NAME" "$DB" "PITR to T, provisioned again"
+ok "roles, ownership, grants, RLS and policies came back with the cluster ($source_rls); the hashes from T too, re-synced by provision.sh"
 
 step "6b. bring the restored data into a database with backup.sh + restore.sh (README procedure)"
 export_archive="$("$DEPLOY_DIR/backup.sh" --container "$PITR_NAME" --dir "$WORK/export" --keep 1 2>/dev/null)"
@@ -265,9 +308,20 @@ for _ in $(seq 1 60); do
   docker exec "$LIVE" pg_isready -q -h 127.0.0.1 -U "$DB_USER" -d "$DB" && break
   sleep 1
 done
-"$DEPLOY_DIR/restore.sh" --container "$LIVE" --identity "$KEYS/operational.key" "$export_archive" 2>/dev/null
+"$DEPLOY_DIR/restore.sh" --container "$LIVE" --identity "$KEYS/operational.key" --secrets "$WORK/secrets" "$export_archive" 2>/dev/null
 [[ "$(rows "$LIVE")" == "1,2" ]] || fail "rows after backup.sh + restore.sh of the restored data: $(rows "$LIVE")"
-ok "exported with backup.sh and loaded with restore.sh: rows $(rows "$LIVE")"
+assert_roles "$LIVE" "$DB" "backup.sh + restore.sh of the PITR copy"
+ok "exported with backup.sh and loaded with restore.sh: rows $(rows "$LIVE"); roles as D163"
+# The PITR copy has no network: its re-synced verifier is checked on LIVE, which has one.
+live_ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$LIVE")"
+{ # on stdin, never a command line; single-quoted, so psql interpolates nothing in it
+  printf "\\set verifier '%s'\n" "$resynced_verifier"
+  printf '%s\n' 'CREATE ROLE pitr_probe LOGIN;' "ALTER ROLE pitr_probe PASSWORD :'verifier';"
+} | psql_in "$LIVE"
+[[ "$(role_login bridge "$live_ip" pitr_probe "$WORK/secrets/db_app_password")" == 1 ]] \
+  || fail "the PITR copy's re-synced verifier does not accept the current db_app_password"
+if role_login bridge "$live_ip" pitr_probe "$WORK/old_app_password" >/dev/null; then fail "the re-synced verifier accepts the password from T"; fi
+ok "the PITR copy's re-synced app password is the current db_app_password, not the one from T"
 docker rm -f -v "$LIVE" >/dev/null
 
 step "7. a second restore on the same name is refused without --force"
@@ -325,6 +379,10 @@ pitr_restore --target-time latest --name "$PITR_NAME" --wal-volume "${RUN_ID}_pg
 rto=$((SECONDS - t0))
 [[ "$(rows "$PITR_NAME")" == "1,2,3,4" ]] || fail "rows after restore to latest: $(rows "$PITR_NAME"), expected 1,2,3,4"
 ok "database container and volume deleted; restore to latest from the pg-wal-archive volume has W1-W4"
+assert_roles "$PITR_NAME" "$DB" "PITR to latest"
+[[ "$(rls_summary "$PITR_NAME")" == "$source_rls" ]] || fail "PITR to latest: row-level security $(rls_summary "$PITR_NAME"), source $source_rls"
+[[ "$(verifier "$PITR_NAME" restaurantpro_app)" == "$app_verifier_latest" ]] || fail "PITR to latest: not the rotated password"
+ok "PITR to latest: roles as D163, RLS as the source, the rotated passwords"
 ok "RPO measured: $rpo_note"
 ok "RTO measured: ${rto}s for pitr-restore.sh (base backup + WAL replay, this drill's data size)"
 
