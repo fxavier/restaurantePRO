@@ -10,15 +10,20 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.xavier.backend.OwnerDatabase;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.StoreScopes;
 import com.xavier.backend.inventory.InventoryFixtures;
 import com.xavier.backend.inventory.InventoryModuleTest;
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
@@ -123,6 +128,44 @@ class InterStoreTransferUnderRlsTest {
                 {"lines": [{"stockItemId": "%s", "quantityReceived": 1}]}""".formatted(item))
                 .andExpect(status().isForbidden());
         mvc.perform(get(BO + "/transfers/" + UUID.randomUUID()).with(storeCManager)).andExpect(status().isNotFound());
+    }
+
+    /**
+     * A transfer the R5 image shipped (its line has no value_shipped yet) gets its value from V13080's own backfill
+     * statement, and store B's receiver then receives it, through TransferService in its store's scope, at exactly
+     * that value. Completes {@code StockBalanceStoreUpgradeTest}, which proves the backfill on a real R5 install.
+     */
+    @Test
+    void aTransferShippedBeforeTheUpgradeIsReceivedAtItsBackfilledValue() throws Exception {
+        UUID transfer = id(mvc.perform(idem(post(BO + "/transfers")).with(managerOf(storeA))
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"fromWarehouseId": "%s", "toWarehouseId": "%s",
+                                 "lines": [{"stockItemId": "%s", "quantity": 700}]}""".formatted(warehouseA,
+                                warehouseB, item)))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        command(transfer, "ship", managerOf(storeA)).andExpect(status().isOk());
+        JdbcClient owner = OwnerDatabase.shared().jdbc();
+        owner.sql("UPDATE inventory.stock_transfer_line SET value_shipped = NULL WHERE transfer_id = ?")
+                .param(transfer).update();
+
+        owner.sql(backfillOfV13080() + " AND t.id = ?").param(transfer).update();
+
+        assertThat(owner.sql("SELECT value_shipped FROM inventory.stock_transfer_line WHERE transfer_id = ?")
+                .param(transfer).query(BigDecimal.class).single()).isEqualByComparingTo("1.0000");
+        command(transfer, "receive", managerOf(storeB), """
+                {"lines": [{"stockItemId": "%s", "quantityReceived": 700}]}""".formatted(item))
+                .andExpect(status().isOk());
+        assertThat(movementsOf(transfer)).last().isEqualTo("TRANSFER_IN|" + storeB + "|" + warehouseB
+                + "|700.000000|1.0000");
+    }
+
+    /** The value_shipped backfill of V13080, as migrated (its last statement, without the closing semicolon). */
+    private static String backfillOfV13080() throws IOException {
+        String migration = new ClassPathResource(
+                "db/migration/inventory/V13080__inventory_stock_balance_store.sql")
+                .getContentAsString(StandardCharsets.UTF_8);
+        String backfill = migration.substring(migration.indexOf("UPDATE inventory.stock_transfer_line")).strip();
+        return backfill.substring(0, backfill.length() - 1);
     }
 
     private ResultActions command(UUID transfer, String command, RequestPostProcessor actor) throws Exception {
