@@ -19,9 +19,11 @@ import org.springframework.transaction.support.TransactionTemplate;
  * D163: after Flyway, the backend refuses to start when the pool's role is a superuser, has {@code BYPASSRLS} or owns
  * an application object (row-level security would not bind it), or when a table with a {@code store_id},
  * {@code from_store_id} or {@code to_store_id} column has neither row-level security enabled, forced and a policy, nor
- * a registration in {@code shared.rls_unscoped_table} (a restore that lost its policies, a dropped policy). The table
- * check covers every schema where row-level security has been set up, i.e. that has at least one protected or
- * registered table; the policy slices bring the remaining module schemas in, and the coverage test asserts each.
+ * a registration in {@code shared.rls_unscoped_table}. The expected set is data written by the migrations: every table
+ * in {@code shared.rls_protected_table} (filled by the V1008 helpers and {@code rls_register_protected}) must keep
+ * ENABLE, FORCE and a policy, so a restore without policies or a schema that lost all of them is refused; and every
+ * store table of a schema that appears in either registry must be protected or registered unscoped. A module schema in
+ * neither registry (before its policy slice) is not checked yet.
  *
  * <p>D170: in {@code PERMISSIVE} mode it logs ERROR and writes one system audit row
  * {@value #PERMISSIVE_STARTED}; the alert is {@code config.alerts.StoreScopeAlertSource}'s.
@@ -91,43 +93,53 @@ class StoreScopeStartupCheck implements InitializingBean {
             problems.add("the pool's role owns " + owned + " application object(s) (an owner is not bound by "
                     + "row-level security unless forced, and may change it)");
         }
-        List<Boolean> registryReadable = jdbc.sql("""
+        List<Boolean> registriesReadable = jdbc.sql("""
                         SELECT has_schema_privilege(current_user, n.oid, 'USAGE')
                            AND has_table_privilege(current_user, c.oid, 'SELECT')
                         FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-                        WHERE n.nspname = 'shared' AND c.relname = 'rls_unscoped_table'""")
+                        WHERE n.nspname = 'shared' AND c.relname IN ('rls_unscoped_table', 'rls_protected_table')""")
                 .query(Boolean.class).list();
-        if (registryReadable.isEmpty()) {
-            problems.add("the row-level security migrations are missing (shared.rls_unscoped_table)");
+        if (registriesReadable.size() < 2) {
+            problems.add("the row-level security migrations are missing (shared.rls_unscoped_table, "
+                    + "shared.rls_protected_table)");
             return problems;
         }
-        if (!registryReadable.getFirst()) {
-            problems.add("the pool's role cannot read shared.rls_unscoped_table (run the role provisioning)");
+        if (registriesReadable.contains(false)) {
+            problems.add("the pool's role cannot read the row-level security registries (run the role provisioning)");
             return problems;
         }
-        List<String> uncovered = jdbc.sql("""
-                        WITH store_table AS (
-                            SELECT c.oid, c.relnamespace
-                            FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+        List<String> unprotected = jdbc.sql("""
+                        WITH protected AS (
+                            SELECT c.oid FROM pg_catalog.pg_class c
+                            WHERE c.relrowsecurity AND c.relforcerowsecurity
+                              AND EXISTS (SELECT 1 FROM pg_catalog.pg_policy p WHERE p.polrelid = c.oid)),
+                        registered AS (
+                            SELECT table_name::oid AS oid FROM shared.rls_protected_table
+                            UNION SELECT table_name::oid FROM shared.rls_unscoped_table),
+                        registered_schema AS (
+                            SELECT DISTINCT c.relnamespace FROM pg_catalog.pg_class c
+                            WHERE c.oid IN (SELECT oid FROM registered)),
+                        store_table AS (
+                            SELECT c.oid FROM pg_catalog.pg_class c
+                                JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
                             WHERE c.relkind IN ('r', 'p') AND %s
+                              AND c.relnamespace IN (SELECT relnamespace FROM registered_schema)
                               AND EXISTS (SELECT 1 FROM pg_catalog.pg_attribute a
                                           WHERE a.attrelid = c.oid AND NOT a.attisdropped
-                                            AND a.attname IN ('store_id', 'from_store_id', 'to_store_id'))),
-                        covered AS (
-                            SELECT c.oid, c.relnamespace FROM pg_catalog.pg_class c
-                            WHERE c.relrowsecurity AND c.relforcerowsecurity
-                              AND EXISTS (SELECT 1 FROM pg_catalog.pg_policy p WHERE p.polrelid = c.oid)
+                                            AND a.attname IN ('store_id', 'from_store_id', 'to_store_id')))
+                        SELECT oid::regclass::text FROM (
+                            SELECT c.oid FROM shared.rls_protected_table r
+                                JOIN pg_catalog.pg_class c ON c.oid = r.table_name
                             UNION
-                            SELECT c.oid, c.relnamespace FROM shared.rls_unscoped_table u
-                                JOIN pg_catalog.pg_class c ON c.oid = u.table_name)
-                        SELECT s.oid::regclass::text FROM store_table s
-                        WHERE s.oid NOT IN (SELECT oid FROM covered)
-                          AND s.relnamespace IN (SELECT relnamespace FROM covered)
+                            SELECT oid FROM store_table
+                            WHERE oid NOT IN (SELECT table_name::oid FROM shared.rls_unscoped_table)) expected
+                        WHERE oid NOT IN (SELECT oid FROM protected)
                         ORDER BY 1""".formatted(APPLICATION_SCHEMA))
                 .query(String.class).list();
-        if (!uncovered.isEmpty()) {
-            problems.add("store tables without row-level security (enabled, forced, with a policy) or an unscoped "
-                    + "registration: " + uncovered);
+        if (!unprotected.isEmpty()) {
+            problems.add("tables without row-level security (enabled, forced, with a policy) although registered as "
+                    + "protected, or store tables of a covered schema with neither protection nor an unscoped "
+                    + "registration: " + unprotected);
         }
         return problems;
     }

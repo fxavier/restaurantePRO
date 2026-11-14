@@ -121,7 +121,9 @@ public class RowLevelSecurityCoverageTest {
                         SELECT c.oid, c.oid::regclass::text AS name, c.relname, c.relrowsecurity AS enabled,
                                c.relforcerowsecurity AS forced,
                                EXISTS (SELECT 1 FROM shared.rls_unscoped_table u WHERE u.table_name = c.oid)
-                                   AS registered
+                                   AS registered,
+                               EXISTS (SELECT 1 FROM shared.rls_protected_table p WHERE p.table_name = c.oid)
+                                   AS protected_registered
                         FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
                         WHERE n.nspname = ? AND c.relkind IN ('r', 'p')
                         ORDER BY c.relname""")
@@ -135,6 +137,10 @@ public class RowLevelSecurityCoverageTest {
             if (!Boolean.TRUE.equals(table.get("enabled")) || !Boolean.TRUE.equals(table.get("forced"))) {
                 problems.add(name + ": neither registered UNSCOPED nor protected (ENABLE + FORCE)");
                 continue;
+            }
+            if (!Boolean.TRUE.equals(table.get("protected_registered"))) {
+                problems.add(name + ": protected but not in shared.rls_protected_table (use the V1008 helpers, or "
+                        + "shared.rls_register_protected for a special table)");
             }
             List<Map<String, Object>> policies = policies(jdbc, ((Number) table.get("oid")).longValue());
             if (special.contains((String) table.get("relname"))) {
@@ -197,6 +203,8 @@ public class RowLevelSecurityCoverageTest {
             owner.sql("SELECT " + helper).query().listOfRows();
             Map<String, Object> created = policies(owner, owner.sql("SELECT 'pg_temp." + relname
                     + "'::regclass::oid").query(Long.class).single()).getFirst();
+            owner.sql("DELETE FROM shared.rls_protected_table WHERE table_name = 'pg_temp." + relname
+                    + "'::regclass").update();
             owner.sql("DROP TABLE pg_temp." + relname).update();
             return created;
         });
@@ -228,6 +236,8 @@ public class RowLevelSecurityCoverageTest {
 
     private static void dropScratch(JdbcClient owner) {
         owner.sql("DELETE FROM shared.rls_unscoped_table WHERE table_name::text LIKE ?").param(SCRATCH + ".%")
+                .update();
+        owner.sql("DELETE FROM shared.rls_protected_table WHERE table_name::text LIKE ?").param(SCRATCH + ".%")
                 .update();
         owner.sql("DROP SCHEMA IF EXISTS " + SCRATCH + " CASCADE").update();
     }

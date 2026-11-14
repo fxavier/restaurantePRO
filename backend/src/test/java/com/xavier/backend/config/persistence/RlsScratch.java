@@ -53,6 +53,8 @@ final class RlsScratch implements AutoCloseable {
         OwnerDatabase.shared().tx(owner -> {
             owner.sql("DELETE FROM shared.rls_unscoped_table WHERE table_name::text LIKE ?").param(schema + ".%")
                     .update();
+            owner.sql("DELETE FROM shared.rls_protected_table WHERE table_name::text LIKE ?").param(schema + ".%")
+                    .update();
             owner.sql("DROP SCHEMA IF EXISTS " + schema + " CASCADE").update();
         });
     }

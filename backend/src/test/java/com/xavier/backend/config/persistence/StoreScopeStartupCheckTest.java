@@ -93,6 +93,47 @@ class StoreScopeStartupCheckTest {
     }
 
     @Test
+    void aSchemaWhoseOnlyProtectedTablesAllLostTheirProtectionIsRefused() throws SQLException {
+        List<String> problems = inRolledBackTransaction(jdbc -> {
+            jdbc.sql("CREATE SCHEMA rls_check_whole").update();
+            for (String table : List.of("disabled", "unforced", "policyless")) {
+                jdbc.sql("CREATE TABLE rls_check_whole." + table + " (id uuid PRIMARY KEY, store_id uuid NOT NULL)")
+                        .update();
+                jdbc.sql("SELECT shared.rls_protect_store_table('rls_check_whole." + table + "')").query()
+                        .listOfRows();
+            }
+            // a restore without policies, or a migration gone wrong: nothing in the schema is protected any more
+            jdbc.sql("ALTER TABLE rls_check_whole.disabled DISABLE ROW LEVEL SECURITY").update();
+            jdbc.sql("ALTER TABLE rls_check_whole.unforced NO FORCE ROW LEVEL SECURITY").update();
+            jdbc.sql("DROP POLICY store_scope ON rls_check_whole.policyless").update();
+            jdbc.sql("ALTER TABLE rls_check_whole.policyless DISABLE ROW LEVEL SECURITY").update();
+            jdbc.sql("ALTER TABLE rls_check_whole.unforced DISABLE ROW LEVEL SECURITY").update();
+            jdbc.sql("SET LOCAL ROLE " + TestcontainersConfiguration.APP_ROLE).update();
+            return StoreScopeStartupCheck.problems(jdbc);
+        });
+
+        assertThat(problems).singleElement().asString().contains("rls_check_whole.disabled",
+                "rls_check_whole.unforced", "rls_check_whole.policyless");
+    }
+
+    @Test
+    void aSpecialTableRegisteredAsProtectedThatLostItsPolicyIsRefused() throws SQLException {
+        List<String> problems = inRolledBackTransaction(jdbc -> {
+            jdbc.sql("CREATE SCHEMA rls_check_special").update();
+            jdbc.sql("CREATE TABLE rls_check_special.journal (id uuid PRIMARY KEY, store_id uuid)").update();
+            jdbc.sql("ALTER TABLE rls_check_special.journal ENABLE ROW LEVEL SECURITY").update();
+            jdbc.sql("ALTER TABLE rls_check_special.journal FORCE ROW LEVEL SECURITY").update();
+            jdbc.sql("CREATE POLICY journal_read ON rls_check_special.journal FOR SELECT USING (true)").update();
+            jdbc.sql("SELECT shared.rls_register_protected('rls_check_special.journal')").query().listOfRows();
+            jdbc.sql("DROP POLICY journal_read ON rls_check_special.journal").update();
+            jdbc.sql("SET LOCAL ROLE " + TestcontainersConfiguration.APP_ROLE).update();
+            return StoreScopeStartupCheck.problems(jdbc);
+        });
+
+        assertThat(problems).singleElement().asString().contains("rls_check_special.journal");
+    }
+
+    @Test
     void theBackendRefusesToStartAsTheSuperuser() throws SQLException {
         try (Connection connection = superuser()) {
             StoreScopeStartupCheck check = new StoreScopeStartupCheck(new SingleConnectionDataSource(connection, true),

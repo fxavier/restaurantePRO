@@ -64,6 +64,27 @@ SELECT format('((SELECT shared.rls_all_stores()) OR %s = ANY ((SELECT shared.rls
               p_store_column)
 $$;
 
+-- PROTECTED: every table a policy slice protected, written by the helpers below (and by rls_register_protected for
+-- the SPECIAL tables with hand-written policies). The startup check refuses to start when a registered table lost
+-- ENABLE, FORCE or its policies, so losing every policy of a schema (a restore without policies) is caught too.
+CREATE TABLE shared.rls_protected_table
+(
+    table_name regclass NOT NULL,
+    CONSTRAINT rls_protected_table_pk PRIMARY KEY (table_name)
+);
+ALTER TABLE shared.rls_protected_table ENABLE ROW LEVEL SECURITY;
+ALTER TABLE shared.rls_protected_table FORCE ROW LEVEL SECURITY;
+CREATE POLICY registry_read ON shared.rls_protected_table AS PERMISSIVE FOR SELECT TO PUBLIC USING (true);
+
+-- For a SPECIAL table (D168: audit_event, stock_transfer, warehouse) after its own policies are created.
+CREATE FUNCTION shared.rls_register_protected(p_table regclass) RETURNS void
+    LANGUAGE sql AS
+$$
+INSERT INTO shared.rls_protected_table (table_name)
+VALUES (p_table)
+ON CONFLICT (table_name) DO NOTHING
+$$;
+
 CREATE FUNCTION shared.rls_require_store_column(p_table regclass) RETURNS void
     LANGUAGE plpgsql AS
 $$
@@ -92,6 +113,7 @@ BEGIN
     EXECUTE format('CREATE TRIGGER store_scope_fixed BEFORE UPDATE OF store_id ON %s FOR EACH ROW '
                        || 'WHEN (OLD.store_id IS DISTINCT FROM NEW.store_id) '
                        || 'EXECUTE FUNCTION shared.rls_reject_scope_change()', p_table);
+    PERFORM shared.rls_register_protected(p_table);
 END;
 $$;
 
@@ -110,6 +132,7 @@ BEGIN
     EXECUTE format('CREATE TRIGGER store_scope_fixed BEFORE UPDATE OF store_id ON %s FOR EACH ROW '
                        || 'WHEN (OLD.store_id IS DISTINCT FROM NEW.store_id) '
                        || 'EXECUTE FUNCTION shared.rls_reject_scope_change()', p_table);
+    PERFORM shared.rls_register_protected(p_table);
 END;
 $$;
 
@@ -133,6 +156,7 @@ BEGIN
                        || 'WHEN (OLD.%I IS DISTINCT FROM NEW.%I) '
                        || 'EXECUTE FUNCTION shared.rls_reject_scope_change()', p_fk_column, p_table, p_fk_column,
                    p_fk_column);
+    PERFORM shared.rls_register_protected(p_table);
 END;
 $$;
 
@@ -209,7 +233,8 @@ SELECT shared.rls_register_unscoped('public.event_publication',
                                         || 'with no actor; never reaches a client');
 SELECT shared.rls_register_unscoped('public.event_publication_archive',
                                     'Spring Modulith event registry archive: as event_publication');
-SELECT shared.rls_register_unscoped('public.flyway_schema_history', 'Flyway migration history: schema metadata');
+SELECT shared.rls_register_unscoped('public.flyway_schema_history',
+                                    'Flyway migration history: schema metadata');
 SELECT shared.rls_register_unscoped('shared.idempotency_record',
                                     'Idempotency-Key records are keyed by the principal (D38); only a replay to '
                                         || 'the same principal reaches a client');
@@ -218,3 +243,6 @@ SELECT shared.rls_register_unscoped('shared.spring_session_attributes',
                                     'Spring Session JDBC attributes: read before authentication');
 SELECT shared.rls_register_unscoped('shared.rls_unscoped_table',
                                     'This registry: read-only to the pool through its own read policy');
+SELECT shared.rls_register_unscoped('shared.rls_protected_table',
+                                    'The protected-table registry: read-only to the pool through its own read policy');
+

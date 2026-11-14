@@ -56,6 +56,8 @@ class StoreProbeTest {
         if (connection != null) {
             connection.close();
         }
+        OwnerDatabase.shared().jdbc().sql("DELETE FROM shared.rls_protected_table WHERE table_name::text LIKE ?")
+                .param(SCHEMA + ".%").update();
         OwnerDatabase.shared().jdbc().sql("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE").update();
     }
 
