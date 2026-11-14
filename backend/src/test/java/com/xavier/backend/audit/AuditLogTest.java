@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.xavier.backend.OwnerDatabase;
 import com.xavier.backend.TestcontainersConfiguration;
 import com.xavier.backend.access.Actor;
 import com.xavier.backend.access.Permission;
@@ -22,7 +23,8 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.modulith.test.ApplicationModuleTest;
 import org.springframework.transaction.support.TransactionTemplate;
 
-@ApplicationModuleTest(extraIncludes = {"shared", "access"})
+// "config": the store-scope hook (ADR 0039); a module test drops the configuration of modules it does not include
+@ApplicationModuleTest(extraIncludes = {"shared", "access", "config"})
 @Import(TestcontainersConfiguration.class)
 class AuditLogTest {
 
@@ -74,18 +76,22 @@ class AuditLogTest {
         assertThat(row.get("occurred_at")).isNotNull();
     }
 
+    /**
+     * D18: the append-only trigger refuses a change by any role (shown as the owner, in a transaction that is rolled
+     * back anyway); the pool, under row-level security (V1106: no update or delete policy), reaches no row at all.
+     */
     @Test
     void theDatabaseRejectsUpdatingOrDeletingAnAuditRow() {
         transaction.executeWithoutResult(tx -> auditLog.record(entry("STORE_CREATED", Map.of())));
 
-        assertThatThrownBy(() -> jdbc.sql("UPDATE audit.audit_event SET reason = 'tampered' WHERE entity_id = :id")
-                .param("id", entityId).update())
-                .isInstanceOf(DataIntegrityViolationException.class)
-                .rootCause().hasMessageContaining("append-only");
-        assertThatThrownBy(() -> jdbc.sql("DELETE FROM audit.audit_event WHERE entity_id = :id")
-                .param("id", entityId).update())
-                .isInstanceOf(DataIntegrityViolationException.class)
-                .rootCause().hasMessageContaining("append-only");
+        for (String change : List.of("UPDATE audit.audit_event SET reason = 'tampered' WHERE entity_id = :id",
+                "DELETE FROM audit.audit_event WHERE entity_id = :id")) {
+            assertThatThrownBy(() -> OwnerDatabase.shared().rolledBack(owner -> owner.sql(change)
+                    .param("id", entityId).update()))
+                    .as(change).isInstanceOf(DataIntegrityViolationException.class)
+                    .rootCause().hasMessageContaining("append-only");
+            assertThat(jdbc.sql(change).param("id", entityId).update()).as("the pool: %s", change).isZero();
+        }
         assertThat(countRows()).isEqualTo(1);
     }
 
