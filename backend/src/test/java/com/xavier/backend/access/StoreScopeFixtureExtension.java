@@ -11,9 +11,14 @@ import org.junit.platform.commons.support.AnnotationSupport;
  * context, is prepared before the before-each callbacks), so startup code keeps production semantics. A request
  * dispatched by MockMvc is unmarked by {@link FixtureFreeRequests}. Registered for every test by auto-detection
  * ({@code junit-platform.properties}); a {@link StrictStoreScope} class is never marked. Static fixtures of
- * {@code @BeforeAll} use {@code OwnerDatabase} or an explicit scope.
+ * {@code @BeforeAll} use {@code OwnerDatabase} or an explicit scope. An Awaitility condition polled by a test gets
+ * the test thread's mark and actor ({@link StoreScopeTestSupport#propagateToAwaitilityPollThreads}).
  */
 public class StoreScopeFixtureExtension implements BeforeEachCallback, AfterEachCallback {
+
+    static {
+        StoreScopeTestSupport.propagateToAwaitilityPollThreads();
+    }
 
     @Override
     public void beforeEach(ExtensionContext context) {

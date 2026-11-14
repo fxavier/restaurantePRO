@@ -6,6 +6,7 @@ import java.time.Clock;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.function.Supplier;
+import org.awaitility.Awaitility;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 
@@ -60,6 +61,31 @@ public final class StoreScopeTestSupport {
         asFixture(() -> {
             fixture.run();
             return null;
+        });
+    }
+
+    /**
+     * Makes every Awaitility poll thread carry what its test thread has, the fixture mark and the security context,
+     * as {@code pollInSameThread()} would: a condition is test code polled for the test, not a thread of the
+     * application. Awaitility builds each await's poll thread from the awaiting thread, which is where both are read.
+     * A global Awaitility default, installed once by {@link StoreScopeFixtureExtension}.
+     */
+    static void propagateToAwaitilityPollThreads() {
+        Awaitility.pollThread(poll -> {
+            boolean fixture = isFixtureThread();
+            SecurityContext context = SecurityContextHolder.getContext();
+            Thread thread = new Thread(() -> {
+                enter(fixture);
+                SecurityContextHolder.setContext(context);
+                try {
+                    poll.run();
+                } finally {
+                    SecurityContextHolder.clearContext();
+                    leave();
+                }
+            }, "awaitility-thread");
+            thread.setDaemon(true);
+            return thread;
         });
     }
 
