@@ -19,13 +19,12 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
  * Boots the inventory module with what it calls: organization (stores, their zone and cut-off, the company currency),
  * plus shared, access and audit, on the shared Testcontainers PostgreSQL. The clock is a {@link MutableClock}. One
  * annotation, one cached context; never assume empty tables. The facades inventory reads (orders' rounds and voids,
- * catalog's items, S47) are mocks: a test stubs the facts it consumes. {@code config} is included for its store-scope
- * hook (ADR 0039): a module test without it gets a plain pool, and every protected table answers {@code RS001}.
+ * catalog's items, S47) are mocks: a test stubs the facts it consumes.
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
-@ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization", "config"})
+@ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization"})
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, MutableClock.Config.class, InventoryFixtures.class})
 @TestPropertySource(properties = {
