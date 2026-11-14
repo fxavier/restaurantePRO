@@ -47,6 +47,15 @@ class InventoryRowLevelSecurityTest {
 
     static final List<Connection> connections = new ArrayList<>();
 
+    private static final String ARMS = "( SELECT shared.rls_all_stores() AS rls_all_stores) OR (%s = ANY (( SELECT "
+            + "shared.rls_store_ids() AS rls_store_ids)::uuid[]))";
+    /** The either-end policy text as PostgreSQL prints it (whitespace collapsed; the first OR is flattened). */
+    static final Map<String, String> EITHER_END = Map.of(
+            "stock_transfer", "(" + ARMS.formatted("from_store_id") + " OR (" + ARMS.formatted("to_store_id") + "))",
+            "stock_transfer_line", "(EXISTS ( SELECT 1 FROM inventory.stock_transfer p WHERE ((p.id = "
+                    + "stock_transfer_line.transfer_id) AND (" + ARMS.formatted("p.from_store_id") + " OR ("
+                    + ARMS.formatted("p.to_store_id") + ")))))");
+
     @BeforeAll
     static void seed() {
         JdbcClient owner = OwnerDatabase.shared().jdbc();
@@ -276,6 +285,27 @@ class InventoryRowLevelSecurityTest {
                 .params(otherTransfer, warehouseA, warehouseB, STORE_A, STORE_B, ts()).update();
         assertThat(sqlState(() -> allStores().sql("UPDATE inventory.stock_transfer_line SET transfer_id = ? "
                 + "WHERE transfer_id = ?").params(otherTransfer, transferAB).update())).isEqualTo("RS002");
+    }
+
+    /**
+     * The hand-written either-end policies (not compared by the coverage helper): one FOR ALL policy each, the same
+     * test for reads and writes, a VIS arm per end, and for the lines the lookup of their own transfer.
+     */
+    @Test
+    void theTransferPoliciesTestBothEndsForReadsAndWrites() {
+        for (String table : List.of("stock_transfer", "stock_transfer_line")) {
+            Map<String, Object> policy = OwnerDatabase.shared().jdbc().sql("""
+                            SELECT polcmd::text AS cmd, regexp_replace(pg_get_expr(polqual, polrelid), '\\s+', ' ', 'g')
+                                       AS qual,
+                                   regexp_replace(pg_get_expr(polwithcheck, polrelid), '\\s+', ' ', 'g') AS with_check
+                            FROM pg_catalog.pg_policy WHERE polrelid = CAST(? AS regclass)""")
+                    .param("inventory." + table).query().singleRow();
+            String qual = (String) policy.get("qual");
+
+            assertThat(policy.get("cmd")).as(table).isEqualTo("*");
+            assertThat(policy.get("with_check")).as(table).isEqualTo(qual);
+            assertThat(qual).as(table).isEqualTo(EITHER_END.get(table));
+        }
     }
 
     /** D42 under RLS: the probes see every store, so another store's resource answers 403, not 404. */
