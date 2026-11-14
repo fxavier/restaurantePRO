@@ -1,5 +1,7 @@
 package com.xavier.backend.shared.events;
 
+import com.xavier.backend.access.SystemScope;
+import com.xavier.backend.access.SystemScoped;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -63,6 +65,7 @@ public class EventPublicationRecovery {
     }
 
     /** The scheduled retry; its first run waits one interval, so a starting instance relies on startup republishing. */
+    @SystemScoped(SystemScope.EVENT_MAINTENANCE)
     @Scheduled(fixedDelayString = "${restaurantpro.events.resubmit-interval:PT1M}",
             initialDelayString = "${restaurantpro.events.resubmit-interval:PT1M}")
     void resubmitDue() {
@@ -75,6 +78,7 @@ public class EventPublicationRecovery {
         stats.refresh();
     }
 
+    @SystemScoped(SystemScope.EVENT_MAINTENANCE)
     @Scheduled(cron = "${restaurantpro.events.purge-cron:0 45 3 * * *}")
     void purgeCompleted() {
         completed.deletePublicationsOlderThan(completedRetention);

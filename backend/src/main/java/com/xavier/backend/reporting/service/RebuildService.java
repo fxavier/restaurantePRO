@@ -1,7 +1,10 @@
 package com.xavier.backend.reporting.service;
 
+import com.xavier.backend.access.SystemScope;
+import com.xavier.backend.access.SystemScoped;
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
+import com.xavier.backend.access.StoreScopes;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.organization.OrganizationApi;
 import com.xavier.backend.reporting.exception.RebuildRunningException;
@@ -43,10 +46,13 @@ public class RebuildService {
     private final RebuildRunner runner;
     private final AuditLog auditLog;
     private final TaskExecutor executor;
+    private final StoreScopes scopes;
     private final Clock clock;
 
     RebuildService(AccessPolicy access, OrganizationApi organization, RebuildRuns runs, RebuildRunner runner,
-                   AuditLog auditLog, @Qualifier("applicationTaskExecutor") TaskExecutor executor, Clock clock) {
+                   AuditLog auditLog, @Qualifier("applicationTaskExecutor") TaskExecutor executor,
+                   StoreScopes scopes, Clock clock) {
+        this.scopes = scopes;
         this.access = access;
         this.organization = organization;
         this.runs = runs;
@@ -83,12 +89,14 @@ public class RebuildService {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                executor.execute(() -> runner.run(id));
+                // the requesting account's scope; it holds REPORT_REBUILD in the store (D166)
+                executor.execute(scopes.propagate(() -> runner.run(id)));
             }
         });
         return runs.find(id).orElseThrow();
     }
 
+    @SystemScoped(SystemScope.REPORTING_RECOVERY)
     @EventListener(ApplicationReadyEvent.class)
     @Transactional
     public void abandonInterruptedRuns() {

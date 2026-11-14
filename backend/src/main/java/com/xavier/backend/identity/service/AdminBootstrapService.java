@@ -1,5 +1,7 @@
 package com.xavier.backend.identity.service;
 
+import com.xavier.backend.access.SystemScope;
+import com.xavier.backend.access.SystemScoped;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.identity.exception.WeakPasswordException;
 import com.xavier.backend.identity.model.Role;
@@ -49,6 +51,7 @@ public class AdminBootstrapService {
         this.settings = settings;
     }
 
+    @SystemScoped(SystemScope.BOOTSTRAP)
     @ApplicationModuleListener
     void on(CompanyBootstrapped event) {
         onCompanyBootstrapped(settings);

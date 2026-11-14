@@ -1,5 +1,7 @@
 package com.xavier.backend.settlement.service;
 
+import com.xavier.backend.access.SystemScope;
+import com.xavier.backend.access.SystemScoped;
 import com.xavier.backend.settlement.repository.InDoubtAttempt;
 import com.xavier.backend.settlement.repository.PaymentAttemptRepository;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -55,6 +57,7 @@ class InDoubtGauge {
                 .description("Payment attempts in doubt for more than " + ALERT_AFTER).register(meters);
     }
 
+    @SystemScoped(SystemScope.PAYMENT_RECOVERY)
     @Scheduled(fixedDelayString = "${restaurantpro.settlement.in-doubt-poll-interval:PT30S}")
     public synchronized void refresh() {
         Instant overdueBefore = clock.instant().minus(ALERT_AFTER);

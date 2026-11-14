@@ -1,5 +1,7 @@
 package com.xavier.backend.shared.notify;
 
+import com.xavier.backend.access.SystemScope;
+import com.xavier.backend.access.SystemScoped;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Map;
@@ -103,6 +105,7 @@ public class ChangeNotifier implements SmartLifecycle, DisposableBean {
     }
 
     /** Queued on the sender thread like a notice: one writer per stream, and the scheduler never blocks on a client. */
+    @SystemScoped(SystemScope.HOUSEKEEPING)
     @Scheduled(fixedRateString = "${restaurantpro.notifications.heartbeat:PT25S}")
     void heartbeat() {
         sender.execute(() -> subscribers.forEach((storeId, emitters) -> emitters.forEach(emitter ->

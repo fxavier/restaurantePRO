@@ -1,5 +1,7 @@
 package com.xavier.backend.settlement.service;
 
+import com.xavier.backend.access.SystemScope;
+import com.xavier.backend.access.SystemScoped;
 import com.xavier.backend.settlement.model.AttemptStatus;
 import com.xavier.backend.settlement.model.PaymentMethodKind;
 import com.xavier.backend.settlement.repository.PaymentAttemptRepository;
@@ -42,6 +44,7 @@ public class AttemptSweeper {
         this.clock = clock;
     }
 
+    @SystemScoped(SystemScope.PAYMENT_RECOVERY)
     @Scheduled(fixedDelayString = "${restaurantpro.settlement.sweep-interval:PT5S}",
             initialDelayString = "${restaurantpro.settlement.sweep-interval:PT5S}")
     public void sweep() {

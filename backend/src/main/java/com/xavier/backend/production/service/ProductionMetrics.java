@@ -1,5 +1,8 @@
 package com.xavier.backend.production.service;
 
+import com.xavier.backend.access.StoreScopes;
+import com.xavier.backend.access.SystemScope;
+import com.xavier.backend.access.SystemScoped;
 import com.xavier.backend.production.model.PrintJobStatus;
 import com.xavier.backend.production.repository.PrintJobRepository;
 import com.xavier.backend.production.repository.PrintJobRepository.StatusCount;
@@ -47,14 +50,16 @@ public class ProductionMetrics {
 
     private final Counter unrouted;
     private final PrintJobRepository jobs;
+    private final StoreScopes scopes;
     private final Clock clock;
     private final MultiGauge unresolvedGauge;
     private final MultiGauge oldestWaitingGauge;
     private final Set<UUID> stores = ConcurrentHashMap.newKeySet();
     private volatile Counts counts = new Counts(Map.of(), Instant.MIN);
 
-    ProductionMetrics(MeterRegistry registry, PrintJobRepository jobs, Clock clock) {
+    ProductionMetrics(MeterRegistry registry, PrintJobRepository jobs, StoreScopes scopes, Clock clock) {
         this.jobs = jobs;
+        this.scopes = scopes;
         this.clock = clock;
         for (PrintJobStatus status : PrintJobStatus.values()) {
             Gauge.builder("print_jobs", this, metrics -> metrics.jobsIn(status))
@@ -70,6 +75,7 @@ public class ProductionMetrics {
     }
 
     /** The print queue's health per store now (two indexed counts), also published as the gauges. */
+    @SystemScoped(SystemScope.METRICS)
     @Scheduled(fixedDelayString = "${restaurantpro.production.queue-gauges-interval:PT30S}")
     public synchronized QueueHealth refreshQueue() {
         Instant now = clock.instant();
@@ -97,7 +103,9 @@ public class ProductionMetrics {
     private synchronized long jobsIn(PrintJobStatus status) {
         Instant now = clock.instant();
         if (!now.isBefore(counts.countedAt().plus(COUNTS_TTL))) {
-            counts = new Counts(jobs.countGroupedByStatus().stream()
+            // D166: installation-wide whoever scrapes (a token scrape has no actor; a session's scope would be cached
+            // for everyone)
+            counts = new Counts(scopes.call(SystemScope.METRICS, jobs::countGroupedByStatus).stream()
                     .collect(Collectors.toMap(StatusCount::getStatus, StatusCount::getJobs)), now);
         }
         return counts.byStatus().getOrDefault(status, 0L);

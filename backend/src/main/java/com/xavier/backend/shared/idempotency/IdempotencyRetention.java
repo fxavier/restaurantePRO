@@ -1,5 +1,7 @@
 package com.xavier.backend.shared.idempotency;
 
+import com.xavier.backend.access.SystemScope;
+import com.xavier.backend.access.SystemScoped;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -36,6 +38,7 @@ class IdempotencyRetention {
     }
 
     /** @return how many records were deleted */
+    @SystemScoped(SystemScope.HOUSEKEEPING)
     @Scheduled(cron = "${restaurantpro.idempotency.retention-cron:0 30 3 * * *}")
     int purgeExpired() {
         Instant now = clock.instant();

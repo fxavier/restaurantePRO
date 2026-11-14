@@ -1,5 +1,6 @@
 package com.xavier.backend.config.alerts;
 
+import com.xavier.backend.access.StoreScopeTestSupport;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
@@ -33,7 +34,7 @@ class AlertsCacheTest {
 
     @Test
     void theSourcesAreAskedAgainOnlyAfter30Seconds() {
-        AlertsService service = new AlertsService(List.of(counting), null, clock);
+        AlertsService service = new AlertsService(List.of(counting), null, StoreScopeTestSupport.scopes(), clock);
 
         Snapshot first = service.current();
         clock.advance(Duration.ofMillis(29_999));
@@ -51,7 +52,7 @@ class AlertsCacheTest {
 
     @Test
     void aClockThatWentBackCollectsAgain() {
-        AlertsService service = new AlertsService(List.of(counting), null, clock);
+        AlertsService service = new AlertsService(List.of(counting), null, StoreScopeTestSupport.scopes(), clock);
         service.current();
 
         clock.advance(Duration.ofSeconds(-1));
@@ -65,7 +66,7 @@ class AlertsCacheTest {
         AlertSource failing = () -> {
             throw new IllegalStateException("database down");
         };
-        AlertsService service = new AlertsService(List.of(failing, counting), null, clock);
+        AlertsService service = new AlertsService(List.of(failing, counting), null, StoreScopeTestSupport.scopes(), clock);
 
         assertThat(service.current().alerts())
                 .extracting(OperationalAlert::code, OperationalAlert::severity, OperationalAlert::storeId,

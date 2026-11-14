@@ -1,5 +1,6 @@
 package com.xavier.backend.production.service;
 
+import com.xavier.backend.access.StoreScopeTestSupport;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -29,7 +30,7 @@ class ProductionMetricsTest {
     void aScrapeOfEveryStatusRunsOneGroupedCount() {
         when(jobs.countGroupedByStatus()).thenReturn(List.of(count(PrintJobStatus.SENT, 3),
                 count(PrintJobStatus.FAILED, 1)));
-        new ProductionMetrics(registry, jobs, clock);
+        new ProductionMetrics(registry, jobs, StoreScopeTestSupport.scopes(), clock);
 
         assertThat(scrape(PrintJobStatus.SENT)).isEqualTo(3);
         assertThat(scrape(PrintJobStatus.FAILED)).isEqualTo(1);
@@ -45,7 +46,7 @@ class ProductionMetricsTest {
     void theNextScrapeCountsAgain() {
         when(jobs.countGroupedByStatus()).thenReturn(List.of(count(PrintJobStatus.QUEUED, 2)),
                 List.of(count(PrintJobStatus.QUEUED, 5)));
-        new ProductionMetrics(registry, jobs, clock);
+        new ProductionMetrics(registry, jobs, StoreScopeTestSupport.scopes(), clock);
         assertThat(scrape(PrintJobStatus.QUEUED)).isEqualTo(2);
 
         clock.advance(Duration.ofSeconds(2));

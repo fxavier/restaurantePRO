@@ -1,5 +1,7 @@
 package com.xavier.backend.shared.events;
 
+import com.xavier.backend.access.SystemScope;
+import com.xavier.backend.access.SystemScoped;
 import com.xavier.backend.shared.ops.AlertSeverity;
 import com.xavier.backend.shared.ops.AlertSource;
 import com.xavier.backend.shared.ops.OperationalAlert;
@@ -56,6 +58,7 @@ class EventPublicationAlertSource implements AlertSource {
     }
 
     /** Reads the oldest incomplete publication again for the gauge. */
+    @SystemScoped(SystemScope.EVENT_MAINTENANCE)
     @Scheduled(fixedDelayString = "${restaurantpro.events.resubmit-interval:PT1M}")
     void refreshGauge() {
         refresh();

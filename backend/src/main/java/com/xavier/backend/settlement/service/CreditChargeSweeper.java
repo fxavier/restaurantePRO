@@ -1,5 +1,7 @@
 package com.xavier.backend.settlement.service;
 
+import com.xavier.backend.access.SystemScope;
+import com.xavier.backend.access.SystemScoped;
 import com.xavier.backend.settlement.model.CreditCharge;
 import com.xavier.backend.settlement.model.CreditChargeStatus;
 import com.xavier.backend.settlement.repository.CreditChargeRepository;
@@ -45,6 +47,7 @@ public class CreditChargeSweeper {
         this.inTransaction = new TransactionTemplate(transactionManager);
     }
 
+    @SystemScoped(SystemScope.PAYMENT_RECOVERY)
     @Scheduled(fixedDelayString = "${restaurantpro.settlement.credit-sweep-interval:PT1M}",
             initialDelayString = "${restaurantpro.settlement.credit-sweep-interval:PT1M}")
     public void sweep() {

@@ -1,5 +1,7 @@
 package com.xavier.backend.identity.service;
 
+import com.xavier.backend.access.SystemScope;
+import com.xavier.backend.access.SystemScoped;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,6 +31,7 @@ public class SupportGrantExpiry {
      *
      * @return how many grants this run expired
      */
+    @SystemScoped(SystemScope.IDENTITY_MAINTENANCE)
     @Scheduled(cron = "${restaurantpro.identity.support-expiry-cron:0 * * * * *}")
     public int expireDue() {
         int expired = 0;

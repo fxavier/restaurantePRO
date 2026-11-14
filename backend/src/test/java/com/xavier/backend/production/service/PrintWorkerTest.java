@@ -1,5 +1,6 @@
 package com.xavier.backend.production.service;
 
+import com.xavier.backend.access.StoreScopeTestSupport;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.xavier.backend.production.adapter.PrinterTransport;
@@ -31,7 +32,7 @@ class PrintWorkerTest {
 
     final InMemoryQueue queue = new InMemoryQueue();
     final AcceptingTransport transport = new AcceptingTransport();
-    final PrintWorker worker = new PrintWorker(queue, transport, 4);
+    final PrintWorker worker = new PrintWorker(queue, transport, StoreScopeTestSupport.scopes(), 4);
 
     @AfterEach
     void stop() throws InterruptedException {

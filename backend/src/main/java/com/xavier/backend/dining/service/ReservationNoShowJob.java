@@ -1,5 +1,7 @@
 package com.xavier.backend.dining.service;
 
+import com.xavier.backend.access.SystemScope;
+import com.xavier.backend.access.SystemScoped;
 import com.xavier.backend.dining.model.Reservation;
 import com.xavier.backend.dining.model.ReservationWindow;
 import com.xavier.backend.dining.repository.ReservationRepository;
@@ -42,6 +44,7 @@ public class ReservationNoShowJob {
     }
 
     /** @return how many reservations this run marked */
+    @SystemScoped(SystemScope.RESERVATIONS)
     @Scheduled(fixedDelayString = "${restaurantpro.dining.no-show-interval:PT1M}",
             initialDelayString = "${restaurantpro.dining.no-show-interval:PT1M}")
     public int markDue() {

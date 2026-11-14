@@ -1,5 +1,6 @@
 package com.xavier.backend.settlement.service;
 
+import com.xavier.backend.access.StoreScopes;
 import com.xavier.backend.settlement.ProviderOutcome;
 import jakarta.annotation.PreDestroy;
 import java.util.Optional;
@@ -30,10 +31,13 @@ public class PaymentSubmitter {
     private final PaymentProviders providers;
     private final ProviderCalls calls;
     private final TransactionTemplate inTransaction;
+    private final StoreScopes scopes;
     private final ThreadPoolExecutor pool;
 
     PaymentSubmitter(AttemptTransitions transitions, PaymentProviders providers, ProviderCalls calls,
-                     SettlementProperties properties, PlatformTransactionManager transactionManager) {
+                     SettlementProperties properties, PlatformTransactionManager transactionManager,
+                     StoreScopes scopes) {
+        this.scopes = scopes;
         this.transitions = transitions;
         this.providers = providers;
         this.calls = calls;
@@ -47,7 +51,8 @@ public class PaymentSubmitter {
     /** Queues the attempt for submission; never blocks the caller. */
     public void submit(UUID attemptId) {
         try {
-            pool.execute(() -> run(attemptId));
+            // the submitting POS session's store scope, or PAYMENT_RECOVERY from the sweeper (D166)
+            pool.execute(scopes.propagate(() -> run(attemptId)));
         } catch (RejectedExecutionException e) {
             log.warn("Payment submitter is full; attempt {} stays CREATED for the sweeper", attemptId);
         }

@@ -3,6 +3,8 @@ package com.xavier.backend.config.alerts;
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.AccessScope;
 import com.xavier.backend.access.Permission;
+import com.xavier.backend.access.StoreScopes;
+import com.xavier.backend.access.SystemScope;
 import com.xavier.backend.shared.ops.AlertSeverity;
 import com.xavier.backend.shared.ops.AlertSource;
 import com.xavier.backend.shared.ops.OperationalAlert;
@@ -41,12 +43,14 @@ class AlertsService {
 
     private final List<AlertSource> sources;
     private final AccessPolicy accessPolicy;
+    private final StoreScopes scopes;
     private final Clock clock;
     private Snapshot cached;
 
-    AlertsService(List<AlertSource> sources, AccessPolicy accessPolicy, Clock clock) {
+    AlertsService(List<AlertSource> sources, AccessPolicy accessPolicy, StoreScopes scopes, Clock clock) {
         this.sources = List.copyOf(sources);
         this.accessPolicy = accessPolicy;
+        this.scopes = scopes;
         this.clock = clock;
     }
 
@@ -65,7 +69,8 @@ class AlertsService {
         Instant now = clock.instant();
         if (cached == null || now.isBefore(cached.generatedAt())
                 || !now.isBefore(cached.generatedAt().plus(CACHE_FOR))) {
-            cached = new Snapshot(now, collect(now));
+            // D166: computed installation-wide (every store), then filtered per actor by list()
+            cached = new Snapshot(now, scopes.call(SystemScope.ALERTS, () -> collect(now)));
         }
         return cached;
     }

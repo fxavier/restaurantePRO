@@ -1,5 +1,7 @@
 package com.xavier.backend.settlement.service;
 
+import com.xavier.backend.access.SystemScope;
+import com.xavier.backend.access.SystemScoped;
 import com.xavier.backend.settlement.model.AttemptStatus;
 import com.xavier.backend.settlement.model.PaymentAttempt;
 import com.xavier.backend.settlement.repository.PaymentAttemptRepository;
@@ -49,6 +51,7 @@ public class InDoubtResolver {
         this.clock = clock;
     }
 
+    @SystemScoped(SystemScope.PAYMENT_RECOVERY)
     @Scheduled(fixedDelayString = "${restaurantpro.settlement.in-doubt-poll-interval:PT30S}",
             initialDelayString = "${restaurantpro.settlement.in-doubt-poll-interval:PT30S}")
     public void poll() {
