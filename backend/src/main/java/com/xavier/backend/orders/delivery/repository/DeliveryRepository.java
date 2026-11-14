@@ -5,7 +5,6 @@ import com.xavier.backend.orders.delivery.model.Delivery;
 import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -15,9 +14,11 @@ import org.springframework.data.repository.query.Param;
 
 public interface DeliveryRepository extends JpaRepository<Delivery, UUID> {
 
-    /** D42 (b): only the store of a delivery addressed by its order id, before authorizing. */
-    @Query("select d.storeId from Delivery d where d.orderId = :orderId")
-    Optional<UUID> findStoreIdByOrderId(@Param("orderId") UUID orderId);
+    /**
+     * The table, for the D42 store probe ({@code shared.persistence.StoreProbe}): it sees every store, so another
+     * store's row is found (403), not mistaken for absent (404) under row-level security.
+     */
+    String TABLE = "orders.delivery";
 
     List<Delivery> findByStoreIdAndStatusInOrderByOrderId(UUID storeId, Collection<DeliveryStatus> statuses);
 

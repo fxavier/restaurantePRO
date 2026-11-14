@@ -150,8 +150,9 @@ class PrinterHttpTest {
         UUID kitchen = fixtures.printer(store, "KIT", "10.0.0.5", 9100);
         java.util.concurrent.CountDownLatch inserted = new java.util.concurrent.CountDownLatch(1);
         java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        // another request of the store, on a thread of its own (no fixture fallback there)
         java.util.concurrent.CompletableFuture<Void> other = java.util.concurrent.CompletableFuture.runAsync(() ->
-                tx.executeWithoutResult(s -> {
+                scopes.callForStore(store, "test:other-request", () -> tx.execute(s -> {
                     jdbc.sql("INSERT INTO production.destination_route VALUES (?, 'BAR', ?)").param(store)
                             .param(kitchen).update();
                     inserted.countDown();
@@ -160,7 +161,8 @@ class PrinterHttpTest {
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                     }
-                }));
+                    return null;
+                })));
         assertThat(inserted.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
         java.util.concurrent.CompletableFuture.delayedExecutor(500, java.util.concurrent.TimeUnit.MILLISECONDS)
                 .execute(release::countDown);
@@ -172,6 +174,9 @@ class PrinterHttpTest {
 
     @Autowired
     org.springframework.transaction.support.TransactionTemplate tx;
+
+    @Autowired
+    com.xavier.backend.access.StoreScopes scopes;
 
     @Autowired
     org.springframework.jdbc.core.simple.JdbcClient jdbc;

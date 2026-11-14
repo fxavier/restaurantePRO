@@ -6,6 +6,7 @@ import com.xavier.backend.dining.exception.IllegalOccupationStateException;
 import com.xavier.backend.dining.exception.IllegalReservationStateException;
 import com.xavier.backend.dining.exception.ReservationRuleException;
 import com.xavier.backend.dining.exception.TableOccupiedException;
+import com.xavier.backend.dining.exception.TableUnavailableException;
 import com.xavier.backend.dining.model.Reservation;
 import com.xavier.backend.dining.model.RestaurantTable;
 import com.xavier.backend.dining.model.RoomArea;
@@ -21,6 +22,7 @@ import com.xavier.backend.dining.repository.TableOccupationRepository;
 import com.xavier.backend.dining.service.DiningChanges;
 import com.xavier.backend.dining.service.DiningRows;
 import com.xavier.backend.dining.service.ReservationIndicator;
+import com.xavier.backend.shared.persistence.StoreProbe;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
 import java.time.Clock;
 import java.time.Instant;
@@ -49,11 +51,13 @@ public class DiningApi {
 
     static final String ENTITY = "TableOccupation";
     static final String RESERVATION = "Reservation";
+    static final String TABLE = "RestaurantTable";
 
     private final TableOccupationRepository occupations;
     private final RestaurantTableRepository tables;
     private final RoomAreaRepository areas;
     private final AccessPolicy accessPolicy;
+    private final StoreProbe probe;
     private final DiningChanges changes;
     private final DiningRows rows;
     private final ReservationRepository reservations;
@@ -61,7 +65,8 @@ public class DiningApi {
     private final Clock clock;
 
     DiningApi(TableOccupationRepository occupations, RestaurantTableRepository tables, RoomAreaRepository areas,
-              ReservationRepository reservations, AccessPolicy accessPolicy, DiningChanges changes, DiningRows rows,
+              ReservationRepository reservations, AccessPolicy accessPolicy, StoreProbe probe,
+              DiningChanges changes, DiningRows rows,
               ReservationIndicator reservationIndicator, Clock clock) {
         this.reservations = reservations;
         this.reservationIndicator = reservationIndicator;
@@ -69,6 +74,7 @@ public class DiningApi {
         this.tables = tables;
         this.areas = areas;
         this.accessPolicy = accessPolicy;
+        this.probe = probe;
         this.changes = changes;
         this.rows = rows;
         this.clock = clock;
@@ -189,6 +195,7 @@ public class DiningApi {
      * caller read the table earlier in its transaction.
      */
     private RestaurantTable lockedOpenableTable(UUID tableId, UUID storeId) {
+        requireTableOf(storeId, tableId);
         RestaurantTable table = rows.lockTable(tableId);
         table.requireOpenable(storeId, rows.shareArea(table.getAreaId()));
         if (occupations.findByTableIdAndClosedAtIsNull(tableId).isPresent()) {
@@ -197,8 +204,20 @@ public class DiningApi {
         return table;
     }
 
+    /**
+     * D42 before the lock: 404 for an unknown table, {@code STORE_MISMATCH} for another store's, which row-level
+     * security would otherwise hide as unknown.
+     */
+    private void requireTableOf(UUID storeId, UUID tableId) {
+        UUID tableStore = probe.storeOf(RestaurantTableRepository.TABLE, tableId)
+                .orElseThrow(() -> new DiningNotFoundException(TABLE, tableId));
+        if (!tableStore.equals(storeId)) {
+            throw TableUnavailableException.storeMismatch(tableId);
+        }
+    }
+
     private void requireReservationOf(UUID storeId, UUID reservationId) {
-        UUID reservationStore = reservations.findStoreIdById(reservationId)
+        UUID reservationStore = probe.storeOf(ReservationRepository.TABLE, reservationId)
                 .orElseThrow(() -> new DiningNotFoundException(RESERVATION, reservationId));
         if (!reservationStore.equals(storeId)) {
             throw ReservationRuleException.otherStore(reservationId);
@@ -242,8 +261,15 @@ public class DiningApi {
         changes.record(action, ENTITY, occupation.getId(), occupation.getStoreId(), occupation.getTableId(), details);
     }
 
+    /**
+     * The table, or 404 when there is none. A table the caller's store scope hides is another store's: its state is
+     * not the caller's to read, and the caller would refuse it as {@code STORE_MISMATCH} anyway (D42).
+     */
     private RestaurantTable table(UUID tableId) {
-        return tables.findById(tableId).orElseThrow(() -> new DiningNotFoundException("RestaurantTable", tableId));
+        if (probe.storeOf(RestaurantTableRepository.TABLE, tableId).isEmpty()) {
+            throw new DiningNotFoundException(TABLE, tableId);
+        }
+        return tables.findById(tableId).orElseThrow(() -> TableUnavailableException.storeMismatch(tableId));
     }
 
     private RoomArea area(RestaurantTable table) {

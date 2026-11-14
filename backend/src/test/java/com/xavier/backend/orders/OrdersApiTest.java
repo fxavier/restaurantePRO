@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.xavier.backend.access.StoreScopes;
 import com.xavier.backend.dining.DiningApi;
 import com.xavier.backend.orders.OrdersFixtures.Shop;
 import com.xavier.backend.shared.Money;
@@ -39,6 +40,9 @@ class OrdersApiTest {
 
     @Autowired
     OrdersApi ordersApi;
+
+    @Autowired
+    StoreScopes scopes;
 
     @Autowired
     OrdersProductionApi productionApi;
@@ -213,9 +217,10 @@ class OrdersApiTest {
                 .query(UUID.class).single();
         TransactionTemplate tx = new TransactionTemplate(transactionManager);
 
+        // as production's listener runs it: in the round's store (D166), on threads of their own
         OrdersFixtures.race(
-                () -> tx.execute(status -> dispatch(batch)),
-                () -> tx.execute(status -> dispatch(batch)));
+                () -> scopes.callForStore(shop.store(), "listener:test", () -> tx.execute(status -> dispatch(batch))),
+                () -> scopes.callForStore(shop.store(), "listener:test", () -> tx.execute(status -> dispatch(batch))));
 
         assertThat(fixtures.audits("ORDER_BATCH_DISPATCHED", batch)).isOne();
         assertThat(dispatchedAt(batch)).isNotNull();

@@ -21,6 +21,7 @@ import com.xavier.backend.production.repository.PrinterRepository;
 import com.xavier.backend.production.repository.ProductionTicketRepository;
 import com.xavier.backend.shared.notify.ChangeNotifier;
 import com.xavier.backend.shared.notify.ChangeTopic;
+import com.xavier.backend.shared.persistence.StoreProbe;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
 import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
@@ -53,18 +54,20 @@ public class PrintJobService {
     private final PrinterRepository printers;
     private final TicketService ticketService;
     private final AccessPolicy accessPolicy;
+    private final StoreProbe probe;
     private final AuditLog auditLog;
     private final ChangeNotifier notifier;
     private final Clock clock;
 
     PrintJobService(PrintJobRepository jobs, ProductionTicketRepository tickets, PrinterRepository printers,
-                    TicketService ticketService, AccessPolicy accessPolicy, AuditLog auditLog,
+                    TicketService ticketService, AccessPolicy accessPolicy, StoreProbe probe, AuditLog auditLog,
                     ChangeNotifier notifier, Clock clock) {
         this.jobs = jobs;
         this.tickets = tickets;
         this.printers = printers;
         this.ticketService = ticketService;
         this.accessPolicy = accessPolicy;
+        this.probe = probe;
         this.auditLog = auditLog;
         this.notifier = notifier;
         this.clock = clock;
@@ -113,7 +116,7 @@ public class PrintJobService {
     @Transactional
     public PrintJobView reprint(UUID ticketId) {
         PosContext pos = accessPolicy.requirePos(Permission.PRODUCTION_OPERATE);
-        UUID storeId = tickets.findStoreIdById(ticketId)
+        UUID storeId = probe.storeOf(ProductionTicketRepository.TABLE, ticketId)
                 .orElseThrow(() -> new ProductionNotFoundException(TICKET, ticketId));
         accessPolicy.requireSessionStore(pos, storeId, TICKET, ticketId);
         ProductionTicket ticket = tickets.findById(ticketId).orElseThrow();
@@ -139,7 +142,7 @@ public class PrintJobService {
 
     @Transactional
     public PrintJobView testPrint(UUID printerId) {
-        UUID storeId = printers.findStoreIdById(printerId)
+        UUID storeId = probe.storeOf(PrinterRepository.TABLE, printerId)
                 .orElseThrow(() -> new ProductionNotFoundException(PrinterService.ENTITY, printerId));
         accessPolicy.require(Permission.PRODUCTION_MANAGE, storeId);
         TicketService.Issued issued = ticketService.printTest(printers.findById(printerId).orElseThrow());
@@ -186,7 +189,8 @@ public class PrintJobService {
     }
 
     private UUID jobStore(UUID jobId) {
-        return jobs.findStoreIdById(jobId).orElseThrow(() -> new ProductionNotFoundException(JOB, jobId));
+        return probe.storeOf(PrintJobRepository.TABLE, jobId)
+                .orElseThrow(() -> new ProductionNotFoundException(JOB, jobId));
     }
 
     private PageResponse<PrintJobView> list(UUID storeId, PrintJobStatus status, Instant from, Pageable pageable) {

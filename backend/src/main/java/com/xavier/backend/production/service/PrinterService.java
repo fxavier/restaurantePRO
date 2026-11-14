@@ -21,6 +21,7 @@ import com.xavier.backend.production.repository.PrinterRepository;
 import com.xavier.backend.shared.notify.ChangeNotifier;
 import com.xavier.backend.shared.notify.ChangeTopic;
 import com.xavier.backend.shared.persistence.OptimisticLocking;
+import com.xavier.backend.shared.persistence.StoreProbe;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
 import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
@@ -45,16 +46,19 @@ public class PrinterService {
     private final PrintJobRepository jobs;
     private final OrganizationApi organization;
     private final AccessPolicy accessPolicy;
+    private final StoreProbe probe;
     private final AuditLog auditLog;
     private final ChangeNotifier notifier;
     private final Clock clock;
 
     PrinterService(PrinterRepository printers, PrintJobRepository jobs, OrganizationApi organization,
-                   AccessPolicy accessPolicy, AuditLog auditLog, ChangeNotifier notifier, Clock clock) {
+                   AccessPolicy accessPolicy, StoreProbe probe, AuditLog auditLog, ChangeNotifier notifier,
+                   Clock clock) {
         this.printers = printers;
         this.jobs = jobs;
         this.organization = organization;
         this.accessPolicy = accessPolicy;
+        this.probe = probe;
         this.auditLog = auditLog;
         this.notifier = notifier;
         this.clock = clock;
@@ -158,7 +162,8 @@ public class PrinterService {
     }
 
     private UUID storeOf(UUID id) {
-        return printers.findStoreIdById(id).orElseThrow(() -> new ProductionNotFoundException(ENTITY, id));
+        return probe.storeOf(PrinterRepository.TABLE, id)
+                .orElseThrow(() -> new ProductionNotFoundException(ENTITY, id));
     }
 
     private Printer save(Printer printer) {
