@@ -35,7 +35,7 @@ public class ApplicationLifecycleMarks implements SpringApplicationRunListener {
 
     @Override
     public void contextPrepared(ConfigurableApplicationContext context) {
-        CloseMark mark = new CloseMark();
+        CloseMark mark = new CloseMark(context);
         context.addApplicationListener(mark);
         if (context.getBeanFactory() instanceof DefaultSingletonBeanRegistry registry) {
             // registered before the refresh, so destroyed after every bean of the application
@@ -60,13 +60,25 @@ public class ApplicationLifecycleMarks implements SpringApplicationRunListener {
         }
     }
 
-    /** Unmarks the closing thread from the first closed-event listener to the last bean destroyed. */
+    /**
+     * Unmarks the closing thread from the first closed-event listener to the last bean destroyed. Only for its own
+     * context's event: a child context (Boot's management context on its own port) closes inside its parent's close,
+     * and its closed event reaches the parent's listeners too.
+     */
     static final class CloseMark implements ApplicationListener<ContextClosedEvent>, DisposableBean, Ordered {
 
+        private final ConfigurableApplicationContext context;
         private boolean closing;
+
+        CloseMark(ConfigurableApplicationContext context) {
+            this.context = context;
+        }
 
         @Override
         public void onApplicationEvent(ContextClosedEvent event) {
+            if (event.getApplicationContext() != context) {
+                return;
+            }
             StoreScopeTestSupport.enter(false);
             closing = true;
         }
