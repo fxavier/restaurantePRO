@@ -116,7 +116,7 @@ class IdempotencyStepsTest {
         assertThat(jdbc.sql("""
                         SELECT EXTRACT(EPOCH FROM lease_until - created_at) FROM shared.idempotency_record
                         WHERE scope = :s AND key = :k""")
-                .param("s", stored(scope)).param("k", key).query(Double.class).single()).isEqualTo(30.0);
+                .param("s", scope).param("k", key).query(Double.class).single()).isEqualTo(30.0);
     }
 
     @Test
@@ -320,7 +320,7 @@ class IdempotencyStepsTest {
 
         assertThat(runs).hasValue(0);
         assertThat(jdbc.sql("SELECT count(*) FROM shared.idempotency_record WHERE scope = :s")
-                .param("s", stored(scope)).query(Long.class).single()).isZero();
+                .param("s", scope).query(Long.class).single()).isZero();
     }
 
     @Test
@@ -356,7 +356,7 @@ class IdempotencyStepsTest {
                         INSERT INTO shared.idempotency_record (scope, key, request_hash, status, created_at)
                         VALUES (:s, :k, :h, 'IN_PROGRESS', :created)
                         """)
-                .param("s", stored(scope)).param("k", key).param("h", hashOf(body))
+                .param("s", scope).param("k", key).param("h", hashOf(body))
                 .param("created", Timestamp.from(Instant.now())).update();
 
         assertThatThrownBy(() -> idempotency.executeSteps(scope, key, target, body, Closed.class,
@@ -373,7 +373,7 @@ class IdempotencyStepsTest {
         retention.purgeExpired();
 
         assertThat(jdbc.sql("SELECT key FROM shared.idempotency_record WHERE scope = :s")
-                .param("s", stored(scope)).query(String.class).list())
+                .param("s", scope).query(String.class).list())
                 .containsExactly("old-live-lease");
     }
 
@@ -383,7 +383,7 @@ class IdempotencyStepsTest {
                             (scope, key, request_hash, status, created_at, lease_owner, lease_until)
                         VALUES (:s, :k, :h, 'IN_PROGRESS', :created, :owner, :until)
                         """)
-                .param("s", stored(scope)).param("k", key).param("h", hashOf(body)).param("owner", UUID.randomUUID())
+                .param("s", scope).param("k", key).param("h", hashOf(body)).param("owner", UUID.randomUUID())
                 .param("created", Timestamp.from(Instant.now()))
                 .param("until", Timestamp.from(leaseUntil)).update();
     }
@@ -394,7 +394,7 @@ class IdempotencyStepsTest {
                             (scope, key, request_hash, status, created_at, lease_owner, lease_until)
                         VALUES (:s, :k, :h, 'IN_PROGRESS', :created, :owner, :until)
                         """)
-                .param("s", stored(scope)).param("k", recordKey).param("h", "0".repeat(64))
+                .param("s", scope).param("k", recordKey).param("h", "0".repeat(64))
                 .param("created", Timestamp.from(createdAt)).param("owner", UUID.randomUUID())
                 .param("until", Timestamp.from(leaseUntil)).update();
     }
@@ -405,7 +405,7 @@ class IdempotencyStepsTest {
         idempotency.executeSteps(scope, probeKey, target, requestBody, Closed.class,
                 () -> ResponseEntity.ok(new Closed("probe", 0)));
         return jdbc.sql("SELECT request_hash FROM shared.idempotency_record WHERE scope = :s AND key = :k")
-                .param("s", stored(scope)).param("k", probeKey).query(String.class).single();
+                .param("s", scope).param("k", probeKey).query(String.class).single();
     }
 
     private void expireLease() {
@@ -414,7 +414,7 @@ class IdempotencyStepsTest {
                         WHERE scope = :s AND key = :k""")
                 // the app Clock decides expiry: expire with a Java instant, not the database clock (no VM skew)
                 .param("past", Timestamp.from(Instant.now().minusSeconds(5)))
-                .param("s", stored(scope)).param("k", key).update();
+                .param("s", scope).param("k", key).update();
     }
 
     /** executeSteps for this test's key, whose steps signal {@code running}, then wait for {@code release}. */
@@ -438,7 +438,7 @@ class IdempotencyStepsTest {
 
     private String storedStatus() {
         return jdbc.sql("SELECT status FROM shared.idempotency_record WHERE scope = :s AND key = :k")
-                .param("s", stored(scope)).param("k", key).query(String.class).single();
+                .param("s", scope).param("k", key).query(String.class).single();
     }
 
     private static void sleep(Duration duration) {
@@ -460,11 +460,6 @@ class IdempotencyStepsTest {
             Thread.currentThread().interrupt();
             throw new IllegalStateException(e);
         }
-    }
-
-    /** D186: the scope as stored, under the bound (bootstrap) tenant. */
-    private static String stored(String operationScope) {
-        return TenantTestSupport.BOOTSTRAP + ":" + operationScope;
     }
 
     /** Workers emulating concurrent requests: each runs in the bootstrap tenant, as a request does (D177). */

@@ -20,9 +20,9 @@ import org.springframework.http.ResponseEntity;
 
 /**
  * D186 (security rule 7): the Idempotency-Key space is per tenant. The same operation scope and key in tenants A and
- * B are two records (key {@code (tenant_id, scope, key)}, scope prefixed with the tenant): B's request runs its own
- * action instead of replaying A's response, a different body in B is not a reused key, and each tenant replays only
- * its own response. Strict: no bootstrap-tenant fallback.
+ * B are two independent records (key {@code (tenant_id, scope, key)}, row-level security on {@code tenant_id}): B's
+ * request runs its own action instead of replaying A's response, a different body in B is not a reused key, and each
+ * tenant replays only its own response. Strict: no bootstrap-tenant fallback.
  */
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
@@ -56,10 +56,10 @@ class IdempotencyTenantScopeTest {
         assertThat(List.of(inA, inB, replayA, replayB)).containsExactly(new Answer("A"), new Answer("B"),
                 new Answer("A"), new Answer("B"));
         assertThat(runs).as("once per tenant").hasValue(2);
+        // one record per tenant for the same (scope, key): the tenant is the record's column (and RLS), not a string
         assertThat(OwnerDatabase.shared().jdbc().sql("SELECT tenant_id || ' ' || scope FROM shared.idempotency_record "
-                        + "WHERE key = ? ORDER BY tenant_id").param(key).query(String.class).list())
-                .containsExactlyInAnyOrder(TenantTestSupport.A + " " + TenantTestSupport.A + ":" + scope,
-                        TenantTestSupport.B + " " + TenantTestSupport.B + ":" + scope);
+                        + "WHERE key = ?").param(key).query(String.class).list())
+                .containsExactlyInAnyOrder(TenantTestSupport.A + " " + scope, TenantTestSupport.B + " " + scope);
     }
 
     private Answer execute(UUID tenant, String scope, String key, Map<String, String> body, String answer,

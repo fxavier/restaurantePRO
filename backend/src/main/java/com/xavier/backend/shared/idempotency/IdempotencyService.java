@@ -5,7 +5,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import com.xavier.backend.shared.ExternalCalls;
-import com.xavier.backend.shared.tenancy.TenantScopes;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -46,10 +45,10 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <ul>
  *   <li>{@code scope} = operation name + actor kind + actor id ({@code "<op>:<kind>:<id>"}, D38), so two
- *       principals never share a key space. The record is stored under the bound tenant (D186): its scope is
- *       prefixed {@code "<tenantId>:"} here, and its key is {@code (tenant_id, scope, key)}, so the same key in two
- *       tenants is two records and a replay never crosses tenants. Its reads run in a short read-only transaction of
- *       their own, because the table is tenant-protected (D178).</li>
+ *       principals never share a key space. The record is stored under the bound tenant (D186): its key is
+ *       {@code (tenant_id, scope, key)}, {@code tenant_id} taken from the transaction's binding and filtered by
+ *       row-level security, so the same key in two tenants is two records and a replay never crosses tenants. Its
+ *       reads run in a short read-only transaction of their own, because the table is tenant-protected (D178).</li>
  *   <li>{@code target} = what the request acts on, normally {@code "<METHOD> <resolved path>"}. The request
  *       identity is the SHA-256 of target + canonical JSON body ("hash do pedido"). Approver credentials travel
  *       in headers and are never part of it (D40).</li>
@@ -90,11 +89,10 @@ public class IdempotencyService {
     private final TransactionTemplate inOwnTransaction;
     private final TransactionTemplate inActionTransaction;
     private final TransactionTemplate inReadTransaction;
-    private final TenantScopes tenants;
     private final Duration stepLease;
 
     IdempotencyService(IdempotencyRecordStore store, JsonMapper jsonMapper, Clock clock,
-                       PlatformTransactionManager transactionManager, TenantScopes tenants,
+                       PlatformTransactionManager transactionManager,
                        @Value("${restaurantpro.idempotency.step-lease:PT30S}") Duration stepLease) {
         if (stepLease.isNegative() || stepLease.isZero()) {
             throw new IllegalArgumentException("restaurantpro.idempotency.step-lease must be positive: " + stepLease);
@@ -112,18 +110,16 @@ public class IdempotencyService {
         this.inReadTransaction = new TransactionTemplate(transactionManager);
         this.inReadTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.inReadTransaction.setReadOnly(true);
-        this.tenants = tenants;
     }
 
-    public <T> ResponseEntity<T> execute(String operationScope, String key, String target, Object requestBody,
+    public <T> ResponseEntity<T> execute(String scope, String key, String target, Object requestBody,
                                          Class<T> responseType, Supplier<ResponseEntity<T>> action) {
-        Objects.requireNonNull(operationScope, "scope");
+        Objects.requireNonNull(scope, "scope");
         Objects.requireNonNull(target, "target");
         Objects.requireNonNull(responseType, "responseType");
         Objects.requireNonNull(action, "action");
         requireNoActiveTransaction();
         requireValidKey(key);
-        String scope = tenantScoped(operationScope);
         String hash = hash(target, requestBody);
 
         boolean createdNow = Boolean.TRUE.equals(
@@ -187,15 +183,14 @@ public class IdempotencyService {
      *       leaves the lease to expire.</li>
      * </ol>
      */
-    public <T> ResponseEntity<T> executeSteps(String operationScope, String key, String target, Object requestBody,
+    public <T> ResponseEntity<T> executeSteps(String scope, String key, String target, Object requestBody,
                                               Class<T> responseType, Supplier<ResponseEntity<T>> steps) {
-        Objects.requireNonNull(operationScope, "scope");
+        Objects.requireNonNull(scope, "scope");
         Objects.requireNonNull(target, "target");
         Objects.requireNonNull(responseType, "responseType");
         Objects.requireNonNull(steps, "steps");
         requireNoTransactionForSteps();
         requireValidKey(key);
-        String scope = tenantScoped(operationScope);
         String hash = hash(target, requestBody);
         UUID owner = UUID.randomUUID();
 
@@ -273,11 +268,6 @@ public class IdempotencyService {
         }
         log.info("Idempotency step lease expired; this request takes the claim over: scope={} key={}", scope, key);
         return Optional.empty();
-    }
-
-    /** D186: the operation scope under the bound tenant, {@code "<tenantId>:<op>:<kind>:<id>"}. */
-    private String tenantScoped(String operationScope) {
-        return tenants.requireTenant() + ":" + operationScope;
     }
 
     /** A read of the tenant-protected record, in its own short read-only transaction (D178). */
