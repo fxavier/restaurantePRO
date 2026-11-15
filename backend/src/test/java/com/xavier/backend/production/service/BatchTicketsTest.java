@@ -9,6 +9,7 @@ import com.xavier.backend.orders.model.event.OrderBatchConfirmed;
 import com.xavier.backend.production.ProductionFixtures;
 import com.xavier.backend.production.ProductionFixtures.Round;
 import com.xavier.backend.production.ProductionModuleTest;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Instant;
 import java.util.List;
@@ -136,7 +137,8 @@ class BatchTicketsTest {
     }
 
     private OrderBatchConfirmed event(Round round, List<Line> lines) {
-        return new OrderBatchConfirmed(round.order(), round.batch(), 1, shop.store(), terminal, round.orderNumber(),
+        return new OrderBatchConfirmed(TenantTestSupport.BOOTSTRAP,
+                round.order(), round.batch(), 1, shop.store(), terminal, round.orderNumber(),
                 "M1", employee, Instant.parse("2026-11-04T12:00:00Z"), lines);
     }
 }

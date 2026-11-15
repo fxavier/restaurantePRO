@@ -13,6 +13,7 @@ import com.xavier.backend.organization.repository.CompanyProfileRepository;
 import com.xavier.backend.organization.repository.StoreRepository;
 import com.xavier.backend.organization.repository.TerminalRepository;
 import com.xavier.backend.organization.service.TerminalSecrets;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import java.time.ZoneId;
 import java.util.Optional;
 import java.util.UUID;
@@ -31,8 +32,11 @@ public class OrganizationApi {
     private final StoreRepository stores;
     private final TerminalRepository terminals;
     private final CompanyProfileRepository companies;
+    private final TenantScopes tenants;
 
-    OrganizationApi(StoreRepository stores, TerminalRepository terminals, CompanyProfileRepository companies) {
+    OrganizationApi(StoreRepository stores, TerminalRepository terminals, CompanyProfileRepository companies,
+                    TenantScopes tenants) {
+        this.tenants = tenants;
         this.stores = stores;
         this.terminals = terminals;
         this.companies = companies;
@@ -81,6 +85,6 @@ public class OrganizationApi {
     }
 
     private CompanyProfile company() {
-        return companies.findById(Boolean.TRUE).orElseThrow(CompanyNotBootstrappedException::new);
+        return companies.findByTenantId(tenants.requireTenant()).orElseThrow(CompanyNotBootstrappedException::new);
     }
 }

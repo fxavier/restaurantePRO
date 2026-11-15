@@ -25,6 +25,7 @@ import com.xavier.backend.production.ProductionFixtures.Round;
 import com.xavier.backend.production.ProductionModuleTest;
 import com.xavier.backend.shared.notify.ChangeNotifier;
 import com.xavier.backend.shared.notify.ChangeTopic;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -208,7 +209,8 @@ class UnroutedTicketTest {
     @Test
     void anUnroutedSubtotalRoutesToThePrinterTheTerminalGotLater() throws Exception {
         UUID request = UUID.randomUUID();
-        publish(new SubtotalRequested(UUID.randomUUID(), shop.store(), terminal, 80, null, List.of(),
+        publish(new SubtotalRequested(TenantTestSupport.BOOTSTRAP,
+                UUID.randomUUID(), shop.store(), terminal, 80, null, List.of(),
                 Money.of("0.00", MZN), request));
         await(() -> fixtures.tickets(request).size() == 1, "unrouted subtotal");
         UUID ticket = (UUID) fixtures.tickets(request).getFirst().get("id");
@@ -368,7 +370,8 @@ class UnroutedTicketTest {
     }
 
     private OrderLinesVoided voidOn(String destination) {
-        return new OrderLinesVoided(UUID.randomUUID(), UUID.randomUUID(), shop.store(), terminal, 77, "M1",
+        return new OrderLinesVoided(TenantTestSupport.BOOTSTRAP,
+                UUID.randomUUID(), UUID.randomUUID(), shop.store(), terminal, 77, "M1",
                 new Line(UUID.randomUUID(), "I1", "Coca-Cola 33cl", null, new BigDecimal("3"), null, destination),
                 BigDecimal.ONE, "cliente desistiu", Instant.parse("2026-11-04T12:00:00Z"));
     }

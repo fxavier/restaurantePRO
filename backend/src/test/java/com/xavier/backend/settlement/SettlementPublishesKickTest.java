@@ -12,6 +12,7 @@ import com.xavier.backend.customers.CustomersFixtures;
 import com.xavier.backend.identity.ApproverVerifier;
 import com.xavier.backend.settlement.SettlementFixtures.Sale;
 import com.xavier.backend.settlement.model.event.CashDrawerKickRequested;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.UUID;
@@ -63,7 +64,8 @@ class SettlementPublishesKickTest {
         fixtures.payCash(sale, "25.00", "30.00").andExpect(status().isCreated());
         UUID payment = fixtures.paymentOf(sale.order());
 
-        assertThat(kicksOf(sale.store())).singleElement().isEqualTo(new CashDrawerKickRequested("PAYMENT", payment,
+        assertThat(kicksOf(sale.store())).singleElement().isEqualTo(new CashDrawerKickRequested(
+                TenantTestSupport.BOOTSTRAP, "PAYMENT", payment,
                 sale.store(), sale.cashier().terminalId(), confirmedAt("payment", payment)));
     }
 
@@ -98,9 +100,11 @@ class SettlementPublishesKickTest {
                 .andExpect(status().isCreated()));
 
         assertThat(kicksOf(sale.store())).containsExactly(
-                new CashDrawerKickRequested("PAYMENT", payment, sale.store(), sale.cashier().terminalId(),
+                new CashDrawerKickRequested(TenantTestSupport.BOOTSTRAP,
+                        "PAYMENT", payment, sale.store(), sale.cashier().terminalId(),
                         confirmedAt("payment", payment)),
-                new CashDrawerKickRequested("REFUND", refund, sale.store(), refunder.terminalId(),
+                new CashDrawerKickRequested(TenantTestSupport.BOOTSTRAP,
+                        "REFUND", refund, sale.store(), refunder.terminalId(),
                         confirmedAt("refund", refund)));
     }
 

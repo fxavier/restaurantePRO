@@ -10,6 +10,7 @@ import com.xavier.backend.orders.model.event.SubtotalRequested;
 import com.xavier.backend.production.ProductionFixtures;
 import com.xavier.backend.production.ProductionModuleTest;
 import com.xavier.backend.shared.Money;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.math.BigDecimal;
 import java.util.Currency;
 import java.util.List;
@@ -97,7 +98,7 @@ class SubtotalDedupeTest {
     }
 
     private SubtotalRequested subtotal(UUID requestId) {
-        return new SubtotalRequested(order, shop.store(), terminal, 81, "M1",
+        return new SubtotalRequested(TenantTestSupport.BOOTSTRAP, order, shop.store(), terminal, 81, "M1",
                 List.of(new SubtotalLine("Coca-Cola 33cl", new BigDecimal("2"), Money.of("12.50", MZN),
                         Money.of("25.00", MZN))), Money.of("25.00", MZN), requestId);
     }

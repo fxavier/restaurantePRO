@@ -131,7 +131,9 @@ class FlywayUpgradeTest {
      */
     @Test
     void theOldStoreOrAllPoliciesAreReplacedOnAnInstalledDatabase() throws IOException {
-        copyMigrations(version -> version != 1009 && version != 5008);
+        // main before S70: without V1009/V5008, and without what came after them (R6's V1010 carries V1009's helper)
+        copyMigrations(version -> version != 1009 && version != 5008 && version != 1010 && version != 2005
+                && version != 15001);
         flyway(previousRelease, false).migrate();
         JdbcClient db = JdbcClient.create(installation);
         assertThat(policyNames(db, "catalog.quick_page")).containsExactly("store_or_all_scope");

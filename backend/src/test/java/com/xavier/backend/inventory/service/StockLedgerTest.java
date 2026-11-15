@@ -10,6 +10,7 @@ import com.xavier.backend.inventory.model.MovementType;
 import com.xavier.backend.inventory.model.dto.MovementView;
 import com.xavier.backend.inventory.model.dto.PostMovement;
 import com.xavier.backend.inventory.model.event.StockMovementsPosted;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -141,8 +142,9 @@ class StockLedgerTest {
         });
 
         assertThat(events.stream(StockMovementsPosted.class).filter(e -> e.storeId().equals(store)))
-                .containsExactlyInAnyOrder(new StockMovementsPosted("MANUAL_MOVEMENT", source, store, DAY),
-                        new StockMovementsPosted("MANUAL_MOVEMENT", other, store, DAY));
+                .containsExactlyInAnyOrder(new StockMovementsPosted(TenantTestSupport.BOOTSTRAP,
+                        "MANUAL_MOVEMENT", source, store, DAY),
+                        new StockMovementsPosted(TenantTestSupport.BOOTSTRAP, "MANUAL_MOVEMENT", other, store, DAY));
     }
 
     @Test

@@ -28,6 +28,7 @@ import com.xavier.backend.promotions.RedeemCommand;
 import com.xavier.backend.promotions.RedemptionResult;
 import com.xavier.backend.promotions.model.dto.DiscountLimits;
 import com.xavier.backend.shared.Money;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -75,12 +76,14 @@ public class LineAdjustmentService {
     private final ApplicationEventPublisher events;
     private final OrderChanges changes;
     private final Clock clock;
+    private final TenantScopes tenants;
 
     LineAdjustmentService(OrderLineRepository lines, OrderLinePriceAdjustmentRepository adjustments,
                           OrderLineSplitRepository splits, OrderLookup lookup, OrderViews views,
                           PromotionsApi promotions, LoyaltyApi loyalty, LineFamilies families, RewardLineage rewards,
                           ApproverVerifier approvers, AccessPolicy accessPolicy, ApplicationEventPublisher events,
-                          OrderChanges changes, Clock clock) {
+                          OrderChanges changes, Clock clock, TenantScopes tenants) {
+        this.tenants = tenants;
         this.lines = lines;
         this.adjustments = adjustments;
         this.splits = splits;
@@ -245,7 +248,7 @@ public class LineAdjustmentService {
                 seq, new OrderLinePriceAdjustment.Change(adjustment.kind(), quantity, adjustment.percent(), current,
                         newPrice, adjustment.rewardCode(), loyaltyEntry, adjustment.reason(), adjustment.operatorId(),
                         adjustment.approverId()), now));
-        events.publishEvent(new LineDiscountsRecorded(order.getId(), order.getStoreId(),
+        events.publishEvent(new LineDiscountsRecorded(tenants.requireTenant(), order.getId(), order.getStoreId(),
                 LineDiscountsRecorded.ADJUSTMENT, fact.getId()));
         Map<String, Object> details = new HashMap<>();
         details.put("orderId", order.getId().toString());

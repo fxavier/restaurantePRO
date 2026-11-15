@@ -16,6 +16,7 @@ import com.xavier.backend.organization.model.event.TerminalRevoked;
 import com.xavier.backend.organization.repository.StoreRepository;
 import com.xavier.backend.organization.repository.TerminalRepository;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
 import java.time.Duration;
@@ -43,9 +44,11 @@ public class TerminalService {
     private final AuditLog auditLog;
     private final ApplicationEventPublisher events;
     private final Clock clock;
+    private final TenantScopes tenants;
 
     TerminalService(TerminalRepository terminals, StoreRepository stores, AccessPolicy accessPolicy,
-                    AuditLog auditLog, ApplicationEventPublisher events, Clock clock) {
+                    AuditLog auditLog, ApplicationEventPublisher events, Clock clock, TenantScopes tenants) {
+        this.tenants = tenants;
         this.terminals = terminals;
         this.stores = stores;
         this.accessPolicy = accessPolicy;
@@ -127,7 +130,7 @@ public class TerminalService {
         terminal.revoke(now);
         terminals.saveAndFlush(terminal);
         audit("TERMINAL_REVOKED", terminal);
-        events.publishEvent(new TerminalRevoked(terminal.getId(), terminal.getStoreId(), now));
+        events.publishEvent(new TerminalRevoked(tenants.requireTenant(), terminal.getId(), terminal.getStoreId(), now));
         return terminal.toSummary();
     }
 

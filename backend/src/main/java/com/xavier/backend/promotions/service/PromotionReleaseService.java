@@ -17,6 +17,7 @@ import com.xavier.backend.shared.notify.ChangeNotifier;
 import com.xavier.backend.shared.notify.ChangeTopic;
 import com.xavier.backend.shared.persistence.StoreProbe;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
 import java.time.Instant;
@@ -48,11 +49,13 @@ public class PromotionReleaseService {
     private final ChangeNotifier notifier;
     private final JsonMapper json;
     private final Clock clock;
+    private final TenantScopes tenants;
 
     PromotionReleaseService(PromotionReleaseRepository releases, PromotionWorkingCopy workingCopy,
                             OrganizationApi organization, AccessPolicy accessPolicy, StoreProbe probe,
                             PromotionsAudit audit, ApplicationEventPublisher events, ChangeNotifier notifier,
-                            JsonMapper json, Clock clock) {
+                            JsonMapper json, Clock clock, TenantScopes tenants) {
+        this.tenants = tenants;
         this.releases = releases;
         this.workingCopy = workingCopy;
         this.organization = organization;
@@ -120,7 +123,7 @@ public class PromotionReleaseService {
         details.put("promotions", view.promotions().size());
         previous.ifPresent(retired -> details.put("retiredReleaseId", retired.getId().toString()));
         audit.record("PROMOTION_RELEASE_PUBLISHED", "PromotionRelease", releaseId, storeId, details);
-        events.publishEvent(new PromotionsPublished(storeId, releaseId, version));
+        events.publishEvent(new PromotionsPublished(tenants.requireTenant(), storeId, releaseId, version));
         notifier.notifyAfterCommit(storeId, ChangeTopic.CATALOG, null); // store-wide: the POS re-reads its prices
         return view(release);
     }

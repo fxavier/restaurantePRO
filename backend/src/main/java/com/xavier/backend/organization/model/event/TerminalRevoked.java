@@ -9,5 +9,5 @@ import org.springframework.modulith.NamedInterface;
  * sessions opened on it. Published once per terminal (a revoked terminal cannot be revoked again).
  */
 @NamedInterface("event")
-public record TerminalRevoked(UUID terminalId, UUID storeId, Instant revokedAt) {
+public record TerminalRevoked(UUID tenantId, UUID terminalId, UUID storeId, Instant revokedAt) {
 }

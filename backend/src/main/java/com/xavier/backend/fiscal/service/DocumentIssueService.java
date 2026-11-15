@@ -16,6 +16,7 @@ import com.xavier.backend.fiscal.repository.FiscalSeriesRepository;
 import com.xavier.backend.shared.exception.BusinessRuleException;
 import com.xavier.backend.shared.exception.ConflictException;
 import com.xavier.backend.shared.exception.NotFoundException;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -48,10 +49,12 @@ public class DocumentIssueService {
     private final ApplicationEventPublisher events;
     private final Clock clock;
     private final TransactionTemplate inNewTransaction;
+    private final TenantScopes tenants;
 
     DocumentIssueService(FiscalDocumentRepository documents, FiscalSeriesRepository series,
                          ActiveFiscalAdapter adapter, AccessPolicy accessPolicy, ApplicationEventPublisher events,
-                         Clock clock, PlatformTransactionManager transactionManager) {
+                         Clock clock, PlatformTransactionManager transactionManager, TenantScopes tenants) {
+        this.tenants = tenants;
         this.documents = documents;
         this.series = series;
         this.adapter = adapter;
@@ -99,7 +102,8 @@ public class DocumentIssueService {
                 document.paymentSnapshot().orElseThrow()));
         document.issue(numbering, number, now, employeeId, terminalId, adapter.code(), !adapter.certified(), result);
         documents.flush();
-        events.publishEvent(new FiscalDocumentIssued(document.getId(), document.getStoreId(), terminalId,
+        events.publishEvent(new FiscalDocumentIssued(tenants.requireTenant(),
+                document.getId(), document.getStoreId(), terminalId,
                 adapter.printout(document.toIssuedDocument(), false)));
         return document.toView();
     }

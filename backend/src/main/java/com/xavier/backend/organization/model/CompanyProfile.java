@@ -12,10 +12,13 @@ import java.time.Instant;
 import java.util.Currency;
 import java.util.Locale;
 import java.util.Set;
+import java.util.UUID;
+import org.hibernate.annotations.UuidGenerator;
 
 /**
- * The single legal entity of this installation (spec §2, §8.2, D30). Exactly one row: the primary key is
- * the constant {@code TRUE} and the table checks it, so a second company cannot exist.
+ * The legal entity of one tenant (spec §2, §8.2, D174): one row per tenant ({@code UNIQUE (tenant_id)}), so a second
+ * company in a tenant cannot exist. {@code tenant_id} is filled by the database from the bound tenant and read-only
+ * here (D180 as amended); row-level security shows only the bound tenant's row.
  */
 @Entity
 @Table(schema = "organization", name = "company_profile")
@@ -24,7 +27,11 @@ public class CompanyProfile {
     private static final Set<String> ISO_COUNTRIES = Locale.getISOCountries(Locale.IsoCountryCode.PART1_ALPHA2);
 
     @Id
-    private Boolean id;
+    @UuidGenerator(style = UuidGenerator.Style.VERSION_7)
+    private UUID id;
+
+    @Column(name = "tenant_id", insertable = false, updatable = false)
+    private UUID tenantId;
 
     @Column(nullable = false, length = 200)
     private String name;
@@ -53,7 +60,6 @@ public class CompanyProfile {
 
     public static CompanyProfile create(String name, String taxId, String country, String currency, Instant now) {
         CompanyProfile company = new CompanyProfile();
-        company.id = Boolean.TRUE;
         company.createdAt = now;
         company.apply(name, taxId, country, currency, now);
         return company;
@@ -108,6 +114,10 @@ public class CompanyProfile {
 
     public CompanyProfileView toView() {
         return new CompanyProfileView(name, taxId, country, getCurrency(), version);
+    }
+
+    public UUID getId() {
+        return id;
     }
 
     public String getName() {

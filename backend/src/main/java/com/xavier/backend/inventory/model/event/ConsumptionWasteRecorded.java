@@ -14,7 +14,8 @@ import org.springframework.modulith.NamedInterface;
  * recording transaction. {@code occurredAt} is the void's instant, {@code businessDate} the order's day.
  */
 @NamedInterface("event")
-public record ConsumptionWasteRecorded(UUID voidId, UUID originalMovementId, UUID storeId, UUID warehouseId,
+public record ConsumptionWasteRecorded(UUID tenantId, UUID voidId, UUID originalMovementId, UUID storeId,
+                                       UUID warehouseId,
                                        UUID stockItemId, BigDecimal quantity, BigDecimal value, String currency,
                                        LocalDate businessDate, Instant occurredAt) {
 }

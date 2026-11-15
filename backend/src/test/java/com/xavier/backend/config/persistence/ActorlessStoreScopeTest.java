@@ -100,7 +100,8 @@ class ActorlessStoreScopeTest {
     static Stream<String> actorlessEntryPoints() {
         // the listeners among them (their event is their argument) have their own cases below
         return SystemScopeRegistryTest.EXPECTED.keySet().stream()
-                .filter(entryPoint -> !entryPoint.equals("identity.service.AdminBootstrapService.on"));
+                .filter(entryPoint -> !entryPoint.equals("identity.service.AdminBootstrapService.on"))
+                .filter(entryPoint -> !entryPoint.equals("organization.service.TenantProvisioning.on"));
     }
 
     @ParameterizedTest(name = "{0}")
@@ -131,7 +132,8 @@ class ActorlessStoreScopeTest {
         String origin = "listener:TerminalSessionService.on";
         arm(true);
 
-        invoke("identity.service.TerminalSessionService", "on", new StoreDeactivated(store, Instant.now()));
+        invoke("identity.service.TerminalSessionService", "on", new StoreDeactivated(TenantTestSupport.BOOTSTRAP,
+                store, Instant.now()));
 
         Checkout checkout = awaitCheckout(origin);
         assertThat(checkout.thread()).isNotEqualTo(Thread.currentThread().getName());
@@ -145,7 +147,7 @@ class ActorlessStoreScopeTest {
         arm(true);
 
         invoke("identity.service.AdminBootstrapService", "on",
-                new CompanyBootstrapped("C", "400000002", "MZ", "MZN", Instant.now()));
+                new CompanyBootstrapped(TenantTestSupport.BOOTSTRAP, "C", "400000002", "MZ", "MZN", Instant.now()));
 
         assertThat(awaitCheckout("system:BOOTSTRAP").allStores()).isEqualTo("on");
     }

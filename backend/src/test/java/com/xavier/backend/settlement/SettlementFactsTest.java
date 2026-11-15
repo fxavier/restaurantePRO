@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.xavier.backend.settlement.SettlementFixtures.Sale;
 import com.xavier.backend.settlement.model.event.PaymentRecorded;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.time.LocalDate;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -56,7 +57,7 @@ class SettlementFactsTest {
         assertThat(facts.paymentIds(sale.store(), day, day, PageRequest.of(0, 10)).getContent())
                 .containsExactly(payment);
         assertThat(events.stream(PaymentRecorded.class))
-                .contains(new PaymentRecorded(payment, sale.store()));
+                .contains(new PaymentRecorded(TenantTestSupport.BOOTSTRAP, payment, sale.store()));
     }
 
     @Test
@@ -125,7 +126,9 @@ class SettlementFactsTest {
         assertThat(facts.paymentIds(sale.store(), day, day, PageRequest.of(0, 10))).as("credit is not a payment")
                 .isEmpty();
         assertThat(events.stream(com.xavier.backend.settlement.model.event.CreditChargePosted.class))
-                .contains(new com.xavier.backend.settlement.model.event.CreditChargePosted(charge, sale.store()));
+                .contains(new com.xavier.backend.settlement.model.event.CreditChargePosted(TenantTestSupport.BOOTSTRAP,
+                        charge,
+                        sale.store()));
         assertThat(facts.creditChargeFact(UUID.randomUUID())).isEmpty();
     }
 

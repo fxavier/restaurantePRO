@@ -9,5 +9,5 @@ import org.springframework.modulith.NamedInterface;
  * re-dispatch prints a new slip and a redelivered event none.
  */
 @NamedInterface("event")
-public record DeliveryDispatched(UUID orderId, UUID deliveryEventId, UUID storeId, UUID terminalId) {
+public record DeliveryDispatched(UUID tenantId, UUID orderId, UUID deliveryEventId, UUID storeId, UUID terminalId) {
 }

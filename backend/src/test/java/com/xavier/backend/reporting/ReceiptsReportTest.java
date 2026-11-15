@@ -12,6 +12,7 @@ import com.xavier.backend.settlement.SettlementFixtures.Sale;
 import com.xavier.backend.settlement.model.event.CreditChargePosted;
 import com.xavier.backend.settlement.model.event.RefundRecorded;
 import com.xavier.backend.shared.Money;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Currency;
@@ -86,7 +87,8 @@ class ReceiptsReportTest {
                 sale.cashier().employeeId(), UUID.randomUUID(), sale.cashier().terminalId())))
                 .when(settlementFacts).refundFact(refund);
 
-        tx.executeWithoutResult(status -> events.publishEvent(new RefundRecorded(refund, sale.store())));
+        tx.executeWithoutResult(status -> events.publishEvent(new RefundRecorded(TenantTestSupport.BOOTSTRAP,
+                refund, sale.store())));
         reporting.awaitNothingPendingFor(sale.store());
 
         JsonNode report = reporting.report("receipts", sale.store(), day, day, "groupBy", "method");
@@ -103,7 +105,8 @@ class ReceiptsReportTest {
                 Money.of("7.50", MZN), sale.order(), null, customer, UUID.randomUUID(), sale.cashier().employeeId(),
                 sale.cashier().terminalId()))).when(settlementFacts).creditChargeFact(charge);
 
-        tx.executeWithoutResult(status -> events.publishEvent(new CreditChargePosted(charge, sale.store())));
+        tx.executeWithoutResult(status -> events.publishEvent(new CreditChargePosted(TenantTestSupport.BOOTSTRAP,
+                charge, sale.store())));
         reporting.awaitNothingPendingFor(sale.store());
 
         JsonNode byDay = reporting.report("receipts", sale.store(), day, day, "groupBy", "day");

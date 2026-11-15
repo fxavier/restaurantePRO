@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.xavier.backend.BackendApplication;
 import com.xavier.backend.TestcontainersConfiguration;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.time.Duration;
 import java.util.Set;
 import java.util.UUID;
@@ -45,7 +46,8 @@ class EventRepublicationTest {
     void anIncompletePublicationIsDeliveredAgainAfterARestart() {
         UUID id = UUID.randomUUID();
         ProbeListener.failing.set(true);
-        transaction.executeWithoutResult(tx -> events.publishEvent(new ProbeHappened(id, UUID.randomUUID())));
+        transaction.executeWithoutResult(tx -> events.publishEvent(new ProbeHappened(TenantTestSupport.BOOTSTRAP, id,
+                UUID.randomUUID())));
         awaitTrue(() -> ProbeListener.attempts.get() > 0 && incomplete(id), "first delivery attempted and failed");
 
         ProbeListener.failing.set(false);
@@ -96,7 +98,7 @@ class EventRepublicationTest {
     }
 
     /** Carries a store, as every production event of a store listener does (D166: the listener runs in it). */
-    public record ProbeHappened(UUID id, UUID storeId) {
+    public record ProbeHappened(UUID tenantId, UUID id, UUID storeId) {
     }
 
     static class ProbeListener {

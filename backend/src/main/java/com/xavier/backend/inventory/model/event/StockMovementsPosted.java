@@ -13,5 +13,6 @@ import org.springframework.modulith.NamedInterface;
  * {@code eventsAreRecords} ArchUnit rule.
  */
 @NamedInterface("event")
-public record StockMovementsPosted(String sourceType, UUID sourceId, UUID storeId, LocalDate businessDate) {
+public record StockMovementsPosted(UUID tenantId, String sourceType, UUID sourceId, UUID storeId,
+                                   LocalDate businessDate) {
 }

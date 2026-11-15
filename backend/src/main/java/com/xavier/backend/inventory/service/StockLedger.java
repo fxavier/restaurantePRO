@@ -21,6 +21,7 @@ import com.xavier.backend.inventory.repository.LedgerStore.NewMovement;
 import com.xavier.backend.inventory.repository.StockItemRepository;
 import com.xavier.backend.inventory.repository.WarehouseRepository;
 import com.xavier.backend.organization.OrganizationApi;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -78,10 +79,12 @@ public class StockLedger {
     private final AccessPolicy accessPolicy;
     private final ApplicationEventPublisher events;
     private final Clock clock;
+    private final TenantScopes tenants;
 
     StockLedger(LedgerStore store, WarehouseRepository warehouses, StockItemRepository items,
                 OrganizationApi organization, AccessPolicy accessPolicy, ApplicationEventPublisher events,
-                Clock clock) {
+                Clock clock, TenantScopes tenants) {
+        this.tenants = tenants;
         this.store = store;
         this.warehouses = warehouses;
         this.items = items;
@@ -208,7 +211,8 @@ public class StockLedger {
         Set<String> published = publishedInThisTransaction();
         postedSources.forEach((source, first) -> {
             if (published.add(source)) {
-                events.publishEvent(new StockMovementsPosted(first.sourceType(), first.sourceId(), first.storeId(),
+                events.publishEvent(new StockMovementsPosted(tenants.requireTenant(),
+                        first.sourceType(), first.sourceId(), first.storeId(),
                         first.businessDate()));
             }
         });

@@ -22,6 +22,7 @@ import com.xavier.backend.orders.repository.OrderLineComponentRepository;
 import com.xavier.backend.orders.repository.OrderLineRepository;
 import com.xavier.backend.orders.repository.OrderLineVoidRepository;
 import com.xavier.backend.shared.Money;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
@@ -58,11 +59,13 @@ public class LineVoidService {
     private final ApplicationEventPublisher events;
     private final OrderChanges changes;
     private final Clock clock;
+    private final TenantScopes tenants;
 
     LineVoidService(OrderLineRepository lines, OrderLineVoidRepository voids,
                     OrderLineComponentRepository components, RewardLineage rewards, OrderLookup lookup,
                     OrderViews views, ApproverVerifier approvers, AccessPolicy accessPolicy,
-                    ApplicationEventPublisher events, OrderChanges changes, Clock clock) {
+                    ApplicationEventPublisher events, OrderChanges changes, Clock clock, TenantScopes tenants) {
+        this.tenants = tenants;
         this.rewards = rewards;
         this.lines = lines;
         this.voids = voids;
@@ -158,7 +161,8 @@ public class LineVoidService {
         // return nothing, because units still carry the reward
         rewards.reverseIfSpent(line.getId(), voided.getId());
         LineSnapshot snapshot = line.snapshot().orElseThrow();
-        events.publishEvent(new OrderLinesVoided(order.getId(), voided.getId(), order.getStoreId(), terminalId,
+        events.publishEvent(new OrderLinesVoided(tenants.requireTenant(),
+                order.getId(), voided.getId(), order.getStoreId(), terminalId,
                 order.getOrderNumber(), order.getTableCode(), new Line(line.getId(), snapshot.itemCode(),
                 snapshot.description(), snapshot.variantName(), line.getQuantity(), line.getNotes(),
                 snapshot.destination(), voidedComponents(voided)), voided.getQuantity(), voided.getReason(),

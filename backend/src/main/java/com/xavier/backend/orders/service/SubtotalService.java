@@ -9,6 +9,7 @@ import com.xavier.backend.orders.model.Order;
 import com.xavier.backend.orders.model.dto.SubtotalView;
 import com.xavier.backend.orders.model.event.SubtotalLine;
 import com.xavier.backend.orders.model.event.SubtotalRequested;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -32,9 +33,11 @@ public class SubtotalService {
     private final AccessPolicy accessPolicy;
     private final ApplicationEventPublisher events;
     private final OrderChanges changes;
+    private final TenantScopes tenants;
 
     SubtotalService(OrderLookup lookup, OrderViews views, DiningApi dining, AccessPolicy accessPolicy,
-                    ApplicationEventPublisher events, OrderChanges changes) {
+                    ApplicationEventPublisher events, OrderChanges changes, TenantScopes tenants) {
+        this.tenants = tenants;
         this.lookup = lookup;
         this.views = views;
         this.dining = dining;
@@ -56,7 +59,8 @@ public class SubtotalService {
         List<SubtotalLine> lines = bill.lines().stream()
                 .map(line -> new SubtotalLine(line.description(), line.netQty(), line.unitPrice(), line.gross()))
                 .toList();
-        events.publishEvent(new SubtotalRequested(orderId, order.getStoreId(), pos.terminalId(),
+        events.publishEvent(new SubtotalRequested(tenants.requireTenant(),
+                orderId, order.getStoreId(), pos.terminalId(),
                 order.getOrderNumber(), order.getTableCode(), lines, bill.due(), newRequestId()));
         if (order.getTableId() != null) {
             dining.markSubtotalPrinted(orderId);

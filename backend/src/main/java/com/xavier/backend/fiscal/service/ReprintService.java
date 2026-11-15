@@ -15,6 +15,7 @@ import com.xavier.backend.fiscal.model.event.FiscalDocumentReprintRequested;
 import com.xavier.backend.fiscal.repository.FiscalDocumentPrintRepository;
 import com.xavier.backend.fiscal.repository.FiscalDocumentRepository;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Map;
@@ -38,10 +39,12 @@ public class ReprintService {
     private final AuditLog auditLog;
     private final ApplicationEventPublisher events;
     private final Clock clock;
+    private final TenantScopes tenants;
 
     ReprintService(FiscalDocumentRepository documents, FiscalDocumentPrintRepository prints,
                    DocumentQueryService queries, ActiveFiscalAdapter adapter, AccessPolicy accessPolicy,
-                   AuditLog auditLog, ApplicationEventPublisher events, Clock clock) {
+                   AuditLog auditLog, ApplicationEventPublisher events, Clock clock, TenantScopes tenants) {
+        this.tenants = tenants;
         this.documents = documents;
         this.prints = prints;
         this.queries = queries;
@@ -65,7 +68,8 @@ public class ReprintService {
         UniqueConstraints.saveAndFlush(prints,
                 FiscalDocumentPrint.copy(documentId, copyNo, now, pos.employeeId(), pos.terminalId()),
                 () -> new ReprintConflictException(documentId), "fiscal_document_print_copy_uk");
-        events.publishEvent(new FiscalDocumentReprintRequested(documentId, copyNo, document.getStoreId(),
+        events.publishEvent(new FiscalDocumentReprintRequested(tenants.requireTenant(),
+                documentId, copyNo, document.getStoreId(),
                 pos.terminalId(), adapter.printout(printable, true)));
         auditLog.recordAsCurrentActor("FISCAL_DOCUMENT_REPRINTED", "FiscalDocument", documentId.toString(),
                 document.getStoreId(), null, null, Map.of("copyNo", copyNo, "number", printable.number(),

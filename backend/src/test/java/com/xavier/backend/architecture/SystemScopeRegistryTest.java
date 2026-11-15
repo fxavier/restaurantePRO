@@ -21,6 +21,7 @@ public class SystemScopeRegistryTest {
     /** {@code <module>.<package>.<Class>.<method>} → its scope. */
     public static final Map<String, SystemScope> EXPECTED = new TreeMap<>(Map.ofEntries(
             entry("organization.service.CompanyBootstrapRunner.run", SystemScope.BOOTSTRAP),
+            entry("organization.service.TenantProvisioning.on", SystemScope.PROVISIONING),
             entry("identity.service.AdminBootstrapService.on", SystemScope.BOOTSTRAP),
             entry("production.service.PrintWorker.poll", SystemScope.PRINT_WORKER),
             entry("settlement.service.AttemptSweeper.sweep", SystemScope.PAYMENT_RECOVERY),
@@ -38,7 +39,7 @@ public class SystemScopeRegistryTest {
             entry("shared.events.EventPublicationAlertSource.refreshGauge", SystemScope.EVENT_MAINTENANCE),
             entry("identity.service.LoginThrottling.purgeExpired", SystemScope.IDENTITY_MAINTENANCE),
             entry("identity.service.SupportGrantExpiry.expireDue", SystemScope.IDENTITY_MAINTENANCE),
-            entry("shared.idempotency.IdempotencyRetention.purgeExpired", SystemScope.HOUSEKEEPING),
+            entry("shared.idempotency.IdempotencyRetention.purgeExpired", SystemScope.IDEMPOTENCY_RETENTION),
             entry("shared.notify.ChangeNotifier.heartbeat", SystemScope.HOUSEKEEPING)));
 
     @Test

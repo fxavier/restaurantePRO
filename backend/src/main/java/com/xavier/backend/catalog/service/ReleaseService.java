@@ -20,6 +20,7 @@ import com.xavier.backend.shared.notify.ChangeNotifier;
 import com.xavier.backend.shared.notify.ChangeTopic;
 import com.xavier.backend.shared.persistence.StoreProbe;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
 import java.time.Instant;
@@ -51,10 +52,12 @@ public class ReleaseService {
     private final ChangeNotifier notifier;
     private final JsonMapper json;
     private final Clock clock;
+    private final TenantScopes tenants;
 
     ReleaseService(ConfigurationReleaseRepository releases, WorkingCopy workingCopy, OrganizationApi organization,
                    AccessPolicy accessPolicy, StoreProbe probe, CatalogAudit audit, ApplicationEventPublisher events,
-                   ChangeNotifier notifier, JsonMapper json, Clock clock) {
+                   ChangeNotifier notifier, JsonMapper json, Clock clock, TenantScopes tenants) {
+        this.tenants = tenants;
         this.releases = releases;
         this.workingCopy = workingCopy;
         this.organization = organization;
@@ -126,7 +129,7 @@ public class ReleaseService {
                 "configuration_release_one_published_per_store_ux", "configuration_release_store_version_uk");
 
         auditPublication(release, previous, request);
-        events.publishEvent(new CatalogPublished(storeId, releaseId, version, now));
+        events.publishEvent(new CatalogPublished(tenants.requireTenant(), storeId, releaseId, version, now));
         notifier.notifyAfterCommit(storeId, ChangeTopic.CATALOG, null); // store-wide: the POS re-reads its catalog
         return summary(release);
     }

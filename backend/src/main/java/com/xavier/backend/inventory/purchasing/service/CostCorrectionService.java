@@ -29,6 +29,7 @@ import com.xavier.backend.inventory.service.BusinessDates;
 import com.xavier.backend.inventory.service.StockLedger;
 import com.xavier.backend.organization.OrganizationApi;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -70,13 +71,15 @@ public class CostCorrectionService {
     private final AuditLog auditLog;
     private final ApplicationEventPublisher events;
     private final Clock clock;
+    private final TenantScopes tenants;
 
     CostCorrectionService(GoodsReceiptRepository receipts, GoodsReceiptService receiptService,
                           CostCorrectionRepository corrections, CostVarianceRepository variances, StockLedger ledger,
                           LedgerStore ledgerStore, ShareQueries shares, PurchaseUnits units,
                           BusinessDates businessDates, OrganizationApi organization,
                           AccessPolicy accessPolicy, AuditLog auditLog, ApplicationEventPublisher events,
-                          Clock clock) {
+                          Clock clock, TenantScopes tenants) {
+        this.tenants = tenants;
         this.receipts = receipts;
         this.receiptService = receiptService;
         this.corrections = corrections;
@@ -135,7 +138,8 @@ public class CostCorrectionService {
                     split.revaluationValue(), SOURCE_TYPE, correction.getId(), day, now).withSourceLine(lineId)
                     .withReason(correction.getReason())));
         } else {
-            events.publishEvent(new StockMovementsPosted(SOURCE_TYPE, correction.getId(), storeId, day));
+            events.publishEvent(new StockMovementsPosted(tenants.requireTenant(),
+                    SOURCE_TYPE, correction.getId(), storeId, day));
         }
         if (split.varianceValue().signum() != 0) {
             variances.saveAndFlush(CostVariance.ofCorrection(storeId, receipt.getWarehouseId(),

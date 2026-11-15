@@ -13,6 +13,7 @@ import com.xavier.backend.inventory.service.ActivationService;
 import com.xavier.backend.inventory.service.StockLedger;
 import com.xavier.backend.orders.OrdersApi;
 import com.xavier.backend.orders.VoidFacts;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
@@ -64,9 +65,11 @@ public class VoidReversal {
     private final AuditLog auditLog;
     private final ApplicationEventPublisher events;
     private final Clock clock;
+    private final TenantScopes tenants;
 
     VoidReversal(OrdersApi orders, ConsumptionBook book, StockLedger ledger, ActivationService activations,
-                 AuditLog auditLog, ApplicationEventPublisher events, Clock clock) {
+                 AuditLog auditLog, ApplicationEventPublisher events, Clock clock, TenantScopes tenants) {
+        this.tenants = tenants;
         this.events = events;
         this.orders = orders;
         this.book = book;
@@ -153,7 +156,8 @@ public class VoidReversal {
                 if (facts.wasted()) {
                     if (book.recordWaste(facts.voidId(), original, lineId, quantity, value, facts.businessDay(),
                             facts.at(), facts.reason(), now)) {
-                        events.publishEvent(new ConsumptionWasteRecorded(facts.voidId(), original.id(),
+                        events.publishEvent(new ConsumptionWasteRecorded(tenants.requireTenant(),
+                                facts.voidId(), original.id(),
                                 original.storeId(), original.warehouseId(), original.stockItemId(), quantity, value,
                                 original.currency(), facts.businessDay(), facts.at()));
                         wasted++;

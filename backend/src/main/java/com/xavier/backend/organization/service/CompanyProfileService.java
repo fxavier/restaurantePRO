@@ -10,6 +10,7 @@ import com.xavier.backend.organization.model.dto.CompanyProfileView;
 import com.xavier.backend.organization.repository.CompanyProfileRepository;
 import com.xavier.backend.organization.repository.StoreRepository;
 import com.xavier.backend.shared.persistence.OptimisticLocking;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import java.time.Clock;
 import java.util.Map;
 import org.springframework.stereotype.Service;
@@ -24,9 +25,11 @@ public class CompanyProfileService {
     private final AccessPolicy accessPolicy;
     private final AuditLog auditLog;
     private final Clock clock;
+    private final TenantScopes tenants;
 
     CompanyProfileService(CompanyProfileRepository companies, StoreRepository stores, AccessPolicy accessPolicy,
-                          AuditLog auditLog, Clock clock) {
+                          AuditLog auditLog, Clock clock, TenantScopes tenants) {
+        this.tenants = tenants;
         this.companies = companies;
         this.stores = stores;
         this.accessPolicy = accessPolicy;
@@ -44,7 +47,8 @@ public class CompanyProfileService {
     public CompanyProfileView update(CompanyProfileUpdateRequest request) {
         accessPolicy.require(Permission.COMPANY_MANAGE);
         CompanyProfile company = company();
-        OptimisticLocking.requireVersion(CompanyProfile.class, Boolean.TRUE, company.getVersion(), request.version());
+        OptimisticLocking.requireVersion(CompanyProfile.class, company.getId(), company.getVersion(),
+                request.version());
         company.update(request.name(), request.taxId(), request.country(), request.currency(), stores.count() > 0,
                 clock.instant());
         companies.saveAndFlush(company); // flush now: the response carries the new version
@@ -55,6 +59,6 @@ public class CompanyProfileService {
     }
 
     private CompanyProfile company() {
-        return companies.findById(Boolean.TRUE).orElseThrow(CompanyNotBootstrappedException::new);
+        return companies.findByTenantId(tenants.requireTenant()).orElseThrow(CompanyNotBootstrappedException::new);
     }
 }

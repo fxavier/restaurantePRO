@@ -11,6 +11,7 @@ import com.xavier.backend.production.ProductionFixtures.Round;
 import com.xavier.backend.production.ProductionModuleTest;
 import com.xavier.backend.production.TcpFakePrinter;
 import com.xavier.backend.settlement.model.event.ReceiptSlipRequested;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
@@ -59,7 +60,8 @@ class ProductionActorlessScopeTest {
                 UUID store = UUID.randomUUID();
                 UUID terminal = terminalWithPrinter(store, printer);
                 new TransactionTemplate(transactionManager).executeWithoutResult(status -> events.publishEvent(
-                        new ReceiptSlipRequested(payment, store, terminal, List.of("SLIP " + payment))));
+                        new ReceiptSlipRequested(TenantTestSupport.BOOTSTRAP,
+                                payment, store, terminal, List.of("SLIP " + payment))));
             }
             Awaitility.await().atMost(Duration.ofSeconds(20)).until(() -> jobsOf(payments).size() == 2);
 

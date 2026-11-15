@@ -5,6 +5,7 @@ import com.xavier.backend.organization.exception.InvalidCompanyProfileException;
 import com.xavier.backend.organization.model.CompanyProfile;
 import com.xavier.backend.organization.model.event.CompanyBootstrapped;
 import com.xavier.backend.organization.repository.CompanyProfileRepository;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import java.time.Clock;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -14,8 +15,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Creates the single company at first startup (D30). Idempotent: once the company exists, later runs do
- * nothing, whatever the settings say; edits go through {@code PUT /backoffice/company-profile}.
+ * Creates the bound tenant's company at first startup (D30; the bootstrap tenant, D180). Idempotent: once the company
+ * exists, later runs do nothing, whatever the settings say; edits go through {@code PUT /backoffice/company-profile}.
  */
 @Service
 public class CompanyBootstrapService {
@@ -28,9 +29,11 @@ public class CompanyBootstrapService {
     private final AuditLog auditLog;
     private final ApplicationEventPublisher events;
     private final Clock clock;
+    private final TenantScopes tenants;
 
     CompanyBootstrapService(CompanyProfileRepository companies, AuditLog auditLog,
-                            ApplicationEventPublisher events, Clock clock) {
+                            ApplicationEventPublisher events, Clock clock, TenantScopes tenants) {
+        this.tenants = tenants;
         this.companies = companies;
         this.auditLog = auditLog;
         this.events = events;
@@ -43,7 +46,7 @@ public class CompanyBootstrapService {
      */
     @Transactional
     public boolean bootstrap(CompanyBootstrapProperties settings) {
-        if (companies.existsById(Boolean.TRUE)) {
+        if (companies.existsByTenantId(tenants.requireTenant())) {
             return false;
         }
         if (settings.isUnset()) {
@@ -54,7 +57,8 @@ public class CompanyBootstrapService {
         CompanyProfile company = companies.save(create(settings));
         auditLog.recordAsSystem("COMPANY_BOOTSTRAPPED", "CompanyProfile", AUDIT_ENTITY_ID, null, null, null,
                 Map.of("country", company.getCountry(), "currency", company.getCurrency().getCurrencyCode()));
-        events.publishEvent(new CompanyBootstrapped(company.getName(), company.getTaxId(), company.getCountry(),
+        events.publishEvent(new CompanyBootstrapped(tenants.requireTenant(),
+                company.getName(), company.getTaxId(), company.getCountry(),
                 company.getCurrency().getCurrencyCode(), company.getUpdatedAt()));
         log.info("Company bootstrapped (country {}, currency {})", company.getCountry(), company.getCurrency());
         return true;

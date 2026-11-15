@@ -79,6 +79,7 @@ import com.xavier.backend.settlement.reconciliation.exception.ReconciliationConf
 import com.xavier.backend.settlement.reconciliation.exception.ReconciliationRuleException;
 import com.xavier.backend.settlement.reconciliation.model.dto.StatementError;
 import com.xavier.backend.shared.Money;
+import com.xavier.backend.tenancy.exception.IdentityProviderUnavailableException;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
@@ -495,7 +496,15 @@ class CodedErrorContractTest {
                     "new row violates row-level security policy for table \"order_header\"", "42501"))),
             Map.entry("store-change-refused", () -> new org.springframework.orm.jpa.JpaSystemException(
                     new RuntimeException(new java.sql.SQLException(
-                            "store change refused on orders.order_header (origin account:" + ID + ")", "RS002")))));
+                            "store change refused on orders.order_header (origin account:" + ID + ")", "RS002")))),
+            // R6 (S71, the spec's error codes): the tenant refusals, told apart from the store ones
+            Map.entry("tenant-scope-missing", () -> new org.springframework.dao.DataAccessResourceFailureException(
+                    "could not execute statement", new java.sql.SQLException("tenant not set (origin none)",
+                    "RS003"))),
+            Map.entry("tenant-scope-violation", () -> new org.springframework.dao.PermissionDeniedDataAccessException(
+                    "could not execute statement", new java.sql.SQLException(
+                    "new row violates row-level security policy \"tenant_scope\" for table \"store\"", "42501"))),
+            Map.entry("idp-unavailable", IdentityProviderUnavailableException::new));
 
     @Autowired
     MockMvc mvc;
@@ -1229,6 +1238,19 @@ class CodedErrorContractTest {
                 "Unexpected error: a row outside the store scope was refused.", "");
         expect("store-change-refused", 500, "STORE_CHANGE_REFUSED",
                 "Unexpected error: a row cannot move to another store.", "");
+    }
+
+    @Test
+    void tenantScopeRefusalsAreCoded500sWithoutInternals() throws Exception {
+        expect("tenant-scope-missing", 500, "TENANT_SCOPE_MISSING", "Unexpected error: no tenant.", "");
+        expect("tenant-scope-violation", 500, "TENANT_SCOPE_VIOLATION",
+                "Unexpected error: a row outside the tenant was refused.", "");
+    }
+
+    @Test
+    void anUnreachableIdentityProviderIsA503() throws Exception {
+        expect("idp-unavailable", 503, "IDP_UNAVAILABLE", "The identity provider is unavailable; try again later.",
+                "");
     }
 
     private void expect(String name, int status, String code, String detail, String extra) throws Exception {

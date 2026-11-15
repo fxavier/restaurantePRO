@@ -21,17 +21,61 @@ import org.springframework.jdbc.core.simple.JdbcClient;
  */
 public class RowLevelSecurityCoverageTest {
 
-    /** D168: the only definer functions; each reads one protected table's store columns, nothing else. */
+    /**
+     * D168, D179 and the spec's SQL contracts: the only definer functions. Each pins {@code search_path}, is not
+     * executable by {@code PUBLIC}, is executable by the application role, and has its own test (security rule 9):
+     * {@code StoreProbeTenantTest} ({@code store_of}), the inventory suites ({@code stock_transfer_stores}),
+     * {@code TenancyFunctionsTest} (the tenancy functions).
+     */
     static final Set<String> SECURITY_DEFINER_ALLOWED = Set.of("shared.store_of(regclass,uuid)",
-            "inventory.stock_transfer_stores(uuid)");
+            "inventory.stock_transfer_stores(uuid)",
+            "tenancy.resolve_membership(text,text,uuid,text[])",
+            "tenancy.active_tenant_ids()",
+            "tenancy.grant_membership(uuid,text,text,text,uuid,timestamp with time zone,timestamp with time zone)",
+            "tenancy.revoke_membership(uuid)",
+            "tenancy.tenant_status(uuid)",
+            "tenancy.activate_tenant(uuid)");
+
+    /**
+     * R6: the modules whose every table is TENANT* or PLATFORM ({@link #assertModuleTenantProtected}). A module joins
+     * when its slice converts it (S74a-d, S72 for identity); S76 makes the assertion strict over every schema.
+     */
+    static final List<String> TENANT_PROTECTED_MODULES = List.of("organization", "tenancy");
+
+    /** R6 tables converted ahead of their module (the shared kernel keeps Spring Session until S72). */
+    static final List<String> TENANT_PROTECTED_TABLES = List.of("shared.idempotency_record");
 
     private static final String SCRATCH = "rls_scratch_coverage";
 
     @Test
     void theSchemasOfThePrefactorAreClassified() {
-        for (String schema : List.of("shared", "public", "organization", "identity", "customers")) {
+        for (String schema : List.of("shared", "public", "organization", "identity", "customers", "tenancy")) {
             assertModuleClassified(schema);
         }
+    }
+
+    /** D179 (A88, per module until S76): every table of a converted module is TENANT* or PLATFORM with a reason. */
+    @Test
+    void theConvertedModulesAreTenantProtected() {
+        TENANT_PROTECTED_MODULES.forEach(RowLevelSecurityCoverageTest::assertModuleTenantProtected);
+        TENANT_PROTECTED_TABLES.forEach(table -> assertThat(tenantProblems(table)).as(table).isEmpty());
+    }
+
+    /** D177: the application role holds no privilege on any tenancy table; it reaches them through functions. */
+    @Test
+    void theApplicationRoleHasNoPrivilegeOnTenancyTables() {
+        assertThat(OwnerDatabase.shared().jdbc().sql("""
+                        SELECT c.oid::regclass::text FROM pg_catalog.pg_class c
+                            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                        WHERE n.nspname = 'tenancy' AND c.relkind IN ('r', 'p', 'v', 'm', 'S')
+                          AND (has_table_privilege(:role, c.oid, 'SELECT')
+                               OR has_table_privilege(:role, c.oid, 'INSERT')
+                               OR has_table_privilege(:role, c.oid, 'UPDATE')
+                               OR has_table_privilege(:role, c.oid, 'DELETE'))""")
+                .param("role", TestcontainersConfiguration.APP_ROLE).query(String.class).list()).isEmpty();
+        assertThat(OwnerDatabase.shared().jdbc().sql("SELECT count(*) FROM pg_catalog.pg_class c "
+                        + "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'tenancy' "
+                        + "AND c.relkind = 'r'").query(Long.class).single()).as("tenancy has tables").isPositive();
     }
 
     /**
@@ -64,17 +108,40 @@ public class RowLevelSecurityCoverageTest {
         Map<String, Object> counts = OwnerDatabase.shared().jdbc().sql("""
                         SELECT (SELECT count(*) FROM shared.rls_protected_table) AS protected,
                                (SELECT count(*) FROM shared.rls_unscoped_table) AS unscoped""").query().singleRow();
-        assertThat(counts).as("A75: 97 protected after R5; 58 + 4 (R5) unscoped, the Flyway history and the two registries")
-                .containsEntry("protected", 97L).containsEntry("unscoped", 65L);
+        assertThat(counts).as("A75: 97 protected after R5; R6 S71 adds the three organization tables and the "
+                        + "idempotency records (out of UNSCOPED) and moves the Modulith registry, its archive, the "
+                        + "Flyway history and the registries to PLATFORM")
+                .containsEntry("protected", 101L).containsEntry("unscoped", 56L);
+        assertThat(OwnerDatabase.shared().jdbc().sql("SELECT count(*) FROM shared.rls_platform_table")
+                .query(Long.class).single()).as("PLATFORM").isEqualTo(10L);
     }
 
     @Test
     void noSecurityDefinerFunctionOutsideTheAllowList() {
-        assertThat(OwnerDatabase.shared().jdbc().sql("""
-                        SELECT p.oid::regprocedure::text FROM pg_catalog.pg_proc p
+        List<Map<String, Object>> definers = OwnerDatabase.shared().jdbc().sql("""
+                        SELECT p.oid::regprocedure::text AS name,
+                               coalesce(array_to_string(p.proconfig, ','), '') AS config,
+                               p.proacl IS NULL OR EXISTS (SELECT 1 FROM aclexplode(p.proacl) a
+                                                           WHERE a.grantee = 0 AND a.privilege_type = 'EXECUTE')
+                                   AS public_execute,
+                               has_function_privilege(:role, p.oid, 'EXECUTE') AS app_execute
+                        FROM pg_catalog.pg_proc p
                             JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
                         WHERE p.prosecdef AND n.nspname NOT IN ('pg_catalog', 'information_schema')""")
-                .query(String.class).list()).isSubsetOf(SECURITY_DEFINER_ALLOWED).contains("shared.store_of(regclass,uuid)");
+                .param("role", TestcontainersConfiguration.APP_ROLE).query().listOfRows();
+
+        assertThat(definers).extracting(row -> (String) row.get("name")).isSubsetOf(SECURITY_DEFINER_ALLOWED)
+                .contains("shared.store_of(regclass,uuid)", "tenancy.resolve_membership(text,text,uuid,text[])",
+                        "tenancy.active_tenant_ids()");
+        assertThat(definers).filteredOn(row -> !"inventory.stock_transfer_stores(uuid)".equals(row.get("name")))
+                .allSatisfy(row -> {
+                    assertThat((String) row.get("config")).as("%s pins search_path", row.get("name"))
+                            .isEqualTo("search_path=pg_catalog");
+                    assertThat(row.get("public_execute")).as("%s is not PUBLIC's", row.get("name"))
+                            .isEqualTo(false);
+                    assertThat(row.get("app_execute")).as("%s is the application role's", row.get("name"))
+                            .isEqualTo(true);
+                });
     }
 
     @Test
@@ -262,6 +329,7 @@ public class RowLevelSecurityCoverageTest {
                         SELECT c.oid, c.oid::regclass::text AS name, c.relname, c.relrowsecurity AS enabled,
                                c.relforcerowsecurity AS forced,
                                EXISTS (SELECT 1 FROM shared.rls_unscoped_table u WHERE u.table_name = c.oid)
+                                   OR EXISTS (SELECT 1 FROM shared.rls_platform_table f WHERE f.table_name = c.oid)
                                    AS registered,
                                EXISTS (SELECT 1 FROM shared.rls_protected_table p WHERE p.table_name = c.oid)
                                    AS protected_registered
@@ -276,7 +344,7 @@ public class RowLevelSecurityCoverageTest {
                 continue;
             }
             if (!Boolean.TRUE.equals(table.get("enabled")) || !Boolean.TRUE.equals(table.get("forced"))) {
-                problems.add(name + ": neither registered UNSCOPED nor protected (ENABLE + FORCE)");
+                problems.add(name + ": neither registered UNSCOPED or PLATFORM nor protected (ENABLE + FORCE)");
                 continue;
             }
             if (!Boolean.TRUE.equals(table.get("protected_registered"))) {
@@ -298,6 +366,7 @@ public class RowLevelSecurityCoverageTest {
 
     /** The policy names each helper writes (V1008, V1009); a protected table carries exactly one of these sets. */
     static final Map<Set<String>, String> HELPER_OF_POLICIES = Map.of(
+            Set.of("tenant_rows"), "shared.rls_protect_tenant_table",
             Set.of("store_scope"), "shared.rls_protect_store_table",
             Set.of("store_or_all_read", "store_or_all_insert", "store_or_all_update", "store_or_all_delete"),
             "shared.rls_protect_store_or_all_table",
@@ -309,9 +378,12 @@ public class RowLevelSecurityCoverageTest {
                                                   List<Map<String, Object>> policies) {
         Set<String> names = new java.util.TreeSet<>();
         policies.forEach(policy -> names.add((String) policy.get("polname")));
-        String function = HELPER_OF_POLICIES.get(names);
-        if (function == null) {
-            return List.of(name + ": policies " + names + " are not the set of one V1008/V1009 helper");
+        // D179: the restrictive tenant_scope of a converted table comes with its store set (the helper adds it first)
+        Set<String> storeNames = new java.util.TreeSet<>(names);
+        boolean tenant = storeNames.remove("tenant_scope");
+        String function = HELPER_OF_POLICIES.get(storeNames);
+        if (function == null || (function.equals("shared.rls_protect_tenant_table") && !tenant)) {
+            return List.of(name + ": policies " + names + " are not the set of one V1008/V1009/V1010 helper");
         }
         JdbcClient jdbc = OwnerDatabase.shared().jdbc();
         String helper;
@@ -340,15 +412,22 @@ public class RowLevelSecurityCoverageTest {
         }
         List<String> problems = new ArrayList<>();
         List<Map<String, Object>> reference = OwnerDatabase.shared().call(owner -> {
-            owner.sql("CREATE TEMPORARY TABLE " + relname + " (LIKE " + name + ") ON COMMIT DROP").update();
+            owner.sql("CREATE TEMPORARY TABLE " + relname + " (LIKE " + name + " INCLUDING DEFAULTS INCLUDING INDEXES) "
+                    + "ON COMMIT DROP").update();
             owner.sql("SELECT " + helper).query().listOfRows();
             List<Map<String, Object>> created = policies(owner, owner.sql("SELECT 'pg_temp." + relname
                     + "'::regclass::oid").query(Long.class).single());
             owner.sql("DELETE FROM shared.rls_protected_table WHERE table_name = 'pg_temp." + relname
                     + "'::regclass").update();
+            owner.sql("DELETE FROM shared.rls_tenant_table WHERE table_name = 'pg_temp." + relname
+                    + "'::regclass").update();
             owner.sql("DROP TABLE pg_temp." + relname).update();
             return created;
         });
+        if (reference.size() != policies.size()) {
+            problems.add(name + ": policies " + names + " differ from the canonical set of " + helper);
+            return problems;
+        }
         for (int i = 0; i < policies.size(); i++) {
             Map<String, Object> actual = policies.get(i);
             for (String part : List.of("polname", "cmd", "permissive", "roles", "qual", "with_check")) {
@@ -357,6 +436,12 @@ public class RowLevelSecurityCoverageTest {
                             + " is not the canonical text of " + helper);
                 }
             }
+        }
+        if (tenant) {
+            problems.addAll(tenantProblems(name));
+        }
+        if (function.equals("shared.rls_protect_tenant_table")) {
+            return problems; // TENANT class: no store column to guard
         }
         Long guards = jdbc.sql("""
                         SELECT count(*) FROM pg_catalog.pg_trigger t
@@ -368,6 +453,133 @@ public class RowLevelSecurityCoverageTest {
             problems.add(name + ": no enabled RS002 trigger on " + guardedColumn);
         }
         return problems;
+    }
+
+    /**
+     * D179 (security rule 2), per module: every table of {@code schema} is PLATFORM (registered with a reason) or a
+     * TENANT* table: {@code tenant_id uuid NOT NULL DEFAULT shared.rls_tenant_id()}, ENABLE + FORCE, the canonical
+     * restrictive {@code tenant_scope}, {@code UNIQUE (tenant_id, id)} (or a primary key that leads with
+     * {@code tenant_id} when there is no id), the enabled {@code tenant_fixed} RS002 trigger, and its registration in
+     * {@code shared.rls_tenant_table}. A module calls it from its isolation test once its slice converted it.
+     */
+    public static void assertModuleTenantProtected(String schema) {
+        List<String> tables = OwnerDatabase.shared().jdbc().sql("""
+                        SELECT c.oid::regclass::text FROM pg_catalog.pg_class c
+                            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                        WHERE n.nspname = ? AND c.relkind IN ('r', 'p')
+                          AND NOT EXISTS (SELECT 1 FROM shared.rls_platform_table f WHERE f.table_name = c.oid)
+                        ORDER BY 1""").param(schema).query(String.class).list();
+        long all = OwnerDatabase.shared().jdbc().sql("SELECT count(*) FROM pg_catalog.pg_class c JOIN "
+                + "pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = ? AND c.relkind IN ('r', 'p')")
+                .param(schema).query(Long.class).single();
+        assertThat(all).as("schema %s has tables", schema).isPositive();
+        List<String> problems = new ArrayList<>();
+        tables.forEach(table -> problems.addAll(tenantProblems(table)));
+        assertThat(problems).as("tenant protection of schema %s", schema).isEmpty();
+    }
+
+    /** What keeps {@code table} from being a canonical TENANT* table (empty when it is one). */
+    static List<String> tenantProblems(String table) {
+        JdbcClient jdbc = OwnerDatabase.shared().jdbc();
+        Map<String, Object> facts = jdbc.sql("""
+                        SELECT c.relrowsecurity AND c.relforcerowsecurity AS forced,
+                               EXISTS (SELECT 1 FROM pg_catalog.pg_attribute a
+                                           JOIN pg_catalog.pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+                                       WHERE a.attrelid = c.oid AND a.attname = 'tenant_id' AND a.attnotnull
+                                         AND a.atttypid = 'uuid'::regtype
+                                         AND EXISTS (SELECT 1 FROM pg_catalog.pg_depend dep
+                                                     WHERE dep.classid = 'pg_catalog.pg_attrdef'::regclass
+                                                       AND dep.objid = d.oid
+                                                       AND dep.refobjid = 'shared.rls_tenant_id()'::regprocedure))
+                                   AS tenant_column,
+                               (SELECT count(*) FROM pg_catalog.pg_policy p WHERE p.polrelid = c.oid
+                                  AND p.polname = 'tenant_scope' AND NOT p.polpermissive AND p.polcmd = '*'
+                                  AND pg_catalog.pg_get_expr(p.polqual, p.polrelid) = :canonical
+                                  AND pg_catalog.pg_get_expr(p.polwithcheck, p.polrelid) = :canonical) AS policy,
+                               EXISTS (SELECT 1 FROM pg_catalog.pg_attribute a WHERE a.attrelid = c.oid
+                                       AND a.attname = 'id' AND NOT a.attisdropped) AS has_id,
+                               EXISTS (SELECT 1 FROM pg_catalog.pg_index i
+                                       WHERE i.indrelid = c.oid AND i.indisunique AND i.indpred IS NULL
+                                         AND i.indnkeyatts = 2
+                                         AND pg_catalog.pg_get_indexdef(i.indexrelid, 1, true) = 'tenant_id'
+                                         AND pg_catalog.pg_get_indexdef(i.indexrelid, 2, true) = 'id') AS tenant_id_key,
+                               EXISTS (SELECT 1 FROM pg_catalog.pg_index i
+                                       WHERE i.indrelid = c.oid AND i.indisprimary
+                                         AND pg_catalog.pg_get_indexdef(i.indexrelid, 1, true) = 'tenant_id')
+                                   AS tenant_primary_key,
+                               EXISTS (SELECT 1 FROM pg_catalog.pg_trigger t
+                                           JOIN pg_catalog.pg_attribute a ON a.attrelid = t.tgrelid
+                                               AND a.attnum = t.tgattr[0]
+                                       WHERE t.tgrelid = c.oid AND t.tgenabled = 'O' AND a.attname = 'tenant_id'
+                                         AND t.tgfoid = 'shared.rls_reject_tenant_change()'::regprocedure) AS fixed,
+                               EXISTS (SELECT 1 FROM shared.rls_tenant_table r WHERE r.table_name = c.oid)
+                                   AS registered
+                        FROM pg_catalog.pg_class c WHERE c.oid = CAST(:table AS regclass)""")
+                .param("table", table).param("canonical", CANONICAL_TENANT_PREDICATE).query().singleRow();
+        List<String> problems = new ArrayList<>();
+        if (!Boolean.TRUE.equals(facts.get("tenant_column"))) {
+            problems.add(table + ": no tenant_id uuid NOT NULL DEFAULT shared.rls_tenant_id()");
+        }
+        if (!Boolean.TRUE.equals(facts.get("forced"))) {
+            problems.add(table + ": row-level security not enabled and forced");
+        }
+        if (((Number) facts.get("policy")).longValue() != 1) {
+            problems.add(table + ": no canonical restrictive tenant_scope policy");
+        }
+        boolean key = Boolean.TRUE.equals(facts.get("has_id")) ? Boolean.TRUE.equals(facts.get("tenant_id_key"))
+                : Boolean.TRUE.equals(facts.get("tenant_primary_key"));
+        if (!key) {
+            problems.add(table + ": no UNIQUE (tenant_id, id) (or primary key leading with tenant_id)");
+        }
+        if (!Boolean.TRUE.equals(facts.get("fixed"))) {
+            problems.add(table + ": no enabled tenant_fixed RS002 trigger on tenant_id");
+        }
+        if (!Boolean.TRUE.equals(facts.get("registered"))) {
+            problems.add(table + ": not in shared.rls_tenant_table");
+        }
+        return problems;
+    }
+
+    /** The deparsed tenant predicate of {@code shared.rls_protect_tenant}, as pg_get_expr prints it. */
+    static final String CANONICAL_TENANT_PREDICATE = "(tenant_id = ( SELECT shared.rls_tenant_id() AS rls_tenant_id))";
+
+    /** The tenant helper is red-capable: a table without its column, policy, key or trigger is reported. */
+    @Test
+    void theTenantHelperCatchesAMissingColumnPolicyKeyAndTrigger() {
+        JdbcClient owner = OwnerDatabase.shared().jdbc();
+        dropScratch(owner);
+        try {
+            OwnerDatabase.shared().tx(jdbc -> {
+                jdbc.sql("CREATE SCHEMA " + SCRATCH).update();
+                jdbc.sql("CREATE TABLE " + SCRATCH + ".company (id uuid PRIMARY KEY, "
+                        + "tenant_id uuid NOT NULL DEFAULT shared.rls_tenant_id(), UNIQUE (tenant_id, id))").update();
+                jdbc.sql("SELECT shared.rls_protect_tenant_table('" + SCRATCH + ".company')").query().listOfRows();
+            });
+            assertModuleTenantProtected(SCRATCH);
+            assertModuleClassified(SCRATCH);
+
+            owner.sql("CREATE TABLE " + SCRATCH + ".stray (id uuid PRIMARY KEY)").update();
+            assertThatThrownBy(() -> assertModuleTenantProtected(SCRATCH)).hasMessageContaining(SCRATCH + ".stray")
+                    .hasMessageContaining("no tenant_id");
+            owner.sql("DROP TABLE " + SCRATCH + ".stray").update();
+
+            owner.sql("ALTER POLICY tenant_scope ON " + SCRATCH + ".company USING (true)").update();
+            assertThatThrownBy(() -> assertModuleTenantProtected(SCRATCH))
+                    .hasMessageContaining("no canonical restrictive tenant_scope");
+            owner.sql("ALTER POLICY tenant_scope ON " + SCRATCH + ".company USING (" + CANONICAL_TENANT_PREDICATE
+                    + ")").update();
+            assertModuleTenantProtected(SCRATCH);
+
+            owner.sql("ALTER TABLE " + SCRATCH + ".company DISABLE TRIGGER tenant_fixed").update();
+            assertThatThrownBy(() -> assertModuleTenantProtected(SCRATCH)).hasMessageContaining("tenant_fixed");
+            owner.sql("ALTER TABLE " + SCRATCH + ".company ENABLE TRIGGER tenant_fixed").update();
+
+            owner.sql("ALTER TABLE " + SCRATCH + ".company DROP CONSTRAINT company_tenant_id_id_key").update();
+            assertThatThrownBy(() -> assertModuleTenantProtected(SCRATCH))
+                    .hasMessageContaining("UNIQUE (tenant_id, id)");
+        } finally {
+            dropScratch(owner);
+        }
     }
 
     private static List<Map<String, Object>> policies(JdbcClient jdbc, long oid) {
@@ -383,6 +595,8 @@ public class RowLevelSecurityCoverageTest {
         owner.sql("DELETE FROM shared.rls_unscoped_table WHERE table_name::text LIKE ?").param(SCRATCH + ".%")
                 .update();
         owner.sql("DELETE FROM shared.rls_protected_table WHERE table_name::text LIKE ?").param(SCRATCH + ".%")
+                .update();
+        owner.sql("DELETE FROM shared.rls_tenant_table WHERE table_name::text LIKE ?").param(SCRATCH + ".%")
                 .update();
         owner.sql("DROP SCHEMA IF EXISTS " + SCRATCH + " CASCADE").update();
     }

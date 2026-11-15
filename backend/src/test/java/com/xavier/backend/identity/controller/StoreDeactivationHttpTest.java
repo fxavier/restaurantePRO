@@ -12,6 +12,7 @@ import com.xavier.backend.identity.IdentityFixtures.Employee;
 import com.xavier.backend.identity.IdentityFixtures.Terminal;
 import com.xavier.backend.identity.IdentityTest;
 import com.xavier.backend.organization.model.event.StoreDeactivated;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import jakarta.servlet.http.Cookie;
 import java.time.Duration;
 import java.time.Instant;
@@ -103,7 +104,7 @@ class StoreDeactivationHttpTest {
                 mvc.perform(get("/api/v1/auth/session").cookie(session)).andExpect(status().isUnauthorized()));
 
         new TransactionTemplate(transactions).executeWithoutResult(tx ->
-                events.publishEvent(new StoreDeactivated(store, Instant.now())));
+                events.publishEvent(new StoreDeactivated(TenantTestSupport.BOOTSTRAP, store, Instant.now())));
 
         Awaitility.await().atMost(Duration.ofSeconds(10)).untilAsserted(() ->
                 assertThat(identityDeliveriesOf(store)).as("both deliveries handled by identity")

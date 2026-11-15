@@ -4,7 +4,8 @@
  * {@link com.xavier.backend.organization.BusinessDays}) plus the {@code model.dto} and {@code model.event}
  * named interfaces. Everything else is internal.
  */
-@ApplicationModule(displayName = "Organization", allowedDependencies = {"shared", "audit", "access"})
+@ApplicationModule(displayName = "Organization",
+        allowedDependencies = {"shared", "audit", "access", "tenancy :: event"})
 package com.xavier.backend.organization;
 
 import org.springframework.modulith.ApplicationModule;

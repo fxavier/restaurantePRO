@@ -18,6 +18,7 @@ import com.xavier.backend.settlement.SettlementFixtures;
 import com.xavier.backend.settlement.SettlementFixtures.Sale;
 import com.xavier.backend.settlement.model.event.CreditChargePosted;
 import com.xavier.backend.shared.Money;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Currency;
@@ -116,7 +117,8 @@ class RebuildEqualsLiveTest {
         doAnswer(call -> sale.store().equals(call.getArgument(0))
                 ? new PageImpl<>(List.of(charge), call.getArgument(3), 1) : call.callRealMethod())
                 .when(settlementFacts).creditChargeIds(any(), any(), any(), any(Pageable.class));
-        tx.executeWithoutResult(status -> events.publishEvent(new CreditChargePosted(charge, sale.store())));
+        tx.executeWithoutResult(status -> events.publishEvent(new CreditChargePosted(TenantTestSupport.BOOTSTRAP,
+                charge, sale.store())));
 
         reporting.awaitNothingPendingFor(sale.store());
         reporting.awaitSalesRecord(reporting.issuedDocument(sale.order()));

@@ -11,6 +11,7 @@ import com.xavier.backend.orders.delivery.DeliveryFixtures.DeliveryShop;
 import com.xavier.backend.orders.model.event.DeliveryDispatched;
 import com.xavier.backend.production.ProductionFixtures;
 import com.xavier.backend.production.ProductionModuleTest;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -75,7 +76,7 @@ class DeliverySlipOnceTest {
         UUID dispatch = dispatchFrom(terminal);
         await(() -> completed(dispatch) == 1, "first delivery handled");
 
-        publish(new DeliveryDispatched(order, dispatch, d.shop().store(), terminal));
+        publish(new DeliveryDispatched(TenantTestSupport.BOOTSTRAP, order, dispatch, d.shop().store(), terminal));
         await(() -> completed(dispatch) == 2, "redelivery handled");
 
         assertThat(fixtures.tickets(dispatch)).singleElement().satisfies(ticket -> {

@@ -22,6 +22,7 @@ import com.xavier.backend.settlement.SettlementFixtures.Sale;
 import com.xavier.backend.settlement.model.event.CreditChargePosted;
 import com.xavier.backend.settlement.model.event.PaymentRecorded;
 import com.xavier.backend.settlement.model.event.RefundRecorded;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.List;
@@ -83,27 +84,36 @@ class ReportingActorlessScopeTest {
     static Stream<Arguments> listeners() {
         return Stream.of(
                 listener("ProjectionListeners.on", "projectDocument",
-                        (t, store, id) -> t.projectionListeners.on(new FiscalDocumentIssued(id, store, null, null))),
+                        (t, store, id) -> t.projectionListeners.on(new FiscalDocumentIssued(TenantTestSupport.BOOTSTRAP,
+                                id, store, null, null))),
                 listener("ProjectionListeners.on", "projectVoid",
-                        (t, store, id) -> t.projectionListeners.on(new OrderLinesVoided(UUID.randomUUID(), id,
+                        (t, store, id) -> t.projectionListeners.on(new OrderLinesVoided(TenantTestSupport.BOOTSTRAP,
+                                UUID.randomUUID(), id,
                                 store, null, 1, null, null, null, null, null, null))),
                 listener("ProjectionListeners.on", "projectPayment",
-                        (t, store, id) -> t.projectionListeners.on(new PaymentRecorded(id, store))),
+                        (t, store, id) -> t.projectionListeners.on(new PaymentRecorded(TenantTestSupport.BOOTSTRAP,
+                                id, store))),
                 listener("ProjectionListeners.on", "projectRefund",
-                        (t, store, id) -> t.projectionListeners.on(new RefundRecorded(id, store))),
+                        (t, store, id) -> t.projectionListeners.on(new RefundRecorded(TenantTestSupport.BOOTSTRAP,
+                                id, store))),
                 listener("ProjectionListeners.on", "projectCreditCharge",
-                        (t, store, id) -> t.projectionListeners.on(new CreditChargePosted(id, store))),
+                        (t, store, id) -> t.projectionListeners.on(new CreditChargePosted(TenantTestSupport.BOOTSTRAP,
+                                id, store))),
                 listener("CostOfGoodsListeners.on", "projectStockSource",
-                        (t, store, id) -> t.costListeners.on(new StockMovementsPosted("ROUND", id, store,
+                        (t, store, id) -> t.costListeners.on(new StockMovementsPosted(TenantTestSupport.BOOTSTRAP,
+                                "ROUND", id, store,
                                 LocalDate.of(2026, 1, 5)))),
                 listener("CostOfGoodsListeners.on", "projectWaste",
-                        (t, store, id) -> t.costListeners.on(new ConsumptionWasteRecorded(id, UUID.randomUUID(),
+                        (t, store, id) -> t.costListeners.on(new ConsumptionWasteRecorded(TenantTestSupport.BOOTSTRAP,
+                                id, UUID.randomUUID(),
                                 store, null, null, null, null, null, null, null))),
                 listener("CostOfGoodsListeners.on", "projectDiscounts",
-                        (t, store, id) -> t.costListeners.on(new LineDiscountsRecorded(UUID.randomUUID(), store,
+                        (t, store, id) -> t.costListeners.on(new LineDiscountsRecorded(TenantTestSupport.BOOTSTRAP,
+                                UUID.randomUUID(), store,
                                 LineDiscountsRecorded.BATCH, id))),
                 listener("CostOfGoodsListeners.on", "projectOfferCosts",
-                        (t, store, id) -> t.costListeners.on(new OrderClosed(id, store, LocalDate.of(2026, 1, 5)))));
+                        (t, store, id) -> t.costListeners.on(new OrderClosed(TenantTestSupport.BOOTSTRAP,
+                                id, store, LocalDate.of(2026, 1, 5)))));
     }
 
     @ParameterizedTest(name = "{1}")
