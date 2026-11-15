@@ -2,14 +2,13 @@ package com.xavier.bff;
 
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MvcResult;
 
 import java.net.URI;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
+import java.util.Map;
 import java.net.http.HttpResponse;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -19,9 +18,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class BffCsrfTest extends BffTestSupport {
-
-    @LocalServerPort
-    int port;
 
     @Test
     void aStateChangingRelayWithoutTheCsrfTokenIsRefused() throws Exception {
@@ -55,6 +51,7 @@ class BffCsrfTest extends BffTestSupport {
         assertThat(xsrf.isHttpOnly()).isFalse();
         assertThat(xsrf.getSecure()).isTrue();
         assertThat(xsrf.getPath()).isEqualTo("/");
+        assertThat(xsrf.getAttribute("SameSite")).isEqualTo("Lax");
 
         mvc.perform(post("/api/v1/backoffice/items").session(session).cookie(xsrf)
                         .header("X-XSRF-TOKEN", xsrf.getValue())
@@ -75,9 +72,29 @@ class BffCsrfTest extends BffTestSupport {
     }
 
     @Test
+    void theSessionIdChangesAtLoginAndThePreLoginCookieIsDead() throws Exception {
+        HttpResponse<Void> toKeycloak = http.send(HttpRequest.newBuilder(local("/oauth2/authorization/keycloak")).build(),
+                HttpResponse.BodyHandlers.discarding());
+        String preLogin = sessionCookie(toKeycloak);
+        Map<String, String> authorization = RecordedRequest.parse(
+                URI.create(toKeycloak.headers().firstValue("Location").orElseThrow()).getRawQuery());
+        AUTHORIZATION_SERVER.expectNonce(authorization.get("nonce"));
+
+        HttpResponse<Void> callback = http.send(HttpRequest.newBuilder(
+                        local("/login/oauth2/code/keycloak?code=stub-code&state=" + authorization.get("state")))
+                .header("Cookie", preLogin).build(), HttpResponse.BodyHandlers.discarding());
+
+        assertThat(callback.statusCode()).isEqualTo(302);
+        assertThat(sessionCookie(callback)).isNotEqualTo(preLogin);
+        HttpResponse<Void> withPreLoginCookie = http.send(HttpRequest.newBuilder(local("/api/v1/backoffice/stores"))
+                .header("Cookie", preLogin).build(), HttpResponse.BodyHandlers.discarding());
+        assertThat(withPreLoginCookie.statusCode()).isEqualTo(401);
+        assertThat(BACKEND.received()).isEmpty();
+    }
+
+    @Test
     void theSessionCookieIsHttpOnlySecureAndSameSiteLax() throws Exception {
-        HttpResponse<Void> response = HttpClient.newHttpClient().send(
-                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/oauth2/authorization/keycloak")).build(),
+        HttpResponse<Void> response = http.send(HttpRequest.newBuilder(local("/oauth2/authorization/keycloak")).build(),
                 HttpResponse.BodyHandlers.discarding());
 
         String sessionCookie = response.headers().allValues("Set-Cookie").stream()

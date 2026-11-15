@@ -9,13 +9,25 @@ import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MvcResult;
 
 import java.net.URI;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class BffTokenRelayTest extends BffTestSupport {
@@ -125,19 +137,110 @@ class BffTokenRelayTest extends BffTestSupport {
     }
 
     @Test
-    void aRefusedRefreshAnswers401WithoutCallingTheBackend() throws Exception {
-        AUTHORIZATION_SERVER.issueAccessTokensValidFor(5);
-        MockHttpSession session = login();
-        AUTHORIZATION_SERVER.refuseRefresh();
+    void eachSessionRelaysItsOwnTokensEvenForTheSameUser() throws Exception {
+        MockHttpSession firstDevice = login();
+        String firstDeviceToken = AUTHORIZATION_SERVER.lastAccessToken();
+        login();
 
-        mvc.perform(get("/api/v1/backoffice/stores").session(session)).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/backoffice/stores").session(firstDevice)).andExpect(status().isOk());
+
+        assertThat(BACKEND.onlyRequest().header("Authorization")).isEqualTo("Bearer " + firstDeviceToken);
+    }
+
+    @Test
+    void parallelCallsOnOneSessionRefreshTheTokenOnce() throws Exception {
+        AUTHORIZATION_SERVER.issueNextAccessTokenValidFor(5);
+        String session = loginOverHttp();
+        int calls = 4;
+        AUTHORIZATION_SERVER.holdRefreshesUntil(calls);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService browser = Executors.newFixedThreadPool(calls);
+        try {
+            List<Future<Integer>> statuses = new ArrayList<>();
+            for (int i = 0; i < calls; i++) {
+                statuses.add(browser.submit(() -> {
+                    start.await();
+                    return http.send(HttpRequest.newBuilder(local("/api/v1/backoffice/stores")).header("Cookie", session).build(),
+                            HttpResponse.BodyHandlers.discarding()).statusCode();
+                }));
+            }
+            start.countDown();
+            for (Future<Integer> status : statuses) {
+                assertThat(status.get(30, TimeUnit.SECONDS)).isEqualTo(200);
+            }
+        } finally {
+            browser.shutdownNow();
+        }
+
+        assertThat(AUTHORIZATION_SERVER.refreshGrants()).hasSize(1);
+        assertThat(BACKEND.received()).hasSize(calls)
+                .allSatisfy(r -> assertThat(r.header("Authorization")).isEqualTo("Bearer " + AUTHORIZATION_SERVER.lastAccessToken()));
+    }
+
+    @Test
+    void aHungIdentityProviderFailsTheCallFast() throws Exception {
+        AUTHORIZATION_SERVER.issueNextAccessTokenValidFor(5);
+        MockHttpSession session = login();
+        AUTHORIZATION_SERVER.hangTokenEndpoint();
+
+        assertTimeoutPreemptively(Duration.ofSeconds(8), () ->
+                mvc.perform(get("/api/v1/backoffice/stores").session(session)).andExpect(status().isUnauthorized()));
 
         assertThat(BACKEND.received()).isEmpty();
     }
 
     @Test
-    void anAnonymousCallAnswers401WithoutCallingTheBackend() throws Exception {
-        mvc.perform(get("/api/v1/backoffice/stores")).andExpect(status().isUnauthorized());
+    void aRefusedRefreshAnswersSessionExpiredWithoutCallingTheBackend() throws Exception {
+        AUTHORIZATION_SERVER.issueAccessTokensValidFor(5);
+        MockHttpSession session = login();
+        AUTHORIZATION_SERVER.refuseRefresh();
+
+        mvc.perform(get("/api/v1/backoffice/stores").session(session))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.code").value("BFF_SESSION_EXPIRED"));
+
+        assertThat(BACKEND.received()).isEmpty();
+    }
+
+    @Test
+    void anAnonymousCallAnswersSessionExpiredWithoutCallingTheBackend() throws Exception {
+        mvc.perform(get("/api/v1/backoffice/stores"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.code").value("BFF_SESSION_EXPIRED"))
+                .andExpect(jsonPath("$.status").value(401));
+
+        assertThat(BACKEND.received()).isEmpty();
+    }
+
+    @Test
+    void anUnreachableBackendAnswersBackendUnavailable() throws Exception {
+        MockHttpSession session = login();
+        BACKEND.dropNextConnection();
+
+        mvc.perform(get("/api/v1/backoffice/stores").session(session))
+                .andExpect(status().isBadGateway())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.code").value("BACKEND_UNAVAILABLE"));
+    }
+
+    @Test
+    void aNonStandardBackendStatusIsPassedThrough() throws Exception {
+        MockHttpSession session = login();
+        BACKEND.willRespond(499, Map.of("Content-Type", "application/json"), "{}");
+
+        mvc.perform(get("/api/v1/backoffice/stores").session(session)).andExpect(status().is(499));
+    }
+
+    @Test
+    void aBodyOverTheLimitIsRefusedWithoutCallingTheBackend() throws Exception {
+        MockHttpSession session = login();
+        byte[] overOneMebibyte = new byte[1024 * 1024 + 1];
+
+        mvc.perform(post("/api/v1/backoffice/items").session(session).with(xsrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(overOneMebibyte))
+                .andExpect(status().isPayloadTooLarge());
 
         assertThat(BACKEND.received()).isEmpty();
     }

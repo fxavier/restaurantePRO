@@ -59,6 +59,17 @@ class BffStepUpTest extends BffTestSupport {
     }
 
     @Test
+    void anAbandonedStepUpDoesNotRedirectALaterLogin() throws Exception {
+        MockHttpSession session = login();
+        stepUp(session, "/fiscal");
+
+        MvcResult toKeycloak = mvc.perform(get("/oauth2/authorization/keycloak").session(session)).andReturn();
+        MvcResult callback = completeLogin(session, toKeycloak);
+
+        assertThat(callback.getResponse().getRedirectedUrl()).isEqualTo("/");
+    }
+
+    @Test
     void anOrdinaryLoginAsksForNoStepUp() throws Exception {
         MockHttpSession session = login();
         stepUp(session, "/fiscal");

@@ -16,6 +16,10 @@ final class StubBackend extends StubHttpServer {
         next = new Response(status, headers, body);
     }
 
+    void dropNextConnection() {
+        next = NO_ANSWER;
+    }
+
     void reset() {
         next = ok();
         clearReceived();

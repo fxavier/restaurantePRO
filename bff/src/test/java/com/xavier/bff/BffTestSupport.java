@@ -4,6 +4,7 @@ import com.nimbusds.jose.jwk.RSAKey;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -16,6 +17,9 @@ import jakarta.servlet.http.Cookie;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
@@ -41,11 +45,18 @@ abstract class BffTestSupport {
     @Autowired
     protected MockMvc mvc;
 
+    @LocalServerPort
+    protected int port;
+
+    protected final HttpClient http = HttpClient.newHttpClient();
+
     @DynamicPropertySource
     static void stubs(DynamicPropertyRegistry registry) {
         registry.add("spring.security.oauth2.client.provider.keycloak.issuer-uri", AUTHORIZATION_SERVER::issuer);
         registry.add("restaurantpro.bff.backend-url", BACKEND::baseUrl);
         registry.add("restaurantpro.bff.client-key-file", () -> CLIENT_KEY_FILE);
+        // Above the stub's one-second refresh hold, far below its one-minute hang.
+        registry.add("restaurantpro.bff.idp-read-timeout", () -> "PT3S");
     }
 
     @BeforeEach
@@ -72,6 +83,36 @@ abstract class BffTestSupport {
                         .param("state", authorization.get("state"))
                         .session(session))
                 .andExpect(status().is3xxRedirection()).andReturn();
+    }
+
+    /**
+     * Logs in over real HTTP against the running server, for tests that need the container's own
+     * (thread-safe) session; returns the session cookie as a {@code Cookie} header value.
+     */
+    protected String loginOverHttp() throws Exception {
+        HttpResponse<Void> toKeycloak = http.send(HttpRequest.newBuilder(local("/oauth2/authorization/keycloak")).build(),
+                HttpResponse.BodyHandlers.discarding());
+        Map<String, String> authorization = RecordedRequest.parse(
+                URI.create(toKeycloak.headers().firstValue("Location").orElseThrow()).getRawQuery());
+        AUTHORIZATION_SERVER.expectNonce(authorization.get("nonce"));
+        HttpResponse<Void> callback = http.send(HttpRequest.newBuilder(
+                        local("/login/oauth2/code/keycloak?code=stub-code&state=" + authorization.get("state")))
+                .header("Cookie", sessionCookie(toKeycloak)).build(), HttpResponse.BodyHandlers.discarding());
+        if (callback.statusCode() != 302) {
+            throw new AssertionError("login callback answered " + callback.statusCode());
+        }
+        return sessionCookie(callback);
+    }
+
+    protected URI local(String pathAndQuery) {
+        return URI.create("http://localhost:" + port + pathAndQuery);
+    }
+
+    static String sessionCookie(HttpResponse<?> response) {
+        return response.headers().allValues("Set-Cookie").stream()
+                .filter(cookie -> cookie.startsWith("__Host-bff-session="))
+                .map(cookie -> cookie.substring(0, cookie.indexOf(';')))
+                .findFirst().orElseThrow(() -> new AssertionError("no session cookie"));
     }
 
     /** What the SPA does on a state-changing call: echo the CSRF cookie in the header (double submit). */

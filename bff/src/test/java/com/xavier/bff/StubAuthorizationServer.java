@@ -14,6 +14,8 @@ import java.time.Instant;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -24,12 +26,16 @@ final class StubAuthorizationServer extends StubHttpServer {
 
     static final String REALM_PATH = "/realms/restaurantpro";
     static final String TOKEN_PATH = REALM_PATH + "/protocol/openid-connect/token";
+    static final String LOGOUT_PATH = REALM_PATH + "/protocol/openid-connect/logout";
 
     private final RSAKey signingKey = generate("stub-as");
     private final AtomicInteger issued = new AtomicInteger();
     private volatile String nonce;
     private volatile long accessTokenLifetimeSeconds = 300;
     private volatile boolean refusingRefresh;
+    private volatile Long nextAccessTokenLifetimeSeconds;
+    private volatile CountDownLatch refreshGate;
+    private volatile CountDownLatch hang;
     private volatile String lastAccessToken;
     private volatile String lastRefreshToken;
     private volatile String lastIdToken;
@@ -54,6 +60,28 @@ final class StubAuthorizationServer extends StubHttpServer {
         accessTokenLifetimeSeconds = seconds;
     }
 
+    /** Only the next access token gets this lifetime; later ones get the usual one. */
+    void issueNextAccessTokenValidFor(long seconds) {
+        nextAccessTokenLifetimeSeconds = seconds;
+    }
+
+    /**
+     * Each refresh grant waits until {@code count} refresh grants have arrived, or one second has passed:
+     * concurrent refreshes, if the BFF sends them, all arrive before any answer goes out.
+     */
+    void holdRefreshesUntil(int count) {
+        refreshGate = new CountDownLatch(count);
+    }
+
+    /** The token and logout endpoints answer nothing for a minute (or until {@link #reset()}), as a hung identity provider would. */
+    void hangTokenEndpoint() {
+        hang = new CountDownLatch(1);
+    }
+
+    List<RecordedRequest> refreshGrants() {
+        return tokenRequests().stream().filter(r -> "refresh_token".equals(r.form().get("grant_type"))).toList();
+    }
+
     void refuseRefresh() {
         refusingRefresh = true;
     }
@@ -75,6 +103,18 @@ final class StubAuthorizationServer extends StubHttpServer {
     }
 
     void reset() {
+        CountDownLatch gate = refreshGate;
+        if (gate != null) {
+            while (gate.getCount() > 0) {
+                gate.countDown();
+            }
+        }
+        refreshGate = null;
+        if (hang != null) {
+            hang.countDown();
+        }
+        hang = null;
+        nextAccessTokenLifetimeSeconds = null;
         accessTokenLifetimeSeconds = 300;
         refusingRefresh = false;
         nonce = null;
@@ -88,6 +128,10 @@ final class StubAuthorizationServer extends StubHttpServer {
             case REALM_PATH + "/.well-known/openid-configuration" -> json(200, discovery());
             case REALM_PATH + "/protocol/openid-connect/certs" -> json(200, new JWKSet(signingKey.toPublicJWK()).toString());
             case TOKEN_PATH -> token(request.form());
+            case LOGOUT_PATH -> {
+                awaitHang();
+                yield new Response(204, Map.of(), "");
+            }
             default -> json(404, "{}");
         };
     }
@@ -105,9 +149,15 @@ final class StubAuthorizationServer extends StubHttpServer {
     }
 
     private Response token(Map<String, String> form) {
+        awaitHang();
+        if ("refresh_token".equals(form.get("grant_type"))) {
+            awaitRefreshGate();
+        }
         if ("refresh_token".equals(form.get("grant_type")) && refusingRefresh) {
             return json(400, "{\"error\":\"invalid_grant\",\"error_description\":\"Token is not active\"}");
         }
+        long lifetime = nextAccessTokenLifetimeSeconds != null ? nextAccessTokenLifetimeSeconds : accessTokenLifetimeSeconds;
+        nextAccessTokenLifetimeSeconds = null;
         int n = issued.incrementAndGet();
         lastAccessToken = "stub-access-token-" + n;
         lastRefreshToken = "stub-refresh-token-" + n;
@@ -115,7 +165,31 @@ final class StubAuthorizationServer extends StubHttpServer {
         return json(200, """
                 {"access_token":"%s","token_type":"Bearer","expires_in":%d,"refresh_token":"%s",
                  "refresh_expires_in":1800,"scope":"openid","id_token":"%s"}
-                """.formatted(lastAccessToken, accessTokenLifetimeSeconds, lastRefreshToken, lastIdToken));
+                """.formatted(lastAccessToken, lifetime, lastRefreshToken, lastIdToken));
+    }
+
+    private void awaitRefreshGate() {
+        CountDownLatch gate = refreshGate;
+        if (gate == null) {
+            return;
+        }
+        gate.countDown();
+        await(gate, 1);
+    }
+
+    private void awaitHang() {
+        CountDownLatch gate = hang;
+        if (gate != null) {
+            await(gate, 60);
+        }
+    }
+
+    private static void await(CountDownLatch gate, long seconds) {
+        try {
+            gate.await(seconds, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private String idToken() {
