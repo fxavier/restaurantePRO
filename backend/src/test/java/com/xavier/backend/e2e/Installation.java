@@ -20,6 +20,8 @@ import java.util.UUID;
 import org.awaitility.Awaitility;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import tools.jackson.databind.JsonNode;
@@ -65,6 +67,15 @@ final class Installation {
         FlywayConnectionDetails freshPostgresFlyway(PostgreSQLContainer freshPostgres) {
             return DatabaseRoles.ownerConnection(freshPostgres);
         }
+    }
+
+    /**
+     * The owner of {@code freshPostgres}, for privileged fixtures (DDL); it bypasses row-level security. Assertion SQL
+     * in a test body uses the application's {@code JdbcClient}, which has the fixture fallback (every store) there.
+     */
+    static JdbcClient owner(PostgreSQLContainer freshPostgres) {
+        return JdbcClient.create(new DriverManagerDataSource(freshPostgres.getJdbcUrl(), DatabaseRoles.OWNER_ROLE,
+                DatabaseRoles.ownerPassword()));
     }
 
     /** The bootstrap settings of a company in MZN whose administrator {@link #ADMIN} starts with {@code password}. */
