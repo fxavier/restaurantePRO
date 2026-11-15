@@ -105,7 +105,7 @@ public class CountLedgerQueries {
                         INSERT INTO inventory.inventory_activation (store_id, active_from, activated_by_account_id,
                             activated_at)
                         VALUES (?, ?, ?, ?)
-                        ON CONFLICT (store_id) DO NOTHING""")
+                        ON CONFLICT (tenant_id, store_id) DO NOTHING""")
                 .params(storeId, Timestamp.from(activeFrom), accountId, Timestamp.from(now)).update() == 1;
     }
 

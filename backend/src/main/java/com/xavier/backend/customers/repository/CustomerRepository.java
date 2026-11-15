@@ -13,7 +13,7 @@ public interface CustomerRepository extends JpaRepository<Customer, UUID> {
     String SEARCH_BY_PHONE_SUFFIX = """
             SELECT c.* FROM customers.customer c
             JOIN (SELECT p.customer_id AS id FROM customers.customer_phone p
-                  WHERE p.digits_reversed LIKE :reversedPrefix
+                  WHERE p.digits_reversed ~>=~ :reversedFrom AND p.digits_reversed ~<~ :reversedBefore
                   UNION
                   SELECT t.id FROM customers.customer t WHERE t.tax_id = :taxId) m ON m.id = c.id
             ORDER BY c.name, c.id
@@ -27,7 +27,8 @@ public interface CustomerRepository extends JpaRepository<Customer, UUID> {
             LIMIT :limit""";
 
     @Query(nativeQuery = true, value = SEARCH_BY_PHONE_SUFFIX)
-    List<Customer> searchByPhoneSuffix(@Param("reversedPrefix") String reversedPrefix, @Param("taxId") String taxId,
+    List<Customer> searchByPhoneSuffix(@Param("reversedFrom") String reversedFrom,
+                                       @Param("reversedBefore") String reversedBefore, @Param("taxId") String taxId,
                                        @Param("limit") int limit);
 
     @Query(nativeQuery = true, value = SEARCH_BY_NAME)

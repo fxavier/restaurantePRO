@@ -112,7 +112,7 @@ public class LedgerStore {
                             reverses_movement_id, recipe_version_id, policy_version_id, sale_item_id, business_date,
                             occurred_at, posted_at, actor_kind, actor_id, reason)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT (source_type, source_id, stock_item_id, type, warehouse_id) DO NOTHING
+                        ON CONFLICT (tenant_id, source_type, source_id, stock_item_id, type, warehouse_id) DO NOTHING
                         RETURNING %s""".formatted(MOVEMENT_COLUMNS))
                 .params(m.id(), m.warehouseId(), m.storeId(), m.stockItemId(), m.type(), m.quantity(), m.unitCost(),
                         m.referenceUnitCost(), m.value(), m.currency(), m.sourceType(), m.sourceId(), m.sourceLineId(),

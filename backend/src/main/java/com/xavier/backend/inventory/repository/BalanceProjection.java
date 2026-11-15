@@ -63,7 +63,7 @@ public class BalanceProjection {
         for (UUID store : stores) {
             jdbc.sql("""
                             INSERT INTO inventory.balance_check (store_id, drifting_balances, checked_at) VALUES (?, ?, ?)
-                            ON CONFLICT (store_id) DO UPDATE
+                            ON CONFLICT (tenant_id, store_id) DO UPDATE
                             SET drifting_balances = EXCLUDED.drifting_balances, checked_at = EXCLUDED.checked_at""")
                     .params(store, drifting.getOrDefault(store, 0), Timestamp.from(at)).update();
         }
