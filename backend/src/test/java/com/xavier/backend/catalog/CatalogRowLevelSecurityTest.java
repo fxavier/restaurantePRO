@@ -96,11 +96,51 @@ class CatalogRowLevelSecurityTest {
             OwnerDatabase.shared().jdbc().sql("DELETE FROM catalog.quick_page WHERE id = ?").param(page).update();
         }
         pages.clear();
+        for (UUID automatic : automatics) {
+            OwnerDatabase.shared().jdbc().sql("DELETE FROM catalog.automatic_item WHERE id = ?").param(automatic)
+                    .update();
+        }
+        automatics.clear();
+    }
+
+    final List<UUID> automatics = new ArrayList<>();
+
+    /**
+     * STORE_OR_ALL writes need VIS(store_id) for DELETE too: a store scope reads every-store pages, entries and
+     * automatic items, but its DELETE matches none of them (a cascade from the page would bypass RLS on the entries).
+     */
+    @Test
+    void aStoreScopeReadsButCannotDeleteEveryStoreRows() {
+        UUID companyWide = quickPage(null);
+        OwnerDatabase.shared().jdbc().sql("INSERT INTO catalog.quick_page_entry (page_id, position, item_id) "
+                + "VALUES (?, 0, ?)").param(companyWide).param(item).update();
+        UUID automatic = automaticItem(null);
+
+        actor(Permission.CATALOG_MANAGE.authority(storeA));
+        assertThat(jdbc.sql("DELETE FROM catalog.quick_page_entry WHERE page_id = ?").param(companyWide).update())
+                .as("an every-store page's entry").isZero();
+        assertThat(jdbc.sql("DELETE FROM catalog.quick_page WHERE id = ?").param(companyWide).update())
+                .as("an every-store page").isZero();
+        assertThat(jdbc.sql("DELETE FROM catalog.automatic_item WHERE id = ?").param(automatic).update())
+                .as("an every-store automatic item").isZero();
+
+        assertThat(jdbc.sql("SELECT count(*) FROM catalog.quick_page_entry WHERE page_id = ?").param(companyWide)
+                .query(Long.class).single()).as("still read in the store scope").isOne();
+        assertThat(jdbc.sql("SELECT count(*) FROM catalog.quick_page WHERE id = ?").param(companyWide)
+                .query(Long.class).single()).isOne();
+        assertThat(jdbc.sql("SELECT count(*) FROM catalog.automatic_item WHERE id = ?").param(automatic)
+                .query(Long.class).single()).isOne();
+
+        installationWide();
+        assertThat(jdbc.sql("DELETE FROM catalog.automatic_item WHERE id = ?").param(automatic).update())
+                .as("an all-stores scope still deletes it").isOne();
+        assertThat(jdbc.sql("DELETE FROM catalog.quick_page_entry WHERE page_id = ?").param(companyWide).update())
+                .isOne();
     }
 
     @Test
     void theCatalogSchemaIsClassified() {
-        RowLevelSecurityCoverageTest.assertModuleClassified("catalog", "quick_page_entry");
+        RowLevelSecurityCoverageTest.assertModuleClassified("catalog");
 
         assertThat(protectedTables()).containsExactlyInAnyOrder("catalog.price_list", "catalog.configuration_release",
                 "catalog.item_availability", "catalog.daily_dish", "catalog.store_item_exclusion",
@@ -180,8 +220,8 @@ class CatalogRowLevelSecurityTest {
     }
 
     /**
-     * STORE_OR_ALL: a company-wide quick page is read in every scope and inserted or updated only by an all-stores one
-     * (a store scope's DELETE is not refused yet: a V1008 helper gap scheduled for S70).
+     * STORE_OR_ALL: a company-wide quick page is read in every scope and inserted, updated or deleted only by an
+     * all-stores one (V1009: a store scope's UPDATE or DELETE matches no every-store row).
      */
     @Test
     void aCompanyWideQuickPageIsReadEverywhereAndInsertedOrUpdatedOnlyByAllStores() {
@@ -190,9 +230,8 @@ class CatalogRowLevelSecurityTest {
 
         actor(Permission.CATALOG_MANAGE.authority(storeA));
         assertThat(visiblePages(companyWide, ofB)).containsExactly(companyWide);
-        assertThatThrownBy(() -> jdbc.sql("UPDATE catalog.quick_page SET name = 'x' WHERE id = ?")
-                .param(companyWide).update()).as("a store scope cannot rewrite a company-wide page")
-                .rootCause().hasMessageContaining("row-level security");
+        assertThat(jdbc.sql("UPDATE catalog.quick_page SET name = 'x' WHERE id = ?").param(companyWide).update())
+                .as("a store scope cannot rewrite a company-wide page").isZero();
         assertThatThrownBy(() -> jdbc.sql("""
                 INSERT INTO catalog.quick_page (id, store_id, code, name, position, version, created_at, updated_at)
                 VALUES (?, NULL, ?, 'Page', 0, 0, now(), now())""").param(UUID.randomUUID())
@@ -210,7 +249,7 @@ class CatalogRowLevelSecurityTest {
                 .isEqualTo(1);
     }
 
-    /** The entries of an every-store page follow their page (D168 special): read by every scope, written by all. */
+    /** The entries of an every-store page follow their page (STORE_OR_ALL child): read by every scope, written by all. */
     @Test
     void theEntriesOfACompanyWidePageAreReadInEveryStoreAndInsertedOnlyByAllStores() {
         UUID companyWide = quickPage(null);
@@ -271,6 +310,17 @@ class CatalogRowLevelSecurityTest {
                 INSERT INTO catalog.quick_page (id, store_id, code, name, position, version, created_at, updated_at)
                 VALUES (?, ?, ?, 'Page', 0, 0, now(), now())""").param(id).param(store)
                 .param(CatalogFixtures.code("Q")).update();
+        return id;
+    }
+
+    private UUID automaticItem(UUID store) {
+        UUID id = UUID.randomUUID();
+        automatics.add(id);
+        OwnerDatabase.shared().jdbc().sql("""
+                INSERT INTO catalog.automatic_item (id, store_id, trigger, mode, item_id, quantity, active, version,
+                                                    created_at, updated_at)
+                VALUES (?, ?, 'ORDER_OPEN', NULL, ?, 1, false, 0, now(), now())""").param(id).param(store)
+                .param(item).update();
         return id;
     }
 

@@ -16,7 +16,8 @@ import org.springframework.jdbc.core.simple.JdbcClient;
  * D167/D171 coverage against the real migrations: every table of a module schema is either protected by the V1008
  * helpers (ENABLE + FORCE, the one canonical policy, the {@code RS002} trigger) or registered UNSCOPED with a reason;
  * no {@code SECURITY DEFINER} function outside the allow-list; the application role is bound by row-level security.
- * Each policy slice asserts its own schemas with {@link #assertModuleClassified}; S70 adds the all-schemas assertion.
+ * Each policy slice asserts its own schemas with {@link #assertModuleClassified}; S70 adds the all-schemas assertion
+ * (A75) and the per-command STORE_OR_ALL policies of V1009.
  */
 public class RowLevelSecurityCoverageTest {
 
@@ -31,6 +32,40 @@ public class RowLevelSecurityCoverageTest {
         for (String schema : List.of("shared", "public", "organization", "identity", "customers")) {
             assertModuleClassified(schema);
         }
+    }
+
+    /**
+     * D167 SPECIAL tables, accepted with hand-written policies: the audit trail (inserts open), the inter-store
+     * transfer and its lines (either end) and the warehouse (open reads).
+     */
+    static final Map<String, String[]> SPECIAL_TABLES = Map.of(
+            "audit", new String[] {"audit_event"},
+            "inventory", new String[] {"warehouse", "stock_transfer", "stock_transfer_line"});
+
+    /**
+     * A75 strict over every schema: the schemas that hold a table are exactly the module folders of the migrations
+     * (MigrationNumberingTest) plus {@code public}, and every table of each is classified.
+     */
+    @Test
+    void everySchemaOfTheInstallationIsClassified() {
+        Set<String> expected = new java.util.TreeSet<>(MigrationNumberingTest.BLOCKS.keySet());
+        expected.add("public");
+        List<String> schemas = OwnerDatabase.shared().jdbc().sql("""
+                        SELECT DISTINCT n.nspname FROM pg_catalog.pg_class c
+                            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                        WHERE c.relkind IN ('r', 'p') AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+                          AND n.nspname NOT LIKE 'pg\\_%'
+                        ORDER BY 1""").query(String.class).list();
+
+        assertThat(schemas).as("schemas holding tables").containsExactlyInAnyOrderElementsOf(expected);
+        for (String schema : schemas) {
+            assertModuleClassified(schema, SPECIAL_TABLES.getOrDefault(schema, new String[0]));
+        }
+        Map<String, Object> counts = OwnerDatabase.shared().jdbc().sql("""
+                        SELECT (SELECT count(*) FROM shared.rls_protected_table) AS protected,
+                               (SELECT count(*) FROM shared.rls_unscoped_table) AS unscoped""").query().singleRow();
+        assertThat(counts).as("A75: 97 protected after R5; 58 + 4 (R5) unscoped, the Flyway history and the two registries")
+                .containsEntry("protected", 97L).containsEntry("unscoped", 65L);
     }
 
     @Test
@@ -127,11 +162,15 @@ public class RowLevelSecurityCoverageTest {
                 jdbc.sql("CREATE TABLE " + SCRATCH + ".page (id uuid PRIMARY KEY, store_id uuid)").update();
                 jdbc.sql("CREATE TABLE " + SCRATCH + ".child (id uuid PRIMARY KEY, parent_id uuid NOT NULL "
                         + "REFERENCES " + SCRATCH + ".parent (id))").update();
+                jdbc.sql("CREATE TABLE " + SCRATCH + ".entry (id uuid PRIMARY KEY, page_id uuid NOT NULL "
+                        + "REFERENCES " + SCRATCH + ".page (id))").update();
                 jdbc.sql("CREATE TABLE " + SCRATCH + ".company (id uuid PRIMARY KEY)").update();
                 jdbc.sql("SELECT shared.rls_protect_store_table('" + SCRATCH + ".parent'), "
                         + "shared.rls_protect_store_or_all_table('" + SCRATCH + ".page'), "
                         + "shared.rls_protect_child_table('" + SCRATCH + ".child', 'parent_id', '" + SCRATCH
-                        + ".parent', 'id'), shared.rls_register_unscoped('" + SCRATCH + ".company', 'company-wide')")
+                        + ".parent', 'id'), shared.rls_protect_store_or_all_child_table('" + SCRATCH
+                        + ".entry', 'page_id', '" + SCRATCH + ".page', 'id'), shared.rls_register_unscoped('"
+                        + SCRATCH + ".company', 'company-wide')")
                         .query().listOfRows();
             });
             assertModuleClassified(SCRATCH);
@@ -144,20 +183,69 @@ public class RowLevelSecurityCoverageTest {
             assertThatThrownBy(() -> assertModuleClassified(SCRATCH)).hasMessageContaining(SCRATCH + ".child");
             owner.sql("ALTER TABLE " + SCRATCH + ".child FORCE ROW LEVEL SECURITY").update();
 
-            owner.sql("DROP POLICY store_or_all_scope ON " + SCRATCH + ".page").update();
-            owner.sql("CREATE POLICY store_or_all_scope ON " + SCRATCH + ".page USING (true)").update();
+            // the V1008 gap: a DELETE policy that borrows the read rule (store_id IS NULL OR VIS)
+            owner.sql("DROP POLICY store_or_all_delete ON " + SCRATCH + ".page").update();
+            owner.sql("CREATE POLICY store_or_all_delete ON " + SCRATCH + ".page FOR DELETE USING (store_id IS NULL "
+                    + "OR " + visible("store_id") + ")").update();
             assertThatThrownBy(() -> assertModuleClassified(SCRATCH)).hasMessageContaining(SCRATCH + ".page");
+            owner.sql("DROP POLICY store_or_all_delete ON " + SCRATCH + ".page").update();
+            assertThatThrownBy(() -> assertModuleClassified(SCRATCH)).as("a policy missing from the set")
+                    .hasMessageContaining(SCRATCH + ".page");
+            owner.sql("CREATE POLICY store_or_all_delete ON " + SCRATCH + ".page FOR DELETE USING ("
+                    + visible("store_id") + ")").update();
+            assertModuleClassified(SCRATCH);
+
+            owner.sql("ALTER POLICY store_or_all_parent_delete ON " + SCRATCH + ".entry USING (true)").update();
+            assertThatThrownBy(() -> assertModuleClassified(SCRATCH)).hasMessageContaining(SCRATCH + ".entry");
         } finally {
             dropScratch(owner);
         }
     }
 
     /**
+     * D168 amended (V1009): a STORE_OR_ALL table, and the child of one, reads every-store rows in any scope but writes
+     * and deletes only in VIS: one policy per command, none of the write policies carries the read rule.
+     */
+    @Test
+    void theStoreOrAllHelpersReadEveryStoreRowsButWriteOnlyInScope() {
+        String read = "((store_id IS NULL) OR " + visible("store_id") + ")";
+        String write = visible("store_id");
+        assertThat(policyTexts("catalog.quick_page")).containsExactlyInAnyOrder(
+                "store_or_all_delete d " + write + " null",
+                "store_or_all_insert a null " + write,
+                "store_or_all_read r " + read + " null",
+                "store_or_all_update w " + write + " " + write);
+
+        List<String> entry = policyTexts("catalog.quick_page_entry");
+        assertThat(entry).extracting(text -> text.split(" ")[0] + " " + text.split(" ")[1]).containsExactlyInAnyOrder(
+                "store_or_all_parent_delete d", "store_or_all_parent_insert a", "store_or_all_parent_read r",
+                "store_or_all_parent_update w");
+        assertThat(entry).filteredOn(text -> text.startsWith("store_or_all_parent_read"))
+                .singleElement().asString().contains("p.store_id IS NULL");
+        assertThat(entry).filteredOn(text -> !text.startsWith("store_or_all_parent_read"))
+                .hasSize(3).allSatisfy(text -> assertThat(text).doesNotContain("IS NULL").contains("p.store_id"));
+    }
+
+    /** The deparsed VIS(column) of D168, as pg_get_expr prints it. */
+    private static String visible(String column) {
+        return "(( SELECT shared.rls_all_stores() AS rls_all_stores) OR (" + column
+                + " = ANY (( SELECT shared.rls_store_ids() AS rls_store_ids)::uuid[])))";
+    }
+
+    private static List<String> policyTexts(String table) {
+        return policies(OwnerDatabase.shared().jdbc(), OwnerDatabase.shared().jdbc()
+                .sql("SELECT ?::regclass::oid").param(table).query(Long.class).single()).stream()
+                .map(policy -> policy.get("polname") + " " + policy.get("cmd") + " " + policy.get("qual") + " "
+                        + policy.get("with_check")).toList();
+    }
+
+    /**
      * Every table of {@code schema} is classified (D167): registered in {@code shared.rls_unscoped_table}, or protected
-     * with ENABLE + FORCE, exactly one canonical policy ({@code store_scope}, {@code store_or_all_scope} or
-     * {@code parent_scope}, compared with the same V1008 helper applied to a copy) and its {@code RS002} trigger.
-     * {@code specialTables} (D168: {@code audit_event}, {@code stock_transfer}, {@code warehouse}) need only ENABLE,
-     * FORCE and a policy; their own slice proves their policies.
+     * with ENABLE + FORCE, the canonical policy set of one helper ({@link #HELPER_OF_POLICIES}: {@code store_scope},
+     * the four {@code store_or_all_*}, {@code parent_scope} or the four {@code store_or_all_parent_*}, compared with
+     * the same V1008/V1009 helper applied to a copy) and its {@code RS002} trigger. {@code specialTables} (D167/D168:
+     * {@code audit_event}, {@code stock_transfer}, {@code stock_transfer_line}, {@code warehouse}, see
+     * {@link #SPECIAL_TABLES}) need only ENABLE, FORCE and a policy; their own slice proves their policies.
      */
     public static void assertModuleClassified(String schema, String... specialTables) {
         Set<String> special = Set.of(specialTables);
@@ -201,62 +289,66 @@ public class RowLevelSecurityCoverageTest {
         assertThat(problems).as("row-level security coverage of schema %s", schema).isEmpty();
     }
 
+    /** The policy names each helper writes (V1008, V1009); a protected table carries exactly one of these sets. */
+    static final Map<Set<String>, String> HELPER_OF_POLICIES = Map.of(
+            Set.of("store_scope"), "shared.rls_protect_store_table",
+            Set.of("store_or_all_read", "store_or_all_insert", "store_or_all_update", "store_or_all_delete"),
+            "shared.rls_protect_store_or_all_table",
+            Set.of("parent_scope"), "shared.rls_protect_child_table",
+            Set.of("store_or_all_parent_read", "store_or_all_parent_insert", "store_or_all_parent_update",
+                    "store_or_all_parent_delete"), "shared.rls_protect_store_or_all_child_table");
+
     private static List<String> canonicalProblems(String name, String relname, long oid,
                                                   List<Map<String, Object>> policies) {
-        if (policies.size() != 1) {
-            return List.of(name + ": expected one canonical policy, found " + policies.size());
+        Set<String> names = new java.util.TreeSet<>();
+        policies.forEach(policy -> names.add((String) policy.get("polname")));
+        String function = HELPER_OF_POLICIES.get(names);
+        if (function == null) {
+            return List.of(name + ": policies " + names + " are not the set of one V1008/V1009 helper");
         }
-        String policy = (String) policies.getFirst().get("polname");
         JdbcClient jdbc = OwnerDatabase.shared().jdbc();
         String helper;
         String guardedColumn;
-        switch (policy) {
-            case "store_scope" -> {
-                helper = "shared.rls_protect_store_table('pg_temp." + relname + "')";
-                guardedColumn = "store_id";
+        if (function.endsWith("child_table")) {
+            List<Map<String, Object>> parent = jdbc.sql("""
+                            SELECT a.attname AS fk, k.confrelid::regclass::text AS parent, pa.attname AS key
+                            FROM pg_catalog.pg_trigger t
+                                JOIN pg_catalog.pg_attribute a ON a.attrelid = t.tgrelid AND a.attnum = t.tgattr[0]
+                                JOIN pg_catalog.pg_constraint k ON k.conrelid = t.tgrelid AND k.contype = 'f'
+                                    AND k.conkey = ARRAY[a.attnum]
+                                JOIN pg_catalog.pg_attribute pa ON pa.attrelid = k.confrelid
+                                    AND pa.attnum = k.confkey[1]
+                            WHERE t.tgrelid = ? AND t.tgname = 'parent_fixed'""")
+                    .param(oid).query().listOfRows();
+            if (parent.size() != 1) {
+                return List.of(name + ": " + names + " without its parent_fixed trigger on a foreign key");
             }
-            case "store_or_all_scope" -> {
-                helper = "shared.rls_protect_store_or_all_table('pg_temp." + relname + "')";
-                guardedColumn = "store_id";
-            }
-            case "parent_scope" -> {
-                List<Map<String, Object>> parent = jdbc.sql("""
-                                SELECT a.attname AS fk, k.confrelid::regclass::text AS parent, pa.attname AS key
-                                FROM pg_catalog.pg_trigger t
-                                    JOIN pg_catalog.pg_attribute a ON a.attrelid = t.tgrelid AND a.attnum = t.tgattr[0]
-                                    JOIN pg_catalog.pg_constraint k ON k.conrelid = t.tgrelid AND k.contype = 'f'
-                                        AND k.conkey = ARRAY[a.attnum]
-                                    JOIN pg_catalog.pg_attribute pa ON pa.attrelid = k.confrelid
-                                        AND pa.attnum = k.confkey[1]
-                                WHERE t.tgrelid = ? AND t.tgname = 'parent_fixed'""")
-                        .param(oid).query().listOfRows();
-                if (parent.size() != 1) {
-                    return List.of(name + ": parent_scope without its parent_fixed trigger on a foreign key");
-                }
-                Map<String, Object> link = parent.getFirst();
-                helper = "shared.rls_protect_child_table('pg_temp." + relname + "', '" + link.get("fk") + "', '"
-                        + link.get("parent") + "', '" + link.get("key") + "')";
-                guardedColumn = (String) link.get("fk");
-            }
-            default -> {
-                return List.of(name + ": policy " + policy + " is not one of the V1008 helpers'");
-            }
+            Map<String, Object> link = parent.getFirst();
+            helper = function + "('pg_temp." + relname + "', '" + link.get("fk") + "', '" + link.get("parent")
+                    + "', '" + link.get("key") + "')";
+            guardedColumn = (String) link.get("fk");
+        } else {
+            helper = function + "('pg_temp." + relname + "')";
+            guardedColumn = "store_id";
         }
         List<String> problems = new ArrayList<>();
-        Map<String, Object> actual = policies.getFirst();
-        Map<String, Object> reference = OwnerDatabase.shared().call(owner -> {
+        List<Map<String, Object>> reference = OwnerDatabase.shared().call(owner -> {
             owner.sql("CREATE TEMPORARY TABLE " + relname + " (LIKE " + name + ") ON COMMIT DROP").update();
             owner.sql("SELECT " + helper).query().listOfRows();
-            Map<String, Object> created = policies(owner, owner.sql("SELECT 'pg_temp." + relname
-                    + "'::regclass::oid").query(Long.class).single()).getFirst();
+            List<Map<String, Object>> created = policies(owner, owner.sql("SELECT 'pg_temp." + relname
+                    + "'::regclass::oid").query(Long.class).single());
             owner.sql("DELETE FROM shared.rls_protected_table WHERE table_name = 'pg_temp." + relname
                     + "'::regclass").update();
             owner.sql("DROP TABLE pg_temp." + relname).update();
             return created;
         });
-        for (String part : List.of("polname", "cmd", "permissive", "roles", "qual", "with_check")) {
-            if (!String.valueOf(actual.get(part)).equals(String.valueOf(reference.get(part)))) {
-                problems.add(name + ": its policy's " + part + " is not the canonical text of " + helper);
+        for (int i = 0; i < policies.size(); i++) {
+            Map<String, Object> actual = policies.get(i);
+            for (String part : List.of("polname", "cmd", "permissive", "roles", "qual", "with_check")) {
+                if (!String.valueOf(actual.get(part)).equals(String.valueOf(reference.get(i).get(part)))) {
+                    problems.add(name + ": its policy " + actual.get("polname") + "'s " + part
+                            + " is not the canonical text of " + helper);
+                }
             }
         }
         Long guards = jdbc.sql("""
