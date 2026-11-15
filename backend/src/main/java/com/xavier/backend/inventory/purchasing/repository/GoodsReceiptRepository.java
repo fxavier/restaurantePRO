@@ -13,7 +13,7 @@ import org.springframework.data.jpa.repository.Query;
 
 public interface GoodsReceiptRepository extends JpaRepository<GoodsReceipt, UUID> {
 
-    /** The store and order of a receipt alone, to authorize and lock in order before the full load (D42). */
+    /** The store and order of a receipt alone, read once its store is authorized, to lock in order (D42). */
     @Query("SELECT new com.xavier.backend.inventory.purchasing.repository.ReceiptRef(r.storeId, r.purchaseOrderId) "
             + "FROM GoodsReceipt r WHERE r.id = :id")
     Optional<ReceiptRef> refOf(UUID id);

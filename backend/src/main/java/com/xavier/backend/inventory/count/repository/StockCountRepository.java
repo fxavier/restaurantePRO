@@ -12,11 +12,7 @@ import org.springframework.data.jpa.repository.Query;
 
 public interface StockCountRepository extends JpaRepository<StockCount, UUID> {
 
-    /** The store of a count alone, to authorize before anything else is read (D42 (b)). */
-    @Query("SELECT c.storeId FROM StockCount c WHERE c.id = :id")
-    Optional<UUID> storeOf(UUID id);
-
-    /** The store and kind of a count alone, to authorize a start before the row is locked (D42 (b)). */
+    /** The store and kind of a count alone, read once its store is authorized, before the row is locked. */
     @Query("SELECT new com.xavier.backend.inventory.count.repository.CountRef(c.storeId, c.kind) FROM StockCount c"
             + " WHERE c.id = :id")
     Optional<CountRef> refOf(UUID id);

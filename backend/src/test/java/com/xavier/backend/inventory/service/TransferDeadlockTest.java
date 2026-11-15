@@ -12,6 +12,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.xavier.backend.inventory.StoreTasks;
+import com.xavier.backend.access.StoreScopes;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.inventory.InventoryFixtures;
 import com.xavier.backend.inventory.InventoryModuleTest;
@@ -48,6 +50,9 @@ class TransferDeadlockTest {
 
     static final LocalDate DAY = LocalDate.parse("2026-11-06");
     static final Instant AT = Instant.parse("2026-11-06T10:00:00Z");
+
+    @Autowired
+    StoreScopes scopes;
 
     @Autowired
     MockMvc mvc;
@@ -92,12 +97,12 @@ class TransferDeadlockTest {
         CountDownLatch release = new CountDownLatch(1);
         AtomicInteger holder = new AtomicInteger();
         try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
-            Future<?> hold = pool.submit(() -> tx.executeWithoutResult(status -> {
+            Future<?> hold = pool.submit(StoreTasks.inStore(scopes, store, () -> tx.executeWithoutResult(status -> {
                 ledger.post(List.of(sale(low)));
                 holder.set(backendPid(jdbc));
                 holding.countDown();
                 await(release);
-            }));
+            })));
             await(holding);
             Future<Integer> ship = pool.submit(() -> ship(transfer));
             try {
@@ -145,10 +150,10 @@ class TransferDeadlockTest {
                     await(start);
                     return ship(transfer);
                 });
-                Future<?> b = pool.submit(() -> {
+                Future<?> b = pool.submit(StoreTasks.inStore(scopes, store, () -> {
                     await(start);
                     tx.executeWithoutResult(status -> ledger.post(List.of(sale(low), sale(high))));
-                });
+                }));
                 start.countDown();
                 assertThat(a.get(60, TimeUnit.SECONDS)).isEqualTo(200);
                 b.get(60, TimeUnit.SECONDS);

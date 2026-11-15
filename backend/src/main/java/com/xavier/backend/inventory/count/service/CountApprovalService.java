@@ -17,6 +17,7 @@ import com.xavier.backend.inventory.exception.InventoryNotFoundException;
 import com.xavier.backend.inventory.model.MovementType;
 import com.xavier.backend.inventory.model.dto.PostMovement;
 import com.xavier.backend.inventory.service.BusinessDates;
+import com.xavier.backend.inventory.service.InventoryScope;
 import com.xavier.backend.inventory.service.StockLedger;
 import com.xavier.backend.shared.events.EventPublicationStats;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
@@ -68,12 +69,14 @@ public class CountApprovalService {
     private final BusinessDates businessDates;
     private final AccessPolicy accessPolicy;
     private final AuditLog auditLog;
+    private final InventoryScope scope;
     private final Clock clock;
 
     CountApprovalService(StockCountRepository counts, CountLedgerQueries ledgerQueries, StockLedger ledger,
                          EventPublicationStats publications, BusinessDates businessDates,
                          AccessPolicy accessPolicy,
-                         AuditLog auditLog, Clock clock) {
+                         AuditLog auditLog, InventoryScope scope, Clock clock) {
+        this.scope = scope;
         this.counts = counts;
         this.ledgerQueries = ledgerQueries;
         this.ledger = ledger;
@@ -86,8 +89,7 @@ public class CountApprovalService {
 
     @Transactional
     public CountView approve(UUID id) {
-        UUID storeId = counts.storeOf(id)
-                .orElseThrow(() -> new InventoryNotFoundException(StockCountService.ENTITY, id));
+        UUID storeId = scope.storeOf(StockCountService.TABLE, StockCountService.ENTITY, id);
         accessPolicy.require(Permission.INVENTORY_COUNT_APPROVE, storeId);
         StockCount count = counts.findForUpdate(id)
                 .orElseThrow(() -> new InventoryNotFoundException(StockCountService.ENTITY, id));

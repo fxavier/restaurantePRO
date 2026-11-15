@@ -42,6 +42,7 @@ public class WarehouseService {
 
     static final String ENTITY = "Warehouse";
     static final String ROUTE = "ConsumptionRoute";
+    static final String ROUTE_TABLE = "inventory.consumption_route";
     static final String LEVEL = "StockLevel";
 
     private final WarehouseRepository warehouses;
@@ -124,7 +125,7 @@ public class WarehouseService {
 
     @Transactional
     public RouteView updateRoute(UUID id, RouteUpdateRequest request) {
-        UUID storeId = routes.storeOf(id).orElseThrow(() -> new InventoryNotFoundException(ROUTE, id));
+        UUID storeId = scope.storeOf(ROUTE_TABLE, ROUTE, id);
         accessPolicy.require(Permission.INVENTORY_MANAGE, storeId);
         ConsumptionRoute route = routes.findById(id).orElseThrow(() -> new InventoryNotFoundException(ROUTE, id));
         OptimisticLocking.requireVersion(ConsumptionRoute.class, id, route.getVersion(), request.version());
@@ -137,8 +138,7 @@ public class WarehouseService {
 
     @Transactional
     public void deleteRoute(UUID id) {
-        UUID storeId = routes.storeOf(id).orElseThrow(() -> new InventoryNotFoundException(ROUTE, id));
-        accessPolicy.require(Permission.INVENTORY_MANAGE, storeId);
+        accessPolicy.require(Permission.INVENTORY_MANAGE, scope.storeOf(ROUTE_TABLE, ROUTE, id));
         ConsumptionRoute route = routes.findById(id).orElseThrow(() -> new InventoryNotFoundException(ROUTE, id));
         routes.delete(route);
         auditRoute("CONSUMPTION_ROUTE_DELETED", route);

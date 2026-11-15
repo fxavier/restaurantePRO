@@ -6,6 +6,8 @@ import static com.xavier.backend.inventory.service.Concurrency.someoneBlockedBy;
 import static com.xavier.backend.inventory.service.Concurrency.waitUntil;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.xavier.backend.inventory.StoreTasks;
+import com.xavier.backend.access.StoreScopes;
 import com.xavier.backend.inventory.InventoryFixtures;
 import com.xavier.backend.inventory.InventoryModuleTest;
 import com.xavier.backend.inventory.model.MovementType;
@@ -25,6 +27,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,6 +46,9 @@ class AverageCostConcurrencyTest {
     static final Instant AT = Instant.parse("2026-11-06T10:00:00Z");
 
     @Autowired
+    StoreScopes scopes;
+
+    @Autowired
     StockLedger ledger;
 
     @Autowired
@@ -54,12 +60,14 @@ class AverageCostConcurrencyTest {
     @Autowired
     JdbcClient jdbc;
 
+    UUID store;
     UUID warehouse;
     UUID item;
 
     @BeforeEach
     void anItemWith10At10() throws Exception {
-        warehouse = fixtures.newWarehouse(fixtures.newStore(), "ALLOW");
+        store = fixtures.newStore();
+        warehouse = fixtures.newWarehouse(store, "ALLOW");
         item = fixtures.newStockItem("kg");
         tx.executeWithoutResult(status -> ledger.post(List.of(receipt("10", "10"))));
     }
@@ -71,16 +79,17 @@ class AverageCostConcurrencyTest {
         CountDownLatch mayCommit = new CountDownLatch(1);
         AtomicInteger receiver = new AtomicInteger();
         try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
-            Future<?> receipt = pool.submit(() -> tx.executeWithoutResult(status -> {
+            Future<?> receipt = pool.submit(StoreTasks.inStore(scopes, store, () -> tx.executeWithoutResult(status -> {
                 ledger.post(List.of(receipt("10", "12")));
                 receiver.set(backendPid(jdbc));
                 received.countDown();
                 await(mayCommit);
-            }));
+            })));
             await(received);
-            Future<List<MovementView>> sale = pool.submit(() -> tx.execute(status -> ledger.post(List.of(
-                    PostMovement.of(warehouse, item, MovementType.SALE_CONSUMPTION, new BigDecimal("-4"),
-                            "ORDER_LINE", UUID.randomUUID(), DAY, AT)))));
+            AtomicReference<List<MovementView>> posted = new AtomicReference<>();
+            Future<?> sale = pool.submit(StoreTasks.inStore(scopes, store, () -> posted.set(tx.execute(status ->
+                    ledger.post(List.of(PostMovement.of(warehouse, item, MovementType.SALE_CONSUMPTION,
+                            new BigDecimal("-4"), "ORDER_LINE", UUID.randomUUID(), DAY, AT)))))));
             try {
                 waitUntil(() -> sale.isDone() || someoneBlockedBy(jdbc, receiver.get()));
                 assertThat(sale.isDone()).as("the sale waits for the receipt's balance lock").isFalse();
@@ -88,7 +97,8 @@ class AverageCostConcurrencyTest {
                 mayCommit.countDown();
             }
             receipt.get(60, TimeUnit.SECONDS);
-            assertThat(sale.get(60, TimeUnit.SECONDS)).singleElement().satisfies(movement -> {
+            sale.get(60, TimeUnit.SECONDS);
+            assertThat(posted.get()).singleElement().satisfies(movement -> {
                 assertThat(movement.unitCost()).isEqualByComparingTo("11");
                 assertThat(movement.value()).isEqualByComparingTo("-44");
             });
@@ -111,7 +121,7 @@ class AverageCostConcurrencyTest {
         try (ExecutorService pool = Executors.newFixedThreadPool(threads)) {
             for (int t = 0; t < threads; t++) {
                 Random random = new Random(42L + t);
-                done.add(pool.submit(() -> {
+                done.add(pool.submit(StoreTasks.inStore(scopes, store, () -> {
                     await(start);
                     for (int i = 0; i < perThread; i++) {
                         PostMovement movement = random.nextInt(3) == 0
@@ -122,7 +132,7 @@ class AverageCostConcurrencyTest {
                                 UUID.randomUUID(), DAY, AT);
                         tx.executeWithoutResult(status -> ledger.post(List.of(movement)));
                     }
-                }));
+                })));
             }
             start.countDown();
             for (Future<?> future : done) {

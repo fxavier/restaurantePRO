@@ -62,6 +62,7 @@ public class GoodsReceiptService {
 
     public static final String SOURCE_TYPE = "GOODS_RECEIPT";
     static final String ENTITY = "GoodsReceipt";
+    static final String TABLE = "inventory.goods_receipt";
     static final String OVER_RECEIPT = "OVER_RECEIPT";
 
     private final GoodsReceiptRepository receipts;
@@ -110,11 +111,14 @@ public class GoodsReceiptService {
         PurchaseOrder order = null;
         UUID supplierId = request.supplierId();
         if (request.purchaseOrderId() != null) {
+            // probed across stores: an order of another store is this rule's 422, not an absent order (D42, D162)
+            UUID orderStore = scope.storeOf(PurchaseOrderService.TABLE, PurchaseOrderService.ENTITY,
+                    request.purchaseOrderId());
+            if (!orderStore.equals(storeId)) {
+                throw InventoryRuleException.warehouseStoreMismatch(request.warehouseId(), orderStore);
+            }
             order = orders.findById(request.purchaseOrderId()).orElseThrow(() -> new InventoryNotFoundException(
                     PurchaseOrderService.ENTITY, request.purchaseOrderId()));
-            if (!order.getStoreId().equals(storeId)) {
-                throw InventoryRuleException.warehouseStoreMismatch(request.warehouseId(), order.getStoreId());
-            }
             if (!order.getWarehouseId().equals(request.warehouseId())) {
                 throw PurchasingRuleException.referenceMismatch("Purchase order " + order.getId()
                         + " is received in warehouse " + order.getWarehouseId() + ", not " + request.warehouseId()
@@ -140,7 +144,7 @@ public class GoodsReceiptService {
 
     @Transactional
     public ReceiptView update(UUID id, ReceiptUpdateRequest request) {
-        accessPolicy.require(Permission.GOODS_RECEIVE, refOf(id).storeId());
+        accessPolicy.require(Permission.GOODS_RECEIVE, storeOf(id));
         GoodsReceipt receipt = receipts.findById(id).orElseThrow(() -> new InventoryNotFoundException(ENTITY, id));
         PurchaseOrder order = receipt.getPurchaseOrderId() == null ? null
                 : orders.findById(receipt.getPurchaseOrderId()).orElseThrow();
@@ -163,8 +167,8 @@ public class GoodsReceiptService {
      */
     @Transactional
     public ReceiptView confirm(UUID id) {
+        accessPolicy.require(Permission.GOODS_RECEIVE, storeOf(id));
         ReceiptRef ref = refOf(id);
-        accessPolicy.require(Permission.GOODS_RECEIVE, ref.storeId());
         if (activations.activeFrom(ref.storeId()).isEmpty()) {
             throw InventoryRuleException.notActive(ref.storeId()); // D122: the opening count comes first (S49)
         }
@@ -190,7 +194,7 @@ public class GoodsReceiptService {
 
     @Transactional
     public ReceiptView cancel(UUID id) {
-        GoodsReceipt receipt = lockAuthorized(id, refOf(id));
+        GoodsReceipt receipt = lockAuthorized(id);
         receipt.cancel(clock.instant());
         GoodsReceipt saved = receipts.saveAndFlush(receipt);
         audit("GOODS_RECEIPT_CANCELLED", saved);
@@ -200,7 +204,7 @@ public class GoodsReceiptService {
     /** {@code GOODS_RECEIVE} or {@code INVENTORY_VIEW} in the receipt's store. */
     @Transactional(readOnly = true)
     public ReceiptView get(UUID id) {
-        accessPolicy.requireAny(refOf(id).storeId(), Permission.GOODS_RECEIVE, Permission.INVENTORY_VIEW);
+        accessPolicy.requireAny(storeOf(id), Permission.GOODS_RECEIVE, Permission.INVENTORY_VIEW);
         return view(receipts.findById(id).orElseThrow(() -> new InventoryNotFoundException(ENTITY, id)), List.of());
     }
 
@@ -263,12 +267,19 @@ public class GoodsReceiptService {
         return over ? List.of(OVER_RECEIPT) : List.of();
     }
 
+    /** D42 (b): the receipt's store, whatever the caller's store scope (404 when there is no such receipt). */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public UUID storeOf(UUID id) {
+        return scope.storeOf(TABLE, ENTITY, id);
+    }
+
+    /** The store and order of a receipt the caller was authorized for. */
     private ReceiptRef refOf(UUID id) {
         return receipts.refOf(id).orElseThrow(() -> new InventoryNotFoundException(ENTITY, id));
     }
 
-    private GoodsReceipt lockAuthorized(UUID id, ReceiptRef ref) {
-        accessPolicy.require(Permission.GOODS_RECEIVE, ref.storeId());
+    private GoodsReceipt lockAuthorized(UUID id) {
+        accessPolicy.require(Permission.GOODS_RECEIVE, storeOf(id));
         return lock(id);
     }
 

@@ -17,9 +17,9 @@ import com.xavier.backend.inventory.model.dto.TransferLineRequest;
 import com.xavier.backend.inventory.model.dto.TransferRequest;
 import com.xavier.backend.inventory.model.dto.TransferUpdateRequest;
 import com.xavier.backend.inventory.model.dto.TransferView;
-import com.xavier.backend.inventory.repository.LedgerStore;
 import com.xavier.backend.inventory.repository.StockItemRepository;
 import com.xavier.backend.inventory.repository.StockTransferRepository;
+import com.xavier.backend.inventory.repository.TransferStoreProbe;
 import com.xavier.backend.inventory.repository.TransferStores;
 import com.xavier.backend.shared.persistence.OptimisticLocking;
 import com.xavier.backend.shared.web.PageResponse;
@@ -63,13 +63,13 @@ public class TransferService {
     private final AccessPolicy accessPolicy;
     private final AuditLog auditLog;
     private final EntityManager entityManager;
-    private final LedgerStore ledgerStore;
+    private final TransferStoreProbe probe;
     private final Clock clock;
 
     TransferService(StockTransferRepository transfers, StockItemRepository items, StockLedger ledger, Units units,
                     InventoryScope scope, BusinessDates businessDates, AccessPolicy accessPolicy, AuditLog auditLog,
-                    EntityManager entityManager, LedgerStore ledgerStore, Clock clock) {
-        this.ledgerStore = ledgerStore;
+                    EntityManager entityManager, TransferStoreProbe probe, Clock clock) {
+        this.probe = probe;
         this.transfers = transfers;
         this.items = items;
         this.ledger = ledger;
@@ -124,10 +124,11 @@ public class TransferService {
         List<PostMovement> outs = transfer.getLines().stream().map(line -> PostMovement.of(
                 transfer.getFromWarehouseId(), line.getStockItemId(), MovementType.TRANSFER_OUT,
                 line.getQuantityShipped().negate(), SOURCE_TYPE, id, shipDate, now).manual("transfer")).toList();
-        Map<UUID, BigDecimal> unitCosts = new HashMap<>();
+        Map<UUID, TransferLine.Shipped> shipped = new HashMap<>();
         ledger.post(outs).stream().filter(m -> m.type().equals(MovementType.TRANSFER_OUT.name()))
-                .forEach(m -> unitCosts.put(m.stockItemId(), m.unitCost()));
-        transfer.recordShippingCosts(unitCosts);
+                .forEach(m -> shipped.put(m.stockItemId(), new TransferLine.Shipped(m.unitCost(),
+                        m.value().negate())));
+        transfer.recordShipping(shipped);
         audit("STOCK_TRANSFER_SHIPPED", transfer, stores.fromStoreId());
         if (transfer.withinOneStore()) {
             Map<UUID, BigDecimal> everything = new HashMap<>();
@@ -186,12 +187,13 @@ public class TransferService {
         transfer.receive(received, actorId(), now);
         List<PostMovement> movements = new ArrayList<>();
         for (TransferLine line : transfer.getLines()) {
-            // the IN carries exactly the value its OUT took (D113 as amended): a transfer never creates value
-            BigDecimal shipped = ledgerStore.findBySourceKey(SOURCE_TYPE, transfer.getId(), line.getStockItemId(),
-                            MovementType.TRANSFER_OUT.name(), transfer.getFromWarehouseId())
-                    .orElseThrow(() -> new IllegalStateException("transfer " + transfer.getId()
-                            + " was shipped without its TRANSFER_OUT of " + line.getStockItemId()))
-                    .value().negate();
+            // the IN carries exactly the value its OUT took (D113 as amended): a transfer never creates value. It is
+            // read from the line, not from the source's ledger, which a destination-only scope cannot see (D168).
+            BigDecimal shipped = line.getValueShipped();
+            if (shipped == null) {
+                throw new IllegalStateException("transfer " + transfer.getId() + " was shipped without the value of "
+                        + "its TRANSFER_OUT of " + line.getStockItemId());
+            }
             movements.add(PostMovement.of(transfer.getToWarehouseId(), line.getStockItemId(),
                     MovementType.TRANSFER_IN, line.getQuantityShipped(), SOURCE_TYPE, transfer.getId(), day, now)
                     .atCost(line.getUnitCost()).withValue(shipped));
@@ -216,7 +218,7 @@ public class TransferService {
     }
 
     private TransferStores storesOf(UUID id) {
-        return transfers.storesOf(id).orElseThrow(() -> new InventoryNotFoundException(ENTITY, id));
+        return probe.storesOf(id).orElseThrow(() -> new InventoryNotFoundException(ENTITY, id));
     }
 
     /** The transfer row FOR UPDATE, refreshed so the decision is taken on the locked state. */

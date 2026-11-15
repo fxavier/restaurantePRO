@@ -8,7 +8,9 @@ import java.util.UUID;
 
 /**
  * One stock item of a transfer, in its base unit: shipped, then received; {@code unitCost} is the source average at
- * shipping, which the IN and the shortage at the destination use (D120).
+ * shipping, which the IN and the shortage at the destination use (D120), and {@code valueShipped} the value its OUT
+ * took, which the IN carries (D113 as amended). Both are kept here because the destination cannot read the source
+ * store's ledger under row-level security (D168); it sees the transfer and its lines.
  */
 @Embeddable
 public class TransferLine {
@@ -25,6 +27,9 @@ public class TransferLine {
     @Column(precision = 19, scale = 6)
     private BigDecimal unitCost;
 
+    @Column(precision = 19, scale = 4)
+    private BigDecimal valueShipped;
+
     protected TransferLine() {
         // JPA
     }
@@ -39,8 +44,9 @@ public class TransferLine {
         return line;
     }
 
-    void shippedAt(BigDecimal unitCost) {
-        this.unitCost = unitCost;
+    void shipped(Shipped out) {
+        this.unitCost = out.unitCost();
+        this.valueShipped = out.value();
     }
 
     void received(BigDecimal quantity) {
@@ -66,5 +72,13 @@ public class TransferLine {
 
     public BigDecimal getUnitCost() {
         return unitCost;
+    }
+
+    public BigDecimal getValueShipped() {
+        return valueShipped;
+    }
+
+    /** What a line's TRANSFER_OUT recorded: its unit cost and the (positive) value it took from the source. */
+    public record Shipped(BigDecimal unitCost, BigDecimal value) {
     }
 }

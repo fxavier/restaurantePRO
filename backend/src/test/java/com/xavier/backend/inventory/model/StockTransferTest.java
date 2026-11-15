@@ -57,7 +57,9 @@ class StockTransferTest {
                 TransferLine.of(other, new BigDecimal("2"))));
 
         transfer.ship(null, NOW);
-        transfer.recordShippingCosts(Map.of(item, new BigDecimal("3.500000"), other, new BigDecimal("1.000000")));
+        transfer.recordShipping(Map.of(item, new TransferLine.Shipped(new BigDecimal("3.500000"),
+                new BigDecimal("35.0000")), other, new TransferLine.Shipped(new BigDecimal("1.000000"),
+                new BigDecimal("2.0000"))));
         transfer.receive(Map.of(item, new BigDecimal("8"), other, new BigDecimal("2")), null, NOW);
 
         assertThat(transfer.getStatus()).isEqualTo(TransferStatus.RECEIVED);
@@ -70,8 +72,24 @@ class StockTransferTest {
     void shippingCostsAreRecordedOnlyOnceShipped() {
         StockTransfer transfer = draft(List.of(TransferLine.of(item, BigDecimal.TEN)));
 
-        assertThatThrownBy(() -> transfer.recordShippingCosts(Map.of(item, BigDecimal.ONE)))
-                .isInstanceOf(InventoryConflictException.class);
+        assertThatThrownBy(() -> transfer.recordShipping(Map.of(item, new TransferLine.Shipped(BigDecimal.ONE,
+                BigDecimal.TEN)))).isInstanceOf(InventoryConflictException.class);
+    }
+
+    /**
+     * D113 as amended under RLS (D168): the value each line's OUT took is kept on the line, which both stores see, so
+     * the destination's IN carries it without reading the source store's ledger.
+     */
+    @Test
+    void eachLineKeepsTheValueItsOutTook() {
+        StockTransfer transfer = draft(List.of(TransferLine.of(item, new BigDecimal("3"))));
+        transfer.ship(null, NOW);
+
+        transfer.recordShipping(Map.of(item, new TransferLine.Shipped(new BigDecimal("3.333333"),
+                new BigDecimal("10.0000"))));
+
+        assertThat(transfer.getLines().getFirst().getValueShipped()).isEqualByComparingTo("10");
+        assertThat(transfer.getLines().getFirst().getUnitCost()).isEqualByComparingTo("3.333333");
     }
 
     @Test

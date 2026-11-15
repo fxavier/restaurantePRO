@@ -1,5 +1,6 @@
 package com.xavier.backend.inventory.consumption;
 
+import com.xavier.backend.access.StoreScopes;
 import com.xavier.backend.catalog.CatalogApi;
 import com.xavier.backend.inventory.InventoryFixtures;
 import com.xavier.backend.inventory.consumption.service.RoundConsumption;
@@ -45,6 +46,9 @@ abstract class ConsumptionTestBase {
 
     @Autowired
     VoidReversal voids;
+
+    @Autowired
+    StoreScopes scopes;
 
     Kitchen kitchen;
 

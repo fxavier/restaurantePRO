@@ -116,7 +116,7 @@ public class StockTransfer {
         notes = newNotes == null || newNotes.isBlank() ? null : newNotes.strip();
     }
 
-    /** DRAFT → SHIPPED. The OUTs are posted next, then their costs are recorded ({@link #recordShippingCosts}). */
+    /** DRAFT → SHIPPED. The OUTs are posted next, then what they recorded is kept ({@link #recordShipping}). */
     public void ship(UUID actorId, Instant now) {
         requireStatus(TransferStatus.DRAFT, "be shipped");
         status = TransferStatus.SHIPPED;
@@ -124,10 +124,13 @@ public class StockTransfer {
         shippedByActorId = actorId;
     }
 
-    /** The unit cost each line's OUT was valued at (the source average), which the destination uses (D120). */
-    public void recordShippingCosts(Map<UUID, BigDecimal> unitCosts) {
+    /**
+     * The unit cost each line's OUT was valued at (the source average) and the value it took, which the destination
+     * uses (D120, D113 as amended).
+     */
+    public void recordShipping(Map<UUID, TransferLine.Shipped> outs) {
         requireStatus(TransferStatus.SHIPPED, "record shipping costs");
-        lines.forEach(line -> line.shippedAt(unitCosts.get(line.getStockItemId())));
+        lines.forEach(line -> line.shipped(outs.get(line.getStockItemId())));
     }
 
     /**
