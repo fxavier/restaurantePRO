@@ -194,9 +194,13 @@ public class DeliveryService {
         }
     }
 
-    /** D42 (b): the delivery's store only (404), the session's store (403), then the delivery at the client's version. */
+    /**
+     * D42 (b): the store only (404), the session's store (403), then the delivery at the client's version. A delivery
+     * is keyed by its order (its primary key leads with the tenant, which the probe does not take), so the probe
+     * reads the order's store, which is the delivery's.
+     */
     private Delivery inSessionStore(PosContext pos, UUID orderId, long version) {
-        UUID storeId = probe.storeOf(DeliveryRepository.TABLE, orderId)
+        UUID storeId = probe.storeOf(OrderRepository.TABLE, orderId)
                 .orElseThrow(() -> new OrderNotFoundException(ENTITY, orderId));
         accessPolicy.requireSessionStore(pos, storeId, ENTITY, orderId);
         Delivery delivery = deliveries.findById(orderId)

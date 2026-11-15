@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -20,30 +21,33 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * P47: every {@code restaurantpro.dining.no-show-interval} (PT1M) a BOOKED reservation whose
  * {@code starts_at + grace} (the store's setting, else 30 min) has passed becomes NO_SHOW as SYSTEM, audited. Each
- * batch is one short transaction that takes its rows {@code FOR UPDATE SKIP LOCKED} (D46): a reservation a request
- * is changing is left for the next run, and the job never waits behind a request. Idempotent: it only selects
- * BOOKED rows, so a second or overlapping run changes nothing. Time is the injected {@code Clock}'s.
+ * run is one short transaction per tenant (the advisor runs the job once per active tenant) that marks at most
+ * {@code restaurantpro.jobs.batch-per-tenant} reservations, taking its rows {@code FOR UPDATE SKIP LOCKED} (D46): a
+ * reservation a request is changing is left for the next run, the job never waits behind a request, and a tenant with
+ * a backlog cannot starve the others (the next run goes on). Idempotent: it only selects BOOKED rows, so a second or
+ * overlapping run changes nothing. Time is the injected {@code Clock}'s.
  */
 @Service
 public class ReservationNoShowJob {
 
     private static final Logger log = LoggerFactory.getLogger(ReservationNoShowJob.class);
-    static final int BATCH = 100;
-
     private final ReservationRepository reservations;
     private final DiningChanges changes;
     private final TransactionTemplate inTransaction;
     private final Clock clock;
+    private final int batchPerTenant;
 
     ReservationNoShowJob(ReservationRepository reservations, DiningChanges changes,
-                         PlatformTransactionManager transactionManager, Clock clock) {
+                         PlatformTransactionManager transactionManager, Clock clock,
+                         @Value("${restaurantpro.jobs.batch-per-tenant:100}") int batchPerTenant) {
         this.reservations = reservations;
         this.changes = changes;
         this.inTransaction = new TransactionTemplate(transactionManager);
         this.clock = clock;
+        this.batchPerTenant = batchPerTenant;
     }
 
-    /** @return how many reservations this run marked */
+    /** @return how many reservations this run marked, for the tenant it ran in */
     @SystemScoped(SystemScope.RESERVATIONS)
     @Scheduled(fixedDelayString = "${restaurantpro.dining.no-show-interval:PT1M}",
             initialDelayString = "${restaurantpro.dining.no-show-interval:PT1M}")
@@ -51,13 +55,9 @@ public class ReservationNoShowJob {
         Instant now = clock.instant();
         int marked = 0;
         try {
-            int batch;
-            do {
-                batch = inTransaction.execute(status -> markBatch(now));
-                marked += batch;
-            } while (batch == BATCH);
+            marked = inTransaction.execute(status -> markBatch(now));
         } catch (RuntimeException e) {
-            log.error("Reservation no-show run stopped after {} reservations; the next run retries", marked, e);
+            log.error("Reservation no-show run failed; the next run retries", e);
         }
         if (marked > 0) {
             log.info("Reservation no-show run marked {} reservations", marked);
@@ -66,7 +66,7 @@ public class ReservationNoShowJob {
     }
 
     private int markBatch(Instant now) {
-        List<UUID> due = reservations.lockDueForNoShow(now, ReservationWindow.DEFAULT_GRACE_MINUTES, BATCH);
+        List<UUID> due = reservations.lockDueForNoShow(now, ReservationWindow.DEFAULT_GRACE_MINUTES, batchPerTenant);
         for (Reservation reservation : reservations.findAllById(due)) {
             reservation.markNoShow(Reservation.SYSTEM, now);
             reservations.saveAndFlush(reservation);

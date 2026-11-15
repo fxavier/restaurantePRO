@@ -50,6 +50,7 @@ class OrdersTenantIsolationTest {
     static final UUID B_STORE = UUID.fromString("0190b400-0000-7000-8000-0000000000d1");
     static final UUID A_ORDER = UUID.fromString("0190b400-0000-7000-8000-0000000002a1");
     static final UUID A_OTHER_ORDER = UUID.fromString("0190b400-0000-7000-8000-0000000002a2");
+    static final UUID A_EMPTY_ORDER = UUID.fromString("0190b400-0000-7000-8000-0000000002a3");
     static final UUID B_ORDER = UUID.fromString("0190b400-0000-7000-8000-0000000002b1");
     static final UUID A_LINE = UUID.fromString("0190b400-0000-7000-8000-0000000003a1");
     static final UUID B_LINE = UUID.fromString("0190b400-0000-7000-8000-0000000003b1");
@@ -66,6 +67,7 @@ class OrdersTenantIsolationTest {
         seed(B, B_STORE, B_ORDER, B_LINE, B_ZONE);
         try (AppRoleSession app = AppRoleSession.open().tenant(A).allStores()) {
             insertOrder(app.jdbc(), A_OTHER_ORDER, A_OTHER_STORE);
+            insertOrder(app.jdbc(), A_EMPTY_ORDER, A_STORE);
         }
     }
 
@@ -117,7 +119,8 @@ class OrdersTenantIsolationTest {
     @Test
     void anotherTenantsOrderById404AndOwnOrder200() throws Exception {
         mvc.perform(get("/api/v1/pos/orders/" + B_ORDER).with(pos(A, A_STORE))).andExpect(status().isNotFound());
-        mvc.perform(get("/api/v1/pos/orders/" + A_ORDER).with(pos(A, A_STORE))).andExpect(status().isOk());
+        mvc.perform(get("/api/v1/pos/orders/" + A_EMPTY_ORDER).with(pos(A, A_STORE)))
+                .andExpect(status().isOk());
     }
 
     @Test

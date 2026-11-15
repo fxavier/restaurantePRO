@@ -11,6 +11,7 @@ import com.xavier.backend.access.StoreScopes;
 import com.xavier.backend.dining.DiningFixtures;
 import com.xavier.backend.dining.DiningModuleTest;
 import com.xavier.backend.dining.repository.ReservationRepository;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -72,7 +73,7 @@ class ReservationNoShowJobTest {
 
     ReservationNoShowJob jobAt(Duration afterStart) {
         return new ReservationNoShowJob(reservations, changes, transactionManager,
-                Clock.fixed(startsAt.plus(afterStart), ZoneOffset.UTC));
+                Clock.fixed(startsAt.plus(afterStart), ZoneOffset.UTC), 100);
     }
 
     @Test
@@ -118,14 +119,14 @@ class ReservationNoShowJobTest {
         TransactionTemplate tx = new TransactionTemplate(transactionManager);
         try (ExecutorService pool = Executors.newSingleThreadExecutor()) {
             // a request of the reservation's store, on a thread of its own (no fixture fallback there)
-            Future<?> holder = pool.submit(() -> scopes.callForStore(store, "test:holder",
-                    () -> tx.execute(status -> {
+            Future<?> holder = pool.submit(TenantTestSupport.inBootstrap(() -> scopes.callForStore(store,
+                    "test:holder", () -> tx.execute(status -> {
                         jdbc.sql("SELECT id FROM dining.reservation WHERE id = :id FOR UPDATE")
                                 .param("id", reservation).query(UUID.class).single();
                         locked.countDown();
                         await(release);
                         return null;
-                    })));
+                    }))));
             assertThat(locked.await(30, TimeUnit.SECONDS)).isTrue();
 
             jobAt(Duration.ofMinutes(31)).markDue(); // would block here without SKIP LOCKED

@@ -3,6 +3,7 @@ package com.xavier.backend.orders.delivery;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.xavier.backend.orders.BootstrapSeed;
 import com.xavier.backend.access.StoreScopes;
 import com.xavier.backend.customers.CustomersFixtures;
 import com.xavier.backend.orders.OrdersFixtures;
@@ -163,11 +164,11 @@ class DeliveryTransitionRaceTest {
 
     /** {@code work} in a transaction of the shop's store scope, as a request of that store would run it. */
     void inStoreTransaction(Runnable work) {
-        scopes.callForStore(d.shop().store(), "test:race", () -> new TransactionTemplate(transactionManager)
-                .execute(status -> {
+        BootstrapSeed.supplyInBootstrap(() -> scopes.callForStore(d.shop().store(), "test:race",
+                () -> new TransactionTemplate(transactionManager).execute(status -> {
                     work.run();
                     return null;
-                }));
+                }))).get();
     }
 
     long waiting(String queryPattern) {

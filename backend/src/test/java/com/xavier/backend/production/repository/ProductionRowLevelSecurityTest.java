@@ -4,6 +4,7 @@ import static com.xavier.backend.AppRoleSession.assertRefused;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.xavier.backend.OwnerDatabase;
+import com.xavier.backend.orders.BootstrapSeed;
 import com.xavier.backend.architecture.RowLevelSecurityCoverageTest;
 import com.xavier.backend.AppRoleSession;
 import com.xavier.backend.shared.persistence.StoreProbe;
@@ -32,7 +33,7 @@ class ProductionRowLevelSecurityTest {
 
     final UUID storeA = UUID.randomUUID();
     final UUID storeB = UUID.randomUUID();
-    final JdbcClient owner = OwnerDatabase.shared().jdbc();
+    final JdbcClient owner = BootstrapSeed.jdbc();
 
     UUID printerA;
     UUID printerB;
@@ -63,9 +64,13 @@ class ProductionRowLevelSecurityTest {
         Map<String, String> policies = owner.sql("""
                         SELECT c.relname, p.polname FROM pg_catalog.pg_policy p
                             JOIN pg_catalog.pg_class c ON c.oid = p.polrelid
-                        WHERE c.relnamespace = 'production'::regnamespace""")
+                        WHERE c.relnamespace = 'production'::regnamespace AND p.polname <> 'tenant_scope'""")
                 .query((row, n) -> Map.entry(row.getString(1), row.getString(2))).list().stream()
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        assertThat(owner.sql("SELECT count(*) FROM pg_catalog.pg_policy p JOIN pg_catalog.pg_class c ON c.oid = p.polrelid "
+                + "WHERE c.relnamespace = 'production'::regnamespace AND p.polname = 'tenant_scope' AND NOT p.polpermissive")
+                .query(Long.class).single()).as("R6: every production table also carries the restrictive tenant policy")
+                .isEqualTo((long) policies.size());
         assertThat(policies.keySet()).containsExactlyInAnyOrderElementsOf(STORE_TABLES);
         assertThat(policies.values()).containsOnly("store_scope");
     }
