@@ -1,6 +1,6 @@
 # 0007. Server-side sessions with Spring Session JDBC
 
-Status: Accepted, 2026-11-04 (D25). Source: [backend-decisions.md](../design/backend-decisions.md) D25; spec §5, §10.
+Status: Accepted, 2026-11-04 (D25). Source: [backend-decisions.md](../design/backend-decisions.md) D25; spec §5, §10. **Superseded 2026-11-15 by [ADR 0040](0040-saas-multitenancy-tenant-id-rls-keycloak.md)** (Keycloak JWTs, resource server, no server-side sessions; D176).
 
 ## Context
 

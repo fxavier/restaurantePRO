@@ -1,10 +1,12 @@
 # restaurantPRO backend — row-level security on store_id: decisions for approval
 
-Status: **PROPOSED** 2026-11-13, for approval by Xavier Francisco. This document continues [backend-decisions.md](backend-decisions.md) (D1–D33), [r2-decisions.md](r2-decisions.md) (D34–D63), [r3-decisions.md](r3-decisions.md) (D64–D98), [r4-decisions.md](r4-decisions.md) (D99–D136) and [r5-decisions.md](r5-decisions.md) (D137–D161, P52–P60, A57–A68). Those decisions stay in force unless a decision below amends one by id. Ids continue from **D162, P61 and A69**. Answer by id, for example "P62: SET LOCAL" or "D167: no policy on reporting". Once approved, D162 ★, D163 ★ and D165 ★ are recorded in [ADR 0039](../adr/0039-row-level-security-on-store-id.md) (written now with status *Proposed*; the integration slice S70 flips it to *Accepted*).
+Status: **PROPOSED** 2026-11-13 — **AMENDED 2026-11-15 by [multitenancy-decisions.md](multitenancy-decisions.md)**: the store scope is kept inside each tenant and combined with a restrictive tenant policy (D179); S64 and S65 are merged; S66–S70 are replaced by S71–S76 (D190), for approval by Xavier Francisco. This document continues [backend-decisions.md](backend-decisions.md) (D1–D33), [r2-decisions.md](r2-decisions.md) (D34–D63), [r3-decisions.md](r3-decisions.md) (D64–D98), [r4-decisions.md](r4-decisions.md) (D99–D136) and [r5-decisions.md](r5-decisions.md) (D137–D161, P52–P60, A57–A68). Those decisions stay in force unless a decision below amends one by id. Ids continue from **D162, P61 and A69**. Answer by id, for example "P62: SET LOCAL" or "D167: no policy on reporting". Once approved, D162 ★, D163 ★ and D165 ★ are recorded in [ADR 0039](../adr/0039-row-level-security-on-store-id.md) (written now with status *Proposed*; the integration slice S70 flips it to *Accepted*).
 
 Source of truth: [product_description.md](../product_description.md), cited as §n. Slices, contracts and the graph are in [PRD RLS](../prd/rls-store-isolation.md). Glossary: [CONTEXT.md](../../CONTEXT.md). Coding rules: [backend-conventions.md](../architecture/backend-conventions.md). Baseline: `origin/feat/backend-stage5` at 41f8bc4 (main + R5 design + S55 + S62).
 
 **User decision (binding, 2026-11-13).** The user first asked for SaaS multi-tenancy (a shared schema with `tenant_id`, Keycloak JWT). That conflicts with §1 and §2 ("Não existem Tenant… tenant_id em tabelas, tenant claims") and with ADR 0034. Given the options, the user chose **PostgreSQL Row-Level Security (RLS) on `store_id` inside each installation**, as a second line of defence behind the application authorization (`AccessPolicy`, D27, D42). **No `tenant_id`, no Keycloak, no spec change.** The flow the user asked for still applies, mapped onto stores: the application validates the session and the permissions; at the start of the database work it sets the store scope ("âmbito de loja") allowed for this actor; PostgreSQL enforces RLS policies on the `store_id` columns.
+
+> **Reversed in part on 2026-11-15:** the user chose SaaS multi-tenancy with `tenant_id`, Keycloak and `SET LOCAL` ([D174](multitenancy-decisions.md#d174)). The "no `tenant_id`, no Keycloak, no spec change" clause below no longer holds.
 
 ---
 
@@ -98,6 +100,8 @@ Grants to `restaurantpro_app`: `USAGE` on the application schemas, `SELECT, INSE
 
 ### D164 — The session variables and how actors map onto them (P63)
 
+*⟶ Amended by [D178](multitenancy-decisions.md#d178): adds `app.tenant_id`; all values are transaction-local.*
+
 Three custom settings, always written together:
 
 | setting | values | meaning |
@@ -128,6 +132,8 @@ Resolution order (`access.StoreScopes.current()`): the innermost explicit system
 
 ### D165 ★ — Where the scope is applied: at connection checkout (P62)
 
+*⟶ **Superseded by [D178](multitenancy-decisions.md#d178)**: `set_config(…, true)` (`SET LOCAL`) right after transaction begin, in a `JpaTransactionManager` subclass; the P62 alternative.*
+
 **Decision.** `config.persistence.StoreScopedDataSource extends org.springframework.jdbc.datasource.DelegatingDataSource` wraps the Hikari `DataSource` bean (through a `BeanPostProcessor`, so the JPA `EntityManagerFactory`, `JdbcTemplate`, `JdbcClient`, Spring Session JDBC and the Spring Modulith JPA event publication registry all receive it). On every `getConnection()` it runs one statement before returning the connection:
 
 ```sql
@@ -153,6 +159,8 @@ with the values of `StoreScopes.current()`. `getConnection(user, password)` thro
 - **Hikari `connectionInitSql`:** runs once per physical connection, not per borrower; useless for a per-actor scope.
 
 ### D166 — Actor-less contexts: named, explicit system scopes (P65)
+
+*⟶ Amended by [D185](multitenancy-decisions.md#d185): every system scope is inside one tenant; jobs iterate tenants; events carry `tenantId`.*
 
 No `BYPASSRLS` on the application role: it would switch RLS off for every request too, since requests and jobs share the pool. A second pool with a privileged role for jobs was rejected: listeners run inside the Spring Modulith machinery on the one `DataSource`, and the jobs' writes would be unprotected.
 
@@ -183,6 +191,8 @@ That is all 14 `@Scheduled` methods, the runner, the readiness hook and the DB-b
 **Alternatives considered.** (a) All stores for every listener: no isolation of asynchronous writes (P65). (b) An `implements StoreScopedEvent` marker on each event: explicit, but it touches every module's event records; the record component plus the ArchUnit rule gives the same guarantee. (c) `BYPASSRLS` for jobs: rejected above.
 
 ### D167 — Table coverage (P64, P66)
+
+*⟶ Amended by [D179](multitenancy-decisions.md#d179): formerly UNSCOPED company-wide tables become TENANT class; every table gets `tenant_id`.*
 
 Five table classes. A table belongs to exactly one; the coverage test (D171) fails on a table in none.
 
@@ -221,6 +231,8 @@ Five table classes. A table belongs to exactly one; the coverage test (D171) fai
 
 ### D168 — Policies
 
+*⟶ Amended by [D179](multitenancy-decisions.md#d179): a restrictive `tenant_scope` policy is ANDed with these; composite foreign keys; `store_of` answers NULL (404) across tenants.*
+
 All policies are generated by helper functions in `shared` (block V1008), so every protected table carries the same canonical text, and the coverage test compares the stored expression with it. `VIS(c)` below abbreviates `((SELECT shared.rls_all_stores()) OR c = ANY ((SELECT shared.rls_store_ids())::uuid[]))`. The `(SELECT …)` wrappers make each function an InitPlan, evaluated once per statement, not once per row (verified with `EXPLAIN`).
 
 | helper (owner runs it in a migration) | what it creates on the table |
@@ -257,6 +269,8 @@ All policies are generated by helper functions in `shared` (block V1008), so eve
 **The real plan risk is leakproofness.** Under RLS, PostgreSQL uses a query's own predicate as an index condition only when its operator is leakproof. On 18.6, `uuid_eq`, `texteq`, `bpchareq`, `int4eq`, `int8eq`, `booleq`, `date` and `timestamptz` comparisons are leakproof; **`numeric_eq`, `jsonb_eq` and `textlike` are not**. Verified: a `(store_id, qty numeric)` index keeps `store_id` in `Index Cond` but moves `qty = 2` to the filter under RLS. Each policy slice lists its module's queries that rely on an index for a `numeric`, `jsonb` or `LIKE`/`ILIKE` predicate on a protected table (the trigram customer search is on an unscoped table) and proves its plan with the R3 pattern. Granting `LEAKPROOF` to built-in operators would need the superuser and is rejected.
 
 ### D170 — Errors, signals and the emergency switch (P68)
+
+*⟶ Amended: the `PERMISSIVE` switch relaxes only the store scope, never the tenant (multitenancy §3).*
 
 Application authorization stays primary: 404, then 403 (D42), then the business rules. RLS refusing something the application allowed is a bug.
 
@@ -305,6 +319,8 @@ The response carries only the code and the correlation id, never a store id or t
 **Deploy drills (S65, S70).** `test-backup-restore.sh` (restore into a fresh container, then provisioning, then the backend starts and answers as the application role), `test-pitr.sh --quick` (roles, ownership and policies survive PITR; the passwords re-sync), `test-two-installations.sh` (A's owner and application passwords do not open B; B's dump is byte-identical; each backend's pool role is `restaurantpro_app`).
 
 ### D172 — Rollout, sequencing and Flyway blocks (P67)
+
+*⟶ **Superseded by [D190](multitenancy-decisions.md#d190)** (slices S71–S76; Flyway versions in [D180](multitenancy-decisions.md#d180)).*
 
 **After R5's S63** (P67). R5 is mid-build (Group 1: S56, S58, S59, S61; Group 2: S57, S60). This run touches migrations in eleven module blocks, the test harness, `application.yaml`, Compose and every scheduled job and listener; interleaving would collide with R5 write sets and Flyway versions. RLS also needs R5's tables (S58's `store_item_exclusion`, S56/S57's identity tables) and the R5 alert code to exist, so they are covered once.
 

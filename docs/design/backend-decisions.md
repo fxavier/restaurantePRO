@@ -1,6 +1,6 @@
 # restaurantPRO backend — decisions for approval
 
-Status: **ACCEPTED** by Xavier Francisco, 2026-11-04. Approval also covers G2 (PRD) and G3 (slices) for R1. Blockers B1–B3 resolved (own git repo, Docker running, local Markdown PRD/issues). P1: country stays **configurable** (no market hard-coded). This document is the ADR record for D1–D33; supersede a decision with a new ADR in `docs/adr/`.
+Status: **ACCEPTED** by Xavier Francisco, 2026-11-04. Approval also covers G2 (PRD) and G3 (slices) for R1. Blockers B1–B3 resolved (own git repo, Docker running, local Markdown PRD/issues). P1: country stays **configurable** (no market hard-coded). This document is the ADR record for D1–D33; supersede a decision with a new ADR in `docs/adr/`. **⟶ 2026-11-15: the installation-per-company premise (P6, D25, D26, D30, D32) is superseded or amended by [multitenancy-decisions.md](multitenancy-decisions.md) (D174–D190, [ADR 0040](../adr/0040-saas-multitenancy-tenant-id-rls-keycloak.md)).**
 Source of truth: [product_description.md](../product_description.md). Where the spec already decides something, this document does not reopen it. Each decision has an id, so you can answer "D7: use X instead".
 
 ---
@@ -39,7 +39,7 @@ The full spec is 14 modules and 4 delivery stages (§13). That is too big for on
 | P3 | Tax | Tax categories and rates are configurable data (catalog). No country's rates are seeded. | none |
 | P4 | Payment provider | R2: cash + "external card terminal, operator confirms" adapter behind a `PaymentProvider` port. Real integrated provider when you name one. | R2 |
 | P5 | Printers | R2: ESC/POS over raw TCP (port 9100), the common denominator for kitchen printers. | R2 |
-| P6 | Hosting | Local server per company (spec recommendation). Compose stack in R1 targets that. | low |
+| P6 | Hosting | Local server per company (spec recommendation). Compose stack in R1 targets that. ⟶ *Superseded by [D174](multitenancy-decisions.md#d174): SaaS only.* | low |
 
 ---
 
@@ -117,16 +117,16 @@ Every module depends on `access` for one reason: it holds `AccessPolicy.require(
 - **D24 — Idempotency-Key** (shared mechanism, used from R1 by publish and other repeatable commands, heavily in R2): table `shared.idempotency_record(key, scope, request_hash, status, response_body, created_at)`, unique `(scope, key)`. Same key + same hash → stored response replayed. Same key + different hash → **422**. Concurrent duplicate → one wins via the unique constraint, the other gets 409 "in progress". Scope = operation name + actor.
 
 ### Security (spec §10)
-- **D25 — Server-side sessions with Spring Session JDBC** (sessions survive restarts and can be listed or revoked per user, which spec §5 needs). Cookie `Secure; HttpOnly; SameSite=Lax`. CSRF enabled with a cookie-to-header token (SPA pattern). No JWT.
-- **D26 — Two login flows, one identity model:**
+- **D25 — Server-side sessions with Spring Session JDBC** (sessions survive restarts and can be listed or revoked per user, which spec §5 needs). Cookie `Secure; HttpOnly; SameSite=Lax`. CSRF enabled with a cookie-to-header token (SPA pattern). No JWT. **⟶ Superseded by [D176](multitenancy-decisions.md#d176):** Keycloak JWTs validated by a resource server; no server-side sessions.
+- **D26 — Two login flows, one identity model:** **⟶ BackOffice part superseded by [D175](multitenancy-decisions.md#d175) (Keycloak); POS part amended by [D182](multitenancy-decisions.md#d182) (terminal = Keycloak client, PIN kept).**
   - BackOffice: `username + password`, BCrypt (an adaptive hash, built in). Strong-password rule. MFA (TOTP) is **deferred**; spec says "conforme implantação". It needs a decision later if remote admin access is planned.
   - POS: `employee code + PIN` **on a registered terminal**. A terminal is enrolled once by an admin (one-time enrollment code → long-lived device token stored hashed). The PIN is BCrypt-hashed. 5 failed attempts lock the employee until a manager unlocks it. The session carries `employeeId, terminalId, storeId`.
 - **D27 — RBAC:** `Permission` is a **code-defined enum** (e.g. `CATALOG_PUBLISH`, `ORDER_VOID`, `CASH_CLOSE_APPROVE`), because permissions are tied to code paths. `Role` is data (a named set of permissions), seeded with the 7 profiles from §3 and editable. `EmployeeStoreAssignment(employee, store, role)` gives per-store scope, and an employee can have many. Every service use case calls `AccessPolicy.require(permission, storeId)`. Controllers do not decide authorization. **POS sessions are scoped to the terminal's store** (user decision 2026-11-04): a PIN login on a terminal grants only the store-scoped authorities of that store; BackOffice sessions carry all assigned stores.
 - **D28 — Supervisor approval** (void, discount, reopen…): the request carries the approver's credentials (code + PIN). The server verifies the approver has the permission in that store, and the audit row records both operator and approver. The pattern is built in R1, first used in R2.
-- **D29 — Support access** (§5): a time-boxed account an admin enables, with audit. Deferred to R3 unless you want it in R1.
+- **D29 — Support access** (§5): a time-boxed account an admin enables, with audit. Deferred to R3 unless you want it in R1. ⟶ *Built as D83; mechanism superseded by [D183](multitenancy-decisions.md#d183).*
 
 ### Bootstrap
-- **D30 — Company is created at first startup**, not via API. Properties `restaurantpro.bootstrap.company.{name,tax-id,country,currency}` and `restaurantpro.bootstrap.admin.{username,initial-password-file}`, set from env `RESTAURANTPRO_BOOTSTRAP_COMPANY_{NAME,TAX_ID,COUNTRY,CURRENCY}`, `RESTAURANTPRO_BOOTSTRAP_ADMIN_USERNAME`, `RESTAURANTPRO_BOOTSTRAP_ADMIN_INITIAL_PASSWORD_FILE` (secret file). A single-row constraint (`id boolean PRIMARY KEY CHECK (id)`) makes a second company impossible. The admin must change the initial password at first login. After bootstrap: `GET/PUT /backoffice/company-profile` only.
+- **D30 — Company is created at first startup**, not via API. Properties `restaurantpro.bootstrap.company.{name,tax-id,country,currency}` and `restaurantpro.bootstrap.admin.{username,initial-password-file}`, set from env `RESTAURANTPRO_BOOTSTRAP_COMPANY_{NAME,TAX_ID,COUNTRY,CURRENCY}`, `RESTAURANTPRO_BOOTSTRAP_ADMIN_USERNAME`, `RESTAURANTPRO_BOOTSTRAP_ADMIN_INITIAL_PASSWORD_FILE` (secret file). A single-row constraint (`id boolean PRIMARY KEY CHECK (id)`) makes a second company impossible. The admin must change the initial password at first login. After bootstrap: `GET/PUT /backoffice/company-profile` only. **⟶ Superseded by [D174](multitenancy-decisions.md#d174) and [D181](multitenancy-decisions.md#d181):** tenants are created by platform onboarding; the company profile is unique per tenant.
 
 ### Catalog publication (spec §5, §8.3)
 - **D31 — Working copy + frozen release.** Admins edit normal relational tables (families, items, variants, units, barcodes, tax categories/rates, price lists, production destination). `ConfigurationRelease` follows DRAFT → VALIDATED → PUBLISHED → RETIRED. **Publish freezes a complete per-store snapshot as `jsonb`** with version, effective time and author. The previous published release becomes RETIRED. POS reads only `GET /pos/catalog` (current published snapshot plus its version). Orders (R2) copy description/price/tax from the snapshot onto the line at confirmation. So republishing can never change past sales (acceptance criterion §14 #7).
@@ -134,7 +134,7 @@ Every module depends on `access` for one reason: it holds `AccessPolicy.require(
 - Item availability ACTIVE/INACTIVE is separate from release state (§8.3).
 
 ### Operations (§11)
-- **D32 — R1 ships** `deploy/compose.yaml` (backend + PostgreSQL + Caddy reverse proxy with internal TLS for LAN HTTPS), healthchecks, persistent volumes, and `deploy/backup.sh` / `deploy/restore.sh` (`pg_dump -Fc` + files, optional encryption with `age`). A test restores into a fresh container and checks the data. WAL/PITR (the RPO 15 min target) is a later ops slice. **⟶ Superseded in part by [D98](r3-decisions.md#d98) (R3 amendment):** encryption is mandatory in production, with recipient-only keys on the server and restore drills that include key recovery.
+- **D32 — R1 ships** `deploy/compose.yaml` (backend + PostgreSQL + Caddy reverse proxy with internal TLS for LAN HTTPS), healthchecks, persistent volumes, and `deploy/backup.sh` / `deploy/restore.sh` (`pg_dump -Fc` + files, optional encryption with `age`). A test restores into a fresh container and checks the data. WAL/PITR (the RPO 15 min target) is a later ops slice. **⟶ Superseded in part by [D98](r3-decisions.md#d98) (R3 amendment):** encryption is mandatory in production, with recipient-only keys on the server and restore drills that include key recovery. **⟶ Amended again by [D188](multitenancy-decisions.md#d188):** managed PITR for the cluster, tenant export and tenant-restore procedure.
 - **D33 — Observability:** Spring Boot structured JSON logs, a correlation-id filter (`X-Correlation-Id` → MDC), and Actuator `health`/`info`/`metrics`/`prometheus` on the management port, admin-only. No `order_id` in metric labels.
 
 ---

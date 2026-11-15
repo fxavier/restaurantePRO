@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-The product specification is [docs/product_description.md](docs/product_description.md). It is written in Portuguese and is authoritative: one installation per company (no multi-tenancy), a Spring Modulith modular monolith, PostgreSQL with Flyway, and React frontends for the POS and BackOffice. Read it before designing or implementing features.
+The product specification is [docs/product_description.md](docs/product_description.md). It is written in Portuguese and is authoritative: a SaaS multi-tenant platform (shared schema with `tenant_id` and PostgreSQL RLS bound with `SET LOCAL`, Keycloak as the identity provider; amended 2026-11-15, see [docs/design/multitenancy-decisions.md](docs/design/multitenancy-decisions.md) and ADR 0040), a Spring Modulith modular monolith, PostgreSQL with Flyway, and React frontends for the POS and BackOffice. Read it before designing or implementing features.
 
 restaurantPRO is at the scaffold stage. Only `backend/` exists: a freshly generated Spring Boot app with a single `BackendApplication` class and a context-load test. There is no domain code, persistence layer, or frontend in this directory yet.
 
@@ -49,3 +49,17 @@ The empty `<license>`, `<developers>` and `<scm>` elements in `pom.xml` are deli
 The enclosing git repository is rooted at `/Users/xavier` (the home directory), not at this project. `git status` therefore lists unrelated home-directory files. Scope git commands to this directory (for example `rtk git status .` or `rtk git add <paths>`), and never run `git add -A` or `git add .` from a parent directory.
 
 `.github/modernize/java-upgrade/` holds tool-use recording hooks from a Java-upgrade tool. It is not CI.
+
+## Agent skills
+
+### Issue tracker
+
+Local Markdown: issues under `docs/issues/<feature>/`, specs under `docs/prd/`; external PRs are not a triage surface. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`) as a `Status:` line in each issue file. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` (glossary) and `docs/adr/` at the repo root. See `docs/agents/domain.md`.

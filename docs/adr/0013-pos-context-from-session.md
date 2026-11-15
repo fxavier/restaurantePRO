@@ -1,6 +1,6 @@
 # 0013. POS context comes from the session, never from the request
 
-Status: Accepted, 2026-11-04 (D39 ★, with D45; from G6 #4). Source: [r2-decisions.md](../design/r2-decisions.md) D39, D45; spec §3, §10.
+Status: Accepted, 2026-11-04 (D39 ★, with D45; from G6 #4). Source: [r2-decisions.md](../design/r2-decisions.md) D39, D45; spec §3, §10. **Amended 2026-11-15 by [ADR 0040](0040-saas-multitenancy-tenant-id-rls-keycloak.md):** the POS session is an opaque token bound to the terminal's Keycloak client (D182); the store still comes from the terminal.
 
 ## Context
 

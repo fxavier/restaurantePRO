@@ -80,7 +80,7 @@ Enforcement: `ModularityTests` (`verify()`) unchanged lists; `ArchitectureTests`
 
 ## 3. Identity: MFA and federation (§3, §5, §10)
 
-**D138 ★ — Keycloak is not adopted as the core identity provider (ADR 0034).** Reasons:
+**D138 ★ — Keycloak is not adopted as the core identity provider (ADR 0034).** **⟶ Superseded 2026-11-15 by [D175](multitenancy-decisions.md#d175) (ADR 0040).** Reasons:
 1. **One installation per company (§2).** Keycloak would be one more stateful service, database schema, upgrade path, backup and restore drill **per company**, on hardware sized for a restaurant server.
 2. **Offline operation (§11).** The POS must keep working with no Internet and must refuse cleanly with no server. A second server process on the critical login path adds a failure mode and buys nothing for a LAN.
 3. **The POS flow does not fit an IdP.** PIN on an enrolled terminal, store-scoped authority, approver code + PIN in headers (D28, D40), lockout and manager unlock: none of these is an OIDC flow, so they would stay local anyway.
@@ -88,7 +88,7 @@ Enforcement: `ModularityTests` (`verify()`) unchanged lists; `ArchitectureTests`
 5. **Existing, tested code.** Sessions (D25), throttling (S10), support grants (D83), session revocation and audit are built and tested.
 The **integration path** is D144: an installation that already has an IdP links BackOffice accounts to it for authentication only.
 
-**D139 ★ — A native TOTP second factor (RFC 6238) for BackOffice accounts (ADR 0035).**
+**D139 ★ — A native TOTP second factor (RFC 6238) for BackOffice accounts (ADR 0035).** **⟶ Superseded by [D175](multitenancy-decisions.md#d175)/[D184](multitenancy-decisions.md#d184): MFA is done by Keycloak.**
 - HMAC-SHA1, 6 digits, 30-second step, accepted window ±1 step (clock drift up to 30 s). Implemented with `javax.crypto.Mac`; **no new dependency** (a TOTP library is ~50 lines over the JDK and RFC 6238 Appendix B gives the test vectors). The secret is 160 random bits from `SecureRandom`, shown base32 (RFC 4648, our own small codec) inside an `otpauth://totp/<issuer>:<username>?secret=…&issuer=…&digits=6&period=30` URI. The BackOffice draws the QR code; the backend sends no image (no QR dependency).
 - **Secret at rest:** AES-256-GCM with a 96-bit random nonce per secret and the key from a secret file (`RESTAURANTPRO_MFA_KEY_FILE`, 32 random bytes, base64), with a `key_id` column for a later rotation. A database dump alone then cannot generate codes. The installation does not start when MFA is not `OFF` and the key file is missing or malformed (fail fast, like D98). The key travels in the encrypted backup's `secrets/` (D98).
 - **Replay:** the factor stores `last_used_step`; a code is accepted only for a step greater than it, with a compare-and-set update, so a code used once (or a code of an earlier step) is refused, also by a second session at the same time.
@@ -96,7 +96,7 @@ The **integration path** is D144: an installation that already has an IdP links 
 - **Recovery codes:** 10 per enrolment, 10 characters of base32 (50 bits) each, shown **once**; stored as SHA-256 hashes (high entropy, so an adaptive hash adds nothing, as for terminal tokens, ADR 0008). Each works once (compare-and-set on `used_at`). Regenerating replaces all of them and needs a fresh step-up.
 - **(amended 2026-11-13, S56 review) Keyed code hashes.** 50 bits (recovery code) and 60 bits (enrolment code) fall to an offline search of an unsalted SHA-256 from a database dump in hours. Both are stored as **HMAC-SHA256** of the normalized code (upper case, no separators), keyed with a **per-purpose sub-key** derived from the MFA key of `mfa.key-file` (`HMAC-SHA256(key, "restaurantpro/mfa/recovery-code/v1")`, `…/enrolment-code/v1`), so a dump alone cannot test guesses. Each row stores the **`key_id`** next to the hash for a later rotation. The given code is compared with the stored hashes in constant time (an account has at most 10 unused recovery codes and one open enrolment code). With mode `OFF` and no key file there are no codes: enrolment and an administrator's reset answer 409 `MFA_NOT_CONFIGURED`.
 
-**D140 — MFA policy per installation and the "remote access" rule.**
+**D140 — MFA policy per installation and the "remote access" rule.** **⟶ Superseded by [D184](multitenancy-decisions.md#d184): MFA mandatory for every BackOffice account; no LAN/remote rule.**
 - `restaurantpro.security.mfa.mode ∈ {OFF, SENSITIVE, ALL_BACKOFFICE}` (P52). It is a deployment property, not data: §10 says "conforme implantação", the operator sets it in `.env`, and an attacker with an administrator session cannot switch it off through the API.
 
 | mode | login with a password (or OIDC) | sensitive permission (D142) |
@@ -110,13 +110,13 @@ The **integration path** is D144: an installation that already has an IdP links 
 - POS sessions (`ActorKind.EMPLOYEE`) are never affected: the PIN flow stays local and offline (user decision 1).
 - **(note 2026-11-13, S56 review) Verify the client address on the host.** Behind Docker's userland proxy, with IPv6 published ports, or on Docker Desktop, Caddy may see the Docker bridge gateway (e.g. `172.17.0.1` or `172.18.0.1`) instead of the client. That address is inside the default `lan-cidrs` (`172.16.0.0/12`), so **every client, including remote ones, would count as local** and `SENSITIVE` would ask no remote login for a code. The operator must check, after installation, that the backend sees the real client address (log in from outside and read the client address of the login log line or audit), and fix the publishing (host networking for Caddy, or `userland-proxy: false`) or narrow `lan-cidrs` before relying on the remote rule. The deploy README should say so (S62 owns it); S63 drills it.
 
-**D141 — Login with a second factor: a pending session.**
+**D141 — Login with a second factor: a pending session.** **⟶ Superseded by [D175](multitenancy-decisions.md#d175).**
 - `POST /auth/login` (and the OIDC callback, D144) checks the password as today. When D140 asks for a second factor, the session starts in state **`MFA_PENDING`**: it holds **no authority**, `MustChangeCredentialFilter` (extended with the two MFA states) serves only `/api/v1/auth/**`, and the pending state expires after 5 minutes. `POST /auth/mfa/verify {code | recoveryCode}` restarts the session (new id, as `LoginSessions.start`) with the account's authorities and `secondFactorAt = now`.
 - An account that needs a second factor but has none gets state **`MFA_ENROLMENT_REQUIRED`** (same restrictions) when the request is from the LAN, so it can enrol right away; from a remote address it gets **403 `MFA_NOT_ENROLLED`** unless it presents an enrolment code (D143). A stolen password then cannot enrol the attacker's phone from outside.
 - `SessionView` gains `mfa {state: NONE | PENDING | ENROLMENT_REQUIRED | VERIFIED, stepUpValidUntil}`. A must-change-password session (D30) changes its password first, then does the second factor.
 - Throttling: the S10 login throttle still counts password attempts; second-factor attempts are counted on the factor (D139).
 
-**D142 ★ — Step-up: a fresh second factor before a sensitive permission (ADR 0035).**
+**D142 ★ — Step-up: a fresh second factor before a sensitive permission (ADR 0035).** **⟶ Amended by [D184](multitenancy-decisions.md#d184): freshness from `acr`/`auth_time`, RFC 9470 challenge; the sensitive set is kept.**
 - `access.Permission` gets `boolean sensitive()`, backed by one `EnumSet` in the enum, code-defined like the permissions themselves (D27). The set, derived from the spec (P54):
 
 | permission | spec basis |
@@ -139,7 +139,7 @@ The **integration path** is D144: an installation that already has an IdP links 
 - **(amended 2026-11-12, S55 review)** Outside the POS gate (`require`, `requireAny`, `requireInAnyStore`, `scopeOf`), an `EMPLOYEE` session whose granting permission is sensitive (for `requireAny`: every granting one) is refused with **403 `MFA_ACCOUNT_REQUIRED`** ("Use a BackOffice account with a second factor for this action.", no `stepUpUri`) while step-up is enforced, because a PIN session cannot prove a second factor; `requirePos*` and approver PINs are unchanged, and with mode `OFF` nothing changes. `AuthenticationAssurance.current()` (S56) therefore reports `enforced` from the installation mode whatever the actor kind.
 - `AuthenticationAssurance` absent (a module test without identity): step-up is not enforced, so R4 module tests stay green unchanged.
 
-**D143 — Enrolment, recovery, reset and break-glass.**
+**D143 — Enrolment, recovery, reset and break-glass.** **⟶ Superseded by [D184](multitenancy-decisions.md#d184) (Keycloak credentials and admin reset).**
 - **Enrolment** (self): `POST /auth/mfa/enrolment {currentPassword, enrolmentCode?}` creates a PENDING factor and returns the secret and `otpauth` URI (valid 10 minutes); `POST /auth/mfa/enrolment/confirm {code}` activates it, returns the 10 recovery codes once, and restarts the session as VERIFIED. One PENDING and one ACTIVE factor per account (partial unique indexes). From a remote address enrolment needs an **enrolment code**.
 - **Enrolment code:** one-time, 24 hours, 12 base32 characters, SHA-256 hashed, issued by an administrator's reset (below) and handed over out of band, like a terminal enrolment code (D26).
 - **Admin reset:** `POST /backoffice/users/{id}/mfa/reset {reason}` (`USER_MANAGE`, so itself a step-up action): revokes the factor and its recovery codes, ends the account's sessions (the existing per-user revoke), issues an enrolment code, audits `MFA_RESET` with the reason. Not on one's own account (422 `MFA_SELF_RESET`: use a recovery code).
@@ -148,7 +148,7 @@ The **integration path** is D144: an installation that already has an IdP links 
   - **(amended 2026-11-13, S56 review)** The same transaction also ends the account's sessions through `shared.end_account_sessions(account_id)` (V1007; the session tables are `shared`'s), and the identity function also deletes a PENDING factor and any open enrolment code. `EXECUTE` on the three console functions is revoked from `PUBLIC` and granted to the migration's role, which the script uses (the database owner today; a later RLS track may give the script its own role).
 - Audited actions: `MFA_ENROLMENT_STARTED`, `MFA_ENROLLED`, `MFA_VERIFIED` (login and step-up, with `kind`), `MFA_RECOVERY_CODE_USED`, `MFA_RECOVERY_CODES_REGENERATED`, `MFA_LOCKED`, `MFA_RESET`, `MFA_BREAK_GLASS_RESET`. Never a secret, a code or a hash in `details` (the recursive secret guard of D82 applies).
 
-**D144 ★ — Optional OIDC federation (ADR 0034).**
+**D144 ★ — Optional OIDC federation (ADR 0034).** **⟶ Superseded by [D175](multitenancy-decisions.md#d175): Keycloak is the core IdP; OIDC federation is no longer an option.**
 - **New dependency:** `spring-boot-starter-oauth2-client`, because it implements the authorization-code flow with PKCE, `state` and `nonce` checks and ID-token signature validation, which must not be hand-written.
 - **Off by default** (`restaurantpro.security.oidc.enabled=false`): no filter, the routes answer 404, no outbound call. **One provider per installation** (Keycloak, Entra ID, Google… any OpenID Provider): `issuer-uri`, `client-id`, `client-secret-file`, `display-name`, `scopes` (default `openid`).
 - **No discovery at startup.** Spring Boot's issuer-based registration fetches the discovery document at boot, so an installation without Internet would not start (§11). R5 uses its own `ClientRegistrationRepository` that resolves the discovery document on first use, caches it, and answers 503 `OIDC_UNAVAILABLE` for the OIDC routes only while the IdP is unreachable. Password login never depends on it.
@@ -161,7 +161,7 @@ The **integration path** is D144: an installation that already has an IdP links 
 - **(amended 2026-11-13, S57 review) The IdP never holds a request long.** Discovery and the token endpoint are called with a 3 s connect and 5 s read timeout, discovery without a lock; a discovery failure is remembered for 30 s (503 `OIDC_UNAVAILABLE` at once), then retried. The discovery document's `issuer` must equal `issuer-uri` exactly. JWKS still uses Spring's default client (no timeout).
 - **(amended 2026-11-13, S57 review)** `restaurantpro.security.oidc.enabled` is `true` or `false` (any case; blank = `false`); any other value stops startup, so the beans and `GET /auth/oidc` read it the same way.
 
-**D145 — Support accounts and MFA** (amends D83, P36). P36 kept MFA deferred on the assumption that support connects over a VPN. With MFA available, a **support account always needs a second factor at login when the mode is not `OFF`**, wherever it connects from, because support access is remote by nature. The first enrolment of a support account uses an enrolment code issued by an administrator's reset. Support accounts cannot link an external identity.
+**D145 — Support accounts and MFA** **⟶ Superseded by [D183](multitenancy-decisions.md#d183).** (amends D83, P36). P36 kept MFA deferred on the assumption that support connects over a VPN. With MFA available, a **support account always needs a second factor at login when the mode is not `OFF`**, wherever it connects from, because support access is remote by nature. The first enrolment of a support account uses an enrolment code issued by an administrator's reset. Support accounts cannot link an external identity.
 
 ---
 
@@ -226,7 +226,7 @@ Warnings are stored on the release (`configuration_release.validation_warnings j
 
 Out of scope: an alert per printer being off (a printer off produces RETRY_WAIT then FAILED jobs, which the print-queue alerts catch).
 
-**D151 — How the backup age reaches the application: a status file.**
+**D151 — How the backup age reaches the application: a status file.** ⟶ *amended by [D188](multitenancy-decisions.md#d188) (managed backups)*
 - Backups run outside the JVM (`deploy/*.sh`, D98), and the backend container has no access to the backup directory by design. **`deploy/verify-backups.sh`** (already every 15 min, already computing ages and problems) writes, atomically (temporary file + `mv`), `deploy/status/backup-status.json`, mode 0644 in a 0755 directory that holds no secret. Compose mounts `./status` read-only into the backend at `/run/restaurantpro/status`. The backend reads it at most once a minute (`restaurantpro.alerts.backup-status-file`; unset = no backup alerts, e.g. developer stacks).
 - Contract (frozen, schema version 1; ISO-8601 UTC instants; no path, host name, key or recipient in it):
 
@@ -254,7 +254,7 @@ Out of scope: an alert per printer being off (a printer off produces RETRY_WAIT 
 
 ## 6. Printing: a real ESC/POS driver (§4, §8.6, D57)
 
-**D154 ★ — A printer profile per printer (ADR 0038).** Printer models are unknown (§15), so R5 targets the **ESC/POS common subset of Epson TM-compatible printers** and stores the variable parts on each printer (production schema, V7008):
+**D154 ★ — A printer profile per printer (ADR 0038).** ⟶ *D154–D158 executed by the print bridge, [D187](multitenancy-decisions.md#d187)* Printer models are unknown (§15), so R5 targets the **ESC/POS common subset of Epson TM-compatible printers** and stores the variable parts on each printer (production schema, V7008):
 
 | field | values (default for existing rows) | ESC/POS |
 |---|---|---|

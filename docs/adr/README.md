@@ -10,13 +10,13 @@ Each ADR records a decision as built, with its context and consequences. The ful
 | [0004](0004-event-publication-registry.md) | Cross-module events through the Spring Modulith publication registry | D19 | Accepted 2026-11-04 |
 | [0005](0005-synchronous-audit.md) | Audit is written synchronously, in the caller's transaction | D20, D41 | Accepted 2026-11-04 |
 | [0006](0006-idempotency-key.md) | One shared Idempotency-Key mechanism | D24 | Accepted 2026-11-04 |
-| [0007](0007-server-side-sessions.md) | Server-side sessions with Spring Session JDBC | D25 | Accepted 2026-11-04 |
-| [0008](0008-two-login-flows.md) | Two login flows, one identity model | D26 | Accepted 2026-11-04; MFA part superseded by 0035 |
+| [0007](0007-server-side-sessions.md) | Server-side sessions with Spring Session JDBC | D25 | Accepted 2026-11-04; superseded by 0040 |
+| [0008](0008-two-login-flows.md) | Two login flows, one identity model | D26 | Accepted 2026-11-04; MFA part superseded by 0035; amended by 0040 |
 | [0009](0009-rbac-and-access-policy.md) | RBAC with code-defined permissions, checked by `AccessPolicy` | D27, D42 | Accepted 2026-11-04 |
 | [0010](0010-catalog-frozen-release.md) | Catalog working copy plus a frozen published release | D31, D58 | Accepted 2026-11-04 |
 | [0011](0011-r2-module-dependencies.md) | R2 module dependencies (three amendments to D13) | D35 ★, D36, D37 | Accepted 2026-11-04 |
 | [0012](0012-actor-kind.md) | The Actor carries its kind | D38 ★ | Accepted 2026-11-04 |
-| [0013](0013-pos-context-from-session.md) | POS context comes from the session | D39 ★, D45 | Accepted 2026-11-04 |
+| [0013](0013-pos-context-from-session.md) | POS context comes from the session | D39 ★, D45 | Accepted 2026-11-04; amended by 0040 |
 | [0014](0014-approvals-before-locks.md) | Approvals are verified before locks, credentials in headers | D40 ★, D28 | Accepted 2026-11-04 |
 | [0015](0015-idempotency-r2-rules.md) | Idempotency in R2: typed, headers kept, only 2xx stored, retention | D47 ★ | Accepted 2026-11-04 |
 | [0016](0016-external-calls-persist-call-record.md) | External calls: persist, then call, then record | D48 ★, D53 | Accepted 2026-11-04 |
@@ -37,12 +37,13 @@ Each ADR records a decision as built, with its context and consequences. The ful
 | [0031](0031-stock-ledger-and-moving-average.md) | Stock: a movement ledger, a balance projection and a weighted moving average | D113 ★ + amendment | Accepted 2026-11-06, amended 2026-11-07 |
 | [0032](0032-consumption-by-event-triggered-pull.md) | Consumption: an event-triggered, idempotent pull from the confirmed round | D116 ★ | Accepted 2026-11-06 |
 | [0033](0033-delivery-as-an-order-mode.md) | Delivery is an order mode plus a `Delivery` lifecycle in orders | D127 ★, D128–D130 | Accepted 2026-11-06 |
-| [0034](0034-keycloak-not-core-idp-oidc-federation.md) | Keycloak is not the core IdP; optional OIDC federation is the integration path | D138 ★, D144 ★ | Accepted 2026-11-12 (R5) |
-| [0035](0035-native-totp-mfa-and-step-up.md) | Native TOTP second factor, per-installation policy, step-up in AccessPolicy | D139 ★, D140–D143, D145 | Accepted 2026-11-12 (R5) |
+| [0034](0034-keycloak-not-core-idp-oidc-federation.md) | Keycloak is not the core IdP; optional OIDC federation is the integration path | D138 ★, D144 ★ | Accepted 2026-11-12 (R5); superseded by 0040 |
+| [0035](0035-native-totp-mfa-and-step-up.md) | Native TOTP second factor, per-installation policy, step-up in AccessPolicy | D139 ★, D140–D143, D145 | Accepted 2026-11-12 (R5); superseded by 0040 |
 | [0036](0036-store-item-exclusion.md) | Per-store catalog availability through an explicit exclusion | D146 ★, D147, D148 | Accepted 2026-11-12 (R5) |
 | [0037](0037-operational-alerts.md) | Operational alerts: AlertSource, metrics, in-app list, backup status file | D149 ★, D150–D153 | Accepted 2026-11-12 (R5) |
 | [0038](0038-escpos-printer-profiles.md) | ESC/POS driver: printer profiles, styled tickets, status probe, drawer kick | D154 ★, D155–D158 | Accepted 2026-11-12 (R5) |
-| [0039](0039-row-level-security-on-store-id.md) | PostgreSQL row-level security on store_id as defence in depth: three database roles, scope set at connection checkout | D162 ★, D163 ★, D165 ★, D164, D166–D173 | Accepted 2026-11-15 |
+| [0039](0039-row-level-security-on-store-id.md) | PostgreSQL row-level security on store_id as defence in depth: three database roles, scope set at connection checkout | D162 ★, D163 ★, D165 ★, D164, D166–D173 | Accepted 2026-11-15; amended by 0040 |
+| [0040](0040-saas-multitenancy-tenant-id-rls-keycloak.md) | SaaS multi-tenancy: shared schema with `tenant_id`, RLS bound with `SET LOCAL`, Keycloak as the IdP | D174 ★, D177 ★, D178 ★, D179 ★, D175, D176, D180–D190 | Proposed 2026-11-15 |
 
 ## Where the code deviates from a decision text
 

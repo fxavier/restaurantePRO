@@ -1,6 +1,6 @@
 # 0039. PostgreSQL row-level security on store_id as defence in depth, with separate database roles and a scope set at connection checkout
 
-Status: Accepted 2026-11-15 (proposed 2026-11-13; approved with PR #85, built by S64–S70). D162 ★, D163 ★, D165 ★, with D164 and D166–D173; P61–P68. Source: [rls-decisions.md](../design/rls-decisions.md), including its 2026-11-14/15 amendments (restore keeps privileges, rollback to R5 only until V13080, per-command STORE_OR_ALL policies of V1009, the accepted SPECIAL tables, the audit get-by-id 403); spec §2, §8, §10, §11, §14. Amends D4/D11 (tests connect as the application role) and D32/D98 (restore provisions roles).
+Status: Accepted 2026-11-15 (proposed 2026-11-13; approved with PR #85, built by S64–S70). D162 ★, D163 ★, D165 ★, with D164 and D166–D173; P61–P68. Source: [rls-decisions.md](../design/rls-decisions.md), including its 2026-11-14/15 amendments (restore keeps privileges, rollback to R5 only until V13080, per-command STORE_OR_ALL policies of V1009, the accepted SPECIAL tables, the audit get-by-id 403); spec §2, §8, §10, §11, §14. Amends D4/D11 (tests connect as the application role) and D32/D98 (restore provisions roles). **Amended 2026-11-15 by [ADR 0040](0040-saas-multitenancy-tenant-id-rls-keycloak.md):** a restrictive `tenant_id` policy is ANDed with the store policies; the scope is bound with `SET LOCAL` at transaction begin instead of connection checkout (D178, D179).
 
 ## Context
 

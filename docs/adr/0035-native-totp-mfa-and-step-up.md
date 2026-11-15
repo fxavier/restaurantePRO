@@ -1,6 +1,6 @@
 # 0035. Native TOTP second factor, per-installation policy, and step-up in AccessPolicy
 
-Status: Accepted 2026-11-12 (R5 approval, D139–D143, D145; P52–P54); built in S55 and S56, integrated in S63 (2026-11-13). Source: [r5-decisions.md](../design/r5-decisions.md) §3; spec §5, §10. Supersedes the "MFA (TOTP) is deferred" part of [0008](0008-two-login-flows.md) (D26) and amends D83 (support access).
+Status: Accepted 2026-11-12 (R5 approval, D139–D143, D145; P52–P54); built in S55 and S56, integrated in S63 (2026-11-13). Source: [r5-decisions.md](../design/r5-decisions.md) §3; spec §5, §10. Supersedes the "MFA (TOTP) is deferred" part of [0008](0008-two-login-flows.md) (D26) and amends D83 (support access). **Superseded 2026-11-15 by [ADR 0040](0040-saas-multitenancy-tenant-id-rls-keycloak.md)** (MFA and step-up through Keycloak `acr`/`auth_time`, RFC 9470; D184). The sensitive-permission set of D142 is kept.
 
 ## Context
 
