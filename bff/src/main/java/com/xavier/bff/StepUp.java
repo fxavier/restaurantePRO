@@ -58,11 +58,16 @@ record StepUp(String acrValues, String maxAge, String returnPath) implements Ser
         session.setAttribute(PENDING, this);
     }
 
-    /** The step-up to ask for in the next authorization request, at most once. */
+    /**
+     * The step-up to ask for in the next authorization request, at most once. An authorization request without
+     * one also forgets the return path of an abandoned step-up, so a later ordinary login lands on the home page.
+     */
     static StepUp takePending(HttpSession session) {
         StepUp pending = (StepUp) session.getAttribute(PENDING);
         session.removeAttribute(PENDING);
-        if (pending != null) {
+        if (pending == null) {
+            session.removeAttribute(RETURN);
+        } else {
             session.setAttribute(RETURN, pending.returnPath());
         }
         return pending;

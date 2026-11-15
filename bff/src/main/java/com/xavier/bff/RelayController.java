@@ -32,16 +32,20 @@ class RelayController {
         return relay.relay(request, client.getAccessToken().getTokenValue(), TenantController.selected(session));
     }
 
-    /** No usable token any more (refresh refused, for example after reuse detection): the SPA logs in again. */
+    /** No usable token any more (refresh refused after reuse detection, or Keycloak not answering in time). */
     @ExceptionHandler(ClientAuthorizationException.class)
-    @ResponseStatus(HttpStatus.UNAUTHORIZED)
     ProblemDetail sessionExpired() {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, "The BFF session has no valid token; log in again");
+        return BffProblem.SESSION_EXPIRED.toProblemDetail();
     }
 
     @ExceptionHandler(IOException.class)
-    @ResponseStatus(HttpStatus.BAD_GATEWAY)
     ProblemDetail backendUnreachable() {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_GATEWAY, "The backend could not be reached");
+        return BffProblem.BACKEND_UNAVAILABLE.toProblemDetail();
+    }
+
+    @ExceptionHandler(BackendRelay.RequestBodyTooLargeException.class)
+    @ResponseStatus(HttpStatus.CONTENT_TOO_LARGE)
+    ProblemDetail tooLarge() {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONTENT_TOO_LARGE, "The request body is larger than the BFF relays");
     }
 }

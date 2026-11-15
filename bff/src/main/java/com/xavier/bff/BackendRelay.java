@@ -2,7 +2,6 @@ package com.xavier.bff;
 
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 
@@ -72,8 +71,16 @@ class BackendRelay {
         return URI.create(properties.backendUrl() + request.getRequestURI() + (query == null ? "" : "?" + query));
     }
 
-    private static HttpRequest.BodyPublisher body(HttpServletRequest request) throws IOException {
-        byte[] bytes = request.getInputStream().readAllBytes();
+    static final class RequestBodyTooLargeException extends RuntimeException {
+    }
+
+    private HttpRequest.BodyPublisher body(HttpServletRequest request) throws IOException {
+        int max = Math.toIntExact(properties.maxRequestBody().toBytes());
+        // Reads at most one byte past the limit, whether the body has a Content-Length or is chunked.
+        byte[] bytes = request.getInputStream().readNBytes(max + 1);
+        if (bytes.length > max) {
+            throw new RequestBodyTooLargeException();
+        }
         return bytes.length == 0 ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofByteArray(bytes);
     }
 
@@ -85,6 +92,7 @@ class BackendRelay {
             }
         });
         byte[] body = response.body();
-        return new ResponseEntity<>(body.length == 0 ? null : body, headers, HttpStatus.valueOf(response.statusCode()));
+        // status(int): a code Spring has no constant for (499, 599) passes through instead of failing.
+        return ResponseEntity.status(response.statusCode()).headers(headers).body(body.length == 0 ? null : body);
     }
 }

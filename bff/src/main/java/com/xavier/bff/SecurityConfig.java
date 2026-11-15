@@ -4,27 +4,37 @@ import com.nimbusds.jose.jwk.JWK;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpStatus;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.http.converter.FormHttpMessageConverter;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClientProviderBuilder;
 import org.springframework.security.oauth2.client.endpoint.NimbusJwtClientAuthenticationParametersConverter;
 import org.springframework.security.oauth2.client.endpoint.OAuth2AccessTokenResponseClient;
 import org.springframework.security.oauth2.client.endpoint.OAuth2AuthorizationCodeGrantRequest;
 import org.springframework.security.oauth2.client.endpoint.OAuth2RefreshTokenGrantRequest;
 import org.springframework.security.oauth2.client.endpoint.RestClientAuthorizationCodeTokenResponseClient;
 import org.springframework.security.oauth2.client.endpoint.RestClientRefreshTokenTokenResponseClient;
-import org.springframework.security.oauth2.client.oidc.web.logout.OidcClientInitiatedLogoutSuccessHandler;
+import org.springframework.security.oauth2.client.http.OAuth2ErrorResponseErrorHandler;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizationRequestResolver;
+import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizedClientManager;
+import org.springframework.security.oauth2.client.web.HttpSessionOAuth2AuthorizedClientRepository;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
+import org.springframework.security.oauth2.core.http.converter.OAuth2AccessTokenResponseHttpMessageConverter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
-import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationSuccessHandler;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.firewall.HttpStatusRequestRejectedHandler;
 import org.springframework.security.web.firewall.RequestRejectedHandler;
 import org.springframework.security.web.savedrequest.NullRequestCache;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.util.HttpSessionMutexListener;
+
+import java.util.List;
 
 @Configuration
 class SecurityConfig {
@@ -33,7 +43,7 @@ class SecurityConfig {
     static final String AUTHORIZATION_PATH = "/oauth2/authorization/" + REGISTRATION_ID;
 
     @Bean
-    SecurityFilterChain bff(HttpSecurity http, ClientRegistrationRepository registrations) {
+    SecurityFilterChain bff(HttpSecurity http, ClientRegistrationRepository registrations, KeycloakLogout keycloakLogout) {
         http
                 .authorizeHttpRequests(requests -> requests
                         .requestMatchers("/bff/step-up", "/error").permitAll()
@@ -46,9 +56,11 @@ class SecurityConfig {
                         .successHandler(afterLogin()))
                 .logout(logout -> logout
                         .logoutUrl("/bff/logout")
-                        .logoutSuccessHandler(keycloakLogout(registrations)))
+                        .addLogoutHandler(keycloakLogout)
+                        .logoutSuccessHandler(keycloakLogout))
                 // An XHR gets a status, never a redirect to Keycloak; the SPA navigates to the login itself.
-                .exceptionHandling(errors -> errors.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
+                .exceptionHandling(errors -> errors.authenticationEntryPoint(
+                        (request, response, failure) -> BffProblem.SESSION_EXPIRED.writeTo(response)))
                 .requestCache(cache -> cache.requestCache(new NullRequestCache()));
         return http.build();
     }
@@ -108,11 +120,50 @@ class SecurityConfig {
         };
     }
 
-    /** RP-initiated logout: after the BFF session ends, the browser ends Keycloak's session too. */
-    private static OidcClientInitiatedLogoutSuccessHandler keycloakLogout(ClientRegistrationRepository registrations) {
-        OidcClientInitiatedLogoutSuccessHandler handler = new OidcClientInitiatedLogoutSuccessHandler(registrations);
-        handler.setPostLogoutRedirectUri("{baseUrl}/");
-        return handler;
+    @Bean
+    KeycloakLogout keycloakLogout(ClientRegistrationRepository registrations, OAuth2AuthorizedClientRepository authorizedClients,
+                                  RestClient identityProviderRestClient, JWK clientKey) {
+        return new KeycloakLogout(registrations, authorizedClients, identityProviderRestClient, clientKey);
+    }
+
+    /** The tokens live in the BFF's HTTP session: one set per login, gone with the session (not one per user name). */
+    @Bean
+    OAuth2AuthorizedClientRepository authorizedClientRepository() {
+        return new HttpSessionOAuth2AuthorizedClientRepository();
+    }
+
+    @Bean
+    OAuth2AuthorizedClientManager authorizedClientManager(ClientRegistrationRepository registrations,
+                                                          OAuth2AuthorizedClientRepository authorizedClients,
+                                                          OAuth2AccessTokenResponseClient<OAuth2RefreshTokenGrantRequest> refreshTokenTokenResponseClient) {
+        DefaultOAuth2AuthorizedClientManager manager = new DefaultOAuth2AuthorizedClientManager(registrations, authorizedClients);
+        manager.setAuthorizedClientProvider(OAuth2AuthorizedClientProviderBuilder.builder()
+                .authorizationCode()
+                .refreshToken(refresh -> refresh.accessTokenResponseClient(refreshTokenTokenResponseClient))
+                .build());
+        return new OneRefreshPerSession(manager);
+    }
+
+    /**
+     * Gives every session a dedicated mutex at creation, which {@link OneRefreshPerSession} locks. Without it
+     * WebUtils falls back to the HttpSession object, which is stable on Tomcat only by implementation detail.
+     */
+    @Bean
+    HttpSessionMutexListener sessionMutexListener() {
+        return new HttpSessionMutexListener();
+    }
+
+    /** The BFF's own calls to Keycloak (code exchange, refresh, back-channel logout) fail fast when it hangs. */
+    @Bean
+    RestClient identityProviderRestClient(BffProperties properties) {
+        SimpleClientHttpRequestFactory requests = new SimpleClientHttpRequestFactory();
+        requests.setConnectTimeout(properties.idpConnectTimeout());
+        requests.setReadTimeout(properties.idpReadTimeout());
+        return RestClient.builder()
+                .requestFactory(requests)
+                .messageConverters(List.of(new FormHttpMessageConverter(), new OAuth2AccessTokenResponseHttpMessageConverter()))
+                .defaultStatusHandler(new OAuth2ErrorResponseErrorHandler())
+                .build();
     }
 
     @Bean
@@ -122,16 +173,20 @@ class SecurityConfig {
 
     /** private_key_jwt (RFC 7523) on the code exchange. */
     @Bean
-    OAuth2AccessTokenResponseClient<OAuth2AuthorizationCodeGrantRequest> authorizationCodeTokenResponseClient(JWK clientKey) {
+    OAuth2AccessTokenResponseClient<OAuth2AuthorizationCodeGrantRequest> authorizationCodeTokenResponseClient(
+            JWK clientKey, RestClient identityProviderRestClient) {
         RestClientAuthorizationCodeTokenResponseClient client = new RestClientAuthorizationCodeTokenResponseClient();
+        client.setRestClient(identityProviderRestClient);
         client.addParametersConverter(new NimbusJwtClientAuthenticationParametersConverter<>(registration -> clientKey));
         return client;
     }
 
     /** private_key_jwt on every refresh; Keycloak rotates the refresh token and Spring keeps the new one. */
     @Bean
-    OAuth2AccessTokenResponseClient<OAuth2RefreshTokenGrantRequest> refreshTokenTokenResponseClient(JWK clientKey) {
+    OAuth2AccessTokenResponseClient<OAuth2RefreshTokenGrantRequest> refreshTokenTokenResponseClient(
+            JWK clientKey, RestClient identityProviderRestClient) {
         RestClientRefreshTokenTokenResponseClient client = new RestClientRefreshTokenTokenResponseClient();
+        client.setRestClient(identityProviderRestClient);
         client.addParametersConverter(new NimbusJwtClientAuthenticationParametersConverter<>(registration -> clientKey));
         return client;
     }

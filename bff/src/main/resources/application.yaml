@@ -39,3 +39,6 @@ restaurantpro:
     # A private JWK (RSA or EC, with "kid") registered on backoffice-bff for private_key_jwt.
     client-key-file: ${RESTAURANTPRO_BFF_CLIENT_KEY_FILE}
     backend-timeout: PT30S
+    idp-connect-timeout: PT5S
+    idp-read-timeout: PT10S
+    max-request-body: 1MB
