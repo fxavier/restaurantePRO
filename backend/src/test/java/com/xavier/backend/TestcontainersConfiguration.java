@@ -5,6 +5,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.flyway.autoconfigure.FlywayConnectionDetails;
 import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Lazy;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
@@ -83,6 +84,17 @@ public class TestcontainersConfiguration {
     /** The owner role's password in every container of this JVM. */
     public static String ownerPassword() {
         return DatabaseRoles.ownerPassword();
+    }
+
+    /**
+     * D189 (as amended): the Keycloak of the identity and end-to-end suites, one per JVM, started on first use only (a
+     * suite that never asks for it never starts it), with the realms of {@code deploy/keycloak} imported. A wrapper,
+     * not the container: Spring Boot's Testcontainers lifecycle would stop a container bean when its context closes.
+     */
+    @Bean
+    @Lazy
+    SharedKeycloak sharedKeycloak() {
+        return SharedKeycloak.instance();
     }
 
     @Bean

@@ -125,6 +125,14 @@ restaurantpro:
   # would not map them (RESTAURANTPRO_MFA_MODE is not restaurantpro.security.mfa.mode), so each is bound explicitly.
   # FrozenConfigurationNamesTest proves every one. An empty value means "not set".
   security:
+    # R6 (spec "frozen contracts", D176/D184): Keycloak's two realms. Unset issuers make every API call 503
+    # IDP_UNAVAILABLE (fail closed, S72); S71 only declares them.
+    issuers:
+      tenant: ${RESTAURANTPRO_OIDC_TENANT_ISSUER:}
+      ops: ${RESTAURANTPRO_OIDC_OPS_ISSUER:}
+    audience: restaurantpro-api
+    clock-skew: PT30S
+    step-up-max-age: PT5M
     mfa:
       # D138/D142: OFF, SENSITIVE or ALL_BACKOFFICE (deploy/.env.example sets SENSITIVE, P52)
       mode: ${RESTAURANTPRO_MFA_MODE:OFF}
@@ -144,6 +152,19 @@ restaurantpro:
       scopes: ${RESTAURANTPRO_OIDC_SCOPES:openid}
       trust-idp-mfa: ${RESTAURANTPRO_OIDC_TRUST_IDP_MFA:false}
       post-login-uri: ${RESTAURANTPRO_OIDC_POST_LOGIN_URI:/backoffice/}
+  keycloak:
+    # R6 (D181): the tenancy-provisioner service account of the IdentityProviderAdmin adapter (S75); its private key
+    # comes from a secret file, never from the environment.
+    admin:
+      base-url: ${RESTAURANTPRO_KEYCLOAK_ADMIN_BASE_URL:}
+      realm: ${RESTAURANTPRO_KEYCLOAK_ADMIN_REALM:restaurantpro}
+      client-id: tenancy-provisioner
+      key-file: ${RESTAURANTPRO_KEYCLOAK_ADMIN_KEY_FILE:}
+  jobs:
+    # R6 (D185): a reach-ALL job takes a lease per (job, tenant) for this long (released when its run ends), and handles
+    # at most this many items per tenant per tick (fairness).
+    lease-ttl: PT2M
+    batch-per-tenant: 100
   alerts:
     # D151: the backup status file written by deploy/verify-backups.sh (Compose mounts it read-only at
     # /run/restaurantpro/status/backup-status.json). Empty = no backup alerts (developer stacks).
