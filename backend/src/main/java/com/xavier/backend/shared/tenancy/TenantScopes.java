@@ -2,8 +2,6 @@ package com.xavier.backend.shared.tenancy;
 
 import com.xavier.backend.access.StoreScopes;
 import com.xavier.backend.access.SystemScope;
-import java.util.ArrayDeque;
-import java.util.Deque;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -33,7 +31,7 @@ public class TenantScopes {
     private record Frame(TenantContext context) {
     }
 
-    private static final ThreadLocal<Deque<Frame>> EXPLICIT = ThreadLocal.withInitial(ArrayDeque::new);
+    private static final ThreadStack<Frame> EXPLICIT = new ThreadStack<>();
     private static final ThreadLocal<TenantContext> REQUEST = new ThreadLocal<>();
     private static final TenantContext PRE_RESOLUTION = new TenantContext(BootstrapTenant.ID, MembershipKind.SYSTEM,
             null, "request:pre-resolution");
@@ -59,7 +57,7 @@ public class TenantScopes {
 
     /** The tenant a transaction begun now is bound to; empty = unbound ({@code ''}, a protected table raises RS003). */
     public Optional<TenantContext> current() {
-        Frame explicit = EXPLICIT.get().peek();
+        Frame explicit = EXPLICIT.peek();
         if (explicit != null) {
             return Optional.ofNullable(explicit.context());
         }
@@ -148,15 +146,10 @@ public class TenantScopes {
         Frame frame = new Frame(captured.map(context -> context.origin().startsWith(TASK) ? context
                 : new TenantContext(context.tenantId(), context.kind(), context.principalId(),
                         TASK + context.origin())).orElse(null));
-        return () -> {
-            Deque<Frame> stack = EXPLICIT.get();
-            stack.push(frame);
-            try {
-                task.run();
-            } finally {
-                pop(stack);
-            }
-        };
+        return () -> EXPLICIT.within(frame, () -> {
+            task.run();
+            return null;
+        });
     }
 
     /** {@link BootstrapTenantRequests}: the request thread runs in the pre-resolution tenant until it ends. */
@@ -202,19 +195,6 @@ public class TenantScopes {
             throw new IllegalStateException("The tenant cannot change inside a transaction (" + origin + "): the code "
                     + "would keep the transaction's connection and its binding (D178)");
         }
-        Deque<Frame> stack = EXPLICIT.get();
-        stack.push(frame);
-        try {
-            return action.get();
-        } finally {
-            pop(stack);
-        }
-    }
-
-    private static void pop(Deque<Frame> stack) {
-        stack.pop();
-        if (stack.isEmpty()) {
-            EXPLICIT.remove();
-        }
+        return EXPLICIT.within(frame, action);
     }
 }

@@ -3,8 +3,7 @@ package com.xavier.backend.access;
 import com.xavier.backend.shared.persistence.StoreScopeViolations;
 import com.xavier.backend.shared.tenancy.CurrentAuthentication;
 import com.xavier.backend.shared.tenancy.TenantScopes;
-import java.util.ArrayDeque;
-import java.util.Deque;
+import com.xavier.backend.shared.tenancy.ThreadStack;
 import java.util.UUID;
 import java.util.function.Supplier;
 import org.springframework.beans.factory.ObjectProvider;
@@ -26,7 +25,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 @Component
 public class StoreScopes {
 
-    private static final ThreadLocal<Deque<StoreScope>> EXPLICIT = ThreadLocal.withInitial(ArrayDeque::new);
+    private static final ThreadStack<StoreScope> EXPLICIT = new ThreadStack<>();
     private static final String TASK = "task:";
 
     private final StoreScopeFallback fallback;
@@ -52,7 +51,7 @@ public class StoreScopes {
      * the actor never recurses ({@link CurrentAuthentication}).
      */
     public StoreScope current() {
-        StoreScope explicit = EXPLICIT.get().peek();
+        StoreScope explicit = EXPLICIT.peek();
         if (explicit != null) {
             return explicit;
         }
@@ -103,18 +102,15 @@ public class StoreScopes {
         StoreScope captured = current();
         String origin = captured.origin().startsWith(TASK) ? captured.origin() : TASK + captured.origin();
         StoreScope taskScope = captured.withOrigin(origin);
-        return () -> {
-            Deque<StoreScope> stack = EXPLICIT.get();
-            stack.push(taskScope);
+        return () -> EXPLICIT.within(taskScope, () -> {
             try {
                 task.run();
+                return null;
             } catch (RuntimeException e) {
                 StoreScopeViolations.classify(e).ifPresent(kind -> violations.record(kind, origin));
                 throw e;
-            } finally {
-                pop(stack);
             }
-        };
+        });
     }
 
     private static <T> T within(StoreScope scope, Supplier<T> action) {
@@ -122,19 +118,6 @@ public class StoreScopes {
             throw new IllegalStateException("The store scope cannot change inside a transaction (" + scope.origin()
                     + "): the code would keep the transaction's connection and its scope (D165)");
         }
-        Deque<StoreScope> stack = EXPLICIT.get();
-        stack.push(scope);
-        try {
-            return action.get();
-        } finally {
-            pop(stack);
-        }
-    }
-
-    private static void pop(Deque<StoreScope> stack) {
-        stack.pop();
-        if (stack.isEmpty()) {
-            EXPLICIT.remove();
-        }
+        return EXPLICIT.within(scope, action);
     }
 }
