@@ -35,7 +35,8 @@ public interface CreditChargeRepository extends JpaRepository<CreditCharge, UUID
             select c.id from CreditCharge c
             where c.status = com.xavier.backend.settlement.model.CreditChargeStatus.RESERVED
                 and c.documentId is not null and c.createdAt < :before order by c.createdAt""")
-    List<UUID> findReservedWithDocument(@Param("before") java.time.Instant before);
+    List<UUID> findReservedWithDocument(@Param("before") java.time.Instant before,
+                                        org.springframework.data.domain.Pageable limit);
 
     /** Reporting's backfill (D84): a store's POSTED charges of business days {@code [from, to]}, oldest first. */
     @Query("""

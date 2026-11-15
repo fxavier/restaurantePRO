@@ -15,6 +15,7 @@ import com.xavier.backend.cash.CashTestClock;
 import com.xavier.backend.cash.repository.CashClosingRepository;
 import com.xavier.backend.shared.ops.AlertSeverity;
 import com.xavier.backend.shared.ops.OperationalAlert;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.math.BigDecimal;
@@ -54,6 +55,9 @@ class CashDiscrepancyAlertSourceTest {
 
     @Autowired
     MockMvc mvc;
+
+    @Autowired
+    TenantScopes tenants;
 
     UUID store;
     UUID register;
@@ -134,9 +138,9 @@ class CashDiscrepancyAlertSourceTest {
     void onlyADifferenceAboveTheThresholdCounts() throws Exception {
         fixtures.submittedClosing(operator, register, day);
         CashDiscrepancyAlertSource atFive = new CashDiscrepancyAlertSource(closings, new SimpleMeterRegistry(), clock,
-                new BigDecimal("5.00"));
+                new BigDecimal("5.00"), tenants);
         CashDiscrepancyAlertSource belowFive = new CashDiscrepancyAlertSource(closings, new SimpleMeterRegistry(),
-                clock, new BigDecimal("4.99"));
+                clock, new BigDecimal("4.99"), tenants);
 
         atFive.refresh();
         belowFive.refresh();

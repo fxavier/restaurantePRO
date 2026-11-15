@@ -10,11 +10,11 @@ import org.springframework.data.repository.query.Param;
 
 public interface OrderSettlementRepository extends JpaRepository<OrderSettlement, UUID> {
 
-    /** Creates the order's lock row once; a concurrent or later call changes nothing. */
+    /** Creates the tenant's lock row of the order once; a concurrent or later call changes nothing. */
     @Modifying
     @Query(value = """
             INSERT INTO settlement.order_settlement (order_id, created_at) VALUES (:orderId, :now)
-            ON CONFLICT (order_id) DO NOTHING""", nativeQuery = true)
+            ON CONFLICT (tenant_id, order_id) DO NOTHING""", nativeQuery = true)
     void createIfAbsent(@Param("orderId") UUID orderId, @Param("now") Instant now);
 
     /** {@code SELECT ... FOR UPDATE} on the order's lock row, until the caller's transaction ends (D51). */

@@ -18,7 +18,7 @@ public interface CashDayRepository extends JpaRepository<CashDay, UUID> {
     @Modifying
     @NativeQuery("""
             INSERT INTO cash.cash_day (store_id, business_date, opened_at) VALUES (:storeId, :businessDate, :now)
-            ON CONFLICT (store_id, business_date) DO NOTHING""")
+            ON CONFLICT (tenant_id, store_id, business_date) DO NOTHING""")
     void createIfAbsent(@Param("storeId") UUID storeId, @Param("businessDate") LocalDate businessDate,
                         @Param("now") Instant now);
 

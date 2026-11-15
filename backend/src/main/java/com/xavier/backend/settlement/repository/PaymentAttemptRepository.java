@@ -64,10 +64,10 @@ public interface PaymentAttemptRepository extends JpaRepository<PaymentAttempt, 
             order by a.nextPollAt nulls first""")
     List<UUID> findDueForPoll(@Param("now") Instant now, org.springframework.data.domain.Pageable limit);
 
-    /** D48 sweeper: attempts of {@code kind} in {@code status} not touched since {@code before}, oldest first. */
+    /** D48 sweeper: attempts of {@code kind} in {@code status} not touched since {@code before}, oldest first, at most {@code limit}. */
     @Query("""
             select a.id from PaymentAttempt a
             where a.status = :status and a.methodKind = :kind and a.updatedAt < :before order by a.updatedAt""")
     List<UUID> findStale(@Param("status") AttemptStatus status, @Param("kind") PaymentMethodKind kind,
-                         @Param("before") Instant before);
+                         @Param("before") Instant before, org.springframework.data.domain.Pageable limit);
 }

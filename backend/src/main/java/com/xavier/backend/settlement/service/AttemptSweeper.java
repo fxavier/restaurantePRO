@@ -11,6 +11,8 @@ import java.time.Clock;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -20,7 +22,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * D48's sweeper. A CREATED integrated attempt older than {@code created-grace} was never charged (the submitter
  * crashed or was full): it is submitted again. A PENDING one older than the provider timeout plus
  * {@code pending-margin} lost its caller during the call: it becomes UNKNOWN, never FAILED, and waits for a resolve.
- * Safe under overlap: submission is a compare-and-set, and expiry decides under the order's lock.
+ * Safe under overlap: submission is a compare-and-set, and expiry decides under the order's lock. One run takes at
+ * most {@code restaurantpro.jobs.batch-per-tenant} attempts of each kind per tenant; the rest wait for the next run.
  */
 @Service
 public class AttemptSweeper {
@@ -33,9 +36,12 @@ public class AttemptSweeper {
     private final SettlementProperties properties;
     private final TransactionTemplate inTransaction;
     private final Clock clock;
+    private final int batch;
 
     AttemptSweeper(PaymentAttemptRepository attempts, PaymentSubmitter submitter, AttemptTransitions transitions,
-                   SettlementProperties properties, PlatformTransactionManager transactionManager, Clock clock) {
+                   SettlementProperties properties, PlatformTransactionManager transactionManager, Clock clock,
+                   @Value("${restaurantpro.jobs.batch-per-tenant:100}") int batch) {
+        this.batch = batch;
         this.attempts = attempts;
         this.submitter = submitter;
         this.transitions = transitions;
@@ -50,12 +56,13 @@ public class AttemptSweeper {
     public void sweep() {
         Instant now = clock.instant();
         for (UUID created : attempts.findStale(AttemptStatus.CREATED, PaymentMethodKind.INTEGRATED,
-                now.minus(properties.createdGrace()))) {
+                now.minus(properties.createdGrace()), Pageable.ofSize(batch))) {
             log.info("Payment attempt {} was never submitted; submitting it again", created);
             submitter.submit(created);
         }
         Duration lost = properties.providerTimeout().plus(properties.pendingMargin());
-        for (UUID pending : attempts.findStale(AttemptStatus.PENDING, PaymentMethodKind.INTEGRATED, now.minus(lost))) {
+        for (UUID pending : attempts.findStale(AttemptStatus.PENDING, PaymentMethodKind.INTEGRATED, now.minus(lost),
+                Pageable.ofSize(batch))) {
             try {
                 inTransaction.executeWithoutResult(tx -> transitions.expire(pending,
                         "no provider outcome within " + lost));

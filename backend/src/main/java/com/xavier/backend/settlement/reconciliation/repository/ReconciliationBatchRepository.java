@@ -17,9 +17,11 @@ public interface ReconciliationBatchRepository extends JpaRepository<Reconciliat
 
     /**
      * Serializes the imports of one payment method until the transaction ends (a transaction-level advisory lock), so
-     * a second statement sees what the first matched (its DUPLICATE_LINEs) instead of racing it.
+     * a second statement sees what the first matched (its DUPLICATE_LINEs) instead of racing it. The key carries the
+     * bound tenant, so two tenants importing for the same method code never wait for each other.
      */
-    @Query(value = "SELECT 1 FROM pg_advisory_xact_lock(hashtextextended('settlement.reconciliation:' || :methodCode, 0))",
+    @Query(value = "SELECT 1 FROM pg_advisory_xact_lock(hashtextextended('settlement.reconciliation:' "
+            + "|| shared.rls_tenant_id() || ':' || :methodCode, 0))",
             nativeQuery = true)
     Integer lockImportsOf(@Param("methodCode") String methodCode);
 }

@@ -10,6 +10,8 @@ import java.time.Clock;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -35,10 +37,12 @@ public class CreditChargeSweeper {
     private final TransactionTemplate inTransaction;
     private final SettlementProperties properties;
     private final Clock clock;
+    private final int batch;
 
     CreditChargeSweeper(CreditChargeRepository charges, SettlementLocks locks, CreditSaleSteps steps,
                         PlatformTransactionManager transactionManager, SettlementProperties properties,
-                        Clock clock) {
+                        Clock clock, @Value("${restaurantpro.jobs.batch-per-tenant:100}") int batch) {
+        this.batch = batch;
         this.properties = properties;
         this.clock = clock;
         this.charges = charges;
@@ -51,7 +55,8 @@ public class CreditChargeSweeper {
     @Scheduled(fixedDelayString = "${restaurantpro.settlement.credit-sweep-interval:PT1M}",
             initialDelayString = "${restaurantpro.settlement.credit-sweep-interval:PT1M}")
     public void sweep() {
-        for (UUID chargeId : charges.findReservedWithDocument(clock.instant().minus(properties.creditSweepGrace()))) {
+        for (UUID chargeId : charges.findReservedWithDocument(clock.instant().minus(properties.creditSweepGrace()),
+                Pageable.ofSize(batch))) {
             try {
                 inTransaction.executeWithoutResult(tx -> postIfIssued(chargeId));
             } catch (RuntimeException e) {
