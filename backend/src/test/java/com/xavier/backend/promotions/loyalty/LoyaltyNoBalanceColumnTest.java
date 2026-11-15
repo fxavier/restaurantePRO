@@ -25,7 +25,7 @@ class LoyaltyNoBalanceColumnTest {
                 .query(String.class).list();
 
         assertThat(columns).containsExactlyInAnyOrder("customer_id", "status", "suspended_reason", "enrolled_at",
-                "enrolled_by_actor_kind", "enrolled_by_actor_id", "version");
+                "enrolled_by_actor_kind", "enrolled_by_actor_id", "version", "tenant_id");
     }
 
     @Test

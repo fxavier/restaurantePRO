@@ -20,6 +20,7 @@ import com.xavier.backend.catalog.repository.PriceListRepository;
 import com.xavier.backend.shared.Money;
 import com.xavier.backend.shared.persistence.StoreProbe;
 import com.xavier.backend.shared.persistence.StoreScopeViolations;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -114,8 +115,8 @@ class CatalogRowLevelSecurityTest {
     @Test
     void aStoreScopeReadsButCannotDeleteEveryStoreRows() {
         UUID companyWide = quickPage(null);
-        OwnerDatabase.shared().jdbc().sql("INSERT INTO catalog.quick_page_entry (page_id, position, item_id) "
-                + "VALUES (?, 0, ?)").param(companyWide).param(item).update();
+        OwnerDatabase.shared().jdbc().sql("INSERT INTO catalog.quick_page_entry (tenant_id, page_id, position, item_id) "
+                + "VALUES (?, ?, 0, ?)").param(TenantTestSupport.BOOTSTRAP).param(companyWide).param(item).update();
         UUID automatic = automaticItem(null);
 
         actor(Permission.CATALOG_MANAGE.authority(storeA));
@@ -150,12 +151,16 @@ class CatalogRowLevelSecurityTest {
     void theCatalogSchemaIsClassified() {
         RowLevelSecurityCoverageTest.assertModuleClassified("catalog");
 
-        assertThat(protectedTables()).containsExactlyInAnyOrder("catalog.price_list", "catalog.configuration_release",
-                "catalog.item_availability", "catalog.daily_dish", "catalog.store_item_exclusion",
-                "catalog.quick_page", "catalog.automatic_item", "catalog.item_price", "catalog.quick_page_entry");
+        assertThat(protectedTables()).as("R6: the working copy is TENANT now, so every table is protected")
+                .containsExactlyInAnyOrder("catalog.price_list", "catalog.configuration_release",
+                        "catalog.item_availability", "catalog.daily_dish", "catalog.store_item_exclusion",
+                        "catalog.quick_page", "catalog.automatic_item", "catalog.item_price",
+                        "catalog.quick_page_entry", "catalog.unit", "catalog.family", "catalog.item",
+                        "catalog.item_variant", "catalog.barcode", "catalog.tax_category", "catalog.tax_rate",
+                        "catalog.menu_group", "catalog.menu_option", "catalog.macro", "catalog.macro_entry");
         assertThat(OwnerDatabase.shared().jdbc().sql("""
                         SELECT count(*) FROM shared.rls_unscoped_table WHERE table_name::text LIKE 'catalog.%'""")
-                .query(Long.class).single()).as("the company-wide working copy").isEqualTo(11);
+                .query(Long.class).single()).as("nothing is left UNSCOPED (D179)").isZero();
     }
 
     /** §14 #9: skipping AccessPolicy (the repository and plain SQL as a seam) still cannot touch store B's prices. */
@@ -263,8 +268,9 @@ class CatalogRowLevelSecurityTest {
         UUID companyWide = quickPage(null);
         UUID ofB = quickPage(storeB);
         for (UUID page : List.of(companyWide, ofB)) {
-            OwnerDatabase.shared().jdbc().sql("INSERT INTO catalog.quick_page_entry (page_id, position, item_id) "
-                    + "VALUES (?, 0, ?)").param(page).param(item).update();
+            OwnerDatabase.shared().jdbc().sql("INSERT INTO catalog.quick_page_entry (tenant_id, page_id, position, "
+                    + "item_id) VALUES (?, ?, 0, ?)").param(TenantTestSupport.BOOTSTRAP).param(page).param(item)
+                    .update();
         }
 
         actor(Permission.CATALOG_MANAGE.authority(storeA));
@@ -315,9 +321,10 @@ class CatalogRowLevelSecurityTest {
         UUID id = UUID.randomUUID();
         pages.add(id);
         OwnerDatabase.shared().jdbc().sql("""
-                INSERT INTO catalog.quick_page (id, store_id, code, name, position, version, created_at, updated_at)
-                VALUES (?, ?, ?, 'Page', 0, 0, now(), now())""").param(id).param(store)
-                .param(CatalogFixtures.code("Q")).update();
+                INSERT INTO catalog.quick_page (id, tenant_id, store_id, code, name, position, version, created_at,
+                                                updated_at)
+                VALUES (?, ?, ?, ?, 'Page', 0, 0, now(), now())""").param(id).param(TenantTestSupport.BOOTSTRAP)
+                .param(store).param(CatalogFixtures.code("Q")).update();
         return id;
     }
 
@@ -325,10 +332,10 @@ class CatalogRowLevelSecurityTest {
         UUID id = UUID.randomUUID();
         automatics.add(id);
         OwnerDatabase.shared().jdbc().sql("""
-                INSERT INTO catalog.automatic_item (id, store_id, trigger, mode, item_id, quantity, active, version,
-                                                    created_at, updated_at)
-                VALUES (?, ?, 'ORDER_OPEN', NULL, ?, 1, false, 0, now(), now())""").param(id).param(store)
-                .param(item).update();
+                INSERT INTO catalog.automatic_item (id, tenant_id, store_id, trigger, mode, item_id, quantity, active,
+                                                    version, created_at, updated_at)
+                VALUES (?, ?, ?, 'ORDER_OPEN', NULL, ?, 1, false, 0, now(), now())""").param(id)
+                .param(TenantTestSupport.BOOTSTRAP).param(store).param(item).update();
         return id;
     }
 

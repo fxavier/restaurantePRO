@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.xavier.backend.TestcontainersConfiguration;
 import com.xavier.backend.access.StoreScopes;
+import com.xavier.backend.shared.tenancy.TenantScopes;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import com.xavier.backend.promotions.loyalty.LoyaltyModuleTest;
 import java.util.List;
 import java.util.UUID;
@@ -32,14 +34,21 @@ class LoyaltyBalancePlanTest {
     @Autowired
     StoreScopes scopes;
 
+    @Autowired
+    TenantScopes tenants;
+
     @Test
     void theBalanceIsAnIndexScanOfTheMembersEntries() {
-        seed();
-        UUID member = jdbc.sql("""
+        TenantTestSupport.ensureTenants();
+        // tenant B holds the same ledger: the plan, read in tenant A, must not care (D189)
+        TenantTestSupport.inTenant(tenants, TenantTestSupport.B, () -> tx.executeWithoutResult(status -> seed()));
+        TenantTestSupport.inTenant(tenants, TenantTestSupport.A, () -> tx.executeWithoutResult(status -> seed()));
+        UUID member = TenantTestSupport.inTenant(tenants, TenantTestSupport.A, () -> tx.execute(status -> jdbc.sql("""
                         SELECT customer_id FROM promotions.loyalty_point_entry WHERE reason = 'plan seed' LIMIT 1""")
-                .query(UUID.class).single();
+                .query(UUID.class).single()));
 
-        String plan = scopes.callForStore(UUID.randomUUID(), "plan-test", () -> tx.execute(status -> {
+        String plan = TenantTestSupport.inTenant(tenants, TenantTestSupport.A, () ->
+                scopes.callForStore(UUID.randomUUID(), "plan-test", () -> tx.execute(status -> {
             // ANALYZE needs the table owner: as the pool it is skipped with a warning (ADR 0039)
             OwnerDatabase.shared().jdbc().sql("ANALYZE promotions.loyalty_point_entry").update();
             assertThat(jdbc.sql("SELECT current_user").query(String.class).single())
@@ -48,7 +57,7 @@ class LoyaltyBalancePlanTest {
             List<String> lines = jdbc.sql("EXPLAIN " + LoyaltyPointEntryRepository.BALANCE)
                     .param("customerId", member).query(String.class).list();
             return String.join("\n", lines);
-        }));
+        })));
 
         assertThat(plan).containsPattern("(Index Only Scan using|Index Scan using|Bitmap Index Scan on) "
                         + "loyalty_point_entry_customer_ix")

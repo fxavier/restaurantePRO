@@ -29,10 +29,10 @@ import org.springframework.security.core.context.SecurityContextHolder;
 class ReportingRowLevelSecurityTest {
 
     static final String SALES_RECORD = """
-            INSERT INTO reporting.sales_record (document_id, store_id, business_date, local_date, local_hour,
-                issued_at, terminal_id, on_account, series_code, number, non_fiscal, currency, total_gross, total_net,
-                total_tax, projected_at)
-            VALUES (?, ?, DATE '2026-01-05', DATE '2026-01-05', 12, now(), gen_random_uuid(), false, 'A', 1, true,
+            INSERT INTO reporting.sales_record (document_id, tenant_id, store_id, business_date, local_date,
+                local_hour, issued_at, terminal_id, on_account, series_code, number, non_fiscal, currency,
+                total_gross, total_net, total_tax, projected_at)
+            VALUES (?, '00000000-0000-7000-8000-000000000001', ?, DATE '2026-01-05', DATE '2026-01-05', 12, now(), gen_random_uuid(), false, 'A', 1, true,
                     'MZN', 30, 25, 5, now())""";
 
     @Autowired

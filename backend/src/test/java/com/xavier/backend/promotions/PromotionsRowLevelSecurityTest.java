@@ -12,6 +12,7 @@ import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.StrictStoreScope;
 import com.xavier.backend.architecture.RowLevelSecurityCoverageTest;
 import com.xavier.backend.shared.persistence.StoreProbe;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -55,8 +56,9 @@ class PromotionsRowLevelSecurityTest {
         storeB = fixtures.storeWithoutCatalog();
         for (UUID store : List.of(storeA, storeB)) {
             OwnerDatabase.shared().jdbc().sql("""
-                    INSERT INTO promotions.discount_limits (store_id, free_limit_percent, max_percent, updated_at,
-                        version) VALUES (?, 10, 50, now(), 0)""").param(store).update();
+                    INSERT INTO promotions.discount_limits (tenant_id, store_id, free_limit_percent, max_percent,
+                        updated_at, version) VALUES (?, ?, 10, 50, now(), 0)""")
+                    .param(TenantTestSupport.BOOTSTRAP).param(store).update();
         }
         releaseB = PromotionsFixtures.id(PromotionsFixtures.json(PromotionsFixtures.expect(
                 fixtures.createRelease(storeB), 201)));
@@ -74,10 +76,15 @@ class PromotionsRowLevelSecurityTest {
         assertThat(OwnerDatabase.shared().jdbc().sql("""
                         SELECT table_name::text FROM shared.rls_protected_table
                         WHERE table_name::text LIKE 'promotions.%'""").query(String.class).list())
-                .containsExactlyInAnyOrder("promotions.discount_limits", "promotions.promotion_release");
+                .as("R6: the promotions and the loyalty program are TENANT now, so every table is protected")
+                .containsExactlyInAnyOrder("promotions.discount_limits", "promotions.promotion_release",
+                        "promotions.promotion", "promotions.promotion_scope", "promotions.promotion_window",
+                        "promotions.promotion_store", "promotions.loyalty_program_version",
+                        "promotions.loyalty_program_scope", "promotions.loyalty_reward", "promotions.loyalty_account",
+                        "promotions.loyalty_allocation", "promotions.loyalty_point_entry");
         assertThat(OwnerDatabase.shared().jdbc().sql("""
                         SELECT count(*) FROM shared.rls_unscoped_table WHERE table_name::text LIKE 'promotions.%'""")
-                .query(Long.class).single()).as("the company-wide promotions and loyalty program").isEqualTo(10);
+                .query(Long.class).single()).as("nothing is left UNSCOPED (D179)").isZero();
     }
 
     @Test

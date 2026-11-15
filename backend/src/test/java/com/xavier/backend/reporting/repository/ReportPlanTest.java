@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.xavier.backend.TestcontainersConfiguration;
 import com.xavier.backend.access.StoreScopes;
+import com.xavier.backend.shared.tenancy.TenantScopes;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import com.xavier.backend.reporting.ReportingModuleTest;
 import java.time.LocalDate;
 import java.util.List;
@@ -40,12 +42,24 @@ class ReportPlanTest {
     @Autowired
     StoreScopes scopes;
 
+    @Autowired
+    TenantScopes tenants;
+
     UUID store;
 
     @BeforeEach
     void twelveStoresOfFourHundredDays() {
         List<UUID> stores = java.util.stream.Stream.generate(UUID::randomUUID).limit(12).toList();
         store = stores.getFirst();
+        TenantTestSupport.ensureTenants();
+        // the same projections in tenant B as in tenant A, the same stores and dates: the plans, read in tenant A,
+        // must not care (D189)
+        for (UUID tenant : List.of(TenantTestSupport.A, TenantTestSupport.B)) {
+            TenantTestSupport.inTenant(tenants, tenant, () -> tx.executeWithoutResult(status -> seed(stores)));
+        }
+    }
+
+    private void seed(List<UUID> stores) {
         for (UUID seeded : stores) {
             jdbc.sql("""
                     INSERT INTO reporting.sales_record (document_id, store_id, business_date, local_date, local_hour,
@@ -125,7 +139,8 @@ class ReportPlanTest {
     }
 
     private String explain(String sql) {
-        return scopes.callForStore(store, "plan-test", () -> tx.execute(status -> {
+        return TenantTestSupport.inTenant(tenants, TenantTestSupport.A, () ->
+                scopes.callForStore(store, "plan-test", () -> tx.execute(status -> {
             for (String table : List.of("sales_record", "sales_record_line", "sales_record_tax", "payment_record",
                     "credit_record", "void_record")) {
                 // ANALYZE needs the table owner: as the pool it is skipped with a warning (ADR 0039)
@@ -138,6 +153,6 @@ class ReportPlanTest {
                     .param("from", LocalDate.of(2026, 1, 1)).param("to", LocalDate.of(2026, 1, 31))
                     .param("limit", 20).query(String.class).list();
             return String.join("\n", lines);
-        }));
+        })));
     }
 }
