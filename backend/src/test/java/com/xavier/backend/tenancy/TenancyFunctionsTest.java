@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.xavier.backend.AppRoleSession;
+import com.xavier.backend.OwnerDatabase;
 import com.xavier.backend.TestcontainersConfiguration;
 import com.xavier.backend.shared.persistence.StoreScopeViolations;
 import com.xavier.backend.shared.tenancy.MembershipKind;
@@ -13,6 +14,7 @@ import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import com.xavier.backend.tenancy.exception.IdentityProviderUnavailableException;
 import com.xavier.backend.tenancy.model.dto.Membership;
 import com.xavier.backend.tenancy.model.dto.MembershipGrant;
+import com.xavier.backend.tenancy.model.dto.MembershipSummary;
 import com.xavier.backend.tenancy.model.dto.TenantStatus;
 import java.time.Duration;
 import java.time.Instant;
@@ -80,6 +82,28 @@ class TenancyFunctionsTest {
                 .isInstanceOf(IllegalStateException.class);
         assertThat(tenancy.resolve(ISSUER, subject, TenantTestSupport.B, TENANT_REALM)).map(Membership::tenantId)
                 .contains(TenantTestSupport.B);
+    }
+
+    @Test
+    void membershipSummariesListOnlyTheSubjectsActiveAndCurrentlyValidMemberships() {
+        String subject = UUID.randomUUID().toString();
+        UUID expiredIn = UUID.randomUUID();
+        TenantTestSupport.ensureTenant(expiredIn, "summaries-" + expiredIn, "PROVISIONING");
+        String orgId = "org-" + UUID.randomUUID();
+        OwnerDatabase.shared().jdbc().sql("UPDATE tenancy.tenant SET keycloak_org_id = ? WHERE id = ?").param(orgId)
+                .param(TenantTestSupport.A).update();
+        grantIn(TenantTestSupport.A, subject, MembershipKind.ACCOUNT, UUID.randomUUID(), null);
+        UUID revoked = grantIn(TenantTestSupport.B, subject, MembershipKind.ACCOUNT, UUID.randomUUID(), null);
+        TenantTestSupport.inTenant(tenants, TenantTestSupport.B, () -> tenancy.revoke(revoked));
+        TenantTestSupport.inTenant(tenants, expiredIn, () -> tenancy.grant(new MembershipGrant(ISSUER, subject,
+                MembershipKind.ACCOUNT, UUID.randomUUID(), Instant.now().minus(Duration.ofHours(2)),
+                Instant.now().minus(Duration.ofHours(1)))));
+        grantIn(TenantTestSupport.B, UUID.randomUUID().toString(), MembershipKind.ACCOUNT, UUID.randomUUID(), null);
+
+        assertThat(tenancy.membershipSummaries(ISSUER, subject)).containsExactly(new MembershipSummary(
+                TenantTestSupport.A, "tenant-a", "tenant-a", MembershipKind.ACCOUNT, orgId));
+        assertThat(tenancy.membershipSummaries("https://other.example/realms/x", subject)).as("another issuer")
+                .isEmpty();
     }
 
     @Test
