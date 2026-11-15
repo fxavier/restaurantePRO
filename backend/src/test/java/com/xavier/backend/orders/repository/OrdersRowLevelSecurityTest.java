@@ -1,11 +1,11 @@
 package com.xavier.backend.orders.repository;
 
-import static com.xavier.backend.dining.AppRoleSession.assertRefused;
+import static com.xavier.backend.AppRoleSession.assertRefused;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.xavier.backend.OwnerDatabase;
 import com.xavier.backend.architecture.RowLevelSecurityCoverageTest;
-import com.xavier.backend.dining.AppRoleSession;
+import com.xavier.backend.AppRoleSession;
 import com.xavier.backend.shared.persistence.StoreProbe;
 import com.xavier.backend.shared.persistence.StoreScopeViolations.Kind;
 import java.sql.SQLException;

@@ -3,7 +3,7 @@ package com.xavier.backend.settlement.repository;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.xavier.backend.OwnerDatabase;
-import com.xavier.backend.settlement.AppRoleSession;
+import com.xavier.backend.AppRoleSession;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
