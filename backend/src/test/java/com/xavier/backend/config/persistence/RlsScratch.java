@@ -29,6 +29,31 @@ final class RlsScratch implements AutoCloseable {
         return scratch;
     }
 
+    /**
+     * A TENANT_STORE scratch table (D179): {@code tenant_id} by the D180 recipe, then the store helper, which calls
+     * {@code shared.rls_protect_tenant} first (restrictive {@code tenant_scope} ANDed with {@code store_scope}).
+     */
+    static RlsScratch createTenantStore(String name) {
+        RlsScratch scratch = new RlsScratch("rls_scratch_" + name);
+        scratch.drop();
+        OwnerDatabase.shared().tx(owner -> {
+            owner.sql("CREATE SCHEMA " + scratch.schema).update();
+            owner.sql("CREATE TABLE " + scratch.table() + " (id uuid PRIMARY KEY, store_id uuid NOT NULL, label text, "
+                    + "tenant_id uuid NOT NULL DEFAULT shared.rls_tenant_id(), UNIQUE (tenant_id, id))").update();
+            owner.sql("SELECT shared.rls_protect_store_table(CAST(? AS regclass))").param(scratch.table())
+                    .query().listOfRows();
+        });
+        return scratch;
+    }
+
+    /** A row of {@code tenant} (seeded by the owner, which bypasses row-level security). */
+    UUID insert(UUID tenant, UUID store, String label) {
+        UUID id = UUID.randomUUID();
+        OwnerDatabase.shared().jdbc().sql("INSERT INTO " + table() + " (id, tenant_id, store_id, label) "
+                        + "VALUES (?, ?, ?, ?)").param(id).param(tenant).param(store).param(label).update();
+        return id;
+    }
+
     String table() {
         return schema + ".item";
     }
@@ -54,6 +79,8 @@ final class RlsScratch implements AutoCloseable {
             owner.sql("DELETE FROM shared.rls_unscoped_table WHERE table_name::text LIKE ?").param(schema + ".%")
                     .update();
             owner.sql("DELETE FROM shared.rls_protected_table WHERE table_name::text LIKE ?").param(schema + ".%")
+                    .update();
+            owner.sql("DELETE FROM shared.rls_tenant_table WHERE table_name::text LIKE ?").param(schema + ".%")
                     .update();
             owner.sql("DROP SCHEMA IF EXISTS " + schema + " CASCADE").update();
         });

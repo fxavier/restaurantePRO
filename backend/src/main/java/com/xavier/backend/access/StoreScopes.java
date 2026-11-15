@@ -1,21 +1,23 @@
 package com.xavier.backend.access;
 
 import com.xavier.backend.shared.persistence.StoreScopeViolations;
+import com.xavier.backend.shared.tenancy.CurrentAuthentication;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.UUID;
 import java.util.function.Supplier;
-import org.springframework.security.authentication.AnonymousAuthenticationToken;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * The store scope of the current thread (D164) and the ways to set one explicitly (D166). Resolution order: the
  * innermost explicit system, listener or task scope, else the authenticated {@link Actor}, else the
- * {@link StoreScopeFallback}. The connection hook ({@code config.persistence.StoreScopedDataSource}) writes
- * {@link #current()} into every checked-out connection.
+ * {@link StoreScopeFallback}. {@code config.persistence.TenantBindingTransactionManager} writes {@link #current()} into
+ * the transaction's connection at every begin, with the tenant of {@link TenantScopes} (D178): the store scope is
+ * always within the bound tenant.
  *
  * <p>A scope cannot change inside a transaction: the code inside would join the outer transaction and its connection,
  * silently keeping the outer scope (D165). So {@link #run}, {@link #call} and {@link #callForStore} refuse to start
@@ -25,43 +27,39 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 public class StoreScopes {
 
     private static final ThreadLocal<Deque<StoreScope>> EXPLICIT = ThreadLocal.withInitial(ArrayDeque::new);
-    /** Set while this thread resolves its actor: loading a deferred security context reads the session (JDBC). */
-    private static final ThreadLocal<Boolean> RESOLVING_ACTOR = new ThreadLocal<>();
     private static final String TASK = "task:";
 
     private final StoreScopeFallback fallback;
     private final StoreScopeViolations violations;
+    private final ObjectProvider<TenantScopes> tenants;
 
+    /** Without tenants: for unit tests of the store scope alone ({@link #propagate} then carries no tenant). */
     public StoreScopes(StoreScopeFallback fallback, StoreScopeViolations violations) {
+        this(fallback, violations, null);
+    }
+
+    @Autowired
+    public StoreScopes(StoreScopeFallback fallback, StoreScopeViolations violations,
+                       ObjectProvider<TenantScopes> tenants) {
         this.fallback = fallback;
         this.violations = violations;
+        this.tenants = tenants;
     }
 
     /**
-     * The scope a connection checked out now gets. Spring Security loads a request's context lazily, from the session
-     * in the database; the connection that read takes the fallback (the session tables are unscoped), so resolving
-     * the actor never recurses.
+     * The scope a transaction begun now gets. Spring Security loads a request's context lazily, from the session in
+     * the database; the transaction of that read takes the fallback (the session tables are unscoped), so resolving
+     * the actor never recurses ({@link CurrentAuthentication}).
      */
     public StoreScope current() {
         StoreScope explicit = EXPLICIT.get().peek();
         if (explicit != null) {
             return explicit;
         }
-        if (RESOLVING_ACTOR.get() != null) {
-            return fallback.whenNoActor();
-        }
-        RESOLVING_ACTOR.set(Boolean.TRUE);
-        Authentication authentication;
-        try {
-            authentication = SecurityContextHolder.getContext().getAuthentication();
-        } finally {
-            RESOLVING_ACTOR.remove();
-        }
-        if (authentication != null && !(authentication instanceof AnonymousAuthenticationToken)
-                && authentication.isAuthenticated() && authentication.getPrincipal() instanceof Actor actor) {
-            return StoreScope.of(actor);
-        }
-        return fallback.whenNoActor();
+        return CurrentAuthentication.read()
+                .map(authentication -> authentication.getPrincipal() instanceof Actor actor ? StoreScope.of(actor)
+                        : null)
+                .orElseGet(fallback::whenNoActor);
     }
 
     /** Runs {@code action} in a named system scope. */
@@ -92,9 +90,16 @@ public class StoreScopes {
 
     /**
      * Wraps an executor task so it runs, on its worker thread, in the scope resolved now (at submission), with origin
-     * {@code task:<origin>}. A refusal by row-level security escaping the task is counted (D170) and rethrown.
+     * {@code task:<origin>}, and in the tenant resolved now ({@link TenantScopes#bindCurrentTo}, D185). A refusal by
+     * row-level security escaping the task is counted (D170) and rethrown.
      */
     public Runnable propagate(Runnable task) {
+        TenantScopes tenantScopes = tenants == null ? null : tenants.getIfAvailable();
+        Runnable storeScoped = propagateStoreScope(task);
+        return tenantScopes == null ? storeScoped : tenantScopes.bindCurrentTo(storeScoped);
+    }
+
+    private Runnable propagateStoreScope(Runnable task) {
         StoreScope captured = current();
         String origin = captured.origin().startsWith(TASK) ? captured.origin() : TASK + captured.origin();
         StoreScope taskScope = captured.withOrigin(origin);

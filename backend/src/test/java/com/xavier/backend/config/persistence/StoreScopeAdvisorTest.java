@@ -116,7 +116,8 @@ class StoreScopeAdvisorTest {
 
     @Test
     void itRunsBeforeTheTransactionInterceptor() {
-        assertThat(new StoreScopeAdvisor(provider(scopes), provider(null)).getOrder())
+        assertThat(new StoreScopeAdvisor(provider(scopes), provider(null), provider(null), provider(null),
+                provider(null), provider(null)).getOrder())
                 .isEqualTo(Ordered.HIGHEST_PRECEDENCE + 10);
     }
 
@@ -125,8 +126,8 @@ class StoreScopeAdvisorTest {
         target.scopes = scopes;
         ProxyFactory factory = new ProxyFactory(target);
         factory.setProxyTargetClass(true);
-        factory.addAdvisor(new StoreScopeAdvisor(provider(scopes),
-                provider(new StoreScopeViolations(registry, Clock.systemUTC()))));
+        factory.addAdvisor(new StoreScopeAdvisor(provider(scopes), provider(null), provider(null), provider(null),
+                provider(new StoreScopeViolations(registry, Clock.systemUTC())), provider(null)));
         return (Entry) factory.getProxy();
     }
 

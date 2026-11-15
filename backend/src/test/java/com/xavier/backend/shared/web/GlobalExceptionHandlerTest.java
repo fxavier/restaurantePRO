@@ -146,6 +146,23 @@ class GlobalExceptionHandlerTest {
                 .andExpect(jsonPath("$.errors[*].field", containsInAnyOrder("code", "seats")));
     }
 
+    /** R6 (spec error codes): RS003 → 500 TENANT_SCOPE_MISSING; 42501 on tenant_scope → TENANT_SCOPE_VIOLATION. */
+    @Test
+    void aTenantRefusalIsItsOwnCodedErrorAndIsCounted() throws Exception {
+        double before = registry.get("store_scope_violations").tag("kind", "tenant_write_refused").counter().count();
+
+        mvc.perform(get("/api/v1/backoffice/test-probe/tenant-missing"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.code").value("TENANT_SCOPE_MISSING"));
+        mvc.perform(get("/api/v1/backoffice/test-probe/tenant-violation"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.code").value("TENANT_SCOPE_VIOLATION"))
+                .andExpect(jsonPath("$.detail").value(not(containsString("store"))));
+
+        assertThat(registry.get("store_scope_violations").tag("kind", "tenant_write_refused").counter().count())
+                .isEqualTo(before + 1);
+    }
+
     @Test
     void unexpectedErrorBecomes500WithoutLeakingInternals() throws Exception {
         mvc.perform(get("/api/v1/backoffice/test-probe/boom"))
@@ -212,6 +229,19 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/data-access-misuse")
         void dataAccessMisuse() {
             throw new InvalidDataAccessApiUsageException("a programming error");
+        }
+
+        @GetMapping("/tenant-missing")
+        void tenantMissing() {
+            throw new org.springframework.dao.DataAccessResourceFailureException("could not execute statement",
+                    new java.sql.SQLException("tenant not set (origin none)", "RS003"));
+        }
+
+        @GetMapping("/tenant-violation")
+        void tenantViolation() {
+            throw new org.springframework.dao.DataAccessResourceFailureException("could not execute statement",
+                    new java.sql.SQLException("new row violates row-level security policy \"tenant_scope\" for table "
+                            + "\"store\"", "42501"));
         }
 
         @GetMapping("/store-change")

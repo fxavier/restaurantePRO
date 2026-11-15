@@ -48,6 +48,20 @@ class StoreScopeViolationsTest {
                 new SQLException("store change refused", "RS002"))))).contains(Kind.STORE_CHANGE);
     }
 
+    /** R6: the tenant refusals are told apart from the store ones (D178 amended, the spec's error codes). */
+    @Test
+    void theTenantRefusalsAreClassifiedApartFromTheStoreOnes() {
+        assertThat(StoreScopeViolations.classify(new RuntimeException(new SQLException("tenant not set (origin none)",
+                "RS003")))).contains(Kind.TENANT_MISSING);
+        assertThat(StoreScopeViolations.classify(new SQLException(
+                "new row violates row-level security policy \"tenant_scope\" for table \"store\"", "42501")))
+                .contains(Kind.TENANT_WRITE_REFUSED);
+        assertThat(Kind.TENANT_MISSING.code()).isEqualTo("TENANT_SCOPE_MISSING");
+        assertThat(Kind.TENANT_WRITE_REFUSED.code()).isEqualTo("TENANT_SCOPE_VIOLATION");
+        assertThat(StoreScopeViolations.classify(new SQLException("tenant change refused on organization.store",
+                "RS002"))).as("a row never moves tenant: the store-change code, RS002").contains(Kind.STORE_CHANGE);
+    }
+
     @Test
     void otherErrorsAreNotViolations() {
         assertThat(StoreScopeViolations.classify(new SQLException("permission denied for table t", "42501")))

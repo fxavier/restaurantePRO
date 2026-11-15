@@ -1,5 +1,6 @@
 package com.xavier.backend.access;
 
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.time.Duration;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.support.DefaultSingletonBeanRegistry;
@@ -30,6 +31,8 @@ public class ApplicationLifecycleMarks implements SpringApplicationRunListener {
     @Override
     public void starting(ConfigurableBootstrapContext bootstrapContext) {
         StoreScopeTestSupport.enter(false);
+        TenantTestSupport.enter(false);
+        StoreScopeTestSupport.enterTestBody(false);
         starting = true;
     }
 
@@ -56,6 +59,8 @@ public class ApplicationLifecycleMarks implements SpringApplicationRunListener {
     private void started() {
         if (starting) {
             starting = false;
+            StoreScopeTestSupport.leaveTestBody();
+            TenantTestSupport.leave();
             StoreScopeTestSupport.leave();
         }
     }
@@ -80,6 +85,8 @@ public class ApplicationLifecycleMarks implements SpringApplicationRunListener {
                 return;
             }
             StoreScopeTestSupport.enter(false);
+            TenantTestSupport.enter(false);
+            StoreScopeTestSupport.enterTestBody(false);
             closing = true;
         }
 
@@ -87,6 +94,8 @@ public class ApplicationLifecycleMarks implements SpringApplicationRunListener {
         public void destroy() {
             if (closing) {
                 closing = false;
+                StoreScopeTestSupport.leaveTestBody();
+                TenantTestSupport.leave();
                 StoreScopeTestSupport.leave();
             }
         }

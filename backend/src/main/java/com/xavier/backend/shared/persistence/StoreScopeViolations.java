@@ -16,7 +16,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * Row-level security refusals (D170): recognised by their SQL state, counted as
+ * Row-level security refusals (D170, and the tenant ones of R6): recognised by their SQL state, counted as
  * {@code store_scope_violations_total{kind}}, logged at ERROR with the scope origin, and remembered for 24 h so the
  * {@code STORE_SCOPE_VIOLATION} alert can report them. A refusal is always a bug: {@code AccessPolicy} allowed what
  * the database refused. Classified at the two catch points, the exception handler (requests) and the scope advisor and
@@ -31,6 +31,8 @@ public class StoreScopeViolations {
     static final String METRIC = "store_scope_violations";
     private static final int MAX_REMEMBERED_PER_KIND = 1_000;
     private static final String RLS_MESSAGE = "row-level security";
+    /** PostgreSQL names a failed restrictive policy in the 42501 message; a permissive one it does not. */
+    private static final String TENANT_POLICY = "policy \"tenant_scope\"";
     private static final Logger log = LoggerFactory.getLogger(StoreScopeViolations.class);
 
     /** What the database refused. */
@@ -39,8 +41,12 @@ public class StoreScopeViolations {
         SCOPE_MISSING("scope_missing", "STORE_SCOPE_MISSING"),
         /** {@code 42501} from a policy's {@code WITH CHECK}: a written row outside the scope. */
         WRITE_REFUSED("write_refused", "STORE_SCOPE_VIOLATION"),
-        /** {@code RS002}: a row's store (or a child's parent) changed. */
-        STORE_CHANGE("store_change", "STORE_CHANGE_REFUSED");
+        /** {@code RS002}: a row's store, tenant (or a child's parent) changed. */
+        STORE_CHANGE("store_change", "STORE_CHANGE_REFUSED"),
+        /** {@code RS003}: a tenant table touched with no tenant bound (R6, D178 as amended). */
+        TENANT_MISSING("tenant_missing", "TENANT_SCOPE_MISSING"),
+        /** {@code 42501} from the restrictive {@code tenant_scope} policy: a row of another tenant (CRITICAL). */
+        TENANT_WRITE_REFUSED("tenant_write_refused", "TENANT_SCOPE_VIOLATION");
 
         private final String label;
         private final String code;
@@ -127,8 +133,12 @@ public class StoreScopeViolations {
         if ("RS002".equals(state)) {
             return Optional.of(Kind.STORE_CHANGE);
         }
-        if ("42501".equals(state) && String.valueOf(sql.getMessage()).contains(RLS_MESSAGE)) {
-            return Optional.of(Kind.WRITE_REFUSED);
+        if ("RS003".equals(state)) {
+            return Optional.of(Kind.TENANT_MISSING);
+        }
+        String message = String.valueOf(sql.getMessage());
+        if ("42501".equals(state) && message.contains(RLS_MESSAGE)) {
+            return Optional.of(message.contains(TENANT_POLICY) ? Kind.TENANT_WRITE_REFUSED : Kind.WRITE_REFUSED);
         }
         return Optional.empty();
     }

@@ -1,6 +1,7 @@
 package com.xavier.backend.access;
 
 import com.xavier.backend.shared.persistence.StoreScopeViolations;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
 import java.util.ArrayDeque;
@@ -26,6 +27,8 @@ public final class StoreScopeTestSupport {
             ? StoreScope.all(ORIGIN) : StoreScope.UNSET;
 
     private static final ThreadLocal<Deque<Boolean>> MARKS = ThreadLocal.withInitial(ArrayDeque::new);
+    /** A test body (strict or not), outside MockMvc requests and application lifecycles: see FixtureCheckouts. */
+    private static final ThreadLocal<Deque<Boolean>> TEST_BODY = ThreadLocal.withInitial(ArrayDeque::new);
 
     private StoreScopeTestSupport() {
     }
@@ -88,14 +91,20 @@ public final class StoreScopeTestSupport {
     static void propagateToAwaitilityPollThreads() {
         Awaitility.pollThread(poll -> {
             boolean fixture = isFixtureThread();
+            boolean tenantFixture = TenantTestSupport.isFixtureThread();
+            boolean testBody = isTestBody();
             SecurityContext context = SecurityContextHolder.getContext();
             Thread thread = new Thread(() -> {
                 enter(fixture);
+                TenantTestSupport.enter(tenantFixture);
+                enterTestBody(testBody);
                 SecurityContextHolder.setContext(context);
                 try {
                     poll.run();
                 } finally {
                     SecurityContextHolder.clearContext();
+                    leaveTestBody();
+                    TenantTestSupport.leave();
                     leave();
                 }
             }, "awaitility-thread");
@@ -106,6 +115,24 @@ public final class StoreScopeTestSupport {
 
     static void enter(boolean fixture) {
         MARKS.get().push(fixture);
+    }
+
+    /** Whether this thread runs a test body (strict or not), not a request or an application's own startup. */
+    public static boolean isTestBody() {
+        Boolean innermost = TEST_BODY.get().peek();
+        return innermost != null && innermost;
+    }
+
+    static void enterTestBody(boolean testBody) {
+        TEST_BODY.get().push(testBody);
+    }
+
+    static void leaveTestBody() {
+        Deque<Boolean> marks = TEST_BODY.get();
+        marks.poll();
+        if (marks.isEmpty()) {
+            TEST_BODY.remove();
+        }
     }
 
     static void leave() {

@@ -9,6 +9,8 @@ import com.xavier.backend.access.SystemScope;
 import com.xavier.backend.architecture.SystemScopeRegistryTest;
 import com.xavier.backend.organization.model.event.CompanyBootstrapped;
 import com.xavier.backend.organization.model.event.StoreDeactivated;
+import com.xavier.backend.shared.tenancy.TenantScopes;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -23,12 +25,12 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Stream;
-import javax.sql.DataSource;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.boot.DefaultApplicationArguments;
@@ -39,13 +41,16 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.jdbc.datasource.DelegatingDataSource;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * A74 (S64 part): every actor-less entry point resolves its D166 scope on the connection it checks out, seen through a
- * probe of {@code current_setting} at each checkout. Strict: the JUnit thread has no fixture fallback, so a missing
- * scope shows as unset. While armed, the probe aborts each checkout after recording it, so a job's body writes nothing
- * to the shared database. Each module's own listeners and jobs are added by its slice in its own class.
+ * A74 (S64 part, R6 binding): every actor-less entry point resolves its D166 scope, and its D185 tenant, in every
+ * transaction it begins, seen through a probe of {@code current_setting} right after the binding (D178). Strict for the
+ * store scope: the JUnit thread has no store fixture fallback, so a missing scope shows as unset; it keeps the
+ * bootstrap tenant (the tenant suites are {@code ActorlessTenantScopeTest}). While armed, the probe aborts each begin
+ * after recording it, so a job's body writes nothing to the shared database. Each module's own listeners and jobs
+ * are added by its slice in its own class.
  */
 @SpringBootTest
 @Import({TestcontainersConfiguration.class, ActorlessStoreScopeTest.Probe.class})
@@ -56,7 +61,7 @@ class ActorlessStoreScopeTest {
     /** Entry points that do not touch the database. */
     static final Set<String> NO_DATABASE = Set.of("shared.notify.ChangeNotifier.heartbeat");
 
-    record Checkout(String thread, String allStores, String storeIds, String origin) {
+    record Checkout(String thread, String allStores, String storeIds, String origin, String tenant) {
     }
 
     @Autowired
@@ -76,23 +81,24 @@ class ActorlessStoreScopeTest {
     }
 
     @Test
-    void thePoolIsTheStoreScopeHook() {
-        DataSource bean = context.getBean(DataSource.class);
-
-        assertThat(((DelegatingDataSource) bean).getTargetDataSource()).isInstanceOf(StoreScopedDataSource.class);
+    void theOnlyTransactionManagerIsTheTenantBinding() {
+        assertThat(context.getBeansOfType(PlatformTransactionManager.class).values()).singleElement()
+                .isInstanceOf(TenantBindingTransactionManager.class);
     }
 
     @Test
     void theStrictTestThreadWithNoActorIsUnset() {
         arm(false);
 
-        jdbc.sql("SELECT 1").query(Integer.class).single();
+        jdbc.sql("SELECT 1").query(Integer.class).single(); // autocommit: no transaction, no binding
+        transactions().executeWithoutResult(status -> jdbc.sql("SELECT 1").query(Integer.class).single());
 
         assertThat(onThisThread()).singleElement().isEqualTo(new Checkout(Thread.currentThread().getName(), "", "",
-                "none"));
+                "none", TenantTestSupport.BOOTSTRAP.toString()));
     }
 
     static Stream<String> actorlessEntryPoints() {
+        // the listeners among them (their event is their argument) have their own cases below
         return SystemScopeRegistryTest.EXPECTED.keySet().stream()
                 .filter(entryPoint -> !entryPoint.equals("identity.service.AdminBootstrapService.on"));
     }
@@ -113,6 +119,9 @@ class ActorlessStoreScopeTest {
             assertThat(checkout.origin()).isEqualTo(expected.scope().origin());
             assertThat(checkout.allStores()).isEqualTo(expected.scope().allStoresSetting());
             assertThat(checkout.storeIds()).isEqualTo("{}");
+            // D185: reach ALL in a tenant (the bootstrap tenant here), reach NONE in none
+            assertThat(checkout.tenant()).isEqualTo(expected.reach() == SystemScope.Reach.NONE ? ""
+                    : TenantTestSupport.BOOTSTRAP.toString());
         });
     }
 
@@ -128,6 +137,7 @@ class ActorlessStoreScopeTest {
         assertThat(checkout.thread()).isNotEqualTo(Thread.currentThread().getName());
         assertThat(checkout.allStores()).isEqualTo("off");
         assertThat(checkout.storeIds()).isEqualTo("{" + store + "}");
+        assertThat(checkout.tenant()).as("the event's tenant").isEqualTo(TenantTestSupport.BOOTSTRAP.toString());
     }
 
     @Test
@@ -184,6 +194,10 @@ class ActorlessStoreScopeTest {
         });
     }
 
+    private TransactionTemplate transactions() {
+        return new TransactionTemplate(context.getBean(PlatformTransactionManager.class));
+    }
+
     private void invoke(String entryPoint) throws Exception {
         int dot = entryPoint.lastIndexOf('.');
         String type = ROOT + entryPoint.substring(0, dot);
@@ -225,34 +239,43 @@ class ActorlessStoreScopeTest {
         ProbeDataSource.armed = true;
     }
 
-    /** Records the settings of every checkout while armed; aborts the checkout after recording when asked. */
-    static final class ProbeDataSource extends DelegatingDataSource {
+    /**
+     * Records the settings of every transaction begin while armed, as the binding wrote them; aborts the begin after
+     * recording when asked (the entry point then writes nothing).
+     */
+    static final class ProbeDataSource {
 
         static final List<Checkout> seen = new CopyOnWriteArrayList<>();
         static volatile boolean armed;
         static volatile boolean abort;
 
-        ProbeDataSource(DataSource target) {
-            super(target);
+        private ProbeDataSource() {
+        }
+    }
+
+    /** The production binding, then the probe on the same connection. */
+    static final class ProbingTransactionManager extends TenantBindingTransactionManager {
+
+        ProbingTransactionManager(ObjectProvider<TenantScopes> tenants, ObjectProvider<StoreScopes> stores) {
+            super(tenants, stores, StoreScopeEnforcement.ENFORCE);
         }
 
         @Override
-        public Connection getConnection() throws SQLException {
-            Connection connection = super.getConnection();
-            if (!armed) {
-                return connection;
+        protected void bind(Connection connection) throws SQLException {
+            super.bind(connection);
+            if (!ProbeDataSource.armed) {
+                return;
             }
             try (ResultSet row = connection.createStatement().executeQuery("SELECT current_setting('app.all_stores', "
-                    + "true), current_setting('app.store_ids', true), current_setting('app.scope_origin', true)")) {
+                    + "true), current_setting('app.store_ids', true), current_setting('app.scope_origin', true), "
+                    + "current_setting('app.tenant_id', true)")) {
                 row.next();
-                seen.add(new Checkout(Thread.currentThread().getName(), row.getString(1), row.getString(2),
-                        row.getString(3)));
+                ProbeDataSource.seen.add(new Checkout(Thread.currentThread().getName(), row.getString(1),
+                        row.getString(2), row.getString(3), row.getString(4)));
             }
-            if (abort) {
-                connection.close();
-                throw new SQLException("probe: stopped after recording the store scope");
+            if (ProbeDataSource.abort) {
+                throw new SQLException("probe: stopped after recording the binding");
             }
-            return connection;
         }
     }
 
@@ -260,11 +283,19 @@ class ActorlessStoreScopeTest {
     static class Probe {
 
         @Bean
-        static BeanPostProcessor storeScopeCheckoutProbe() {
+        static BeanPostProcessor tenantBindingProbe(ObjectProvider<TenantScopes> tenants,
+                                                    ObjectProvider<StoreScopes> stores) {
             return new BeanPostProcessor() {
                 @Override
                 public Object postProcessAfterInitialization(Object bean, String beanName) {
-                    return bean instanceof StoreScopedDataSource scoped ? new ProbeDataSource(scoped) : bean;
+                    if (!(bean instanceof TenantBindingTransactionManager production)
+                            || bean instanceof ProbingTransactionManager) {
+                        return bean;
+                    }
+                    ProbingTransactionManager probing = new ProbingTransactionManager(tenants, stores);
+                    probing.setEntityManagerFactory(production.getEntityManagerFactory());
+                    probing.afterPropertiesSet();
+                    return probing;
                 }
             };
         }

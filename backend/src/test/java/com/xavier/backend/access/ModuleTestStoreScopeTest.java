@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.xavier.backend.OwnerDatabase;
 import com.xavier.backend.StoreScopeTestAutoConfigurationTest;
 import com.xavier.backend.TestcontainersConfiguration;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -28,6 +29,7 @@ import org.springframework.modulith.test.ApplicationModuleTest;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.stereotype.Component;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -87,9 +89,9 @@ class ModuleTestStoreScopeTest {
     }
 
     @Test
-    void theModuleContextHasExactlyOneHookAndOneAdvisor() {
+    void theModuleContextHasExactlyOneTransactionManagerAndOneAdvisor() {
         assertThat(StoreScopeTestAutoConfigurationTest.storeScopePlumbing(context))
-                .containsExactly("StoreScopeDataSourcePostProcessor", "StoreScopeAdvisor");
+                .containsExactly("TenantBindingTransactionManager", "StoreScopeAdvisor");
     }
 
     @Test
@@ -113,7 +115,8 @@ class ModuleTestStoreScopeTest {
     void aListenerRunsInTheScopeOfItsEventsStore() throws Exception {
         Jobs.heard = new CompletableFuture<>();
 
-        tx.executeWithoutResult(status -> events.publishEvent(new LabelRequested(STORE_B)));
+        tx.executeWithoutResult(status -> events.publishEvent(new LabelRequested(TenantTestSupport.BOOTSTRAP,
+                STORE_B)));
 
         assertThat(Jobs.heard.get(10, TimeUnit.SECONDS)).isEqualTo("listener:Jobs.on:b");
     }
@@ -132,7 +135,7 @@ class ModuleTestStoreScopeTest {
                 .andExpect(jsonPath("$.code").value("STORE_SCOPE_MISSING"));
     }
 
-    record LabelRequested(UUID storeId) {
+    record LabelRequested(UUID tenantId, UUID storeId) {
     }
 
     @Component
@@ -141,9 +144,11 @@ class ModuleTestStoreScopeTest {
         static volatile CompletableFuture<String> heard = new CompletableFuture<>();
 
         private final JdbcClient jdbc;
+        private final TransactionTemplate reads;
 
-        Jobs(JdbcClient jdbc) {
+        Jobs(JdbcClient jdbc, PlatformTransactionManager transactions) {
             this.jdbc = jdbc;
+            this.reads = new TransactionTemplate(transactions);
         }
 
         @SystemScoped(SystemScope.RESERVATIONS)
@@ -165,8 +170,9 @@ class ModuleTestStoreScopeTest {
             }
         }
 
+        /** In a transaction, as production code reads (D178: the binding is at its begin). */
         private String read() {
-            return jdbc.sql(READ).query(String.class).single();
+            return reads.execute(status -> jdbc.sql(READ).query(String.class).single());
         }
     }
 
@@ -174,14 +180,17 @@ class ModuleTestStoreScopeTest {
     static class Labels {
 
         private final JdbcClient jdbc;
+        private final TransactionTemplate reads;
 
-        Labels(JdbcClient jdbc) {
+        Labels(JdbcClient jdbc, PlatformTransactionManager transactions) {
             this.jdbc = jdbc;
+            this.reads = new TransactionTemplate(transactions);
         }
 
         @GetMapping(PATH)
         List<String> labels() {
-            return jdbc.sql("SELECT label FROM " + TABLE + " ORDER BY label").query(String.class).list();
+            return reads.execute(status -> jdbc.sql("SELECT label FROM " + TABLE + " ORDER BY label")
+                    .query(String.class).list());
         }
     }
 

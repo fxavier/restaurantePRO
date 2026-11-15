@@ -52,7 +52,9 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     private static final Map<Kind, String> STORE_SCOPE_DETAIL = Map.of(
             Kind.SCOPE_MISSING, "Unexpected error: no store scope.",
             Kind.WRITE_REFUSED, "Unexpected error: a row outside the store scope was refused.",
-            Kind.STORE_CHANGE, "Unexpected error: a row cannot move to another store.");
+            Kind.STORE_CHANGE, "Unexpected error: a row cannot move to another store.",
+            Kind.TENANT_MISSING, "Unexpected error: no tenant.",
+            Kind.TENANT_WRITE_REFUSED, "Unexpected error: a row outside the tenant was refused.");
 
     private final StoreScopeViolations violations;
 

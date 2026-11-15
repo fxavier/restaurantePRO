@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.xavier.backend.TestcontainersConfiguration;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.shared.exception.BusinessRuleException;
 import com.xavier.backend.shared.exception.ConflictException;
@@ -40,6 +41,9 @@ class IdempotencyServiceTest {
 
     @Autowired
     IdempotencyService idempotency;
+
+    @Autowired
+    com.xavier.backend.shared.tenancy.TenantScopes tenantScopes;
 
     @Autowired
     IdempotencyRetention retention;
@@ -110,7 +114,7 @@ class IdempotencyServiceTest {
         AtomicInteger runs = new AtomicInteger();
         Map<String, Object> body = Map.of("amount", "5.00");
 
-        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+        try (ExecutorService executor = Executors.newSingleThreadExecutor(bootstrapThreads())) {
             Future<ResponseEntity<String>> first = executor.submit(
                     () -> idempotency.execute(scope, key, target, body, String.class, () -> {
                         runs.incrementAndGet();
@@ -139,12 +143,12 @@ class IdempotencyServiceTest {
         // first request claimed the key, then the process died: its action transaction rolled back
         idempotency.execute(scope, "probe-" + key, target, body, String.class, () -> ResponseEntity.ok("probe"));
         String hash = jdbc.sql("SELECT request_hash FROM shared.idempotency_record WHERE scope = :s AND key = :k")
-                .param("s", scope).param("k", "probe-" + key).query(String.class).single();
+                .param("s", stored(scope)).param("k", "probe-" + key).query(String.class).single();
         jdbc.sql("""
                         INSERT INTO shared.idempotency_record (scope, key, request_hash, status, created_at)
                         VALUES (:s, :k, :h, 'IN_PROGRESS', :t)
                         """)
-                .param("s", scope).param("k", key).param("h", hash)
+                .param("s", stored(scope)).param("k", key).param("h", hash)
                 .param("t", java.sql.Timestamp.from(Instant.now().minusSeconds(60))).update();
         AtomicInteger runs = new AtomicInteger();
 
@@ -233,7 +237,7 @@ class IdempotencyServiceTest {
 
         assertThat(runs).hasValue(0);
         assertThat(jdbc.sql("SELECT count(*) FROM shared.idempotency_record WHERE scope = :s")
-                .param("s", scope).query(Long.class).single()).isZero();
+                .param("s", stored(scope)).query(Long.class).single()).isZero();
     }
 
     @Test
@@ -294,7 +298,7 @@ class IdempotencyServiceTest {
 
         assertThat(deleted).isGreaterThanOrEqualTo(2);
         assertThat(jdbc.sql("SELECT key FROM shared.idempotency_record WHERE scope = :s")
-                .param("s", scope).query(String.class).list())
+                .param("s", stored(scope)).query(String.class).list())
                 .containsExactlyInAnyOrder("recent-completed", "recent-in-progress");
     }
 
@@ -305,7 +309,7 @@ class IdempotencyServiceTest {
                             (scope, key, request_hash, status, response_status, response_body, created_at, completed_at)
                         VALUES (:s, :k, :h, :status, :rs, CAST(:body AS jsonb), :created, :completed)
                         """)
-                .param("s", scope).param("k", recordKey).param("h", "0".repeat(64)).param("status", status)
+                .param("s", stored(scope)).param("k", recordKey).param("h", "0".repeat(64)).param("status", status)
                 .param("rs", completed ? 200 : null).param("body", completed ? "\"ok\"" : null)
                 .param("created", Timestamp.from(createdAt))
                 .param("completed", completed ? Timestamp.from(completedAt) : null)
@@ -314,7 +318,7 @@ class IdempotencyServiceTest {
 
     private String storedStatus(String recordKey) {
         return jdbc.sql("SELECT status FROM shared.idempotency_record WHERE scope = :s AND key = :k")
-                .param("s", scope).param("k", recordKey).query(String.class).single();
+                .param("s", stored(scope)).param("k", recordKey).query(String.class).single();
     }
 
     record Published(String status, int version) {
@@ -340,5 +344,15 @@ class IdempotencyServiceTest {
             Thread.currentThread().interrupt();
             throw new IllegalStateException(e);
         }
+    }
+
+    /** D186: the scope as stored, under the bound (bootstrap) tenant. */
+    private static String stored(String operationScope) {
+        return TenantTestSupport.BOOTSTRAP + ":" + operationScope;
+    }
+
+    /** Workers emulating concurrent requests: each runs in the bootstrap tenant, as a request does (D177). */
+    private java.util.concurrent.ThreadFactory bootstrapThreads() {
+        return task -> new Thread(() -> TenantTestSupport.inTenant(tenantScopes, TenantTestSupport.BOOTSTRAP, task));
     }
 }

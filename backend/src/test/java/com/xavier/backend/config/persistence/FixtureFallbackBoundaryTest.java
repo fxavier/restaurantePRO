@@ -22,6 +22,8 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -87,14 +89,18 @@ class FixtureFallbackBoundaryTest {
     static class Labels {
 
         private final JdbcClient jdbc;
+        private final TransactionTemplate reads;
 
-        Labels(JdbcClient jdbc) {
+        Labels(JdbcClient jdbc, PlatformTransactionManager transactions) {
             this.jdbc = jdbc;
+            this.reads = new TransactionTemplate(transactions);
         }
 
+        /** In a transaction, as production code reads (D178: the binding is at its begin). */
         @GetMapping(PATH)
         List<String> labels() {
-            return jdbc.sql("SELECT label FROM " + scratch.table() + " ORDER BY label").query(String.class).list();
+            return reads.execute(status -> jdbc.sql("SELECT label FROM " + scratch.table() + " ORDER BY label")
+                    .query(String.class).list());
         }
     }
 

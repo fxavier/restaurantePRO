@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.xavier.backend.OwnerDatabase;
 import com.xavier.backend.TestcontainersConfiguration;
+import com.xavier.backend.shared.tenancy.BootstrapTenant;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
@@ -17,7 +18,8 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
 /**
  * D168: the D42 probe sees every store, so another store's resource still answers 403, not 404, while a plain read of
- * the same row under the actor's scope sees nothing. As the application role, scoped to store A.
+ * the same row under the actor's scope sees nothing. As the application role, scoped to store A of the bootstrap tenant
+ * (the probe reads the bound tenant first, D179; {@code StoreProbeTenantTest} covers other tenants).
  */
 class StoreProbeTest {
 
@@ -47,7 +49,8 @@ class StoreProbeTest {
                 TestcontainersConfiguration.APP_ROLE, TestcontainersConfiguration.appPassword());
         connection.createStatement().execute("SELECT set_config('app.all_stores', 'off', false), "
                 + "set_config('app.store_ids', '{" + STORE_A + "}', false), "
-                + "set_config('app.scope_origin', 'account:test', false)");
+                + "set_config('app.scope_origin', 'account:test', false), "
+                + "set_config('app.tenant_id', '" + BootstrapTenant.ID + "', false)");
         storeA = JdbcClient.create(new SingleConnectionDataSource(connection, true));
     }
 

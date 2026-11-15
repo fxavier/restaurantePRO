@@ -24,9 +24,11 @@ public class FixtureFreeRequests implements Filter, Ordered {
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
             throws IOException, ServletException {
         StoreScopeTestSupport.enter(false);
+        StoreScopeTestSupport.enterTestBody(false);
         try {
             chain.doFilter(request, response);
         } finally {
+            StoreScopeTestSupport.leaveTestBody();
             StoreScopeTestSupport.leave();
         }
     }
