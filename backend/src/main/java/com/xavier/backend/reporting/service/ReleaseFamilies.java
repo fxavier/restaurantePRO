@@ -2,6 +2,7 @@ package com.xavier.backend.reporting.service;
 
 import com.xavier.backend.catalog.CatalogApi;
 import com.xavier.backend.catalog.model.dto.CatalogSnapshot;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -10,16 +11,23 @@ import org.springframework.stereotype.Component;
 
 /**
  * The family code of an item as a catalog release had it (D84): historically correct, because a line keeps the
- * release it was priced from. A published release never changes, so its item → family map is parsed once and kept.
+ * release it was priced from. A published release never changes, so its item → family map is parsed once and kept,
+ * per tenant: the key is {@code (tenantId, releaseId)}, so a release id never serves another tenant's families
+ * (security rule 7).
  */
 @Component
 class ReleaseFamilies {
 
-    private final CatalogApi catalog;
-    private final Map<UUID, Map<UUID, String>> byRelease = new ConcurrentHashMap<>();
+    private record Key(UUID tenantId, UUID releaseId) {
+    }
 
-    ReleaseFamilies(CatalogApi catalog) {
+    private final CatalogApi catalog;
+    private final TenantScopes tenants;
+    private final Map<Key, Map<UUID, String>> byRelease = new ConcurrentHashMap<>();
+
+    ReleaseFamilies(CatalogApi catalog, TenantScopes tenants) {
         this.catalog = catalog;
+        this.tenants = tenants;
     }
 
     /** @return the family code, or {@code null} when the line has no release or the item is not in it */
@@ -27,7 +35,8 @@ class ReleaseFamilies {
         if (releaseId == null || itemId == null) {
             return null;
         }
-        return byRelease.computeIfAbsent(releaseId, id -> familiesOf(catalog.snapshot(storeId, id))).get(itemId);
+        return byRelease.computeIfAbsent(new Key(tenants.requireTenant(), releaseId),
+                key -> familiesOf(catalog.snapshot(storeId, releaseId))).get(itemId);
     }
 
     private static Map<UUID, String> familiesOf(CatalogSnapshot snapshot) {

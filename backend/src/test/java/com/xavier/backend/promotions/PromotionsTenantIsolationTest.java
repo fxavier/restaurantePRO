@@ -171,9 +171,8 @@ class PromotionsTenantIsolationTest {
     @Test
     void aChildCannotReferenceAnotherTenantsParent() {
         try (AppRoleSession app = AppRoleSession.open().tenant(A).allStores()) {
-            assertThatThrownBy(() -> app.jdbc().sql("INSERT INTO promotions.loyalty_reward (id, version_id, code, "
-                    + "name, points_cost, effect) VALUES (?, ?, 'ISO-FORGED', 'Forged', 1, 'FREE_UNIT')")
-                    .param(UUID.randomUUID()).param(B_VERSION).update())
+            assertThatThrownBy(() -> app.jdbc().sql("INSERT INTO promotions.promotion_store (promotion_id, "
+                    + "store_id) VALUES (?, ?)").param(B_PROMOTION).param(A_STORE).update())
                     .isInstanceOf(DataIntegrityViolationException.class)
                     .satisfies(error -> assertThat(AppRoleSession.sqlState(error)).isEqualTo("23503"));
             assertThatThrownBy(() -> app.jdbc().sql("INSERT INTO promotions.loyalty_point_entry (id, customer_id, "

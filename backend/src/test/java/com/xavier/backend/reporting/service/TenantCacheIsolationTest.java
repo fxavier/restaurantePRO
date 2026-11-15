@@ -30,7 +30,7 @@ class TenantCacheIsolationTest {
 
     final CatalogApi catalog = mock(CatalogApi.class);
     final TenantScopes tenants = new TenantScopes((com.xavier.backend.access.StoreScopes) null, Optional::empty);
-    final ReleaseFamilies families = new ReleaseFamilies(catalog);
+    final ReleaseFamilies families = new ReleaseFamilies(catalog, tenants);
 
     @Test
     void theSameReleaseIdInTwoTenantsKeepsEachTenantsFamilies() {

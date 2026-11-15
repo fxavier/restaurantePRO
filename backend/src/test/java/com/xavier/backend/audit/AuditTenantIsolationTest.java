@@ -109,12 +109,18 @@ class AuditTenantIsolationTest {
         }
     }
 
+    /**
+     * The trail has no UPDATE policy (V1106), so the pool matches no row to move: the update changes nothing, and the
+     * {@code tenant_fixed} trigger that {@code assertModuleTenantProtected} requires stays as the second guard.
+     */
     @Test
     void aRowNeverMovesToAnotherTenant() {
         try (AppRoleSession app = AppRoleSession.open().tenant(A).allStores()) {
-            AppRoleSession.assertRefused(() -> app.jdbc().sql("UPDATE audit.audit_event SET tenant_id = ? "
-                    + "WHERE id = ?").param(B).param(A_EVENT).update(), StoreScopeViolations.Kind.STORE_CHANGE);
+            assertThat(app.jdbc().sql("UPDATE audit.audit_event SET tenant_id = ? WHERE id = ?").param(B)
+                    .param(A_EVENT).update()).isZero();
         }
+        assertThat(OwnerDatabase.shared().jdbc().sql("SELECT tenant_id FROM audit.audit_event WHERE id = ?")
+                .param(A_EVENT).query(UUID.class).single()).isEqualTo(A);
     }
 
     @Test
