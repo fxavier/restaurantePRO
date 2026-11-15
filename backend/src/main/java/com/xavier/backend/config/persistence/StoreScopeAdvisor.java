@@ -24,6 +24,7 @@ import org.aopalliance.intercept.MethodInvocation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.aop.Pointcut;
+import org.springframework.aop.ProxyMethodInvocation;
 import org.springframework.aop.support.AbstractPointcutAdvisor;
 import org.springframework.aop.support.AopUtils;
 import org.springframework.aop.support.ComposablePointcut;
@@ -168,7 +169,10 @@ class StoreScopeAdvisor extends AbstractPointcutAdvisor {
                 continue;
             }
             try {
-                result = counted(origin, () -> tenantScopes.call(tenantId, scope, () -> proceed(invocation)));
+                // a fresh invocation per tenant: one invocation proceeds once, and a second proceed() would skip
+                // every interceptor after this one (the method's own @Transactional among them)
+                MethodInvocation run = ((ProxyMethodInvocation) invocation).invocableClone();
+                result = counted(origin, () -> tenantScopes.call(tenantId, scope, () -> proceed(run)));
             } catch (Error e) {
                 throw e;
             } catch (Throwable e) {

@@ -108,6 +108,17 @@ class ActorlessTenantScopeTest {
         assertThat(SEEN).allSatisfy(seen -> assertThat(seen.transaction()).isEqualTo(seen.bound().toString()));
     }
 
+    /** Each tenant's run goes through the whole interceptor chain again, its own transaction included. */
+    @Test
+    void aTransactionalReachAllJobBeginsABoundTransactionForEveryTenant() {
+        jobs.transactionalSweep();
+
+        assertThat(SEEN).extracting(Seen::bound)
+                .containsExactlyInAnyOrder(TenantTestSupport.BOOTSTRAP, T1, T2);
+        assertThat(SEEN).allSatisfy(seen -> assertThat(seen.transaction()).as("tenant %s", seen.bound())
+                .isEqualTo(seen.bound().toString()));
+    }
+
     @Test
     void oneTenantsFailureIsCountedAndTheOtherTenantsStillRun() {
         TenantJobs.failing = T1;
@@ -277,6 +288,17 @@ class ActorlessTenantScopeTest {
             if (tenants.requireTenant().equals(failing)) {
                 throw new IllegalStateException("this tenant's sweep fails");
             }
+        }
+
+        /** A {@code @Transactional} reach-ALL job: its own transaction, begun by the interceptor after the advisor. */
+        @SystemScoped(SystemScope.ALERTS)
+        @org.springframework.transaction.annotation.Transactional
+        public void transactionalSweep() {
+            UUID bound = tenants.current().map(TenantContext::tenantId).orElse(null);
+            String transaction = org.springframework.transaction.support.TransactionSynchronizationManager
+                    .isActualTransactionActive() ? jdbc.sql("SELECT coalesce(current_setting('app.tenant_id', true), "
+                    + "'')").query(String.class).single() : "no transaction";
+            SEEN.add(new Seen("transactional", bound, transaction, Thread.currentThread().getName()));
         }
 
         @SystemScoped(SystemScope.HOUSEKEEPING)
