@@ -2,36 +2,36 @@
 
 ## 1. Visão e decisão de produto
 
-Sistema integrado de gestão de restaurantes, com FrontOffice para atendimento e vendas e BackOffice para configuração, gestão, controlo e análise. Cada empresa tem a sua instalação independente: aplicação, PostgreSQL, ficheiros, credenciais, configurações, integrações e backups próprios.
+Sistema integrado de gestão de restaurantes, com FrontOffice para atendimento e vendas e BackOffice para configuração, gestão, controlo e análise. O produto é uma plataforma SaaS multi-tenant: todas as empresas (tenants) partilham a mesma aplicação e a mesma base de dados PostgreSQL, com isolamento garantido em simultâneo na aplicação e na base de dados.
 
-**Decisão confirmada em 3 de novembro de 2026:** produto instalado por empresa, sem plataforma SaaS e sem base de dados partilhada entre empresas. Esta descrição substitui a anterior proposta multi-tenant desta página.
+**Decisão confirmada em 15 de novembro de 2026:** plataforma SaaS multi-tenant com schema partilhado, coluna `tenant_id` e Row-Level Security (RLS) no PostgreSQL, e Keycloak como fornecedor de identidade. Esta decisão substitui a de 3 de novembro de 2026 (produto instalado por empresa). As decisões técnicas estão em `docs/design/multitenancy-decisions.md` (D174–D190) e no ADR 0040.
 
 Este documento é a especificação única de FrontOffice e BackOffice. Os dois nomes identificam interfaces e perfis de utilização do mesmo sistema, com um único modelo de domínio. As páginas anteriores passam a remeter para esta especificação. O manual original não foi disponibilizado nesta revisão; o âmbito funcional foi consolidado a partir das duas páginas do Notion.
 
-## 2. Instalação por empresa
+## 2. Plataforma multi-tenant
 
-| Elemento                 | Regra                                                                             |
-| ---------------------------- | ------------------------------------------------------------------------------------- |
-| Empresa                      | Uma entidade jurídica por instalação; perfil fiscal único configurado no arranque     |
-| Lojas                        | Uma ou várias lojas da mesma empresa; store\_id distingue operações e permissões      |
-| Backend                      | Um monólito modular dedicado à empresa                                                |
-| Dados                        | PostgreSQL exclusivo; schemas organizam módulos, não empresas                         |
-| Ficheiros e segredos         | Diretórios/volumes e credenciais exclusivos                                           |
-| Identidade                   | Contas, perfis, sessões e dispositivos próprios                                       |
-| Gestão comercial do software | Contrato/licença e manutenção por instalação; modelo comercial por definir            |
-| Código                       | Base comum e releases versionadas para todas as instalações; evitar forks por cliente |
+| Elemento                 | Regra                                                                                                   |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Tenant                       | Uma empresa (entidade jurídica) por tenant; perfil fiscal único por tenant, criado no onboarding da plataforma |
+| Lojas                        | Uma ou várias lojas do mesmo tenant; store\_id distingue operações e permissões dentro do tenant            |
+| Backend                      | Um monólito modular partilhado por todos os tenants, com várias instâncias                                  |
+| Dados                        | PostgreSQL partilhado; schemas organizam módulos, não empresas; todas as tabelas do tenant têm `tenant_id` e RLS |
+| Ficheiros e segredos         | Prefixo por tenant no armazenamento de objetos; credenciais de integração por tenant num cofre de segredos  |
+| Identidade                   | Keycloak; o tenant é resolvido a partir de uma associação utilizador–empresa autorizada, nunca do pedido   |
+| Gestão comercial do software | Subscrição por tenant; modelo comercial (planos, faturação) por definir                                     |
+| Código                       | Uma única versão em produção para todos os tenants; sem forks por cliente                                   |
 
-Não existem Tenant, TenantPlan, subscrições SaaS, seleção de empresa no login, tenant\_id em tabelas, tenant claims ou endpoints /tenants e /plans. O isolamento entre empresas acontece na infraestrutura. Manter controlo de acesso por loja dentro de cada instalação.
+O isolamento entre empresas exige controlos na aplicação e na base de dados, não apenas filtros nos repositórios. O backend valida o JWT emitido pelo Keycloak e resolve o tenant a partir de uma associação utilizador–empresa ativa e autorizada; um `tenant_id` recebido no pedido nunca é aceite sem validação. A identidade do tenant é estabelecida no contexto transacional e aplicada à ligação PostgreSQL com `SET LOCAL`, antes de qualquer acesso a dados protegidos. As políticas RLS por tenant combinam-se com o âmbito por loja dentro de cada tenant. Um recurso de outro tenant responde como inexistente.
 
-**Recomendação de implantação:** servidor local da empresa para continuidade na rede interna sem Internet. Hospedagem em servidor dedicado da empresa é uma alternativa, mas a operação passa a depender da ligação ao servidor remoto. Uma instalação por empresa não significa uma instalação por terminal.
+Existem Tenant, associação utilizador–tenant, onboarding, suspensão e encerramento de tenant, e endpoints de plataforma reservados a operadores da plataforma. Operadores da plataforma não acedem a dados de negócio de um tenant; o acesso de suporte é concedido pelo administrador do tenant, por tempo limitado e auditado.
 
-Para várias lojas: uma instalação central da empresa funciona com ligação estável ou VPN. Continuidade autónoma de cada loja durante corte WAN exige servidores locais e sincronização, e constitui uma evolução separada; não está implicitamente incluída.
+**Implantação:** apenas SaaS, alojado centralmente (região a definir). Os terminais, o BackOffice e a ponte de impressão de cada loja ligam-se ao serviço central por HTTPS. Sem ligação à Internet, os terminais não confirmam novas operações nem simulam sucesso. Continuidade autónoma de cada loja durante corte de Internet exige servidores locais e sincronização, e constitui uma evolução separada; não está incluída.
 
 ## 3. Utilizadores e responsabilidades
 
 | Perfil               | Responsabilidades                                      |
 | ------------------------ | ---------------------------------------------------------- |
-| Administrador da empresa | Configuração, utilizadores, permissões e instalação        |
+| Administrador da empresa | Configuração, utilizadores, permissões e dispositivos do tenant |
 | Gerente                  | Supervisão, autorizações, catálogo, fechos e indicadores   |
 | Empregado de sala        | Mesas, pedidos, consulta, transferências autorizadas       |
 | Caixa                    | Recebimentos, documentos, movimentos e fecho de sessão     |
@@ -75,7 +75,7 @@ Caixa com dia comercial, turnos, caixas e sessões diretas/bolsas; fundo inicial
 
 ### Organização e acessos
 
-Configurar o perfil único da empresa, lojas, horários, timezone, moeda, áreas, mesas, terminais e armazéns. A empresa é criada no bootstrap; não há cadastro de várias empresas na mesma instalação.
+Configurar o perfil único da empresa, lojas, horários, timezone, moeda, áreas, mesas, terminais e armazéns. A empresa (tenant) é criada no onboarding da plataforma; cada tenant tem um único perfil de empresa.
 
 Gerir empregados, contas administrativas, funções, permissões, associação a lojas, PIN, bloqueio e sessões. Acesso de suporte é temporário, autorizado e auditado.
 
@@ -101,7 +101,7 @@ Não bloquear a venda por indisponibilidade temporária do processamento de stoc
 
 Vendas, recebimentos, dívidas, diferenças, descontos, ofertas, estornos, reconciliação de adquirentes e aprovação de fechos. Uma reabertura autorizada gera rastreabilidade e ajustes; não reescreve documentos emitidos.
 
-Séries, tipos de documento, numeração concorrente, identidade fiscal e exportações dependem do país de instalação. Portugal/SAF-T PT e exemplos de fornecedores nas páginas originais não definem automaticamente o mercado do produto. País, certificação, impostos, documentos e obrigações devem ser validados antes da entrada em produção. Integrações obrigatórias no mercado escolhido são condição de lançamento, não uma fase opcional posterior.
+Séries, tipos de documento, numeração concorrente, identidade fiscal e exportações dependem do país do tenant. Portugal/SAF-T PT e exemplos de fornecedores nas páginas originais não definem automaticamente o mercado do produto. País, certificação, impostos, documentos e obrigações devem ser validados antes da entrada em produção. Integrações obrigatórias no mercado escolhido são condição de lançamento, não uma fase opcional posterior.
 
 Relatórios por loja/período/empregado/artigo/zona/método: vendas, impostos, caixa, crédito, stock, margens, desperdício, compras e auditoria. Exportação autorizada para contabilidade. Não inclui contabilidade geral completa, salários ou RH completo.
 
@@ -164,7 +164,7 @@ Dados estruturantes: company\_profile único, store, terminal, employee, employe
 
 | Conceito canónico | Entidade / módulo proprietário                      | Significado e fronteira                                                                       |
 | --------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Empresa               | CompanyProfile / organization                           | Perfil único da entidade jurídica da instalação; fiscal guarda snapshots nos documentos           |
+| Empresa               | CompanyProfile / organization                           | Perfil único da entidade jurídica do tenant; fiscal guarda snapshots nos documentos               |
 | Loja                  | Store / organization                                    | Unidade operacional da empresa; “site”, “restaurante” e “local” não criam entidades paralelas     |
 | Terminal              | Terminal / organization                                 | Posto registado; produção referencia o seu identificador, sem duplicar cadastro                   |
 | Armazém               | Warehouse / inventory                                   | Local de stock associado à loja; não pertence simultaneamente a organization                      |
@@ -234,13 +234,13 @@ Estado financeiro do pedido é derivado: UNSETTLED, PARTIALLY\_SETTLED ou SETTLE
 - Estorno financeiro não significa reposição de stock. Devolução física utilizável, desperdício e reversão de erro são movimentos de stock distintos.
 - Fecho de caixa considera todas as sessões da caixa; uma sessão não pode ser fechada com cobrança desconhecida sob sua responsabilidade sem resolução/reclassificação autorizada. Dia não fecha operacionalmente com sessões ou pedidos pendentes no seu âmbito.
 - Débito a crédito usa validação e reserva transacional do limite, evitando que dois terminais ultrapassem o saldo disponível.
-- Moeda base e timezone são definidos por instalação/loja; não misturar moedas num apuramento sem regra de conversão explícita. A primeira versão opera numa moeda base.
+- Moeda base e timezone são definidos por tenant/loja; não misturar moedas num apuramento sem regra de conversão explícita. A primeira versão opera numa moeda base.
 
 ### 8.5 Fluxos completos entre as duas interfaces
 
 | Fluxo            | Preparação administrativa                                              | Execução operacional                                               | Controlo e resultado                                   |
 | -------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------- |
-| Nova instalação      | Configurar empresa, país, loja, utilizadores, dispositivos e séries        | Testar login, artigo, pedido, documento e impressão                    | Backup/restauro e aprovação do piloto                      |
+| Novo tenant          | Configurar empresa, país, loja, utilizadores, dispositivos e séries        | Testar login, artigo, pedido, documento e impressão                    | Exportação do tenant e aprovação do piloto                 |
 | Publicar catálogo    | Criar artigo, unidade, imposto, preço, receita e destino; validar/publicar | POS carrega a versão e confirma linhas com snapshot                    | Auditoria de publicação e histórico preservado             |
 | Atendimento          | Configurar áreas, mesas e políticas                                        | Abrir ocupação, registar rondas, enviar produção, emitir subtotal      | Gerente acompanha tempos, anulações e pendências           |
 | Dividir/receber      | Métodos e políticas configurados                                           | Particionar, confirmar pagamentos, emitir documentos e fechar          | Reconciliar prestador, dívida e caixa sem duplicação       |
@@ -295,23 +295,23 @@ Quando uma célula abrevia o prefixo, os caminhos seguintes usam o mesmo prefixo
 
 ## 10. Segurança
 
-Sessões server-side e cookies Secure/HttpOnly/SameSite, HTTPS também na LAN e CSRF nos pedidos autenticados por cookie. POS identifica empregado e terminal; PIN individual protegido por hash adaptativo, limitação de tentativas e bloqueio. Administração usa credenciais fortes; MFA para acesso remoto e funções sensíveis, conforme implantação.
+Identidade no Keycloak: o backend valida JWT (assinatura, emissor, audiência, validade e cliente) e não mantém sessões server-side; o BackOffice usa um BFF com cookies Secure/HttpOnly/SameSite e CSRF. Cada terminal POS e cada ponte de impressão é um cliente confidencial do Keycloak com chave privada própria, registado por código de ativação de uso único. POS identifica empregado e terminal; PIN individual protegido por hash adaptativo, limitação de tentativas e bloqueio. Administração usa credenciais fortes e MFA obrigatório; funções sensíveis exigem reautenticação recente (step-up).
 
-Privilégio mínimo por função/loja; autorização adicional para anulação, descontos, crédito, reabertura e exportações. Base de dados não exposta à rede pública. Segredos fora do código, permissões de ficheiros restritas, backups cifrados e logs sem PIN, palavras-passe ou dados completos de pagamento.
+Isolamento por tenant na aplicação e na base de dados (RLS); privilégio mínimo por função/loja dentro do tenant; autorização adicional para anulação, descontos, crédito, reabertura e exportações. Base de dados não exposta à rede pública; a aplicação liga-se com uma função sem BYPASSRLS e sem propriedade de objetos. Segredos fora do código, permissões de ficheiros restritas, backups cifrados e logs sem PIN, palavras-passe ou dados completos de pagamento.
 
-Auditoria append-only para a aplicação, com ator, aprovador, ação, entidade, loja, terminal, instante e motivo. Antes/depois apenas quando necessário e sem segredos. Acesso de administrador da infraestrutura é risco distinto, controlado por segregação e cópias protegidas.
+Auditoria append-only por tenant, com ator, aprovador, ação, entidade, loja, terminal, instante e motivo; ações de operadores da plataforma em auditoria própria. Antes/depois apenas quando necessário e sem segredos. Acesso de administrador da infraestrutura é risco distinto, controlado por segregação e cópias protegidas.
 
 ## 11. Operação, continuidade e manutenção
 
-Pacote de instalação reproduzível: reverse proxy, frontend estático, backend, PostgreSQL e worker/ponte de impressão quando exigido pelo hardware. Docker Compose é a opção inicial proposta; instalação nativa pode ser suportada conforme ambiente. Versões fixadas, volumes persistentes, health checks, arranque automático, rotação de logs e UPS.
+Plataforma central reproduzível: balanceador, frontend estático, BFF, backend com várias instâncias, Keycloak em alta disponibilidade com base de dados própria e PostgreSQL gerido. Em cada loja, apenas os terminais e a ponte de impressão (ligação apenas de saída). Versões fixadas, health checks, rotação de logs e infraestrutura como código.
 
-Sem Internet, o servidor local continua pedidos, impressão local, numerário e consulta; serviços externos ficam indisponíveis ou pendentes conforme contrato. Sem LAN ou servidor, os terminais não confirmam novas operações nem simulam sucesso. Escrita offline por terminal e sincronização posterior ficam fora do MVP.
+Sem Internet ou sem o serviço central, os terminais não confirmam novas operações nem simulam sucesso; trabalhos de impressão já confirmados são impressos quando a ponte volta a ligar. Escrita offline por terminal e sincronização posterior ficam fora do MVP.
 
-Backups automáticos de base, ficheiros, configurações e material necessário à recuperação; cópia cifrada fora do equipamento e testes de restauro. Backups não são alta disponibilidade. Plano de substituição do servidor e procedimento de contingência operacional.
+Backups automáticos e PITR da base partilhada, cópias cifradas noutra localização e testes de restauro; exportação cifrada por tenant e procedimento de restauro de um único tenant. Backups não são alta disponibilidade.
 
-**Metas propostas, a validar no piloto:** RPO até 15 minutos com estratégia WAL/PITR e RTO até 2 horas com equipamento de substituição disponível. Sem essa infraestrutura, declarar os objetivos efetivamente atingíveis. Retenção depende do contrato e do regime aplicável.
+**Metas propostas, a validar no piloto:** RPO até 15 minutos com estratégia WAL/PITR e RTO até 2 horas para a plataforma. Sem essa infraestrutura, declarar os objetivos efetivamente atingíveis. Retenção depende do contrato e do regime aplicável.
 
-Atualizar cada empresa em janela acordada, após backup e ensaio em cópia. Migrações compatíveis, histórico de versões, smoke tests e plano de recuperação de dados; voltar à imagem anterior não desfaz automaticamente uma migração incompatível.
+Atualizar a plataforma em janela publicada, após backup e ensaio em cópia; uma única versão serve todos os tenants. Migrações compatíveis, histórico de versões, smoke tests e plano de recuperação de dados; voltar à imagem anterior não desfaz automaticamente uma migração incompatível.
 
 ## 12. Qualidade e observabilidade
 
@@ -347,7 +347,7 @@ O âmbito completo inclui as quatro etapas. Não representa implementação conc
 
 ## 15. Decisões pendentes
 
-Confirmar país inicial, moeda, regime fiscal/certificação, modelos de impressora, integração de pagamentos, hardware, número de lojas/terminais, alojamento local ou dedicado e necessidade real de autonomia entre lojas. São parâmetros de implementação; não alteram a decisão de instalação independente por empresa.
+Confirmar país inicial, moeda, regime fiscal/certificação, modelos de impressora, integração de pagamentos, hardware, número de lojas/terminais, região de alojamento e residência de dados, e necessidade real de autonomia das lojas sem Internet. São parâmetros de implementação; não alteram a decisão de plataforma SaaS multi-tenant.
 
 ## 16. Referências técnicas
 
