@@ -44,7 +44,7 @@ public class PinChangeService {
         this.clock = clock;
     }
 
-    /** @return the session the employee now gets on this terminal, with their authorities in its store */
+    /** @return the employee's session on this terminal, now with their authorities in its store */
     @Transactional
     public SessionView choosePin(String newPin) {
         Actor actor = accessPolicy.current();

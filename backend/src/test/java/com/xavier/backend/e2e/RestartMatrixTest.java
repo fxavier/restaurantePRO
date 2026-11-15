@@ -120,6 +120,11 @@ import tools.jackson.databind.JsonNode;
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class RestartMatrixTest {
 
+    /** The installation's owner connection, for what onboarding and Keycloak would have created. */
+    private JdbcClient owner() {
+        return Installation.owner(freshPostgres);
+    }
+
     static final String INITIAL_PASSWORD = "initial " + UUID.randomUUID();
     static final String NEW_PASSWORD = "changed " + UUID.randomUUID();
     static final String CASHIER_PIN = "5172";
@@ -263,7 +268,7 @@ class RestartMatrixTest {
 
     private void setUp() throws Exception {
         office = new Browser("backoffice", port, journey);
-        Installation.firstLogin(office, INITIAL_PASSWORD, NEW_PASSWORD);
+        Installation.firstLogin(office, owner(), clock::instant);
         store = Installation.store(office, "R");
         terminal = terminal(office, store, "POS1");
         String cashierCode = employee(office, store, "CX1", "Carla", CASHIER_PIN, CASHIER_ROLE);

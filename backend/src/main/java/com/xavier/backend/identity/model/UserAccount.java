@@ -19,10 +19,11 @@ import java.util.UUID;
 import org.hibernate.annotations.UuidGenerator;
 
 /**
- * A BackOffice login: username + password (D26). Only the password hash is kept. Store permissions come from
- * the linked employee's store assignments; {@code roleIds} are installation-wide roles (every store). A new
- * account must change its password at first login. A {@code support} account (D83) logs in only while it holds an
- * active {@link SupportGrant}; the flag is fixed at creation, and such an account is never linked to an employee.
+ * A BackOffice account of the tenant (D175): its profile, roles and status. Keycloak owns the credentials, the second
+ * factor and the sessions; an {@code ACCOUNT} membership links a Keycloak user to this account (D177). Store
+ * permissions come from the linked employee's store assignments; {@code roleIds} are tenant-wide roles (every store).
+ * A {@code support} account (D83, D183) acts only through an active {@link SupportGrant}'s {@code SUPPORT}
+ * membership; the flag is fixed at creation, and such an account is never linked to an employee.
  */
 @Entity
 @Table(schema = "identity", name = "user_account")
@@ -32,14 +33,8 @@ public class UserAccount {
     @UuidGenerator(style = UuidGenerator.Style.VERSION_7)
     private UUID id;
 
-    @Column(nullable = false, updatable = false, length = 60)
+    @Column(nullable = false, updatable = false, length = 254)
     private String username;
-
-    @Column(nullable = false, length = 100)
-    private String passwordHash;
-
-    @Column(nullable = false)
-    private boolean mustChangePassword;
 
     @Column(nullable = false)
     private boolean active;
@@ -68,13 +63,10 @@ public class UserAccount {
         // JPA
     }
 
-    /** A new account with an initial password that must be changed at first login. */
-    public static UserAccount open(String username, String initialPasswordHash, UUID employeeId, Set<UUID> roleIds,
-                                   Instant now) {
+    /** A new account; it acts once a Keycloak user holds its {@code ACCOUNT} membership. */
+    public static UserAccount open(String username, UUID employeeId, Set<UUID> roleIds, Instant now) {
         UserAccount account = new UserAccount();
         account.username = normalize(username);
-        account.passwordHash = initialPasswordHash;
-        account.mustChangePassword = true;
         account.active = true;
         account.employeeId = employeeId;
         account.roleIds.addAll(roleIds);
@@ -83,22 +75,15 @@ public class UserAccount {
         return account;
     }
 
-    /** A new support account (D83): no employee link; it logs in only while a grant is active. */
-    public static UserAccount openSupport(String username, String initialPasswordHash, Set<UUID> roleIds,
-                                          Instant now) {
-        UserAccount account = open(username, initialPasswordHash, null, roleIds, now);
+    /** A new support account (D83): no employee link; it acts only while a grant is active. */
+    public static UserAccount openSupport(String username, Set<UUID> roleIds, Instant now) {
+        UserAccount account = open(username, null, roleIds, now);
         account.support = true;
         return account;
     }
 
     public static String normalize(String username) {
         return username.strip().toLowerCase(Locale.ROOT);
-    }
-
-    public void changePassword(String newPasswordHash, Instant now) {
-        passwordHash = newPasswordHash;
-        mustChangePassword = false;
-        updatedAt = now;
     }
 
     public void update(UUID newEmployeeId, Set<UUID> newRoleIds, boolean newActive, Instant now) {
@@ -112,10 +97,8 @@ public class UserAccount {
         updatedAt = now;
     }
 
-    /** @param mfaEnrolled whether the account has an active second factor (kept on {@code MfaFactor}) */
-    public UserSummary toSummary(boolean mfaEnrolled) {
-        return new UserSummary(id, username, employeeId, Set.copyOf(roleIds), active, mustChangePassword, support,
-                getVersion(), mfaEnrolled);
+    public UserSummary toSummary() {
+        return new UserSummary(id, username, employeeId, Set.copyOf(roleIds), active, support, getVersion());
     }
 
     public UUID getId() {
@@ -124,14 +107,6 @@ public class UserAccount {
 
     public String getUsername() {
         return username;
-    }
-
-    public String getPasswordHash() {
-        return passwordHash;
-    }
-
-    public boolean isMustChangePassword() {
-        return mustChangePassword;
     }
 
     public boolean isActive() {

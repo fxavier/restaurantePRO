@@ -1,5 +1,6 @@
 package com.xavier.backend.e2e;
 
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import static com.xavier.backend.e2e.Installation.CASHIER_ROLE;
 import static com.xavier.backend.e2e.Installation.MANAGER_ROLE;
 import static com.xavier.backend.e2e.Installation.id;
@@ -7,12 +8,8 @@ import static com.xavier.backend.e2e.Installation.posLogin;
 import static com.xavier.backend.e2e.Installation.terminal;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.xavier.backend.config.security.TestJwtFactory;
 import com.xavier.backend.e2e.Browser.Csrf;
-import com.xavier.backend.identity.SwitchableMfaPolicy;
-import com.xavier.backend.identity.mfa.Base32;
-import com.xavier.backend.identity.mfa.MfaMode;
-import com.xavier.backend.identity.mfa.Totp;
-import com.xavier.backend.identity.oidc.StubIdp;
 import com.xavier.backend.production.TcpFakePrinter;
 import com.xavier.backend.settlement.FakePaymentProvider;
 import com.xavier.backend.settlement.SettlementTestClock;
@@ -59,21 +56,17 @@ import org.springframework.test.util.AopTestUtils;
 import tools.jackson.databind.JsonNode;
 
 /**
- * R5 end to end (PRD S63, r5-decisions §11 A57–A68): one installation through the real HTTP API of a real embedded
- * server, with the real security chain (sessions in PostgreSQL, CSRF, the MFA filters, step-up in
- * {@code AccessPolicy}, OIDC login against a {@link StubIdp}), the print worker sending ESC/POS over TCP to
+ * R5 end to end (PRD S63, r5-decisions §11 A62–A68; R6 S72 replaced A57–A61's local second factor and OIDC with
+ * Keycloak, D175, D184): one installation through the real HTTP API of a real embedded server, with the real security
+ * chain (bearer tokens validated by the resource server, the tenant resolved from the membership, step-up from the
+ * token's {@code acr} and {@code auth_time} in {@code AccessPolicy}), the print worker sending ESC/POS over TCP to
  * {@link TcpFakePrinter}s, the alert sources and the management port's Prometheus scrape with its token.
  * <p>The server runs as in the Compose package behind Caddy: {@code server.forward-headers-strategy=native}, so a tab's
- * {@link Browser#at address} reaches the backend as {@code X-Forwarded-For} from the trusted loopback proxy;
- * {@code lan-cidrs} is the store LAN {@code 192.168.1.0/24} only. The MFA mode is {@code SENSITIVE} (P52), switched to
- * {@code ALL_BACKOFFICE} for step 5 through {@link SwitchableMfaPolicy} (the deployment property, changed without a
- * restart). TOTP codes come from the enrolment's secret and the application clock ({@link SettlementTestClock}),
- * moved one 30 s step before each code so the replay guard never refuses one.
+ * {@link Browser#at address} reaches the backend as {@code X-Forwarded-For} from the trusted loopback proxy. Tokens are
+ * issued on the application clock ({@link SettlementTestClock}).
  * <ol>
- *   <li>The bootstrap administrator logs in from the LAN without a code, is refused a sensitive action until enrolled,
- *       enrols, publishes store A's catalog after a step-up (16 min later: 403 {@code MFA_STEP_UP_REQUIRED}, then the
- *       same Idempotency-Key once), and resets the MFA of a second administrator, who enrols from outside with the
- *       enrolment code (A57–A60).</li>
+ *   <li>The bootstrap administrator logs in through Keycloak and publishes store A's catalog after a step-up (a second
+ *       factor 16 min old: 401 with the RFC 9470 challenge, then the same Idempotency-Key once, A87).</li>
  *   <li>Store B excludes the coffee and the delivery fee: B's release validates without their prices, lists both under
  *       {@code excludedItems} and omits the company-wide macro holding the coffee ({@code MACRO_OMITTED}); A keeps
  *       both; a POS of B gets {@code ITEM_NOT_IN_CATALOG} for the coffee and {@code FEE_ITEM_NOT_PUBLISHED} for a
@@ -84,8 +77,6 @@ import tools.jackson.databind.JsonNode;
  *       A66).</li>
  *   <li>The seven §12 alerts provoked and listed by {@code GET /backoffice/alerts}; the Prometheus text scraped with the
  *       token holds every metric the Prometheus rules use ({@link AlertRulesReferenceExistingMetricsTest}, A63, A64).</li>
- *   <li>OIDC: the administrator links, logs in federated, lands in {@code MFA_PENDING} (mode ALL_BACKOFFICE) and
- *       verifies; with the IdP stopped, the password login still works (A61).</li>
  * </ol>
  * Provoked at the boundary rather than through HTTP, as no API can cause them: the backup status file (written as
  * {@code verify-backups.sh} would), an exhausted event publication (a row as Modulith leaves it), the export failure
@@ -95,28 +86,28 @@ import tools.jackson.databind.JsonNode;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "management.server.port=0",
         "server.forward-headers-strategy=native",
-        "restaurantpro.security.mfa.mode=SENSITIVE",
-        "restaurantpro.security.mfa.key-file=src/test/resources/identity/mfa-test.key",
-        "restaurantpro.security.lan-cidrs=192.168.1.0/24",
         "restaurantpro.metrics.token-file=" + R5AcceptanceTest.TOKEN_FILE,
         "restaurantpro.settlement.provider-timeout=PT2S",
         "restaurantpro.settlement.in-doubt-poll-interval=PT1H"})
-@Import({Installation.FreshDatabase.class, SettlementTestClock.Config.class, FakePaymentProvider.Config.class,
-        SwitchableMfaPolicy.Config.class})
+@Import({Installation.FreshDatabase.class, SettlementTestClock.Config.class, FakePaymentProvider.Config.class})
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class R5AcceptanceTest {
 
+    @Autowired
+    PostgreSQLContainer freshPostgres;
+
+    /** The installation's owner connection, for what onboarding and Keycloak would have created. */
+    private JdbcClient owner() {
+        return Installation.owner(freshPostgres);
+    }
+
     static final String TOKEN_FILE = "src/test/resources/config/metrics-token.txt";
-    static final String INITIAL_PASSWORD = "initial " + UUID.randomUUID();
-    static final String NEW_PASSWORD = "changed " + UUID.randomUUID();
+    static final String INITIAL_PASSWORD = "unused " + UUID.randomUUID();
     static final String LAN = "192.168.1.10";
-    static final String REMOTE = "203.0.113.5";
     static final String CASHIER_PIN = "5172";
     static final String MANAGER_PIN = "6283";
     static final String POS = "/api/v1/pos";
     static final String BO = "/api/v1/backoffice";
-    static final String MFA = "/api/v1/auth/mfa";
-    static final String OIDC = "/api/v1/auth/oidc";
     static final String CATALOG = Installation.CATALOG;
     static final Charset CP860 = Charset.forName("IBM860");
     static final Charset WPC1252 = Charset.forName("windows-1252");
@@ -130,25 +121,18 @@ class R5AcceptanceTest {
 
     static final TcpFakePrinter KITCHEN = answering();
     static final TcpFakePrinter COUNTER = open();
-    static final StubIdp IDP = StubIdp.start();
     static final Path BACKUP_STATUS = statusFile();
 
     @DynamicPropertySource
     static void settings(DynamicPropertyRegistry registry) throws IOException {
         Installation.bootstrap(registry, "Restaurante R5", INITIAL_PASSWORD);
         registry.add("restaurantpro.alerts.backup-status-file", BACKUP_STATUS::toString);
-        registry.add("restaurantpro.security.oidc.enabled", () -> "true");
-        registry.add("restaurantpro.security.oidc.issuer-uri", IDP::issuer);
-        registry.add("restaurantpro.security.oidc.client-id", () -> StubIdp.CLIENT_ID);
-        registry.add("restaurantpro.security.oidc.client-secret-file",
-                () -> "src/test/resources/identity/oidc-client-secret.txt");
     }
 
     @AfterAll
     static void unplug() throws IOException {
         KITCHEN.close();
         COUNTER.close();
-        IDP.close();
     }
 
     @LocalServerPort
@@ -164,9 +148,6 @@ class R5AcceptanceTest {
     SettlementTestClock clock;
 
     @Autowired
-    SwitchableMfaPolicy mfaPolicy;
-
-    @Autowired
     FakePaymentProvider provider;
 
     @Autowired
@@ -178,7 +159,7 @@ class R5AcceptanceTest {
     private final List<String> journey = new ArrayList<>();
 
     Browser office;
-    byte[] ownerSecret;
+    String adminSubject;
     UUID storeA;
     UUID storeB;
     UUID terminalA;
@@ -194,87 +175,52 @@ class R5AcceptanceTest {
     @Test
     void stageFiveEndToEnd() throws Exception {
         try {
-            mfaPolicy.set(MfaMode.SENSITIVE);
-            secondFactorStepUpAndRemoteEnrolment();
+            keycloakStepUp();
             storeItemExclusions();
             printerProfilesStyledTicketsDrawerAndPaperOut();
             theSevenAlertsAndTheScrape();
-            federatedLoginAndPasswordFallback();
         } finally {
-            mfaPolicy.reset();
             clock.reset();
             System.out.println("R5 acceptance journey (step -> HTTP status):\n  " + String.join("\n  ", journey));
         }
     }
 
-    // ---- 1. second factor, step-up, reset, remote enrolment (A57–A60) ----
+    // ---- 1. Keycloak step-up (D184, replacing A57–A60's local second factor) ----
 
-    private void secondFactorStepUpAndRemoteEnrolment() throws Exception {
+    private void keycloakStepUp() throws Exception {
         office = new Browser("backoffice", port, journey).at(LAN);
-        Installation.firstLogin(office, INITIAL_PASSWORD, NEW_PASSWORD);
+        Installation.firstLogin(office, owner(), clock::instant);
+        adminSubject = Installation.subjectOf(UUID.fromString(office.get("/api/v1/auth/session", 200)
+                .get("userId").asString()));
         assertThat(office.get("/api/v1/auth/session", 200).get("permissions")).isNotEmpty();
         storeA = Installation.store(office, "A");
         storeB = Installation.store(office, "B");
-        JsonNode refused = office.command(BO + "/terminals", Map.of("storeId", storeA, "code", "POS1", "name",
-                "POS1"), 403, "a sensitive action before enrolling");
-        assertThat(refused.get("code").asString()).isEqualTo("MFA_ENROLMENT_REQUIRED");
-
-        ownerSecret = enrol(office, NEW_PASSWORD, null);
         terminalA = terminal(office, storeA, "POS1");
         cashierCode = Installation.employee(office, storeA, "CX1", "Carla", CASHIER_PIN, CASHIER_ROLE);
         managerCode = Installation.employee(office, storeA, "GR1", "Gil", MANAGER_PIN, MANAGER_ROLE);
         catalog();
 
-        // A59: 16 min after the second factor, publishing (CATALOG_PUBLISH) needs a step-up; the retry with the
-        // same key publishes once
+        // A87: a second factor 16 min old does not publish (CATALOG_PUBLISH is sensitive): the RFC 9470 challenge;
+        // after the step-up, the retry with the same key publishes once
         UUID release = id(office.post(CATALOG + "/releases", Map.of("storeId", storeA), 201));
         JsonNode validatedA = office.post(CATALOG + "/releases/" + release + "/validate", null, 200);
         assertThat(validatedA.get("excludedItems")).isEmpty();
-        clock.advance(Duration.ofMinutes(16));
+        office.signedIn(() -> TestJwtFactory.account(adminSubject, clock.instant())
+                .authenticated("2", clock.instant().minus(Duration.ofMinutes(16))).encode());
         Map<String, String> key = Browser.idem();
         String publish = CATALOG + "/releases/" + release + "/publish";
-        JsonNode stale = office.post(publish, Map.of("note", "R5"), 403, Csrf.SEND, key, "publish, factor 16 min old");
-        assertThat(stale.get("code").asString()).isEqualTo("MFA_STEP_UP_REQUIRED");
-        assertThat(stale.get("stepUpUri").asString()).isEqualTo(MFA + "/step-up");
-        stepUp(office, ownerSecret);
+        HttpResponse<String> stale = office.send("POST", publish, Map.of("note", "R5"), Csrf.SEND, key);
+        office.record(office.name() + ": publish, factor 16 min old", stale);
+        assertThat(stale.statusCode()).isEqualTo(401);
+        assertThat(stale.headers().firstValue("WWW-Authenticate")).hasValue("Bearer "
+                + "error=\"insufficient_user_authentication\", error_description=\"A different authentication level "
+                + "is required\", acr_values=\"2\", max_age=300");
+        assertThat(Browser.JSON.readTree(stale.body()).get("code").asString()).isEqualTo("MFA_STEP_UP_REQUIRED");
+        stepUp(office);
         office.post(publish, Map.of("note", "R5"), 200, Csrf.SEND, key, "publish after the step-up");
         office.post(publish, Map.of("note", "R5"), 200, Csrf.SEND, key, "the same key again (replayed)");
         assertThat(count("SELECT count(*) FROM catalog.configuration_release WHERE store_id = ? "
                 + "AND status = 'PUBLISHED'", storeA)).isEqualTo(1);
-
-        // A60, A58: a second administrator enrolled on the LAN; reset; she enrols from outside with the code
-        String password = "pw " + UUID.randomUUID();
-        UUID gestora = id(office.post(BO + "/users", Map.of("username", "gestora", "initialPassword", password,
-                "roleIds", List.of(ADMINISTRATOR_ROLE)), 201));
-        Browser second = office.sibling("gestora");
-        second.get("/api/v1/auth/session", 401);
-        second.post("/api/v1/auth/login", Map.of("username", "gestora", "password", password), 200);
-        second.post("/api/v1/auth/password", Map.of("currentPassword", password, "newPassword", password + " 2"),
-                200);
-        password = password + " 2";
-        enrol(second, password, null);
-        second.get(BO + "/stores", 200);
-
-        JsonNode reset = office.post(BO + "/users/" + gestora + "/mfa/reset", Map.of("reason",
-                "Telemovel perdido"), 200, "reset the second administrator's MFA");
-        String enrolmentCode = reset.get("enrolmentCode").asString();
-        office.post(BO + "/users/" + office.get("/api/v1/auth/session", 200).get("userId").asString()
-                + "/mfa/reset", Map.of("reason", "eu"), 422, "resetting oneself");
-        second.get("/api/v1/auth/session", 401);
-
-        second.at(REMOTE);
-        JsonNode notEnrolled = second.post("/api/v1/auth/login", Map.of("username", "gestora", "password",
-                password), 403, "remote login without a factor");
-        assertThat(notEnrolled.get("code").asString()).isEqualTo("MFA_NOT_ENROLLED");
-        JsonNode enrolling = second.post("/api/v1/auth/login", Map.of("username", "gestora", "password", password,
-                "enrolmentCode", enrolmentCode), 200, "remote login with the enrolment code");
-        assertThat(enrolling.get("mfa").get("state").asString()).isEqualTo("ENROLMENT_REQUIRED");
-        assertThat(enrolling.get("permissions")).isEmpty();
-        second.get(BO + "/stores", 403);
-        enrol(second, password, enrolmentCode);
-        second.get(BO + "/stores", 200);
-        assertThat(count("SELECT count(*) FROM audit.audit_event WHERE action = 'MFA_RESET' AND entity_id = ?",
-                gestora.toString())).isEqualTo(1);
     }
 
     /**
@@ -331,7 +277,7 @@ class R5AcceptanceTest {
         assertThat(validated.get("validationWarnings")).anySatisfy(w -> {
             assertThat(w.get("code").asString()).isEqualTo("MACRO_OMITTED");
         });
-        stepUp(office, ownerSecret);
+        stepUp(office);
         office.command(CATALOG + "/releases/" + release + "/publish", Map.of("note", "R5 B"), 200, "publish B");
 
         // a POS of B
@@ -367,7 +313,7 @@ class R5AcceptanceTest {
     // ---- 3. printer profiles, styled tickets, drawer, paper out (A63, A65, A66) ----
 
     private void printerProfilesStyledTicketsDrawerAndPaperOut() throws Exception {
-        stepUp(office, ownerSecret);
+        stepUp(office);
         Map<String, JsonNode> presets = new LinkedHashMap<>();
         office.get(BO + "/printer-profiles", 200).forEach(p -> presets.put(p.get("name").asString(), p.get("profile")));
         assertThat(presets).containsKeys("EPSON_TM_80", "GENERIC_80_42", "GENERIC_58");
@@ -537,83 +483,13 @@ class R5AcceptanceTest {
         assertThat(alerts()).noneSatisfy(a -> assertThat(a.get("code").asString()).isEqualTo("EVENTS_FAILED"));
     }
 
-    // ---- 5. OIDC (A61) ----
-
-    private void federatedLoginAndPasswordFallback() throws Exception {
-        mfaPolicy.set(MfaMode.ALL_BACKOFFICE);
-        String subject = "sub-" + UUID.randomUUID();
-        stepUp(office, ownerSecret);
-        assertThat(office.post(OIDC + "/link", null, 200, "link: ask").get("authorizeUri").asString())
-                .isEqualTo(OIDC + "/authorize");
-        assertThat(federate(office, subject)).isEqualTo("/backoffice/");
-        office.get(OIDC + "/link", 200);
-
-        Browser sso = new Browser("sso", port, journey).at(LAN);
-        sso.get("/api/v1/auth/session", 401);
-        assertThat(federate(sso, subject)).isEqualTo("/backoffice/");
-        JsonNode pending = sso.get("/api/v1/auth/session", 200);
-        assertThat(pending.get("mfa").get("state").asString()).isEqualTo("PENDING");
-        sso.get(BO + "/stores", 403);
-        clock.advance(Duration.ofSeconds(Totp.PERIOD));
-        JsonNode verified = sso.post(MFA + "/verify", Map.of("code", code(ownerSecret)), 200, "verify");
-        sso.get(BO + "/stores", 200);
-        assertThat(verified.toString()).contains("VERIFIED");
-
-        IDP.stop();
-        Browser password = new Browser("password", port, journey).at(LAN);
-        password.get("/api/v1/auth/session", 401);
-        JsonNode login = password.post("/api/v1/auth/login", Map.of("username", Installation.ADMIN, "password",
-                NEW_PASSWORD), 200, "password login, the IdP down");
-        assertThat(login.get("mfa").get("state").asString()).isEqualTo("PENDING");
-        clock.advance(Duration.ofSeconds(Totp.PERIOD));
-        password.post(MFA + "/verify", Map.of("code", code(ownerSecret)), 200, "verify");
-        password.get(BO + "/stores", 200);
-    }
-
-    /** The authorization-code round trip for {@code subject} in {@code tab}; the path the callback redirects to. */
-    private String federate(Browser tab, String subject) throws Exception {
-        String toIdp = redirect(tab, OIDC + "/authorize");
-        assertThat(toIdp).startsWith(IDP.issuer() + "/authorize?");
-        Map<String, String> params = Arrays.stream(URI.create(toIdp).getRawQuery().split("&"))
-                .map(p -> p.split("=", 2)).collect(Collectors.toMap(p -> p[0],
-                        p -> URLDecoder.decode(p[1], StandardCharsets.UTF_8)));
-        String code = "code-" + UUID.randomUUID();
-        IDP.issue(code, StubIdp.Grant.of(subject, params.get("nonce"), params.get("code_challenge")));
-        return URI.create(redirect(tab, OIDC + "/callback?code=" + code + "&state="
-                + URLEncoder.encode(params.get("state"), StandardCharsets.UTF_8))).getPath();
-    }
-
-    private String redirect(Browser tab, String path) throws Exception {
-        HttpResponse<String> response = tab.send("GET", path, null, Csrf.OMIT, Map.of());
-        tab.record(tab.name() + ": OIDC", response);
-        assertThat(response.statusCode()).as("GET %s answered %s", path, response.body()).isEqualTo(302);
-        return response.headers().firstValue("Location").orElseThrow();
-    }
-
     // ---- helpers ----
 
     /** Enrols the tab's account (from where the tab is), returns the secret; the session ends VERIFIED. */
-    private byte[] enrol(Browser tab, String currentPassword, String enrolmentCode) throws Exception {
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("currentPassword", currentPassword);
-        body.put("enrolmentCode", enrolmentCode);
-        JsonNode started = tab.post(MFA + "/enrolment", body, 200, "start enrolment");
-        byte[] secret = Base32.decode(started.get("secret").asString());
-        clock.advance(Duration.ofSeconds(Totp.PERIOD));
-        JsonNode confirmed = tab.post(MFA + "/enrolment/confirm", Map.of("code", code(secret)), 200,
-                "confirm enrolment");
-        assertThat(confirmed.get("recoveryCodes")).hasSize(10);
-        assertThat(confirmed.get("session").get("mfa").get("state").asString()).isEqualTo("VERIFIED");
-        return secret;
-    }
-
-    private void stepUp(Browser tab, byte[] secret) throws Exception {
-        clock.advance(Duration.ofSeconds(Totp.PERIOD));
-        tab.post(MFA + "/step-up", Map.of("code", code(secret)), 200, "step-up");
-    }
-
-    private String code(byte[] secret) {
-        return "%06d".formatted(Totp.codeAt(secret, Totp.stepAt(clock.instant())));
+    /** The user authenticates again through Keycloak (the BFF's step-up, D184): fresh tokens from now on. */
+    private void stepUp(Browser tab) {
+        tab.signedIn(() -> TestJwtFactory.account(adminSubject, clock.instant()).encode());
+        journey.add(tab.name() + ": step-up through Keycloak");
     }
 
     private UUID printer(String code, TcpFakePrinter device, String codePage, JsonNode preset, Integer drawerPin)

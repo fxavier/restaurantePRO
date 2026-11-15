@@ -178,8 +178,9 @@ public enum Permission {
             REPORT_EXPORT, AUDIT_EXPORT);
 
     /**
-     * Whether a BackOffice account needs a fresh second factor to use this permission (D142 step-up, enforced by
-     * {@link AccessPolicy} when {@link AuthenticationAssurance} says so). POS sessions are never asked.
+     * Whether a BackOffice account needs a fresh second factor to use this permission (D142 step-up, D184: the
+     * token's {@code acr} and {@code auth_time}, enforced by {@link AccessPolicy}); a POS session cannot use it
+     * outside the POS gate.
      */
     public boolean sensitive() {
         return SENSITIVE.contains(this);

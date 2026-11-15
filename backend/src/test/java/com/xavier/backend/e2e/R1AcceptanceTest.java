@@ -19,6 +19,7 @@ import java.util.UUID;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.Test;
 import com.xavier.backend.TestcontainersConfiguration;
+import com.xavier.backend.config.security.TestJwtFactory;
 import com.xavier.backend.e2e.Browser.Csrf;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -43,17 +44,23 @@ import tools.jackson.databind.json.JsonMapper;
  * settings (D30), and the catalog holds only what this journey creates. The container is a bean of this
  * context, and the context is closed after the class, so the container goes with it.
  *
- * <p>The clients are {@link Browser}s: each keeps its own cookie jar and behaves like the SPA (CSRF echo).
+ * <p>The clients are {@link Browser}s: each sends its own credentials (a BackOffice access token, a POS session).
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Import(R1AcceptanceTest.FreshDatabase.class)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class R1AcceptanceTest {
 
+    @Autowired
+    PostgreSQLContainer freshPostgres;
+
+    /** The installation's owner connection, for what onboarding and Keycloak would have created. */
+    private JdbcClient owner() {
+        return Installation.owner(freshPostgres);
+    }
+
     private static final JsonMapper JSON = Browser.JSON;
     private static final String ADMIN = "owner";
-    private static final String INITIAL_PASSWORD = "initial " + UUID.randomUUID();
-    private static final String NEW_PASSWORD = "changed " + UUID.randomUUID();
     private static final String PIN = "4831";
     private static final UUID WAITER_ROLE = UUID.fromString("01900000-0000-7000-8000-000000000303");
 
@@ -86,15 +93,12 @@ class R1AcceptanceTest {
 
     @DynamicPropertySource
     static void bootstrapSettings(DynamicPropertyRegistry registry) throws IOException {
-        Path secret = Files.createTempFile("admin-initial-password", "");
-        secret.toFile().deleteOnExit();
-        Files.writeString(secret, INITIAL_PASSWORD + "\n"); // a trailing newline, as `echo` writes it
+        registry.add("restaurantpro.security.issuers.tenant", () -> TestJwtFactory.TENANT_ISSUER);
+        registry.add("restaurantpro.security.issuers.ops", () -> TestJwtFactory.OPS_ISSUER);
         registry.add("restaurantpro.bootstrap.company.name", () -> "Restaurante Acceptance");
         registry.add("restaurantpro.bootstrap.company.tax-id", () -> "400000001");
         registry.add("restaurantpro.bootstrap.company.country", () -> "MZ");
         registry.add("restaurantpro.bootstrap.company.currency", () -> "MZN");
-        registry.add("restaurantpro.bootstrap.admin.username", () -> ADMIN);
-        registry.add("restaurantpro.bootstrap.admin.initial-password-file", secret::toString);
     }
 
     @LocalServerPort
@@ -121,36 +125,20 @@ class R1AcceptanceTest {
         assertThat(audits("COMPANY_BOOTSTRAPPED")).isEqualTo(1);
 
         Browser office = new Browser("backoffice", port, journey);
+        // criterion 2 (D176): no access token, no access; a write without one is refused before anything runs
         office.get("/api/v1/auth/session", 401);
-        assertThat(office.cookie("XSRF-TOKEN")).isNotNull();
-        office.post("/api/v1/auth/login", Map.of("username", ADMIN, "password", INITIAL_PASSWORD), 403,
-                Csrf.OMIT); // criterion 2: a mutating request without the CSRF token
+        office.post("/api/v1/backoffice/stores", store("NO-TOKEN"), 401);
 
-        // the admin is created by a listener of CompanyBootstrapped, after the bootstrap transaction commits
-        String csrfBeforeLogin = office.cookie("XSRF-TOKEN");
-        JsonNode login = Awaitility.await().atMost(Duration.ofSeconds(20)).until(() -> office.tryPost(
-                "/api/v1/auth/login", Map.of("username", ADMIN, "password", INITIAL_PASSWORD)), r -> r != null);
-        UUID adminId = UUID.fromString(login.get("userId").asString());
-        assertThat(login.get("mustChangePassword").asBoolean()).isTrue();
-        assertThat(login.get("permissions")).isEmpty();
-        assertThat(office.setCookieHeader("SESSION")).contains("; Secure").contains("; HttpOnly")
-                .contains("; SameSite=Lax");
-        assertThat(office.cookie("XSRF-TOKEN")).isNotNull().isNotEqualTo(csrfBeforeLogin); // rotated at login
-
-        // 2. Until the password changes, only /api/v1/auth/** answers
-        JsonNode blocked = office.get("/api/v1/backoffice/stores", 403);
-        assertThat(blocked.get("detail").asString()).contains("change your password");
-        assertThat(office.post("/api/v1/backoffice/stores", store("BLOCKED"), 403).get("detail").asString())
-                .contains("change your password");
-
-        String sessionBefore = office.cookie("SESSION");
-        JsonNode changed = office.post("/api/v1/auth/password",
-                Map.of("currentPassword", INITIAL_PASSWORD, "newPassword", NEW_PASSWORD), 200);
-        assertThat(changed.get("mustChangePassword").asBoolean()).isFalse();
-        assertThat(changed.get("permissions").valueStream().map(JsonNode::asString))
+        // the administrator as onboarding leaves it (D181); it logs in through Keycloak (here a test token)
+        UUID adminId = Installation.account(owner(), ADMIN, Installation.ADMINISTRATOR_ROLE);
+        Installation.signIn(office, owner(), adminId);
+        JsonNode login = office.get("/api/v1/auth/session", 200);
+        assertThat(login.get("userId").asString()).isEqualTo(adminId.toString());
+        assertThat(login.get("permissions").valueStream().map(JsonNode::asString))
                 .contains("PERM_STORE_MANAGE", "PERM_CATALOG_PUBLISH");
-        assertThat(office.cookie("SESSION")).isNotEqualTo(sessionBefore); // the session restarts
-        assertThat(audits("USER_PASSWORD_CHANGED", adminId.toString())).isEqualTo(1);
+        office.sibling("forger").post("/api/v1/backoffice/stores", store("FORGED"), 401, Csrf.SEND,
+                Map.of("Authorization", "Bearer " + TestJwtFactory.account("kc-" + adminId).unsigned().encode()),
+                "an unsigned token of the administrator");
 
         // 3. Store A (the journey's) and store B (for the store-scope checks)
         UUID storeA = id(office.post("/api/v1/backoffice/stores", store("A"), 201));
@@ -238,6 +226,7 @@ class R1AcceptanceTest {
                 Map.of(), "pos-login without X-Terminal-Token");
         JsonNode posSession = pos.post("/api/v1/auth/pos-login", Map.of("employeeCode", waiterCode, "pin", PIN),
                 200, Csrf.SEND, Map.of("X-Terminal-Token", deviceToken), "pos-login");
+        pos.posSession(posSession.get("posSession").asString());
         assertThat(posSession.get("storeId").asString()).isEqualTo(storeA.toString());
         assertThat(posSession.get("terminalId").asString()).isEqualTo(terminal.toString());
         assertThat(posSession.get("permissions").valueStream().map(JsonNode::asString))
@@ -278,35 +267,35 @@ class R1AcceptanceTest {
 
         // 12. Criterion 4 against the real endpoints: the waiter's session is refused BackOffice catalog writes
         //     and anything of store B
-        // the POS client holds a CSRF token, so these 403s are authorization refusals, not CSRF rejections
-        assertThat(pos.cookie("XSRF-TOKEN")).isNotNull();
+        // a POS session is no BackOffice credential (D176, D182): the BackOffice routes answer 401 to it
         itemBody.put("code", "SNEAKY");
-        pos.post(catalog + "/items", itemBody, 403);
+        pos.post(catalog + "/items", itemBody, 401);
         pos.post(catalog + "/price-lists/" + priceList + "/prices",
-                Map.of("itemId", item, "amount", new BigDecimal("1.00")), 403);
-        pos.post(releases, Map.of("storeId", storeA), 403);
-        pos.post(releases + "/" + release + "/publish", Map.of(), 403, Csrf.SEND,
+                Map.of("itemId", item, "amount", new BigDecimal("1.00")), 401);
+        pos.post(releases, Map.of("storeId", storeA), 401);
+        pos.post(releases + "/" + release + "/publish", Map.of(), 401, Csrf.SEND,
                 Map.of("Idempotency-Key", UUID.randomUUID().toString()), "waiter publish");
         pos.get("/api/v1/pos/catalog?storeId=" + storeB, 403);
         pos.get("/api/v1/pos/tables?storeId=" + storeB, 403);
-        pos.get("/api/v1/backoffice/stores/" + storeB, 403);
+        pos.get("/api/v1/backoffice/stores/" + storeB, 401);
         assertThat(jdbc.sql("SELECT count(*) FROM catalog.item WHERE code = 'SNEAKY'").query(Long.class).single())
                 .isZero();
         assertThat(jdbc.sql("SELECT count(*) FROM catalog.configuration_release WHERE store_id = :s")
                 .param("s", storeA).query(Long.class).single()).isEqualTo(1);
 
-        // 13. Revoking the terminal ends its POS session and its token stops working
+        // 13. Revoking the terminal ends its POS session and its device token stops working
         assertThat(office.post("/api/v1/backoffice/terminals/" + terminal + "/revoke", null, 200)
                 .get("status").asString()).isEqualTo("REVOKED");
         Awaitility.await().atMost(Duration.ofSeconds(10))
-                .until(() -> pos.send("GET", "/api/v1/auth/session", null, Csrf.OMIT, Map.of()).statusCode() == 401);
+                .until(() -> pos.send("GET", "/api/v1/auth/pos-session", null, Csrf.OMIT, Map.of()).statusCode()
+                        == 401);
         journey.add("session after revoke -> 401");
         pos.get("/api/v1/pos/catalog?storeId=" + storeA, 401);
         pos.post("/api/v1/auth/pos-login", Map.of("employeeCode", waiterCode, "pin", PIN), 401, Csrf.SEND,
                 Map.of("X-Terminal-Token", deviceToken), "pos-login with the revoked terminal's token");
         assertThat(auditsBy(adminId, "TERMINAL_REVOKED", terminal)).isEqualTo(1);
 
-        // The BackOffice session is untouched, and the store list answers (what the backup drill compares)
+        // The BackOffice user is untouched, and the store list answers (what the backup drill compares)
         JsonNode stores = office.get("/api/v1/backoffice/stores", 200);
         assertThat(stores.get("content").valueStream().map(s -> s.get("id").asString()))
                 .containsExactlyInAnyOrder(storeA.toString(), storeB.toString());

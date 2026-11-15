@@ -4,12 +4,15 @@ import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.springframework.boot.flyway.autoconfigure.FlywayConnectionDetails;
 import com.xavier.backend.DatabaseRoles;
 import com.xavier.backend.TestcontainersConfiguration;
+import com.xavier.backend.config.security.TestJwtFactory;
+import com.xavier.backend.shared.tenancy.BootstrapTenant;
 import com.xavier.backend.e2e.Browser.Csrf;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
@@ -17,6 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Supplier;
 import org.awaitility.Awaitility;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -28,14 +32,16 @@ import tools.jackson.databind.JsonNode;
 
 /**
  * A first start of one installation through the BackOffice and POS HTTP APIs, as its people do it: the bootstrap
- * settings, the administrator's first login, stores, terminals enrolled for PIN logins, employees and a published
- * catalog. Shared by the R2 journey and the latency smoke.
+ * settings, the administrator's first login (through Keycloak, D175: a test token of the user an {@code ACCOUNT}
+ * membership links to the local administrator, as onboarding creates them), stores, terminals enrolled for PIN logins,
+ * employees and a published catalog. Shared by the journeys and the smokes.
  */
 final class Installation {
 
     static final String ADMIN = "owner";
     static final String ZONE = "Africa/Maputo";
     static final String CATALOG = "/api/v1/backoffice/catalog";
+    static final UUID ADMINISTRATOR_ROLE = UUID.fromString("01900000-0000-7000-8000-000000000301");
     static final UUID MANAGER_ROLE = UUID.fromString("01900000-0000-7000-8000-000000000302");
     static final UUID CASHIER_ROLE = UUID.fromString("01900000-0000-7000-8000-000000000304");
 
@@ -78,28 +84,98 @@ final class Installation {
                 DatabaseRoles.ownerPassword()));
     }
 
-    /** The bootstrap settings of a company in MZN whose administrator {@link #ADMIN} starts with {@code password}. */
+    /**
+     * The bootstrap settings of a company in MZN, and the issuers of the two realms (the test keys are trusted,
+     * {@code TestJwtAutoConfiguration}). {@code password} is ignored: Keycloak owns credentials (D175).
+     */
     static void bootstrap(DynamicPropertyRegistry registry, String company, String password) throws IOException {
-        Path secret = Files.createTempFile("admin-initial-password", "");
-        secret.toFile().deleteOnExit();
-        Files.writeString(secret, password + "\n");
+        registry.add("restaurantpro.security.issuers.tenant", () -> TestJwtFactory.TENANT_ISSUER);
+        registry.add("restaurantpro.security.issuers.ops", () -> TestJwtFactory.OPS_ISSUER);
         registry.add("restaurantpro.bootstrap.company.name", () -> company);
         registry.add("restaurantpro.bootstrap.company.tax-id", () -> "400000002");
         registry.add("restaurantpro.bootstrap.company.country", () -> "MZ");
         registry.add("restaurantpro.bootstrap.company.currency", () -> "MZN");
-        registry.add("restaurantpro.bootstrap.admin.username", () -> ADMIN);
-        registry.add("restaurantpro.bootstrap.admin.initial-password-file", secret::toString);
         // An open change stream is an active request until its next write fails, so a graceful shutdown would wait
         // the full phase timeout (30 s) for it when the context closes.
         registry.add("server.shutdown", () -> "immediate");
     }
 
-    /** The administrator's first login (the account comes from a listener, so it is polled) and password change. */
-    static void firstLogin(Browser office, String initial, String changed) throws Exception {
+    /**
+     * The bootstrap tenant's administrator {@link #ADMIN} (Administrator role, all stores) and the membership of its
+     * Keycloak user, as onboarding leaves them (D181), written as {@code owner}; then the administrator's first
+     * login. Before it, the tab has no token: 401.
+     */
+    static void firstLogin(Browser office, JdbcClient owner) throws Exception {
+        firstLogin(office, owner, Instant::now);
+    }
+
+    /** {@link #firstLogin(Browser, JdbcClient)} on a server whose clock {@code now} reads (a moved test clock). */
+    static void firstLogin(Browser office, JdbcClient owner, Supplier<Instant> now) throws Exception {
         office.get("/api/v1/auth/session", 401);
-        Awaitility.await().atMost(Duration.ofSeconds(20)).until(() -> office.tryPost("/api/v1/auth/login",
-                Map.of("username", ADMIN, "password", initial)), r -> r != null);
-        office.post("/api/v1/auth/password", Map.of("currentPassword", initial, "newPassword", changed), 200);
+        UUID admin = account(owner, ADMIN, ADMINISTRATOR_ROLE);
+        signIn(office, owner, admin, now);
+    }
+
+    /**
+     * A BackOffice account created by {@code office} through the API (linked to {@code employeeId} when not
+     * {@code null}), then logged in on a new tab named {@code tabName}.
+     */
+    static Browser user(Browser office, JdbcClient owner, String username, UUID employeeId, String tabName)
+            throws Exception {
+        return user(office, owner, username, employeeId, tabName, Instant::now);
+    }
+
+    /** {@link #user(Browser, JdbcClient, String, UUID, String)} on a server whose clock {@code now} reads. */
+    static Browser user(Browser office, JdbcClient owner, String username, UUID employeeId, String tabName,
+                        Supplier<Instant> now) throws Exception {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("username", username);
+        body.put("employeeId", employeeId);
+        UUID account = id(office.post("/api/v1/backoffice/users", body, 201));
+        Browser tab = office.sibling(tabName);
+        tab.get("/api/v1/auth/session", 401);
+        return signIn(tab, owner, account, now);
+    }
+
+    /** A local account of the bootstrap tenant holding {@code roles} tenant-wide, as the owner. @return its id */
+    static UUID account(JdbcClient owner, String username, UUID... roles) {
+        UUID id = UUID.randomUUID();
+        owner.sql("INSERT INTO identity.user_account (id, tenant_id, username, active, support, version, created_at, "
+                + "updated_at) VALUES (?, ?, ?, true, false, 0, now(), now())").param(id).param(BootstrapTenant.ID)
+                .param(username).update();
+        for (UUID role : roles) {
+            owner.sql("INSERT INTO identity.user_account_role (tenant_id, user_account_id, role_id) VALUES (?, ?, ?)")
+                    .param(BootstrapTenant.ID).param(id).param(role).update();
+        }
+        return id;
+    }
+
+    /**
+     * {@code tab} logs in as the Keycloak user linked to {@code account} (an {@code ACCOUNT} membership in the
+     * bootstrap tenant, written as the owner; an account created through the API is linked the same way): from now
+     * on it sends a fresh access token with a second factor on every request.
+     */
+    static Browser signIn(Browser tab, JdbcClient owner, UUID account) {
+        return signIn(tab, owner, account, Instant::now);
+    }
+
+    /**
+     * {@link #signIn(Browser, JdbcClient, UUID)} on a server whose clock {@code now} reads: each token is issued, and
+     * its second factor proved, at that instant (the server validates the time claims on its own clock).
+     */
+    static Browser signIn(Browser tab, JdbcClient owner, UUID account, Supplier<Instant> now) {
+        String subject = subjectOf(account);
+        owner.sql("INSERT INTO tenancy.tenant_membership (id, tenant_id, issuer, subject, kind, principal_id, status, "
+                        + "valid_from, created_at) VALUES (?, ?, ?, ?, 'ACCOUNT', ?, 'ACTIVE', now() - interval '1 minute', "
+                        + "now()) ON CONFLICT (issuer, subject, tenant_id) DO NOTHING")
+                .param(UUID.randomUUID()).param(BootstrapTenant.ID).param(TestJwtFactory.TENANT_ISSUER).param(subject)
+                .param(account).update();
+        return tab.signedIn(() -> TestJwtFactory.account(subject, now.get()).encode());
+    }
+
+    /** The Keycloak user an account signed in with ({@link #signIn}) is. */
+    static String subjectOf(UUID account) {
+        return "kc-" + account;
     }
 
     /** A store whose cutoff is 12 h away, so the business day does not turn over while a test runs. */
@@ -127,12 +203,12 @@ final class Installation {
         String enrollment = office.post("/api/v1/backoffice/terminals/" + terminal + "/enrollment-code", null, 200)
                 .get("code").asString();
         Browser pos = office.sibling(name);
-        pos.get("/api/v1/auth/session", 401);
+        pos.get("/api/v1/auth/pos-session", 401);
         String token = pos.post("/api/v1/auth/terminals/enroll", Map.of("code", enrollment), 200)
                 .get("deviceToken").asString();
-        pos.post("/api/v1/auth/pos-login", Map.of("employeeCode", code, "pin", pin), 200, Csrf.SEND,
-                Map.of("X-Terminal-Token", token), "pos-login");
-        return pos;
+        String session = pos.post("/api/v1/auth/pos-login", Map.of("employeeCode", code, "pin", pin), 200, Csrf.SEND,
+                Map.of("X-Terminal-Token", token), "pos-login").get("posSession").asString();
+        return pos.posSession(session);
     }
 
     /** Prego (kitchen) 150.00, Sumo and Agua (bar) 60.00 and 40.00, all 16% VAT, published for {@code store}. */

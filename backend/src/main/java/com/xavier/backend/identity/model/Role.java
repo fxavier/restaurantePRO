@@ -16,18 +16,24 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
 import java.util.EnumSet;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
 import org.hibernate.annotations.UuidGenerator;
 
-/** A named, editable set of {@link Permission}s (D27). Seven are seeded from spec §3 by Flyway. */
+/**
+ * A named, editable set of {@link Permission}s (D27), per tenant. The bootstrap tenant's seven are seeded from spec §3
+ * by Flyway; a tenant provisioned later starts with its administrator role ({@link #administrator}).
+ */
 @Entity
 @Table(schema = "identity", name = "role")
 public class Role {
 
-    /** The seeded "Administrador" role: every permission, read-only through the API. */
+    /** The bootstrap tenant's seeded "Administrador" role. */
     public static final UUID ADMINISTRATOR_ID = UUID.fromString("01900000-0000-7000-8000-000000000301");
+    /** The name of a provisioned tenant's administrator role. */
+    public static final String ADMINISTRATOR_NAME = "Administrador";
 
     @Id
     @UuidGenerator(style = UuidGenerator.Style.VERSION_7)
@@ -35,6 +41,10 @@ public class Role {
 
     @Column(nullable = false, length = 60)
     private String name;
+
+    /** The tenant's administrator role: every permission, read-only through the API; one per tenant. */
+    @Column(nullable = false, updatable = false)
+    private boolean administrator;
 
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(schema = "identity", name = "role_permission", joinColumns = @JoinColumn(name = "role_id"))
@@ -64,6 +74,13 @@ public class Role {
         return role;
     }
 
+    /** A provisioned tenant's administrator role, with every permission (D181 onboarding). */
+    public static Role administrator(Instant now) {
+        Role role = define(ADMINISTRATOR_NAME, EnumSet.allOf(Permission.class), now);
+        role.administrator = true;
+        return role;
+    }
+
     public void redefine(String newName, Set<Permission> newPermissions, Instant now) {
         if (isAdministrator()) {
             throw new ReadOnlyRoleException();
@@ -75,7 +92,7 @@ public class Role {
     }
 
     public boolean isAdministrator() {
-        return ADMINISTRATOR_ID.equals(id);
+        return administrator;
     }
 
     public RoleSummary toSummary() {

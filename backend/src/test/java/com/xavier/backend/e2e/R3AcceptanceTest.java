@@ -1,5 +1,6 @@
 package com.xavier.backend.e2e;
 
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import static com.xavier.backend.e2e.Installation.CASHIER_ROLE;
 import static com.xavier.backend.e2e.Installation.MANAGER_ROLE;
 import static com.xavier.backend.e2e.Installation.employee;
@@ -84,6 +85,14 @@ import tools.jackson.databind.JsonNode;
 @Import({Installation.FreshDatabase.class, SettlementTestClock.Config.class, FakePaymentProvider.Config.class})
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class R3AcceptanceTest {
+
+    @Autowired
+    PostgreSQLContainer freshPostgres;
+
+    /** The installation's owner connection, for what onboarding and Keycloak would have created. */
+    private JdbcClient owner() {
+        return Installation.owner(freshPostgres);
+    }
 
     static final String INITIAL_PASSWORD = "initial " + UUID.randomUUID();
     static final String NEW_PASSWORD = "changed " + UUID.randomUUID();
@@ -178,7 +187,7 @@ class R3AcceptanceTest {
 
     private void setUp() throws Exception {
         office = new Browser("backoffice", port, journey);
-        Installation.firstLogin(office, INITIAL_PASSWORD, NEW_PASSWORD);
+        Installation.firstLogin(office, owner(), clock::instant);
         storeA = Installation.store(office, "A");
         storeB = Installation.store(office, "B");
         terminal1 = terminal(office, storeA, "POS1");
@@ -737,13 +746,7 @@ class R3AcceptanceTest {
         UUID employeeId = id(office.post(BO + "/employees", Map.of("code", code, "name", name, "pin", "9182",
                 "storeId", storeA, "roleId", role), 201));
         String username = name + ".r3";
-        String password = "pw " + UUID.randomUUID();
-        office.post(BO + "/users", Map.of("username", username, "initialPassword", password, "employeeId",
-                employeeId), 201);
-        Browser tab = office.sibling(name);
-        tab.get("/api/v1/auth/session", 401);
-        tab.post("/api/v1/auth/login", Map.of("username", username, "password", password), 200);
-        tab.post("/api/v1/auth/password", Map.of("currentPassword", password, "newPassword", password + " 2"), 200);
+        Browser tab = Installation.user(office, owner(), username, employeeId, name, clock::instant);
         return tab;
     }
 
