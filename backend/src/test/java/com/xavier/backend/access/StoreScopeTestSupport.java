@@ -56,6 +56,21 @@ public final class StoreScopeTestSupport {
         }
     }
 
+    /**
+     * Runs {@code fixture} as fixture code of a non-strict test, also in a {@link StrictStoreScope} class: the thread
+     * is marked and the actor cleared for the call only, so its SQL (and MockMvc requests, which unmark the thread
+     * while they dispatch) see what a non-strict fixture sees. A test-only scope (origin {@value #ORIGIN}), so strict
+     * tests never borrow a production {@link SystemScope} for their setup.
+     */
+    public static <T> T inStrictFixture(Supplier<T> fixture) {
+        enter(true);
+        try {
+            return asFixture(fixture);
+        } finally {
+            leave();
+        }
+    }
+
     /** {@link #asFixture(Supplier)} for a fixture with no result. */
     public static void asFixture(Runnable fixture) {
         asFixture(() -> {
