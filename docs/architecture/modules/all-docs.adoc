@@ -1,10 +1,6 @@
 == BackendApplication
 plantuml::components.puml[,,format=svg]
 
-== Shared kernel
-plantuml::module-shared.puml[,,format=svg]
-include::module-shared.adoc[]
-
 == Access
 plantuml::module-access.puml[,,format=svg]
 include::module-access.adoc[]
@@ -13,21 +9,25 @@ include::module-access.adoc[]
 plantuml::module-audit.puml[,,format=svg]
 include::module-audit.adoc[]
 
-== Configuration
-plantuml::module-config.puml[,,format=svg]
-include::module-config.adoc[]
-
-== Organization
-plantuml::module-organization.puml[,,format=svg]
-include::module-organization.adoc[]
+== Cash
+plantuml::module-cash.puml[,,format=svg]
+include::module-cash.adoc[]
 
 == Catalog
 plantuml::module-catalog.puml[,,format=svg]
 include::module-catalog.adoc[]
 
+== Configuration
+plantuml::module-config.puml[,,format=svg]
+include::module-config.adoc[]
+
 == Customers
 plantuml::module-customers.puml[,,format=svg]
 include::module-customers.adoc[]
+
+== Dining
+plantuml::module-dining.puml[,,format=svg]
+include::module-dining.adoc[]
 
 == Fiscal
 plantuml::module-fiscal.puml[,,format=svg]
@@ -37,35 +37,35 @@ include::module-fiscal.adoc[]
 plantuml::module-identity.puml[,,format=svg]
 include::module-identity.adoc[]
 
-== Cash
-plantuml::module-cash.puml[,,format=svg]
-include::module-cash.adoc[]
-
-== Dining
-plantuml::module-dining.puml[,,format=svg]
-include::module-dining.adoc[]
-
-== Promotions
-plantuml::module-promotions.puml[,,format=svg]
-include::module-promotions.adoc[]
+== Inventory
+plantuml::module-inventory.puml[,,format=svg]
+include::module-inventory.adoc[]
 
 == Orders
 plantuml::module-orders.puml[,,format=svg]
 include::module-orders.adoc[]
 
-== Inventory
-plantuml::module-inventory.puml[,,format=svg]
-include::module-inventory.adoc[]
-
-== Settlement
-plantuml::module-settlement.puml[,,format=svg]
-include::module-settlement.adoc[]
+== Organization
+plantuml::module-organization.puml[,,format=svg]
+include::module-organization.adoc[]
 
 == Production
 plantuml::module-production.puml[,,format=svg]
 include::module-production.adoc[]
 
+== Promotions
+plantuml::module-promotions.puml[,,format=svg]
+include::module-promotions.adoc[]
+
 == Reporting
 plantuml::module-reporting.puml[,,format=svg]
 include::module-reporting.adoc[]
+
+== Settlement
+plantuml::module-settlement.puml[,,format=svg]
+include::module-settlement.adoc[]
+
+== Shared kernel
+plantuml::module-shared.puml[,,format=svg]
+include::module-shared.adoc[]
 

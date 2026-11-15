@@ -8,6 +8,7 @@
 * `c.x.b.d.DiningApi`
 |Bean references
 |* `c.x.b.a.AccessPolicy` (in Access)
+* `c.x.b.s.persistence.StoreProbe` (in Shared kernel)
 * `c.x.b.a.IdempotentRequests` (in Access)
 * `c.x.b.a.AuditLog` (in Audit)
 * `c.x.b.s.notify.ChangeNotifier` (in Shared kernel)

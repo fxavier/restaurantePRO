@@ -5,6 +5,9 @@
 |Spring components
 |* `c.x.b.a.AccessPolicy`
 * `c.x.b.a.IdempotentRequests`
+* `c.x.b.a.StoreScopes`
+* `c.x.b.a.StoreScopeFallback` (via `c.x.b.a.UnsetStoreScopeFallback`)
 |Bean references
 |* `c.x.b.s.idempotency.IdempotencyService` (in Shared kernel)
+* `c.x.b.s.persistence.StoreScopeViolations` (in Shared kernel)
 |===

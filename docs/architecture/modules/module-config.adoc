@@ -8,4 +8,6 @@
 * `c.x.b.s.events.EventPublicationStats` (in Shared kernel)
 * `c.x.b.s.events.EventPublicationRecovery` (in Shared kernel)
 * `c.x.b.a.AuditLog` (in Audit)
+* `c.x.b.a.StoreScopes` (in Access)
+* `c.x.b.s.persistence.StoreScopeViolations` (in Shared kernel)
 |===
