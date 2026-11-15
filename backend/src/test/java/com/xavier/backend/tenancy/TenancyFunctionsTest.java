@@ -101,7 +101,8 @@ class TenancyFunctionsTest {
         grantIn(TenantTestSupport.B, UUID.randomUUID().toString(), MembershipKind.ACCOUNT, UUID.randomUUID(), null);
 
         assertThat(tenancy.membershipSummaries(ISSUER, subject)).containsExactly(new MembershipSummary(
-                TenantTestSupport.A, "tenant-a", "tenant-a", MembershipKind.ACCOUNT, orgId));
+                TenantTestSupport.A, "tenant-a", "tenant-a", MembershipKind.ACCOUNT, orgId,
+                TenantStatus.PROVISIONING));
         assertThat(tenancy.membershipSummaries("https://other.example/realms/x", subject)).as("another issuer")
                 .isEmpty();
     }

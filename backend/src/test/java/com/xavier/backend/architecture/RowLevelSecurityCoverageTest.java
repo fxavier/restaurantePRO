@@ -34,7 +34,8 @@ public class RowLevelSecurityCoverageTest {
             "tenancy.grant_membership(uuid,text,text,text,uuid,timestamp with time zone,timestamp with time zone)",
             "tenancy.revoke_membership(uuid)",
             "tenancy.tenant_status(uuid)",
-            "tenancy.activate_tenant(uuid)");
+            "tenancy.activate_tenant(uuid)",
+            "tenancy.list_memberships(text,text)");
 
     /**
      * R6: the modules whose every table is TENANT* or PLATFORM ({@link #assertModuleTenantProtected}). A module joins

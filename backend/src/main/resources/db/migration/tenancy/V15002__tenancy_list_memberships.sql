@@ -2,7 +2,8 @@
 -- organization-claim check (S73). SECURITY DEFINER like the V15001 functions: the application role holds no privilege
 -- on tenancy.*, search_path is pinned, EXECUTE is revoked from PUBLIC and granted to the application role only.
 -- Only ACTIVE memberships valid at now() of exactly (issuer, subject) are listed, so it never names a tenant the
--- subject does not belong to.
+-- subject does not belong to. The tenant's status is returned, not filtered: the caller shows or refuses a SUSPENDED or
+-- CLOSED tenant.
 CREATE FUNCTION tenancy.list_memberships(p_issuer text, p_subject text)
     RETURNS TABLE
             (
@@ -10,14 +11,15 @@ CREATE FUNCTION tenancy.list_memberships(p_issuer text, p_subject text)
                 code            text,
                 legal_name      text,
                 kind            text,
-                keycloak_org_id text
+                keycloak_org_id text,
+                tenant_status   text
             )
     LANGUAGE sql
     STABLE
     SECURITY DEFINER
     SET search_path = pg_catalog AS
 $$
-SELECT m.tenant_id, t.code, t.legal_name, m.kind, t.keycloak_org_id
+SELECT m.tenant_id, t.code, t.legal_name, m.kind, t.keycloak_org_id, t.status
 FROM tenancy.tenant_membership m
          JOIN tenancy.tenant t ON t.id = m.tenant_id
 WHERE m.issuer = p_issuer

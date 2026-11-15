@@ -60,12 +60,12 @@ public class TenancyApi {
      */
     @Transactional(readOnly = true)
     public List<MembershipSummary> membershipSummaries(String issuer, String subject) {
-        return jdbc.sql("SELECT tenant_id, code, legal_name, kind, keycloak_org_id "
+        return jdbc.sql("SELECT tenant_id, code, legal_name, kind, keycloak_org_id, tenant_status "
                         + "FROM tenancy.list_memberships(:issuer, :subject)")
                 .param("issuer", issuer).param("subject", subject)
                 .query((rs, row) -> new MembershipSummary(rs.getObject("tenant_id", UUID.class), rs.getString("code"),
                         rs.getString("legal_name"), MembershipKind.valueOf(rs.getString("kind")),
-                        rs.getString("keycloak_org_id")))
+                        rs.getString("keycloak_org_id"), TenantStatus.valueOf(rs.getString("tenant_status"))))
                 .list();
     }
 
