@@ -1,5 +1,6 @@
 package com.xavier.backend.settlement;
 
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -137,15 +138,18 @@ class CreditChargeRecoveryTest {
         CountDownLatch locked = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         try (var pool = Executors.newSingleThreadExecutor()) {
-            var holder = pool.submit(() -> new TransactionTemplate(transactionManager).executeWithoutResult(tx -> {
-                jdbc.sql("SELECT order_id FROM settlement.order_settlement WHERE order_id = ? FOR UPDATE")
-                        .param(sale.order()).query(UUID.class).single();
-                locked.countDown();
-                try {
-                    release.await(30, TimeUnit.SECONDS);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
+            var holder = pool.submit(TenantTestSupport.inBootstrap(() -> {
+                new TransactionTemplate(transactionManager).executeWithoutResult(tx -> {
+                    jdbc.sql("SELECT order_id FROM settlement.order_settlement WHERE order_id = ? FOR UPDATE")
+                            .param(sale.order()).query(UUID.class).single();
+                    locked.countDown();
+                    try {
+                        release.await(30, TimeUnit.SECONDS);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                });
+                return null;
             }));
             locked.await(30, TimeUnit.SECONDS);
 

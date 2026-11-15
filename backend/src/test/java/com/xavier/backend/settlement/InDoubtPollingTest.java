@@ -1,5 +1,6 @@
 package com.xavier.backend.settlement;
 
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.xavier.backend.settlement.FakePaymentProvider.Behaviour;
@@ -136,16 +137,19 @@ class InDoubtPollingTest {
         java.util.concurrent.CountDownLatch locked = new java.util.concurrent.CountDownLatch(1);
         java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
         try (var pool = java.util.concurrent.Executors.newSingleThreadExecutor()) {
-            var holder = pool.submit(() -> new org.springframework.transaction.support.TransactionTemplate(
-                    transactionManager).executeWithoutResult(tx -> {
-                jdbc.sql("SELECT order_id FROM settlement.order_settlement WHERE order_id = ? FOR UPDATE")
-                        .param(sale.order()).query(UUID.class).single();
-                locked.countDown();
-                try {
-                    release.await(10, java.util.concurrent.TimeUnit.SECONDS);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
+            var holder = pool.submit(TenantTestSupport.inBootstrap(() -> {
+                new org.springframework.transaction.support.TransactionTemplate(transactionManager)
+                        .executeWithoutResult(tx -> {
+                            jdbc.sql("SELECT order_id FROM settlement.order_settlement WHERE order_id = ? "
+                                    + "FOR UPDATE").param(sale.order()).query(UUID.class).single();
+                            locked.countDown();
+                            try {
+                                release.await(10, java.util.concurrent.TimeUnit.SECONDS);
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                        });
+                return null;
             }));
             locked.await(10, java.util.concurrent.TimeUnit.SECONDS);
 

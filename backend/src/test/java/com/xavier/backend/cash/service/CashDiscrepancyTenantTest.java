@@ -11,6 +11,7 @@ import com.xavier.backend.shared.tenancy.TenantScopes;
 import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.sql.Timestamp;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -47,8 +48,8 @@ class CashDiscrepancyTenantTest {
         TenantTestSupport.ensureTenants();
         UUID storeA = UUID.randomUUID();
         UUID storeB = UUID.randomUUID();
-        submittedClosingFiveShort(A, storeA);
-        submittedClosingFiveShort(B, storeB);
+        submittedClosingFiveShort(A, storeA, clock.instant());
+        submittedClosingFiveShort(B, storeB, clock.instant());
 
         TenantTestSupport.inTenant(tenants, A, source::refresh);
         TenantTestSupport.inTenant(tenants, B, source::refresh);
@@ -60,13 +61,13 @@ class CashDiscrepancyTenantTest {
                 .isEqualTo(1);
     }
 
-    /** A SUBMITTED closing of a fresh store whose cash line is 5.00 short, in {@code tenant}. */
-    private void submittedClosingFiveShort(UUID tenant, UUID store) {
+    /** A SUBMITTED closing (at {@code now}) of a fresh store whose cash line is 5.00 short, in {@code tenant}. */
+    static void submittedClosingFiveShort(UUID tenant, UUID store, Instant now) {
         try (AppRoleSession app = AppRoleSession.open().tenant(tenant).allStores()) {
             UUID register = UUID.randomUUID();
             UUID day = UUID.randomUUID();
             UUID closing = UUID.randomUUID();
-            Timestamp submitted = Timestamp.from(clock.instant());
+            Timestamp submitted = Timestamp.from(now);
             app.jdbc().sql("INSERT INTO cash.cash_register (id, store_id, code, name, active, version, created_at, "
                     + "updated_at) VALUES (?, ?, 'R1', 'Till', true, 0, now(), now())").param(register).param(store)
                     .update();

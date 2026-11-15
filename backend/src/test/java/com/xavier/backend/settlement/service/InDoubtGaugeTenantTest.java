@@ -12,6 +12,7 @@ import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.sql.Timestamp;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -48,8 +49,8 @@ class InDoubtGaugeTenantTest {
         TenantTestSupport.ensureTenants();
         UUID storeA = UUID.randomUUID();
         UUID storeB = UUID.randomUUID();
-        attemptInDoubt(A, storeA);
-        attemptInDoubt(B, storeB);
+        attemptInDoubt(A, storeA, clock.instant());
+        attemptInDoubt(B, storeB, clock.instant());
 
         TenantTestSupport.inTenant(tenants, A, gauge::refresh);
         TenantTestSupport.inTenant(tenants, B, gauge::refresh);
@@ -61,9 +62,10 @@ class InDoubtGaugeTenantTest {
         assertThat(gauge.overdueAtLastRefresh()).extracting(OverdueInStore::storeId).contains(storeA, storeB);
     }
 
-    private void attemptInDoubt(UUID tenant, UUID store) {
+    /** An UNKNOWN attempt of {@code store} in {@code tenant}, 40 minutes old at {@code now}. */
+    static void attemptInDoubt(UUID tenant, UUID store, Instant now) {
         try (AppRoleSession app = AppRoleSession.open().tenant(tenant).allStores()) {
-            Timestamp created = Timestamp.from(clock.instant().minus(Duration.ofMinutes(40)));
+            Timestamp created = Timestamp.from(now.minus(Duration.ofMinutes(40)));
             app.jdbc().sql("""
                     INSERT INTO settlement.payment_attempt (id, order_id, store_id, terminal_id, session_id,
                         method_code, method_kind, provider_code, provider_reference, amount, currency, status,
