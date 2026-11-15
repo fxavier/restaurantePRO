@@ -15,7 +15,7 @@ import com.xavier.backend.OwnerDatabase;
 import com.xavier.backend.access.Actor;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.architecture.RowLevelSecurityCoverageTest;
-import com.xavier.backend.settlement.TenantKeyChecks;
+import com.xavier.backend.settlement.TenantModuleChecks;
 import com.xavier.backend.shared.persistence.StoreScopeViolations;
 import com.xavier.backend.shared.tenancy.MembershipKind;
 import com.xavier.backend.shared.tenancy.StrictTenantScope;
@@ -222,7 +222,7 @@ class CashTenantIsolationTest {
     @Test
     void theModuleIsTenantProtected() {
         RowLevelSecurityCoverageTest.assertModuleTenantProtected("cash");
-        TenantKeyChecks.assertKeysIncludeTheTenant("cash");
+        TenantModuleChecks.assertKeysIncludeTheTenant("cash");
     }
 
     /** An installation-wide account of {@code tenant} (its resolved membership as the principal's details). */

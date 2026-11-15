@@ -257,7 +257,7 @@ class SettlementTenantIsolationTest {
     @Test
     void theModuleIsTenantProtected() {
         RowLevelSecurityCoverageTest.assertModuleTenantProtected("settlement");
-        TenantKeyChecks.assertKeysIncludeTheTenant("settlement");
+        TenantModuleChecks.assertKeysIncludeTheTenant("settlement");
     }
 
     /** An installation-wide account of {@code tenant} (its resolved membership as the principal's details). */

@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.architecture.RowLevelSecurityCoverageTest;
+import com.xavier.backend.settlement.TenantModuleChecks;
 import com.xavier.backend.AppRoleSession;
 import java.util.List;
 import java.util.UUID;
@@ -66,7 +67,7 @@ class FiscalRowLevelSecurityTest {
 
     @Test
     void theTablesAreClassifiedAsD167Says() {
-        assertThat(AppRoleSession.classification("fiscal")).containsOnly(
+        assertThat(TenantModuleChecks.classification("fiscal")).containsOnly(
                 entry("fiscal_series", "STORE"), entry("fiscal_document", "STORE"),
                 entry("fiscal_document_line", "CHILD:fiscal.fiscal_document"),
                 entry("fiscal_document_tax", "CHILD:fiscal.fiscal_document"),

@@ -14,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.architecture.RowLevelSecurityCoverageTest;
+import com.xavier.backend.settlement.TenantModuleChecks;
 import com.xavier.backend.cash.CashFixtures.Pos;
 import com.xavier.backend.AppRoleSession;
 import java.util.List;
@@ -67,7 +68,7 @@ class CashRowLevelSecurityTest {
 
     @Test
     void theTablesAreClassifiedAsD167Says() {
-        assertThat(AppRoleSession.classification("cash")).containsOnly(
+        assertThat(TenantModuleChecks.classification("cash")).containsOnly(
                 entry("cash_register", "STORE"), entry("cash_day", "STORE"), entry("cash_day_reopening", "STORE"),
                 entry("cash_session", "STORE"), entry("cash_movement", "STORE"), entry("cash_closing", "STORE"),
                 entry("cash_session_count", "CHILD:cash.cash_session"),

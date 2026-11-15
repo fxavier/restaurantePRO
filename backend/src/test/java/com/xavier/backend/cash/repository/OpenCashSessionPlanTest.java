@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.xavier.backend.OwnerDatabase;
 import com.xavier.backend.cash.model.CashSessionStatus;
 import com.xavier.backend.AppRoleSession;
+import com.xavier.backend.settlement.OwnerSeeds;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -15,8 +17,9 @@ import org.junit.jupiter.api.Test;
  * ({@link CashSessionRepository#findByStoreIdAndOperatorEmployeeIdAndStatus}, read by every payment to route its
  * money, P16) stays on the partial index {@code cash_session_operator_open_uk} under row-level security, as the
  * application role in a store scope (D169: {@code uuid_eq} and {@code texteq} are leakproof). Deterministic: one
- * register and day with 3 000 closed sessions and one open one, ANALYZE by the owner, then EXPLAIN in one transaction
- * with {@code enable_seqscan = off}.
+ * register and day with 3 000 closed sessions and one open one in tenant A and as many in tenant B (D189: B's rows
+ * are present), ANALYZE by the owner, then EXPLAIN in one transaction with {@code enable_seqscan = off}, bound to
+ * tenant A.
  *
  * <p>D169 audit of cash: the one {@code numeric} predicate on a protected table, the discrepancy threshold of
  * {@code CashClosingRepository.discrepanciesSince}, compares an aggregate, not an indexed column.
@@ -32,9 +35,11 @@ class OpenCashSessionPlanTest {
     void theOpenSessionOfAnOperatorIsReadThroughThePartialIndexUnderAStoreScope() {
         UUID store = UUID.randomUUID();
         UUID operator = UUID.randomUUID();
-        seed(store, operator);
+        TenantTestSupport.ensureTenants();
+        seed(TenantTestSupport.A, store, operator);
+        seed(TenantTestSupport.B, UUID.randomUUID(), UUID.randomUUID());
 
-        try (AppRoleSession app = AppRoleSession.open()) {
+        try (AppRoleSession app = AppRoleSession.open().tenant(TenantTestSupport.A)) {
             app.stores(store);
             List<String> plan = new ArrayList<>();
             app.inTransaction(() -> {
@@ -55,10 +60,10 @@ class OpenCashSessionPlanTest {
                 UUID.class, CashSessionStatus.class)).isNotNull();
     }
 
-    private static void seed(UUID store, UUID operator) {
+    private static void seed(UUID tenant, UUID store, UUID operator) {
         UUID register = UUID.randomUUID();
         UUID day = UUID.randomUUID();
-        OwnerDatabase.shared().tx(owner -> {
+        OwnerSeeds.tx(tenant, owner -> {
             owner.sql("""
                     INSERT INTO cash.cash_register (id, store_id, code, name, active, version, created_at, updated_at)
                     VALUES (?, ?, 'PLAN', 'Plano', true, 0, now(), now())""").params(register, store).update();

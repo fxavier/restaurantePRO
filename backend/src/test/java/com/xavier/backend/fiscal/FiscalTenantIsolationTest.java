@@ -15,7 +15,7 @@ import com.xavier.backend.OwnerDatabase;
 import com.xavier.backend.access.Actor;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.architecture.RowLevelSecurityCoverageTest;
-import com.xavier.backend.settlement.TenantKeyChecks;
+import com.xavier.backend.settlement.TenantModuleChecks;
 import com.xavier.backend.shared.persistence.StoreScopeViolations;
 import com.xavier.backend.shared.tenancy.MembershipKind;
 import com.xavier.backend.shared.tenancy.StrictTenantScope;
@@ -235,7 +235,7 @@ class FiscalTenantIsolationTest {
     @Test
     void theModuleIsTenantProtected() {
         RowLevelSecurityCoverageTest.assertModuleTenantProtected("fiscal");
-        TenantKeyChecks.assertKeysIncludeTheTenant("fiscal");
+        TenantModuleChecks.assertKeysIncludeTheTenant("fiscal");
     }
 
     private UUID createSeries(UUID tenant, UUID store, String code, long firstNumber) throws Exception {
