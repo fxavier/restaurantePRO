@@ -3,9 +3,9 @@ package com.xavier.backend.production.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.xavier.backend.OwnerDatabase;
-import com.xavier.backend.access.Actor;
-import com.xavier.backend.access.Permission;
+import com.xavier.backend.access.StoreScopes;
 import com.xavier.backend.access.StrictStoreScope;
+import com.xavier.backend.access.SystemScope;
 import com.xavier.backend.orders.OrdersFixtures.Shop;
 import com.xavier.backend.production.ProductionFixtures;
 import com.xavier.backend.production.ProductionFixtures.Round;
@@ -16,7 +16,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import org.awaitility.Awaitility;
@@ -24,8 +23,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -52,6 +49,9 @@ class ProductionActorlessScopeTest {
 
     @Autowired
     ProductionFixtures fixtures;
+
+    @Autowired
+    StoreScopes scopes;
 
     final JdbcClient owner = OwnerDatabase.shared().jdbc();
 
@@ -84,7 +84,7 @@ class ProductionActorlessScopeTest {
         try (TcpFakePrinter printer = TcpFakePrinter.accepting()) {
             UUID employee = UUID.randomUUID();
             UUID terminal = UUID.randomUUID();
-            Round round = asInstallationAdmin(() -> {
+            Round round = asFixture(() -> {
                 Shop shop = fixtures.shop();
                 fixtures.barPrinter(shop.store(), printer.host(), printer.port());
                 return fixtures.confirmedRound(shop, employee, terminal, "1");
@@ -108,17 +108,18 @@ class ProductionActorlessScopeTest {
     }
 
     /**
-     * Fixture setup on the strict thread as an installation-wide account (D164: all stores), as a BackOffice admin;
-     * each MockMvc request still carries its own actor. Cleared afterwards, so the test body is actor-less.
+     * Fixture setup on the strict thread in an explicit all-stores scope: an actor alone does not last, since each
+     * MockMvc request of the fixtures clears the security context, and their direct SQL (the catalog release) would
+     * then be unset. The scope ends with the setup, so the test body is actor-less and unscoped again.
      */
-    private static <T> T asInstallationAdmin(Callable<T> setup) throws Exception {
-        SecurityContextHolder.getContext().setAuthentication(UsernamePasswordAuthenticationToken.authenticated(
-                Actor.account(UUID.randomUUID(), Set.of(Permission.ORDER_VIEW.authority())), null, List.of()));
-        try {
-            return setup.call();
-        } finally {
-            SecurityContextHolder.clearContext();
-        }
+    private <T> T asFixture(Callable<T> setup) {
+        return scopes.call(SystemScope.BOOTSTRAP, () -> {
+            try {
+                return setup.call();
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        });
     }
 
     private Map<UUID, String> jobsOf(List<UUID> payments) {
