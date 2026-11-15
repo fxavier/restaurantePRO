@@ -205,7 +205,7 @@ class CashTenantIsolationTest {
             AppRoleSession.assertRefused(() -> app.jdbc().sql("""
                     INSERT INTO cash.cash_session_count (id, session_id, method_code, amount, currency, counted_at)
                     VALUES (?, ?, 'MBWAY', 1.00, 'MZN', now())""").params(UUID.randomUUID(), b.session()).update(),
-                    StoreScopeViolations.Kind.TENANT_WRITE_REFUSED);
+                    StoreScopeViolations.Kind.WRITE_REFUSED);
         }
     }
 

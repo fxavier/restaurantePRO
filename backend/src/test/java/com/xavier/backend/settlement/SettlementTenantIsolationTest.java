@@ -240,7 +240,7 @@ class SettlementTenantIsolationTest {
                     INSERT INTO settlement.payment_allocation (id, payment_id, target_type, target_id, amount,
                         currency, created_at) VALUES (?, ?, 'ORDER', ?, 1.00, 'MZN', now())""")
                     .params(UUID.randomUUID(), b.payment(), UUID.randomUUID()).update(),
-                    StoreScopeViolations.Kind.TENANT_WRITE_REFUSED);
+                    StoreScopeViolations.Kind.WRITE_REFUSED);
         }
     }
 

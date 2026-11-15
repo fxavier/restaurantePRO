@@ -218,7 +218,7 @@ class FiscalTenantIsolationTest {
             AppRoleSession.assertRefused(() -> app.jdbc().sql("INSERT INTO fiscal.fiscal_document_tax (id, "
                     + "document_id, tax_rate, net, tax) VALUES (?, ?, 5, 1.00, 0.05)")
                     .params(UUID.randomUUID(), b.document()).update(),
-                    StoreScopeViolations.Kind.TENANT_WRITE_REFUSED);
+                    StoreScopeViolations.Kind.WRITE_REFUSED);
         }
     }
 
