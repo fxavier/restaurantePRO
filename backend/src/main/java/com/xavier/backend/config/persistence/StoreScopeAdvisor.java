@@ -138,7 +138,8 @@ class StoreScopeAdvisor extends AbstractPointcutAdvisor {
         if (tenantScopes.current().isPresent()) {
             return counted(origin, () -> stores.call(scope, () -> proceed(invocation)));
         }
-        return eachActiveTenant(invocation, method, name, scope, tenantScopes);
+        // the lease key: two classes may share a simple name, never a fully-qualified one
+        return eachActiveTenant(invocation, method, target.getName() + "." + method.getName(), scope, tenantScopes);
     }
 
     private Object eachActiveTenant(MethodInvocation invocation, Method method, String job, SystemScope scope,
@@ -160,6 +161,9 @@ class StoreScopeAdvisor extends AbstractPointcutAdvisor {
         for (int i = 0; i < ids.size(); i++) {
             UUID tenantId = ids.get((start + i) % ids.size());
             try {
+                // ponytail: the lease is taken once per run, not renewed while it runs; a run longer than
+                // restaurantpro.jobs.lease-ttl lets a second instance start the same tenant (follow-up: renew, or
+                // size the ttl above the longest run)
                 if (jobLeases != null && !jobLeases.tryAcquire(job, tenantId)) {
                     log.debug("{} skipped tenant {}: another instance holds its lease", job, tenantId);
                     continue;

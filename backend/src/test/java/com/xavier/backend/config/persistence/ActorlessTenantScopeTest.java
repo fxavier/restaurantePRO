@@ -56,7 +56,8 @@ class ActorlessTenantScopeTest {
     static final UUID T1 = UUID.fromString("0190b300-0000-7000-8000-000000000001");
     static final UUID T2 = UUID.fromString("0190b300-0000-7000-8000-000000000002");
     static final UUID SUSPENDED = UUID.fromString("0190b300-0000-7000-8000-000000000003");
-    static final String JOB = "TenantJobs.sweep";
+    /** The lease and metric name of a job: its class's fully-qualified name and the method. */
+    static final String JOB = TenantJobs.class.getName() + ".sweep";
 
     /** What a probe saw: the bound tenant, and the tenant its own transaction was bound to. */
     record Seen(String where, UUID bound, String transaction, String thread) {
