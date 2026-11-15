@@ -31,6 +31,7 @@ public class CashRegisterService {
 
     static final String ENTITY = "CashRegister";
 
+    private final CashStoreProbe stores;
     private final CashRegisterRepository registers;
     private final CashSessionRepository sessions;
     private final OrganizationApi organization;
@@ -38,8 +39,9 @@ public class CashRegisterService {
     private final CashAudit audit;
     private final Clock clock;
 
-    CashRegisterService(CashRegisterRepository registers, CashSessionRepository sessions,
+    CashRegisterService(CashStoreProbe stores, CashRegisterRepository registers, CashSessionRepository sessions,
                         OrganizationApi organization, AccessPolicy accessPolicy, CashAudit audit, Clock clock) {
+        this.stores = stores;
         this.registers = registers;
         this.sessions = sessions;
         this.organization = organization;
@@ -63,7 +65,7 @@ public class CashRegisterService {
     @Transactional
     public RegisterSummary update(UUID id, RegisterUpdateRequest request) {
         accessPolicy.require(Permission.CASH_REGISTER_MANAGE,
-                registers.findStoreIdById(id).orElseThrow(() -> new CashNotFoundException(ENTITY, id)));
+                stores.register(id).orElseThrow(() -> new CashNotFoundException(ENTITY, id)));
         CashRegister register = registers.findById(id).orElseThrow(() -> new CashNotFoundException(ENTITY, id));
         OptimisticLocking.requireVersion(CashRegister.class, id, register.getVersion(), request.version());
         if (register.isActive() && !request.active()

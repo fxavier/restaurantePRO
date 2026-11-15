@@ -48,6 +48,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class CashCoordinationService {
 
+    private final CashStoreProbe stores;
     private final CashSessionRepository sessions;
     private final CashSessionCountRepository counts;
     private final CashMovementRepository movements;
@@ -57,9 +58,10 @@ public class CashCoordinationService {
     private final CashAudit audit;
     private final Clock clock;
 
-    CashCoordinationService(CashSessionRepository sessions, CashSessionCountRepository counts,
+    CashCoordinationService(CashStoreProbe stores, CashSessionRepository sessions, CashSessionCountRepository counts,
                             CashMovementRepository movements, CashDayRepository days, RowLocks locks,
                             AccessPolicy accessPolicy, CashAudit audit, Clock clock) {
+        this.stores = stores;
         this.sessions = sessions;
         this.accessPolicy = accessPolicy;
         this.locks = locks;
@@ -169,7 +171,13 @@ public class CashCoordinationService {
 
     @Transactional(readOnly = true)
     public UUID storeOfDay(UUID dayId) {
-        return CashDayService.storeOf(days, dayId);
+        return CashDayService.storeOf(stores, dayId);
+    }
+
+    @Transactional(readOnly = true)
+    public UUID storeOfSession(UUID sessionId) {
+        return stores.session(sessionId).orElseThrow(() -> new CashNotFoundException(CashSessionService.ENTITY,
+                sessionId));
     }
 
     @Transactional(readOnly = true)

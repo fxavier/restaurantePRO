@@ -8,6 +8,7 @@ import com.xavier.backend.fiscal.model.FiscalDocument;
 import com.xavier.backend.fiscal.model.dto.DocumentSummary;
 import com.xavier.backend.fiscal.model.dto.DocumentView;
 import com.xavier.backend.fiscal.repository.FiscalDocumentRepository;
+import com.xavier.backend.shared.persistence.StoreProbe;
 import com.xavier.backend.shared.web.PageResponse;
 import java.time.Instant;
 import java.util.UUID;
@@ -26,10 +27,12 @@ public class DocumentQueryService {
     private static final Instant NO_UPPER_BOUND = Instant.parse("9999-12-31T00:00:00Z");
 
     private final FiscalDocumentRepository documents;
+    private final StoreProbe storeProbe;
     private final AccessPolicy accessPolicy;
 
-    DocumentQueryService(FiscalDocumentRepository documents, AccessPolicy accessPolicy) {
+    DocumentQueryService(FiscalDocumentRepository documents, StoreProbe storeProbe, AccessPolicy accessPolicy) {
         this.documents = documents;
+        this.storeProbe = storeProbe;
         this.accessPolicy = accessPolicy;
     }
 
@@ -57,8 +60,9 @@ public class DocumentQueryService {
         return load(id).toView();
     }
 
+    /** D42: only the store, read across every store (D168), so another store's document is a 403, not a 404. */
     UUID storeOf(UUID id) {
-        return documents.findStoreIdById(id).orElseThrow(() -> new DocumentNotFoundException(id));
+        return storeProbe.storeOf("fiscal.fiscal_document", id).orElseThrow(() -> new DocumentNotFoundException(id));
     }
 
     static void requireSessionStore(PosContext pos, UUID documentStore, UUID id) {

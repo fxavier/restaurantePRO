@@ -10,7 +10,6 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.NativeQuery;
-import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface CashDayRepository extends JpaRepository<CashDay, UUID> {
@@ -41,7 +40,4 @@ public interface CashDayRepository extends JpaRepository<CashDay, UUID> {
     List<CashDay> findByStoreIdAndStatusAndBusinessDateBeforeOrderByBusinessDateAsc(UUID storeId,
                                                                                    CashDayStatus status,
                                                                                    LocalDate businessDate);
-
-    @Query("select d.storeId from CashDay d where d.id = :id")
-    Optional<UUID> findStoreIdById(@Param("id") UUID id);
 }

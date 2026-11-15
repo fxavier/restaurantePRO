@@ -1,5 +1,6 @@
 package com.xavier.backend.settlement.service;
 
+import com.xavier.backend.shared.persistence.StoreProbe;
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.PosContext;
@@ -29,6 +30,7 @@ public class CreditSaleService {
     /** The idempotency operation of a credit sale; its scope (per actor) is part of the charge's request key. */
     public static final String CHARGE_OPERATION = "settlement.credit.charge";
 
+    private final StoreProbe storeProbe;
     private final AccessPolicy accessPolicy;
     private final CreditSaleSteps steps;
     private final SettlementLocks locks;
@@ -39,9 +41,10 @@ public class CreditSaleService {
     private final SettlementAudit audit;
     private final Clock clock;
 
-    CreditSaleService(AccessPolicy accessPolicy, CreditSaleSteps steps, SettlementLocks locks,
+    CreditSaleService(StoreProbe storeProbe, AccessPolicy accessPolicy, CreditSaleSteps steps, SettlementLocks locks,
                       CreditChargeRepository charges, CustomersApi customers, FiscalApi fiscal,
                       PaymentLocks paymentLocks, SettlementAudit audit, Clock clock) {
+        this.storeProbe = storeProbe;
         this.accessPolicy = accessPolicy;
         this.steps = steps;
         this.locks = locks;
@@ -85,9 +88,10 @@ public class CreditSaleService {
     @Transactional
     public CreditChargeView cancel(UUID chargeId, CancelCreditChargeRequest request) {
         PosContext pos = accessPolicy.requirePos(Permission.CREDIT_SALE);
-        PartitionRef ref = charges.findRefById(chargeId)
+        UUID storeId = storeProbe.storeOf("settlement.credit_charge", chargeId)
                 .orElseThrow(() -> new SettlementNotFoundException(CreditSaleSteps.CHARGE, chargeId));
-        accessPolicy.requireSessionStore(pos, ref.storeId(), CreditSaleSteps.CHARGE, chargeId);
+        accessPolicy.requireSessionStore(pos, storeId, CreditSaleSteps.CHARGE, chargeId);
+        PartitionRef ref = charges.findRefById(chargeId).orElseThrow();
         locks.lockOrder(ref.orderId());
         CreditCharge charge = charges.findById(chargeId).orElseThrow();
         if (charge.getStatus() == CreditChargeStatus.POSTED || steps.documentIssued(charge)) {

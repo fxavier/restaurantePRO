@@ -1,5 +1,6 @@
 package com.xavier.backend.settlement.service;
 
+import com.xavier.backend.shared.persistence.StoreProbe;
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.PosContext;
@@ -39,6 +40,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 public class AttemptResolutionService {
 
+    private final StoreProbe storeProbe;
     private final AccessPolicy accessPolicy;
     private final PaymentAttemptRepository attempts;
     private final ProviderStatusQuery statusQuery;
@@ -53,12 +55,13 @@ public class AttemptResolutionService {
     private final SettlementProperties properties;
     private final Clock clock;
 
-    AttemptResolutionService(AccessPolicy accessPolicy, PaymentAttemptRepository attempts,
+    AttemptResolutionService(StoreProbe storeProbe, AccessPolicy accessPolicy, PaymentAttemptRepository attempts,
                              ProviderStatusQuery statusQuery, PaymentProviders providers,
                              AttemptTransitions transitions,
                              ApproverVerifier approvers, PaymentRecorder recorder, PaymentLocks paymentLocks,
                              SettlementAudit audit, SettlementProperties properties,
                              PlatformTransactionManager transactionManager, Clock clock) {
+        this.storeProbe = storeProbe;
         this.accessPolicy = accessPolicy;
         this.attempts = attempts;
         this.statusQuery = statusQuery;
@@ -152,10 +155,11 @@ public class AttemptResolutionService {
         return attempt.toView();
     }
 
+    /** D42: the attempt's store across every store (D168), 404 then 403, before its ref is read. */
     private AttemptRef authorized(PosContext pos, UUID attemptId) {
-        AttemptRef ref = attempts.findRefById(attemptId)
+        UUID storeId = storeProbe.storeOf("settlement.payment_attempt", attemptId)
                 .orElseThrow(() -> new SettlementNotFoundException(SettlementAudit.ATTEMPT, attemptId));
-        accessPolicy.requireSessionStore(pos, ref.storeId(), SettlementAudit.ATTEMPT, attemptId);
-        return ref;
+        accessPolicy.requireSessionStore(pos, storeId, SettlementAudit.ATTEMPT, attemptId);
+        return attempts.findRefById(attemptId).orElseThrow();
     }
 }

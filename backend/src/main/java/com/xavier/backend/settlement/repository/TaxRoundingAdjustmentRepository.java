@@ -2,7 +2,6 @@ package com.xavier.backend.settlement.repository;
 
 import com.xavier.backend.settlement.model.TaxRoundingAdjustment;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -13,9 +12,6 @@ import org.springframework.data.repository.query.Param;
 public interface TaxRoundingAdjustmentRepository extends JpaRepository<TaxRoundingAdjustment, UUID> {
 
     List<TaxRoundingAdjustment> findByOrderIdOrderById(UUID orderId);
-
-    @Query("select a.storeId from TaxRoundingAdjustment a where a.id = :id")
-    Optional<UUID> findStoreIdById(@Param("id") UUID id);
 
     /** A store's pending corrections, oldest first: {@code open} true → unresolved, false → resolved, null → all. */
     @Query("""

@@ -1,5 +1,6 @@
 package com.xavier.backend.settlement.service;
 
+import com.xavier.backend.shared.persistence.StoreProbe;
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.PosContext;
@@ -50,6 +51,7 @@ public class PartitionService {
 
     static final String PARTITION = "BillPartition";
 
+    private final StoreProbe storeProbe;
     private final AccessPolicy accessPolicy;
     private final SettlementLocks locks;
     private final Bills bills;
@@ -63,10 +65,11 @@ public class PartitionService {
     private final SettlementAudit audit;
     private final Clock clock;
 
-    PartitionService(AccessPolicy accessPolicy, SettlementLocks locks, Bills bills, SettlementViews views,
+    PartitionService(StoreProbe storeProbe, AccessPolicy accessPolicy, SettlementLocks locks, Bills bills, SettlementViews views,
                      BillPartitionRepository partitions, PaymentRepository payments,
                      PaymentAttemptRepository attempts, PaymentLocks paymentLocks, OrdersApi orders,
                      FiscalApi fiscal, SettlementAudit audit, Clock clock) {
+        this.storeProbe = storeProbe;
         this.accessPolicy = accessPolicy;
         this.locks = locks;
         this.bills = bills;
@@ -244,10 +247,11 @@ public class PartitionService {
         return bills.of(orderId).requireOpen().requireNotFrozen();
     }
 
+    /** D42: the partition's store across every store (D168), 404 then 403, before its ref is read. */
     PartitionRef authorized(PosContext pos, UUID partitionId) {
-        PartitionRef ref = partitions.findRefById(partitionId)
+        UUID storeId = storeProbe.storeOf("settlement.bill_partition", partitionId)
                 .orElseThrow(() -> new SettlementNotFoundException(PARTITION, partitionId));
-        accessPolicy.requireSessionStore(pos, ref.storeId(), PARTITION, partitionId);
-        return ref;
+        accessPolicy.requireSessionStore(pos, storeId, PARTITION, partitionId);
+        return partitions.findRefById(partitionId).orElseThrow();
     }
 }

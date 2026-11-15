@@ -54,6 +54,7 @@ public class CashClosingService {
     /** Prometheus: {@code cash_closing_difference_total{store}}. Σ |difference| of approved closings. */
     static final String DIFFERENCE_METRIC = "cash.closing.difference";
 
+    private final CashStoreProbe stores;
     private final CashClosingRepository closings;
     private final ClosingRounds rounds;
     private final CashRegisterRepository registers;
@@ -68,11 +69,12 @@ public class CashClosingService {
     private final MeterRegistry meters;
     private final Clock clock;
 
-    CashClosingService(CashClosingRepository closings, ClosingRounds rounds,
+    CashClosingService(CashStoreProbe stores, CashClosingRepository closings, ClosingRounds rounds,
                        CashRegisterRepository registers, CashDayRepository days,
                        CashSessionRepository sessions, CashMovementRepository movements,
                        CashSessionCountRepository counts, OrganizationApi organization, AccessPolicy accessPolicy,
                        RowLocks locks, CashAudit audit, MeterRegistry meters, Clock clock) {
+        this.stores = stores;
         this.locks = locks;
         this.closings = closings;
         this.rounds = rounds;
@@ -96,10 +98,10 @@ public class CashClosingService {
     @Transactional
     public ClosingView create(CreateClosingRequest request) {
         PosContext pos = accessPolicy.requirePos(Permission.CASH_OPERATE);
-        StoreScope.requireSameStore(pos.storeId(), registers.findStoreIdById(request.registerId())
+        StoreScope.requireSameStore(pos.storeId(), stores.register(request.registerId())
                         .orElseThrow(() -> new CashNotFoundException(CashRegisterService.ENTITY, request.registerId())),
                 CashRegisterService.ENTITY, request.registerId());
-        StoreScope.requireSameStore(pos.storeId(), days.findStoreIdById(request.cashDayId())
+        StoreScope.requireSameStore(pos.storeId(), stores.day(request.cashDayId())
                         .orElseThrow(() -> new CashNotFoundException(CashDayService.ENTITY, request.cashDayId())),
                 CashDayService.ENTITY, request.cashDayId());
         CashRegister register = registers.findById(request.registerId()).orElseThrow();
@@ -164,7 +166,7 @@ public class CashClosingService {
      */
     @Transactional
     public ClosingView approve(UUID id) {
-        UUID storeId = closings.findStoreIdById(id).orElseThrow(() -> new CashNotFoundException(ENTITY, id));
+        UUID storeId = stores.closing(id).orElseThrow(() -> new CashNotFoundException(ENTITY, id));
         accessPolicy.require(Permission.CASH_CLOSING_APPROVE, storeId);
         CashDay day = locks.lock(days.findById(closings.findCashDayIdById(id).orElseThrow()).orElseThrow(),
                 LockModeType.PESSIMISTIC_READ);
@@ -223,14 +225,14 @@ public class CashClosingService {
 
     /** D42: read only the store first (404), check it is the POS store (403), then lock the closing. */
     private CashClosing posClosing(PosContext pos, UUID id) {
-        UUID storeId = closings.findStoreIdById(id).orElseThrow(() -> new CashNotFoundException(ENTITY, id));
+        UUID storeId = stores.closing(id).orElseThrow(() -> new CashNotFoundException(ENTITY, id));
         StoreScope.requireSameStore(pos.storeId(), storeId, ENTITY, id);
         return closings.findByIdForUpdate(id).orElseThrow(() -> new CashNotFoundException(ENTITY, id));
     }
 
     /** D42: read only the store first (404), authorize in it (403), then lock the closing. */
     private CashClosing backOfficeClosing(UUID id) {
-        UUID storeId = closings.findStoreIdById(id).orElseThrow(() -> new CashNotFoundException(ENTITY, id));
+        UUID storeId = stores.closing(id).orElseThrow(() -> new CashNotFoundException(ENTITY, id));
         accessPolicy.require(Permission.CASH_CLOSING_APPROVE, storeId);
         return closings.findByIdForUpdate(id).orElseThrow(() -> new CashNotFoundException(ENTITY, id));
     }

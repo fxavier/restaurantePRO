@@ -1,5 +1,6 @@
 package com.xavier.backend.settlement.service;
 
+import com.xavier.backend.shared.persistence.StoreProbe;
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.PosContext;
@@ -62,6 +63,7 @@ public class RefundService {
 
     static final String PAYMENT = "Payment";
 
+    private final StoreProbe storeProbe;
     private final AccessPolicy accessPolicy;
     private final ApproverVerifier approvers;
     private final PaymentRepository payments;
@@ -76,10 +78,11 @@ public class RefundService {
     private final ApplicationEventPublisher events;
     private final Clock clock;
 
-    RefundService(AccessPolicy accessPolicy, ApproverVerifier approvers, PaymentRepository payments,
+    RefundService(StoreProbe storeProbe, AccessPolicy accessPolicy, ApproverVerifier approvers, PaymentRepository payments,
                   PaymentAttemptRepository attempts, RefundRepository refunds, SettlementLocks locks, Bills bills,
                   FiscalApi fiscal, CashApi cash, CustomersApi customers, SettlementAudit audit,
                   ApplicationEventPublisher events, Clock clock) {
+        this.storeProbe = storeProbe;
         this.accessPolicy = accessPolicy;
         this.approvers = approvers;
         this.payments = payments;
@@ -166,7 +169,7 @@ public class RefundService {
     /** D42: the payment's store alone, checked against the POS session before anything is loaded or locked. */
     private PosContext authorized(UUID paymentId) {
         PosContext pos = accessPolicy.requirePos(Permission.PAYMENT_REFUND);
-        UUID storeId = payments.findStoreIdById(paymentId)
+        UUID storeId = storeProbe.storeOf("settlement.payment", paymentId)
                 .orElseThrow(() -> new SettlementNotFoundException(PAYMENT, paymentId));
         accessPolicy.requireSessionStore(pos, storeId, PAYMENT, paymentId);
         return pos;

@@ -69,7 +69,4 @@ public interface CashClosingRepository extends JpaRepository<CashClosing, UUID> 
 
     @Query("select c.cashDayId from CashClosing c where c.id = :id")
     Optional<UUID> findCashDayIdById(@Param("id") UUID id);
-
-    @Query("select c.storeId from CashClosing c where c.id = :id")
-    Optional<UUID> findStoreIdById(@Param("id") UUID id);
 }

@@ -1,5 +1,6 @@
 package com.xavier.backend.settlement.reconciliation.service;
 
+import com.xavier.backend.shared.persistence.StoreProbe;
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Actor;
 import com.xavier.backend.access.Permission;
@@ -29,14 +30,16 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ResolutionService {
 
+    private final StoreProbe storeProbe;
     private final AccessPolicy accessPolicy;
     private final ReconciliationEntryRepository entries;
     private final ReconciliationResolutionRepository resolutions;
     private final AuditLog audit;
     private final Clock clock;
 
-    ResolutionService(AccessPolicy accessPolicy, ReconciliationEntryRepository entries,
+    ResolutionService(StoreProbe storeProbe, AccessPolicy accessPolicy, ReconciliationEntryRepository entries,
                       ReconciliationResolutionRepository resolutions, AuditLog audit, Clock clock) {
+        this.storeProbe = storeProbe;
         this.accessPolicy = accessPolicy;
         this.entries = entries;
         this.resolutions = resolutions;
@@ -46,7 +49,7 @@ public class ResolutionService {
 
     @Transactional
     public ResolutionView resolve(UUID entryId, ResolutionRequest request) {
-        UUID storeId = entries.findStoreIdById(entryId)
+        UUID storeId = storeProbe.storeOf("settlement.reconciliation_entry", entryId)
                 .orElseThrow(() -> new ReconciliationNotFoundException("ReconciliationEntry", entryId));
         accessPolicy.require(Permission.RECONCILIATION_MANAGE, storeId);
         if (resolutions.existsByEntryId(entryId)) {
