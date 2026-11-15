@@ -1,10 +1,11 @@
 package com.xavier.backend.settlement;
 
-import static com.xavier.backend.settlement.AppRoleSession.sqlState;
+import static com.xavier.backend.AppRoleSession.sqlState;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.entry;
 
+import com.xavier.backend.AppRoleSession;
 import com.xavier.backend.OwnerDatabase;
 import com.xavier.backend.architecture.RowLevelSecurityCoverageTest;
 import java.math.BigDecimal;

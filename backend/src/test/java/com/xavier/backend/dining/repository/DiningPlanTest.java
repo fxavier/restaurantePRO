@@ -3,7 +3,7 @@ package com.xavier.backend.dining.repository;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.xavier.backend.OwnerDatabase;
-import com.xavier.backend.dining.AppRoleSession;
+import com.xavier.backend.AppRoleSession;
 import java.sql.SQLException;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;

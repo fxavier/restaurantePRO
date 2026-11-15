@@ -13,6 +13,7 @@
 * `c.x.b.c.CustomersApi` (in Customers)
 * `c.x.b.a.AccessPolicy` (in Access)
 * `c.x.b.a.AuditLog` (in Audit)
+* `c.x.b.s.persistence.StoreProbe` (in Shared kernel)
 * `c.x.b.s.notify.ChangeNotifier` (in Shared kernel)
 * `c.x.b.c.CatalogApi` (in Catalog)
 |===

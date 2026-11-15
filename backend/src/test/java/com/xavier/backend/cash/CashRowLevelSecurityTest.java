@@ -3,7 +3,7 @@ package com.xavier.backend.cash;
 import static com.xavier.backend.cash.CashFixtures.account;
 import static com.xavier.backend.cash.CashFixtures.idem;
 import static com.xavier.backend.cash.CashFixtures.pos;
-import static com.xavier.backend.settlement.AppRoleSession.sqlState;
+import static com.xavier.backend.AppRoleSession.sqlState;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.entry;
@@ -15,7 +15,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.architecture.RowLevelSecurityCoverageTest;
 import com.xavier.backend.cash.CashFixtures.Pos;
-import com.xavier.backend.settlement.AppRoleSession;
+import com.xavier.backend.AppRoleSession;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;

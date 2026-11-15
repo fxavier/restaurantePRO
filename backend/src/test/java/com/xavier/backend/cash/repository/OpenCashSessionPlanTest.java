@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.xavier.backend.OwnerDatabase;
 import com.xavier.backend.cash.model.CashSessionStatus;
-import com.xavier.backend.settlement.AppRoleSession;
+import com.xavier.backend.AppRoleSession;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;

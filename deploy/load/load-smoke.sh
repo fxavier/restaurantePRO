@@ -40,6 +40,13 @@
 # LOAD_ADMIN_PASSWORD_FILE (never from the command line or the environment), the account (LOAD_ADMIN_USERNAME,
 # default admin) must have completed its first login, and the employees' PINs are random per run and never printed.
 #
+# DATABASE ROLE (ADR 0039, A77): measure the stack as it ships, with its pool as restaurantpro_app (bound by
+# row-level security, ENFORCE) and Flyway as restaurantpro_owner: deploy/compose.yaml (db-provision) and
+# backend/run-local.sh do since S65. A backend connected as the superuser bypasses RLS and measures nothing of A77; the
+# backend refuses to start that way anyway (StoreScopeStartupCheck). Check during a run with
+#   SELECT DISTINCT usename FROM pg_stat_activity WHERE datname = 'restaurantpro' AND backend_type = 'client backend'
+# (as the superuser, from psql): only restaurantpro_app and your own session.
+#
 # MFA (R5, D142): the seed uses sensitive permissions (terminals, employees, catalog publish, the fiscal series, a
 # credit limit, the promotion release), which a stack with RESTAURANTPRO_MFA_MODE other than OFF refuses without a
 # fresh second factor (403 MFA_ENROLMENT_REQUIRED or MFA_STEP_UP_REQUIRED). This program does not compute TOTP

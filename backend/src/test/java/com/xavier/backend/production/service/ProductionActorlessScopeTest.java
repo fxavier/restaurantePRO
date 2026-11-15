@@ -3,9 +3,8 @@ package com.xavier.backend.production.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.xavier.backend.OwnerDatabase;
-import com.xavier.backend.access.StoreScopes;
+import com.xavier.backend.access.StoreScopeTestSupport;
 import com.xavier.backend.access.StrictStoreScope;
-import com.xavier.backend.access.SystemScope;
 import com.xavier.backend.orders.OrdersFixtures.Shop;
 import com.xavier.backend.production.ProductionFixtures;
 import com.xavier.backend.production.ProductionFixtures.Round;
@@ -49,9 +48,6 @@ class ProductionActorlessScopeTest {
 
     @Autowired
     ProductionFixtures fixtures;
-
-    @Autowired
-    StoreScopes scopes;
 
     final JdbcClient owner = OwnerDatabase.shared().jdbc();
 
@@ -108,12 +104,12 @@ class ProductionActorlessScopeTest {
     }
 
     /**
-     * Fixture setup on the strict thread in an explicit all-stores scope: an actor alone does not last, since each
+     * Fixture setup on the strict thread in the test-only fixture scope: an actor alone does not last, since each
      * MockMvc request of the fixtures clears the security context, and their direct SQL (the catalog release) would
      * then be unset. The scope ends with the setup, so the test body is actor-less and unscoped again.
      */
     private <T> T asFixture(Callable<T> setup) {
-        return scopes.call(SystemScope.BOOTSTRAP, () -> {
+        return StoreScopeTestSupport.inStrictFixture(() -> {
             try {
                 return setup.call();
             } catch (Exception e) {

@@ -42,7 +42,7 @@ Each ADR records a decision as built, with its context and consequences. The ful
 | [0036](0036-store-item-exclusion.md) | Per-store catalog availability through an explicit exclusion | D146 ★, D147, D148 | Accepted 2026-11-12 (R5) |
 | [0037](0037-operational-alerts.md) | Operational alerts: AlertSource, metrics, in-app list, backup status file | D149 ★, D150–D153 | Accepted 2026-11-12 (R5) |
 | [0038](0038-escpos-printer-profiles.md) | ESC/POS driver: printer profiles, styled tickets, status probe, drawer kick | D154 ★, D155–D158 | Accepted 2026-11-12 (R5) |
-| [0039](0039-row-level-security-on-store-id.md) | PostgreSQL row-level security on store_id as defence in depth: three database roles, scope set at connection checkout | D162 ★, D163 ★, D165 ★, D164, D166–D173 | Proposed 2026-11-13 |
+| [0039](0039-row-level-security-on-store-id.md) | PostgreSQL row-level security on store_id as defence in depth: three database roles, scope set at connection checkout | D162 ★, D163 ★, D165 ★, D164, D166–D173 | Accepted 2026-11-15 |
 
 ## Where the code deviates from a decision text
 

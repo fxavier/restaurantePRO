@@ -124,6 +124,35 @@ class FlywayUpgradeTest {
                 .as("the blocker this setting fixes").hasMessageContaining("ignored");
     }
 
+    /**
+     * D168 amended (V1009, V5008): a database migrated with V1008's single FOR ALL store-or-all policies (main before
+     * S70) gets the per-command policies on every table the old helper protected, and the quick-page entries move to
+     * the store-or-all child helper.
+     */
+    @Test
+    void theOldStoreOrAllPoliciesAreReplacedOnAnInstalledDatabase() throws IOException {
+        copyMigrations(version -> version != 1009 && version != 5008);
+        flyway(previousRelease, false).migrate();
+        JdbcClient db = JdbcClient.create(installation);
+        assertThat(policyNames(db, "catalog.quick_page")).containsExactly("store_or_all_scope");
+
+        flyway(currentRelease, outOfOrderOfApplicationYaml()).migrate();
+
+        for (String table : List.of("catalog.quick_page", "catalog.automatic_item")) {
+            assertThat(policyNames(db, table)).as(table).containsExactly("store_or_all_delete", "store_or_all_insert",
+                    "store_or_all_read", "store_or_all_update");
+            assertThat(db.sql("SELECT count(*) FROM pg_catalog.pg_trigger WHERE tgrelid = ?::regclass "
+                    + "AND tgname = 'store_scope_fixed'").param(table).query(Long.class).single()).isOne();
+        }
+        assertThat(policyNames(db, "catalog.quick_page_entry")).containsExactly("store_or_all_parent_delete",
+                "store_or_all_parent_insert", "store_or_all_parent_read", "store_or_all_parent_update");
+    }
+
+    private static List<String> policyNames(JdbcClient db, String table) {
+        return db.sql("SELECT polname FROM pg_catalog.pg_policy WHERE polrelid = ?::regclass ORDER BY polname")
+                .param(table).query(String.class).list();
+    }
+
     private static boolean outOfOrderOfApplicationYaml() throws IOException {
         for (PropertySource<?> yaml : new YamlPropertySourceLoader().load("application.yaml",
                 new ClassPathResource("application.yaml"))) {

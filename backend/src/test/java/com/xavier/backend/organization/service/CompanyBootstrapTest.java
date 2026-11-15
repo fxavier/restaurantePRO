@@ -79,19 +79,27 @@ class CompanyBootstrapTest {
         });
     }
 
+    /**
+     * Counted before and after the call in the same transaction: the context's own startup bootstrap wrote an equal
+     * row, and a time window between the JVM's clock (audit) and the database's (the row) cannot tell them apart.
+     */
     @Test
     void theBootstrapIsAudited() {
         inRolledBackTransactionWithoutCompany(() -> {
+            long before = bootstrapAudits();
+
             bootstrap.bootstrap(SOL);
             entityManager.flush();
 
-            assertThat(jdbc.sql("""
-                            SELECT count(*) FROM audit.audit_event
-                            WHERE action = 'COMPANY_BOOTSTRAPPED' AND entity_type = 'CompanyProfile'
-                              AND actor_id IS NULL AND details->>'currency' = 'MZN'
-                              AND occurred_at >= (SELECT created_at FROM organization.company_profile)
-                            """).query(Long.class).single()).isEqualTo(1);
+            assertThat(bootstrapAudits() - before).isEqualTo(1);
         });
+    }
+
+    private long bootstrapAudits() {
+        return jdbc.sql("""
+                        SELECT count(*) FROM audit.audit_event
+                        WHERE action = 'COMPANY_BOOTSTRAPPED' AND entity_type = 'CompanyProfile'
+                          AND actor_id IS NULL AND details->>'currency' = 'MZN'""").query(Long.class).single();
     }
 
     @ParameterizedTest(name = "currency {0}")
