@@ -16,6 +16,7 @@ import com.xavier.backend.dining.repository.RoomAreaRepository;
 import com.xavier.backend.dining.repository.TableOccupationRepository;
 import com.xavier.backend.organization.OrganizationApi;
 import com.xavier.backend.shared.persistence.OptimisticLocking;
+import com.xavier.backend.shared.persistence.StoreProbe;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
 import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
@@ -40,18 +41,20 @@ public class RestaurantTableService {
     private final DiningRows rows;
     private final OrganizationApi organization;
     private final AccessPolicy accessPolicy;
+    private final StoreProbe probe;
     private final DiningChanges audit;
     private final Clock clock;
 
     RestaurantTableService(RestaurantTableRepository tables, RoomAreaRepository areas,
                            TableOccupationRepository occupations, DiningRows rows, OrganizationApi organization,
-                           AccessPolicy accessPolicy, DiningChanges audit, Clock clock) {
+                           AccessPolicy accessPolicy, StoreProbe probe, DiningChanges audit, Clock clock) {
         this.tables = tables;
         this.areas = areas;
         this.occupations = occupations;
         this.rows = rows;
         this.organization = organization;
         this.accessPolicy = accessPolicy;
+        this.probe = probe;
         this.audit = audit;
         this.clock = clock;
     }
@@ -72,8 +75,7 @@ public class RestaurantTableService {
 
     @Transactional
     public RestaurantTableSummary update(UUID id, RestaurantTableUpdateRequest request) {
-        accessPolicy.require(Permission.DINING_MANAGE,
-                tables.findStoreIdById(id).orElseThrow(() -> new DiningNotFoundException(ENTITY, id)));
+        accessPolicy.require(Permission.DINING_MANAGE, storeOf(id));
         RestaurantTable table = rows.lockTable(id);
         if (!request.active() && occupations.existsByTableIdAndClosedAtIsNull(id)) {
             throw new StillOccupiedException(ENTITY, id);
@@ -91,9 +93,14 @@ public class RestaurantTableService {
 
     @Transactional(readOnly = true)
     public RestaurantTableSummary get(UUID id) {
-        RestaurantTable table = table(id);
-        accessPolicy.require(Permission.DINING_MANAGE, table.getStoreId());
-        return table.toSummary();
+        accessPolicy.require(Permission.DINING_MANAGE, storeOf(id));
+        return table(id).toSummary();
+    }
+
+    /** D42: only the table's store (404), so another store's table is 403, not hidden by row-level security. */
+    private UUID storeOf(UUID id) {
+        return probe.storeOf(RestaurantTableRepository.TABLE, id)
+                .orElseThrow(() -> new DiningNotFoundException(ENTITY, id));
     }
 
     @Transactional(readOnly = true)

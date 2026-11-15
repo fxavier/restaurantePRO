@@ -246,11 +246,14 @@ class RewardRedemptionTest {
         voidOn(target, copy, "1");
     }
 
+    /** As settlement's POS request does it, also on a racing thread: the read and the void in the session's scope. */
     void voidOn(UUID target, UUID lineId, String quantity) {
-        long version = ordersApi.billingView(target).version();
-        OrdersActors.runAsPos(shop.store(), operator, terminal, () -> new TransactionTemplate(transactionManager)
-                .execute(status -> ordersApi.voidLine(new SettledVoidCommand(target, version, lineId,
-                        new BigDecimal(quantity), "wrong dish", false, operator), UUID.randomUUID())));
+        OrdersActors.runAsPos(shop.store(), operator, terminal, () -> {
+            long version = ordersApi.billingView(target).version();
+            return new TransactionTemplate(transactionManager).execute(status -> ordersApi.voidLine(
+                    new SettledVoidCommand(target, version, lineId, new BigDecimal(quantity), "wrong dish", false,
+                            operator), UUID.randomUUID()));
+        });
     }
 
     long redeemReversals(UUID rewardedLine) {

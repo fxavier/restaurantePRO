@@ -37,12 +37,16 @@ public final class OrdersActors {
                 actor.authorities().stream().map(SimpleGrantedAuthority::new).toList()));
     }
 
-    /** Runs {@code action} on this thread as that POS session (what settlement's request has when it calls). */
+    /**
+     * Runs {@code action} on this thread as that POS session (what settlement's request has when it calls). The
+     * session holds settlement's {@code PAYMENT_COLLECT} there, so its store scope is the store (D164: a session
+     * holding no authority sees no store rows).
+     */
     public static <T> T runAsPos(UUID store, UUID employee, UUID terminal, Supplier<T> action) {
         SecurityContext previous = SecurityContextHolder.getContext();
         SecurityContext context = SecurityContextHolder.createEmptyContext();
         context.setAuthentication(UsernamePasswordAuthenticationToken.authenticated(
-                actor(store, employee, terminal), null, List.of()));
+                actor(store, employee, terminal, Permission.PAYMENT_COLLECT), null, List.of()));
         SecurityContextHolder.setContext(context);
         try {
             return action.get();

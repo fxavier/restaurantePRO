@@ -19,6 +19,7 @@ import com.xavier.backend.dining.repository.ReservationRepository;
 import com.xavier.backend.dining.repository.RestaurantTableRepository;
 import com.xavier.backend.organization.OrganizationApi;
 import com.xavier.backend.shared.persistence.OptimisticLocking;
+import com.xavier.backend.shared.persistence.StoreProbe;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -52,13 +53,14 @@ public class ReservationService {
     private final DiningSettingsService settings;
     private final OrganizationApi organization;
     private final AccessPolicy accessPolicy;
+    private final StoreProbe probe;
     private final DiningRows rows;
     private final DiningChanges changes;
     private final Clock clock;
 
     ReservationService(ReservationRepository reservations, RestaurantTableRepository tables, CustomersApi customers,
                        DiningSettingsService settings,
-                       OrganizationApi organization, AccessPolicy accessPolicy, DiningRows rows,
+                       OrganizationApi organization, AccessPolicy accessPolicy, StoreProbe probe, DiningRows rows,
                        DiningChanges changes, Clock clock) {
         this.reservations = reservations;
         this.tables = tables;
@@ -66,6 +68,7 @@ public class ReservationService {
         this.settings = settings;
         this.organization = organization;
         this.accessPolicy = accessPolicy;
+        this.probe = probe;
         this.rows = rows;
         this.changes = changes;
         this.clock = clock;
@@ -140,7 +143,8 @@ public class ReservationService {
     /** D42: the store only (404), the session's store (403), then the row lock, the version (409) and the change. */
     private ReservationView command(UUID id, long version, Command command) {
         PosContext pos = accessPolicy.requirePos(Permission.RESERVATION_MANAGE);
-        UUID storeId = reservations.findStoreIdById(id).orElseThrow(() -> new DiningNotFoundException(ENTITY, id));
+        UUID storeId = probe.storeOf(ReservationRepository.TABLE, id)
+                .orElseThrow(() -> new DiningNotFoundException(ENTITY, id));
         accessPolicy.requireSessionStore(pos, storeId, ENTITY, id);
         Reservation reservation = rows.lockReservation(id);
         OptimisticLocking.requireVersion(Reservation.class, id, reservation.getVersion(), version);

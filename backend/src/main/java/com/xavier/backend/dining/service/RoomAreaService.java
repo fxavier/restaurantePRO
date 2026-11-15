@@ -13,6 +13,7 @@ import com.xavier.backend.dining.repository.RoomAreaRepository;
 import com.xavier.backend.dining.repository.TableOccupationRepository;
 import com.xavier.backend.organization.OrganizationApi;
 import com.xavier.backend.shared.persistence.OptimisticLocking;
+import com.xavier.backend.shared.persistence.StoreProbe;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
 import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
@@ -36,16 +37,19 @@ public class RoomAreaService {
     private final DiningRows rows;
     private final OrganizationApi organization;
     private final AccessPolicy accessPolicy;
+    private final StoreProbe probe;
     private final DiningChanges audit;
     private final Clock clock;
 
     RoomAreaService(RoomAreaRepository areas, TableOccupationRepository occupations, DiningRows rows,
-                    OrganizationApi organization, AccessPolicy accessPolicy, DiningChanges audit, Clock clock) {
+                    OrganizationApi organization, AccessPolicy accessPolicy, StoreProbe probe, DiningChanges audit,
+                    Clock clock) {
         this.areas = areas;
         this.occupations = occupations;
         this.rows = rows;
         this.organization = organization;
         this.accessPolicy = accessPolicy;
+        this.probe = probe;
         this.audit = audit;
         this.clock = clock;
     }
@@ -65,8 +69,7 @@ public class RoomAreaService {
 
     @Transactional
     public RoomAreaSummary update(UUID id, RoomAreaUpdateRequest request) {
-        accessPolicy.require(Permission.DINING_MANAGE,
-                areas.findStoreIdById(id).orElseThrow(() -> new DiningNotFoundException(ENTITY, id)));
+        accessPolicy.require(Permission.DINING_MANAGE, storeOf(id));
         RoomArea area = rows.lockArea(id);
         if (!request.active() && occupations.existsOpenInArea(id)) {
             throw new StillOccupiedException(ENTITY, id);
@@ -83,9 +86,13 @@ public class RoomAreaService {
 
     @Transactional(readOnly = true)
     public RoomAreaSummary get(UUID id) {
-        RoomArea area = area(id);
-        accessPolicy.require(Permission.DINING_MANAGE, area.getStoreId());
-        return area.toSummary();
+        accessPolicy.require(Permission.DINING_MANAGE, storeOf(id));
+        return area(id).toSummary();
+    }
+
+    /** D42: only the area's store (404), so another store's area is 403, not hidden by row-level security. */
+    private UUID storeOf(UUID id) {
+        return probe.storeOf(RoomAreaRepository.TABLE, id).orElseThrow(() -> new DiningNotFoundException(ENTITY, id));
     }
 
     @Transactional(readOnly = true)

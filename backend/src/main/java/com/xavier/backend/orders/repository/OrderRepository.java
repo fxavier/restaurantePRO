@@ -15,9 +15,11 @@ import org.springframework.data.repository.query.Param;
 
 public interface OrderRepository extends JpaRepository<Order, UUID> {
 
-    /** D42 (b): only the store of an order addressed by id, before authorizing. */
-    @Query("select o.storeId from Order o where o.id = :id")
-    Optional<UUID> findStoreIdById(@Param("id") UUID id);
+    /**
+     * The table, for the D42 store probe ({@code shared.persistence.StoreProbe}): it sees every store, so another
+     * store's row is found (403), not mistaken for absent (404) under row-level security.
+     */
+    String TABLE = "orders.order_header";
 
     /**
      * Moves the order's version on as one compare-and-set, for a change that writes facts but no order column (a void,

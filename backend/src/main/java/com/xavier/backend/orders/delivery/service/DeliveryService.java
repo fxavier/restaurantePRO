@@ -31,6 +31,7 @@ import com.xavier.backend.orders.service.OrderChanges;
 import com.xavier.backend.orders.service.OrderLookup;
 import com.xavier.backend.orders.service.OrderViews;
 import com.xavier.backend.shared.persistence.OptimisticLocking;
+import com.xavier.backend.shared.persistence.StoreProbe;
 import java.time.Clock;
 import java.util.HashMap;
 import java.util.List;
@@ -62,6 +63,7 @@ public class DeliveryService {
     private final OrderBatchRepository batches;
     private final EmployeeDirectory employees;
     private final AccessPolicy accessPolicy;
+    private final StoreProbe probe;
     private final OrderChanges changes;
     private final ApplicationEventPublisher publisher;
     private final Clock clock;
@@ -70,7 +72,7 @@ public class DeliveryService {
                     DeliveryZones zones, DeliveryFees fees,
                     DeliveryViews views, OrderLookup lookup, OrderRepository orderRows, OrderViews orderViews,
                     OrderLineRepository lines, OrderBatchRepository batches,
-                    EmployeeDirectory employees, AccessPolicy accessPolicy, OrderChanges changes,
+                    EmployeeDirectory employees, AccessPolicy accessPolicy, StoreProbe probe, OrderChanges changes,
                     ApplicationEventPublisher publisher, Clock clock) {
         this.deliveries = deliveries;
         this.events = events;
@@ -84,6 +86,7 @@ public class DeliveryService {
         this.batches = batches;
         this.employees = employees;
         this.accessPolicy = accessPolicy;
+        this.probe = probe;
         this.changes = changes;
         this.publisher = publisher;
         this.clock = clock;
@@ -189,7 +192,7 @@ public class DeliveryService {
 
     /** D42 (b): the delivery's store only (404), the session's store (403), then the delivery at the client's version. */
     private Delivery inSessionStore(PosContext pos, UUID orderId, long version) {
-        UUID storeId = deliveries.findStoreIdByOrderId(orderId)
+        UUID storeId = probe.storeOf(DeliveryRepository.TABLE, orderId)
                 .orElseThrow(() -> new OrderNotFoundException(ENTITY, orderId));
         accessPolicy.requireSessionStore(pos, storeId, ENTITY, orderId);
         Delivery delivery = deliveries.findById(orderId)

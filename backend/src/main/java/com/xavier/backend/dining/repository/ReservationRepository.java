@@ -10,9 +10,11 @@ import org.springframework.data.jpa.repository.Query;
 
 public interface ReservationRepository extends JpaRepository<Reservation, UUID> {
 
-    /** Only the store of a reservation, to authorize before loading it (D42). */
-    @Query("select r.storeId from Reservation r where r.id = :id")
-    Optional<UUID> findStoreIdById(UUID id);
+    /**
+     * The table, for the D42 store probe ({@code shared.persistence.StoreProbe}): it sees every store, so another
+     * store's row is found (403), not mistaken for absent (404) under row-level security.
+     */
+    String TABLE = "dining.reservation";
 
     /** The calendar: every state, {@code from} inclusive, {@code to} exclusive. */
     List<Reservation> findByStoreIdAndStartsAtGreaterThanEqualAndStartsAtLessThanOrderByStartsAtAscIdAsc(

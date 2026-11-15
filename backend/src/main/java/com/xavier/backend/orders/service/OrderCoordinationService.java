@@ -19,6 +19,7 @@ import com.xavier.backend.orders.model.OrderBatch;
 import com.xavier.backend.orders.repository.OrderBatchRepository;
 import com.xavier.backend.orders.repository.OrderRepository;
 import com.xavier.backend.shared.persistence.OptimisticLocking;
+import com.xavier.backend.shared.persistence.StoreProbe;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
@@ -36,6 +37,7 @@ import org.springframework.stereotype.Service;
 public class OrderCoordinationService {
 
     private final OrderRepository orders;
+    private final StoreProbe probe;
     private final OrderBatchRepository batches;
     private final OrderLookup lookup;
     private final OrderViews views;
@@ -51,7 +53,9 @@ public class OrderCoordinationService {
     OrderCoordinationService(OrderRepository orders, OrderBatchRepository batches, OrderLookup lookup,
                              OrderViews views, OrderChanges changes, DiningApi dining,
                              RewardLineage rewards, LineFamilies families, LoyaltyApi loyalty,
-                             DeliveryGuards deliveries, ApplicationEventPublisher events, Clock clock) {
+                             DeliveryGuards deliveries, ApplicationEventPublisher events, StoreProbe probe,
+                             Clock clock) {
+        this.probe = probe;
         this.deliveries = deliveries;
         this.events = events;
         this.rewards = rewards;
@@ -67,7 +71,7 @@ public class OrderCoordinationService {
     }
 
     public UUID storeOf(UUID orderId) {
-        return orders.findStoreIdById(orderId)
+        return probe.storeOf(OrderRepository.TABLE, orderId)
                 .orElseThrow(() -> new OrderNotFoundException(OrderChanges.ENTITY, orderId));
     }
 

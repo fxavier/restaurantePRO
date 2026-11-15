@@ -8,6 +8,7 @@ import com.xavier.backend.dining.model.RestaurantTable;
 import com.xavier.backend.dining.model.dto.TableMap;
 import com.xavier.backend.dining.repository.RestaurantTableRepository;
 import com.xavier.backend.dining.repository.TableOccupationRepository;
+import com.xavier.backend.shared.persistence.StoreProbe;
 import java.time.Clock;
 import java.util.Map;
 import java.util.UUID;
@@ -26,18 +27,20 @@ public class TableLockService {
     private final RestaurantTableRepository tables;
     private final TableOccupationRepository occupations;
     private final AccessPolicy accessPolicy;
+    private final StoreProbe probe;
     private final DiningChanges changes;
     private final DiningRows rows;
     private final ReservationIndicator reservations;
     private final Clock clock;
 
     TableLockService(RestaurantTableRepository tables, TableOccupationRepository occupations,
-                     AccessPolicy accessPolicy, DiningChanges changes, DiningRows rows,
+                     AccessPolicy accessPolicy, StoreProbe probe, DiningChanges changes, DiningRows rows,
                      ReservationIndicator reservations, Clock clock) {
         this.reservations = reservations;
         this.tables = tables;
         this.occupations = occupations;
         this.accessPolicy = accessPolicy;
+        this.probe = probe;
         this.changes = changes;
         this.rows = rows;
         this.clock = clock;
@@ -68,7 +71,8 @@ public class TableLockService {
      * lock the row.
      */
     private RestaurantTable tableOfSessionStore(UUID tableId, PosContext pos) {
-        UUID storeId = tables.findStoreIdById(tableId).orElseThrow(() -> new DiningNotFoundException(ENTITY, tableId));
+        UUID storeId = probe.storeOf(RestaurantTableRepository.TABLE, tableId)
+                .orElseThrow(() -> new DiningNotFoundException(ENTITY, tableId));
         accessPolicy.requireSessionStore(pos, storeId, ENTITY, tableId);
         return rows.lockTable(tableId);
     }

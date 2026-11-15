@@ -3,6 +3,7 @@ package com.xavier.backend.orders.delivery;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.xavier.backend.access.StoreScopes;
 import com.xavier.backend.customers.CustomersFixtures;
 import com.xavier.backend.orders.OrdersFixtures;
 import com.xavier.backend.orders.OrdersModuleTest;
@@ -50,6 +51,9 @@ class DeliveryTransitionRaceTest {
 
     @Autowired
     PlatformTransactionManager transactionManager;
+
+    @Autowired
+    StoreScopes scopes;
 
     final UUID employee = UUID.randomUUID();
     final UUID terminal = UUID.randomUUID();
@@ -113,16 +117,15 @@ class DeliveryTransitionRaceTest {
         CountDownLatch commit = new CountDownLatch(1);
         try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
             // a draft as DraftLineService writes it: the row insert, whose foreign key takes FOR KEY SHARE on the order
-            Future<?> adding = pool.submit(() -> new TransactionTemplate(transactionManager).executeWithoutResult(
-                    status -> {
-                        jdbc.sql("""
-                                INSERT INTO orders.order_line (id, order_id, status, item_id, quantity, created_at,
-                                    created_by_employee_id, version)
-                                VALUES (gen_random_uuid(), ?, 'DRAFT', ?, 1, now(), ?, 0)""")
-                                .param(order).param(d.shop().item()).param(employee).update();
-                        drafted.countDown();
-                        await(commit);
-                    }));
+            Future<?> adding = pool.submit(() -> inStoreTransaction(() -> {
+                jdbc.sql("""
+                        INSERT INTO orders.order_line (id, order_id, status, item_id, quantity, created_at,
+                            created_by_employee_id, version)
+                        VALUES (gen_random_uuid(), ?, 'DRAFT', ?, 1, now(), ?, 0)""")
+                        .param(order).param(d.shop().item()).param(employee).update();
+                drafted.countDown();
+                await(commit);
+            }));
             assertThat(drafted.await(30, TimeUnit.SECONDS)).isTrue();
             Future<Integer> dispatch = pool.submit(() -> deliveries.dispatch(d, order, 0, d.courier()).andReturn()
                     .getResponse().getStatus());
@@ -140,13 +143,12 @@ class DeliveryTransitionRaceTest {
         CountDownLatch held = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         try (ExecutorService pool = Executors.newFixedThreadPool(3)) {
-            Future<?> holder = pool.submit(() -> new TransactionTemplate(transactionManager).executeWithoutResult(
-                    status -> {
-                        jdbc.sql("SELECT order_id FROM orders.delivery WHERE order_id = ? FOR UPDATE").param(order)
-                                .query(UUID.class).single();
-                        held.countDown();
-                        await(release);
-                    }));
+            Future<?> holder = pool.submit(() -> inStoreTransaction(() -> {
+                jdbc.sql("SELECT order_id FROM orders.delivery WHERE order_id = ? FOR UPDATE").param(order)
+                        .query(UUID.class).single();
+                held.countDown();
+                await(release);
+            }));
             assertThat(held.await(30, TimeUnit.SECONDS)).isTrue();
             Future<Integer> a = pool.submit(first);
             Future<Integer> b = pool.submit(second);
@@ -157,6 +159,15 @@ class DeliveryTransitionRaceTest {
             holder.get(30, TimeUnit.SECONDS);
             return List.of(a.get(30, TimeUnit.SECONDS), b.get(30, TimeUnit.SECONDS));
         }
+    }
+
+    /** {@code work} in a transaction of the shop's store scope, as a request of that store would run it. */
+    void inStoreTransaction(Runnable work) {
+        scopes.callForStore(d.shop().store(), "test:race", () -> new TransactionTemplate(transactionManager)
+                .execute(status -> {
+                    work.run();
+                    return null;
+                }));
     }
 
     long waiting(String queryPattern) {

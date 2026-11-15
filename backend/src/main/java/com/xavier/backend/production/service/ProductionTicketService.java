@@ -11,6 +11,7 @@ import com.xavier.backend.production.model.TicketRouting;
 import com.xavier.backend.production.model.dto.PrintJobView;
 import com.xavier.backend.production.model.dto.TicketView;
 import com.xavier.backend.production.repository.ProductionTicketRepository;
+import com.xavier.backend.shared.persistence.StoreProbe;
 import com.xavier.backend.shared.web.PageResponse;
 import java.util.Map;
 import java.util.UUID;
@@ -31,13 +32,15 @@ public class ProductionTicketService {
     private final ProductionTicketRepository tickets;
     private final TicketService ticketService;
     private final AccessPolicy accessPolicy;
+    private final StoreProbe probe;
     private final AuditLog auditLog;
 
     ProductionTicketService(ProductionTicketRepository tickets, TicketService ticketService,
-                            AccessPolicy accessPolicy, AuditLog auditLog) {
+                            AccessPolicy accessPolicy, StoreProbe probe, AuditLog auditLog) {
         this.tickets = tickets;
         this.ticketService = ticketService;
         this.accessPolicy = accessPolicy;
+        this.probe = probe;
         this.auditLog = auditLog;
     }
 
@@ -82,7 +85,7 @@ public class ProductionTicketService {
     }
 
     private UUID ticketStore(UUID ticketId) {
-        return tickets.findStoreIdById(ticketId)
+        return probe.storeOf(ProductionTicketRepository.TABLE, ticketId)
                 .orElseThrow(() -> new ProductionNotFoundException(PrintJobService.TICKET, ticketId));
     }
 }
