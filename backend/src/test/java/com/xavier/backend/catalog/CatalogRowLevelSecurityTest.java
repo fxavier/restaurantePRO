@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.xavier.backend.AppRoleSession;
 import com.xavier.backend.OwnerDatabase;
 import com.xavier.backend.access.Actor;
 import com.xavier.backend.access.Permission;
@@ -18,6 +19,7 @@ import com.xavier.backend.catalog.repository.ItemPriceRepository;
 import com.xavier.backend.catalog.repository.PriceListRepository;
 import com.xavier.backend.shared.Money;
 import com.xavier.backend.shared.persistence.StoreProbe;
+import com.xavier.backend.shared.persistence.StoreScopeViolations;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -131,6 +133,12 @@ class CatalogRowLevelSecurityTest {
         assertThat(jdbc.sql("SELECT count(*) FROM catalog.automatic_item WHERE id = ?").param(automatic)
                 .query(Long.class).single()).isOne();
 
+        // an UPDATE is refused loudly (42501, counted by D170), not matched to 0 rows: a breach must be seen
+        AppRoleSession.assertRefused(() -> jdbc.sql("UPDATE catalog.automatic_item SET quantity = 2 WHERE id = ?")
+                .param(automatic).update(), StoreScopeViolations.Kind.WRITE_REFUSED);
+        AppRoleSession.assertRefused(() -> jdbc.sql("UPDATE catalog.quick_page_entry SET position = 7 "
+                + "WHERE page_id = ?").param(companyWide).update(), StoreScopeViolations.Kind.WRITE_REFUSED);
+
         installationWide();
         assertThat(jdbc.sql("DELETE FROM catalog.automatic_item WHERE id = ?").param(automatic).update())
                 .as("an all-stores scope still deletes it").isOne();
@@ -221,7 +229,7 @@ class CatalogRowLevelSecurityTest {
 
     /**
      * STORE_OR_ALL: a company-wide quick page is read in every scope and inserted, updated or deleted only by an
-     * all-stores one (V1009: a store scope's UPDATE or DELETE matches no every-store row).
+     * all-stores one (V1009: a store scope's UPDATE of it raises 42501, its DELETE matches no row).
      */
     @Test
     void aCompanyWideQuickPageIsReadEverywhereAndInsertedOrUpdatedOnlyByAllStores() {
@@ -230,8 +238,8 @@ class CatalogRowLevelSecurityTest {
 
         actor(Permission.CATALOG_MANAGE.authority(storeA));
         assertThat(visiblePages(companyWide, ofB)).containsExactly(companyWide);
-        assertThat(jdbc.sql("UPDATE catalog.quick_page SET name = 'x' WHERE id = ?").param(companyWide).update())
-                .as("a store scope cannot rewrite a company-wide page").isZero();
+        AppRoleSession.assertRefused(() -> jdbc.sql("UPDATE catalog.quick_page SET name = 'x' WHERE id = ?")
+                .param(companyWide).update(), StoreScopeViolations.Kind.WRITE_REFUSED);
         assertThatThrownBy(() -> jdbc.sql("""
                 INSERT INTO catalog.quick_page (id, store_id, code, name, position, version, created_at, updated_at)
                 VALUES (?, NULL, ?, 'Page', 0, 0, now(), now())""").param(UUID.randomUUID())

@@ -204,7 +204,8 @@ public class RowLevelSecurityCoverageTest {
 
     /**
      * D168 amended (V1009): a STORE_OR_ALL table, and the child of one, reads every-store rows in any scope but writes
-     * and deletes only in VIS: one policy per command, none of the write policies carries the read rule.
+     * and deletes only in VIS: one policy per command; only the read and the UPDATE's USING (so a store scope's update
+     * of an every-store row raises 42501) carry the read rule, never a WITH CHECK nor the DELETE.
      */
     @Test
     void theStoreOrAllHelpersReadEveryStoreRowsButWriteOnlyInScope() {
@@ -214,16 +215,22 @@ public class RowLevelSecurityCoverageTest {
                 "store_or_all_delete d " + write + " null",
                 "store_or_all_insert a null " + write,
                 "store_or_all_read r " + read + " null",
-                "store_or_all_update w " + write + " " + write);
+                "store_or_all_update w " + read + " " + write);
 
         List<String> entry = policyTexts("catalog.quick_page_entry");
         assertThat(entry).extracting(text -> text.split(" ")[0] + " " + text.split(" ")[1]).containsExactlyInAnyOrder(
                 "store_or_all_parent_delete d", "store_or_all_parent_insert a", "store_or_all_parent_read r",
                 "store_or_all_parent_update w");
-        assertThat(entry).filteredOn(text -> text.startsWith("store_or_all_parent_read"))
-                .singleElement().asString().contains("p.store_id IS NULL");
-        assertThat(entry).filteredOn(text -> !text.startsWith("store_or_all_parent_read"))
-                .hasSize(3).allSatisfy(text -> assertThat(text).doesNotContain("IS NULL").contains("p.store_id"));
+        assertThat(entry).filteredOn(text -> text.startsWith("store_or_all_parent_read")
+                        || text.startsWith("store_or_all_parent_update"))
+                .hasSize(2).allSatisfy(text -> assertThat(text).contains("p.store_id IS NULL"));
+        // the update's WITH CHECK (its last part) and the insert and delete carry VIS only
+        assertThat(entry).filteredOn(text -> text.startsWith("store_or_all_parent_update"))
+                .singleElement().satisfies(text -> assertThat(text.substring(text.lastIndexOf("EXISTS")))
+                        .doesNotContain("IS NULL"));
+        assertThat(entry).filteredOn(text -> text.startsWith("store_or_all_parent_insert")
+                        || text.startsWith("store_or_all_parent_delete"))
+                .hasSize(2).allSatisfy(text -> assertThat(text).doesNotContain("IS NULL").contains("p.store_id"));
     }
 
     /** The deparsed VIS(column) of D168, as pg_get_expr prints it. */
