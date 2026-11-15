@@ -10,6 +10,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.xavier.backend.AppRoleSession;
 import com.xavier.backend.OwnerDatabase;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.identity.ApproverVerifier;
@@ -19,6 +20,7 @@ import com.xavier.backend.inventory.service.StockBalanceReconciliationJob;
 import com.xavier.backend.orders.OrdersActors;
 import com.xavier.backend.settlement.SettlementFixtures;
 import com.xavier.backend.settlement.SettlementFixtures.Sale;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.List;
 import java.util.UUID;
@@ -102,9 +104,10 @@ class InventoryActorlessScopeTest {
         for (UUID warehouse : List.of(warehouseA, warehouseB)) {
             UUID store = warehouse.equals(warehouseA) ? storeA : storeB;
             OwnerDatabase.shared().jdbc().sql("""
-                            INSERT INTO inventory.stock_balance (warehouse_id, store_id, stock_item_id, quantity, value,
-                                average_cost, last_posting_seq, updated_at) VALUES (?, ?, ?, 1, 2, 2, 0, now())""")
-                    .params(warehouse, store, item).update(); // a balance no movement explains: a drift
+                            INSERT INTO inventory.stock_balance (tenant_id, warehouse_id, store_id, stock_item_id, quantity,
+                                value, average_cost, last_posting_seq, updated_at)
+                            VALUES (?, ?, ?, ?, 1, 2, 2, 0, now())""")
+                    .params(TenantTestSupport.BOOTSTRAP, warehouse, store, item).update(); // a balance no movement explains: a drift
         }
         double violations = violations();
         AtomicReference<List<BalanceDrift>> found = new AtomicReference<>();
@@ -117,6 +120,61 @@ class InventoryActorlessScopeTest {
                         SELECT count(*) FROM inventory.balance_check WHERE store_id IN (?, ?) AND drifting_balances = 1""")
                 .params(storeA, storeB).query(Long.class).single()).isEqualTo(2);
         assertThat(violations()).isEqualTo(violations);
+    }
+
+    /**
+     * D185: the job runs once per active tenant, each run in its own tenant; a run replaces its tenant's share of the
+     * gauges and keeps the others', and records the check of its own tenant's stores only.
+     */
+    @Test
+    void theReconcileJobKeepsEveryActiveTenantsShareOfItsGauges() throws Exception {
+        UUID t1 = UUID.fromString("0190b300-0000-7000-8000-0000000074c1");
+        UUID t2 = UUID.fromString("0190b300-0000-7000-8000-0000000074c2");
+        TenantTestSupport.ensureTenant(t1, "reconcile-1", "ACTIVE");
+        TenantTestSupport.ensureTenant(t2, "reconcile-2", "ACTIVE");
+        try {
+            UUID store1 = negativeBalanceIn(t1);
+            UUID store2 = negativeBalanceIn(t2);
+
+            CompletableFuture.runAsync(() -> reconciliation.reconcile(), command -> new Thread(command).start())
+                    .get(60, TimeUnit.SECONDS);
+
+            assertThat(OwnerDatabase.shared().jdbc().sql("""
+                            SELECT count(*) FROM inventory.balance_check
+                            WHERE store_id IN (?, ?) AND drifting_balances = 1""").params(store1, store2)
+                    .query(Long.class).single()).as("each tenant's store is checked in its own run").isEqualTo(2);
+            for (UUID store : List.of(store1, store2)) {
+                assertThat(meters.get("inventory_negative_balances").tag("store", store.toString()).gauge().value())
+                        .as("the later tenant's run keeps the earlier tenant's store").isEqualTo(1.0);
+            }
+            assertThat(meters.get("inventory_balance_drift").gauge().value())
+                    .as("a total over tenants, not the last tenant's").isGreaterThanOrEqualTo(2.0);
+        } finally {
+            TenantTestSupport.ensureTenant(t1, "reconcile-1", "CLOSED");
+            TenantTestSupport.ensureTenant(t2, "reconcile-2", "CLOSED");
+        }
+    }
+
+    /** One store of {@code tenant} holding a balance of -1 that no movement explains: a drift and a negative. */
+    private static UUID negativeBalanceIn(UUID tenant) {
+        UUID store = UUID.randomUUID();
+        UUID warehouse = UUID.randomUUID();
+        UUID item = UUID.randomUUID();
+        try (AppRoleSession app = AppRoleSession.open().tenant(tenant).allStores()) {
+            app.jdbc().sql("""
+                            INSERT INTO inventory.warehouse (id, store_id, code, name, active, version, created_at,
+                                updated_at) VALUES (?, ?, 'MAIN', 'Main', true, 0, now(), now())""")
+                    .params(warehouse, store).update();
+            app.jdbc().sql("""
+                            INSERT INTO inventory.stock_item (id, code, name, base_unit, kind, active, version,
+                                created_at, updated_at) VALUES (?, 'FLOUR', 'Flour', 'kg', 'PURCHASED', true, 0, now(),
+                                now())""").param(item).update();
+            app.jdbc().sql("""
+                            INSERT INTO inventory.stock_balance (warehouse_id, store_id, stock_item_id, quantity, value,
+                                average_cost, last_posting_seq, updated_at) VALUES (?, ?, ?, -1, -2, 2, 0, now())""")
+                    .params(warehouse, store, item).update();
+        }
+        return store;
     }
 
     private void voidLine(Sale sale, UUID line) throws Exception {

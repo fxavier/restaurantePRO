@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.xavier.backend.TestcontainersConfiguration;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -107,11 +108,14 @@ class StockBalanceStoreUpgradeTest {
                 .as("the value its OUT took").isEqualByComparingTo("4.0001");
         assertThat(jdbc.sql("SELECT value_shipped FROM inventory.stock_transfer_line WHERE transfer_id = ?")
                 .param(draft).query(java.math.BigDecimal.class).optional()).as("not shipped").isEmpty();
-        UUID other = stockItem();
+        assertThat(jdbc.sql("SELECT DISTINCT tenant_id FROM inventory.stock_balance").query(UUID.class).list())
+                .as("R6 (V13082): the installation's rows are the bootstrap tenant's")
+                .containsExactly(TenantTestSupport.BOOTSTRAP);
+        UUID other = bootstrapStockItem();
         assertThatThrownBy(() -> jdbc.sql("""
-                        INSERT INTO inventory.stock_balance (warehouse_id, store_id, stock_item_id, quantity, value,
-                            average_cost, last_posting_seq, updated_at) VALUES (?, ?, ?, 0, 0, 0, 0, ?)""")
-                .params(warehouseA, storeB, other, AT).update())
+                        INSERT INTO inventory.stock_balance (tenant_id, warehouse_id, store_id, stock_item_id, quantity,
+                            value, average_cost, last_posting_seq, updated_at) VALUES (?, ?, ?, ?, 0, 0, 0, 0, ?)""")
+                .params(TenantTestSupport.BOOTSTRAP, warehouseA, storeB, other, AT).update())
                 .hasMessageContaining("stock_balance_warehouse_store_fk");
     }
 
@@ -121,6 +125,16 @@ class StockBalanceStoreUpgradeTest {
                         INSERT INTO inventory.stock_item (id, code, name, base_unit, kind, active, version, created_at,
                             updated_at) VALUES (?, ?, 'Flour', 'g', 'PURCHASED', true, 0, ?, ?)""")
                 .params(id, "UP-" + id, AT, AT).update();
+        return id;
+    }
+
+    /** After V13082 the tenant is a column with no usable default on this unbound connection: say it. */
+    private UUID bootstrapStockItem() {
+        UUID id = UUID.randomUUID();
+        jdbc.sql("""
+                        INSERT INTO inventory.stock_item (id, tenant_id, code, name, base_unit, kind, active, version,
+                            created_at, updated_at) VALUES (?, ?, ?, 'Flour', 'g', 'PURCHASED', true, 0, ?, ?)""")
+                .params(id, TenantTestSupport.BOOTSTRAP, "UP-" + id, AT, AT).update();
         return id;
     }
 

@@ -87,8 +87,8 @@ class InventoryTenantIsolationTest {
 
     /** The same codes in every tenant: stores ISO-1/ISO-2, warehouses MAIN, item FLOUR; costs tell the tenants apart. */
     private Owned seed(UUID tenant, String unitCost) throws Exception {
-        UUID store = store(tenant, "ISO-1");
-        UUID otherStore = store(tenant, "ISO-2");
+        UUID store = store(tenant, "INV-1");
+        UUID otherStore = store(tenant, "INV-2");
         for (UUID each : List.of(store, otherStore)) {
             mvc.perform(idem(post(BO + "/activations")).with(in(tenant, each, Permission.INVENTORY_MANAGE))
                             .contentType(MediaType.APPLICATION_JSON).content("{\"storeId\": \"%s\"}".formatted(each)))
@@ -136,7 +136,8 @@ class InventoryTenantIsolationTest {
     @Test
     void bothTenantsUseTheSameItemAndWarehouseCodes() {
         assertThat(OwnerDatabase.shared().jdbc().sql("SELECT tenant_id FROM inventory.stock_item "
-                + "WHERE code = 'FLOUR'").query(UUID.class).list()).containsExactlyInAnyOrder(A, B);
+                + "WHERE code = 'FLOUR' AND tenant_id IN (?, ?)")
+                .params(A, B).query(UUID.class).list()).containsExactlyInAnyOrder(A, B);
         assertThat(OwnerDatabase.shared().jdbc().sql("SELECT tenant_id FROM inventory.warehouse "
                         + "WHERE code = 'MAIN' AND id IN (?, ?, ?, ?)")
                 .params(a.warehouse, a.otherWarehouse, b.warehouse, b.otherWarehouse).query(UUID.class).list())
