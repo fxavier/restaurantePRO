@@ -18,6 +18,7 @@ import com.xavier.backend.catalog.repository.ConfigurationReleaseRepository;
 import com.xavier.backend.organization.OrganizationApi;
 import com.xavier.backend.shared.notify.ChangeNotifier;
 import com.xavier.backend.shared.notify.ChangeTopic;
+import com.xavier.backend.shared.persistence.StoreProbe;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
 import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
@@ -44,6 +45,7 @@ public class ReleaseService {
     private final WorkingCopy workingCopy;
     private final OrganizationApi organization;
     private final AccessPolicy accessPolicy;
+    private final StoreProbe probe;
     private final CatalogAudit audit;
     private final ApplicationEventPublisher events;
     private final ChangeNotifier notifier;
@@ -51,12 +53,13 @@ public class ReleaseService {
     private final Clock clock;
 
     ReleaseService(ConfigurationReleaseRepository releases, WorkingCopy workingCopy, OrganizationApi organization,
-                   AccessPolicy accessPolicy, CatalogAudit audit, ApplicationEventPublisher events,
+                   AccessPolicy accessPolicy, StoreProbe probe, CatalogAudit audit, ApplicationEventPublisher events,
                    ChangeNotifier notifier, JsonMapper json, Clock clock) {
         this.releases = releases;
         this.workingCopy = workingCopy;
         this.organization = organization;
         this.accessPolicy = accessPolicy;
+        this.probe = probe;
         this.audit = audit;
         this.events = events;
         this.notifier = notifier;
@@ -82,8 +85,7 @@ public class ReleaseService {
      */
     @Transactional
     public ReleaseSummary validate(UUID releaseId) {
-        ConfigurationRelease release = release(releaseId);
-        accessPolicy.require(Permission.CATALOG_MANAGE, release.getStoreId());
+        ConfigurationRelease release = authorizedRelease(releaseId, Permission.CATALOG_MANAGE);
         release.requireValidatable();
         Instant now = clock.instant();
         WorkingCopy.View view = workingCopy.of(release.getStoreId(), now);
@@ -103,9 +105,8 @@ public class ReleaseService {
      */
     @Transactional
     public ReleaseSummary publish(UUID releaseId, PublishRequest request) {
-        ConfigurationRelease release = release(releaseId);
+        ConfigurationRelease release = authorizedRelease(releaseId, Permission.CATALOG_PUBLISH);
         UUID storeId = release.getStoreId();
-        accessPolicy.require(Permission.CATALOG_PUBLISH, storeId);
         release.requirePublishable();
         Instant now = clock.instant();
         WorkingCopy.View view = workingCopy.of(storeId, now);
@@ -132,8 +133,7 @@ public class ReleaseService {
 
     @Transactional(readOnly = true)
     public ReleaseSummary get(UUID releaseId) {
-        ConfigurationRelease release = release(releaseId);
-        accessPolicy.require(Permission.CATALOG_MANAGE, release.getStoreId());
+        ConfigurationRelease release = authorizedRelease(releaseId, Permission.CATALOG_MANAGE);
         return summary(release);
     }
 
@@ -167,7 +167,18 @@ public class ReleaseService {
                 : List.of(json.readValue(warnings, ReleaseValidationWarning[].class)));
     }
 
-    private ConfigurationRelease release(UUID id) {
-        return releases.findById(id).orElseThrow(() -> new CatalogEntryNotFoundException("Release", id));
+    /**
+     * D42 (b): the release's store alone (absent: 404), then {@code permission} there (403), then the release. The
+     * store is probed through {@code shared.store_of}: row-level security hides another store's release from a plain
+     * read, which would turn the 403 into a 404.
+     */
+    private ConfigurationRelease authorizedRelease(UUID id, Permission permission) {
+        UUID storeId = probe.storeOf("catalog.configuration_release", id).orElseThrow(() -> notFound(id));
+        accessPolicy.require(permission, storeId);
+        return releases.findById(id).orElseThrow(() -> notFound(id));
+    }
+
+    private static CatalogEntryNotFoundException notFound(UUID id) {
+        return new CatalogEntryNotFoundException("Release", id);
     }
 }

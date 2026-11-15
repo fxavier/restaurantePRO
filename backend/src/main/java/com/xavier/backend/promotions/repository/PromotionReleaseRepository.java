@@ -15,9 +15,6 @@ public interface PromotionReleaseRepository extends JpaRepository<PromotionRelea
 
     Page<PromotionRelease> findAllByStoreId(UUID storeId, Pageable pageable);
 
-    /** The store of a release, read alone so the caller authorizes before loading it (D42 (b)). */
-    @Query("select r.storeId from PromotionRelease r where r.id = :id")
-    Optional<UUID> findStoreIdById(UUID id);
 
     @Query("select coalesce(max(r.versionNo), 0) from PromotionRelease r where r.storeId = :storeId")
     long maxVersionNo(UUID storeId);

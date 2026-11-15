@@ -5,7 +5,7 @@ import com.xavier.backend.audit.exception.AuditEventNotFoundException;
 import com.xavier.backend.audit.model.dto.AuditEventView;
 import com.xavier.backend.audit.model.dto.AuditFilter;
 import com.xavier.backend.audit.repository.AuditEventRepository;
-import com.xavier.backend.audit.repository.AuditEventStore;
+import com.xavier.backend.shared.persistence.StoreProbe;
 import com.xavier.backend.shared.web.PageResponse;
 import java.util.UUID;
 import org.springframework.data.domain.PageRequest;
@@ -23,10 +23,12 @@ public class AuditQueryService {
 
     private final AuditEventRepository events;
     private final AuditAccess access;
+    private final StoreProbe probe;
 
-    AuditQueryService(AuditEventRepository events, AuditAccess access) {
+    AuditQueryService(AuditEventRepository events, AuditAccess access, StoreProbe probe) {
         this.events = events;
         this.access = access;
+        this.probe = probe;
     }
 
     public PageResponse<AuditEventView> list(AuditFilter filter, Pageable pageable) {
@@ -34,10 +36,14 @@ public class AuditQueryService {
         return PageResponse.from(new AuditCriteria(filter, visibility).page(events, unsorted(pageable)));
     }
 
-    /** D42 (b): only the row's store is read (absent → 404), then authorized (→ 403), then the row. */
+    /**
+     * D42 (b): only the row's store is read, then authorized (→ 403), then the row (absent → 404). The store is probed
+     * through {@code shared.store_of}, which sees every store, because row-level security hides another store's row. It
+     * answers no store both for a store-less row and for no row, and a store-less row needs an installation-wide grant
+     * either way: so only an installation-wide auditor learns that an id does not exist (404); anyone else gets 403.
+     */
     public AuditEventView get(UUID id) {
-        AuditEventStore row = events.findStoreById(id).orElseThrow(() -> new AuditEventNotFoundException(id));
-        access.requireToSee(row.storeId());
+        access.requireToSee(probe.storeOf("audit.audit_event", id).orElse(null));
         return events.findViewById(id).orElseThrow(() -> new AuditEventNotFoundException(id));
     }
 

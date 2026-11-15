@@ -40,11 +40,6 @@ public interface AuditEventRepository extends Repository<AuditEvent, UUID> {
 
     AuditEvent save(AuditEvent event);
 
-    /** Present for an existing row even when its store is {@code null} (a store-less row). */
-    @Query("select new com.xavier.backend.audit.repository.AuditEventStore(e.storeId) from AuditEvent e "
-            + "where e.id = :id")
-    Optional<AuditEventStore> findStoreById(@Param("id") UUID id);
-
     @Query(VIEW + "from AuditEvent e where e.id = :id")
     Optional<AuditEventView> findViewById(@Param("id") UUID id);
 

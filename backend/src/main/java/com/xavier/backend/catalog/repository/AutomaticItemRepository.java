@@ -16,5 +16,6 @@ public interface AutomaticItemRepository extends JpaRepository<AutomaticItem, UU
 
     List<AutomaticItem> findAllByStoreIdIsNullOrderById();
 
-    Optional<StoreScope> findScopeById(UUID id);
+    @Query("SELECT new com.xavier.backend.catalog.repository.EntryStore(a.storeId) FROM AutomaticItem a WHERE a.id = :id")
+    Optional<EntryStore> findStoreById(@Param("id") UUID id);
 }

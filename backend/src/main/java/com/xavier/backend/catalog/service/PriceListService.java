@@ -21,6 +21,7 @@ import com.xavier.backend.organization.OrganizationApi;
 import com.xavier.backend.organization.model.dto.StoreSummary;
 import com.xavier.backend.shared.Money;
 import com.xavier.backend.shared.persistence.OptimisticLocking;
+import com.xavier.backend.shared.persistence.StoreProbe;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -41,18 +42,20 @@ public class PriceListService {
     private final ItemVariantRepository variants;
     private final OrganizationApi organization;
     private final AccessPolicy accessPolicy;
+    private final StoreProbe probe;
     private final CatalogAudit audit;
     private final Clock clock;
 
     PriceListService(PriceListRepository priceLists, ItemPriceRepository prices, ItemRepository items,
                      ItemVariantRepository variants, OrganizationApi organization, AccessPolicy accessPolicy,
-                     CatalogAudit audit, Clock clock) {
+                     StoreProbe probe, CatalogAudit audit, Clock clock) {
         this.priceLists = priceLists;
         this.prices = prices;
         this.items = items;
         this.variants = variants;
         this.organization = organization;
         this.accessPolicy = accessPolicy;
+        this.probe = probe;
         this.audit = audit;
         this.clock = clock;
     }
@@ -71,8 +74,7 @@ public class PriceListService {
 
     @Transactional
     public PriceListSummary rename(UUID id, PriceListUpdateRequest request) {
-        PriceList list = priceList(id);
-        accessPolicy.require(Permission.CATALOG_MANAGE, list.getStoreId());
+        PriceList list = authorizedPriceList(id);
         OptimisticLocking.requireVersion(PriceList.class, id, list.getVersion(), request.version());
         list.rename(request.name(), clock.instant());
         priceLists.saveAndFlush(list);
@@ -82,8 +84,7 @@ public class PriceListService {
 
     @Transactional(readOnly = true)
     public PriceListSummary get(UUID id) {
-        PriceList list = priceList(id);
-        accessPolicy.require(Permission.CATALOG_MANAGE, list.getStoreId());
+        PriceList list = authorizedPriceList(id);
         return list.toSummary();
     }
 
@@ -95,8 +96,7 @@ public class PriceListService {
 
     @Transactional
     public ItemPriceSummary addPrice(UUID priceListId, ItemPriceCreateRequest request) {
-        PriceList list = priceList(priceListId);
-        accessPolicy.require(Permission.CATALOG_MANAGE, list.getStoreId());
+        PriceList list = authorizedPriceList(priceListId);
         requireTarget(request.itemId(), request.variantId());
         ItemPrice price = UniqueConstraints.saveAndFlush(prices,
                 ItemPrice.create(list.getId(), request.itemId(), request.variantId(),
@@ -109,8 +109,7 @@ public class PriceListService {
 
     @Transactional
     public ItemPriceSummary changePrice(UUID priceListId, UUID priceId, ItemPriceUpdateRequest request) {
-        PriceList list = priceList(priceListId);
-        accessPolicy.require(Permission.CATALOG_MANAGE, list.getStoreId());
+        PriceList list = authorizedPriceList(priceListId);
         ItemPrice price = prices.findByIdAndPriceListId(priceId, priceListId)
                 .orElseThrow(() -> new CatalogEntryNotFoundException("Item price", priceId));
         OptimisticLocking.requireVersion(ItemPrice.class, priceId, price.getVersion(), request.version());
@@ -122,8 +121,7 @@ public class PriceListService {
 
     @Transactional(readOnly = true)
     public List<ItemPriceSummary> listPrices(UUID priceListId) {
-        PriceList list = priceList(priceListId);
-        accessPolicy.require(Permission.CATALOG_MANAGE, list.getStoreId());
+        PriceList list = authorizedPriceList(priceListId);
         return prices.findAllByPriceListId(priceListId).stream().map(ItemPrice::toSummary).toList();
     }
 
@@ -145,8 +143,19 @@ public class PriceListService {
         }
     }
 
-    private PriceList priceList(UUID id) {
-        return priceLists.findById(id).orElseThrow(() -> new CatalogEntryNotFoundException("Price list", id));
+    /**
+     * D42 (b): the list's store alone (absent: 404), then {@code CATALOG_MANAGE} there (403), then the list. The store
+     * is probed through {@code shared.store_of}, which sees every store: row-level security hides another store's list
+     * from a plain read, which would turn the 403 into a 404.
+     */
+    private PriceList authorizedPriceList(UUID id) {
+        UUID storeId = probe.storeOf("catalog.price_list", id).orElseThrow(() -> notFound(id));
+        accessPolicy.require(Permission.CATALOG_MANAGE, storeId);
+        return priceLists.findById(id).orElseThrow(() -> notFound(id));
+    }
+
+    private static CatalogEntryNotFoundException notFound(UUID id) {
+        return new CatalogEntryNotFoundException("Price list", id);
     }
 
     private void auditPrice(ItemPrice price, PriceList list) {
