@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import org.awaitility.Awaitility;
@@ -247,6 +248,65 @@ class TenantBindingTransactionManagerTest {
         Object rebound = TenantTestSupport.inTenant(tenants, TenantTestSupport.A,
                 () -> new TransactionTemplate(transactions).execute(status -> settings().get("tenant")));
         assertThat(rebound).as("the pool still binds").isEqualTo(TenantTestSupport.A.toString());
+    }
+
+    /**
+     * D173 carried over to D178: a listener of tenant A and a request of tenant B, both transactions open at once (a
+     * barrier, no sleeps), each on its own connection of one pool: each writes its own tenant's row and is refused the
+     * other's ({@code 42501}).
+     */
+    @Test
+    void twoTransactionsOpenAtOnceInTwoTenantsEachWriteOnlyTheirOwn() throws Exception {
+        CyclicBarrier bothOpen = new CyclicBarrier(2);
+        java.util.concurrent.ExecutorService threads = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            java.util.concurrent.Future<List<Object>> inA = threads.submit(() -> writeOwnThenOther(TenantTestSupport.A,
+                    TenantTestSupport.B, bothOpen));
+            java.util.concurrent.Future<List<Object>> inB = threads.submit(() -> writeOwnThenOther(TenantTestSupport.B,
+                    TenantTestSupport.A, bothOpen));
+
+            for (List<Object> outcome : List.of(inA.get(60, TimeUnit.SECONDS), inB.get(60, TimeUnit.SECONDS))) {
+                assertThat(outcome.get(0)).as("its own row").isEqualTo(1);
+                assertThat(outcome.get(1)).as("the other tenant's row").isEqualTo(
+                        StoreScopeViolations.Kind.TENANT_WRITE_REFUSED);
+            }
+        } finally {
+            threads.shutdownNow();
+            com.xavier.backend.OwnerDatabase.shared().jdbc().sql("DELETE FROM " + scratch.table()
+                    + " WHERE label IN ('own', 'other')").update(); // the other cases count this table's rows
+        }
+    }
+
+    private List<Object> writeOwnThenOther(UUID own, UUID other, CyclicBarrier bothOpen) {
+        TransactionTemplate tx = new TransactionTemplate(transactions);
+        StoreScopes stores = storeProvider.getObject();
+        // a worker thread, as a listener of store A of its tenant: no fixture fallback
+        Object written = TenantTestSupport.inTenant(tenants, own, () -> stores.callForStore(STORE_A, "test:worker",
+                () -> tx.execute(status -> {
+                    int rows = jdbc.sql("INSERT INTO " + scratch.table() + " (id, store_id, label) "
+                            + "VALUES (?, ?, 'own')").param(UUID.randomUUID()).param(STORE_A).update();
+                    await(bothOpen);
+                    return rows;
+                })));
+        Object refused;
+        try {
+            TenantTestSupport.inTenant(tenants, own, () -> stores.callForStore(STORE_A, "test:worker",
+                    () -> tx.execute(status -> jdbc.sql("INSERT INTO " + scratch.table()
+                            + " (id, tenant_id, store_id, label) VALUES (?, ?, ?, 'other')").param(UUID.randomUUID())
+                            .param(other).param(STORE_A).update())));
+            refused = "written";
+        } catch (RuntimeException e) {
+            refused = StoreScopeViolations.classify(e).orElse(null);
+        }
+        return List.of(written, refused);
+    }
+
+    private static void await(CyclicBarrier barrier) {
+        try {
+            barrier.await(30, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     @Test
