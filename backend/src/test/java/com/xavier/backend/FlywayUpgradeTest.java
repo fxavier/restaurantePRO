@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
@@ -52,6 +53,12 @@ class FlywayUpgradeTest {
 
     /** Newer migrations of low blocks, as a release adds them under an installed head of a higher block. */
     static final Set<Integer> HELD_BACK = Set.of(1006, 8009);
+
+    private static final String SCRATCH_PAGE = "upgrade_scratch.page";
+
+    /** {@code shared.rls_protect_tenant}'s predicate as PostgreSQL prints it (RowLevelSecurityCoverageTest's). */
+    private static final String CANONICAL_TENANT_PREDICATE =
+            "(tenant_id = ( SELECT shared.rls_tenant_id() AS rls_tenant_id))";
 
     private static final Pattern VERSION = Pattern.compile("V(\\d+)__.+\\.sql");
 
@@ -139,8 +146,7 @@ class FlywayUpgradeTest {
         flyway(currentRelease, outOfOrderOfApplicationYaml()).migrate();
 
         for (String table : List.of("catalog.quick_page", "catalog.automatic_item")) {
-            assertThat(policyNames(db, table)).as(table).containsExactly("store_or_all_delete", "store_or_all_insert",
-                    "store_or_all_read", "store_or_all_update");
+            assertStoreOrAllPolicies(db, table);
             assertThat(db.sql("SELECT count(*) FROM pg_catalog.pg_trigger WHERE tgrelid = ?::regclass "
                     + "AND tgname = 'store_scope_fixed'").param(table).query(Long.class).single()).isOne();
         }
@@ -165,6 +171,58 @@ class FlywayUpgradeTest {
                 .isTrue();
         assertThat(installedBeforeS70(1009, "CREATE OR REPLACE FUNCTION shared.rls_protect_store_or_all_table"))
                 .isFalse();
+    }
+
+    /**
+     * Once a store-or-all table's module is converted (S74d for catalog), its restrictive {@code tenant_scope} joins
+     * the four store policies (D179): they stay pinned exactly, beside the canonical tenant policy.
+     */
+    @Test
+    void aConvertedStoreOrAllTableKeepsItsFourStorePoliciesBesideItsTenantScope() throws IOException {
+        JdbcClient db = currentInstallationWithScratchPage(
+                "tenant_id uuid NOT NULL DEFAULT shared.rls_tenant_id(), UNIQUE (tenant_id, id)");
+
+        assertStoreOrAllPolicies(db, SCRATCH_PAGE);
+    }
+
+    private JdbcClient currentInstallationWithScratchPage(String extraColumns) throws IOException {
+        copyMigrations((version, sql) -> true);
+        flyway(previousRelease, false).migrate();
+        JdbcClient db = JdbcClient.create(installation);
+        db.sql("CREATE SCHEMA upgrade_scratch").update();
+        db.sql("CREATE TABLE " + SCRATCH_PAGE + " (id uuid PRIMARY KEY, store_id uuid, " + extraColumns + ")")
+                .update();
+        db.sql("SELECT shared.rls_protect_store_or_all_table(CAST(? AS regclass))").param(SCRATCH_PAGE).query()
+                .listOfRows();
+        return db;
+    }
+
+    /** A tenant_scope that is not the canonical restrictive one does not pass for a converted table's. */
+    @Test
+    void aPermissiveTenantScopeBesideTheStorePoliciesIsRefused() throws IOException {
+        JdbcClient db = currentInstallationWithScratchPage("label text");
+        db.sql("CREATE POLICY tenant_scope ON " + SCRATCH_PAGE + " AS PERMISSIVE FOR ALL USING (true)").update();
+
+        assertThatThrownBy(() -> assertStoreOrAllPolicies(db, SCRATCH_PAGE)).hasMessageContaining("tenant_scope");
+    }
+
+    /**
+     * The four store-or-all policies exactly, and beside them at most the canonical restrictive {@code tenant_scope}
+     * of {@code shared.rls_protect_tenant} (a converted table).
+     */
+    private static void assertStoreOrAllPolicies(JdbcClient db, String table) {
+        assertThat(policyNames(db, table)).as(table).filteredOn(name -> !name.equals("tenant_scope"))
+                .containsExactly("store_or_all_delete", "store_or_all_insert", "store_or_all_read",
+                        "store_or_all_update");
+        for (Map<String, Object> tenantScope : db.sql("""
+                        SELECT polpermissive, polcmd::text AS command, pg_get_expr(polqual, polrelid) AS using_clause,
+                               pg_get_expr(polwithcheck, polrelid) AS check_clause
+                        FROM pg_catalog.pg_policy WHERE polrelid = CAST(? AS regclass) AND polname = 'tenant_scope'""")
+                .param(table).query().listOfRows()) {
+            assertThat(tenantScope).as("%s's tenant_scope is the canonical restrictive one", table)
+                    .containsExactlyInAnyOrderEntriesOf(Map.of("polpermissive", false, "command", "*",
+                            "using_clause", CANONICAL_TENANT_PREDICATE, "check_clause", CANONICAL_TENANT_PREDICATE));
+        }
     }
 
     private static List<String> policyNames(JdbcClient db, String table) {
