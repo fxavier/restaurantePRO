@@ -32,7 +32,7 @@ import org.springframework.context.annotation.Import;
  * application role, which holds no privilege on any tenancy table. A membership resolves only for its own (issuer,
  * subject), kinds and tenant, with the same empty answer for a foreign and a random tenant; writes act on the bound
  * tenant only (another tenant {@code 42501}, none {@code RS003}); a support grant lasts at most 24 h; only ACTIVE
- * tenants are iterated; activation leaves PROVISIONING only; the placeholder identity-provider port fails closed.
+ * tenants are iterated; activation leaves PROVISIONING only; an unconfigured identity provider fails closed.
  */
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
@@ -182,7 +182,7 @@ class TenancyFunctionsTest {
     }
 
     @Test
-    void thePlaceholderIdentityProviderFailsClosed() {
+    void anUnconfiguredIdentityProviderFailsClosed() {
         assertThatThrownBy(() -> tenancy.idp().createOrganization("acme", "Acme"))
                 .isInstanceOfSatisfying(IdentityProviderUnavailableException.class,
                         error -> assertThat(error.code()).isEqualTo("IDP_UNAVAILABLE"));
