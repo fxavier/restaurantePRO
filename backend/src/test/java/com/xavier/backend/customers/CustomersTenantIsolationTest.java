@@ -18,6 +18,7 @@ import com.xavier.backend.AppRoleSession;
 import com.xavier.backend.OwnerDatabase;
 import com.xavier.backend.access.Actor;
 import com.xavier.backend.access.Permission;
+import com.xavier.backend.architecture.CompositeForeignKeyCoverageTest;
 import com.xavier.backend.architecture.RowLevelSecurityCoverageTest;
 import com.xavier.backend.shared.exception.NotFoundException;
 import com.xavier.backend.shared.persistence.StoreScopeViolations;
@@ -244,6 +245,7 @@ class CustomersTenantIsolationTest {
     @Test
     void theModuleIsTenantProtected() {
         RowLevelSecurityCoverageTest.assertModuleTenantProtected("customers");
+        CompositeForeignKeyCoverageTest.assertModuleKeysIncludeTheTenant("customers");
     }
 
     /** A POS employee of {@code tenant} on a terminal of {@code store}. */

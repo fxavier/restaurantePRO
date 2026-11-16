@@ -17,6 +17,7 @@ import com.xavier.backend.AppRoleSession;
 import com.xavier.backend.OwnerDatabase;
 import com.xavier.backend.access.Actor;
 import com.xavier.backend.access.Permission;
+import com.xavier.backend.architecture.CompositeForeignKeyCoverageTest;
 import com.xavier.backend.architecture.RowLevelSecurityCoverageTest;
 import com.xavier.backend.shared.persistence.StoreScopeViolations;
 import com.xavier.backend.shared.tenancy.MembershipKind;
@@ -289,6 +290,7 @@ class InventoryTenantIsolationTest {
     @Test
     void theModuleIsTenantProtected() {
         RowLevelSecurityCoverageTest.assertModuleTenantProtected("inventory");
+        CompositeForeignKeyCoverageTest.assertModuleKeysIncludeTheTenant("inventory");
     }
 
     /** The stock units are a seeded code list, the same for every tenant: PLATFORM, with its reason. */
