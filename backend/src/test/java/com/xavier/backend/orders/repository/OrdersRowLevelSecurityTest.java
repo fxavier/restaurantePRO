@@ -78,7 +78,7 @@ class OrdersRowLevelSecurityTest {
         CHILD_PARENTS.forEach((child, parent) -> {
             assertThat(policies).containsEntry(child, "parent_scope");
             assertThat(owner.sql("SELECT pg_catalog.pg_get_expr(polqual, polrelid) FROM pg_catalog.pg_policy "
-                    + "WHERE polrelid = CAST(? AS regclass)").param("orders." + child).query(String.class).single())
+                    + "WHERE polrelid = CAST(? AS regclass) AND polname <> 'tenant_scope'").param("orders." + child).query(String.class).single())
                     .as("%s looks up %s", child, parent).contains("FROM " + parent + " p");
         });
     }

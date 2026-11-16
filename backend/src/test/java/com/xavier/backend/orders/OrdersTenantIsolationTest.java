@@ -11,6 +11,7 @@ import com.xavier.backend.AppRoleSession;
 import com.xavier.backend.OwnerDatabase;
 import com.xavier.backend.access.Actor;
 import com.xavier.backend.access.Permission;
+import com.xavier.backend.architecture.CompositeForeignKeyCoverageTest;
 import com.xavier.backend.architecture.RowLevelSecurityCoverageTest;
 import com.xavier.backend.shared.persistence.StoreScopeViolations;
 import com.xavier.backend.shared.tenancy.MembershipKind;
@@ -179,7 +180,7 @@ class OrdersTenantIsolationTest {
     @Test
     void theModuleIsTenantProtected() {
         RowLevelSecurityCoverageTest.assertModuleTenantProtected("orders");
-        TenantKeyAssertions.assertModuleKeysIncludeTheTenant("orders");
+        CompositeForeignKeyCoverageTest.assertModuleKeysIncludeTheTenant("orders");
     }
 
     /** A POS session of {@code tenant} in {@code store} (its resolved membership as the principal's details). */

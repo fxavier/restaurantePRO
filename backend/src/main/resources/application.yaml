@@ -112,6 +112,10 @@ restaurantpro:
   notifications:
     # D60: SSE comment heartbeat on /api/v1/pos/notifications.
     heartbeat: PT25S
+  notify:
+    # R6 (D185/D188): the change-notice LISTEN connection's own JDBC URL, direct to PostgreSQL past a transaction-mode
+    # pooler (PgBouncer delivers nothing to a LISTEN); empty = the datasource URL. Credentials: the pool's role.
+    listen-url: ${RESTAURANTPRO_NOTIFY_LISTEN_URL:}
   events:
     # D88: the recovery job resubmits, every resubmit-interval, each incomplete publication untouched (since its
     # publication or last resubmission) for resubmit-older-than, until it has had max-attempts attempts (Modulith
@@ -130,6 +134,8 @@ restaurantpro:
     issuers:
       tenant: ${RESTAURANTPRO_OIDC_TENANT_ISSUER:}
       ops: ${RESTAURANTPRO_OIDC_OPS_ISSUER:}
+      # S73/S75: the realm of terminals and print bridges; unset = fail closed
+      devices: ${RESTAURANTPRO_OIDC_DEVICES_ISSUER:}
     audience: restaurantpro-api
     clock-skew: PT30S
     step-up-max-age: PT5M
@@ -160,6 +166,12 @@ restaurantpro:
       realm: ${RESTAURANTPRO_KEYCLOAK_ADMIN_REALM:restaurantpro}
       client-id: tenancy-provisioner
       key-file: ${RESTAURANTPRO_KEYCLOAK_ADMIN_KEY_FILE:}
+    # S73/S75: the device-provisioner service account of the devices realm (pos-*/bridge-* clients); key from a file
+    devices-admin:
+      base-url: ${RESTAURANTPRO_KEYCLOAK_DEVICES_ADMIN_BASE_URL:}
+      realm: restaurantpro-devices
+      client-id: device-provisioner
+      key-file: ${RESTAURANTPRO_KEYCLOAK_DEVICES_ADMIN_KEY_FILE:}
   jobs:
     # R6 (D185): a reach-ALL job takes a lease per (job, tenant) for this long (released when its run ends), and handles
     # at most this many items per tenant per tick (fairness).

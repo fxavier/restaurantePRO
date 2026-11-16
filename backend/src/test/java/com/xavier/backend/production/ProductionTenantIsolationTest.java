@@ -13,7 +13,7 @@ import com.xavier.backend.AppRoleSession;
 import com.xavier.backend.OwnerDatabase;
 import com.xavier.backend.access.Actor;
 import com.xavier.backend.access.Permission;
-import com.xavier.backend.orders.TenantKeyAssertions;
+import com.xavier.backend.architecture.CompositeForeignKeyCoverageTest;
 import com.xavier.backend.architecture.RowLevelSecurityCoverageTest;
 import com.xavier.backend.shared.persistence.StoreScopeViolations;
 import com.xavier.backend.shared.tenancy.MembershipKind;
@@ -185,7 +185,7 @@ class ProductionTenantIsolationTest {
     @Test
     void theModuleIsTenantProtected() {
         RowLevelSecurityCoverageTest.assertModuleTenantProtected("production");
-        TenantKeyAssertions.assertModuleKeysIncludeTheTenant("production");
+        CompositeForeignKeyCoverageTest.assertModuleKeysIncludeTheTenant("production");
     }
 
     /** A BackOffice account of {@code tenant} operating and viewing production in {@code store}, or everywhere. */

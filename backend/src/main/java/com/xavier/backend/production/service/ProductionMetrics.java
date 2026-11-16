@@ -1,6 +1,5 @@
 package com.xavier.backend.production.service;
 
-import com.xavier.backend.access.StoreScopes;
 import com.xavier.backend.access.SystemScope;
 import com.xavier.backend.access.SystemScoped;
 import com.xavier.backend.production.model.PrintJobStatus;
@@ -23,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -48,26 +48,24 @@ public class ProductionMetrics {
     /** D150: a job waiting longer than this on a NORMAL printer means the queue is stalled. */
     static final Duration STALLED_AFTER = Duration.ofMinutes(5);
 
-    private static final Logger log = LoggerFactory.getLogger(ProductionMetrics.class);
+    /** A tenant not refreshed this long (suspended, closed: the advisor skips it) no longer counts in the sums. */
+    static final Duration STALE_AFTER = Duration.ofMinutes(5);
 
-    /** A scrape reads every status gauge within this, so they share one count. */
-    static final Duration COUNTS_TTL = Duration.ofSeconds(1);
+    private static final Logger log = LoggerFactory.getLogger(ProductionMetrics.class);
 
     private final Counter unrouted;
     private final PrintJobRepository jobs;
-    private final StoreScopes scopes;
     private final Clock clock;
     private final TenantScopes tenants;
     private final MultiGauge unresolvedGauge;
     private final MultiGauge oldestWaitingGauge;
     /** Per tenant, the queue it showed at its last refresh (guarded by {@code this}). */
     private final Map<UUID, TenantQueue> queues = new HashMap<>();
-    private volatile Counts counts = new Counts(Map.of(), Instant.MIN);
+    /** Per tenant, its print jobs by status at its last refresh: what {@code print_jobs{status}} sums (R6). */
+    private final Map<UUID, StatusCounts> statusCounts = new ConcurrentHashMap<>();
 
-    ProductionMetrics(MeterRegistry registry, PrintJobRepository jobs, StoreScopes scopes, TenantScopes tenants,
-                      Clock clock) {
+    ProductionMetrics(MeterRegistry registry, PrintJobRepository jobs, TenantScopes tenants, Clock clock) {
         this.jobs = jobs;
-        this.scopes = scopes;
         this.tenants = tenants;
         this.clock = clock;
         for (PrintJobStatus status : PrintJobStatus.values()) {
@@ -139,18 +137,25 @@ public class ProductionMetrics {
         }
     }
 
-    private synchronized long jobsIn(PrintJobStatus status) {
-        Instant now = clock.instant();
-        if (!now.isBefore(counts.countedAt().plus(COUNTS_TTL))) {
-            // D166: installation-wide whoever scrapes (a token scrape has no actor; a session's scope would be cached
-            // for everyone)
-            counts = new Counts(scopes.call(SystemScope.METRICS, jobs::countGroupedByStatus).stream()
-                    .collect(Collectors.toMap(StatusCount::getStatus, StatusCount::getJobs)), now);
-        }
-        return counts.byStatus().getOrDefault(status, 0L);
+    /**
+     * The bound tenant's print jobs by status (one grouped count), kept for {@code print_jobs{status}}: the advisor
+     * runs it once per tenant (D185), so a scrape, which has no tenant, never reads the database.
+     */
+    @SystemScoped(SystemScope.METRICS)
+    @Scheduled(fixedDelayString = "${restaurantpro.production.queue-gauges-interval:PT30S}")
+    public void refreshStatusCounts() {
+        statusCounts.put(tenants.requireTenant(), new StatusCounts(jobs.countGroupedByStatus().stream()
+                .collect(Collectors.toMap(StatusCount::getStatus, StatusCount::getJobs)), clock.instant()));
     }
 
-    private record Counts(Map<PrintJobStatus, Long> byStatus, Instant countedAt) {
+    /** Every tenant's last count, summed (the tenant is never a label, P74). */
+    private long jobsIn(PrintJobStatus status) {
+        Instant oldestFresh = clock.instant().minus(STALE_AFTER);
+        statusCounts.values().removeIf(counts -> counts.at().isBefore(oldestFresh));
+        return statusCounts.values().stream().mapToLong(counts -> counts.byStatus().getOrDefault(status, 0L)).sum();
+    }
+
+    private record StatusCounts(Map<PrintJobStatus, Long> byStatus, Instant at) {
     }
 
     /** Logged at WARN and counted: the work is kept UNROUTED, not printed until it is routed (D89 (1)). */

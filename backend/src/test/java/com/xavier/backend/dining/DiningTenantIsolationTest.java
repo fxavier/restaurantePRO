@@ -11,7 +11,7 @@ import com.xavier.backend.AppRoleSession;
 import com.xavier.backend.OwnerDatabase;
 import com.xavier.backend.access.Actor;
 import com.xavier.backend.access.Permission;
-import com.xavier.backend.orders.TenantKeyAssertions;
+import com.xavier.backend.architecture.CompositeForeignKeyCoverageTest;
 import com.xavier.backend.architecture.RowLevelSecurityCoverageTest;
 import com.xavier.backend.shared.persistence.StoreScopeViolations;
 import com.xavier.backend.shared.tenancy.MembershipKind;
@@ -180,7 +180,7 @@ class DiningTenantIsolationTest {
     @Test
     void theModuleIsTenantProtected() {
         RowLevelSecurityCoverageTest.assertModuleTenantProtected("dining");
-        TenantKeyAssertions.assertModuleKeysIncludeTheTenant("dining");
+        CompositeForeignKeyCoverageTest.assertModuleKeysIncludeTheTenant("dining");
     }
 
     /** A BackOffice account of {@code tenant} managing dining in {@code store}, or everywhere when null. */

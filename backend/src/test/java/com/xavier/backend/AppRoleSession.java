@@ -125,7 +125,8 @@ public final class AppRoleSession implements AutoCloseable {
 
     /**
      * Each table of {@code schema} → its D167 class as built: {@code STORE}, {@code STORE_OR_ALL},
-     * {@code CHILD:<parent>} (read from its {@code parent_fixed} trigger's foreign key), {@code UNSCOPED}, or
+     * {@code CHILD:<parent>} (read from its {@code parent_fixed} trigger's foreign key, single-column or composite with
+     * {@code tenant_id}), {@code TENANT}, {@code UNSCOPED}, or
      * {@code NONE} when it has neither a policy nor a registration.
      */
     public static Map<String, String> classification(String schema) {
@@ -138,14 +139,21 @@ public final class AppRoleSession implements AutoCloseable {
                                  WHEN p.polname = 'parent_scope' THEN 'CHILD:' || coalesce((
                                      SELECT k.confrelid::regclass::text FROM pg_catalog.pg_trigger t
                                          JOIN pg_catalog.pg_constraint k ON k.conrelid = t.tgrelid
-                                             AND k.contype = 'f' AND k.conkey = ARRAY[t.tgattr[0]]
+                                             AND k.contype = 'f' AND t.tgattr[0] = ANY (k.conkey)
+                                             AND (cardinality(k.conkey) = 1 OR (cardinality(k.conkey) = 2
+                                                 AND EXISTS (SELECT 1 FROM pg_catalog.pg_attribute ta
+                                                             WHERE ta.attrelid = k.conrelid
+                                                               AND ta.attname = 'tenant_id'
+                                                               AND ta.attnum = ANY (k.conkey))))
                                      WHERE t.tgrelid = c.oid AND t.tgname = 'parent_fixed'), '?')
+                                 WHEN p.polname = 'tenant_rows' THEN 'TENANT'
                                  WHEN p.polname IS NULL THEN 'NONE'
                                  ELSE 'OTHER:' || p.polname END AS class
                         FROM pg_catalog.pg_class c
                             JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
                             LEFT JOIN shared.rls_unscoped_table u ON u.table_name = c.oid
                             LEFT JOIN pg_catalog.pg_policy p ON p.polrelid = c.oid
+                                AND p.polname <> 'tenant_scope'
                         WHERE n.nspname = ? AND c.relkind IN ('r', 'p')""")
                 .param(schema).query().listOfRows();
         return rows.stream().collect(Collectors.toMap(row -> (String) row.get("name"), row -> (String) row.get("class"),
