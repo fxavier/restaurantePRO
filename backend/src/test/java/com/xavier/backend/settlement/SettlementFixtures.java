@@ -506,8 +506,8 @@ public class SettlementFixtures {
                 return null;
             }));
             locked.await(30, TimeUnit.SECONDS);
-            var a = pool.submit(first);
-            var b = pool.submit(second);
+            var a = pool.submit(TenantTestSupport.inBootstrap(first));
+            var b = pool.submit(TenantTestSupport.inBootstrap(second));
             long deadline = System.nanoTime() + java.time.Duration.ofSeconds(30).toNanos();
             while (blockedOnLocks() < 2 && System.nanoTime() < deadline) {
                 Thread.sleep(5); // polls a condition; not a timing guard

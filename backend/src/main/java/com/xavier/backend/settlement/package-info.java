@@ -25,7 +25,7 @@
  * another module's tables.
  */
 @ApplicationModule(displayName = "Settlement", allowedDependencies = {
-        "shared", "audit", "access", "organization", "organization :: dto", "identity", "orders", "cash", "fiscal",
+        "shared", "audit", "access", "organization", "organization :: dto", "organization :: event", "identity", "orders", "cash", "fiscal",
         "fiscal :: dto", "customers", "customers :: dto"})
 package com.xavier.backend.settlement;
 
