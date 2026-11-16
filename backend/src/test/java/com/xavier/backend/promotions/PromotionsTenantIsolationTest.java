@@ -10,6 +10,7 @@ import com.xavier.backend.AppRoleSession;
 import com.xavier.backend.OwnerDatabase;
 import com.xavier.backend.access.Actor;
 import com.xavier.backend.access.Permission;
+import com.xavier.backend.architecture.CompositeForeignKeyCoverageTest;
 import com.xavier.backend.architecture.RowLevelSecurityCoverageTest;
 import com.xavier.backend.shared.persistence.StoreScopeViolations;
 import com.xavier.backend.shared.tenancy.MembershipKind;
@@ -197,6 +198,7 @@ class PromotionsTenantIsolationTest {
     @Test
     void theModuleIsTenantProtected() {
         RowLevelSecurityCoverageTest.assertModuleTenantProtected("promotions");
+        CompositeForeignKeyCoverageTest.assertModuleKeysIncludeTheTenant("promotions");
     }
 
     /** An account of {@code tenant} (its resolved membership as the principal's details), in a store or everywhere. */

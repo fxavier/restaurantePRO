@@ -11,6 +11,7 @@ import com.xavier.backend.OwnerDatabase;
 import com.xavier.backend.TestcontainersConfiguration;
 import com.xavier.backend.access.Actor;
 import com.xavier.backend.access.Permission;
+import com.xavier.backend.architecture.CompositeForeignKeyCoverageTest;
 import com.xavier.backend.architecture.RowLevelSecurityCoverageTest;
 import com.xavier.backend.shared.persistence.StoreScopeViolations;
 import com.xavier.backend.shared.tenancy.MembershipKind;
@@ -138,6 +139,7 @@ class AuditTenantIsolationTest {
     @Test
     void theModuleIsTenantProtected() {
         RowLevelSecurityCoverageTest.assertModuleTenantProtected("audit");
+        CompositeForeignKeyCoverageTest.assertModuleKeysIncludeTheTenant("audit");
     }
 
     /** An installation-wide auditor of {@code tenant}. */
