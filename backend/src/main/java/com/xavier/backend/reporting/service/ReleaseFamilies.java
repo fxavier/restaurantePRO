@@ -23,6 +23,8 @@ class ReleaseFamilies {
 
     private final CatalogApi catalog;
     private final TenantScopes tenants;
+    // ponytail: never cleared; one entry per tenant per release (a published release never changes). Upgrade path: a
+    // bounded LRU when a tenant's release history makes the map worth bounding.
     private final Map<Key, Map<UUID, String>> byRelease = new ConcurrentHashMap<>();
 
     ReleaseFamilies(CatalogApi catalog, TenantScopes tenants) {
