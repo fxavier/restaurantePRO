@@ -3,9 +3,9 @@ package com.xavier.backend.config.security;
 import com.xavier.backend.access.ActorAuthentication;
 import com.xavier.backend.access.ActorDirectory;
 import com.xavier.backend.access.Assurance;
-import com.xavier.backend.shared.tenancy.BootstrapTenant;
 import com.xavier.backend.shared.tenancy.MembershipKind;
 import com.xavier.backend.shared.tenancy.TenantContext;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -27,9 +27,11 @@ final class PosSessionFilter extends OncePerRequestFilter {
     static final String HEADER = "X-Pos-Session";
 
     private final ActorDirectory actors;
+    private final TenantScopes tenants;
 
-    PosSessionFilter(ActorDirectory actors) {
+    PosSessionFilter(ActorDirectory actors, TenantScopes tenants) {
         this.actors = actors;
+        this.tenants = tenants;
     }
 
     @Override
@@ -39,7 +41,8 @@ final class PosSessionFilter extends OncePerRequestFilter {
         if (token != null && !token.isBlank()) {
             actors.posSession(token.strip()).ifPresent(actor -> {
                 SecurityContext context = SecurityContextHolder.createEmptyContext();
-                context.setAuthentication(new ActorAuthentication(actor, new TenantContext(BootstrapTenant.ID,
+                // the tenant the POS chain bound (InterimPosBootstrapTenant, until S73's TERMINAL membership)
+                context.setAuthentication(new ActorAuthentication(actor, new TenantContext(tenants.requireTenant(),
                         MembershipKind.TERMINAL, actor.terminalId(), InterimPosBootstrapTenant.ORIGIN),
                         Assurance.NONE));
                 SecurityContextHolder.setContext(context);

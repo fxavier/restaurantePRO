@@ -79,7 +79,7 @@ class SecurityConfig {
         RequestMatcher pos = RouteFamily::isPos;
         return api.stateless(http.securityMatcher(pos))
                 .addFilterBefore(new InterimPosBootstrapTenant(tenants), AnonymousAuthenticationFilter.class)
-                .addFilterAfter(new PosSessionFilter(actors), InterimPosBootstrapTenant.class)
+                .addFilterAfter(new PosSessionFilter(actors, tenants), InterimPosBootstrapTenant.class)
                 .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint((request, response, e) ->
                         problems.refuse(response, org.springframework.http.HttpStatus.UNAUTHORIZED,
                                 "POS_SESSION_INVALID", "Log in on the terminal again.")))
