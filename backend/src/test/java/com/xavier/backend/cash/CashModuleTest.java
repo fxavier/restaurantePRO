@@ -20,7 +20,7 @@ import org.springframework.test.context.TestPropertySource;
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
-@ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization", "identity"})
+@ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization", "identity", "tenancy"})
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, CashTestClock.Config.class, CashFixtures.class})
 @TestPropertySource(properties = {
