@@ -30,8 +30,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 class ReportPlanTest {
 
     static final String INDEX_NODE = "(Index Scan using|Index Only Scan using|Bitmap Index Scan on) ";
-    static final String STORE_AND_DAYS = "Index Cond: \\(\\(store_id = '[0-9a-f-]+'::uuid\\) AND "
-            + "\\(business_date >= '2026-01-01'::date\\) AND \\(business_date <= '2026-01-31'::date\\)\\)";
+    static final String STORE_AND_DAYS = "Index Cond: \\(\\(tenant_id = \\(InitPlan \\d+\\)\\.col1\\) AND "
+            + "\\(store_id = '[0-9a-f-]+'::uuid\\) AND \\(business_date >= '2026-01-01'::date\\) AND \\(business_date <= '2026-01-31'::date\\)\\)";
 
     @Autowired
     JdbcClient jdbc;

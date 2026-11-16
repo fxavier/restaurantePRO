@@ -254,7 +254,7 @@ class AuditQueryTest {
                         + "AND indexname = 'audit_event_store_action_ix'")
                 .query(String.class).single();
 
-        assertThat(definition).endsWith("(store_id, action, occurred_at)");
+        assertThat(definition).endsWith("(tenant_id, store_id, action, occurred_at)");
     }
 
     @Test
@@ -263,7 +263,7 @@ class AuditQueryTest {
                         + "AND indexname = 'audit_event_occurred_ix'")
                 .query(String.class).single();
 
-        assertThat(definition).endsWith("(occurred_at, id)");
+        assertThat(definition).endsWith("(tenant_id, occurred_at, id)");
     }
 
     MockHttpServletRequestBuilder list() {

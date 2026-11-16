@@ -549,3 +549,9 @@ SELECT shared.rls_protect_tenant('catalog.store_item_exclusion');
 SELECT shared.rls_protect_tenant_table('catalog.tax_category');
 SELECT shared.rls_protect_tenant_table('catalog.tax_rate');
 SELECT shared.rls_protect_tenant_table('catalog.unit');
+
+-- D180 (indexes): tenant_id leads every composite index and every index on store_id, so the restrictive tenant
+-- policy is served by the index. Same names, same partial predicates; built under a temporary name, then swapped.
+CREATE INDEX automatic_item_store_ix_tenant ON catalog.automatic_item USING btree (tenant_id, store_id);
+DROP INDEX catalog.automatic_item_store_ix;
+ALTER INDEX catalog.automatic_item_store_ix_tenant RENAME TO automatic_item_store_ix;

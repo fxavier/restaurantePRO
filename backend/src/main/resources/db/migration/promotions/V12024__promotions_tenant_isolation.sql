@@ -288,3 +288,12 @@ SELECT shared.rls_protect_tenant('promotions.promotion_release');
 SELECT shared.rls_protect_tenant_table('promotions.promotion_scope');
 SELECT shared.rls_protect_tenant_table('promotions.promotion_store');
 SELECT shared.rls_protect_tenant_table('promotions.promotion_window');
+
+-- D180 (indexes): tenant_id leads every composite index and every index on store_id, so the restrictive tenant
+-- policy is served by the index. Same names, same partial predicates; built under a temporary name, then swapped.
+CREATE INDEX loyalty_point_entry_customer_ix_tenant ON promotions.loyalty_point_entry USING btree (tenant_id, customer_id, occurred_at) INCLUDE (points);
+DROP INDEX promotions.loyalty_point_entry_customer_ix;
+ALTER INDEX promotions.loyalty_point_entry_customer_ix_tenant RENAME TO loyalty_point_entry_customer_ix;
+CREATE INDEX promotion_store_store_ix_tenant ON promotions.promotion_store USING btree (tenant_id, store_id);
+DROP INDEX promotions.promotion_store_store_ix;
+ALTER INDEX promotions.promotion_store_store_ix_tenant RENAME TO promotion_store_store_ix;

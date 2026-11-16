@@ -61,7 +61,8 @@ class LoyaltyBalancePlanTest {
 
         assertThat(plan).containsPattern("(Index Only Scan using|Index Scan using|Bitmap Index Scan on) "
                         + "loyalty_point_entry_customer_ix")
-                .contains("Index Cond: (customer_id = '" + member + "'::uuid)");
+                .containsPattern("Index Cond: \\(\\(tenant_id = \\(InitPlan \\d+\\)\\.col1\\) AND \\(customer_id = '" + member
+                        + "'::uuid\\)\\)");
     }
 
     private void seed() {

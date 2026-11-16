@@ -110,7 +110,7 @@ class AuditPlanTest {
 
         assertThat(plan).containsPattern("(Index Scan( Backward)? using|Bitmap Index Scan on) "
                         + "audit_event_store_action_ix")
-                .containsPattern("Index Cond: \\(\\(store_id = '" + store + "'::uuid\\) AND \\(\\(action\\)::text = '"
+                .containsPattern("Index Cond: \\(\\(tenant_id = \\(InitPlan \\d+\\)\\.col1\\) AND \\(store_id = '" + store + "'::uuid\\) AND \\(\\(action\\)::text = '"
                         + voided + "'::text\\)");
     }
 }
