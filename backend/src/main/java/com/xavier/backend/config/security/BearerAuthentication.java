@@ -4,6 +4,7 @@ import com.nimbusds.jwt.JWTParser;
 import jakarta.servlet.http.HttpServletRequest;
 import java.text.ParseException;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
@@ -20,7 +21,6 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtAudienceValidator;
 import org.springframework.security.oauth2.jwt.JwtClaimNames;
 import org.springframework.security.oauth2.jwt.JwtClaimValidator;
-import org.springframework.security.oauth2.jwt.JwtIssuedAtValidator;
 import org.springframework.security.oauth2.jwt.JwtIssuerValidator;
 import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.JwtTypeValidator;
@@ -34,7 +34,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
  * JWT validation, complete and fail closed (D176, security rule 8), one decoder per route family and realm:
  * signature against the realm's key set with the algorithm allow-list {@code RS256}/{@code ES256} (no {@code none},
  * no {@code HS*}); {@code iss} exactly the realm's issuer; {@code aud} contains the API audience; {@code exp} required,
- * {@code nbf} and {@code iat} not in the future, all with the configured clock skew; the claim {@code typ = Bearer}
+ * {@code nbf} and {@code iat} (required) not in the future, all with the configured clock skew; the claim {@code typ = Bearer}
  * (Keycloak: an ID or a refresh token is never an access token); {@code azp} allowed for the route family. The token
  * picks its decoder by its unverified {@code iss}, among the family's trusted realms only; then everything is verified.
  *
@@ -111,9 +111,11 @@ final class BearerAuthentication {
         JwtTimestampValidator timestamps = new JwtTimestampValidator(properties.clockSkew());
         timestamps.setClock(clock);
         timestamps.setAllowEmptyExpiryClaim(false);
-        JwtIssuedAtValidator issuedAt = new JwtIssuedAtValidator(true);
-        issuedAt.setClockSkew(properties.clockSkew());
-        issuedAt.setClock(clock);
+        // iat required and not in the future (skew allowed); its age is bounded by exp, not here. Spring's
+        // JwtIssuedAtValidator is DPoP's: it also refuses an iat older than the skew, i.e. every access token after
+        // 30 s (found by KeycloakLoginIT)
+        OAuth2TokenValidator<Jwt> issuedAt = new JwtClaimValidator<Instant>(JwtClaimNames.IAT,
+                iat -> iat != null && !iat.isAfter(clock.instant().plus(properties.clockSkew())));
         JwtTypeValidator header = JwtTypeValidator.jwt();
         header.setAllowEmpty(true);
         List<OAuth2TokenValidator<Jwt>> validators = new ArrayList<>(List.of(

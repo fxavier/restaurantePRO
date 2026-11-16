@@ -55,6 +55,13 @@ class JwtValidationTest {
         call(token().es256().encode()).andExpect(status().isOk());
     }
 
+    /** An access token lives five minutes (D175): one issued four minutes ago is still valid. */
+    @Test
+    void aTokenIssuedFourMinutesAgoIsAccepted() throws Exception {
+        call(token().claim("iat", Instant.now().minusSeconds(240)).claim("nbf", Instant.now().minusSeconds(240))
+                .encode()).andExpect(status().isOk());
+    }
+
     /** Keycloak's access tokens carry no {@code nbf}: it is checked when present, never required. */
     @Test
     void aTokenWithoutNotBeforeIsAccepted() throws Exception {

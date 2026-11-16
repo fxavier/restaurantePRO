@@ -113,7 +113,7 @@ class KeycloakLoginIT {
     @Test
     void theAccessTokenOfAMemberResolvesItsAccount() throws Exception {
         UUID tenant = Members.activeTenant();
-        UUID account = Members.member(tenant, subject);
+        UUID account = member(tenant);
 
         mvc.perform(get("/api/v1/auth/session").header("Authorization", bearer(tokens.get("access_token")
                         .asString())))
@@ -145,7 +145,7 @@ class KeycloakLoginIT {
     @Test
     void aPasswordOnlyLoginGetsTheStepUpChallengeOnASensitiveAction() throws Exception {
         UUID tenant = Members.activeTenant();
-        Members.member(tenant, subject, Members.role(tenant, Permission.SUPPORT_ACCESS_MANAGE));
+        member(tenant, Members.role(tenant, Permission.SUPPORT_ACCESS_MANAGE));
 
         mvc.perform(post("/api/v1/backoffice/support-grants")
                         .header("Authorization", bearer(tokens.get("access_token").asString()))
@@ -159,6 +159,14 @@ class KeycloakLoginIT {
                 .andExpect(header().string("WWW-Authenticate", Matchers.containsString(
                         "error=\"insufficient_user_authentication\"")))
                 .andExpect(jsonPath("$.code").value("MFA_STEP_UP_REQUIRED"));
+    }
+
+    /** An account of {@code tenant} whose ACCOUNT membership is the Keycloak user's, under the real issuer. */
+    private static UUID member(UUID tenant, UUID... roles) {
+        UUID account = Members.account(tenant, roles);
+        Members.membership(tenant, SharedKeycloak.instance().issuer(REALM), subject, "ACCOUNT", account,
+                java.time.Instant.now().minusSeconds(60), null);
+        return account;
     }
 
     private static String adminToken() throws Exception {
