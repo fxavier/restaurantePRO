@@ -55,6 +55,12 @@ class JwtValidationTest {
         call(token().es256().encode()).andExpect(status().isOk());
     }
 
+    /** Keycloak's access tokens carry no {@code nbf}: it is checked when present, never required. */
+    @Test
+    void aTokenWithoutNotBeforeIsAccepted() throws Exception {
+        call(token().without("nbf").encode()).andExpect(status().isOk());
+    }
+
     @Test
     void noTokenIsAChallengeWithoutError() throws Exception {
         mvc.perform(get(PROBE)).andExpect(status().isUnauthorized())

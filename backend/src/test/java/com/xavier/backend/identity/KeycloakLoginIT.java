@@ -11,7 +11,11 @@ import com.nimbusds.jwt.JWTParser;
 import com.xavier.backend.SharedKeycloak;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.config.security.Members;
-import com.xavier.backend.config.security.SecurityHttpTest;
+import com.xavier.backend.TestcontainersConfiguration;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.annotation.Import;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -43,7 +47,10 @@ import tools.jackson.databind.json.JsonMapper;
  * <p>Test-only changes on the throw-away container, through the admin API: the BFF client may use the password grant
  * with a client secret (in production it uses the authorization code flow with {@code private_key_jwt}), and one user.
  */
-@SecurityHttpTest
+@SpringBootTest
+@AutoConfigureMockMvc
+@Import(TestcontainersConfiguration.class)
+@ExtendWith(Members.CloseTenantsAfterClass.class)
 class KeycloakLoginIT {
 
     static final JsonMapper JSON = JsonMapper.builder().build();
@@ -55,7 +62,12 @@ class KeycloakLoginIT {
 
     @DynamicPropertySource
     static void realKeycloak(DynamicPropertyRegistry registry) {
+        // its own context (not @SecurityHttpTest, whose test issuers would compete with these): the real realms
         registry.add("restaurantpro.test.jwt", () -> "false");
+        registry.add("restaurantpro.bootstrap.company.name", () -> "Test Company");
+        registry.add("restaurantpro.bootstrap.company.tax-id", () -> "TEST-TAX-ID");
+        registry.add("restaurantpro.bootstrap.company.country", () -> "MZ");
+        registry.add("restaurantpro.bootstrap.company.currency", () -> "MZN");
         registry.add("restaurantpro.security.issuers.tenant", () -> SharedKeycloak.instance().issuer(REALM));
         registry.add("restaurantpro.security.issuers.ops",
                 () -> SharedKeycloak.instance().issuer("restaurantpro-ops"));
