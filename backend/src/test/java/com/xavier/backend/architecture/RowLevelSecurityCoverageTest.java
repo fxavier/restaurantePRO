@@ -105,15 +105,65 @@ public class RowLevelSecurityCoverageTest {
         for (String schema : schemas) {
             assertModuleClassified(schema, SPECIAL_TABLES.getOrDefault(schema, new String[0]));
         }
-        Map<String, Object> counts = OwnerDatabase.shared().jdbc().sql("""
-                        SELECT (SELECT count(*) FROM shared.rls_protected_table) AS protected,
-                               (SELECT count(*) FROM shared.rls_unscoped_table) AS unscoped""").query().singleRow();
-        assertThat(counts).as("A75: 97 protected after R5; R6 S71 adds the three organization tables and the "
-                        + "idempotency records (out of UNSCOPED) and moves the Modulith registry, its archive, the "
-                        + "Flyway history and the registries to PLATFORM")
-                .containsEntry("protected", 101L).containsEntry("unscoped", 56L);
-        assertThat(OwnerDatabase.shared().jdbc().sql("SELECT count(*) FROM shared.rls_platform_table")
-                .query(Long.class).single()).as("PLATFORM").isEqualTo(10L);
+        assertThat(registryProblems(schemas)).as("each table in exactly one registry").isEmpty();
+    }
+
+    /**
+     * A75 as R6 converts modules (it holds whatever slice merges first): the three registries (PROTECTED, UNSCOPED,
+     * PLATFORM) partition every table of {@code schemas}, each table in exactly one, and UNSCOPED is left only in a
+     * module not yet converted ({@link #TENANT_PROTECTED_MODULES}).
+     */
+    static List<String> registryProblems(List<String> schemas) {
+        List<Map<String, Object>> tables = OwnerDatabase.shared().jdbc().sql("""
+                        SELECT c.oid::regclass::text AS name, n.nspname AS schema,
+                               (EXISTS (SELECT 1 FROM shared.rls_protected_table r WHERE r.table_name = c.oid))::int
+                             + (EXISTS (SELECT 1 FROM shared.rls_unscoped_table r WHERE r.table_name = c.oid))::int
+                             + (EXISTS (SELECT 1 FROM shared.rls_platform_table r WHERE r.table_name = c.oid))::int
+                                   AS registries,
+                               EXISTS (SELECT 1 FROM shared.rls_unscoped_table r WHERE r.table_name = c.oid)
+                                   AS unscoped
+                        FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                        WHERE c.relkind IN ('r', 'p') AND n.nspname = ANY (CAST(? AS text[]))
+                        ORDER BY 1""").param("{" + String.join(",", schemas) + "}").query().listOfRows();
+        List<String> problems = new ArrayList<>();
+        for (Map<String, Object> table : tables) {
+            long registries = ((Number) table.get("registries")).longValue();
+            if (registries != 1) {
+                problems.add(table.get("name") + ": in " + registries + " registries, not exactly one");
+            }
+            if (Boolean.TRUE.equals(table.get("unscoped"))
+                    && TENANT_PROTECTED_MODULES.contains((String) table.get("schema"))) {
+                problems.add(table.get("name") + ": UNSCOPED in a module converted to tenant tables");
+            }
+        }
+        return problems;
+    }
+
+    /** The partition is red-capable: an unregistered table, a table in two registries, UNSCOPED in a converted one. */
+    @Test
+    void theRegistryPartitionCatchesAMissingADoubleAndAStaleUnscopedTable() {
+        JdbcClient owner = OwnerDatabase.shared().jdbc();
+        dropScratch(owner);
+        try {
+            OwnerDatabase.shared().tx(jdbc -> {
+                jdbc.sql("CREATE SCHEMA " + SCRATCH).update();
+                jdbc.sql("CREATE TABLE " + SCRATCH + ".stray (id uuid PRIMARY KEY)").update();
+                jdbc.sql("CREATE TABLE " + SCRATCH + ".twice (id uuid PRIMARY KEY)").update();
+                jdbc.sql("SELECT shared.rls_register_unscoped('" + SCRATCH + ".twice', 'x'), "
+                        + "shared.rls_register_protected('" + SCRATCH + ".twice')").query().listOfRows();
+            });
+            assertThat(registryProblems(List.of(SCRATCH))).containsExactly(
+                    SCRATCH + ".stray: in 0 registries, not exactly one",
+                    SCRATCH + ".twice: in 2 registries, not exactly one");
+            owner.sql("INSERT INTO shared.rls_unscoped_table VALUES ('organization.store', 'stale')").update();
+            assertThat(registryProblems(List.of("organization")))
+                    .contains("organization.store: in 2 registries, not exactly one",
+                            "organization.store: UNSCOPED in a module converted to tenant tables");
+        } finally {
+            owner.sql("DELETE FROM shared.rls_unscoped_table WHERE table_name = 'organization.store'::regclass")
+                    .update();
+            dropScratch(owner);
+        }
     }
 
     @Test
