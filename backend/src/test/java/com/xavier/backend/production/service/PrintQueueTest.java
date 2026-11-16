@@ -64,6 +64,9 @@ class PrintQueueTest {
     PrintQueue queue;
 
     @Autowired
+    ProductionMetrics metrics;
+
+    @Autowired
     MockMvc mvc;
 
     @Autowired
@@ -110,6 +113,7 @@ class PrintQueueTest {
                 .contains("BAR\n", "Ronda 1\n", "2 x Coca-Cola 33cl\n").endsWith("\u001dVB\u0000")
                 .doesNotContain("CÓPIA"));
         assertThat(fixtures.job(job)).containsEntry("attempts", 1).containsEntry("printer_id", bar);
+        metrics.refreshStatusCounts(); // what the per-tenant refresh shows the next scrape (a scrape reads nothing)
         assertThat(meters.get("print_jobs").tag("status", "SENT").gauge().value()).isPositive();
         // queued, then sent
         verify(notifier, timeout(5000).times(2)).notifyAfterCommit(eq(shop.store()), eq(ChangeTopic.PRINT_JOBS),
