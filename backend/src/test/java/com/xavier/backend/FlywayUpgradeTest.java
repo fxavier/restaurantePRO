@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
-import java.util.function.Predicate;
+import java.util.function.BiPredicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -83,7 +83,7 @@ class FlywayUpgradeTest {
     @Test
     void theLastReleaseUpgradesToTheCurrentMigrations() throws IOException {
         Set<Integer> released = releasedVersions();
-        copyMigrations(released::contains);
+        copyMigrations((version, sql) -> released.contains(version));
         flyway(previousRelease, false).migrate();
         int installedHead = released.stream().mapToInt(Integer::intValue).max().orElseThrow();
 
@@ -101,7 +101,7 @@ class FlywayUpgradeTest {
 
     @Test
     void migrationsBelowTheInstalledHeadAreAppliedOutOfOrder() throws IOException {
-        copyMigrations(version -> !HELD_BACK.contains(version));
+        copyMigrations((version, sql) -> !HELD_BACK.contains(version));
         flyway(previousRelease, false).migrate();
 
         Flyway upgrade = flyway(currentRelease, outOfOrderOfApplicationYaml());
@@ -117,7 +117,7 @@ class FlywayUpgradeTest {
 
     @Test
     void withoutOutOfOrderTheSameUpgradeIsRefused() throws IOException {
-        copyMigrations(version -> !HELD_BACK.contains(version));
+        copyMigrations((version, sql) -> !HELD_BACK.contains(version));
         flyway(previousRelease, false).migrate();
 
         assertThatThrownBy(() -> flyway(currentRelease, false).migrate())
@@ -131,9 +131,7 @@ class FlywayUpgradeTest {
      */
     @Test
     void theOldStoreOrAllPoliciesAreReplacedOnAnInstalledDatabase() throws IOException {
-        // main before S70: without V1009/V5008, and without what came after them (R6's V1010 carries V1009's helper)
-        copyMigrations(version -> version != 1009 && version != 5008 && version != 1010 && version != 2005
-                && version != 15001);
+        copyMigrations(FlywayUpgradeTest::installedBeforeS70);
         flyway(previousRelease, false).migrate();
         JdbcClient db = JdbcClient.create(installation);
         assertThat(policyNames(db, "catalog.quick_page")).containsExactly("store_or_all_scope");
@@ -148,6 +146,25 @@ class FlywayUpgradeTest {
         }
         assertThat(policyNames(db, "catalog.quick_page_entry")).containsExactly("store_or_all_parent_delete",
                 "store_or_all_parent_insert", "store_or_all_parent_read", "store_or_all_parent_update");
+    }
+
+    /**
+     * The installation of {@link #theOldStoreOrAllPoliciesAreReplacedOnAnInstalledDatabase}: main before S70, so
+     * without S70's V1009/V5008 and without anything of R6, which came after (V1010 carries V1009's helper; every R6
+     * migration names {@code tenant_id}). Derived from the migration itself, so no converting slice edits this test.
+     */
+    static boolean installedBeforeS70(int version, String sql) {
+        return version != 1009 && version != 5008 && !sql.contains("tenant_id");
+    }
+
+    @Test
+    void theBaselineBeforeS70LeavesOutEveryTenantMigrationAFutureSliceAdds() {
+        assertThat(installedBeforeS70(6031, "ALTER TABLE orders.order_header ADD COLUMN tenant_id uuid")).isFalse();
+        assertThat(installedBeforeS70(1010, "CREATE FUNCTION shared.rls_tenant_id() ... tenant_id")).isFalse();
+        assertThat(installedBeforeS70(5007, "SELECT shared.rls_protect_store_or_all_table('catalog.quick_page')"))
+                .isTrue();
+        assertThat(installedBeforeS70(1009, "CREATE OR REPLACE FUNCTION shared.rls_protect_store_or_all_table"))
+                .isFalse();
     }
 
     private static List<String> policyNames(JdbcClient db, String table) {
@@ -172,16 +189,18 @@ class FlywayUpgradeTest {
     }
 
     /** Every current migration into {@link #currentRelease}; those of the previous release into the other. */
-    private void copyMigrations(Predicate<Integer> inPreviousRelease) throws IOException {
+    private void copyMigrations(BiPredicate<Integer, String> inPreviousRelease) throws IOException {
         Resource[] migrations = new PathMatchingResourcePatternResolver()
                 .getResources("classpath*:db/migration/**/*.sql");
         assertThat(migrations).isNotEmpty();
         for (Resource migration : migrations) {
             String name = migration.getFilename();
+            byte[] sql;
             try (InputStream in = migration.getInputStream()) {
-                Files.write(currentRelease.resolve(name), in.readAllBytes());
+                sql = in.readAllBytes();
+                Files.write(currentRelease.resolve(name), sql);
             }
-            if (inPreviousRelease.test(version(name))) {
+            if (inPreviousRelease.test(version(name), new String(sql, StandardCharsets.UTF_8))) {
                 Files.copy(currentRelease.resolve(name), previousRelease.resolve(name));
             }
         }
