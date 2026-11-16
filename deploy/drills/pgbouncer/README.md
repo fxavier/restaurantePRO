@@ -23,9 +23,8 @@ so the pool behaves as production's). Run: `deploy/drills/pgbouncer/run.sh`, or
 **Consequences for deployment.**
 - `ChangeNotifier` (SSE fan-out, D60/D185) keeps one `LISTEN change_notice` connection per instance. In transaction
   mode the `LISTEN` runs on a server connection that returns to the pool, so notices are lost. That connection **must
-  bypass the pooler**: today it opens its own connection with the pool's JDBC URL, so behind PgBouncer it needs a
-  direct URL of its own (a property, e.g. `restaurantpro.notify.jdbc-url`, in `shared/notify` — not S75's scope;
-  follow-up for S76 or the hosting work). `pg_notify` from a transaction through the pooler is fine (delivered on commit).
+  bypass the pooler**: set `restaurantpro.notify.listen-url` (`RESTAURANTPRO_NOTIFY_LISTEN_URL`, S71) to a direct JDBC
+  URL; empty, it uses the pool's URL, which is right only without a pooler. `pg_notify` from a transaction through the pooler is fine (delivered on commit).
 - Flyway (`restaurantpro_owner`, DDL, advisory locks) connects directly.
 - Use PgBouncer ≥ 1.21 with `max_prepared_statements > 0` (pgjdbc's server-side prepared statements), or set
   `prepareThreshold=0` on the JDBC URL.

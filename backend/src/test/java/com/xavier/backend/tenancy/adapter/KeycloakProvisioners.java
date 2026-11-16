@@ -21,9 +21,9 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 
 /**
- * The deploy-time set-up of the two provisioners (O1 option 3), done on a Keycloak Testcontainer as its master
- * administrator, once per JVM: the three realms of {@code deploy/keycloak} imported (the devices realm is
- * {@code realm-restaurantpro-devices.json}); in {@code restaurantpro}, FGAP v2 on and the
+ * The deploy-time set-up of the two provisioners (O1 option 3), done on the shared Keycloak Testcontainer
+ * ({@link SharedKeycloak}, which imports every {@code deploy/keycloak} realm) as its master administrator, once per
+ * JVM: in {@code restaurantpro}, FGAP v2 on and the
  * {@code tenancy-provisioner} client with Users and Organizations permissions only (the change S72 makes to
  * {@code realm-restaurantpro.json}); each provisioner's public key registered (the private keys live in temporary
  * files only); and the tenant realm's SMTP pointed at a Mailpit, so the invitation email is observable.
@@ -63,12 +63,7 @@ final class KeycloakProvisioners {
     }
 
     private static KeycloakProvisioners setUp() throws Exception {
-        // SharedKeycloak (S71) starts Keycloak with "--import-realm" as its whole command, which Keycloak refuses
-        // ("Unknown option", exit 2); until its owner fixes it, this suite runs its own server, same pinned image,
-        // and imports every realm file through the admin API.
-        KeycloakContainer keycloak = new KeycloakContainer(SharedKeycloak.IMAGE);
-        keycloak.withStartupTimeout(java.time.Duration.ofMinutes(5)); // six slices share this machine
-        keycloak.start();
+        KeycloakContainer keycloak = SharedKeycloak.instance().container();
         GenericContainer<?> mailpit = new GenericContainer<>(MAILPIT_IMAGE).withExposedPorts(1025, 8025)
                 .waitingFor(Wait.forHttp("/livez").forPort(8025));
         mailpit.start();
@@ -81,9 +76,13 @@ final class KeycloakProvisioners {
     }
 
     private void configure(String mailpitIp) throws Exception {
-        for (String file : REALM_FILES) {
+        for (String file : REALM_FILES) { // SharedKeycloak imports them; a missing one is imported here
             String realm = Files.readString(RealmFiles.directory().resolve(file));
-            expect(status(HttpMethod.POST, "/admin/realms", master(), realm), 201);
+            String name = (String) tools.jackson.databind.json.JsonMapper.builder().build().readValue(realm, Map.class)
+                    .get("realm");
+            if (status(HttpMethod.GET, "/admin/realms/" + name, master(), null).value() == 404) {
+                expect(status(HttpMethod.POST, "/admin/realms", master(), realm), 201);
+            }
         }
         register(DEVICE_REALM, "device-provisioner", Path.of(deviceProvisioner.keyFile()));
 

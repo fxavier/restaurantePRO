@@ -8,7 +8,7 @@
 #     realm-restaurantpro.json; then only its permissions and key are set here.)
 # Each authenticates with private_key_jwt (ES256): its P-256 private key is written to KEYS_DIR as
 # <client>.pem (PKCS#8, 0600; give the backend its path in RESTAURANTPRO_KEYCLOAK_ADMIN_KEY_FILE and
-# RESTAURANTPRO_KEYCLOAK_DEVICESADMIN_KEYFILE) and only the public JWK is registered on the client. No secret exists,
+# RESTAURANTPRO_KEYCLOAK_DEVICES_ADMIN_KEY_FILE) and only the public JWK is registered on the client. No secret exists,
 # none is printed. Optional --smtp-host HOST[:PORT] points the tenant realm's email at a relay (development: mailpit).
 #
 # Usage: deploy/keycloak-provisioners.sh --url URL --admin-password-file FILE --keys-dir DIR [--admin USER]
