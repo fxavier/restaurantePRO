@@ -54,10 +54,23 @@ public class ReservationNoShowJob {
     public int markDue() {
         Instant now = clock.instant();
         int marked = 0;
+        List<UUID> due;
         try {
-            marked = inTransaction.execute(status -> markBatch(now));
+            due = inTransaction.execute(status -> reservations.lockDueForNoShow(now,
+                    ReservationWindow.DEFAULT_GRACE_MINUTES, batchPerTenant));
         } catch (RuntimeException e) {
-            log.error("Reservation no-show run failed; the next run retries", e);
+            log.error("Reservation no-show run failed to list the due reservations; the next run retries", e);
+            return 0;
+        }
+        for (UUID id : due) {
+            // ponytail: a reservation that always fails is retried every run and keeps its slot in the tenant's
+            // batch, so batch-per-tenant such reservations would starve the rest; a failure counter or a retry-after
+            // column is the next step if it is ever seen.
+            try {
+                marked += inTransaction.execute(status -> markOne(id, now));
+            } catch (RuntimeException e) {
+                log.error("Reservation {} could not be marked no-show; the others of the run go on", id, e);
+            }
         }
         if (marked > 0) {
             log.info("Reservation no-show run marked {} reservations", marked);
@@ -65,14 +78,17 @@ public class ReservationNoShowJob {
         return marked;
     }
 
-    private int markBatch(Instant now) {
-        List<UUID> due = reservations.lockDueForNoShow(now, ReservationWindow.DEFAULT_GRACE_MINUTES, batchPerTenant);
-        for (Reservation reservation : reservations.findAllById(due)) {
-            reservation.markNoShow(Reservation.SYSTEM, now);
-            reservations.saveAndFlush(reservation);
-            changes.recordAsSystem("RESERVATION_NO_SHOW", ReservationService.ENTITY, reservation.getId(),
-                    reservation.getStoreId(), Map.of("startsAt", reservation.getStartsAt().toString()));
+    /** One reservation in its own transaction, still due once its row is locked again (a request may have moved it). */
+    private int markOne(UUID id, Instant now) {
+        if (!reservations.lockDueForNoShow(now, ReservationWindow.DEFAULT_GRACE_MINUTES, batchPerTenant)
+                .contains(id)) {
+            return 0;
         }
-        return due.size();
+        Reservation reservation = reservations.findById(id).orElseThrow();
+        reservation.markNoShow(Reservation.SYSTEM, now);
+        reservations.saveAndFlush(reservation);
+        changes.recordAsSystem("RESERVATION_NO_SHOW", ReservationService.ENTITY, reservation.getId(),
+                reservation.getStoreId(), Map.of("startsAt", reservation.getStartsAt().toString()));
+        return 1;
     }
 }

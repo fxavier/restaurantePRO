@@ -140,6 +140,24 @@ class ReservationNoShowJobTest {
         assertThat(fixtures.reservationStatus(reservation)).isEqualTo("NO_SHOW");
     }
 
+    /** One reservation that cannot be marked must not roll back, nor block, the others of the run. */
+    @Test
+    void aFailingReservationDoesNotBlockTheOthersOfTheRun() throws Exception {
+        UUID other = fixtures.book(fixtures.newStore(), startsAt);
+        DiningChanges failing = org.mockito.Mockito.spy(changes);
+        org.mockito.Mockito.doThrow(new IllegalStateException("cannot audit")).when(failing).recordAsSystem(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq(reservation), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
+        ReservationNoShowJob job = new ReservationNoShowJob(reservations, failing, transactionManager,
+                Clock.fixed(startsAt.plus(Duration.ofMinutes(31)), ZoneOffset.UTC), 100);
+
+        job.markDue();
+
+        assertThat(fixtures.reservationStatus(other)).isEqualTo("NO_SHOW");
+        assertThat(fixtures.reservationStatus(reservation)).as("left for the next run").isEqualTo("BOOKED");
+    }
+
     static void await(CountDownLatch latch) {
         try {
             if (!latch.await(60, TimeUnit.SECONDS)) {
