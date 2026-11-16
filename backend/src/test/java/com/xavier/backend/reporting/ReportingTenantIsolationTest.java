@@ -76,7 +76,7 @@ class ReportingTenantIsolationTest {
                     + "created_at, updated_at) VALUES (?, ?, 'TAX-ISO', 'MZ', 'MZN', 0, now(), now()) "
                     + "ON CONFLICT (tenant_id) DO NOTHING").param(UUID.randomUUID()).param(company).update();
             app.jdbc().sql("INSERT INTO organization.store (id, code, name, timezone, active, version, created_at, "
-                    + "updated_at) VALUES (?, 'ISO-1', 'Baixa', 'Africa/Maputo', true, 0, now(), now())")
+                    + "updated_at) VALUES (?, 'RPT-1', 'Baixa', 'Africa/Maputo', true, 0, now(), now())")
                     .param(store).update();
             app.jdbc().sql("INSERT INTO reporting.rebuild_run (id, store_id, from_date, to_date, status, projected, "
                     + "started_at) VALUES (?, ?, DATE '" + DAY + "', DATE '" + DAY + "', 'RUNNING', 0, now())")
