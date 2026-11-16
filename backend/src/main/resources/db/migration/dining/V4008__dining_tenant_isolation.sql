@@ -143,6 +143,17 @@ ALTER INDEX dining.tn_reservation_occupation_uk RENAME TO reservation_occupation
 ALTER INDEX dining.tn_table_occupation_open_order_uk RENAME TO table_occupation_open_order_uk;
 ALTER INDEX dining.tn_table_occupation_open_table_uk RENAME TO table_occupation_open_table_uk;
 
+-- D180 Indexes: every composite index that led with store_id now leads with tenant_id (same name and predicate).
+CREATE INDEX tn_reservation_booked_store_starts_ix ON dining.reservation (tenant_id, store_id, starts_at) WHERE (status)::text = 'BOOKED'::text;
+DROP INDEX dining.reservation_booked_store_starts_ix;
+ALTER INDEX dining.tn_reservation_booked_store_starts_ix RENAME TO reservation_booked_store_starts_ix;
+CREATE INDEX tn_reservation_store_starts_ix ON dining.reservation (tenant_id, store_id, starts_at);
+DROP INDEX dining.reservation_store_starts_ix;
+ALTER INDEX dining.tn_reservation_store_starts_ix RENAME TO reservation_store_starts_ix;
+CREATE INDEX tn_table_occupation_open_store_ix ON dining.table_occupation (tenant_id, store_id) WHERE closed_at IS NULL;
+DROP INDEX dining.table_occupation_open_store_ix;
+ALTER INDEX dining.tn_table_occupation_open_store_ix RENAME TO table_occupation_open_store_ix;
+
 -- (6) The restrictive tenant policy, the tenant_fixed trigger and both registries (the table keeps its store
 -- or parent policy of the RLS run: the two are ANDed).
 SELECT shared.rls_protect_tenant('dining.room_area');

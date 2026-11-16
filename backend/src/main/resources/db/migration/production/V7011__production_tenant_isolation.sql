@@ -138,6 +138,23 @@ ALTER TABLE production.print_job
     RENAME CONSTRAINT tn_print_job_ticket_fk TO print_job_ticket_fk;
 ALTER INDEX production.tn_print_job_retry_of_uk RENAME TO print_job_retry_of_uk;
 
+-- D180 Indexes: every composite index that led with store_id now leads with tenant_id (same name and predicate).
+CREATE INDEX tn_print_job_store_status_created_ix ON production.print_job (tenant_id, store_id, status, created_at);
+DROP INDEX production.print_job_store_status_created_ix;
+ALTER INDEX production.tn_print_job_store_status_created_ix RENAME TO print_job_store_status_created_ix;
+CREATE INDEX tn_print_job_unresolved_ix ON production.print_job (tenant_id, store_id, created_at) WHERE status::text = ANY (ARRAY['FAILED', 'UNKNOWN']) AND resolution IS NULL;
+DROP INDEX production.print_job_unresolved_ix;
+ALTER INDEX production.tn_print_job_unresolved_ix RENAME TO print_job_unresolved_ix;
+CREATE INDEX tn_production_ticket_store_created_ix ON production.production_ticket (tenant_id, store_id, created_at);
+DROP INDEX production.production_ticket_store_created_ix;
+ALTER INDEX production.tn_production_ticket_store_created_ix RENAME TO production_ticket_store_created_ix;
+CREATE INDEX tn_production_ticket_unrouted_ix ON production.production_ticket (tenant_id, store_id, created_at) WHERE routing::text = 'UNROUTED';
+DROP INDEX production.production_ticket_unrouted_ix;
+ALTER INDEX production.tn_production_ticket_unrouted_ix RENAME TO production_ticket_unrouted_ix;
+CREATE INDEX tn_terminal_printer_store_ix ON production.terminal_printer (tenant_id, store_id);
+DROP INDEX production.terminal_printer_store_ix;
+ALTER INDEX production.tn_terminal_printer_store_ix RENAME TO terminal_printer_store_ix;
+
 -- (6) The restrictive tenant policy, the tenant_fixed trigger and both registries (the table keeps its store
 -- or parent policy of the RLS run: the two are ANDed).
 SELECT shared.rls_protect_tenant('production.printer');

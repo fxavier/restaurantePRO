@@ -376,6 +376,17 @@ ALTER TABLE orders.delivery_event
     RENAME CONSTRAINT tn_delivery_event_delivery_fk TO delivery_event_delivery_fk;
 ALTER INDEX orders.tn_order_header_open_table_uk RENAME TO order_header_open_table_uk;
 
+-- D180 Indexes: every composite index that led with store_id now leads with tenant_id (same name and predicate).
+CREATE INDEX tn_delivery_store_status_ix ON orders.delivery (tenant_id, store_id, status);
+DROP INDEX orders.delivery_store_status_ix;
+ALTER INDEX orders.tn_delivery_store_status_ix RENAME TO delivery_store_status_ix;
+CREATE INDEX tn_order_header_store_business_day_ix ON orders.order_header (tenant_id, store_id, business_day);
+DROP INDEX orders.order_header_store_business_day_ix;
+ALTER INDEX orders.tn_order_header_store_business_day_ix RENAME TO order_header_store_business_day_ix;
+CREATE INDEX tn_order_header_store_lifecycle_ix ON orders.order_header (tenant_id, store_id, lifecycle);
+DROP INDEX orders.order_header_store_lifecycle_ix;
+ALTER INDEX orders.tn_order_header_store_lifecycle_ix RENAME TO order_header_store_lifecycle_ix;
+
 -- (6) The restrictive tenant policy, the tenant_fixed trigger and both registries (the table keeps its store
 -- or parent policy of the RLS run: the two are ANDed).
 SELECT shared.rls_protect_tenant('orders.order_header');

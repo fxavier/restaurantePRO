@@ -90,7 +90,7 @@ class OrdersPlanTest {
         assertThat(plan).as("the store_scope policy, once per statement").contains("InitPlan")
                 .doesNotContain("Seq Scan")
                 .containsPattern(INDEX_NODE + "order_header_store_\\w+_ix")
-                .containsPattern("Index Cond: \\(\\(?store_id = '[0-9a-f-]+'::uuid\\)");
+                .containsPattern("Index Cond: \\(\\(tenant_id = \\(InitPlan \\d+\\)\\.col1\\) AND \\(store_id = '[0-9a-f-]+'::uuid\\)");
     }
 
     @Test
