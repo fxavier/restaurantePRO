@@ -23,6 +23,7 @@ public enum SystemScope {
     ALERTS(Reach.ALL, "collects the operational alerts of every store, then filters them per actor (D149)"),
     EVENT_MAINTENANCE(Reach.NONE, "resubmits, purges and counts event publications (an unscoped table)"),
     IDEMPOTENCY_RETENTION(Reach.ALL, "purges each tenant's expired idempotency records (a TENANT table, D186)"),
+    PLATFORM(Reach.NONE, "serves a platform operator's /platform/** request: no tenant, PLATFORM tables only (D181)"),
     HOUSEKEEPING(Reach.NONE, "sends the change-stream heartbeat (in memory)");
 
     /**

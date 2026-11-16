@@ -4,6 +4,7 @@ import com.xavier.backend.access.Actor;
 import com.xavier.backend.access.ActorAuthentication;
 import com.xavier.backend.access.ActorDirectory;
 import com.xavier.backend.access.Assurance;
+import com.xavier.backend.access.SystemScope;
 import com.xavier.backend.shared.tenancy.MembershipKind;
 import com.xavier.backend.shared.tenancy.TenantContext;
 import com.xavier.backend.shared.tenancy.TenantScopes;
@@ -16,6 +17,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -158,7 +160,27 @@ final class TenantResolutionFilter extends OncePerRequestFilter {
                     "The platform API needs a platform operator.");
             return;
         }
-        chain.doFilter(request, response);
+        // no tenant, explicitly: it outranks any fallback, so every transaction binds '' (the platform functions
+        // refuse a bound tenant)
+        try {
+            tenants.callUnbound(SystemScope.PLATFORM, () -> {
+                try {
+                    chain.doFilter(request, response);
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                } catch (ServletException e) {
+                    throw new IllegalStateException(e);
+                }
+                return null;
+            });
+        } catch (UncheckedIOException e) {
+            throw e.getCause();
+        } catch (IllegalStateException e) {
+            if (e.getCause() instanceof ServletException servlet) {
+                throw servlet;
+            }
+            throw e;
+        }
     }
 
     private static List<String> realmRoles(Jwt jwt) {
