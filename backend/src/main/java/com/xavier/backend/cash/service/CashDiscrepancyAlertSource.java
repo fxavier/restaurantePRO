@@ -15,6 +15,7 @@ import io.micrometer.core.instrument.Tags;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,6 +39,8 @@ import org.springframework.stereotype.Component;
 class CashDiscrepancyAlertSource implements AlertSource {
 
     static final Duration WINDOW = Duration.ofHours(24);
+    /** A tenant not run for this long (suspended, closed) is no longer reported: its state is dropped. */
+    static final Duration STALE_AFTER = Duration.ofMinutes(5);
     private static final Set<CashClosingStatus> COUNTED = Set.of(CashClosingStatus.SUBMITTED,
             CashClosingStatus.APPROVED);
 
@@ -48,6 +51,7 @@ class CashDiscrepancyAlertSource implements AlertSource {
     private final TenantScopes tenants;
     private final Map<UUID, Set<UUID>> storesOf = new ConcurrentHashMap<>();
     private final Map<UUID, List<StoreCashDiscrepancy>> lastOf = new ConcurrentHashMap<>();
+    private final Map<UUID, Instant> ranAt = new ConcurrentHashMap<>();
 
     CashDiscrepancyAlertSource(CashClosingRepository closings, MeterRegistry meters, Clock clock,
                                @Value("${restaurantpro.alerts.cash-difference-threshold:0}") BigDecimal threshold,
@@ -65,8 +69,17 @@ class CashDiscrepancyAlertSource implements AlertSource {
     @Scheduled(fixedDelayString = "PT1M")
     void refresh() {
         UUID tenant = tenants.requireTenant();
-        List<StoreCashDiscrepancy> current = closings.discrepanciesSince(COUNTED, clock.instant().minus(WINDOW),
-                threshold);
+        Instant now = clock.instant();
+        ranAt.put(tenant, now);
+        ranAt.entrySet().removeIf(run -> {
+            boolean stale = run.getValue().isBefore(now.minus(STALE_AFTER));
+            if (stale) {
+                storesOf.remove(run.getKey());
+                lastOf.remove(run.getKey());
+            }
+            return stale;
+        });
+        List<StoreCashDiscrepancy> current = closings.discrepanciesSince(COUNTED, now.minus(WINDOW), threshold);
         Map<UUID, Long> perStore = current.stream()
                 .collect(Collectors.toMap(StoreCashDiscrepancy::storeId, StoreCashDiscrepancy::closings));
         storesOf.computeIfAbsent(tenant, key -> ConcurrentHashMap.newKeySet()).addAll(perStore.keySet());

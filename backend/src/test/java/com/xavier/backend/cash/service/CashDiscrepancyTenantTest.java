@@ -11,6 +11,7 @@ import com.xavier.backend.shared.tenancy.TenantScopes;
 import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
@@ -59,6 +60,23 @@ class CashDiscrepancyTenantTest {
                 .isEqualTo(1);
         assertThat(meters.get("cash_closings_with_difference").tag("store", storeB.toString()).gauge().value())
                 .isEqualTo(1);
+    }
+
+    /** A tenant that stops being run (suspended, closed) stops being reported once its last run is stale. */
+    @Test
+    void aTenantThatNoLongerRunsIsDroppedFromTheGaugeAndTheAlerts() {
+        TenantTestSupport.ensureTenants();
+        UUID storeA = UUID.randomUUID();
+        UUID storeB = UUID.randomUUID();
+        submittedClosingFiveShort(A, storeA, clock.instant());
+        submittedClosingFiveShort(B, storeB, clock.instant());
+        TenantTestSupport.inTenant(tenants, A, source::refresh);
+
+        clock.set(clock.instant().plus(Duration.ofMinutes(10))); // past the window, A is not run again
+        TenantTestSupport.inTenant(tenants, B, source::refresh);
+
+        assertThat(meters.find("cash_closings_with_difference").tag("store", storeA.toString()).gauge()).isNull();
+        assertThat(source.alerts()).extracting(OperationalAlert::storeId).contains(storeB).doesNotContain(storeA);
     }
 
     /** A SUBMITTED closing (at {@code now}) of a fresh store whose cash line is 5.00 short, in {@code tenant}. */

@@ -4,10 +4,13 @@ import com.xavier.backend.access.SystemScope;
 import com.xavier.backend.access.SystemScoped;
 import com.xavier.backend.settlement.model.AttemptStatus;
 import com.xavier.backend.settlement.model.PaymentMethodKind;
+import com.xavier.backend.settlement.repository.Keyed;
 import com.xavier.backend.settlement.repository.PaymentAttemptRepository;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.Clock;
+import java.util.List;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,7 +26,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * crashed or was full): it is submitted again. A PENDING one older than the provider timeout plus
  * {@code pending-margin} lost its caller during the call: it becomes UNKNOWN, never FAILED, and waits for a resolve.
  * Safe under overlap: submission is a compare-and-set, and expiry decides under the order's lock. One run takes at
- * most {@code restaurantpro.jobs.batch-per-tenant} attempts of each kind per tenant; the rest wait for the next run.
+ * most {@code restaurantpro.jobs.batch-per-tenant} attempts of each kind per tenant, continuing after the last one it
+ * saw ({@link SweepCursors}), so a backlog that stays eligible never starves the newer attempts.
  */
 @Service
 public class AttemptSweeper {
@@ -37,11 +41,14 @@ public class AttemptSweeper {
     private final TransactionTemplate inTransaction;
     private final Clock clock;
     private final int batch;
+    private final TenantScopes tenants;
+    private final SweepCursors cursors = new SweepCursors();
 
     AttemptSweeper(PaymentAttemptRepository attempts, PaymentSubmitter submitter, AttemptTransitions transitions,
                    SettlementProperties properties, PlatformTransactionManager transactionManager, Clock clock,
-                   @Value("${restaurantpro.jobs.batch-per-tenant:100}") int batch) {
+                   @Value("${restaurantpro.jobs.batch-per-tenant:100}") int batch, TenantScopes tenants) {
         this.batch = batch;
+        this.tenants = tenants;
         this.attempts = attempts;
         this.submitter = submitter;
         this.transitions = transitions;
@@ -55,14 +62,14 @@ public class AttemptSweeper {
             initialDelayString = "${restaurantpro.settlement.sweep-interval:PT5S}")
     public void sweep() {
         Instant now = clock.instant();
-        for (UUID created : attempts.findStale(AttemptStatus.CREATED, PaymentMethodKind.INTEGRATED,
-                now.minus(properties.createdGrace()), Pageable.ofSize(batch))) {
-            log.info("Payment attempt {} was never submitted; submitting it again", created);
-            submitter.submit(created);
+        UUID tenant = tenants.requireTenant();
+        for (Keyed created : page(tenant, AttemptStatus.CREATED, now.minus(properties.createdGrace()))) {
+            log.info("Payment attempt {} was never submitted; submitting it again", created.id());
+            submitter.submit(created.id());
         }
         Duration lost = properties.providerTimeout().plus(properties.pendingMargin());
-        for (UUID pending : attempts.findStale(AttemptStatus.PENDING, PaymentMethodKind.INTEGRATED, now.minus(lost),
-                Pageable.ofSize(batch))) {
+        for (Keyed stale : page(tenant, AttemptStatus.PENDING, now.minus(lost))) {
+            UUID pending = stale.id();
             try {
                 inTransaction.executeWithoutResult(tx -> transitions.expire(pending,
                         "no provider outcome within " + lost));
@@ -71,5 +78,13 @@ public class AttemptSweeper {
                 log.error("Payment attempt {} could not be marked UNKNOWN", pending, e);
             }
         }
+    }
+
+    private List<Keyed> page(UUID tenant, AttemptStatus status, Instant before) {
+        Keyed after = cursors.after(tenant, status.name());
+        List<Keyed> page = attempts.findStale(status, PaymentMethodKind.INTEGRATED, before, after.at(), after.id(),
+                Pageable.ofSize(batch));
+        cursors.read(tenant, status.name(), page, batch);
+        return page;
     }
 }

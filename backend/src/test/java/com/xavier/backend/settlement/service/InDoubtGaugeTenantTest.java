@@ -62,6 +62,25 @@ class InDoubtGaugeTenantTest {
         assertThat(gauge.overdueAtLastRefresh()).extracting(OverdueInStore::storeId).contains(storeA, storeB);
     }
 
+    /** A tenant that stops being run (suspended, closed) stops being reported once its last run is stale. */
+    @Test
+    void aTenantThatNoLongerRunsIsDroppedFromTheGaugeAndTheAlert() {
+        TenantTestSupport.ensureTenants();
+        UUID storeA = UUID.randomUUID();
+        UUID storeB = UUID.randomUUID();
+        attemptInDoubt(A, storeA, clock.instant());
+        attemptInDoubt(B, storeB, clock.instant());
+        TenantTestSupport.inTenant(tenants, A, gauge::refresh);
+
+        clock.advance(Duration.ofMinutes(10)); // past the window, A is not run again
+        TenantTestSupport.inTenant(tenants, B, gauge::refresh);
+
+        assertThat(meters.find("payment_attempts_in_doubt").tag("store", storeA.toString()).gauge()).isNull();
+        assertThat(meters.find("payment_attempts_in_doubt").tag("store", storeB.toString()).gauge()).isNotNull();
+        assertThat(gauge.overdueAtLastRefresh()).extracting(OverdueInStore::storeId).contains(storeB)
+                .doesNotContain(storeA);
+    }
+
     /** An UNKNOWN attempt of {@code store} in {@code tenant}, 40 minutes old at {@code now}. */
     static void attemptInDoubt(UUID tenant, UUID store, Instant now) {
         try (AppRoleSession app = AppRoleSession.open().tenant(tenant).allStores()) {

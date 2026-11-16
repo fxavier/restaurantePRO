@@ -11,11 +11,13 @@ import com.xavier.backend.settlement.model.AttemptStatus;
 import com.xavier.backend.settlement.model.PaymentMethodKind;
 import com.xavier.backend.settlement.repository.CreditChargeRepository;
 import com.xavier.backend.settlement.repository.PaymentAttemptRepository;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.data.domain.Pageable;
@@ -33,18 +35,32 @@ class SweeperBatchTest {
                 Duration.ofHours(24), 20);
     static final Clock CLOCK = Clock.fixed(Instant.parse("2026-11-15T10:00:00Z"), ZoneOffset.UTC);
 
+    static AttemptSweeper attemptSweeper(PaymentAttemptRepository attempts, PaymentSubmitter submitter, int batch,
+                                         UUID tenant) {
+        TenantScopes tenants = mock(TenantScopes.class);
+        when(tenants.requireTenant()).thenReturn(tenant);
+        return new AttemptSweeper(attempts, submitter, null, PROPERTIES, mock(PlatformTransactionManager.class), CLOCK,
+                batch, tenants);
+    }
+
+    static TenantScopes tenantOf(UUID tenant) {
+        TenantScopes tenants = mock(TenantScopes.class);
+        when(tenants.requireTenant()).thenReturn(tenant);
+        return tenants;
+    }
+
     @Test
     void theAttemptSweeperAsksForAtMostTheTenantBatchOfEachKind() {
         PaymentAttemptRepository attempts = mock(PaymentAttemptRepository.class);
-        when(attempts.findStale(any(), any(), any(), any())).thenReturn(List.of());
-        AttemptSweeper sweeper = new AttemptSweeper(attempts, null, null, PROPERTIES, mock(PlatformTransactionManager.class), CLOCK, 7);
+        when(attempts.findStale(any(), any(), any(), any(), any(), any())).thenReturn(List.of());
+        AttemptSweeper sweeper = attemptSweeper(attempts, null, 7, UUID.randomUUID());
 
         sweeper.sweep();
 
         ArgumentCaptor<Pageable> limit = ArgumentCaptor.forClass(Pageable.class);
-        verify(attempts).findStale(eq(AttemptStatus.CREATED), eq(PaymentMethodKind.INTEGRATED), any(),
-                limit.capture());
-        verify(attempts).findStale(eq(AttemptStatus.PENDING), eq(PaymentMethodKind.INTEGRATED), any(),
+        verify(attempts).findStale(eq(AttemptStatus.CREATED), eq(PaymentMethodKind.INTEGRATED), any(), any(),
+                any(), limit.capture());
+        verify(attempts).findStale(eq(AttemptStatus.PENDING), eq(PaymentMethodKind.INTEGRATED), any(), any(), any(),
                 limit.capture());
         assertThat(limit.getAllValues()).extracting(Pageable::getPageSize).containsExactly(7, 7);
     }
@@ -52,14 +68,14 @@ class SweeperBatchTest {
     @Test
     void theCreditSweeperAsksForAtMostTheTenantBatch() {
         CreditChargeRepository charges = mock(CreditChargeRepository.class);
-        when(charges.findReservedWithDocument(any(), any())).thenReturn(List.of());
+        when(charges.findReservedWithDocument(any(), any(), any(), any())).thenReturn(List.of());
         CreditChargeSweeper sweeper = new CreditChargeSweeper(charges, null, null,
-                mock(PlatformTransactionManager.class), PROPERTIES, CLOCK, 5);
+                mock(PlatformTransactionManager.class), PROPERTIES, CLOCK, 5, tenantOf(UUID.randomUUID()));
 
         sweeper.sweep();
 
         ArgumentCaptor<Pageable> limit = ArgumentCaptor.forClass(Pageable.class);
-        verify(charges).findReservedWithDocument(any(Instant.class), limit.capture());
+        verify(charges).findReservedWithDocument(any(Instant.class), any(), any(), limit.capture());
         assertThat(limit.getValue().getPageSize()).isEqualTo(5);
     }
 }

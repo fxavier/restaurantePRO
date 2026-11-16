@@ -36,6 +36,8 @@ import org.springframework.stereotype.Component;
 class InDoubtGauge {
 
     static final Duration ALERT_AFTER = Duration.ofMinutes(30);
+    /** A tenant not run for this long (suspended, closed) is no longer reported: its state is dropped. */
+    static final Duration STALE_AFTER = Duration.ofMinutes(5);
 
     private static final Logger log = LoggerFactory.getLogger(InDoubtGauge.class);
 
@@ -57,6 +59,7 @@ class InDoubtGauge {
         Map<UUID, Long> inDoubt = Map.of();
         Map<UUID, Long> overdue = Map.of();
         volatile List<OverdueInStore> lastOverdue = List.of();
+        Instant ranAt = Instant.MIN;
     }
 
     InDoubtGauge(MeterRegistry meters, PaymentAttemptRepository attempts, Clock clock, TenantScopes tenants) {
@@ -73,7 +76,10 @@ class InDoubtGauge {
     @Scheduled(fixedDelayString = "${restaurantpro.settlement.in-doubt-poll-interval:PT30S}")
     public synchronized void refresh() {
         TenantState state = perTenant.computeIfAbsent(tenants.requireTenant(), tenant -> new TenantState());
-        Instant overdueBefore = clock.instant().minus(ALERT_AFTER);
+        Instant now = clock.instant();
+        state.ranAt = now;
+        perTenant.values().removeIf(other -> other.ranAt.isBefore(now.minus(STALE_AFTER)));
+        Instant overdueBefore = now.minus(ALERT_AFTER);
         List<InDoubtAttempt> unknown = attempts.findInDoubt();
         List<InDoubtAttempt> late = unknown.stream().filter(a -> a.createdAt().isBefore(overdueBefore)).toList();
         state.inDoubt = perStore(unknown);
