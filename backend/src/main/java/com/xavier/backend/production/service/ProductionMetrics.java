@@ -27,6 +27,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -48,8 +49,8 @@ public class ProductionMetrics {
     /** D150: a job waiting longer than this on a NORMAL printer means the queue is stalled. */
     static final Duration STALLED_AFTER = Duration.ofMinutes(5);
 
-    /** A tenant not refreshed this long (suspended, closed: the advisor skips it) no longer counts in the sums. */
-    static final Duration STALE_AFTER = Duration.ofMinutes(5);
+    /** A tenant not refreshed for this many refresh intervals is suspended or closed: the advisor skips it. */
+    private static final int STALE_INTERVALS = 3;
 
     private static final Logger log = LoggerFactory.getLogger(ProductionMetrics.class);
 
@@ -57,6 +58,7 @@ public class ProductionMetrics {
     private final PrintJobRepository jobs;
     private final Clock clock;
     private final TenantScopes tenants;
+    private final Duration staleAfter;
     private final MultiGauge unresolvedGauge;
     private final MultiGauge oldestWaitingGauge;
     /** Per tenant, the queue it showed at its last refresh (guarded by {@code this}). */
@@ -64,7 +66,9 @@ public class ProductionMetrics {
     /** Per tenant, its print jobs by status at its last refresh: what {@code print_jobs{status}} sums (R6). */
     private final Map<UUID, StatusCounts> statusCounts = new ConcurrentHashMap<>();
 
-    ProductionMetrics(MeterRegistry registry, PrintJobRepository jobs, TenantScopes tenants, Clock clock) {
+    ProductionMetrics(MeterRegistry registry, PrintJobRepository jobs, TenantScopes tenants, Clock clock,
+                      @Value("${restaurantpro.production.queue-gauges-interval:PT30S}") Duration refreshInterval) {
+        this.staleAfter = refreshInterval.multipliedBy(STALE_INTERVALS);
         this.jobs = jobs;
         this.tenants = tenants;
         this.clock = clock;
@@ -91,10 +95,16 @@ public class ProductionMetrics {
         Instant now = clock.instant();
         QueueHealth health = new QueueHealth(now, jobs.countUnresolvedSince(now.minus(ATTENTION_WINDOW)),
                 jobs.countWaitingOnNormalPrinters(now.minus(STALLED_AFTER)));
+        queues.values().removeIf(queue -> queue.at.isBefore(now.minus(staleAfter)));
         queues.computeIfAbsent(tenants.requireTenant(), tenant -> new TenantQueue()).update(health, now);
         unresolvedGauge.register(rows(TenantQueue::unresolved), true);
         oldestWaitingGauge.register(rows(TenantQueue::oldestWaitingSeconds), true);
         return health;
+    }
+
+    /** After this long without a refresh a tenant no longer shows in the gauges (suspended, closed). */
+    Duration staleAfter() {
+        return staleAfter;
     }
 
     /** Per store: the jobs needing attention, and the jobs waiting on NORMAL printers (with how many are late). */
@@ -116,10 +126,12 @@ public class ProductionMetrics {
     private static final class TenantQueue {
 
         private final Set<UUID> stores = new HashSet<>();
+        private Instant at = Instant.MIN;
         private Map<UUID, Long> unresolved = Map.of();
         private Map<UUID, Long> oldestWaitingSeconds = Map.of();
 
         void update(QueueHealth health, Instant now) {
+            at = now;
             health.unresolved().forEach(count -> stores.add(count.storeId()));
             health.waiting().forEach(count -> stores.add(count.storeId()));
             unresolved = health.unresolved().stream()
@@ -150,7 +162,7 @@ public class ProductionMetrics {
 
     /** Every tenant's last count, summed (the tenant is never a label, P74). */
     private long jobsIn(PrintJobStatus status) {
-        Instant oldestFresh = clock.instant().minus(STALE_AFTER);
+        Instant oldestFresh = clock.instant().minus(staleAfter);
         statusCounts.values().removeIf(counts -> counts.at().isBefore(oldestFresh));
         return statusCounts.values().stream().mapToLong(counts -> counts.byStatus().getOrDefault(status, 0L)).sum();
     }

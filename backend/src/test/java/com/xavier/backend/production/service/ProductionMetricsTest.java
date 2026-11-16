@@ -32,6 +32,8 @@ class ProductionMetricsTest {
     static final UUID A = TenantTestSupport.A;
     static final UUID B = TenantTestSupport.B;
 
+    static final Duration INTERVAL = Duration.ofSeconds(30);
+
     final PrintJobRepository jobs = mock(PrintJobRepository.class);
     final SettableClock clock = new SettableClock();
     final SimpleMeterRegistry registry = new SimpleMeterRegistry();
@@ -41,7 +43,7 @@ class ProductionMetricsTest {
     void aScrapeShowsEveryTenantsLastRefreshAndReadsNoDatabase() {
         when(jobs.countGroupedByStatus()).thenReturn(List.of(count(PrintJobStatus.SENT, 3),
                 count(PrintJobStatus.FAILED, 1)), List.of(count(PrintJobStatus.SENT, 2)));
-        ProductionMetrics metrics = new ProductionMetrics(registry, jobs, tenants, clock);
+        ProductionMetrics metrics = new ProductionMetrics(registry, jobs, tenants, clock, INTERVAL);
 
         TenantTestSupport.inTenant(tenants, A, metrics::refreshStatusCounts);
         TenantTestSupport.inTenant(tenants, B, metrics::refreshStatusCounts);
@@ -59,7 +61,7 @@ class ProductionMetricsTest {
     void aTenantsNextRefreshReplacesOnlyItsOwnCounts() {
         when(jobs.countGroupedByStatus()).thenReturn(List.of(count(PrintJobStatus.QUEUED, 2)),
                 List.of(count(PrintJobStatus.QUEUED, 4)), List.of(count(PrintJobStatus.QUEUED, 5)));
-        ProductionMetrics metrics = new ProductionMetrics(registry, jobs, tenants, clock);
+        ProductionMetrics metrics = new ProductionMetrics(registry, jobs, tenants, clock, INTERVAL);
         TenantTestSupport.inTenant(tenants, A, metrics::refreshStatusCounts);
         TenantTestSupport.inTenant(tenants, B, metrics::refreshStatusCounts);
 
@@ -72,13 +74,13 @@ class ProductionMetricsTest {
     void aTenantThatStoppedRefreshingIsEvictedFromTheSummedCounts() {
         when(jobs.countGroupedByStatus()).thenReturn(List.of(count(PrintJobStatus.QUEUED, 2)),
                 List.of(count(PrintJobStatus.QUEUED, 4)), List.of(count(PrintJobStatus.QUEUED, 5)));
-        ProductionMetrics metrics = new ProductionMetrics(registry, jobs, tenants, clock);
+        ProductionMetrics metrics = new ProductionMetrics(registry, jobs, tenants, clock, INTERVAL);
         TenantTestSupport.inTenant(tenants, A, metrics::refreshStatusCounts);
         TenantTestSupport.inTenant(tenants, B, metrics::refreshStatusCounts);
         assertThat(scrape(PrintJobStatus.QUEUED)).isEqualTo(6);
 
         // B is suspended: the advisor no longer runs it, A keeps refreshing
-        clock.advance(ProductionMetrics.STALE_AFTER.plusSeconds(1));
+        clock.advance(metrics.staleAfter().plusSeconds(1));
         TenantTestSupport.inTenant(tenants, A, metrics::refreshStatusCounts);
 
         assertThat(scrape(PrintJobStatus.QUEUED)).as("only A's fresh count").isEqualTo(5);
@@ -86,7 +88,7 @@ class ProductionMetricsTest {
 
     @Test
     void theQueueGaugesOfOneTenantSurviveTheRunOfTheNext() {
-        ProductionMetrics metrics = new ProductionMetrics(registry, jobs, tenants, clock);
+        ProductionMetrics metrics = new ProductionMetrics(registry, jobs, tenants, clock, INTERVAL);
         UUID storeA = UUID.fromString("0190b400-0000-7000-8000-0000000000aa");
         UUID storeB = UUID.fromString("0190b400-0000-7000-8000-0000000000bb");
         Instant oldest = clock.instant().minusSeconds(600);
@@ -110,6 +112,39 @@ class ProductionMetricsTest {
 
         assertThat(queueGauge("print_jobs_unresolved", storeA)).as("A resolved its jobs: back to 0").isZero();
         assertThat(queueGauge("print_jobs_unresolved", storeB)).as("B untouched by A's run").isEqualTo(1);
+    }
+
+    @Test
+    void aTenantThatStoppedRefreshingDropsItsQueueGauges() {
+        ProductionMetrics metrics = new ProductionMetrics(registry, jobs, tenants, clock, INTERVAL);
+        UUID storeA = UUID.randomUUID();
+        UUID storeB = UUID.randomUUID();
+        Instant oldest = clock.instant().minusSeconds(60);
+        when(jobs.countUnresolvedSince(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(List.of(new StoreJobCount(storeA, 1L, 0L, oldest)))
+                .thenReturn(List.of(new StoreJobCount(storeB, 2L, 0L, oldest)))
+                .thenReturn(List.of(new StoreJobCount(storeA, 1L, 0L, oldest)));
+        when(jobs.countWaitingOnNormalPrinters(org.mockito.ArgumentMatchers.any())).thenReturn(List.of());
+        TenantTestSupport.inTenant(tenants, A, metrics::refreshQueue);
+        TenantTestSupport.inTenant(tenants, B, metrics::refreshQueue);
+        assertThat(queueGauge("print_jobs_unresolved", storeB)).isEqualTo(2);
+
+        // B is suspended: the advisor no longer runs it, A keeps refreshing
+        clock.advance(metrics.staleAfter().plusSeconds(1));
+        TenantTestSupport.inTenant(tenants, A, metrics::refreshQueue);
+
+        assertThat(queueGauge("print_jobs_unresolved", storeA)).isEqualTo(1);
+        assertThat(registry.find("print_jobs_unresolved").tag("store", storeB.toString()).gauge())
+                .as("a suspended tenant's store no longer reports").isNull();
+    }
+
+    @Test
+    void theStalenessFollowsTheConfiguredInterval() {
+        ProductionMetrics slow = new ProductionMetrics(registry, jobs, tenants, clock, Duration.ofMinutes(10));
+
+        assertThat(slow.staleAfter()).isEqualTo(Duration.ofMinutes(30));
+        assertThat(new ProductionMetrics(new SimpleMeterRegistry(), jobs, tenants, clock, INTERVAL).staleAfter())
+                .isEqualTo(Duration.ofSeconds(90));
     }
 
     private double queueGauge(String name, UUID store) {
