@@ -136,6 +136,18 @@ ALTER TABLE fiscal.fiscal_document_print
 ALTER TABLE fiscal.fiscal_document_print
     RENAME CONSTRAINT fiscal_document_print_document_fk_t TO fiscal_document_print_document_fk;
 
+-- D180 "Indexes": tenant_id leads every composite index that led with store_id (same names, same partial
+-- predicates), so a tenant's store query is an index range, not a filter over every tenant's rows.
+CREATE INDEX fiscal_document_store_issued_ix_t ON fiscal.fiscal_document (tenant_id, store_id, issued_at);
+DROP INDEX fiscal.fiscal_document_store_issued_ix;
+ALTER INDEX fiscal.fiscal_document_store_issued_ix_t RENAME TO fiscal_document_store_issued_ix;
+CREATE INDEX fiscal_document_store_status_ix_t ON fiscal.fiscal_document (tenant_id, store_id, status);
+DROP INDEX fiscal.fiscal_document_store_status_ix;
+ALTER INDEX fiscal.fiscal_document_store_status_ix_t RENAME TO fiscal_document_store_status_ix;
+CREATE INDEX fiscal_document_store_business_date_ix_t ON fiscal.fiscal_document (tenant_id, store_id, business_date);
+DROP INDEX fiscal.fiscal_document_store_business_date_ix;
+ALTER INDEX fiscal.fiscal_document_store_business_date_ix_t RENAME TO fiscal_document_store_business_date_ix;
+
 -- (6) The tenant policy through the helper, then the registries; the V10012 store / parent policies stay.
 SELECT shared.rls_protect_tenant('fiscal.fiscal_series');
 SELECT shared.rls_protect_tenant('fiscal.fiscal_document');

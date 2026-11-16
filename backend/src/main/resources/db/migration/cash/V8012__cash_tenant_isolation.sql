@@ -209,6 +209,16 @@ ALTER TABLE cash.cash_closing_line
 ALTER TABLE cash.cash_closing_line
     RENAME CONSTRAINT cash_closing_line_method_uk_t TO cash_closing_line_method_uk;
 
+-- D180 "Indexes": tenant_id leads every composite index that led with store_id (same names, same partial
+-- predicates), so a tenant's store query is an index range, not a filter over every tenant's rows.
+CREATE INDEX cash_movement_store_day_ix_t ON cash.cash_movement (tenant_id, store_id, cash_day_id);
+DROP INDEX cash.cash_movement_store_day_ix;
+ALTER INDEX cash.cash_movement_store_day_ix_t RENAME TO cash_movement_store_day_ix;
+CREATE INDEX cash_day_store_open_ix_t ON cash.cash_day (tenant_id, store_id, business_date)
+    WHERE status = 'OPEN';
+DROP INDEX cash.cash_day_store_open_ix;
+ALTER INDEX cash.cash_day_store_open_ix_t RENAME TO cash_day_store_open_ix;
+
 -- (6) The tenant policy through the helper, then the registries; the V8011 store / parent policies stay.
 SELECT shared.rls_protect_tenant('cash.cash_register');
 SELECT shared.rls_protect_tenant('cash.cash_day');

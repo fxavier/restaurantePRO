@@ -261,6 +261,29 @@ ALTER TABLE settlement.tax_correction_resolution
 ALTER TABLE settlement.tax_correction_resolution
     RENAME CONSTRAINT tax_correction_resolution_adjustment_fk_t TO tax_correction_resolution_adjustment_fk;
 
+-- D180 "Indexes": tenant_id leads every composite index that led with store_id (same names, same partial
+-- predicates), so a tenant's store query is an index range, not a filter over every tenant's rows.
+CREATE INDEX payment_store_confirmed_ix_t ON settlement.payment (tenant_id, store_id, confirmed_at);
+DROP INDEX settlement.payment_store_confirmed_ix;
+ALTER INDEX settlement.payment_store_confirmed_ix_t RENAME TO payment_store_confirmed_ix;
+CREATE INDEX refund_store_day_ix_t ON settlement.refund (tenant_id, store_id, business_date);
+DROP INDEX settlement.refund_store_day_ix;
+ALTER INDEX settlement.refund_store_day_ix_t RENAME TO refund_store_day_ix;
+CREATE INDEX credit_charge_store_day_ix_t ON settlement.credit_charge (tenant_id, store_id, business_date)
+    WHERE status = 'POSTED';
+DROP INDEX settlement.credit_charge_store_day_ix;
+ALTER INDEX settlement.credit_charge_store_day_ix_t RENAME TO credit_charge_store_day_ix;
+CREATE INDEX reconciliation_batch_store_ix_t ON settlement.reconciliation_batch (tenant_id, store_id, imported_at);
+DROP INDEX settlement.reconciliation_batch_store_ix;
+ALTER INDEX settlement.reconciliation_batch_store_ix_t RENAME TO reconciliation_batch_store_ix;
+CREATE INDEX reconciliation_entry_store_kind_ix_t ON settlement.reconciliation_entry (tenant_id, store_id, kind);
+DROP INDEX settlement.reconciliation_entry_store_kind_ix;
+ALTER INDEX settlement.reconciliation_entry_store_kind_ix_t RENAME TO reconciliation_entry_store_kind_ix;
+CREATE INDEX tax_rounding_adjustment_pending_ix_t ON settlement.tax_rounding_adjustment (tenant_id, store_id, created_at)
+    WHERE kind = 'PENDING_CORRECTION';
+DROP INDEX settlement.tax_rounding_adjustment_pending_ix;
+ALTER INDEX settlement.tax_rounding_adjustment_pending_ix_t RENAME TO tax_rounding_adjustment_pending_ix;
+
 -- (6) The tenant policy through the helper, then the registries. The STORE and CHILD tables already carry their
 -- V9060 store / parent policy; the tenant policy is restrictive and ANDs with it. The two UNSCOPED tables leave that
 -- registry for TENANT class (a permissive tenant_rows lets the tenant's rows through).

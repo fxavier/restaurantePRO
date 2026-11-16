@@ -54,7 +54,7 @@ class SettlementRowLevelSecurityTest {
 
     @Test
     void theTablesAreClassifiedAsD167Says() {
-        assertThat(TenantModuleChecks.classification("settlement")).containsOnly(
+        assertThat(AppRoleSession.classification("settlement")).containsOnly(
                 entry("payment_attempt", "STORE"), entry("payment", "STORE"), entry("refund", "STORE"),
                 entry("bill_partition", "STORE"), entry("credit_charge", "STORE"),
                 entry("reconciliation_batch", "STORE"), entry("reconciliation_entry", "STORE"),
