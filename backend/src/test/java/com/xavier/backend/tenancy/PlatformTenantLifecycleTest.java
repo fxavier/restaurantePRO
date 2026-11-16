@@ -1,6 +1,7 @@
 package com.xavier.backend.tenancy;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -16,6 +17,7 @@ import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import com.xavier.backend.tenancy.model.dto.Membership;
 import com.xavier.backend.tenancy.model.dto.MembershipGrant;
 import com.xavier.backend.tenancy.model.dto.TenantStatus;
+import com.xavier.backend.tenancy.service.PlatformTenantService;
 import com.xavier.backend.tenancy.model.event.TenantClosed;
 import com.xavier.backend.tenancy.model.event.TenantProvisioned;
 import com.xavier.backend.tenancy.model.event.TenantReactivated;
@@ -37,6 +39,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.event.EventListener;
 import org.springframework.http.MediaType;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
@@ -64,6 +67,8 @@ class PlatformTenantLifecycleTest {
     TenancyApi tenancy;
     @Autowired
     TenantScopes tenants;
+    @Autowired
+    PlatformTenantService platform;
 
     @Test
     void onboardingIsOneIdempotentCommandThroughTheEventChain() throws Exception {
@@ -147,6 +152,21 @@ class PlatformTenantLifecycleTest {
 
             assertThat(tenancy.activeTenantIds()).contains(tenant);
             assertThat(events(TenantReactivated.class, tenant)).hasSize(1);
+        } finally {
+            close(tenant);
+        }
+    }
+
+    /** G5 High: a tenant-bound caller (a cashier's request) that reaches the platform service changes nothing. */
+    @Test
+    void aTenantBoundCallerCannotReachPlatformWrites() throws Exception {
+        UUID tenant = activeTenant();
+        try {
+            assertThatThrownBy(() -> TenantTestSupport.inTenant(tenants, TenantTestSupport.BOOTSTRAP,
+                    () -> platform.suspend(tenant, "a cashier", "cashier")))
+                    .isInstanceOf(AccessDeniedException.class);
+
+            assertThat(tenancy.activeTenantIds()).contains(tenant);
         } finally {
             close(tenant);
         }

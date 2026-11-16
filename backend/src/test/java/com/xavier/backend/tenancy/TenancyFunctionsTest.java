@@ -172,6 +172,24 @@ class TenancyFunctionsTest {
     }
 
     @Test
+    void platformWritesAreRefusedInATenantBoundTransaction() {
+        String code = "bound-" + UUID.randomUUID().toString().substring(0, 8);
+        try (AppRoleSession app = AppRoleSession.open().tenant(TenantTestSupport.A)) {
+            assertState(() -> app.jdbc().sql("SELECT * FROM tenancy.create_tenant(?, 'Bound Lda', NULL, 'op')")
+                    .param(code).query().listOfRows(), "TN004");
+            assertState(() -> app.jdbc().sql("SELECT * FROM tenancy.set_tenant_status(?, 'SUSPENDED', 'op', 'r')")
+                    .param(TenantTestSupport.B).query().listOfRows(), "TN004");
+            assertState(() -> app.jdbc().sql("SELECT tenancy.record_platform_event(?, 'op', 'TEST_EVENT', NULL)")
+                    .param(TenantTestSupport.B).query().listOfRows(), "TN004");
+        }
+        try (AppRoleSession app = AppRoleSession.open().noTenant()) {
+            assertThat(app.jdbc().sql("SELECT status FROM tenancy.create_tenant(?, 'Bound Lda', NULL, 'op')")
+                    .param(code).query(String.class).single()).as("unbound: a platform transaction")
+                    .isEqualTo("PROVISIONING");
+        }
+    }
+
+    @Test
     void theApplicationRoleReadsNoTenancyTableDirectly() {
         try (AppRoleSession app = AppRoleSession.open().tenant(TenantTestSupport.A)) {
             assertState(() -> app.jdbc().sql("SELECT count(*) FROM tenancy.tenant").query(Long.class).single(),

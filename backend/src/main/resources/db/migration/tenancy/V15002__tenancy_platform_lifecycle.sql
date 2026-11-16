@@ -72,15 +72,34 @@ CREATE TRIGGER platform_audit_event_no_truncate
     FOR EACH STATEMENT
 EXECUTE FUNCTION tenancy.reject_platform_audit_change();
 
+-- Defence in depth (G5): platform writes run with NO tenant binding (/platform/** requests and platform jobs). A
+-- tenant-bound transaction — a tenant user's request that reached a platform code path — is refused with TN004.
+CREATE FUNCTION tenancy.require_platform_transaction(p_caller text)
+    RETURNS void
+    LANGUAGE plpgsql
+    STABLE
+    SET search_path = pg_catalog AS
+$$
+BEGIN
+    IF coalesce(pg_catalog.current_setting('app.tenant_id', true), '') <> '' THEN
+        RAISE EXCEPTION USING ERRCODE = 'TN004', MESSAGE = p_caller || ': a tenant-bound transaction cannot make a '
+            || 'platform write';
+    END IF;
+END;
+$$;
+
 -- Appends one platform audit row (an action of the platform command that changes no tenant row).
 CREATE FUNCTION tenancy.record_platform_event(p_tenant uuid, p_operator text, p_action text, p_reason text)
     RETURNS void
-    LANGUAGE sql
+    LANGUAGE plpgsql
     SECURITY DEFINER
     SET search_path = pg_catalog AS
 $$
-INSERT INTO tenancy.platform_audit_event (operator, tenant_id, action, reason)
-VALUES (p_operator, p_tenant, p_action, p_reason)
+BEGIN
+    PERFORM tenancy.require_platform_transaction('tenancy.record_platform_event');
+    INSERT INTO tenancy.platform_audit_event (operator, tenant_id, action, reason)
+    VALUES (p_operator, p_tenant, p_action, p_reason);
+END;
 $$;
 
 -- Onboarding's first step, idempotent by the tenant code (the Keycloak organization alias): a new code creates a
@@ -102,6 +121,7 @@ $$
 DECLARE
     v tenancy.tenant%ROWTYPE;
 BEGIN
+    PERFORM tenancy.require_platform_transaction('tenancy.create_tenant');
     INSERT INTO tenancy.tenant AS t (id, code, legal_name, status, created_at)
     VALUES (pg_catalog.uuidv7(), p_code, p_legal_name, 'PROVISIONING', pg_catalog.now())
     ON CONFLICT ON CONSTRAINT tenant_code_uk DO NOTHING
@@ -149,6 +169,7 @@ DECLARE
     v_from text;
     v_code text;
 BEGIN
+    PERFORM tenancy.require_platform_transaction('tenancy.set_tenant_status');
     IF p_reason IS NULL OR pg_catalog.btrim(p_reason) = '' THEN
         RAISE EXCEPTION USING ERRCODE = '22023', MESSAGE = 'tenancy.set_tenant_status: a reason is required';
     END IF;
@@ -201,6 +222,7 @@ END;
 $$;
 
 REVOKE EXECUTE ON FUNCTION tenancy.reject_platform_audit_change() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION tenancy.require_platform_transaction(text) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION tenancy.record_platform_event(uuid, text, text, text) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION tenancy.create_tenant(text, text, text, text) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION tenancy.set_tenant_status(uuid, text, text, text) FROM PUBLIC;

@@ -2,6 +2,7 @@ package com.xavier.backend.tenancy.service;
 
 import com.xavier.backend.tenancy.IdentityProviderAdmin;
 import com.xavier.backend.tenancy.exception.IllegalTenantStateException;
+import com.xavier.backend.tenancy.exception.PlatformForbiddenException;
 import com.xavier.backend.tenancy.exception.TenantCodeTakenException;
 import com.xavier.backend.tenancy.exception.TenantNotFoundException;
 import com.xavier.backend.tenancy.model.dto.OnboardTenantRequest;
@@ -39,6 +40,7 @@ public class PlatformTenantService {
     private static final String TENANT_CODE_TAKEN = "TN001";
     private static final String ILLEGAL_TENANT_STATE = "TN002";
     private static final String NO_SUCH_TENANT = "TN003";
+    private static final String TENANT_BOUND = "TN004";
 
     private final JdbcClient jdbc;
     private final TransactionTemplate transaction;
@@ -122,6 +124,7 @@ public class PlatformTenantService {
                 case TENANT_CODE_TAKEN -> new TenantCodeTakenException();
                 case ILLEGAL_TENANT_STATE -> new IllegalTenantStateException();
                 case NO_SUCH_TENANT -> new TenantNotFoundException();
+                case TENANT_BOUND -> new PlatformForbiddenException();
                 case null, default -> e;
             };
         }
