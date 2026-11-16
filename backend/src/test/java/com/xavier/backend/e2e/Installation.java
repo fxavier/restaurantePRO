@@ -208,6 +208,17 @@ final class Installation {
                 .get("deviceToken").asString();
         String session = pos.post("/api/v1/auth/pos-login", Map.of("employeeCode", code, "pin", pin), 200, Csrf.SEND,
                 Map.of("X-Terminal-Token", token), "pos-login").get("posSession").asString();
+        return pos.enrolled(token).posSession(session);
+    }
+
+    /**
+     * The employee logs in again with code and PIN on the terminal {@code pos} enrolled (a POS session ends after
+     * 30 min idle or 10 h on the application clock, D182).
+     */
+    static Browser pinLoginAgain(Browser pos, String code, String pin) throws Exception {
+        String session = pos.post("/api/v1/auth/pos-login", Map.of("employeeCode", code, "pin", pin), 200,
+                Csrf.SEND, Map.of("X-Terminal-Token", pos.deviceToken()), "pos-login again").get("posSession")
+                .asString();
         return pos.posSession(session);
     }
 

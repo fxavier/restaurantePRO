@@ -539,6 +539,10 @@ class R3AcceptanceTest {
 
     private void nextDayDebtPayment() throws Exception {
         moveToNextBusinessDay();
+        // a new shift: the POS sessions of yesterday have ended (idle and absolute expiry on the application clock)
+        Installation.pinLoginAgain(cashier, "CX1", CASHIER_PIN);
+        Installation.pinLoginAgain(manager, managerCode, MANAGER_PIN);
+        Installation.pinLoginAgain(cashier2, "CX2", CASHIER2_PIN);
         JsonNode session = cashier.get(POS + "/cash/sessions/" + session1, 200);
         // the drawer is 5.00 short (bread bought from it and not recorded): justified at the closing, corrected later
         List<Map<String, Object>> counts = new ArrayList<>(expectedCounts(session));
@@ -722,6 +726,9 @@ class R3AcceptanceTest {
         UUID account = id(office.post(BO + "/users", Map.of("username", username, "roleIds", List.of(),
                 "support", true), 201));
         String supporter = "ops-" + UUID.randomUUID();
+        // a membership is valid on the database's clock (tenancy.resolve_membership, now()), so the journey's moved
+        // application clock returns to the wall clock before the grant (in production both are the wall clock)
+        clock.reset();
         Browser support = office.sibling("support").signedIn(() -> TestJwtFactory.support(supporter,
                 clock.instant()).encode());
         Map<String, String> inBootstrap = Map.of("X-Tenant-Id", BootstrapTenant.ID.toString());

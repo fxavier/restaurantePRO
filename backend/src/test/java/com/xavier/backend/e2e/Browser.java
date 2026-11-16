@@ -39,6 +39,8 @@ final class Browser {
     private volatile Supplier<String> bearer;
     /** The POS session token (a POS tab), or {@code null}. */
     private volatile String posSession;
+    /** The R2 device token of the terminal this POS tab enrolled (interim until S73), or {@code null}. */
+    private volatile String deviceToken;
     /** The client address Caddy would forward ({@code X-Forwarded-For}); {@code null}: none, loopback. */
     private volatile String clientAddress;
 
@@ -65,6 +67,7 @@ final class Browser {
         Browser moved = new Browser(name, otherPort, journey);
         moved.bearer = bearer;
         moved.posSession = posSession;
+        moved.deviceToken = deviceToken;
         moved.clientAddress = clientAddress;
         return moved;
     }
@@ -99,6 +102,16 @@ final class Browser {
         posSession = token;
         bearer = null;
         return this;
+    }
+
+    /** This POS tab's terminal is enrolled with {@code token}. */
+    Browser enrolled(String token) {
+        deviceToken = token;
+        return this;
+    }
+
+    String deviceToken() {
+        return deviceToken;
     }
 
     /** No credentials any more (logged out). */

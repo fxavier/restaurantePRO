@@ -238,7 +238,7 @@ class R2AcceptanceTest {
 
             // ---- 4. pay in cash with change, the rest by card, issue the document, close the order ----
             office.command(POS + "/payment-attempts", Map.of("orderId", order, "methodCode", "CASH",
-                    "amount", new BigDecimal("200.00")), 403, "a BackOffice session paying at the POS (A12)");
+                    "amount", new BigDecimal("200.00")), 401, "a BackOffice token paying at the POS (A12): no POS session");
             Map<String, Object> cashBody = Map.of("orderId", order, "methodCode", "CASH",
                     "amount", new BigDecimal("200.00"), "tendered", new BigDecimal("250.00"));
             Map<String, String> cashKey = Browser.idem();
