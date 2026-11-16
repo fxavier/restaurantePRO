@@ -326,15 +326,48 @@ public class RowLevelSecurityCoverageTest {
      */
     @Test
     void theStoreOrAllHelpersReadEveryStoreRowsButWriteOnlyInScope() {
+        assertStoreOrAllPolicies("catalog.quick_page", "catalog.quick_page_entry");
+    }
+
+    /** The same once the module is converted: the restrictive tenant_scope joins the store-or-all set (D179). */
+    @Test
+    void aConvertedStoreOrAllTableKeepsItsStoreOrAllPoliciesBesideItsTenantScope() {
+        JdbcClient owner = OwnerDatabase.shared().jdbc();
+        dropScratch(owner);
+        try {
+            OwnerDatabase.shared().tx(jdbc -> {
+                jdbc.sql("CREATE SCHEMA " + SCRATCH).update();
+                jdbc.sql("CREATE TABLE " + SCRATCH + ".page (id uuid PRIMARY KEY, store_id uuid, "
+                        + "tenant_id uuid NOT NULL DEFAULT shared.rls_tenant_id(), UNIQUE (tenant_id, id))").update();
+                jdbc.sql("CREATE TABLE " + SCRATCH + ".entry (id uuid PRIMARY KEY, page_id uuid NOT NULL, "
+                        + "tenant_id uuid NOT NULL DEFAULT shared.rls_tenant_id(), UNIQUE (tenant_id, id), "
+                        + "FOREIGN KEY (tenant_id, page_id) REFERENCES " + SCRATCH + ".page (tenant_id, id))")
+                        .update();
+                jdbc.sql("SELECT shared.rls_protect_store_or_all_table('" + SCRATCH + ".page'), "
+                        + "shared.rls_protect_store_or_all_child_table('" + SCRATCH + ".entry', 'page_id', '"
+                        + SCRATCH + ".page', 'id')").query().listOfRows();
+            });
+
+            assertStoreOrAllPolicies(SCRATCH + ".page", SCRATCH + ".entry");
+        } finally {
+            dropScratch(owner);
+        }
+    }
+
+    /**
+     * {@code page}'s store-or-all policies are exactly V1009's per-command set, and {@code entry}'s the child set; a
+     * restrictive {@code tenant_scope} of a converted table is allowed beside them when it is the canonical one.
+     */
+    static void assertStoreOrAllPolicies(String page, String entryTable) {
         String read = "((store_id IS NULL) OR " + visible("store_id") + ")";
         String write = visible("store_id");
-        assertThat(policyTexts("catalog.quick_page")).containsExactlyInAnyOrder(
+        assertThat(storePolicyTexts(page)).containsExactlyInAnyOrder(
                 "store_or_all_delete d " + write + " null",
                 "store_or_all_insert a null " + write,
                 "store_or_all_read r " + read + " null",
                 "store_or_all_update w " + read + " " + write);
 
-        List<String> entry = policyTexts("catalog.quick_page_entry");
+        List<String> entry = storePolicyTexts(entryTable);
         assertThat(entry).extracting(text -> text.split(" ")[0] + " " + text.split(" ")[1]).containsExactlyInAnyOrder(
                 "store_or_all_parent_delete d", "store_or_all_parent_insert a", "store_or_all_parent_read r",
                 "store_or_all_parent_update w");
@@ -354,6 +387,21 @@ public class RowLevelSecurityCoverageTest {
     private static String visible(String column) {
         return "(( SELECT shared.rls_all_stores() AS rls_all_stores) OR (" + column
                 + " = ANY (( SELECT shared.rls_store_ids() AS rls_store_ids)::uuid[])))";
+    }
+
+    /**
+     * {@link #policyTexts} without the tenant policy, which must then be the canonical restrictive one of
+     * {@code shared.rls_protect_tenant} (a converted table, D179).
+     */
+    private static List<String> storePolicyTexts(String table) {
+        List<String> all = policyTexts(table);
+        String tenant = "tenant_scope * " + CANONICAL_TENANT_PREDICATE + " " + CANONICAL_TENANT_PREDICATE;
+        all.stream().filter(text -> text.startsWith("tenant_scope ")).forEach(text ->
+                assertThat(text).as("%s's tenant_scope", table).isEqualTo(tenant));
+        assertThat(OwnerDatabase.shared().jdbc().sql("SELECT count(*) FROM pg_catalog.pg_policy WHERE polrelid = "
+                        + "CAST(? AS regclass) AND polname = 'tenant_scope' AND polpermissive").param(table)
+                .query(Long.class).single()).as("%s's tenant_scope is restrictive", table).isZero();
+        return all.stream().filter(text -> !text.startsWith("tenant_scope ")).toList();
     }
 
     private static List<String> policyTexts(String table) {
