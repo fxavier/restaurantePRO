@@ -61,8 +61,8 @@ class CustomersTenantIsolationTest {
     static final UUID A = TenantTestSupport.A;
     static final UUID B = TenantTestSupport.B;
     static final UUID ACCOUNT = UUID.fromString("0190b400-0000-7000-8000-0000000000c5");
-    static final UUID A_STORE = UUID.fromString("0190b400-0000-7000-8000-0000000000a1");
-    static final UUID B_STORE = UUID.fromString("0190b400-0000-7000-8000-0000000000b1");
+    static final UUID A_STORE = UUID.fromString("0190b400-0000-7000-8000-0000000074a1");
+    static final UUID B_STORE = UUID.fromString("0190b400-0000-7000-8000-0000000074b1");
     static final LocalDate DAY = LocalDate.of(2026, 11, 5);
     static final String PHONE = "841234567";
     static final String TAX_ID = "400123456";
