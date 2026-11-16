@@ -67,6 +67,20 @@ class AuditQueryTest {
                 .andExpect(jsonPath("$.content[0].storeId").value(storeA.toString()));
     }
 
+    /** D183: a support action is audited as SUPPORT, stored and filterable like the other kinds. */
+    @Test
+    void anEntryOfActorKindSupportIsStoredAndListed() throws Exception {
+        UUID support = audit.row(storeA, T0, action, "Order", UUID.randomUUID().toString(), UUID.randomUUID(),
+                "SUPPORT", null, "{}");
+        audit.row(storeA, T0, action);
+
+        mvc.perform(list().param("actorKind", "SUPPORT").with(account(VIEW)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].id").value(support.toString()))
+                .andExpect(jsonPath("$.content[0].actorKind").value("SUPPORT"));
+    }
+
     @Test
     void aStoreScopedAuditorNamingAnotherStoreIsForbidden() throws Exception {
         audit.row(storeB, T0, action);

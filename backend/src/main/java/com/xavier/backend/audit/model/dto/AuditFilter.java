@@ -12,10 +12,10 @@ import java.util.UUID;
  * narrowed by every other filter that is given. Without {@code storeId} the rows are those of every store the caller
  * may see (and the store-less rows for an installation-wide auditor).
  *
- * @param actorKind {@code ACCOUNT}, {@code EMPLOYEE} or {@code SYSTEM}
+ * @param actorKind {@code ACCOUNT}, {@code EMPLOYEE}, {@code SYSTEM} or {@code SUPPORT}
  */
 public record AuditFilter(UUID storeId, @NotNull Instant from, @NotNull Instant to, UUID actorId,
-                          @Pattern(regexp = "ACCOUNT|EMPLOYEE|SYSTEM") String actorKind,
+                          @Pattern(regexp = "ACCOUNT|EMPLOYEE|SYSTEM|SUPPORT") String actorKind,
                           @Size(max = 100) String action, @Size(max = 100) String entityType,
                           @Size(max = 100) String entityId) {
 

@@ -13,6 +13,14 @@ ALTER TABLE audit.audit_event
     ADD CONSTRAINT audit_event_tenant_id_uk UNIQUE (tenant_id, id);
 SELECT shared.rls_protect_tenant('audit.audit_event');
 
+-- D183: a support action is audited as the SUPPORT kind, not as ACCOUNT. The new check admits the same values as
+-- V1102's plus SUPPORT; a SUPPORT row names its actor like an ACCOUNT or EMPLOYEE one (V1102's principal check).
+-- Re-adding a CHECK scans the table but rewrites no row, so the append-only trigger is not involved.
+ALTER TABLE audit.audit_event
+    DROP CONSTRAINT audit_event_actor_kind_ck;
+ALTER TABLE audit.audit_event
+    ADD CONSTRAINT audit_event_actor_kind_ck CHECK (actor_kind IN ('ACCOUNT', 'EMPLOYEE', 'SYSTEM', 'SUPPORT'));
+
 -- The console function (V1105, D143 break-glass) writes with no application session, so the column default would raise
 -- RS003: the console names the tenant by setting app.tenant_id for its transaction, and with none set the row belongs
 -- to the bootstrap tenant, the only one before the SaaS tenants exist. The signature, grants and the revoke from
