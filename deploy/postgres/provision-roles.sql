@@ -137,6 +137,26 @@ SELECT 'REVOKE ALL ON ALL TABLES IN SCHEMA tenancy FROM restaurantpro_app'
 WHERE EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = 'tenancy')
 \gexec
 
+-- 5d. R6 (D179): PLATFORM tables are shared by every tenant and have no row-level security, so the pool may not write
+-- them (one tenant would change them for all), except the allow-list below, which the application must write:
+--   public.event_publication, public.event_publication_archive   Spring Modulith's event registry (D185)
+--   shared.job_lease                                              the per-tenant job leases (D185)
+-- Re-applied at every run, so a provisioning after the migrations never hands the writes back. A table registered
+-- PLATFORM later keeps the default privileges until the next run (it runs at every start).
+-- Before the first migration there is no registry yet (the query would not parse), hence the \if.
+SELECT to_regclass('shared.rls_platform_table') IS NOT NULL AS provision_has_platform_registry
+\gset
+\if :provision_has_platform_registry
+SELECT format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON %s FROM restaurantpro_app', p.table_name)
+FROM shared.rls_platform_table p
+         JOIN pg_catalog.pg_class c ON c.oid = p.table_name
+         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+WHERE format('%I.%I', n.nspname, c.relname) NOT IN ('public.event_publication', 'public.event_publication_archive',
+                                                    'shared.job_lease')
+ORDER BY 1
+\gexec
+\endif
+
 -- 6. The same for what later migrations create (the owner runs them).
 ALTER DEFAULT PRIVILEGES FOR ROLE restaurantpro_owner GRANT USAGE ON SCHEMAS TO restaurantpro_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE restaurantpro_owner
