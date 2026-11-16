@@ -31,6 +31,7 @@ public class SystemScopeRegistryTest {
             entry("inventory.service.StockBalanceReconciliationJob.reconcile", SystemScope.STOCK_RECONCILE),
             entry("reporting.service.RebuildService.abandonInterruptedRuns", SystemScope.REPORTING_RECOVERY),
             entry("production.service.ProductionMetrics.refreshQueue", SystemScope.METRICS),
+            entry("production.service.ProductionMetrics.refreshStatusCounts", SystemScope.METRICS),
             entry("cash.service.CashDiscrepancyAlertSource.refresh", SystemScope.ALERTS),
             entry("shared.events.EventPublicationRecovery.resubmitDue", SystemScope.EVENT_MAINTENANCE),
             entry("shared.events.EventPublicationRecovery.purgeCompleted", SystemScope.EVENT_MAINTENANCE),

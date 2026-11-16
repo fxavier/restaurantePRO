@@ -23,7 +23,9 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.AfterEach;
@@ -162,15 +164,16 @@ class ActorlessStoreScopeTest {
     }
 
     @Test
-    void thePrintJobsGaugeIsInstallationWideUnderAScrapeWithNoActor() {
+    void aPrintJobsScrapeWithNoTenantReadsNoDatabase() throws Exception {
         arm(false);
 
-        registry.get("print_jobs").tag("status", "QUEUED").gauge().value();
+        // a scrape thread: no actor, no tenant (the gauge shows the per-tenant refreshes, D185)
+        String scraper = CompletableFuture.supplyAsync(() -> {
+            registry.get("print_jobs").tag("status", "QUEUED").gauge().value();
+            return Thread.currentThread().getName();
+        }).get(30, TimeUnit.SECONDS);
 
-        assertThat(onThisThread()).isNotEmpty().allSatisfy(checkout -> {
-            assertThat(checkout.origin()).isEqualTo("system:METRICS");
-            assertThat(checkout.allStores()).isEqualTo("on");
-        });
+        assertThat(ProbeDataSource.seen).noneSatisfy(checkout -> assertThat(checkout.thread()).isEqualTo(scraper));
     }
 
     @Test
