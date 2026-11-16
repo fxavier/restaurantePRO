@@ -68,7 +68,7 @@ class CashSchemaTest {
                         SELECT indexdef FROM pg_indexes WHERE schemaname = 'cash' AND indexname = 'cash_day_store_open_ix'""")
                 .query(String.class).optional())
                 .hasValueSatisfying(definition -> assertThat(definition)
-                        .contains("(store_id, business_date)").contains("WHERE ((status)::text = 'OPEN'::text)"));
+                        .contains("(tenant_id, store_id, business_date)").contains("WHERE ((status)::text = 'OPEN'::text)"));
     }
 
     @Test
