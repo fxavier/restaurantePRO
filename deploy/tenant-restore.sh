@@ -48,6 +48,11 @@ while (($#)); do
   esac
 done
 [[ -f "$archive" ]] || die "--archive $archive is not a file"
+# The name tenant-export.sh gives; it is checked before anything uses it (it is recorded in the audit row).
+archive_name="$(basename "$archive")"
+[[ "$archive_name" =~ ^tenant-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})-[0-9]{8}T[0-9]{6}Z\.tar(\.age)?$ ]] \
+  || die "the archive name is not tenant-<uuid>-<UTC>.tar[.age] as tenant-export.sh writes it"
+named_tenant="${BASH_REMATCH[1]}"
 [[ -n "$container" ]] || die "--container is required"
 require_own_installation "$container" "$other"
 env_mode
@@ -78,12 +83,14 @@ manifest="$WORK/stage/MANIFEST"
 [[ -f "$manifest" ]] || die "$archive has no MANIFEST"
 tenant="$(sed -n 's/^tenant //p' "$manifest")"
 [[ "$tenant" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || die "the MANIFEST names no tenant"
+[[ "$tenant" == "$named_tenant" ]] || die "the archive name names tenant $named_tenant, its MANIFEST $tenant"
 
 as_super() { docker exec -i "$container" psql -X -q -At -v ON_ERROR_STOP=1 -U "$SUPERUSER" -d "$db" "$@"; }
 
 # The archive is what its MANIFEST says, file by file.
 while read -r kind table rows sum; do
   [[ "$kind" == table ]] || continue
+  [[ "$table" =~ ^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$ && "$rows" =~ ^[0-9]+$ ]] || die "the MANIFEST holds a malformed line"
   f="$WORK/stage/$table.copy"
   [[ -f "$f" ]] || die "the MANIFEST lists $table but the archive has no $table.copy"
   [[ "$(wc -l <"$f" | tr -d ' ')" == "$rows" && "$(sha256_hex "$f")" == "$sum" ]] || die "$table.copy does not match the MANIFEST"
@@ -93,27 +100,29 @@ listed="$(sed -n 's/^table \([^ ]*\) .*/\1/p' "$manifest" | LC_ALL=C sort)"
 [[ "$expected" == "$listed" ]] || die "the archive's tables are not the target's TENANT* tables (another release?)"
 [[ "$(sed -n 's/^schema_version //p' "$manifest")" == "$(as_super -c "SELECT coalesce(max(version), '') FROM flyway_schema_history WHERE success")" ]] \
   || die "the archive's schema version is not the target's: migrate the staging copy to the same release first"
-status="$(as_super -c "SELECT status FROM tenancy.tenant WHERE id = '$tenant'")"
+status="$(as_super -v tenant="$tenant" <<<"SELECT status FROM tenancy.tenant WHERE id = :'tenant'")"
 [[ -n "$status" ]] || die "no tenant $tenant on the target"
 [[ "$status" == SUSPENDED ]] || die "tenant $tenant is $status: suspend it first (POST /api/v1/platform/tenants/{id}/suspend)"
 
 docker exec "$container" sh -c "umask 077 && mkdir '$remote'"
 tar -C "$WORK/stage" -cf - . | docker exec -i "$container" tar -C "$remote" -xf -
 operator="ops:$(id -un)"
+# Values reach SQL only as psql variables (:'tenant'); table names are the target's own registry entries (checked
+# above against it and against an identifier pattern), the only text spliced.
 {
   echo "BEGIN;"
   echo "SET LOCAL session_replication_role = replica;"
-  echo "SELECT 1 FROM tenancy.tenant WHERE id = '$tenant' AND status = 'SUSPENDED' FOR UPDATE \\g /dev/null"
+  echo "SELECT 1 FROM tenancy.tenant WHERE id = :'tenant' AND status = 'SUSPENDED' FOR UPDATE \\g /dev/null"
   while read -r kind table rows sum; do
     [[ "$kind" == table && "$table" != tenancy.tenant ]] || continue
-    echo "DELETE FROM $table WHERE tenant_id = '$tenant';"
+    echo "DELETE FROM $table WHERE tenant_id = :'tenant';"
     echo "\\copy $table FROM '$remote/$table.copy'"
     # a mismatch divides by zero: the transaction is rolled back
-    echo "SELECT 1 / (CASE WHEN count(*) = $rows THEN 1 ELSE 0 END) FROM $table WHERE tenant_id = '$tenant' \\g /dev/null"
+    echo "SELECT 1 / (CASE WHEN count(*) = $rows THEN 1 ELSE 0 END) FROM $table WHERE tenant_id = :'tenant' \\g /dev/null"
   done <"$manifest"
   echo "SET LOCAL session_replication_role = origin;"
   echo "INSERT INTO tenancy.platform_audit_event (operator, tenant_id, action, reason)"
-  echo "VALUES ('$operator', '$tenant', 'TENANT_RESTORED', 'tenant-restore.sh from $(basename "$archive")');"
+  echo "VALUES (:'operator', :'tenant', 'TENANT_RESTORED', 'tenant-restore.sh from ' || :'archive');"
   echo "COMMIT;"
-} | as_super >/dev/null || die "the replacement failed and was rolled back; tenant $tenant is unchanged"
-echo "tenant-restore: tenant $tenant restored from $(basename "$archive"); it stays SUSPENDED until an operator reactivates it" >&2
+} | as_super -v tenant="$tenant" -v operator="$operator" -v archive="$archive_name" >/dev/null || die "the replacement failed and was rolled back; tenant $tenant is unchanged"
+echo "tenant-restore: tenant $tenant restored from $archive_name; it stays SUSPENDED until an operator reactivates it" >&2

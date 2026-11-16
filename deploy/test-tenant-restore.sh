@@ -6,7 +6,8 @@
 #      (a new store, a membership revoked);
 #   3. A is exported from staging (production mode: age, throwaway keys) — also under D188 fallback (b), the staging
 #      owner without BYPASSRLS, which must give the same archive;
-#   4. tenant-restore.sh refuses, changing nothing: A still ACTIVE; a tampered archive; a key that is not a recipient;
+#   4. tenant-restore.sh refuses, changing nothing: A still ACTIVE; a tampered archive; a malformed archive name; a key
+#      that is not a recipient;
 #      another schema version;
 #   5. A suspended, the restore replaces A's rows: A equals A at T (every TENANT* table and its memberships), B equals
 #      B after its post-T changes, A stays SUSPENDED, and the restore is audited (TENANT_RESTORED).
@@ -95,10 +96,14 @@ su_sql "$PROD" "UPDATE tenancy.tenant SET status = 'SUSPENDED', suspended_at = n
 mkdir "$WORK/tampered/x"
 tar -C "$WORK/tampered/x" -xf "$WORK/a.tar"
 sed -i.bak 's/Baixa/Tampered/' "$WORK/tampered/x/organization.store.copy" && rm -f "$WORK/tampered/x/"*.bak
-(cd "$WORK/tampered/x" && tar -cf "$WORK/tampered/tenant.tar" MANIFEST ./*.copy)
+(cd "$WORK/tampered/x" && tar -cf "$WORK/tampered/tenant-$A-20260101T000000Z.tar" MANIFEST ./*.copy)
 export RESTAURANTPRO_ENVIRONMENT=test # the tampered tar is plaintext
-refused "a tampered archive" --archive "$WORK/tampered/tenant.tar"
+refused "a tampered archive" --archive "$WORK/tampered/tenant-$A-20260101T000000Z.tar"
 grep -q "does not match the MANIFEST" "$WORK/refused.out" || fail "the tampered archive was refused for another reason: $(cat "$WORK/refused.out")"
+# G5: an archive name never reaches SQL unchecked (a quote in it would be spliced into the superuser's statement)
+cp "$WORK/a.tar" "$WORK/tampered/tenant-x');DROP TABLE organization.store;--.tar"
+refused "a malformed archive name" --archive "$WORK/tampered/tenant-x');DROP TABLE organization.store;--.tar"
+grep -q "archive name" "$WORK/refused.out" || fail "the malformed name was refused for another reason: $(cat "$WORK/refused.out")"
 export RESTAURANTPRO_ENVIRONMENT=production
 (umask 077 && age_keygen >"$WORK/keys/other.key")
 refused "a key that is not a recipient" --archive "$archive" --identity "$WORK/keys/other.key"
