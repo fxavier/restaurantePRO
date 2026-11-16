@@ -113,8 +113,7 @@ class KeycloakIdentityProviderAdmin implements IdentityProviderAdmin {
     }
 
     private Optional<String> findUser(String email) {
-        List<Map<String, Object>> users = tenantRealm.read("/users?exact=true&email=" + encode(email), List.class);
-        return users.stream().map(user -> (String) user.get("id")).findFirst();
+        return firstId(tenantRealm, "/users?exact=true&email=" + encode(email));
     }
 
     private String createUser(String email) {
@@ -128,8 +127,13 @@ class KeycloakIdentityProviderAdmin implements IdentityProviderAdmin {
     }
 
     private Optional<String> clientUuid(String clientId) {
-        List<Map<String, Object>> clients = deviceRealm.read("/clients?clientId=" + encode(clientId), List.class);
-        return clients.stream().map(client -> (String) client.get("id")).findFirst();
+        return firstId(deviceRealm, "/clients?clientId=" + encode(clientId));
+    }
+
+    /** The id of the first representation an exact search answers (Keycloak lists matches). */
+    private static Optional<String> firstId(RealmAdmin realm, String search) {
+        List<Map<String, Object>> found = realm.read(search, List.class);
+        return found.stream().map(representation -> (String) representation.get("id")).findFirst();
     }
 
     /** A confidential client with no secret: {@code private_key_jwt} (ES256), client credentials only, the API audience. */
