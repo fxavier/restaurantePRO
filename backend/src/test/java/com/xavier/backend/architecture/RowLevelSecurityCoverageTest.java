@@ -114,7 +114,7 @@ public class RowLevelSecurityCoverageTest {
                         + "the five MFA/throttle/OIDC tables and Spring Session's two")
                 .containsEntry("protected", 109L).containsEntry("unscoped", 41L);
         assertThat(OwnerDatabase.shared().jdbc().sql("SELECT count(*) FROM shared.rls_platform_table")
-                .query(Long.class).single()).as("PLATFORM").isEqualTo(10L);
+                .query(Long.class).single()).as("PLATFORM (S72: + identity.role_template and its permissions)").isEqualTo(12L);
     }
 
     @Test

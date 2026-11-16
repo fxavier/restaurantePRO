@@ -16,7 +16,6 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
 import java.util.EnumSet;
-import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -24,7 +23,7 @@ import org.hibernate.annotations.UuidGenerator;
 
 /**
  * A named, editable set of {@link Permission}s (D27), per tenant. The bootstrap tenant's seven are seeded from spec §3
- * by Flyway; a tenant provisioned later starts with its administrator role ({@link #administrator}).
+ * by Flyway; a tenant provisioned later starts with the same roles, copied from {@code identity.role_template}.
  */
 @Entity
 @Table(schema = "identity", name = "role")
@@ -32,8 +31,6 @@ public class Role {
 
     /** The bootstrap tenant's seeded "Administrador" role. */
     public static final UUID ADMINISTRATOR_ID = UUID.fromString("01900000-0000-7000-8000-000000000301");
-    /** The name of a provisioned tenant's administrator role. */
-    public static final String ADMINISTRATOR_NAME = "Administrador";
 
     @Id
     @UuidGenerator(style = UuidGenerator.Style.VERSION_7)
@@ -74,10 +71,10 @@ public class Role {
         return role;
     }
 
-    /** A provisioned tenant's administrator role, with every permission (D181 onboarding). */
-    public static Role administrator(Instant now) {
-        Role role = define(ADMINISTRATOR_NAME, EnumSet.allOf(Permission.class), now);
-        role.administrator = true;
+    /** One of a provisioned tenant's standard roles, from its template (D181 onboarding). */
+    public static Role fromTemplate(String name, Set<Permission> permissions, boolean administrator, Instant now) {
+        Role role = define(name, permissions, now);
+        role.administrator = administrator;
         return role;
     }
 

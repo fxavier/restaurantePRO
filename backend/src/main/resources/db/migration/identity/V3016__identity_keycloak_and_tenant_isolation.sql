@@ -49,6 +49,38 @@ ALTER TABLE identity.role
     ADD COLUMN administrator BOOLEAN NOT NULL DEFAULT false;
 UPDATE identity.role SET administrator = true WHERE id = '01900000-0000-7000-8000-000000000301';
 
+-- The standard roles a provisioned tenant starts with (D181): a snapshot of the roles the identity migrations seeded
+-- (V3001, V3005, V3010, V3012), taken before they become the bootstrap tenant's. PLATFORM class (not tenant data, read
+-- by every tenant's onboarding, written by migrations only): a later migration that changes a seeded role's
+-- permissions changes its template too.
+CREATE TABLE identity.role_template
+(
+    id            UUID        NOT NULL,
+    name          VARCHAR(60) NOT NULL,
+    administrator BOOLEAN     NOT NULL,
+    CONSTRAINT role_template_pk PRIMARY KEY (id),
+    CONSTRAINT role_template_name_uk UNIQUE (name)
+);
+CREATE TABLE identity.role_template_permission
+(
+    template_id UUID        NOT NULL,
+    permission  VARCHAR(40) NOT NULL,
+    CONSTRAINT role_template_permission_pk PRIMARY KEY (template_id, permission),
+    CONSTRAINT role_template_permission_template_fk FOREIGN KEY (template_id) REFERENCES identity.role_template (id)
+);
+INSERT INTO identity.role_template (id, name, administrator)
+SELECT id, name, administrator FROM identity.role
+WHERE id BETWEEN '01900000-0000-7000-8000-000000000301' AND '01900000-0000-7000-8000-000000000307';
+INSERT INTO identity.role_template_permission (template_id, permission)
+SELECT role_id, permission FROM identity.role_permission
+WHERE role_id IN (SELECT id FROM identity.role_template);
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON identity.role_template, identity.role_template_permission
+    FROM restaurantpro_app;
+SELECT shared.rls_register_platform('identity.role_template',
+                                    'The standard roles of a new tenant (D181): seeded by migrations, no tenant data');
+SELECT shared.rls_register_platform('identity.role_template_permission',
+                                    'The permissions of the standard roles of a new tenant (D181)');
+
 -- (1)+(2) tenant_id on every table, parents first.
 ALTER TABLE identity.role
     ADD COLUMN tenant_id uuid NOT NULL DEFAULT '00000000-0000-7000-8000-000000000001';

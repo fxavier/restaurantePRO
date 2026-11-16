@@ -2,7 +2,6 @@ package com.xavier.backend.identity.service;
 
 import com.xavier.backend.identity.model.Role;
 import com.xavier.backend.identity.model.UserAccount;
-import com.xavier.backend.identity.repository.RoleRepository;
 import com.xavier.backend.identity.repository.UserAccountRepository;
 import com.xavier.backend.organization.model.event.CompanyProvisioned;
 import com.xavier.backend.shared.exception.UnavailableException;
@@ -24,7 +23,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * The last link of onboarding (D181 as amended): {@code CompanyProvisioned} → in the event's tenant, the tenant's
- * administrator role (every permission) and the local administrator account (its e-mail as the username, all stores),
+ * standard roles ({@link StandardRoles}) and the local administrator account (its e-mail as the username, the
+ * administrator role, all stores),
  * then the Keycloak user invited (execute-actions e-mail), then the {@code ACCOUNT} membership of that user and the
  * tenant activated. The invitation is an external call (D48: persist, call, record), so it runs between two
  * transactions, never inside one. Idempotent: each step finds what an earlier delivery did (the account by username,
@@ -36,14 +36,14 @@ class AdministratorProvisioning {
 
     private static final Logger log = LoggerFactory.getLogger(AdministratorProvisioning.class);
 
-    private final RoleRepository roles;
+    private final StandardRoles roles;
     private final UserAccountRepository accounts;
     private final TenancyApi tenancy;
     private final TransactionTemplate transaction;
     private final String tenantIssuer;
     private final Clock clock;
 
-    AdministratorProvisioning(RoleRepository roles, UserAccountRepository accounts, TenancyApi tenancy,
+    AdministratorProvisioning(StandardRoles roles, UserAccountRepository accounts, TenancyApi tenancy,
                               PlatformTransactionManager transactions,
                               @Value("${restaurantpro.security.issuers.tenant:}") String tenantIssuer, Clock clock) {
         this.roles = roles;
@@ -73,8 +73,7 @@ class AdministratorProvisioning {
     private UUID administratorAccount(String email) {
         String username = UserAccount.normalize(email);
         return accounts.findByUsername(username).map(UserAccount::getId).orElseGet(() -> {
-            Role role = roles.findAdministrator().orElseGet(() -> roles.saveAndFlush(Role.administrator(
-                    clock.instant())));
+            Role role = roles.ensureFor();
             return accounts.saveAndFlush(UserAccount.open(username, null, Set.of(role.getId()), clock.instant()))
                     .getId();
         });
