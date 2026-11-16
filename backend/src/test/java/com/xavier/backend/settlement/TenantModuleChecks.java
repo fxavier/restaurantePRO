@@ -1,17 +1,11 @@
 package com.xavier.backend.settlement;
 
-import java.lang.reflect.InvocationTargetException;
 import com.xavier.backend.AppRoleSession;
 import com.xavier.backend.OwnerDatabase;
-import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * D179 (security rule 3) for the slices that convert a module before {@code CompositeForeignKeyCoverageTest} lists it
- * (S76 does): runs that test's own per-module check, so the rule is not copied. Remove with the reflection once the
- * module is in {@code RowLevelSecurityCoverageTest.TENANT_PROTECTED_MODULES}.
- */
+/** Tenant-aware views of the D167 classification for the converted modules' RLS tests. */
 public final class TenantModuleChecks {
 
     private TenantModuleChecks() {
@@ -39,22 +33,5 @@ public final class TenantModuleChecks {
                         AND k.conkey @> ARRAY[t.tgattr[0]]
                 WHERE t.tgrelid = CAST(? AS regclass) AND t.tgname = 'parent_fixed'""")
                 .param(schema + "." + table).query(String.class).single();
-    }
-
-    /** Every foreign key and business key of the tenant tables of {@code schema} includes {@code tenant_id}. */
-    public static void assertKeysIncludeTheTenant(String schema) {
-        try {
-            Method check = Class.forName("com.xavier.backend.architecture.CompositeForeignKeyCoverageTest")
-                    .getDeclaredMethod("assertModuleKeysIncludeTheTenant", String.class);
-            check.setAccessible(true);
-            check.invoke(null, schema);
-        } catch (InvocationTargetException e) {
-            if (e.getCause() instanceof Error error) {
-                throw error;
-            }
-            throw new IllegalStateException(e.getCause());
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException(e);
-        }
     }
 }
