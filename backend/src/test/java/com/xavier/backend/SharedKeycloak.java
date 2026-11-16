@@ -1,10 +1,13 @@
 package com.xavier.backend;
 
 import dasniko.testcontainers.keycloak.KeycloakContainer;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
+import java.time.Duration;
 import java.nio.file.Path;
 import java.util.List;
-import org.testcontainers.utility.MountableFile;
+import java.util.stream.Stream;
 
 /**
  * One Keycloak for the whole test JVM (D189 as amended), started lazily by {@link #instance()} with the two realms
@@ -16,7 +19,8 @@ public final class SharedKeycloak {
     /** Keycloak 26.x, pinned (D175: minor upgrades are a planned change). */
     public static final String IMAGE = "quay.io/keycloak/keycloak:26.8.0";
 
-    static final List<String> REALM_FILES = List.of("realm-restaurantpro.json", "realm-restaurantpro-ops.json");
+    /** Where the pom puts {@code deploy/keycloak/realm-*.json} on the test classpath. */
+    static final String CLASSPATH_DIRECTORY = "keycloak/";
 
     private final KeycloakContainer container;
 
@@ -27,6 +31,12 @@ public final class SharedKeycloak {
     /** The shared server, started on the first call. */
     public static SharedKeycloak instance() {
         return Holder.INSTANCE;
+    }
+
+    /** The realms of {@code deploy/keycloak}: every {@code realm-<name>.json} there (S75 adds its devices realm). */
+    public static List<String> realmNames() {
+        return realmFiles().stream().map(file -> file.substring("realm-".length(), file.length() - ".json".length()))
+                .toList();
     }
 
     /** The issuer of a realm, e.g. {@code restaurantpro} or {@code restaurantpro-ops}. */
@@ -42,23 +52,32 @@ public final class SharedKeycloak {
 
         static final SharedKeycloak INSTANCE = start();
 
+        /**
+         * The module's own realm import ({@code --import-realm} from classpath files): a custom command would replace
+         * Keycloak's {@code start-dev} and the container would exit with code 2.
+         */
         private static SharedKeycloak start() {
-            Path realms = realmDirectory();
-            KeycloakContainer container = new KeycloakContainer(IMAGE);
-            for (String file : REALM_FILES) {
-                container.withCopyFileToContainer(MountableFile.forHostPath(realms.resolve(file)),
-                        "/opt/keycloak/data/import/" + file);
-            }
-            container.withCustomCommand("--import-realm");
+            KeycloakContainer container = new KeycloakContainer(IMAGE).withRealmImportFiles(realmFiles().stream()
+                    .map(file -> CLASSPATH_DIRECTORY + file).toArray(String[]::new))
+                    .withStartupTimeout(Duration.ofMinutes(5)); // a first start builds Keycloak, slow on a busy host
             container.start();
             return new SharedKeycloak(container);
+        }
+    }
+
+    static List<String> realmFiles() {
+        try (Stream<Path> files = Files.list(realmDirectory())) {
+            return files.map(file -> file.getFileName().toString())
+                    .filter(name -> name.startsWith("realm-") && name.endsWith(".json")).sorted().toList();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         }
     }
 
     static Path realmDirectory() {
         for (Path dir = Path.of("").toAbsolutePath(); dir != null; dir = dir.getParent()) {
             Path candidate = dir.resolve("deploy/keycloak");
-            if (Files.isRegularFile(candidate.resolve(REALM_FILES.getFirst()))) {
+            if (Files.isRegularFile(candidate.resolve("realm-restaurantpro.json"))) {
                 return candidate;
             }
         }

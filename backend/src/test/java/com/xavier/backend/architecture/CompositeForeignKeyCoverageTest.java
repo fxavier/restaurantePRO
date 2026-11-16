@@ -15,15 +15,16 @@ import org.springframework.jdbc.core.simple.JdbcClient;
  * between two TENANT* tables of a converted module pairs {@code tenant_id} with {@code tenant_id} (a child can never
  * reference another tenant's parent), and every business unique key includes {@code tenant_id} (two tenants can use the
  * same codes, and a violation cannot reveal another tenant's row). The primary key on {@code id} alone is not a
- * business key ({@code id} is a global UUIDv7). The modules are {@link RowLevelSecurityCoverageTest}'s.
+ * business key ({@code id} is a global UUIDv7). The modules are the converted ones, derived from the database
+ * ({@link RowLevelSecurityCoverageTest#tenantProtectedModules}).
  */
-class CompositeForeignKeyCoverageTest {
+public class CompositeForeignKeyCoverageTest {
 
     private static final String SCRATCH = "rls_scratch_composite";
 
     @Test
     void everyForeignKeyAndBusinessKeyOfTheConvertedModulesIncludesTheTenant() {
-        for (String schema : RowLevelSecurityCoverageTest.TENANT_PROTECTED_MODULES) {
+        for (String schema : RowLevelSecurityCoverageTest.tenantProtectedModules()) {
             assertModuleKeysIncludeTheTenant(schema);
         }
         for (String table : RowLevelSecurityCoverageTest.TENANT_PROTECTED_TABLES) {
@@ -80,6 +81,12 @@ class CompositeForeignKeyCoverageTest {
         List<String> problems = new ArrayList<>();
         tables.forEach(table -> problems.addAll(keyProblems(schema, table)));
         assertThat(problems).as("tenant keys of schema %s", schema).isEmpty();
+    }
+
+    /** {@link #assertModuleKeysIncludeTheTenant} for one table, for a slice that converts one table at a time. */
+    public static void assertTableKeysIncludeTheTenant(String table) {
+        assertThat(keyProblems(table.substring(0, table.indexOf('.')), table)).as("tenant keys of %s", table)
+                .isEmpty();
     }
 
     private static List<String> keyProblems(String schema, String table) {

@@ -181,10 +181,38 @@
     </dependencies>
 
     <build>
+        <testResources>
+            <testResource>
+                <directory>src/test/resources</directory>
+            </testResource>
+            <!-- R6 D189: the realms the dev Compose imports, on the test classpath for SharedKeycloak (D4) -->
+            <testResource>
+                <directory>../deploy/keycloak</directory>
+                <targetPath>keycloak</targetPath>
+                <includes>
+                    <include>realm-*.json</include>
+                </includes>
+            </testResource>
+        </testResources>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            <!-- R6: the gate (`mvn clean test`) also runs the *IT suites (real Keycloak); *Repro, *Smoke and
+                 *Benchmark stay outside the patterns on purpose (backend-conventions, Tests) -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <includes>
+                        <include>**/Test*.java</include>
+                        <include>**/*Test.java</include>
+                        <include>**/*Tests.java</include>
+                        <include>**/*TestCase.java</include>
+                        <include>**/*IT.java</include>
+                    </includes>
+                </configuration>
             </plugin>
         </plugins>
     </build>
