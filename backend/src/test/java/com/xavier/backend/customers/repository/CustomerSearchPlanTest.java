@@ -62,17 +62,22 @@ class CustomerSearchPlanTest {
         }
     }
 
+    /** In chunks of 500: each statement stays far inside the pool role's 15 s statement timeout, even on a busy host. */
     private static void seedWith(JdbcClient jdbc) {
-        jdbc.sql("""
-                INSERT INTO customers.customer (id, name, tax_id, active, created_at, updated_at, version)
-                SELECT uuidv7(), 'Seed ' || md5(i::text), 'SEED' || i, true, now(), now(), 0
-                FROM generate_series(1, 5000) i""").update();
-        jdbc.sql("""
-                INSERT INTO customers.customer_phone (id, customer_id, digits, is_primary)
-                SELECT uuidv7(), c.id, lpad(((substr(c.tax_id, 5)::bigint * 7919) % 1000000000)::text, 9, '0'), true
-                FROM customers.customer c
-                WHERE c.tax_id LIKE 'SEED%'
-                  AND NOT EXISTS (SELECT 1 FROM customers.customer_phone p WHERE p.customer_id = c.id)""").update();
+        for (int from = 1; from <= 5000; from += 500) {
+            jdbc.sql("""
+                    INSERT INTO customers.customer (id, name, tax_id, active, created_at, updated_at, version)
+                    SELECT uuidv7(), 'Seed ' || md5(i::text), 'SEED' || i, true, now(), now(), 0
+                    FROM generate_series(:from, :to) i""").param("from", from).param("to", from + 499).update();
+            jdbc.sql("""
+                    INSERT INTO customers.customer_phone (id, customer_id, digits, is_primary)
+                    SELECT uuidv7(), c.id, lpad(((substr(c.tax_id, 5)::bigint * 7919) % 1000000000)::text, 9, '0'),
+                           true
+                    FROM customers.customer c
+                    WHERE c.tax_id IN (SELECT 'SEED' || i FROM generate_series(:from, :to) i)
+                      AND NOT EXISTS (SELECT 1 FROM customers.customer_phone p WHERE p.customer_id = c.id)""")
+                    .param("from", from).param("to", from + 499).update();
+        }
     }
 
     @Test
