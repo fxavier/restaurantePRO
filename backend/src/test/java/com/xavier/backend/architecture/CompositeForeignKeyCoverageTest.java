@@ -15,7 +15,8 @@ import org.springframework.jdbc.core.simple.JdbcClient;
  * between two TENANT* tables of a converted module pairs {@code tenant_id} with {@code tenant_id} (a child can never
  * reference another tenant's parent), and every business unique key includes {@code tenant_id} (two tenants can use the
  * same codes, and a violation cannot reveal another tenant's row). The primary key on {@code id} alone is not a
- * business key ({@code id} is a global UUIDv7). The modules are {@link RowLevelSecurityCoverageTest}'s.
+ * business key ({@code id} is a global UUIDv7). The modules are the converted ones, derived from the database
+ * ({@link RowLevelSecurityCoverageTest#tenantProtectedModules}).
  */
 public class CompositeForeignKeyCoverageTest {
 
@@ -23,7 +24,7 @@ public class CompositeForeignKeyCoverageTest {
 
     @Test
     void everyForeignKeyAndBusinessKeyOfTheConvertedModulesIncludesTheTenant() {
-        for (String schema : RowLevelSecurityCoverageTest.TENANT_PROTECTED_MODULES) {
+        for (String schema : RowLevelSecurityCoverageTest.tenantProtectedModules()) {
             assertModuleKeysIncludeTheTenant(schema);
         }
         for (String table : RowLevelSecurityCoverageTest.TENANT_PROTECTED_TABLES) {
