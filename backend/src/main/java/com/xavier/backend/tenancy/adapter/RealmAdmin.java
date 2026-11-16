@@ -31,7 +31,7 @@ import tools.jackson.databind.json.JsonMapper;
 /**
  * The admin REST API of one realm, as one service account (D181, D182). The account authenticates with
  * {@code private_key_jwt} (RFC 7523: an ES256 assertion signed with the key of {@link KeycloakAdminClient#keyFile()}),
- * so no client secret exists; its access token is reused until 30 s before it expires. Anything that is not an answer
+ * so no client secret exists; its access token is reused until 30 s before it expires, and dropped when refused. Anything that is not an answer
  * of the realm — not configured, unreachable, a 5xx, a refused token (401) or a refused call (403, a provisioner set up
  * with too few rights) — is 503 {@code IDP_UNAVAILABLE}: nothing is assumed to have changed. Other statuses (201, 204,
  * 404, 409…) are the caller's to read. Never inside a transaction (D48); never logs a token, an assertion or a key.
@@ -75,6 +75,9 @@ class RealmAdmin {
     Reply send(HttpMethod method, String path, Object body) {
         String bearer = accessToken();
         Reply reply = exchange(method, URI.create(client.adminBase() + path), bearer, body);
+        if (reply.status() == 401) {
+            token = null; // revoked or its key rotated: the next call asks for a new one
+        }
         if (reply.status() == 401 || reply.status() == 403) {
             log.error("Keycloak refused {} {} to {} in realm {} ({}): check its admin rights", method, path,
                     client.clientId(), client.realm(), reply.status());
