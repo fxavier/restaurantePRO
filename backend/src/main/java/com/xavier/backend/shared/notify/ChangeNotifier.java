@@ -26,6 +26,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.springframework.boot.web.server.context.WebServerGracefulShutdownLifecycle;
 import org.springframework.context.SmartLifecycle;
@@ -40,7 +41,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  * POS change notices (D60, spec §9; D185 as amended). A use case calls {@link #notifyAfterCommit} inside its
  * transaction: it runs {@code pg_notify('change_notice', '<tenantId>:<storeId>:<topic>:<id>')} on the transaction's
  * connection, so PostgreSQL delivers the notice only on commit and never after a rollback, to every backend instance.
- * Each instance holds one {@code LISTEN change_notice} connection of its own (not from the pool) and forwards each
+ * Each instance holds one {@code LISTEN change_notice} connection of its own (not from the pool, and past any
+ * transaction-mode pooler: {@code restaurantpro.notify.listen-url}) and forwards each
  * notice to its streams subscribed to that {@code (tenantId, storeId)}: a stream of another tenant never receives it,
  * even for the same store id. Notices carry ids only: clients re-read through the authorized GET.
  *
@@ -75,6 +77,7 @@ public class ChangeNotifier implements SmartLifecycle, DisposableBean {
     private final TenantScopes tenants;
     private final JdbcClient jdbc;
     private final JdbcConnectionDetails database;
+    private final String listenUrl;
     private volatile boolean running;
     private volatile Thread listener;
     private volatile Connection listening;
@@ -87,14 +90,22 @@ public class ChangeNotifier implements SmartLifecycle, DisposableBean {
         this.tenants = null;
         this.jdbc = null;
         this.database = null;
+        this.listenUrl = "";
     }
 
+    /**
+     * @param listenUrl {@code restaurantpro.notify.listen-url}: a direct URL to PostgreSQL for the LISTEN connection
+     *                  only, past a transaction-mode pooler (PgBouncer delivers no notification to a LISTEN, D188);
+     *                  blank = the pool's URL. The credentials are the pool's role either way.
+     */
     @Autowired
     public ChangeNotifier(ObjectProvider<TenantScopes> tenants, ObjectProvider<JdbcClient> jdbc,
-                          ObjectProvider<JdbcConnectionDetails> database) {
+                          ObjectProvider<JdbcConnectionDetails> database,
+                          @Value("${restaurantpro.notify.listen-url:}") String listenUrl) {
         this.tenants = tenants.getIfAvailable();
         this.jdbc = jdbc.getIfAvailable();
         this.database = database.getIfAvailable();
+        this.listenUrl = listenUrl;
     }
 
     /**
@@ -267,8 +278,8 @@ public class ChangeNotifier implements SmartLifecycle, DisposableBean {
             return;
         }
         try {
-            Connection connection = DriverManager.getConnection(database.getJdbcUrl(), database.getUsername(),
-                    database.getPassword());
+            String url = listenUrl == null || listenUrl.isBlank() ? database.getJdbcUrl() : listenUrl;
+            Connection connection = DriverManager.getConnection(url, database.getUsername(), database.getPassword());
             try (Statement statement = connection.createStatement()) {
                 statement.execute("LISTEN " + CHANNEL);
             }
