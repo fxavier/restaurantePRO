@@ -19,9 +19,12 @@ public final class TestAuthentications {
     private TestAuthentications() {
     }
 
-    /** {@code actor} in {@code tenantId}, authenticated now (with a second factor when it is an account). */
+    /**
+     * {@code actor} in {@code tenantId}, authenticated now on the test's application clock ({@link TestClocks}), with a
+     * second factor when it is an account.
+     */
     public static Authentication of(Actor actor, UUID tenantId) {
-        return of(actor, tenantId, Instant.now());
+        return of(actor, tenantId, TestClocks.now());
     }
 
     /** {@code actor} in the bootstrap tenant, authenticated now. */
@@ -37,14 +40,15 @@ public final class TestAuthentications {
                 account ? new Assurance(Assurance.SECOND_FACTOR, authTime) : Assurance.NONE);
     }
 
-    /** As a MockMvc request's authentication. */
+    /** As a MockMvc request's authentication, authenticated when the request is built. */
     public static RequestPostProcessor as(Actor actor) {
-        return SecurityMockMvcRequestPostProcessors.authentication(of(actor));
+        return request -> SecurityMockMvcRequestPostProcessors.authentication(of(actor)).postProcessRequest(request);
     }
 
-    /** As a MockMvc request's authentication, in {@code tenantId}. */
+    /** As a MockMvc request's authentication, in {@code tenantId}, authenticated when the request is built. */
     public static RequestPostProcessor as(Actor actor, UUID tenantId) {
-        return SecurityMockMvcRequestPostProcessors.authentication(of(actor, tenantId));
+        return request -> SecurityMockMvcRequestPostProcessors.authentication(of(actor, tenantId))
+                .postProcessRequest(request);
     }
 
     private static UUID principalOf(Actor actor) {
