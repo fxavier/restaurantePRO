@@ -36,8 +36,9 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  * A80, A82 and A84 (audit): tenants A and B each audit the same action on the same entity id. Through the API an
  * auditor of A sees only A's events, B's event addressed by id is 404 (as an id that never existed), and the history of
  * the shared entity id lists A's row only. With no {@code AccessPolicy} in front (the application-role seam), B's rows
- * are invisible to A, a row with B's {@code tenant_id} is refused ({@code 42501}), a row never moves tenant
- * ({@code RS002}) and an unbound read raises {@code RS003}. An insert with no tenant bound fails too: an audit row
+ * are invisible to A, a row with B's {@code tenant_id} is refused ({@code 42501}), an update of {@code tenant_id}
+ * changes 0 rows (the trail has no UPDATE policy, so there is no {@code RS002}) and an unbound read raises
+ * {@code RS003}. An insert with no tenant bound fails too: an audit row
  * always belongs to a tenant. Strict: no bootstrap-tenant fallback.
  */
 @SpringBootTest
@@ -134,6 +135,23 @@ class AuditTenantIsolationTest {
                     + "'IsoEntity', 'x')").param(UUID.randomUUID()).update(),
                     StoreScopeViolations.Kind.TENANT_MISSING);
         }
+    }
+
+    /** The console function (D143) fails closed: no tenant named, no row; a named tenant owns the row it writes. */
+    @Test
+    void theConsoleFunctionNeedsATenantAndWritesItsRow() {
+        String call = "SELECT audit.record_console_event('ISO_CONSOLE', 'IsoEntity', ?, 'reason')";
+        String entity = "console-" + UUID.randomUUID();
+
+        AppRoleSession.assertRefused(() -> OwnerDatabase.shared().jdbc().sql(call).param(entity)
+                .query(UUID.class).single(), StoreScopeViolations.Kind.TENANT_MISSING);
+
+        UUID id = OwnerDatabase.shared().call(owner -> {
+            owner.sql("SELECT set_config('app.tenant_id', ?, true)").param(B.toString()).query().listOfRows();
+            return owner.sql(call).param(entity).query(UUID.class).single();
+        });
+        assertThat(OwnerDatabase.shared().jdbc().sql("SELECT tenant_id FROM audit.audit_event WHERE id = ?")
+                .param(id).query(UUID.class).single()).isEqualTo(B);
     }
 
     @Test

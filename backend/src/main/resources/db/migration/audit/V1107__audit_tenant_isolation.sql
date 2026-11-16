@@ -22,8 +22,8 @@ ALTER TABLE audit.audit_event
     ADD CONSTRAINT audit_event_actor_kind_ck CHECK (actor_kind IN ('ACCOUNT', 'EMPLOYEE', 'SYSTEM', 'SUPPORT'));
 
 -- The console function (V1105, D143 break-glass) writes with no application session, so the column default would raise
--- RS003: the console names the tenant by setting app.tenant_id for its transaction, and with none set the row belongs
--- to the bootstrap tenant, the only one before the SaaS tenants exist. The signature, grants and the revoke from
+-- RS003, which is the point: the console names the tenant by setting app.tenant_id for its transaction, and with
+-- none set the call fails closed (RS003) instead of writing a row into a tenant nobody named. The signature, grants and the revoke from
 -- PUBLIC (V1106) are unchanged: CREATE OR REPLACE keeps them.
 CREATE OR REPLACE FUNCTION audit.record_console_event(p_action text, p_entity_type text, p_entity_id text,
                                                       p_reason text)
@@ -32,8 +32,7 @@ CREATE OR REPLACE FUNCTION audit.record_console_event(p_action text, p_entity_ty
 $$
 DECLARE
     v_id     uuid := uuidv7();
-    v_tenant uuid := coalesce(nullif(current_setting('app.tenant_id', true), '')::uuid,
-                              '00000000-0000-7000-8000-000000000001');
+    v_tenant uuid := shared.rls_tenant_id();
 BEGIN
     INSERT INTO audit.audit_event (id, tenant_id, occurred_at, actor_id, actor_kind, approver_id, action, entity_type,
                                    entity_id, store_id, terminal_id, reason, details)
@@ -42,3 +41,21 @@ BEGIN
     RETURN v_id;
 END;
 $$;
+
+-- D180 (indexes): tenant_id leads every composite index and every index on store_id, so the restrictive tenant
+-- policy is served by the index. Same names, same partial predicates; built under a temporary name, then swapped.
+CREATE INDEX audit_event_actor_ix_tenant ON audit.audit_event USING btree (tenant_id, actor_id, occurred_at);
+DROP INDEX audit.audit_event_actor_ix;
+ALTER INDEX audit.audit_event_actor_ix_tenant RENAME TO audit_event_actor_ix;
+CREATE INDEX audit_event_entity_ix_tenant ON audit.audit_event USING btree (tenant_id, entity_type, entity_id, occurred_at);
+DROP INDEX audit.audit_event_entity_ix;
+ALTER INDEX audit.audit_event_entity_ix_tenant RENAME TO audit_event_entity_ix;
+CREATE INDEX audit_event_occurred_ix_tenant ON audit.audit_event USING btree (tenant_id, occurred_at, id);
+DROP INDEX audit.audit_event_occurred_ix;
+ALTER INDEX audit.audit_event_occurred_ix_tenant RENAME TO audit_event_occurred_ix;
+CREATE INDEX audit_event_store_action_ix_tenant ON audit.audit_event USING btree (tenant_id, store_id, action, occurred_at);
+DROP INDEX audit.audit_event_store_action_ix;
+ALTER INDEX audit.audit_event_store_action_ix_tenant RENAME TO audit_event_store_action_ix;
+CREATE INDEX audit_event_store_ix_tenant ON audit.audit_event USING btree (tenant_id, store_id, occurred_at);
+DROP INDEX audit.audit_event_store_ix;
+ALTER INDEX audit.audit_event_store_ix_tenant RENAME TO audit_event_store_ix;
