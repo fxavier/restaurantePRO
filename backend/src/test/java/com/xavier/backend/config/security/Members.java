@@ -13,14 +13,33 @@ import java.util.UUID;
  */
 public final class Members {
 
+    /** The tenants this JVM's tests created and have not closed yet. */
+    private static final java.util.Set<UUID> OPEN = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
     private Members() {
     }
 
-    /** A new ACTIVE tenant (random id). */
+    /**
+     * A new ACTIVE tenant (random id), CLOSED again after its test class ({@link CloseTenantsAfterClass}, on
+     * {@link SecurityHttpTest}): a leftover ACTIVE tenant would join every reach-ALL job of the suites that follow.
+     */
     public static UUID activeTenant() {
         UUID id = UUID.randomUUID();
         TenantTestSupport.ensureTenant(id, "t-" + id, "ACTIVE");
+        OPEN.add(id);
         return id;
+    }
+
+    /** Closes every tenant {@link #activeTenant} created, after each test class. */
+    public static final class CloseTenantsAfterClass implements org.junit.jupiter.api.extension.AfterAllCallback {
+
+        @Override
+        public void afterAll(org.junit.jupiter.api.extension.ExtensionContext context) {
+            for (UUID id : java.util.List.copyOf(OPEN)) {
+                TenantTestSupport.ensureTenant(id, "t-" + id, "CLOSED");
+                OPEN.remove(id);
+            }
+        }
     }
 
     /** A role of {@code tenant} with {@code permissions}. */

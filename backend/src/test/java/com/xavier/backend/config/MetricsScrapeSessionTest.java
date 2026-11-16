@@ -17,9 +17,7 @@ import org.springframework.test.web.servlet.MockMvc;
 /**
  * D152: besides the scrape token, {@code /actuator/prometheus} answers an installation-wide {@code SYSTEM_MONITOR}
  * actor and refuses any other. Actuator is served on the application port here so MockMvc reaches it with the
- * actor; on a real installation it is the management port ({@link MetricsScrapeTokenTest}). A session is not
- * resolved on a separate management port today (Spring Session's filter is not in the management child context), so
- * this is the only place the session half of D152 can be shown.
+ * actor; on a real installation it is the management port ({@link MetricsScrapeTokenTest}).
  */
 @SpringBootTest(properties = {"management.server.port=8080",
         "restaurantpro.metrics.token-file=src/test/resources/config/metrics-token.txt"})

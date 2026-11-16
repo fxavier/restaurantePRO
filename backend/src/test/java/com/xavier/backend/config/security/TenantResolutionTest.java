@@ -159,6 +159,18 @@ class TenantResolutionTest {
                 .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("TENANT_FORBIDDEN"));
     }
 
+    /** D177 amended: the ops realm resolves SUPPORT memberships only, whatever else names its subject. */
+    @Test
+    void anOpsRealmTokenNeverResolvesAnAccountMembership() throws Exception {
+        UUID tenant = Members.activeTenant();
+        String subject = subject();
+        Members.membership(tenant, TestJwtFactory.OPS_ISSUER, subject, "ACCOUNT", Members.account(tenant),
+                java.time.Instant.now().minusSeconds(60), null);
+
+        mvc.perform(get(SESSION).with(TestJwtFactory.support(subject, java.time.Instant.now()).bearer()))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("TENANT_FORBIDDEN"));
+    }
+
     @Test
     void thePlatformApiNeedsAPlatformOperatorOfTheOpsRealm() throws Exception {
         mvc.perform(get("/api/v1/platform/tenants").with(TestJwtFactory.account(subject()).bearer()))

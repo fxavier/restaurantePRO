@@ -110,8 +110,9 @@ public class RowLevelSecurityCoverageTest {
                                (SELECT count(*) FROM shared.rls_unscoped_table) AS unscoped""").query().singleRow();
         assertThat(counts).as("A75: 97 protected after R5; R6 S71 adds the three organization tables and the "
                         + "idempotency records (out of UNSCOPED) and moves the Modulith registry, its archive, the "
-                        + "Flyway history and the registries to PLATFORM")
-                .containsEntry("protected", 101L).containsEntry("unscoped", 56L);
+                        + "Flyway history and the registries to PLATFORM; S72 protects identity's eight tables and drops "
+                        + "the five MFA/throttle/OIDC tables and Spring Session's two")
+                .containsEntry("protected", 109L).containsEntry("unscoped", 41L);
         assertThat(OwnerDatabase.shared().jdbc().sql("SELECT count(*) FROM shared.rls_platform_table")
                 .query(Long.class).single()).as("PLATFORM").isEqualTo(10L);
     }

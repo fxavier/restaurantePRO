@@ -64,9 +64,9 @@ public class AccessPolicy {
     private final Clock clock;
 
     AccessPolicy(ObjectProvider<StoreActivity> storeActivity,
-                 @Value("${restaurantpro.security.step-up-max-age:PT5M}") Duration stepUpMaxAge, Clock clock) {
+                 @Value("${restaurantpro.security.step-up-max-age:PT5M}") String stepUpMaxAge, Clock clock) {
         this.storeActivity = storeActivity;
-        this.stepUpMaxAge = stepUpMaxAge;
+        this.stepUpMaxAge = Duration.parse(stepUpMaxAge);
         this.clock = clock;
     }
 

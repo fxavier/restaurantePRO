@@ -154,7 +154,7 @@ class R2AcceptanceTest {
 
         // ---- 2. POS: PIN login, session, change streams, table, two rounds ----
         Browser cashier = posLogin(office, terminal1, cashierCode, CASHIER_PIN, "cashier");
-        UUID cashierId = UUID.fromString(cashier.get("/api/v1/auth/session", 200).get("employeeId").asString());
+        UUID cashierId = UUID.fromString(cashier.get("/api/v1/auth/pos-session", 200).get("employeeId").asString());
         Browser cashierB = posLogin(office, terminalB, cashierBCode, CASHIER_PIN, "cashier B");
         try (ChangeStream streamA = ChangeStream.subscribe(cashier);
              ChangeStream streamB = ChangeStream.subscribe(cashierB)) {

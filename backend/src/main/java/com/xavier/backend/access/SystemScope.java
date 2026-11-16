@@ -22,7 +22,6 @@ public enum SystemScope {
     METRICS(Reach.ALL, "installation-wide gauges, whoever scrapes them (a token scrape has no actor)"),
     ALERTS(Reach.ALL, "collects the operational alerts of every store, then filters them per actor (D149)"),
     EVENT_MAINTENANCE(Reach.NONE, "resubmits, purges and counts event publications (an unscoped table)"),
-    IDENTITY_MAINTENANCE(Reach.NONE, "purges login throttles and expires support grants (unscoped tables)"),
     IDEMPOTENCY_RETENTION(Reach.ALL, "purges each tenant's expired idempotency records (a TENANT table, D186)"),
     HOUSEKEEPING(Reach.NONE, "sends the change-stream heartbeat (in memory)");
 

@@ -100,7 +100,6 @@ class ActorlessStoreScopeTest {
     static Stream<String> actorlessEntryPoints() {
         // the listeners among them (their event is their argument) have their own cases below
         return SystemScopeRegistryTest.EXPECTED.keySet().stream()
-                .filter(entryPoint -> !entryPoint.equals("identity.service.AdminBootstrapService.on"))
                 .filter(entryPoint -> !entryPoint.equals("organization.service.TenantProvisioning.on"));
     }
 
@@ -143,16 +142,6 @@ class ActorlessStoreScopeTest {
     }
 
     @Test
-    void theBootstrapListenerRunsInTheBootstrapScope() throws Exception {
-        arm(true);
-
-        invoke("identity.service.AdminBootstrapService", "on",
-                new CompanyBootstrapped(TenantTestSupport.BOOTSTRAP, "C", "400000002", "MZ", "MZN", Instant.now()));
-
-        assertThat(awaitCheckout("system:BOOTSTRAP").allStores()).isEqualTo("on");
-    }
-
-    @Test
     void aPaymentSubmissionRunsInTheSubmittersScopeOnItsWorker() throws Exception {
         UUID store = UUID.randomUUID();
         Object submitter = context.getBean(Class.forName(ROOT + "settlement.service.PaymentSubmitter"));
@@ -188,11 +177,20 @@ class ActorlessStoreScopeTest {
     void theOperationalAlertsAreCollectedInstallationWide() {
         arm(true);
 
-        context.getBean("operationalAlertsHealthIndicator", HealthIndicator.class).health();
+        // the health check sums each ACTIVE tenant's snapshot, computed in that tenant (S72, security rule 7)
+        Object alerts = context.getBean("alertsService");
+        try {
+            Method activeIn = alerts.getClass().getDeclaredMethod("activeIn", List.class);
+            activeIn.setAccessible(true);
+            activeIn.invoke(alerts, List.of(TenantTestSupport.BOOTSTRAP));
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
 
         assertThat(onThisThread()).isNotEmpty().allSatisfy(checkout -> {
             assertThat(checkout.origin()).isIn("system:ALERTS", "system:METRICS");
             assertThat(checkout.allStores()).isEqualTo("on");
+            assertThat(checkout.tenant()).isEqualTo(TenantTestSupport.BOOTSTRAP.toString());
         });
     }
 

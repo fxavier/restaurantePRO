@@ -9,12 +9,15 @@ import static com.xavier.backend.e2e.Installation.posLogin;
 import static com.xavier.backend.e2e.Installation.terminal;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.xavier.backend.config.security.TestJwtFactory;
 import com.xavier.backend.e2e.Browser.Csrf;
+import com.xavier.backend.shared.tenancy.BootstrapTenant;
 import com.xavier.backend.production.TcpFakePrinter;
 import com.xavier.backend.settlement.FakePaymentProvider;
 import com.xavier.backend.settlement.SettlementTestClock;
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.net.http.HttpResponse;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -96,7 +99,6 @@ class R3AcceptanceTest {
 
     static final String INITIAL_PASSWORD = "initial " + UUID.randomUUID();
     static final String NEW_PASSWORD = "changed " + UUID.randomUUID();
-    static final String SUPPORT_PASSWORD = "support " + UUID.randomUUID();
     static final String CASHIER_PIN = "5172";
     static final String CASHIER2_PIN = "5839";
     static final String MANAGER_PIN = "6283";
@@ -714,30 +716,32 @@ class R3AcceptanceTest {
         assertThat(csv.lines().count()).isEqualTo(4);
         assertThat(count("SELECT count(*) FROM audit.audit_event WHERE action = 'AUDIT_EXPORTED'")).isEqualTo(1);
 
-        // A34: a support account logs in only under a grant; after 2 h its session is revoked (401)
+        // A34 (D183): support acts only under a grant, as the ops-realm person it names, with a second factor and
+        // X-Tenant-Id; after 2 h the grant has ended and the next request is refused
         String username = "suporte.r3";
-        UUID account = id(office.post(BO + "/users", Map.of("username", username, "initialPassword",
-                SUPPORT_PASSWORD, "roleIds", List.of(), "support", true), 201));
-        Browser support = office.sibling("support");
-        support.get("/api/v1/auth/session", 401);
-        support.post("/api/v1/auth/login", Map.of("username", username, "password", SUPPORT_PASSWORD), 401);
-        UUID grant = id(office.command(BO + "/support-grants", Map.of("accountId", account, "durationMinutes", 120,
-                "reason", "Suporte ao fecho do dia"), 201, "support grant 2 h"));
-        support.post("/api/v1/auth/login", Map.of("username", username, "password", SUPPORT_PASSWORD), 200);
-        support.get("/api/v1/auth/session", 200);
+        UUID account = id(office.post(BO + "/users", Map.of("username", username, "roleIds", List.of(),
+                "support", true), 201));
+        String supporter = "ops-" + UUID.randomUUID();
+        Browser support = office.sibling("support").signedIn(() -> TestJwtFactory.support(supporter,
+                clock.instant()).encode());
+        Map<String, String> inBootstrap = Map.of("X-Tenant-Id", BootstrapTenant.ID.toString());
+        assertThat(support.send("GET", "/api/v1/auth/session", null, Csrf.OMIT, inBootstrap).statusCode())
+                .as("no grant yet").isEqualTo(403);
+        UUID grant = id(office.command(BO + "/support-grants", Map.of("accountId", account, "subject", supporter,
+                "durationMinutes", 120, "reason", "Suporte ao fecho do dia"), 201, "support grant 2 h"));
+        HttpResponse<String> granted = support.send("GET", "/api/v1/auth/session", null, Csrf.OMIT, inBootstrap);
+        support.record("support: session under the grant", granted);
+        assertThat(granted.statusCode()).isEqualTo(200);
+        assertThat(Browser.JSON.readTree(granted.body()).get("userId").asString()).isEqualTo(account.toString());
         clock.advance(Duration.ofMinutes(121));
-        Awaitility.await().atMost(Duration.ofSeconds(20)).pollInterval(Duration.ofMillis(250))
-                .until(() -> support.send("GET", "/api/v1/auth/session", null, Csrf.OMIT, Map.of()).statusCode()
-                        == 401);
-        support.post("/api/v1/auth/login", Map.of("username", username, "password", SUPPORT_PASSWORD), 401);
-        // every step is audited: the grant, the login under it, and the expiry by the system
-        Awaitility.await().atMost(Duration.ofSeconds(20)).pollInterval(Duration.ofMillis(250))
-                .until(() -> audits("SUPPORT_GRANT_EXPIRED", grant) == 1);
+        HttpResponse<String> ended = support.send("GET", "/api/v1/auth/session", null, Csrf.OMIT, inBootstrap);
+        support.record("support: after the grant's end", ended);
+        assertThat(ended.statusCode()).isEqualTo(403);
+        // every step is audited: the grant and support's first action under it
         assertThat(audits("SUPPORT_GRANT_CREATED", grant)).isEqualTo(1);
-        assertThat(count("SELECT count(*) FROM audit.audit_event WHERE action = 'SUPPORT_GRANT_EXPIRED' "
-                + "AND entity_id = ? AND actor_kind = 'SYSTEM'", grant.toString())).isEqualTo(1);
-        assertThat(count("SELECT count(*) FROM audit.audit_event WHERE action = 'USER_LOGGED_IN' AND entity_id = ? "
-                + "AND details ->> 'supportGrantId' = ?", account.toString(), grant.toString())).isEqualTo(1);
+        assertThat(audits("SUPPORT_SESSION_STARTED", grant)).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM audit.audit_event WHERE action = 'SUPPORT_SESSION_STARTED' "
+                + "AND entity_id = ? AND actor_id = ?", grant.toString(), account)).isEqualTo(1);
     }
 
     // ---- helpers ----

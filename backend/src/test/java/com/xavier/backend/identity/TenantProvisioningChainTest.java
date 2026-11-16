@@ -81,6 +81,7 @@ class TenantProvisioningChainTest {
         assertThat(OwnerDatabase.shared().jdbc().sql("SELECT count(*) FROM tenancy.tenant_membership "
                 + "WHERE tenant_id = ?").param(tenant).query(Long.class).single()).isEqualTo(1);
         assertThat(status(tenant)).isEqualTo("ACTIVE");
+        TenantTestSupport.ensureTenant(tenant, "chain-" + tenant, "CLOSED"); // no ACTIVE tenant left behind
     }
 
     private void publishIn(UUID tenant, Object event) {

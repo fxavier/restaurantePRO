@@ -115,7 +115,7 @@ class StoreScopeTest {
                         SystemScope.REPORTING_RECOVERY, SystemScope.METRICS, SystemScope.ALERTS,
                         SystemScope.IDEMPOTENCY_RETENTION);
         assertThat(SystemScope.values()).filteredOn(s -> s.reach() == SystemScope.Reach.NONE)
-                .containsExactlyInAnyOrder(SystemScope.EVENT_MAINTENANCE, SystemScope.IDENTITY_MAINTENANCE,
+                .containsExactlyInAnyOrder(SystemScope.EVENT_MAINTENANCE,
                         SystemScope.HOUSEKEEPING);
     }
 }
