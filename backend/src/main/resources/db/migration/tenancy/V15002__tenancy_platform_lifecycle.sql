@@ -72,6 +72,12 @@ CREATE TRIGGER platform_audit_event_no_truncate
     FOR EACH STATEMENT
 EXECUTE FUNCTION tenancy.reject_platform_audit_change();
 
+-- The onboarding request a tenant was created from (SHA-256 of its canonical fields, never the fields themselves):
+-- a replay must carry the same request (G5), a fixture or the bootstrap tenant has none.
+ALTER TABLE tenancy.tenant
+    ADD COLUMN onboarding_hash text,
+    ADD CONSTRAINT tenant_onboarding_hash_ck CHECK (onboarding_hash IS NULL OR onboarding_hash ~ '^[0-9a-f]{64}$');
+
 -- Defence in depth (G5): platform writes run with NO tenant binding (/platform/** requests and platform jobs). A
 -- tenant-bound transaction — a tenant user's request that reached a platform code path — is refused with TN004.
 CREATE FUNCTION tenancy.require_platform_transaction(p_caller text)
@@ -103,10 +109,11 @@ END;
 $$;
 
 -- Onboarding's first step, idempotent by the tenant code (the Keycloak organization alias): a new code creates a
--- PROVISIONING tenant (audited TENANT_CREATED); the same code with the same legal name returns that tenant; another
--- legal name is refused (TN001). With p_keycloak_org_id, records the organization the platform command created
+-- PROVISIONING tenant (audited TENANT_CREATED) with its request hash; the same code with the same legal name and
+-- request hash returns that tenant; anything else is refused (TN001). With p_keycloak_org_id, records the organization the platform command created
 -- (audited ORGANIZATION_LINKED) unless it is already recorded; another organization is refused (TN001).
-CREATE FUNCTION tenancy.create_tenant(p_code text, p_legal_name text, p_keycloak_org_id text, p_operator text)
+CREATE FUNCTION tenancy.create_tenant(p_code text, p_legal_name text, p_keycloak_org_id text, p_operator text,
+                                      p_request_hash text)
     RETURNS TABLE
             (
                 tenant_id       uuid,
@@ -122,15 +129,15 @@ DECLARE
     v tenancy.tenant%ROWTYPE;
 BEGIN
     PERFORM tenancy.require_platform_transaction('tenancy.create_tenant');
-    INSERT INTO tenancy.tenant AS t (id, code, legal_name, status, created_at)
-    VALUES (pg_catalog.uuidv7(), p_code, p_legal_name, 'PROVISIONING', pg_catalog.now())
+    INSERT INTO tenancy.tenant AS t (id, code, legal_name, status, created_at, onboarding_hash)
+    VALUES (pg_catalog.uuidv7(), p_code, p_legal_name, 'PROVISIONING', pg_catalog.now(), p_request_hash)
     ON CONFLICT ON CONSTRAINT tenant_code_uk DO NOTHING
     RETURNING t.* INTO v;
     IF FOUND THEN
         INSERT INTO tenancy.platform_audit_event (operator, tenant_id, action) VALUES (p_operator, v.id, 'TENANT_CREATED');
     ELSE
         SELECT t.* INTO v FROM tenancy.tenant t WHERE t.code = p_code FOR UPDATE;
-        IF v.legal_name IS DISTINCT FROM p_legal_name THEN
+        IF v.legal_name IS DISTINCT FROM p_legal_name OR v.onboarding_hash IS DISTINCT FROM p_request_hash THEN
             RAISE EXCEPTION USING ERRCODE = 'TN001', MESSAGE = 'tenancy.create_tenant: the code belongs to another '
                 || 'tenant';
         END IF;
@@ -224,10 +231,10 @@ $$;
 REVOKE EXECUTE ON FUNCTION tenancy.reject_platform_audit_change() FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION tenancy.require_platform_transaction(text) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION tenancy.record_platform_event(uuid, text, text, text) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION tenancy.create_tenant(text, text, text, text) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION tenancy.create_tenant(text, text, text, text, text) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION tenancy.set_tenant_status(uuid, text, text, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION tenancy.record_platform_event(uuid, text, text, text) TO restaurantpro_app;
-GRANT EXECUTE ON FUNCTION tenancy.create_tenant(text, text, text, text) TO restaurantpro_app;
+GRANT EXECUTE ON FUNCTION tenancy.create_tenant(text, text, text, text, text) TO restaurantpro_app;
 GRANT EXECUTE ON FUNCTION tenancy.set_tenant_status(uuid, text, text, text) TO restaurantpro_app;
 
 SELECT shared.rls_register_platform('tenancy.platform_audit_event',

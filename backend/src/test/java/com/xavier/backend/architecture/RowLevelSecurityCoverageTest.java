@@ -36,7 +36,7 @@ public class RowLevelSecurityCoverageTest {
             "tenancy.tenant_status(uuid)",
             "tenancy.activate_tenant(uuid)",
             "tenancy.list_memberships(text,text)",
-            "tenancy.create_tenant(text,text,text,text)",
+            "tenancy.create_tenant(text,text,text,text,text)",
             "tenancy.set_tenant_status(uuid,text,text,text)",
             "tenancy.record_platform_event(uuid,text,text,text)");
 

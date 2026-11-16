@@ -110,6 +110,11 @@ class PlatformTenantLifecycleTest {
 
         onboard(code, "Another Name Lda").andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("TENANT_CODE_TAKEN"));
+        onboard(code, "Acme Lda", "Another Store") // a replay with other details (G5)
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("TENANT_CODE_TAKEN"));
+        assertThat(Capture.SEEN).filteredOn(TenantProvisioned.class::isInstance)
+                .map(TenantProvisioned.class::cast).filteredOn(event -> event.tenantId().equals(tenant))
+                .as("nothing published for the refused replay").hasSize(2);
         close(tenant);
     }
 
@@ -192,11 +197,15 @@ class PlatformTenantLifecycleTest {
     }
 
     private ResultActions onboard(String code, String legalName) throws Exception {
+        return onboard(code, legalName, "Loja Central");
+    }
+
+    private ResultActions onboard(String code, String legalName, String firstStoreName) throws Exception {
         return mvc.perform(post(TENANTS).with(PlatformTestSecurity.operator()).contentType(MediaType.APPLICATION_JSON)
                 .content("""
                         {"code":"%s","legalName":"%s","taxId":"400%s","country":"MZ","currency":"MZN",
-                         "firstStoreName":"Loja Central","adminEmail":"admin@%s.example"}"""
-                        .formatted(code, legalName, Math.abs(code.hashCode() % 1_000_000), code)));
+                         "firstStoreName":"%s","adminEmail":"admin@%s.example"}"""
+                        .formatted(code, legalName, Math.abs(code.hashCode() % 1_000_000), firstStoreName, code)));
     }
 
     private ResultActions change(UUID tenant, String action) throws Exception {

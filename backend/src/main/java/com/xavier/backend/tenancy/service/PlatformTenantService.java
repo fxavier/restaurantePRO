@@ -12,9 +12,14 @@ import com.xavier.backend.tenancy.model.event.TenantClosed;
 import com.xavier.backend.tenancy.model.event.TenantProvisioned;
 import com.xavier.backend.tenancy.model.event.TenantReactivated;
 import com.xavier.backend.tenancy.model.event.TenantSuspended;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.HexFormat;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.function.BiFunction;
 import java.util.function.Supplier;
@@ -28,8 +33,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * The platform operator's tenant lifecycle (D181 as amended). It touches {@code tenancy.*} only, through the platform
  * SECURITY DEFINER functions of V15002, and never reads business data. Onboarding is idempotent by the tenant code
- * and follows D48: the tenant is persisted (PROVISIONING), then the Keycloak organization is created outside any
- * transaction, then its id is recorded, then {@code TenantProvisioned} starts the event chain (organization →
+ * and by the request itself (a replay with other details is refused, G5), and follows D48: the tenant is persisted
+ * (PROVISIONING), then the Keycloak organization is created outside any transaction, then its id is recorded, then {@code TenantProvisioned} starts the event chain (organization →
  * {@code CompanyProvisioned} → identity, which activates the tenant). A failure between steps leaves a PROVISIONING
  * tenant that the same command completes when replayed. Status changes publish their event only when they change the
  * status, so a repeated suspension is a no-op.
@@ -107,12 +112,26 @@ public class PlatformTenantService {
 
     private Created createTenant(OnboardTenantRequest request, String organizationId, String operator) {
         return jdbc.sql("SELECT tenant_id, status, keycloak_org_id "
-                        + "FROM tenancy.create_tenant(:code, :legalName, :organization, :operator)")
+                        + "FROM tenancy.create_tenant(:code, :legalName, :organization, :operator, :request)")
                 .param("code", request.code()).param("legalName", request.legalName())
                 .param("organization", organizationId).param("operator", operator)
+                .param("request", requestHash(request))
                 .query((rs, row) -> new Created(rs.getObject("tenant_id", UUID.class),
                         TenantStatus.valueOf(rs.getString("status")), rs.getString("keycloak_org_id")))
                 .single();
+    }
+
+    /** SHA-256 of the request's canonical fields: a replay must be the same request (the address case-insensitive). */
+    static String requestHash(OnboardTenantRequest request) {
+        String canonical = String.join("\u0000", request.code(), request.legalName(), request.taxId(),
+                request.country(), request.currency(), request.firstStoreName(),
+                request.adminEmail().toLowerCase(Locale.ROOT));
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(canonical.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is unavailable", e);
+        }
     }
 
     /** One short transaction (no external call inside, D48), its refusals turned into the platform's errors. */
