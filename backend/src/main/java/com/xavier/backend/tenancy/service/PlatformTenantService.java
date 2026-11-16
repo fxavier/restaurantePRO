@@ -34,8 +34,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  * The platform operator's tenant lifecycle (D181 as amended). It touches {@code tenancy.*} only, through the platform
  * SECURITY DEFINER functions of V15002, and never reads business data. Onboarding is idempotent by the tenant code
  * and by the request itself (a replay with other details is refused, G5), and follows D48: the tenant is persisted
- * (PROVISIONING), then the Keycloak organization is created outside any transaction, then its id is recorded, then {@code TenantProvisioned} starts the event chain (organization →
- * {@code CompanyProvisioned} → identity, which activates the tenant). A failure between steps leaves a PROVISIONING
+ * (PROVISIONING), then the Keycloak organization is created outside any transaction, then its id is recorded, then
+ * {@code TenantProvisioned} starts the event chain (organization → {@code CompanyProvisioned} → identity, which
+ * activates the tenant). A failure between steps leaves a PROVISIONING
  * tenant that the same command completes when replayed. Status changes publish their event only when they change the
  * status, so a repeated suspension is a no-op.
  */
