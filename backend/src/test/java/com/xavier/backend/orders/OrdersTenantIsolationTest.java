@@ -3,7 +3,9 @@ package com.xavier.backend.orders;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -183,9 +185,31 @@ class OrdersTenantIsolationTest {
         CompositeForeignKeyCoverageTest.assertModuleKeysIncludeTheTenant("orders");
     }
 
-    /** A POS session of {@code tenant} in {@code store} (its resolved membership as the principal's details). */
+    /**
+     * The delivery endpoints probe the order's store (a delivery is keyed by its order, tenant first): another tenant's
+     * order is 404, another store of the tenant 403, and the tenant's own order without a delivery 404.
+     */
+    @Test
+    void theDeliveryEndpointAnswers404ForAnotherTenantAnd403ForAnotherStoreAndTheOwnOrderHasNoDelivery()
+            throws Exception {
+        String body = "{\"version\": 0, \"courierEmployeeId\": \"" + UUID.randomUUID() + "\"}";
+        for (UUID[] expectation : new UUID[][] {{B_ORDER}, {A_OTHER_ORDER}, {A_EMPTY_ORDER}}) {
+            int expected = expectation[0].equals(A_OTHER_ORDER) ? 403 : 404;
+            mvc.perform(post("/api/v1/pos/deliveries/" + expectation[0] + "/dispatch")
+                            .with(pos(A, A_STORE, Permission.DELIVERY_OPERATE)).with(csrf())
+                            .header("Idempotency-Key", UUID.randomUUID().toString())
+                            .contentType(org.springframework.http.MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().is(expected));
+        }
+    }
+
     private static RequestPostProcessor pos(UUID tenant, UUID store) {
-        Set<String> authorities = Set.of(Permission.ORDER_VIEW.authority(store));
+        return pos(tenant, store, Permission.ORDER_VIEW);
+    }
+
+    /** A POS session of {@code tenant} in {@code store} (its resolved membership as the principal's details). */
+    private static RequestPostProcessor pos(UUID tenant, UUID store, Permission permission) {
+        Set<String> authorities = Set.of(permission.authority(store));
         Actor actor = Actor.employee(UUID.randomUUID(), UUID.randomUUID(), store, authorities);
         UsernamePasswordAuthenticationToken token = UsernamePasswordAuthenticationToken.authenticated(actor, null,
                 authorities.stream().map(SimpleGrantedAuthority::new).toList());
