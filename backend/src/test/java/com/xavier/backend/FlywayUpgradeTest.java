@@ -44,15 +44,19 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  * <ul>
  *   <li>the last release, from the manifest {@code db/released-migrations.txt}, so every migration added since
  *       (R5's, once merged) is proven to apply on an installed database;</li>
- *   <li>a synthetic one holding back the newest migration of two low blocks, so the out-of-order path is proven on
- *       any branch, also before a release adds its first migration;</li>
+ *   <li>a synthetic one: every real migration installed, then two test-only migrations below its head
+ *       ({@code db/upgrade-test}), so the out-of-order path is proven on any branch, also before a release adds its
+ *       first migration;</li>
  *   <li>the same, refused when out-of-order is off (the blocker this setting fixes).</li>
  * </ul>
  */
 class FlywayUpgradeTest {
 
-    /** Newer migrations of low blocks, as a release adds them under an installed head of a higher block. */
-    static final Set<Integer> HELD_BACK = Set.of(1006, 8009);
+    /**
+     * Migrations a release adds under the installed head: the test-only {@code db/upgrade-test} ones, which touch only
+     * their own scratch objects, so no real migration that later builds on a held-back one can break the baseline.
+     */
+    static final Set<Integer> HELD_BACK = Set.of(901, 902);
 
     private static final String SCRATCH_PAGE = "upgrade_scratch.page";
 
@@ -108,7 +112,7 @@ class FlywayUpgradeTest {
 
     @Test
     void migrationsBelowTheInstalledHeadAreAppliedOutOfOrder() throws IOException {
-        copyMigrations((version, sql) -> !HELD_BACK.contains(version));
+        copyMigrationsWithUpgradeTest((version, sql) -> !HELD_BACK.contains(version));
         flyway(previousRelease, false).migrate();
 
         Flyway upgrade = flyway(currentRelease, outOfOrderOfApplicationYaml());
@@ -124,7 +128,7 @@ class FlywayUpgradeTest {
 
     @Test
     void withoutOutOfOrderTheSameUpgradeIsRefused() throws IOException {
-        copyMigrations((version, sql) -> !HELD_BACK.contains(version));
+        copyMigrationsWithUpgradeTest((version, sql) -> !HELD_BACK.contains(version));
         flyway(previousRelease, false).migrate();
 
         assertThatThrownBy(() -> flyway(currentRelease, false).migrate())
@@ -251,8 +255,17 @@ class FlywayUpgradeTest {
 
     /** Every current migration into {@link #currentRelease}; those of the previous release into the other. */
     private void copyMigrations(BiPredicate<Integer, String> inPreviousRelease) throws IOException {
-        Resource[] migrations = new PathMatchingResourcePatternResolver()
-                .getResources("classpath*:db/migration/**/*.sql");
+        copyMigrations(inPreviousRelease, "classpath*:db/migration/**/*.sql");
+    }
+
+    /** {@link #copyMigrations} with the test-only migrations of {@code db/upgrade-test} beside the real ones. */
+    private void copyMigrationsWithUpgradeTest(BiPredicate<Integer, String> inPreviousRelease) throws IOException {
+        copyMigrations(inPreviousRelease, "classpath*:db/migration/**/*.sql");
+        copyMigrations(inPreviousRelease, "classpath*:db/upgrade-test/*.sql");
+    }
+
+    private void copyMigrations(BiPredicate<Integer, String> inPreviousRelease, String pattern) throws IOException {
+        Resource[] migrations = new PathMatchingResourcePatternResolver().getResources(pattern);
         assertThat(migrations).isNotEmpty();
         for (Resource migration : migrations) {
             String name = migration.getFilename();
