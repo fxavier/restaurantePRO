@@ -133,11 +133,12 @@ class InventoryActorlessScopeTest {
         TenantTestSupport.ensureTenant(t1, "reconcile-1", "ACTIVE");
         TenantTestSupport.ensureTenant(t2, "reconcile-2", "ACTIVE");
         try {
+            runReconcile(); // the two tenants are active and empty: the gauge is the other tenants' total
+            double before = meters.get("inventory_balance_drift").gauge().value();
             UUID store1 = negativeBalanceIn(t1);
             UUID store2 = negativeBalanceIn(t2);
 
-            CompletableFuture.runAsync(() -> reconciliation.reconcile(), command -> new Thread(command).start())
-                    .get(60, TimeUnit.SECONDS);
+            runReconcile();
 
             assertThat(OwnerDatabase.shared().jdbc().sql("""
                             SELECT count(*) FROM inventory.balance_check
@@ -148,11 +149,16 @@ class InventoryActorlessScopeTest {
                         .as("the later tenant's run keeps the earlier tenant's store").isEqualTo(1.0);
             }
             assertThat(meters.get("inventory_balance_drift").gauge().value())
-                    .as("a total over tenants, not the last tenant's").isGreaterThanOrEqualTo(2.0);
+                    .as("a total over tenants, not the last tenant's").isEqualTo(before + 2.0);
         } finally {
             TenantTestSupport.ensureTenant(t1, "reconcile-1", "CLOSED");
             TenantTestSupport.ensureTenant(t2, "reconcile-2", "CLOSED");
         }
+    }
+
+    private void runReconcile() throws Exception {
+        CompletableFuture.runAsync(() -> reconciliation.reconcile(), command -> new Thread(command).start())
+                .get(60, TimeUnit.SECONDS);
     }
 
     /** One store of {@code tenant} holding a balance of -1 that no movement explains: a drift and a negative. */

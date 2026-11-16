@@ -82,8 +82,8 @@ class CustomerSearchPlanTest {
 
     @Test
     void theIndexesHaveTheOperatorClassesTheSearchNeeds() {
-        assertThat(indexDefinition("customer_name_search_trgm_ix")).contains("USING gin (name_search gin_trgm_ops)");
-        assertThat(indexDefinition("customer_phone_digits_reversed_ix")).contains("(digits_reversed text_pattern_ops)");
+        assertThat(indexDefinition("customer_phone_digits_reversed_ix"))
+                .contains("(tenant_id, digits_reversed text_pattern_ops)");
         assertThat(indexDefinition("customer_tax_id_ix")).contains("(tenant_id, tax_id)");
     }
 
@@ -94,7 +94,8 @@ class CustomerSearchPlanTest {
 
         assertThat(plan).containsPattern("(Index Scan using|Index Only Scan using|Bitmap Index Scan on) "
                         + "customer_phone_digits_reversed_ix")
-                .contains("Index Cond: ((digits_reversed ~>=~ '7654'::text) AND (digits_reversed ~<~ '7655'::text))")
+                .containsPattern("Index Cond: \\(" + TENANT + " AND \\(digits_reversed ~>=~ '7654'::text\\) AND "
+                        + "\\(digits_reversed ~<~ '7655'::text\\)\\)")
                 .containsPattern("(Index Scan using|Index Only Scan using|Bitmap Index Scan on) customer_tax_id_ix")
                 .containsPattern("Index Cond: \\(" + TENANT + " AND \\(\\(tax_id\\)::text = '4567'::text\\)\\)");
     }
@@ -109,6 +110,9 @@ class CustomerSearchPlanTest {
     void aNamePartFiltersTheTenantsCustomers() {
         String plan = explain(CustomerRepository.SEARCH_BY_NAME, Map.of("namePart", "a3f9c", "taxId", "a3f9c"));
 
+        assertThat(jdbc.sql("SELECT count(*) FROM pg_indexes WHERE schemaname = 'customers' "
+                + "AND indexname = 'customer_name_search_trgm_ix'").query(Long.class).single())
+                .as("a trigram index no query can use under RLS is not kept").isZero();
         assertThat(plan).doesNotContain("customer_name_search_trgm_ix")
                 .containsPattern("Index Cond: " + TENANT)
                 .contains("name_search ~~ '%a3f9c%'::text");

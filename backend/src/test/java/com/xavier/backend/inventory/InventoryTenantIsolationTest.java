@@ -301,6 +301,21 @@ class InventoryTenantIsolationTest {
                 .singleElement().asString().isNotBlank();
     }
 
+    /** A PLATFORM table is never writable through the pool: one tenant must not change every tenant's units. */
+    @Test
+    void theApplicationRoleCannotWriteTheStockUnits() {
+        try (AppRoleSession app = AppRoleSession.open().tenant(A).allStores()) {
+            assertThatThrownBy(() -> app.jdbc().sql("UPDATE inventory.stock_unit SET factor_to_base = 7 "
+                    + "WHERE code = 'kg'").update()).satisfies(e -> assertThat(AppRoleSession.sqlState(e))
+                    .isEqualTo("42501"));
+            assertThatThrownBy(() -> app.jdbc().sql("INSERT INTO inventory.stock_unit (code, dimension, "
+                    + "factor_to_base) VALUES ('xx', 'MASS', 2)").update()).satisfies(e ->
+                    assertThat(AppRoleSession.sqlState(e)).isEqualTo("42501"));
+            assertThat(app.jdbc().sql("SELECT count(*) FROM inventory.stock_unit").query(Long.class).single())
+                    .as("still readable").isPositive();
+        }
+    }
+
     /** An account of {@code tenant} (its resolved membership as the principal's details), in a store or everywhere. */
     private static RequestPostProcessor in(UUID tenant, UUID store, Permission... permissions) {
         Set<String> authorities = Arrays.stream(permissions)
