@@ -9,6 +9,7 @@ import com.xavier.backend.inventory.model.dto.MovementView;
 import com.xavier.backend.orders.BatchFacts;
 import com.xavier.backend.orders.OrderMode;
 import com.xavier.backend.orders.model.event.OrderBatchConfirmed;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -47,7 +48,8 @@ class ConsumptionIdempotencyTest extends ConsumptionTestBase {
     @Test
     void aRedeliveredEventPostsNothingNew() throws Exception {
         BatchFacts round = pizzaRound();
-        OrderBatchConfirmed event = new OrderBatchConfirmed(round.orderId(), round.batchId(), 1, kitchen.store,
+        OrderBatchConfirmed event = new OrderBatchConfirmed(TenantTestSupport.BOOTSTRAP,
+                round.orderId(), round.batchId(), 1, kitchen.store,
                 UUID.randomUUID(), 1, "M1", UUID.randomUUID(), round.confirmedAt(), List.of());
 
         publish(event);

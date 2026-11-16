@@ -45,7 +45,10 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <ul>
  *   <li>{@code scope} = operation name + actor kind + actor id ({@code "<op>:<kind>:<id>"}, D38), so two
- *       principals never share a key space.</li>
+ *       principals never share a key space. The record is stored under the bound tenant (D186): its key is
+ *       {@code (tenant_id, scope, key)}, {@code tenant_id} taken from the transaction's binding and filtered by
+ *       row-level security, so the same key in two tenants is two records and a replay never crosses tenants. Its
+ *       reads run in a short read-only transaction of their own, because the table is tenant-protected (D178).</li>
  *   <li>{@code target} = what the request acts on, normally {@code "<METHOD> <resolved path>"}. The request
  *       identity is the SHA-256 of target + canonical JSON body ("hash do pedido"). Approver credentials travel
  *       in headers and are never part of it (D40).</li>
@@ -85,6 +88,7 @@ public class IdempotencyService {
     private final Clock clock;
     private final TransactionTemplate inOwnTransaction;
     private final TransactionTemplate inActionTransaction;
+    private final TransactionTemplate inReadTransaction;
     private final Duration stepLease;
 
     IdempotencyService(IdempotencyRecordStore store, JsonMapper jsonMapper, Clock clock,
@@ -103,6 +107,9 @@ public class IdempotencyService {
         this.inOwnTransaction = new TransactionTemplate(transactionManager);
         this.inOwnTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.inActionTransaction = new TransactionTemplate(transactionManager);
+        this.inReadTransaction = new TransactionTemplate(transactionManager);
+        this.inReadTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        this.inReadTransaction.setReadOnly(true);
     }
 
     public <T> ResponseEntity<T> execute(String scope, String key, String target, Object requestBody,
@@ -117,7 +124,7 @@ public class IdempotencyService {
 
         boolean createdNow = Boolean.TRUE.equals(
                 inOwnTransaction.execute(tx -> store.claim(scope, key, hash, clock.instant())));
-        IdempotencyRecordStore.StoredRecord existing = store.find(scope, key)
+        IdempotencyRecordStore.StoredRecord existing = find(scope, key)
                 .orElseThrow(() -> new IllegalStateException("idempotency record vanished: " + scope));
         if (!existing.requestHash().equals(hash)) {
             log.warn("Idempotency key reused for a different request: scope={} key={}", scope, key);
@@ -212,7 +219,7 @@ public class IdempotencyService {
             if (stored) {
                 return response;
             }
-            IdempotencyRecordStore.StoredRecord current = store.find(scope, key).orElse(null);
+            IdempotencyRecordStore.StoredRecord current = find(scope, key).orElse(null);
             if (current != null && current.completed()) {
                 log.info("Idempotency step lease was lost; replaying the response stored by the taker: scope={} "
                         + "key={}", scope, key);
@@ -230,7 +237,7 @@ public class IdempotencyService {
     /** @return the replay when the key is already completed; empty when this call now owns the lease */
     private <T> Optional<ResponseEntity<T>> takeOverOrReplay(String scope, String key, String hash, UUID owner,
                                                              Class<T> responseType) {
-        IdempotencyRecordStore.StoredRecord existing = store.find(scope, key)
+        IdempotencyRecordStore.StoredRecord existing = find(scope, key)
                 .orElseThrow(() -> new IllegalStateException("idempotency record vanished: " + scope));
         if (!existing.requestHash().equals(hash)) {
             log.warn("Idempotency key reused for a different request: scope={} key={}", scope, key);
@@ -251,7 +258,7 @@ public class IdempotencyService {
         boolean tookOver = Boolean.TRUE.equals(inOwnTransaction.execute(tx ->
                 store.takeOverExpired(scope, key, owner, now, now.plus(stepLease))));
         if (!tookOver) {
-            IdempotencyRecordStore.StoredRecord current = store.find(scope, key).orElse(null);
+            IdempotencyRecordStore.StoredRecord current = find(scope, key).orElse(null);
             if (current != null && current.completed()) {
                 return Optional.of(replay(scope, key, current, responseType));
             }
@@ -261,6 +268,11 @@ public class IdempotencyService {
         }
         log.info("Idempotency step lease expired; this request takes the claim over: scope={} key={}", scope, key);
         return Optional.empty();
+    }
+
+    /** A read of the tenant-protected record, in its own short read-only transaction (D178). */
+    private Optional<IdempotencyRecordStore.StoredRecord> find(String scope, String key) {
+        return inReadTransaction.execute(tx -> store.find(scope, key));
     }
 
     private void releaseLease(String scope, String key, UUID owner, Throwable failure) {

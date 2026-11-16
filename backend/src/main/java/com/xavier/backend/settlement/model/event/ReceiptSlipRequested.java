@@ -9,5 +9,5 @@ import org.springframework.modulith.NamedInterface;
  * production prints {@code lines} through its one print queue (source {@code RECEIPT_SLIP}).
  */
 @NamedInterface("event")
-public record ReceiptSlipRequested(UUID paymentId, UUID storeId, UUID terminalId, List<String> lines) {
+public record ReceiptSlipRequested(UUID tenantId, UUID paymentId, UUID storeId, UUID terminalId, List<String> lines) {
 }

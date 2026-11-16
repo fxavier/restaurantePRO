@@ -112,6 +112,10 @@ restaurantpro:
   notifications:
     # D60: SSE comment heartbeat on /api/v1/pos/notifications.
     heartbeat: PT25S
+  notify:
+    # R6 (D185/D188): the change-notice LISTEN connection's own JDBC URL, direct to PostgreSQL past a transaction-mode
+    # pooler (PgBouncer delivers nothing to a LISTEN); empty = the datasource URL. Credentials: the pool's role.
+    listen-url: ${RESTAURANTPRO_NOTIFY_LISTEN_URL:}
   events:
     # D88: the recovery job resubmits, every resubmit-interval, each incomplete publication untouched (since its
     # publication or last resubmission) for resubmit-older-than, until it has had max-attempts attempts (Modulith
@@ -125,6 +129,16 @@ restaurantpro:
   # would not map them (RESTAURANTPRO_MFA_MODE is not restaurantpro.security.mfa.mode), so each is bound explicitly.
   # FrozenConfigurationNamesTest proves every one. An empty value means "not set".
   security:
+    # R6 (spec "frozen contracts", D176/D184): Keycloak's two realms. Unset issuers make every API call 503
+    # IDP_UNAVAILABLE (fail closed, S72); S71 only declares them.
+    issuers:
+      tenant: ${RESTAURANTPRO_OIDC_TENANT_ISSUER:}
+      ops: ${RESTAURANTPRO_OIDC_OPS_ISSUER:}
+      # S73/S75: the realm of terminals and print bridges; unset = fail closed
+      devices: ${RESTAURANTPRO_OIDC_DEVICES_ISSUER:}
+    audience: restaurantpro-api
+    clock-skew: PT30S
+    step-up-max-age: PT5M
     mfa:
       # D138/D142: OFF, SENSITIVE or ALL_BACKOFFICE (deploy/.env.example sets SENSITIVE, P52)
       mode: ${RESTAURANTPRO_MFA_MODE:OFF}
@@ -144,6 +158,25 @@ restaurantpro:
       scopes: ${RESTAURANTPRO_OIDC_SCOPES:openid}
       trust-idp-mfa: ${RESTAURANTPRO_OIDC_TRUST_IDP_MFA:false}
       post-login-uri: ${RESTAURANTPRO_OIDC_POST_LOGIN_URI:/backoffice/}
+  keycloak:
+    # R6 (D181): the tenancy-provisioner service account of the IdentityProviderAdmin adapter (S75); its private key
+    # comes from a secret file, never from the environment.
+    admin:
+      base-url: ${RESTAURANTPRO_KEYCLOAK_ADMIN_BASE_URL:}
+      realm: ${RESTAURANTPRO_KEYCLOAK_ADMIN_REALM:restaurantpro}
+      client-id: tenancy-provisioner
+      key-file: ${RESTAURANTPRO_KEYCLOAK_ADMIN_KEY_FILE:}
+    # S73/S75: the device-provisioner service account of the devices realm (pos-*/bridge-* clients); key from a file
+    devices-admin:
+      base-url: ${RESTAURANTPRO_KEYCLOAK_DEVICES_ADMIN_BASE_URL:}
+      realm: restaurantpro-devices
+      client-id: device-provisioner
+      key-file: ${RESTAURANTPRO_KEYCLOAK_DEVICES_ADMIN_KEY_FILE:}
+  jobs:
+    # R6 (D185): a reach-ALL job takes a lease per (job, tenant) for this long (released when its run ends), and handles
+    # at most this many items per tenant per tick (fairness).
+    lease-ttl: PT2M
+    batch-per-tenant: 100
   alerts:
     # D151: the backup status file written by deploy/verify-backups.sh (Compose mounts it read-only at
     # /run/restaurantpro/status/backup-status.json). Empty = no backup alerts (developer stacks).

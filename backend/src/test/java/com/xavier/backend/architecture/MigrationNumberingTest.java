@@ -45,7 +45,8 @@ class MigrationNumberingTest {
             Map.entry("customers", new int[] {11000, 11999}),
             Map.entry("promotions", new int[] {12000, 12999}),
             Map.entry("inventory", new int[] {13000, 13999}),
-            Map.entry("reporting", new int[] {14000, 14999}));
+            Map.entry("reporting", new int[] {14000, 14999}),
+            Map.entry("tenancy", new int[] {15000, 15999}));
 
     private static final Pattern FILE = Pattern.compile("V(\\d+)__([a-z]+)_.+\\.sql");
     private static final Pattern PATH = Pattern.compile(".*/db/migration/([a-z]+)/([^/]+)$");

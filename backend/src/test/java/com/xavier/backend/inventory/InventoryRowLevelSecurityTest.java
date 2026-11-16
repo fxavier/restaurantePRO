@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 
 import com.xavier.backend.OwnerDatabase;
 import com.xavier.backend.TestcontainersConfiguration;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import com.xavier.backend.architecture.RowLevelSecurityCoverageTest;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -369,8 +370,9 @@ class InventoryRowLevelSecurityTest {
             connections.add(connection);
             JdbcClient jdbc = JdbcClient.create(new SingleConnectionDataSource(connection, true));
             jdbc.sql("SELECT set_config('app.all_stores', ?, false), set_config('app.store_ids', ?, false), "
-                    + "set_config('app.scope_origin', 'test:inventory-rls', false)").params(allStores, storeIds)
-                    .query().listOfRows();
+                    + "set_config('app.scope_origin', 'test:inventory-rls', false), "
+                    + "set_config('app.tenant_id', ?, false)").params(allStores, storeIds,
+                    TenantTestSupport.BOOTSTRAP.toString()).query().listOfRows();
             return jdbc;
         } catch (SQLException e) {
             throw new IllegalStateException(e);

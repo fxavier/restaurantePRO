@@ -27,6 +27,7 @@ import com.xavier.backend.settlement.repository.PartitionRef;
 import com.xavier.backend.settlement.service.Bills.Bill;
 import com.xavier.backend.shared.Money;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import java.time.Clock;
 import java.util.List;
 import java.util.Map;
@@ -77,11 +78,13 @@ public class CreditSaleSteps {
     private final SettlementIssuer issuer;
     private final TransactionTemplate inTransaction;
     private final Clock clock;
+    private final TenantScopes tenants;
 
     CreditSaleSteps(AccessPolicy accessPolicy, SettlementLocks locks, Bills bills, OrdersApi orders, FiscalApi fiscal,
                     CustomersApi customers, CreditChargeRepository charges, SettlementAudit audit,
                     ApplicationEventPublisher events, TaxRoundingAdjustments taxRounding, SettlementIssuer issuer,
-                    PlatformTransactionManager transactionManager, Clock clock) {
+                    PlatformTransactionManager transactionManager, Clock clock, TenantScopes tenants) {
+        this.tenants = tenants;
         this.taxRounding = taxRounding;
         this.issuer = issuer;
         this.accessPolicy = accessPolicy;
@@ -203,7 +206,7 @@ public class CreditSaleSteps {
         charges.saveAndFlush(charge);
         audit.charge("CREDIT_CHARGE_POSTED", charge.getId(), charge.getStoreId(), charge.getOrderId(),
                 charge.getTerminalId(), null, details(charge));
-        events.publishEvent(new CreditChargePosted(charge.getId(), charge.getStoreId()));
+        events.publishEvent(new CreditChargePosted(tenants.requireTenant(), charge.getId(), charge.getStoreId()));
         return charge;
     }
 

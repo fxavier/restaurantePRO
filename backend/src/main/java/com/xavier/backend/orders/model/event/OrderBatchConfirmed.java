@@ -15,15 +15,16 @@ import org.springframework.modulith.NamedInterface;
  * @param mode      R4: how the order is served; {@code null} in a publication stored before R4. It stays last.
  */
 @NamedInterface("event")
-public record OrderBatchConfirmed(UUID orderId, UUID batchId, int batchNo, UUID storeId, UUID terminalId,
-                                  long orderNumber, String tableCode, UUID employeeId, Instant confirmedAt,
+public record OrderBatchConfirmed(UUID tenantId, UUID orderId, UUID batchId, int batchNo, UUID storeId,
+                                  UUID terminalId, long orderNumber, String tableCode, UUID employeeId, Instant confirmedAt,
                                   List<Line> lines, OrderMode mode) {
 
     /** The R2/R3 shape, without the mode. */
-    public OrderBatchConfirmed(UUID orderId, UUID batchId, int batchNo, UUID storeId, UUID terminalId,
-                               long orderNumber, String tableCode, UUID employeeId, Instant confirmedAt,
+    public OrderBatchConfirmed(UUID tenantId, UUID orderId, UUID batchId, int batchNo, UUID storeId,
+                               UUID terminalId, long orderNumber, String tableCode, UUID employeeId, Instant confirmedAt,
                                List<Line> lines) {
-        this(orderId, batchId, batchNo, storeId, terminalId, orderNumber, tableCode, employeeId, confirmedAt, lines,
+        this(tenantId, orderId, batchId, batchNo, storeId, terminalId, orderNumber, tableCode, employeeId, confirmedAt,
+                lines,
                 null);
     }
 }

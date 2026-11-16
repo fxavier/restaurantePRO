@@ -14,6 +14,7 @@ import com.xavier.backend.access.Permission;
 import com.xavier.backend.identity.IdentityFixtures;
 import com.xavier.backend.identity.IdentityTest;
 import com.xavier.backend.organization.model.event.CompanyBootstrapped;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import jakarta.servlet.http.Cookie;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -112,7 +113,8 @@ class AdminBootstrapTest {
     @Test
     void companyBootstrappedCreatesTheConfiguredAdminOnceEvenWhenDeliveredAgain(
             @Autowired ApplicationEventPublisher events, @Autowired TransactionTemplate transaction) throws Exception {
-        CompanyBootstrapped event = new CompanyBootstrapped("Test Company", "TEST-TAX-ID", "MZ", "MZN", Instant.now());
+        CompanyBootstrapped event = new CompanyBootstrapped(TenantTestSupport.BOOTSTRAP,
+                "Test Company", "TEST-TAX-ID", "MZ", "MZN", Instant.now());
 
         // a restart re-delivers outstanding publications; the listener must not create a second admin
         for (int delivery = 0; delivery < 2; delivery++) {

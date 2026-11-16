@@ -9,5 +9,5 @@ import org.springframework.modulith.NamedInterface;
  * the cost of its offers. {@code businessDay} is the order's.
  */
 @NamedInterface("event")
-public record OrderClosed(UUID orderId, UUID storeId, LocalDate businessDay) {
+public record OrderClosed(UUID tenantId, UUID orderId, UUID storeId, LocalDate businessDay) {
 }

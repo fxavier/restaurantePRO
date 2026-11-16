@@ -8,8 +8,10 @@ import java.lang.annotation.Target;
 
 /**
  * Runs the annotated method in a named system scope (D166), applied by {@code config.persistence.StoreScopeAdvisor}
- * before any transaction of the method starts. Required on every {@code @Scheduled} method, {@code ApplicationRunner}
- * and {@code ApplicationReadyEvent} listener, and on a module listener whose event carries no {@code storeId}.
+ * before any transaction of the method starts: reach {@code ALL} once per ACTIVE tenant, reach {@code NONE} once with
+ * no tenant (D185, see {@link SystemScope}); on a listener, in its event's tenant. Required on every {@code @Scheduled}
+ * method, {@code ApplicationRunner} and {@code ApplicationReadyEvent} listener, and on a module listener whose event
+ * carries no {@code storeId}.
  */
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)

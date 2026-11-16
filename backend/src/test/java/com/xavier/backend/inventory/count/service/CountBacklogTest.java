@@ -12,6 +12,7 @@ import com.xavier.backend.inventory.service.StockLedger;
 import com.xavier.backend.orders.model.event.OrderBatchConfirmed;
 import com.xavier.backend.orders.model.event.OrderLinesVoided;
 import com.xavier.backend.organization.MutableClock;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Duration;
@@ -107,7 +108,8 @@ class CountBacklogTest {
 
     @Test
     void aPendingVoidUpToTheCutOffBlocksToo() throws Exception {
-        UUID voided = pending(VOID_LISTENER, new OrderLinesVoided(UUID.randomUUID(), UUID.randomUUID(), store,
+        UUID voided = pending(VOID_LISTENER, new OrderLinesVoided(TenantTestSupport.BOOTSTRAP,
+                UUID.randomUUID(), UUID.randomUUID(), store,
                 UUID.randomUUID(), 1, null, null, BigDecimal.ONE, "wrong dish", counts.at(45)));
 
         counts.approve(store, count).andExpect(status().isConflict())
@@ -125,7 +127,8 @@ class CountBacklogTest {
     }
 
     private static OrderBatchConfirmed round(UUID storeId, Instant confirmedAt) {
-        return new OrderBatchConfirmed(UUID.randomUUID(), UUID.randomUUID(), 1, storeId, UUID.randomUUID(), 1, null,
+        return new OrderBatchConfirmed(TenantTestSupport.BOOTSTRAP,
+                UUID.randomUUID(), UUID.randomUUID(), 1, storeId, UUID.randomUUID(), 1, null,
                 UUID.randomUUID(), confirmedAt, List.of());
     }
 

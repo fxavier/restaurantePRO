@@ -1,5 +1,19 @@
 # Test-only settings, layered over src/main/resources/application.yaml (classpath:/config/ wins over classpath:/).
 restaurantpro:
+  security:
+    # R6: no IdP in the module and HTTP suites (S72 brings the test JwtDecoder; the Keycloak container is only for the
+    # identity and end-to-end suites, D189)
+    issuers:
+      tenant: ""
+      ops: ""
+      devices: ""
+  keycloak:
+    devices-admin:
+      base-url: ""
+      key-file: ""
+  jobs:
+    # R6 (D185): one JVM is one instance; a short lease keeps a test that holds one from blocking the next for long
+    lease-ttl: PT30S
   fiscal:
     # B4 / D54: tests run the NON-CERTIFIED internal adapter. Production defaults keep this false, so a real
     # installation refuses to start with it (FiscalStartupGuardTest).

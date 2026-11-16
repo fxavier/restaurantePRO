@@ -14,6 +14,7 @@ import com.xavier.backend.customers.CustomersApi;
 import com.xavier.backend.settlement.model.event.PaymentRecorded;
 import com.xavier.backend.settlement.repository.PaymentAllocationRepository;
 import com.xavier.backend.settlement.repository.PaymentRepository;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -45,10 +46,12 @@ class PaymentRecorder {
     private final CustomersApi customers;
     private final ReceiptSlips slips;
     private final Clock clock;
+    private final TenantScopes tenants;
 
     PaymentRecorder(PaymentRepository payments, PaymentAllocationRepository allocations, CashApi cash,
                     SettlementAudit audit, ApplicationEventPublisher events, CustomersApi customers,
-                    ReceiptSlips slips, Clock clock) {
+                    ReceiptSlips slips, Clock clock, TenantScopes tenants) {
+        this.tenants = tenants;
         this.customers = customers;
         this.slips = slips;
         this.events = events;
@@ -77,14 +80,15 @@ class PaymentRecorder {
         audit.attempt("PAYMENT_CONFIRMED", succeeded.getId(), succeeded.getStoreId(), succeeded.getOrderId(),
                 succeeded.getTerminalId(), null, null, Map.of("paymentId", payment.getId().toString(),
                         "methodCode", payment.getMethodCode(), "amount", payment.amount().amount().toPlainString()));
-        events.publishEvent(new PaymentRecorded(payment.getId(), succeeded.getStoreId()));
+        events.publishEvent(new PaymentRecorded(tenants.requireTenant(), payment.getId(), succeeded.getStoreId()));
         if (succeeded.getMethodKind() == PaymentMethodKind.CASH) {
             // an attempt always has its terminal (PaymentAttempt.start requires it)
-            events.publishEvent(new CashDrawerKickRequested("PAYMENT", payment.getId(), payment.getStoreId(),
+            events.publishEvent(new CashDrawerKickRequested(tenants.requireTenant(),
+                    "PAYMENT", payment.getId(), payment.getStoreId(),
                     succeeded.getTerminalId(), payment.getConfirmedAt()));
         }
         if (payment.getTargetType() == TargetType.CREDIT_ACCOUNT) {
-            events.publishEvent(new ReceiptSlipRequested(payment.getId(), payment.getStoreId(),
+            events.publishEvent(new ReceiptSlipRequested(tenants.requireTenant(), payment.getId(), payment.getStoreId(),
                     payment.getTerminalId(), slips.lines(payment, customers.debtOf(payment.getCreditAccountId()))));
         }
     }

@@ -32,6 +32,7 @@ import com.xavier.backend.orders.service.OrderLookup;
 import com.xavier.backend.orders.service.OrderViews;
 import com.xavier.backend.shared.persistence.OptimisticLocking;
 import com.xavier.backend.shared.persistence.StoreProbe;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import java.time.Clock;
 import java.util.HashMap;
 import java.util.List;
@@ -67,13 +68,15 @@ public class DeliveryService {
     private final OrderChanges changes;
     private final ApplicationEventPublisher publisher;
     private final Clock clock;
+    private final TenantScopes tenants;
 
     DeliveryService(DeliveryRepository deliveries, DeliveryEventRepository events,
                     DeliveryZones zones, DeliveryFees fees,
                     DeliveryViews views, OrderLookup lookup, OrderRepository orderRows, OrderViews orderViews,
                     OrderLineRepository lines, OrderBatchRepository batches,
                     EmployeeDirectory employees, AccessPolicy accessPolicy, StoreProbe probe, OrderChanges changes,
-                    ApplicationEventPublisher publisher, Clock clock) {
+                    ApplicationEventPublisher publisher, Clock clock, TenantScopes tenants) {
+        this.tenants = tenants;
         this.deliveries = deliveries;
         this.events = events;
         this.zones = zones;
@@ -149,7 +152,8 @@ public class DeliveryService {
         }
         DeliveryStatus from = delivery.dispatch(request.courierEmployeeId(), clock.instant());
         DeliveryEvent event = transitioned(delivery, from, pos, null);
-        publisher.publishEvent(new DeliveryDispatched(orderId, event.getId(), delivery.getStoreId(),
+        publisher.publishEvent(new DeliveryDispatched(tenants.requireTenant(),
+                orderId, event.getId(), delivery.getStoreId(),
                 pos.terminalId()));
         return views.of(delivery);
     }

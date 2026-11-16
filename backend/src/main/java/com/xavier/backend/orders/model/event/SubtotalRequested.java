@@ -14,12 +14,13 @@ import org.springframework.modulith.NamedInterface;
  *                  (consumers then fall back to the content digest). It stays the last component.
  */
 @NamedInterface("event")
-public record SubtotalRequested(UUID orderId, UUID storeId, UUID terminalId, long orderNumber, String tableCode,
+public record SubtotalRequested(UUID tenantId, UUID orderId, UUID storeId, UUID terminalId, long orderNumber,
+                                String tableCode,
                                 List<SubtotalLine> lines, Money due, UUID requestId) {
 
     /** The R2 shape, without a request id: what a redelivered R2 publication is. */
-    public SubtotalRequested(UUID orderId, UUID storeId, UUID terminalId, long orderNumber, String tableCode,
-                             List<SubtotalLine> lines, Money due) {
-        this(orderId, storeId, terminalId, orderNumber, tableCode, lines, due, null);
+    public SubtotalRequested(UUID tenantId, UUID orderId, UUID storeId, UUID terminalId, long orderNumber,
+                             String tableCode, List<SubtotalLine> lines, Money due) {
+        this(tenantId, orderId, storeId, terminalId, orderNumber, tableCode, lines, due, null);
     }
 }

@@ -23,6 +23,7 @@ import com.xavier.backend.production.ProductionModuleTest;
 import com.xavier.backend.production.TcpFakePrinter;
 import com.xavier.backend.production.model.CodePage;
 import com.xavier.backend.shared.Money;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
@@ -142,7 +143,8 @@ class TerminalAndVoidTicketsTest {
     void aSubtotalPrintsOnTheTerminalsPrinterOnceEvenWhenRedelivered() throws Exception {
         UUID order = UUID.randomUUID();
         UUID request = UUID.randomUUID();
-        SubtotalRequested subtotal = new SubtotalRequested(order, shop.store(), terminal, 77, "M1",
+        SubtotalRequested subtotal = new SubtotalRequested(TenantTestSupport.BOOTSTRAP,
+                order, shop.store(), terminal, 77, "M1",
                 List.of(new SubtotalLine("Coca-Cola 33cl", new BigDecimal("2"), Money.of("12.50", MZN),
                         Money.of("25.00", MZN))), Money.of("25.00", MZN), request);
 
@@ -164,7 +166,8 @@ class TerminalAndVoidTicketsTest {
     void aVoidPrintsAVoidTicketOnTheLinesDestinationOnce() throws Exception {
         UUID bar = fixtures.barPrinter(shop.store(), printer.host(), printer.port());
         UUID voidId = UUID.randomUUID();
-        OrderLinesVoided voided = new OrderLinesVoided(UUID.randomUUID(), voidId, shop.store(), terminal, 77, "M1",
+        OrderLinesVoided voided = new OrderLinesVoided(TenantTestSupport.BOOTSTRAP,
+                UUID.randomUUID(), voidId, shop.store(), terminal, 77, "M1",
                 new Line(UUID.randomUUID(), "I1", "Coca-Cola 33cl", null, new BigDecimal("3"), null, "BAR"),
                 BigDecimal.ONE, "cliente desistiu", Instant.parse("2026-11-04T12:00:00Z"));
 
@@ -188,7 +191,8 @@ class TerminalAndVoidTicketsTest {
         UUID request = UUID.randomUUID();
         double unroutedBefore = meters.get(ProductionMetrics.UNROUTED).counter().count();
 
-        publish(new SubtotalRequested(UUID.randomUUID(), otherStore, terminal, 79, null, List.of(),
+        publish(new SubtotalRequested(TenantTestSupport.BOOTSTRAP,
+                UUID.randomUUID(), otherStore, terminal, 79, null, List.of(),
                 Money.of("0.00", MZN), request));
 
         await(() -> fixtures.completedPublications(request) > 0, "publication completed");
@@ -205,7 +209,8 @@ class TerminalAndVoidTicketsTest {
     @Test
     void aTerminalWithoutPrinterGetsAnUnroutedTicket() throws Exception {
         UUID request = UUID.randomUUID();
-        publish(new SubtotalRequested(UUID.randomUUID(), shop.store(), UUID.randomUUID(), 78, null, List.of(),
+        publish(new SubtotalRequested(TenantTestSupport.BOOTSTRAP,
+                UUID.randomUUID(), shop.store(), UUID.randomUUID(), 78, null, List.of(),
                 Money.of("0.00", MZN), request));
 
         await(() -> fixtures.tickets(request).size() == 1, "unrouted subtotal ticket");

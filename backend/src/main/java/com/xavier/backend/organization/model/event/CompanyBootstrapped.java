@@ -1,6 +1,7 @@
 package com.xavier.backend.organization.model.event;
 
 import java.time.Instant;
+import java.util.UUID;
 import org.springframework.modulith.NamedInterface;
 
 /**
@@ -14,6 +15,6 @@ import org.springframework.modulith.NamedInterface;
  * {@code eventsAreRecords} ArchUnit rule, which counts it as a non-record type.
  */
 @NamedInterface("event")
-public record CompanyBootstrapped(String name, String taxId, String country, String currency,
+public record CompanyBootstrapped(UUID tenantId, String name, String taxId, String country, String currency,
                                   Instant bootstrappedAt) {
 }

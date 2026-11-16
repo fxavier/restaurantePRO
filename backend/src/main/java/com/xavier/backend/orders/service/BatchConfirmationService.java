@@ -15,6 +15,7 @@ import com.xavier.backend.orders.model.event.ComponentLine;
 import com.xavier.backend.orders.model.event.LineDiscountsRecorded;
 import com.xavier.backend.orders.repository.OrderLineComponentRepository;
 import com.xavier.backend.shared.Money;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -79,11 +80,13 @@ public class BatchConfirmationService {
     private final OrderChanges changes;
     private final OrderViews views;
     private final Clock clock;
+    private final TenantScopes tenants;
 
     BatchConfirmationService(OrderRepository orders, OrderLineRepository lines, OrderBatchRepository batches,
                              OrderLineComponentRepository components, OrderLookup lookup, CatalogApi catalog,
                              LinePricer pricer, AccessPolicy accessPolicy, ApplicationEventPublisher events,
-                             OrderChanges changes, OrderViews views, Clock clock) {
+                             OrderChanges changes, OrderViews views, Clock clock, TenantScopes tenants) {
+        this.tenants = tenants;
         this.orders = orders;
         this.lines = lines;
         this.batches = batches;
@@ -143,12 +146,14 @@ public class BatchConfirmationService {
                 batch.getId(), pos.employeeId(), now));
         lines.saveAllAndFlush(drafts);
 
-        events.publishEvent(new OrderBatchConfirmed(orderId, batch.getId(), batchNo, order.getStoreId(),
+        events.publishEvent(new OrderBatchConfirmed(tenants.requireTenant(),
+                orderId, batch.getId(), batchNo, order.getStoreId(),
                 pos.terminalId(), order.getOrderNumber(), order.getTableCode(), pos.employeeId(), now,
                 priced.entrySet().stream().map(entry -> eventLine(entry.getKey(), entry.getValue())).toList(),
                 order.getMode()));
         if (priced.values().stream().anyMatch(confirmed -> confirmed.pricing().promotion() != null)) {
-            events.publishEvent(new LineDiscountsRecorded(orderId, order.getStoreId(), LineDiscountsRecorded.BATCH,
+            events.publishEvent(new LineDiscountsRecorded(tenants.requireTenant(),
+                    orderId, order.getStoreId(), LineDiscountsRecorded.BATCH,
                     batch.getId()));
         }
         Map<String, Object> details = new HashMap<>(Map.of("batchId", batch.getId().toString(),

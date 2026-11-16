@@ -132,10 +132,10 @@ class CompanyBootstrapTest {
     }
 
     @Test
-    void theDatabaseHoldsAtMostOneCompany() {
-        // criterion §7.1: no endpoint creates a company, and the table itself refuses a second one
-        assertThatThrownBy(() -> insertCompany("TRUE")).isInstanceOf(DataIntegrityViolationException.class);
-        assertThatThrownBy(() -> insertCompany("FALSE")).isInstanceOf(DataIntegrityViolationException.class);
+    void theDatabaseHoldsAtMostOneCompanyPerTenant() {
+        // criterion §7.1: no endpoint creates a company, and the table itself refuses a second one in a tenant (D174)
+        assertThatThrownBy(() -> insertCompany("gen_random_uuid()"))
+                .isInstanceOf(DataIntegrityViolationException.class);
         assertThat(jdbc.sql("SELECT count(*) FROM organization.company_profile").query(Long.class).single())
                 .isEqualTo(1);
     }

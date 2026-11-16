@@ -24,6 +24,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZonedDateTime;
+import java.util.List;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Repository;
@@ -379,6 +380,221 @@ final class ArchitectureRules {
                 .should().dependOnClassesThat().resideInAPackage("com.zaxxer.hikari..")
                 .as("only config uses Hikari")
                 .because("nothing else may obtain a connection past the store-scope hook (D165)");
+    }
+
+    // ---- ADR 0040 (R6 S71): the tenant is resolved, bound and carried, never taken from a request ----
+
+    private static final String TENANT_CONTEXT = "com.xavier.backend.shared.tenancy.TenantContext";
+    private static final String TENANT_SCOPES = "com.xavier.backend.shared.tenancy.TenantScopes";
+    private static final Set<String> TENANT_REQUEST_NAMES = Set.of("tenantid", "tenant_id", "x-tenant-id");
+
+    /**
+     * Security rule 1 (D177): no tenant from a request. No controller parameter is named {@code tenantId} or bound to a
+     * path, query or header value of that name, no mapping path holds {@code {tenantId}}, and no request body or
+     * {@code *Request} DTO has a {@code tenantId} component. {@code X-Tenant-Id} is read only by
+     * {@code config.security}'s resolution (S72), which no controller is.
+     */
+    static ArchRule noTenantIdFromRequests(String root) {
+        return classes()
+                .that().resideInAPackage(root + "..")
+                .should(new com.tngtech.archunit.lang.ArchCondition<JavaClass>("take no tenant from a request") {
+                    @Override
+                    public void check(JavaClass type, com.tngtech.archunit.lang.ConditionEvents events) {
+                        tenantFromRequestProblems(type).forEach(problem -> events.add(
+                                com.tngtech.archunit.lang.SimpleConditionEvent.violated(type, problem)));
+                    }
+                })
+                .as("no tenantId from requests")
+                .because("the tenant comes only from an authorised membership; X-Tenant-Id only selects among them "
+                        + "(D177, security rule 1)");
+    }
+
+    /**
+     * D185, security rule 6: every event carries its tenant. A record of a {@code model.event} package that a method
+     * constructs where it publishes ({@code ApplicationEventPublisher.publishEvent}), and the event of every
+     * {@code @ApplicationModuleListener}, has {@code UUID tenantId} as its first record component, so the advisor
+     * binds the listener's tenant and a republished event binds its own.
+     */
+    static ArchRule eventsCarryTenantId(String root) {
+        return classes()
+                .that().resideInAPackage(root + "..")
+                .should(new com.tngtech.archunit.lang.ArchCondition<JavaClass>("publish and listen only to events "
+                        + "whose first component is UUID tenantId") {
+                    @Override
+                    public void check(JavaClass type, com.tngtech.archunit.lang.ConditionEvents events) {
+                        for (JavaClass event : eventsPublishedOrHeardBy(type)) {
+                            if (!firstComponentIsTenantId(event)) {
+                                events.add(com.tngtech.archunit.lang.SimpleConditionEvent.violated(type,
+                                        type.getName() + " publishes or listens to " + event.getName()
+                                                + ", whose first record component is not UUID tenantId"));
+                            }
+                        }
+                    }
+                })
+                .as("events carry tenantId")
+                .because("the advisor binds a listener to its event's tenant before its transaction (D185)");
+    }
+
+    /**
+     * D186 (as amended): no Spring or Caffeine cache in a module. The allow-list ({@code shared.tenancy
+     * .TenantScopedCache}, keys including the tenant) is empty until a second cache exists; an in-memory map keyed
+     * without the tenant is a review item (security rule 7).
+     */
+    static ArchRule cachesAreTenantScoped(String root) {
+        return noClasses()
+                .that().resideInAPackage(root + "..")
+                .should().dependOnClassesThat().resideInAnyPackage("org.springframework.cache..",
+                        "com.github.benmanes.caffeine..")
+                .as("caches are tenant scoped")
+                .because("a cache key without the tenant would serve one company's data to another (D186)");
+    }
+
+    /**
+     * D177: a {@link com.xavier.backend.shared.tenancy.TenantContext} is created only by {@code config.security}'s
+     * resolution and by {@code TenantScopes} (system scopes, events, tasks); test sources are not imported.
+     */
+    static ArchRule onlyResolutionCreatesTenantContext(String root) {
+        return noClasses()
+                .that().resideInAPackage(root + "..")
+                .and().resideOutsideOfPackage(root + ".config.security..")
+                .and(DescribedPredicate.not(describe("TenantScopes", (JavaClass type) ->
+                        outermost(type).getName().equals(TENANT_SCOPES))))
+                .should().callConstructorWhere(describe("a TenantContext constructor",
+                        (com.tngtech.archunit.core.domain.JavaConstructorCall call) ->
+                                call.getTargetOwner().getName().equals(TENANT_CONTEXT)))
+                .as("only resolution creates TenantContext")
+                .because("a tenant context made anywhere else would be a tenant taken from no membership (D177)");
+    }
+
+    private static List<String> tenantFromRequestProblems(JavaClass type) {
+        List<String> problems = new java.util.ArrayList<>();
+        boolean controller = CONTROLLER.test(type);
+        if (controller) {
+            for (JavaMethod method : type.getMethods()) {
+                java.lang.reflect.Method reflected;
+                try {
+                    reflected = method.reflect();
+                } catch (RuntimeException | LinkageError e) {
+                    continue;
+                }
+                for (String path : mappingPaths(reflected)) {
+                    if (path.toLowerCase(java.util.Locale.ROOT).contains("{tenantid}")) {
+                        problems.add(method.getFullName() + " maps a {tenantId} path");
+                    }
+                }
+                for (java.lang.reflect.Parameter parameter : reflected.getParameters()) {
+                    if (TENANT_REQUEST_NAMES.contains(parameter.getName().toLowerCase(java.util.Locale.ROOT))
+                            || TENANT_REQUEST_NAMES.contains(boundName(parameter))) {
+                        problems.add(method.getFullName() + " takes " + parameter.getName() + " from the request");
+                    }
+                    if (parameter.isAnnotationPresent(org.springframework.web.bind.annotation.RequestBody.class)
+                            && hasTenantComponent(parameter.getType())) {
+                        problems.add(method.getFullName() + "'s request body " + parameter.getType().getName()
+                                + " has a tenantId");
+                    }
+                }
+            }
+        }
+        if (type.isRecord() && type.getSimpleName().endsWith("Request") && hasTenantComponent(type.reflect())) {
+            problems.add(type.getName() + " is a request with a tenantId component");
+        }
+        return problems;
+    }
+
+    private static List<String> mappingPaths(java.lang.reflect.Method method) {
+        List<String> paths = new java.util.ArrayList<>();
+        org.springframework.web.bind.annotation.RequestMapping mapping =
+                org.springframework.core.annotation.AnnotatedElementUtils.findMergedAnnotation(method,
+                        org.springframework.web.bind.annotation.RequestMapping.class);
+        if (mapping != null) {
+            paths.addAll(java.util.Arrays.asList(mapping.path()));
+        }
+        return paths;
+    }
+
+    private static String boundName(java.lang.reflect.Parameter parameter) {
+        for (Class<? extends java.lang.annotation.Annotation> binding : List.of(
+                org.springframework.web.bind.annotation.PathVariable.class,
+                org.springframework.web.bind.annotation.RequestParam.class,
+                org.springframework.web.bind.annotation.RequestHeader.class)) {
+            java.lang.annotation.Annotation annotation = parameter.getAnnotation(binding);
+            if (annotation != null) {
+                String name = String.valueOf(org.springframework.core.annotation.AnnotationUtils.getValue(annotation));
+                return name.toLowerCase(java.util.Locale.ROOT);
+            }
+        }
+        return "";
+    }
+
+    private static boolean hasTenantComponent(Class<?> type) {
+        return type.isRecord() && java.util.Arrays.stream(type.getRecordComponents())
+                .anyMatch(component -> TENANT_REQUEST_NAMES.contains(
+                        component.getName().toLowerCase(java.util.Locale.ROOT)));
+    }
+
+    private static Set<JavaClass> eventsPublishedOrHeardBy(JavaClass type) {
+        Set<JavaClass> found = new java.util.LinkedHashSet<>();
+        for (JavaMethod method : type.getMethods()) {
+            boolean publishes = method.getMethodCallsFromSelf().stream().anyMatch(call ->
+                    call.getName().equals("publishEvent") && call.getTargetOwner()
+                            .isAssignableTo(org.springframework.context.ApplicationEventPublisher.class));
+            if (publishes) {
+                List<JavaClass> constructed = method.getConstructorCallsFromSelf().stream()
+                        .map(call -> call.getTargetOwner())
+                        .filter(owner -> owner.isRecord() && owner.getPackageName().contains(".model.event"))
+                        .distinct().toList();
+                constructed.stream().filter(event -> !isPartOfAnother(event, constructed)).forEach(found::add);
+            }
+            if (method.isAnnotatedWith(org.springframework.modulith.events.ApplicationModuleListener.class)
+                    && !method.getRawParameterTypes().isEmpty()) {
+                found.add(method.getRawParameterTypes().getFirst());
+            }
+        }
+        return found;
+    }
+
+    /** A record that is a component (or an element of one) of another event built there: a part, not an event. */
+    private static boolean isPartOfAnother(JavaClass candidate, List<JavaClass> constructed) {
+        for (JavaClass other : constructed) {
+            if (other.equals(candidate)) {
+                continue;
+            }
+            java.lang.reflect.RecordComponent[] components;
+            try {
+                components = other.reflect().getRecordComponents();
+            } catch (RuntimeException | LinkageError e) {
+                continue;
+            }
+            for (java.lang.reflect.RecordComponent component : components) {
+                if (mentions(component.getGenericType(), candidate.getName())) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean mentions(java.lang.reflect.Type type, String className) {
+        if (type instanceof Class<?> raw) {
+            return raw.getName().equals(className);
+        }
+        if (type instanceof java.lang.reflect.ParameterizedType parameterized) {
+            return mentions(parameterized.getRawType(), className) || java.util.Arrays.stream(
+                    parameterized.getActualTypeArguments()).anyMatch(argument -> mentions(argument, className));
+        }
+        return false;
+    }
+
+    private static boolean firstComponentIsTenantId(JavaClass event) {
+        Class<?> type;
+        try {
+            type = event.reflect();
+        } catch (RuntimeException | LinkageError e) {
+            return false;
+        }
+        java.lang.reflect.RecordComponent[] components = type.getRecordComponents();
+        return components != null && components.length > 0 && components[0].getName().equals("tenantId")
+                && components[0].getType() == java.util.UUID.class;
     }
 
     private static boolean isActorlessEntryPoint(JavaMethod method) {

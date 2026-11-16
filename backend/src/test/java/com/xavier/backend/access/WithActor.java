@@ -47,4 +47,7 @@ public @interface WithActor {
 
     /** Set for a POS actor. */
     String terminalId() default "";
+
+    /** The actor's tenant (D177): the bootstrap tenant unless set ({@code TenantTestSupport}). */
+    String tenantId() default "";
 }

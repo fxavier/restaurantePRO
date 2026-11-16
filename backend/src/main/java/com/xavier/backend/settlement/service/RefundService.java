@@ -30,6 +30,7 @@ import com.xavier.backend.settlement.repository.PaymentRepository;
 import com.xavier.backend.settlement.repository.RefundRepository;
 import com.xavier.backend.settlement.service.Bills.Bill;
 import com.xavier.backend.shared.Money;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -77,11 +78,13 @@ public class RefundService {
     private final SettlementAudit audit;
     private final ApplicationEventPublisher events;
     private final Clock clock;
+    private final TenantScopes tenants;
 
     RefundService(StoreProbe storeProbe, AccessPolicy accessPolicy, ApproverVerifier approvers, PaymentRepository payments,
                   PaymentAttemptRepository attempts, RefundRepository refunds, SettlementLocks locks, Bills bills,
                   FiscalApi fiscal, CashApi cash, CustomersApi customers, SettlementAudit audit,
-                  ApplicationEventPublisher events, Clock clock) {
+                  ApplicationEventPublisher events, Clock clock, TenantScopes tenants) {
+        this.tenants = tenants;
         this.storeProbe = storeProbe;
         this.accessPolicy = accessPolicy;
         this.approvers = approvers;
@@ -158,9 +161,10 @@ public class RefundService {
         cash.recordRefund(new RefundCommand(session.id(), payment.getMethodCode(), amount, refund.getId(),
                 pos.employeeId()));
         audit.refund(refund, details(refund));
-        events.publishEvent(new RefundRecorded(refund.getId(), refund.getStoreId()));
+        events.publishEvent(new RefundRecorded(tenants.requireTenant(), refund.getId(), refund.getStoreId()));
         if (kind == PaymentMethodKind.CASH) {
-            events.publishEvent(new CashDrawerKickRequested("REFUND", refund.getId(), refund.getStoreId(),
+            events.publishEvent(new CashDrawerKickRequested(tenants.requireTenant(),
+                    "REFUND", refund.getId(), refund.getStoreId(),
                     refund.getTerminalId(), refund.getConfirmedAt()));
         }
         return refund.toView();

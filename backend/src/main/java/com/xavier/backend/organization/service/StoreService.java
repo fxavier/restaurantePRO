@@ -16,6 +16,7 @@ import com.xavier.backend.organization.repository.CompanyProfileRepository;
 import com.xavier.backend.organization.repository.StoreRepository;
 import com.xavier.backend.shared.persistence.OptimisticLocking;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
 import java.time.Instant;
@@ -40,9 +41,11 @@ public class StoreService {
     private final AuditLog auditLog;
     private final Clock clock;
     private final ApplicationEventPublisher events;
+    private final TenantScopes tenants;
 
     StoreService(StoreRepository stores, CompanyProfileRepository companies, AccessPolicy accessPolicy,
-                 AuditLog auditLog, Clock clock, ApplicationEventPublisher events) {
+                 AuditLog auditLog, Clock clock, ApplicationEventPublisher events, TenantScopes tenants) {
+        this.tenants = tenants;
         this.stores = stores;
         this.companies = companies;
         this.accessPolicy = accessPolicy;
@@ -79,7 +82,7 @@ public class StoreService {
         saveWithUniqueCode(store); // flush now: a concurrent writer fails here (409), and the response has the new version
         audit("STORE_UPDATED", store);
         if (wasActive && !store.isActive()) {
-            events.publishEvent(new StoreDeactivated(store.getId(), now)); // D45
+            events.publishEvent(new StoreDeactivated(tenants.requireTenant(), store.getId(), now)); // D45
         }
         return store.toSummary(companyCurrency());
     }
@@ -112,7 +115,7 @@ public class StoreService {
     }
 
     private Currency companyCurrency() {
-        return companies.findById(Boolean.TRUE).map(CompanyProfile::getCurrency)
+        return companies.findByTenantId(tenants.requireTenant()).map(CompanyProfile::getCurrency)
                 .orElseThrow(CompanyNotBootstrappedException::new);
     }
 }

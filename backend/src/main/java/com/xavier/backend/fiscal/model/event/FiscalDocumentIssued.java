@@ -8,5 +8,6 @@ import org.springframework.modulith.NamedInterface;
  * {@code terminalId} (the terminal the issue ran on; {@code null} when it ran without one).
  */
 @NamedInterface("event")
-public record FiscalDocumentIssued(UUID documentId, UUID storeId, UUID terminalId, DocumentPrintout printout) {
+public record FiscalDocumentIssued(UUID tenantId, UUID documentId, UUID storeId, UUID terminalId,
+                                   DocumentPrintout printout) {
 }

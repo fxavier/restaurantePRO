@@ -12,5 +12,5 @@ import org.springframework.modulith.NamedInterface;
  * {@code eventsAreRecords} ArchUnit rule.
  */
 @NamedInterface("event")
-public record CatalogPublished(UUID storeId, UUID releaseId, long version, Instant effectiveAt) {
+public record CatalogPublished(UUID tenantId, UUID storeId, UUID releaseId, long version, Instant effectiveAt) {
 }

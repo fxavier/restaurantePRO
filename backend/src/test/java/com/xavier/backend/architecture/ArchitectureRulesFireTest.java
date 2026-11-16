@@ -236,4 +236,55 @@ class ArchitectureRulesFireTest {
                 .anySatisfy(line -> assertThat(line).contains("PoolOutsideConfig"))
                 .noneSatisfy(line -> assertThat(line).contains("PoolInConfig"));
     }
+
+    static final String TENANT_ROOT = "com.xavier.archfixture.tenant";
+
+    static final JavaClasses TENANT_FIXTURE = new ClassFileImporter().importPackages(TENANT_ROOT);
+
+    /** Rule 1: a tenantId path, parameter, header or request component is caught; a store id is not. */
+    @Test
+    void aTenantIdFromARequestIsCaught() {
+        EvaluationResult result = ArchitectureRules.noTenantIdFromRequests(TENANT_ROOT).evaluate(TENANT_FIXTURE);
+
+        assertThat(result.getFailureReport().getDetails())
+                .anySatisfy(line -> assertThat(line).contains("TenantPathController.byPath").contains("{tenantId}"))
+                .anySatisfy(line -> assertThat(line).contains("TenantPathController.byParameter"))
+                .anySatisfy(line -> assertThat(line).contains("TenantPathController.byHeader"))
+                .anySatisfy(line -> assertThat(line).contains("TransferRequest is a request with a tenantId"))
+                .anySatisfy(line -> assertThat(line).contains("request body"))
+                .noneSatisfy(line -> assertThat(line).contains("CleanController"));
+    }
+
+    /** D185: an event without tenantId first, published or heard, is caught; one with it is not. */
+    @Test
+    void anEventWithoutTenantIdIsCaught() {
+        EvaluationResult result = ArchitectureRules.eventsCarryTenantId(TENANT_ROOT).evaluate(TENANT_FIXTURE);
+
+        assertThat(result.getFailureReport().getDetails())
+                .anySatisfy(line -> assertThat(line).contains("Shipper publishes").contains("OrderShipped"))
+                .anySatisfy(line -> assertThat(line).contains("ShippedListener").contains("OrderShipped"))
+                .anySatisfy(line -> assertThat(line).contains("LateTenant"))
+                .noneSatisfy(line -> assertThat(line).contains("OrderPacked"));
+    }
+
+    /** D186: a Spring cache in a module is caught; the module without one is not. */
+    @Test
+    void aCacheOutsideTheAllowListIsCaught() {
+        EvaluationResult result = ArchitectureRules.cachesAreTenantScoped(TENANT_ROOT).evaluate(TENANT_FIXTURE);
+
+        assertThat(result.getFailureReport().getDetails())
+                .anySatisfy(line -> assertThat(line).contains("CachedCatalog"))
+                .noneSatisfy(line -> assertThat(line).contains("Shipper"));
+    }
+
+    /** D177: a TenantContext made outside config.security is caught; the resolution's own is not. */
+    @Test
+    void aTenantContextOutsideTheResolutionIsCaught() {
+        EvaluationResult result = ArchitectureRules.onlyResolutionCreatesTenantContext(TENANT_ROOT)
+                .evaluate(TENANT_FIXTURE);
+
+        assertThat(result.getFailureReport().getDetails())
+                .anySatisfy(line -> assertThat(line).contains("ForgedTenant"))
+                .noneSatisfy(line -> assertThat(line).contains("MembershipResolution"));
+    }
 }

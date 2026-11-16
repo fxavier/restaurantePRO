@@ -27,6 +27,10 @@ WHERE NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'restaurantp
 \gexec
 ALTER ROLE restaurantpro_owner WITH LOGIN NOSUPERUSER NOCREATEROLE NOCREATEDB NOREPLICATION BYPASSRLS INHERIT;
 ALTER ROLE restaurantpro_app WITH LOGIN NOSUPERUSER NOCREATEROLE NOCREATEDB NOREPLICATION NOBYPASSRLS NOINHERIT;
+-- R6 (D186): per-role limits on the pool, so one tenant's runaway statement or forgotten transaction cannot hold the
+-- shared database. Role defaults, applied at every login; they set no app.* setting (those are transaction-local).
+ALTER ROLE restaurantpro_app SET statement_timeout = '15s';
+ALTER ROLE restaurantpro_app SET idle_in_transaction_session_timeout = '60s';
 
 -- 2. Their passwords (psql quotes the variables as literals).
 ALTER ROLE restaurantpro_owner PASSWORD :'owner_password';
@@ -112,6 +116,7 @@ ORDER BY s.nspname
 \gexec
 SELECT format('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA %I TO restaurantpro_app', s.nspname)
 FROM provision_schema s
+WHERE s.nspname <> 'tenancy'
 ORDER BY s.nspname
 \gexec
 SELECT format('GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA %I TO restaurantpro_app', s.nspname)
@@ -123,6 +128,13 @@ ORDER BY s.nspname
 -- gave it DML; V1008 revokes those on a first install).
 SELECT 'REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON public.flyway_schema_history FROM restaurantpro_app'
 WHERE to_regclass('public.flyway_schema_history') IS NOT NULL
+\gexec
+
+-- 5c. R6 (D177): no privilege for the pool on any tenancy table, whatever the owner's default privileges granted when a
+-- migration created it; the pool reaches tenancy only through its SECURITY DEFINER functions (USAGE on the schema
+-- stays, to call them). V15001 does the same on a first install.
+SELECT 'REVOKE ALL ON ALL TABLES IN SCHEMA tenancy FROM restaurantpro_app'
+WHERE EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = 'tenancy')
 \gexec
 
 -- 6. The same for what later migrations create (the owner runs them).

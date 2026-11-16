@@ -15,13 +15,14 @@ import org.springframework.modulith.NamedInterface;
  * @param mode R4: how the order is served; {@code null} in a publication stored before R4. It stays last.
  */
 @NamedInterface("event")
-public record OrderLinesVoided(UUID orderId, UUID voidId, UUID storeId, UUID terminalId, long orderNumber,
+public record OrderLinesVoided(UUID tenantId, UUID orderId, UUID voidId, UUID storeId, UUID terminalId,
+                               long orderNumber,
                                String tableCode, Line line, BigDecimal quantity, String reason, Instant at,
                                OrderMode mode) {
 
     /** The R2/R3 shape, without the mode. */
-    public OrderLinesVoided(UUID orderId, UUID voidId, UUID storeId, UUID terminalId, long orderNumber,
+    public OrderLinesVoided(UUID tenantId, UUID orderId, UUID voidId, UUID storeId, UUID terminalId, long orderNumber,
                             String tableCode, Line line, BigDecimal quantity, String reason, Instant at) {
-        this(orderId, voidId, storeId, terminalId, orderNumber, tableCode, line, quantity, reason, at, null);
+        this(tenantId, orderId, voidId, storeId, terminalId, orderNumber, tableCode, line, quantity, reason, at, null);
     }
 }

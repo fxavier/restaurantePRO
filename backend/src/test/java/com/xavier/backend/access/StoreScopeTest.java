@@ -110,9 +110,10 @@ class StoreScopeTest {
             assertThat(scope.reason()).as(scope.name()).isNotBlank();
         }
         assertThat(SystemScope.values()).filteredOn(s -> s.reach() == SystemScope.Reach.ALL)
-                .containsExactlyInAnyOrder(SystemScope.BOOTSTRAP, SystemScope.PRINT_WORKER,
+                .containsExactlyInAnyOrder(SystemScope.BOOTSTRAP, SystemScope.PROVISIONING, SystemScope.PRINT_WORKER,
                         SystemScope.PAYMENT_RECOVERY, SystemScope.RESERVATIONS, SystemScope.STOCK_RECONCILE,
-                        SystemScope.REPORTING_RECOVERY, SystemScope.METRICS, SystemScope.ALERTS);
+                        SystemScope.REPORTING_RECOVERY, SystemScope.METRICS, SystemScope.ALERTS,
+                        SystemScope.IDEMPOTENCY_RETENTION);
         assertThat(SystemScope.values()).filteredOn(s -> s.reach() == SystemScope.Reach.NONE)
                 .containsExactlyInAnyOrder(SystemScope.EVENT_MAINTENANCE, SystemScope.IDENTITY_MAINTENANCE,
                         SystemScope.HOUSEKEEPING);

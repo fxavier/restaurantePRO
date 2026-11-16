@@ -10,5 +10,5 @@ import org.springframework.modulith.NamedInterface;
  * active → inactive transition, never for edits of an inactive store.
  */
 @NamedInterface("event")
-public record StoreDeactivated(UUID storeId, Instant at) {
+public record StoreDeactivated(UUID tenantId, UUID storeId, Instant at) {
 }

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.xavier.backend.fiscal.model.event.FiscalDocumentIssued;
 import com.xavier.backend.settlement.SettlementFixtures;
 import com.xavier.backend.settlement.SettlementFixtures.Sale;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
@@ -101,7 +102,8 @@ class SalesProjectionTest {
                 document).get("projected_at");
 
         tx.executeWithoutResult(status -> events.publishEvent(
-                new FiscalDocumentIssued(document, sale.store(), sale.cashier().terminalId(), null)));
+                new FiscalDocumentIssued(TenantTestSupport.BOOTSTRAP,
+                        document, sale.store(), sale.cashier().terminalId(), null)));
         reporting.awaitNothingPendingFor(sale.store());
 
         assertThat(reporting.count("SELECT count(*) FROM reporting.sales_record WHERE document_id = ?", document))

@@ -1,5 +1,8 @@
 package com.xavier.backend.access;
 
+import com.xavier.backend.shared.tenancy.MembershipKind;
+import com.xavier.backend.shared.tenancy.TenantContext;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
@@ -29,7 +32,14 @@ final class WithActorSecurityContextFactory implements WithSecurityContextFactor
 
         List<SimpleGrantedAuthority> granted = authorities.stream().map(SimpleGrantedAuthority::new).toList();
         SecurityContext context = SecurityContextHolder.createEmptyContext();
-        context.setAuthentication(UsernamePasswordAuthenticationToken.authenticated(actor, null, granted));
+        UsernamePasswordAuthenticationToken authentication = UsernamePasswordAuthenticationToken.authenticated(actor,
+                null, granted);
+        // the tenant of the actor's membership (D177): what config.security's resolution will set from S72 on
+        UUID tenantId = annotation.tenantId().isBlank() ? TenantTestSupport.BOOTSTRAP
+                : UUID.fromString(annotation.tenantId());
+        authentication.setDetails(new TenantContext(tenantId, MembershipKind.ACCOUNT, actor.userId(),
+                "test:with-actor"));
+        context.setAuthentication(authentication);
         return context;
     }
 

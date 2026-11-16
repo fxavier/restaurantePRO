@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.xavier.backend.TestcontainersConfiguration;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.shared.exception.BusinessRuleException;
 import com.xavier.backend.shared.exception.ConflictException;
@@ -40,6 +41,9 @@ class IdempotencyServiceTest {
 
     @Autowired
     IdempotencyService idempotency;
+
+    @Autowired
+    com.xavier.backend.shared.tenancy.TenantScopes tenantScopes;
 
     @Autowired
     IdempotencyRetention retention;
@@ -110,7 +114,7 @@ class IdempotencyServiceTest {
         AtomicInteger runs = new AtomicInteger();
         Map<String, Object> body = Map.of("amount", "5.00");
 
-        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+        try (ExecutorService executor = Executors.newSingleThreadExecutor(bootstrapThreads())) {
             Future<ResponseEntity<String>> first = executor.submit(
                     () -> idempotency.execute(scope, key, target, body, String.class, () -> {
                         runs.incrementAndGet();
@@ -340,5 +344,10 @@ class IdempotencyServiceTest {
             Thread.currentThread().interrupt();
             throw new IllegalStateException(e);
         }
+    }
+
+    /** Workers emulating concurrent requests: each runs in the bootstrap tenant, as a request does (D177). */
+    private java.util.concurrent.ThreadFactory bootstrapThreads() {
+        return task -> new Thread(() -> TenantTestSupport.inTenant(tenantScopes, TenantTestSupport.BOOTSTRAP, task));
     }
 }

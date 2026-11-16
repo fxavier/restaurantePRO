@@ -5,8 +5,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.xavier.backend.DatabaseRoles;
 import com.xavier.backend.OwnerDatabase;
 import com.xavier.backend.TestcontainersConfiguration;
-import com.xavier.backend.config.persistence.StoreScopeEnforcement;
-import com.xavier.backend.config.persistence.StoreScopedDataSource;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -26,7 +28,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.event.ContextClosedEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
 /**
  * D171: an application started or closed by a test body (a simulated restart, {@code new SpringApplicationBuilder(...)
@@ -40,8 +42,8 @@ class ApplicationLifecycleStoreScopeTest {
     static final Map<String, String> SEEN = new ConcurrentHashMap<>();
     static final String SCHEMA = "rls_scratch_lifecycle";
     static final String TABLE = SCHEMA + ".item";
-    /** The application role through the production connection hook, scoped by {@link #SCOPES}. */
-    static JdbcClient app;
+    /** D189: whether the bootstrap-tenant fixture fallback applied, per lifecycle step. */
+    static final Map<String, Boolean> TENANT_SEEN = new ConcurrentHashMap<>();
 
     @BeforeAll
     static void scratchTable() {
@@ -53,9 +55,6 @@ class ApplicationLifecycleStoreScopeTest {
             owner.sql("INSERT INTO " + TABLE + " VALUES (?, ?, 'a'), (?, ?, 'b')").param(UUID.randomUUID())
                     .param(UUID.randomUUID()).param(UUID.randomUUID()).param(UUID.randomUUID()).update();
         });
-        var postgres = TestcontainersConfiguration.postgres();
-        app = JdbcClient.create(new StoreScopedDataSource(new DriverManagerDataSource(postgres.getJdbcUrl(),
-                DatabaseRoles.APP_ROLE, DatabaseRoles.appPassword()), SCOPES, StoreScopeEnforcement.ENFORCE));
     }
 
     @AfterAll
@@ -70,6 +69,7 @@ class ApplicationLifecycleStoreScopeTest {
     @BeforeEach
     void forget() {
         SEEN.clear();
+        TENANT_SEEN.clear();
     }
 
     @Test
@@ -81,6 +81,10 @@ class ApplicationLifecycleStoreScopeTest {
 
         assertThat(SEEN).containsOnly(Map.entry("runner", "none"), Map.entry("ready", "none"),
                 Map.entry("closed", "none"), Map.entry("destroy", "none"));
+        assertThat(TENANT_SEEN).as("no bootstrap-tenant fallback during startup and shutdown either")
+                .containsOnly(Map.entry("runner", false), Map.entry("ready", false), Map.entry("closed", false),
+                        Map.entry("destroy", false));
+        assertThat(TenantTestSupport.isFixtureThread()).as("the test body after close()").isTrue();
         assertThat(afterRun).as("the test body after run()").isEqualTo("test-fixture");
         assertThat(SCOPES.current().origin()).as("the test body after close()").isEqualTo("test-fixture");
     }
@@ -142,8 +146,32 @@ class ApplicationLifecycleStoreScopeTest {
         assertThat(SCOPES.current().origin()).isEqualTo("test-fixture");
     }
 
+    /**
+     * The labels the application role sees in a transaction bound to {@link #SCOPES}' current scope, as the
+     * production binding writes it (D178).
+     */
     private static String labels() {
-        return String.join(",", app.sql("SELECT label FROM " + TABLE + " ORDER BY label").query(String.class).list());
+        StoreScope scope = SCOPES.current();
+        var postgres = TestcontainersConfiguration.postgres();
+        try (Connection connection = DriverManager.getConnection(postgres.getJdbcUrl(), DatabaseRoles.APP_ROLE,
+                DatabaseRoles.appPassword())) {
+            connection.setAutoCommit(false);
+            JdbcClient app = JdbcClient.create(new SingleConnectionDataSource(connection, true));
+            app.sql("SELECT set_config('app.all_stores', ?, true), set_config('app.store_ids', ?, true), "
+                    + "set_config('app.scope_origin', ?, true)").param(scope.allStoresSetting())
+                    .param(scope.storeIdsLiteral()).param(scope.origin()).query().listOfRows();
+            String labels = String.join(",", app.sql("SELECT label FROM " + TABLE + " ORDER BY label")
+                    .query(String.class).list());
+            connection.rollback();
+            return labels;
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static void seen(String step) {
+        SEEN.put(step, SCOPES.current().origin());
+        TENANT_SEEN.put(step, TenantTestSupport.FALLBACK.whenUnbound().isPresent());
     }
 
     @Configuration(proxyBeanMethods = false)
@@ -151,7 +179,7 @@ class ApplicationLifecycleStoreScopeTest {
 
         @Bean
         DisposableBean built() {
-            return () -> SEEN.put("destroy", SCOPES.current().origin());
+            return () -> seen("destroy");
         }
 
         @Bean
@@ -165,22 +193,22 @@ class ApplicationLifecycleStoreScopeTest {
 
         @Bean
         ApplicationRunner runner() {
-            return args -> SEEN.put("runner", SCOPES.current().origin());
+            return args -> seen("runner");
         }
 
         @Bean
         DisposableBean destroyed() {
-            return () -> SEEN.put("destroy", SCOPES.current().origin());
+            return () -> seen("destroy");
         }
 
         @EventListener
         void ready(ApplicationReadyEvent event) {
-            SEEN.put("ready", SCOPES.current().origin());
+            seen("ready");
         }
 
         @EventListener
         void closed(ContextClosedEvent event) {
-            SEEN.put("closed", SCOPES.current().origin());
+            seen("closed");
         }
     }
 

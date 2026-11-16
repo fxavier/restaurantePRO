@@ -9,7 +9,7 @@ import org.springframework.modulith.NamedInterface;
  * {@code OrdersApi.discountFacts(sourceType, sourceId)}; a redelivery names the same source.
  */
 @NamedInterface("event")
-public record LineDiscountsRecorded(UUID orderId, UUID storeId, String sourceType, UUID sourceId) {
+public record LineDiscountsRecorded(UUID tenantId, UUID orderId, UUID storeId, String sourceType, UUID sourceId) {
 
     public static final String BATCH = "BATCH";
     public static final String ADJUSTMENT = "ADJUSTMENT";

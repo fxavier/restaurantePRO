@@ -9,7 +9,11 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
-/** {@code shared.idempotency_record} access. Plain JDBC: it needs {@code ON CONFLICT} and {@code NOWAIT}. */
+/**
+ * {@code shared.idempotency_record} access. Plain JDBC: it needs {@code ON CONFLICT} and {@code NOWAIT}. A TENANT table
+ * (D186): {@code tenant_id} takes the bound tenant by default and row-level security keeps every statement in it, so
+ * each call runs inside a transaction.
+ */
 @Repository
 class IdempotencyRecordStore {
 
@@ -50,7 +54,7 @@ class IdempotencyRecordStore {
         return jdbc.sql("""
                         INSERT INTO shared.idempotency_record (scope, key, request_hash, status, created_at)
                         VALUES (:scope, :key, :hash, 'IN_PROGRESS', :now)
-                        ON CONFLICT (scope, key) DO NOTHING
+                        ON CONFLICT (tenant_id, scope, key) DO NOTHING
                         """)
                 .param("scope", scope).param("key", key).param("hash", requestHash).param("now", Timestamp.from(now))
                 .update() == 1;
@@ -67,7 +71,7 @@ class IdempotencyRecordStore {
                         INSERT INTO shared.idempotency_record
                             (scope, key, request_hash, status, created_at, lease_owner, lease_until)
                         VALUES (:scope, :key, :hash, 'IN_PROGRESS', :now, :owner, :until)
-                        ON CONFLICT (scope, key) DO NOTHING
+                        ON CONFLICT (tenant_id, scope, key) DO NOTHING
                         """)
                 .param("scope", scope).param("key", key).param("hash", requestHash).param("now", Timestamp.from(now))
                 .param("owner", owner).param("until", Timestamp.from(leaseUntil))

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.xavier.backend.access.StoreScope;
+import com.xavier.backend.shared.tenancy.BootstrapTenant;
 import com.xavier.backend.shared.persistence.StoreScopeViolations;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -22,10 +23,10 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * The test seam of A71 (D171): one connection to the shared test database as {@code restaurantpro_app}, whose D164
- * store scope the test writes by hand (the three settings the checkout hook writes, D165), so a statement reaches the
- * policies with no {@code AccessPolicy} in front of it. Also reads a schema's D167 classification from the catalog.
- * Used by the row-level security and plan suites of every policy module. Not a Spring bean; close it after the test.
+ * The test seam of A71 (D171) and A84 (D189): one connection to the shared test database as {@code restaurantpro_app},
+ * whose D164 store scope and D178 tenant the test writes by hand (the settings the transaction binding writes), so a
+ * statement reaches the policies with no {@code AccessPolicy} in front of it. Also reads a schema's D167
+ * classification from the catalog. Used by the row-level security and plan suites of every policy module. Not a Spring bean; close it after the test.
  */
 public final class AppRoleSession implements AutoCloseable {
 
@@ -39,11 +40,15 @@ public final class AppRoleSession implements AutoCloseable {
         this.jdbc = JdbcClient.create(dataSource);
     }
 
-    /** A new connection as {@code restaurantpro_app}, its scope unset. */
+    /**
+     * A new connection as {@code restaurantpro_app}, its store scope unset, in the bootstrap tenant (where every
+     * existing suite runs, D189); {@link #tenant} or {@link #noTenant} change it.
+     */
     public static AppRoleSession open() {
         try {
             return new AppRoleSession(DriverManager.getConnection(TestcontainersConfiguration.postgres().getJdbcUrl(),
-                    TestcontainersConfiguration.APP_ROLE, TestcontainersConfiguration.appPassword()));
+                    TestcontainersConfiguration.APP_ROLE, TestcontainersConfiguration.appPassword()))
+                    .tenant(BootstrapTenant.ID);
         } catch (SQLException e) {
             throw new IllegalStateException(e);
         }
@@ -57,6 +62,21 @@ public final class AppRoleSession implements AutoCloseable {
     /** The scope of an installation-wide account or an ALL system scope. */
     public AppRoleSession allStores() {
         return scope("on", "{}", "system:rls-test");
+    }
+
+    /**
+     * The tenant of this test connection (D178's {@code app.tenant_id}; session-level here, a test seam only: the
+     * backend binds it per transaction). Tables of a converted module then show only that tenant's rows.
+     */
+    public AppRoleSession tenant(UUID tenant) {
+        jdbc.sql("SELECT set_config('app.tenant_id', ?, false)").param(tenant.toString()).query().listOfRows();
+        return this;
+    }
+
+    /** No tenant: every tenant table answers {@code RS003}. */
+    public AppRoleSession noTenant() {
+        jdbc.sql("SELECT set_config('app.tenant_id', '', false)").query().listOfRows();
+        return this;
     }
 
     /** Neither setting written: every protected table answers {@code RS001}. */
@@ -105,7 +125,8 @@ public final class AppRoleSession implements AutoCloseable {
 
     /**
      * Each table of {@code schema} → its D167 class as built: {@code STORE}, {@code STORE_OR_ALL},
-     * {@code CHILD:<parent>} (read from its {@code parent_fixed} trigger's foreign key), {@code UNSCOPED}, or
+     * {@code CHILD:<parent>} (read from its {@code parent_fixed} trigger's foreign key, single-column or composite with
+     * {@code tenant_id}), {@code TENANT}, {@code UNSCOPED}, or
      * {@code NONE} when it has neither a policy nor a registration.
      */
     public static Map<String, String> classification(String schema) {
@@ -118,14 +139,21 @@ public final class AppRoleSession implements AutoCloseable {
                                  WHEN p.polname = 'parent_scope' THEN 'CHILD:' || coalesce((
                                      SELECT k.confrelid::regclass::text FROM pg_catalog.pg_trigger t
                                          JOIN pg_catalog.pg_constraint k ON k.conrelid = t.tgrelid
-                                             AND k.contype = 'f' AND k.conkey = ARRAY[t.tgattr[0]]
+                                             AND k.contype = 'f' AND t.tgattr[0] = ANY (k.conkey)
+                                             AND (cardinality(k.conkey) = 1 OR (cardinality(k.conkey) = 2
+                                                 AND EXISTS (SELECT 1 FROM pg_catalog.pg_attribute ta
+                                                             WHERE ta.attrelid = k.conrelid
+                                                               AND ta.attname = 'tenant_id'
+                                                               AND ta.attnum = ANY (k.conkey))))
                                      WHERE t.tgrelid = c.oid AND t.tgname = 'parent_fixed'), '?')
+                                 WHEN p.polname = 'tenant_rows' THEN 'TENANT'
                                  WHEN p.polname IS NULL THEN 'NONE'
                                  ELSE 'OTHER:' || p.polname END AS class
                         FROM pg_catalog.pg_class c
                             JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
                             LEFT JOIN shared.rls_unscoped_table u ON u.table_name = c.oid
                             LEFT JOIN pg_catalog.pg_policy p ON p.polrelid = c.oid
+                                AND p.polname <> 'tenant_scope'
                         WHERE n.nspname = ? AND c.relkind IN ('r', 'p')""")
                 .param(schema).query().listOfRows();
         return rows.stream().collect(Collectors.toMap(row -> (String) row.get("name"), row -> (String) row.get("class"),

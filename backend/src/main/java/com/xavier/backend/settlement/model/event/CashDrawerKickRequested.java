@@ -17,6 +17,6 @@ import org.springframework.modulith.NamedInterface;
  *                    publication stored before it existed, which never kicks
  */
 @NamedInterface("event")
-public record CashDrawerKickRequested(String sourceType, UUID sourceId, UUID storeId, UUID terminalId,
+public record CashDrawerKickRequested(UUID tenantId, String sourceType, UUID sourceId, UUID storeId, UUID terminalId,
                                       Instant requestedAt) {
 }

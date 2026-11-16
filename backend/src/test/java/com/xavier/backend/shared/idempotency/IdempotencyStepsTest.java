@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.xavier.backend.TestcontainersConfiguration;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.io.IOException;
 import java.net.URI;
 import java.sql.Timestamp;
@@ -48,6 +49,9 @@ class IdempotencyStepsTest {
     IdempotencyService idempotency;
 
     @Autowired
+    com.xavier.backend.shared.tenancy.TenantScopes tenantScopes;
+
+    @Autowired
     JdbcClient jdbc;
 
     @Autowired
@@ -89,7 +93,7 @@ class IdempotencyStepsTest {
         CountDownLatch releaseFirst = new CountDownLatch(1);
         AtomicInteger runs = new AtomicInteger();
 
-        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+        try (ExecutorService executor = Executors.newSingleThreadExecutor(bootstrapThreads())) {
             Future<ResponseEntity<Closed>> first = executor.submit(() ->
                     idempotency.executeSteps(scope, key, target, body, Closed.class, () -> {
                         runs.incrementAndGet();
@@ -124,7 +128,7 @@ class IdempotencyStepsTest {
         AtomicInteger effects = new AtomicInteger();
         List<Future<ResponseEntity<Closed>>> results = new ArrayList<>();
 
-        try (ExecutorService executor = Executors.newFixedThreadPool(retries)) {
+        try (ExecutorService executor = Executors.newFixedThreadPool(retries, bootstrapThreads())) {
             for (int i = 0; i < retries; i++) {
                 results.add(executor.submit(() -> {
                     await(start);
@@ -159,7 +163,7 @@ class IdempotencyStepsTest {
         CountDownLatch slowOwnerIsRunning = new CountDownLatch(1);
         CountDownLatch releaseSlowOwner = new CountDownLatch(1);
 
-        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+        try (ExecutorService executor = Executors.newSingleThreadExecutor(bootstrapThreads())) {
             Future<ResponseEntity<Closed>> slowOwner = executor.submit(() ->
                     idempotency.executeSteps(scope, key, target, body, Closed.class, () -> {
                         slowOwnerIsRunning.countDown();
@@ -184,7 +188,7 @@ class IdempotencyStepsTest {
     void anOwnerThatLostItsLeaseAndThenFailsDoesNotReleaseTheTakersLease() throws Exception {
         Blocked loser = new Blocked();
         Blocked taker = new Blocked();
-        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+        try (ExecutorService executor = Executors.newFixedThreadPool(2, bootstrapThreads())) {
             Future<ResponseEntity<Closed>> a = executor.submit(() -> loser.run(() -> {
                 throw new IllegalStateException("fiscal authority unreachable");
             }));
@@ -209,7 +213,7 @@ class IdempotencyStepsTest {
     @Test
     void anOwnerWhoseLeaseExpiredWithNoTakerStillCompletes() throws Exception {
         Blocked owner = new Blocked();
-        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+        try (ExecutorService executor = Executors.newSingleThreadExecutor(bootstrapThreads())) {
             Future<ResponseEntity<Closed>> a = executor.submit(() ->
                     owner.run(() -> ResponseEntity.ok(new Closed("slow but alone", 4))));
             await(owner.running);
@@ -228,7 +232,7 @@ class IdempotencyStepsTest {
     void anOwnerThatLostItsLeaseAndCompletesFirstStoresNothingTheTakersResponseIsStored() throws Exception {
         Blocked loser = new Blocked();
         Blocked taker = new Blocked();
-        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+        try (ExecutorService executor = Executors.newFixedThreadPool(2, bootstrapThreads())) {
             Future<ResponseEntity<Closed>> a = executor.submit(() ->
                     loser.run(() -> ResponseEntity.ok(new Closed("loser", 99))));
             await(loser.running);
@@ -456,5 +460,10 @@ class IdempotencyStepsTest {
             Thread.currentThread().interrupt();
             throw new IllegalStateException(e);
         }
+    }
+
+    /** Workers emulating concurrent requests: each runs in the bootstrap tenant, as a request does (D177). */
+    private java.util.concurrent.ThreadFactory bootstrapThreads() {
+        return task -> new Thread(() -> TenantTestSupport.inTenant(tenantScopes, TenantTestSupport.BOOTSTRAP, task));
     }
 }

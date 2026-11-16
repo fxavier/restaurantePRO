@@ -8,6 +8,7 @@ import com.xavier.backend.orders.OrdersFixtures.Shop;
 import com.xavier.backend.production.ProductionFixtures;
 import com.xavier.backend.production.ProductionModuleTest;
 import com.xavier.backend.settlement.model.event.ReceiptSlipRequested;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -77,7 +78,7 @@ class ReceiptSlipListenerTest {
     }
 
     private ReceiptSlipRequested slip(UUID payment, UUID onTerminal) {
-        return new ReceiptSlipRequested(payment, shop.store(), onTerminal,
+        return new ReceiptSlipRequested(TenantTestSupport.BOOTSTRAP, payment, shop.store(), onTerminal,
                 List.of("PAGAMENTO DE CONTA CORRENTE", "Valor pago: 30.00 MZN"));
     }
 

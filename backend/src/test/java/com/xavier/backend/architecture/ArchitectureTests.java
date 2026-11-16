@@ -84,6 +84,30 @@ class ArchitectureTests {
         ArchitectureRules.onlyConfigUsesHikari("com.xavier.backend").check(PRODUCTION);
     }
 
+    /** Security rule 1 (D177): no tenant from a controller parameter, path, query, header or request DTO. */
+    @Test
+    void noTenantIdFromRequests() {
+        ArchitectureRules.noTenantIdFromRequests("com.xavier.backend").check(PRODUCTION);
+    }
+
+    /** D185: every published or heard event carries UUID tenantId first. */
+    @Test
+    void eventsCarryTenantId() {
+        ArchitectureRules.eventsCarryTenantId("com.xavier.backend").check(PRODUCTION);
+    }
+
+    /** D186: no Spring or Caffeine cache outside the (empty) allow-list. */
+    @Test
+    void cachesAreTenantScoped() {
+        ArchitectureRules.cachesAreTenantScoped("com.xavier.backend").check(PRODUCTION);
+    }
+
+    /** D177: TenantContext is created only by config.security and TenantScopes. */
+    @Test
+    void onlyResolutionCreatesTenantContext() {
+        ArchitectureRules.onlyResolutionCreatesTenantContext("com.xavier.backend").check(PRODUCTION);
+    }
+
     static ArchRule[] forbiddenModuleDependencies() {
         return ArchitectureRules.forbiddenModuleDependencies("com.xavier.backend");
     }

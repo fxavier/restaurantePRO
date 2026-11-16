@@ -9,6 +9,7 @@ import com.xavier.backend.catalog.CatalogFixtures;
 import com.xavier.backend.catalog.Publications;
 import com.xavier.backend.dining.DiningFixtures;
 import com.xavier.backend.identity.IdentityFixtures;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -262,13 +263,14 @@ public class OrdersFixtures {
     public static <T> List<T> race(Callable<T> first, Callable<T> second) throws Exception {
         CountDownLatch start = new CountDownLatch(1);
         try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+            // each worker is a request or a listener of the bootstrap tenant (D185: every context is in a tenant)
             Future<T> a = pool.submit(() -> {
                 start.await();
-                return first.call();
+                return TenantTestSupport.inBootstrap(first).call();
             });
             Future<T> b = pool.submit(() -> {
                 start.await();
-                return second.call();
+                return TenantTestSupport.inBootstrap(second).call();
             });
             start.countDown();
             return List.of(a.get(60, TimeUnit.SECONDS), b.get(60, TimeUnit.SECONDS));

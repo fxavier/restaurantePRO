@@ -3,6 +3,7 @@ package com.xavier.backend.production;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.xavier.backend.settlement.model.event.CashDrawerKickRequested;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -57,7 +58,8 @@ public class DrawerKicks {
 
     /** The same event, as if settlement's clock read {@code requestedAt} when it recorded the payment or refund. */
     public void requested(Till till, String sourceType, UUID sourceId, Instant requestedAt) {
-        tx.executeWithoutResult(status -> events.publishEvent(new CashDrawerKickRequested(sourceType, sourceId,
+        tx.executeWithoutResult(status -> events.publishEvent(new CashDrawerKickRequested(TenantTestSupport.BOOTSTRAP,
+                sourceType, sourceId,
                 till.store(), till.terminal(), requestedAt)));
     }
 

@@ -487,7 +487,7 @@ The same applies to `inventory.stock_transfer_stores`.
 
 | id | item | owner |
 |---|---|---|
-| O1 | Whether Keycloak fine-grained admin permissions v2 can restrict `tenancy-provisioner` to the `pos-*`/`bridge-*` clients (D182). If not, the user chooses between a broader provisioner role and a dedicated admin realm. | S73, stop and ask |
+| O1 | Whether Keycloak fine-grained admin permissions v2 can restrict `tenancy-provisioner` to the `pos-*`/`bridge-*` clients (D182). If not, the user chooses between a broader provisioner role and a dedicated admin realm. | S73, stop and ask  **Resolved 2026-11-16 (R6 build, S75 evidence on Keycloak 26.8.0): FGAP v2 selects clients only by type or id, so `manage` on clients would let the provisioner rewrite other clients (admin console redirect URIs, `backoffice-bff`). Chosen: a dedicated realm `restaurantpro-devices` holding only `pos-*`/`bridge-*` clients and a `device-provisioner` with `manage-clients` in that realm only; `tenancy-provisioner` keeps organizations, members and invites in `restaurantpro` with no Clients permission. Amends D175 (realms, clients) and D182/D187 (terminal and bridge tokens carry the devices issuer). Alternatives rejected: broad rights + deny-list (fail-open for new clients); dynamic client registration (rotating registration tokens stored as secrets).** |
 | O2 | B8 spike result (D188 (a) or (b)). | S75 |
 | O3 | B6 production Keycloak hosting, after P75. | S75 / operations |
 | O4 | In-country data residency for the first contract (P75). | product |
