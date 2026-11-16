@@ -317,7 +317,8 @@ public class RowLevelSecurityCoverageTest {
      * Every table of {@code schema} is classified (D167): registered in {@code shared.rls_unscoped_table}, or protected
      * with ENABLE + FORCE, the canonical policy set of one helper ({@link #HELPER_OF_POLICIES}: {@code store_scope},
      * the four {@code store_or_all_*}, {@code parent_scope} or the four {@code store_or_all_parent_*}, compared with
-     * the same V1008/V1009 helper applied to a copy) and its {@code RS002} trigger. {@code specialTables} (D167/D168:
+     * the same V1008/V1009 helper applied to a copy) and its {@code RS002} trigger. A CHILD table's parent is read from
+     * the foreign key of its {@code parent_fixed} column: single-column, or {@code (tenant_id, x)} once converted. {@code specialTables} (D167/D168:
      * {@code audit_event}, {@code stock_transfer}, {@code stock_transfer_line}, {@code warehouse}, see
      * {@link #SPECIAL_TABLES}) need only ENABLE, FORCE and a policy; their own slice proves their policies.
      */
@@ -394,9 +395,13 @@ public class RowLevelSecurityCoverageTest {
                             FROM pg_catalog.pg_trigger t
                                 JOIN pg_catalog.pg_attribute a ON a.attrelid = t.tgrelid AND a.attnum = t.tgattr[0]
                                 JOIN pg_catalog.pg_constraint k ON k.conrelid = t.tgrelid AND k.contype = 'f'
-                                    AND k.conkey = ARRAY[a.attnum]
+                                    AND a.attnum = ANY (k.conkey)
+                                    AND (cardinality(k.conkey) = 1 OR (cardinality(k.conkey) = 2
+                                        AND EXISTS (SELECT 1 FROM pg_catalog.pg_attribute ta
+                                                    WHERE ta.attrelid = k.conrelid AND ta.attname = 'tenant_id'
+                                                      AND ta.attnum = ANY (k.conkey))))
                                 JOIN pg_catalog.pg_attribute pa ON pa.attrelid = k.confrelid
-                                    AND pa.attnum = k.confkey[1]
+                                    AND pa.attnum = k.confkey[array_position(k.conkey, a.attnum)]
                             WHERE t.tgrelid = ? AND t.tgname = 'parent_fixed'""")
                     .param(oid).query().listOfRows();
             if (parent.size() != 1) {
@@ -538,6 +543,48 @@ public class RowLevelSecurityCoverageTest {
             problems.add(table + ": not in shared.rls_tenant_table");
         }
         return problems;
+    }
+
+    /**
+     * The recipe makes an in-module foreign key composite, {@code (tenant_id, parent_id) REFERENCES parent (tenant_id,
+     * id)}: a converted CHILD table is still classified and canonical, its parent found through that key, as a
+     * single-column one still is for a module not yet converted.
+     */
+    @Test
+    void aConvertedChildTableIsFoundThroughItsCompositeForeignKey() {
+        JdbcClient owner = OwnerDatabase.shared().jdbc();
+        dropScratch(owner);
+        try {
+            OwnerDatabase.shared().tx(jdbc -> {
+                jdbc.sql("CREATE SCHEMA " + SCRATCH).update();
+                jdbc.sql("CREATE TABLE " + SCRATCH + ".parent (id uuid PRIMARY KEY, store_id uuid NOT NULL, "
+                        + "tenant_id uuid NOT NULL DEFAULT shared.rls_tenant_id(), UNIQUE (tenant_id, id))").update();
+                jdbc.sql("CREATE TABLE " + SCRATCH + ".child (id uuid PRIMARY KEY, parent_id uuid NOT NULL, "
+                        + "tenant_id uuid NOT NULL DEFAULT shared.rls_tenant_id(), UNIQUE (tenant_id, id), "
+                        + "FOREIGN KEY (tenant_id, parent_id) REFERENCES " + SCRATCH + ".parent (tenant_id, id))")
+                        .update();
+                jdbc.sql("CREATE TABLE " + SCRATCH + ".legacy_child (id uuid PRIMARY KEY, parent_id uuid NOT NULL "
+                        + "REFERENCES " + SCRATCH + ".parent (id))").update();
+                jdbc.sql("SELECT shared.rls_protect_store_table('" + SCRATCH + ".parent'), "
+                        + "shared.rls_protect_child_table('" + SCRATCH + ".child', 'parent_id', '" + SCRATCH
+                        + ".parent', 'id'), shared.rls_protect_child_table('" + SCRATCH + ".legacy_child', "
+                        + "'parent_id', '" + SCRATCH + ".parent', 'id')").query().listOfRows();
+            });
+
+            assertModuleClassified(SCRATCH);
+            assertTableTenantProtected(SCRATCH + ".child");
+            assertThat(com.xavier.backend.AppRoleSession.classification(SCRATCH))
+                    .containsEntry("child", "CHILD:" + SCRATCH + ".parent")
+                    .containsEntry("legacy_child", "CHILD:" + SCRATCH + ".parent");
+            CompositeForeignKeyCoverageTest.assertTableKeysIncludeTheTenant(SCRATCH + ".child");
+        } finally {
+            dropScratch(owner);
+        }
+    }
+
+    /** {@link #tenantProblems} as an assertion, for a module slice that converts one table at a time. */
+    public static void assertTableTenantProtected(String table) {
+        assertThat(tenantProblems(table)).as("tenant protection of %s", table).isEmpty();
     }
 
     /** The deparsed tenant predicate of {@code shared.rls_protect_tenant}, as pg_get_expr prints it. */
