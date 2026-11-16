@@ -156,11 +156,12 @@ class FlywayUpgradeTest {
 
     /**
      * The installation of {@link #theOldStoreOrAllPoliciesAreReplacedOnAnInstalledDatabase}: main before S70, so
-     * without S70's V1009/V5008 and without anything of R6, which came after (V1010 carries V1009's helper; every R6
-     * migration names {@code tenant_id}). Derived from the migration itself, so no converting slice edits this test.
+     * without S70's V1009/V5008 and without anything of R6, which came after (V1010 carries V1009's helper; an R6
+     * migration names {@code tenant_id} or the PLATFORM registry of V1010). Derived from the migration itself, so no
+     * converting slice edits this test.
      */
     static boolean installedBeforeS70(int version, String sql) {
-        return version != 1009 && version != 5008 && !sql.contains("tenant_id");
+        return version != 1009 && version != 5008 && !sql.contains("tenant_id") && !sql.contains("rls_platform_table");
     }
 
     @Test
@@ -171,6 +172,8 @@ class FlywayUpgradeTest {
                 .isTrue();
         assertThat(installedBeforeS70(1009, "CREATE OR REPLACE FUNCTION shared.rls_protect_store_or_all_table"))
                 .isFalse();
+        assertThat(installedBeforeS70(1012, "SELECT shared.rls_revoke_platform_writes(table_name) "
+                + "FROM shared.rls_platform_table")).isFalse();
     }
 
     /**

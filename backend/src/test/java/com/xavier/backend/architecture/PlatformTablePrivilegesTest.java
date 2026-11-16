@@ -21,9 +21,10 @@ import org.testcontainers.utility.MountableFile;
 /**
  * PLATFORM tables (D179) are shared by every tenant and have no tenant policy, so the pool must not write them: one
  * tenant would change them for all. {@code deploy/postgres/provision-roles.sql} grants data privileges on every table,
- * then takes the writes back from each PLATFORM table outside its allow-list. Checked on a database of its own, as an
- * installation lives: provisioned, migrated by the owner, provisioned again (every start), so no grant a migration
- * revoked can come back.
+ * and the owner's default privileges do the same for every table a migration creates; {@code
+ * shared.rls_revoke_platform_writes} (called when a table is registered PLATFORM, and by provisioning at every start)
+ * takes the writes back from each PLATFORM table outside its allow-list. Checked on a database of its own, as an
+ * installation lives: provisioned, migrated by the owner (first install), provisioned again (every start).
  */
 class PlatformTablePrivilegesTest {
 
@@ -37,6 +38,7 @@ class PlatformTablePrivilegesTest {
 
     private static JdbcClient admin;
     private static JdbcClient installation;
+    private static List<String> writableAfterTheFirstInstall;
 
     @BeforeAll
     static void provisionMigrateAndProvisionAgain() throws Exception {
@@ -51,6 +53,7 @@ class PlatformTablePrivilegesTest {
         provision();
         Flyway.configure().dataSource(url, DatabaseRoles.OWNER_ROLE, DatabaseRoles.ownerPassword())
                 .locations("classpath:db/migration").outOfOrder(true).load().migrate();
+        writableAfterTheFirstInstall = platformTablesThePoolWrites();
         provision();
     }
 
@@ -59,9 +62,19 @@ class PlatformTablePrivilegesTest {
         admin.sql("DROP DATABASE " + DATABASE + " WITH (FORCE)").update();
     }
 
+    /** The migrations take the writes back themselves: a first install is safe before any restart. */
+    @Test
+    void aFirstInstallLeavesThePoolNoWriteOnAPlatformTableOutsideTheAllowList() {
+        assertThat(writableAfterTheFirstInstall).isEmpty();
+    }
+
     @Test
     void afterProvisioningThePoolWritesNoPlatformTableOutsideTheAllowList() {
-        assertThat(installation.sql("""
+        assertThat(platformTablesThePoolWrites()).isEmpty();
+    }
+
+    private static List<String> platformTablesThePoolWrites() {
+        return installation.sql("""
                         SELECT t.name || ' ' || w.privilege
                         FROM (SELECT p.table_name, n.nspname || '.' || c.relname AS name
                               FROM shared.rls_platform_table p
@@ -71,7 +84,7 @@ class PlatformTablePrivilegesTest {
                         WHERE has_table_privilege(?, t.table_name, w.privilege) AND t.name <> ALL (?)
                         ORDER BY 1""")
                 .param(DatabaseRoles.APP_ROLE).param(WRITTEN_BY_THE_APPLICATION.toArray(String[]::new))
-                .query(String.class).list()).isEmpty();
+                .query(String.class).list();
     }
 
     @Test
