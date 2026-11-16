@@ -928,6 +928,10 @@ SELECT shared.rls_protect_tenant_table('inventory.consumption_policy_rule');
 SELECT shared.rls_register_platform('inventory.stock_unit',
                                     'Stock units: a seeded code list, identical for every tenant, written by migrations only (D114)');
 
+-- PLATFORM means no tenant policy, so the pool must not write it: one tenant changing a unit factor would change every
+-- tenant's stock (the units are written by migrations only).
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON inventory.stock_unit FROM restaurantpro_app;
+
 -- The D42 probe of a transfer (D168), now tenant-aware (D179): another tenant's transfer reads as absent (no row ->
 -- 404, existence never revealed), another store of the same tenant still answers its two stores (-> 403). The bound
 -- tenant is read first, so an unbound call raises RS003 even when no transfer matches. EXECUTE is the application

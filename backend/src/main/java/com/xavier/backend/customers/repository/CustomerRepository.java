@@ -19,7 +19,11 @@ public interface CustomerRepository extends JpaRepository<Customer, UUID> {
             ORDER BY c.name, c.id
             LIMIT :limit""";
 
-    /** Name contains, on the folded name (pg_trgm GIN), or an exact tax id (D72). */
+    /**
+     * Name contains, on the folded name, or an exact tax id (D72). ponytail: under row-level security {@code LIKE} is not leakproof, so no index serves this: it filters the
+     * tenant's customers (about 100k per tenant is the ceiling for a p95 inside the budget). Upgrade path when a
+     * tenant outgrows it: a tenant-leading trigram/GIN design or a search service.
+     */
     String SEARCH_BY_NAME = """
             SELECT c.* FROM customers.customer c
             WHERE c.name_search LIKE '%' || customers.fold(:namePart) || '%' OR c.tax_id = :taxId

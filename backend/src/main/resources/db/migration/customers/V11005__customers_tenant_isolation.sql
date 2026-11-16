@@ -91,6 +91,14 @@ CREATE INDEX customer_tax_id_ix_tenant ON customers.customer (tenant_id, tax_id)
 DROP INDEX customers.customer_tax_id_ix;
 ALTER INDEX customers.customer_tax_id_ix_tenant RENAME TO customer_tax_id_ix;
 
+-- The reversed-digits index leads with the tenant (the phone search is a leakproof range, D169). The trigram index on
+-- the folded name can serve no query under row-level security (LIKE is not leakproof), so it goes.
+CREATE INDEX customer_phone_digits_reversed_ix_tenant
+    ON customers.customer_phone (tenant_id, digits_reversed text_pattern_ops);
+DROP INDEX customers.customer_phone_digits_reversed_ix;
+ALTER INDEX customers.customer_phone_digits_reversed_ix_tenant RENAME TO customer_phone_digits_reversed_ix;
+DROP INDEX customers.customer_name_search_trgm_ix;
+
 -- (5) In-module foreign keys become composite (foreign keys bypass RLS, D179): NOT VALID, VALIDATE, then drop the
 -- single-column one and keep its name.
 ALTER TABLE customers.customer_phone
