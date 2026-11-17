@@ -32,6 +32,21 @@ public class CompositeForeignKeyCoverageTest {
         }
     }
 
+    /**
+     * A88 strict (S76): the keys of every schema of the migrations, the shared kernel included, pair or include the
+     * tenant; the converted modules are all of them ({@code RowLevelSecurityCoverageTest} proves it), so no schema is
+     * skipped for being "not converted yet".
+     */
+    @Test
+    void everySchemaOfTheMigrationsHasTenantKeys() {
+        java.util.Set<String> schemas = new java.util.TreeSet<>(MigrationNumberingTest.BLOCKS.keySet());
+        assertThat(RowLevelSecurityCoverageTest.tenantProtectedModules()).as("every module is checked")
+                .containsAll(schemas.stream().filter(schema -> !"shared".equals(schema)).toList());
+        for (String schema : schemas) {
+            assertModuleKeysIncludeTheTenant(schema);
+        }
+    }
+
     /** The check is red-capable: a single-column foreign key and a business key without the tenant are reported. */
     @Test
     void aSingleColumnForeignKeyAndABusinessKeyWithoutTheTenantAreCaught() {

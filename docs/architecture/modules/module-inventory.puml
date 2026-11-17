@@ -28,6 +28,8 @@ System_Boundary("BackendApplication_boundary", "BackendApplication", $tags="") {
 
 }
 
+Rel(BackendApplication.BackendApplication.Audit, BackendApplication.BackendApplication.Access, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Audit, BackendApplication.BackendApplication.Sharedkernel, "uses", $techn="", $tags="", $link="")
 Rel(BackendApplication.BackendApplication.Inventory, BackendApplication.BackendApplication.Orders, "listens to", $techn="", $tags="", $link="")
 Rel(BackendApplication.BackendApplication.Inventory, BackendApplication.BackendApplication.Organization, "uses", $techn="", $tags="", $link="")
 Rel(BackendApplication.BackendApplication.Inventory, BackendApplication.BackendApplication.Access, "uses", $techn="", $tags="", $link="")
@@ -40,17 +42,15 @@ Rel(BackendApplication.BackendApplication.Orders, BackendApplication.BackendAppl
 Rel(BackendApplication.BackendApplication.Orders, BackendApplication.BackendApplication.Sharedkernel, "uses", $techn="", $tags="", $link="")
 Rel(BackendApplication.BackendApplication.Orders, BackendApplication.BackendApplication.Audit, "uses", $techn="", $tags="", $link="")
 Rel(BackendApplication.BackendApplication.Orders, BackendApplication.BackendApplication.Organization, "uses", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Access, BackendApplication.BackendApplication.Sharedkernel, "uses", $techn="", $tags="", $link="")
 Rel(BackendApplication.BackendApplication.Sharedkernel, BackendApplication.BackendApplication.Access, "depends on", $techn="", $tags="", $link="")
 Rel(BackendApplication.BackendApplication.Catalog, BackendApplication.BackendApplication.Access, "uses", $techn="", $tags="", $link="")
 Rel(BackendApplication.BackendApplication.Catalog, BackendApplication.BackendApplication.Sharedkernel, "uses", $techn="", $tags="", $link="")
 Rel(BackendApplication.BackendApplication.Catalog, BackendApplication.BackendApplication.Audit, "uses", $techn="", $tags="", $link="")
 Rel(BackendApplication.BackendApplication.Catalog, BackendApplication.BackendApplication.Organization, "uses", $techn="", $tags="", $link="")
-Rel(BackendApplication.BackendApplication.Organization, BackendApplication.BackendApplication.Sharedkernel, "depends on", $techn="", $tags="", $link="")
+Rel(BackendApplication.BackendApplication.Organization, BackendApplication.BackendApplication.Sharedkernel, "uses", $techn="", $tags="", $link="")
 Rel(BackendApplication.BackendApplication.Organization, BackendApplication.BackendApplication.Audit, "uses", $techn="", $tags="", $link="")
 Rel(BackendApplication.BackendApplication.Organization, BackendApplication.BackendApplication.Access, "uses", $techn="", $tags="", $link="")
-Rel(BackendApplication.BackendApplication.Access, BackendApplication.BackendApplication.Sharedkernel, "uses", $techn="", $tags="", $link="")
-Rel(BackendApplication.BackendApplication.Audit, BackendApplication.BackendApplication.Access, "uses", $techn="", $tags="", $link="")
-Rel(BackendApplication.BackendApplication.Audit, BackendApplication.BackendApplication.Sharedkernel, "uses", $techn="", $tags="", $link="")
 
 SHOW_LEGEND(true)
 hide stereotypes

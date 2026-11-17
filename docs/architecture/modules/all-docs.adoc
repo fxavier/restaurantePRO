@@ -69,3 +69,7 @@ include::module-settlement.adoc[]
 plantuml::module-shared.puml[,,format=svg]
 include::module-shared.adoc[]
 
+== Tenancy
+plantuml::module-tenancy.puml[,,format=svg]
+include::module-tenancy.adoc[]
+

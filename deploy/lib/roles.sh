@@ -52,7 +52,13 @@ FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace,
               UNION ALL
               SELECT 'cannot SELECT, INSERT, UPDATE and DELETE'
               WHERE c.oid IS DISTINCT FROM to_regclass('public.flyway_schema_history')
-                AND NOT has_table_privilege('restaurantpro_app', c.oid, 'SELECT, INSERT, UPDATE, DELETE')) q(p)
+                AND n.nspname <> 'tenancy'
+                AND NOT has_table_privilege('restaurantpro_app', c.oid, 'SELECT, INSERT, UPDATE, DELETE')
+              UNION ALL
+              -- R6 (D177): the tenancy tables are reached only through the allow-listed SECURITY DEFINER functions
+              SELECT 'has ' || x || ' (R6: no privilege on tenancy tables)'
+              FROM unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE']) x
+              WHERE n.nspname = 'tenancy' AND has_table_privilege('restaurantpro_app', c.oid, x)) q(p)
 WHERE c.relkind IN ('r', 'p') AND n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg\_%'
 ORDER BY 1;
 SELECT 'restaurantpro_app can ' || x || ' public.flyway_schema_history'
@@ -62,6 +68,12 @@ WHERE to_regclass('public.flyway_schema_history') IS NOT NULL
 SELECT 'restaurantpro_app can run the console function ' || f
 FROM unnest(:'functions'::text[]) f
 WHERE to_regprocedure(f) IS NOT NULL AND has_function_privilege('restaurantpro_app', to_regprocedure(f), 'EXECUTE');
+SELECT 'restaurantpro_app can run ' || p.oid::regprocedure || ' (R6: only the SECURITY DEFINER tenancy functions)'
+FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+WHERE n.nspname = 'tenancy' AND NOT p.prosecdef AND p.prokind = 'f'
+  AND p.prorettype <> 'trigger'::regtype
+  AND has_function_privilege('restaurantpro_app', p.oid, 'EXECUTE')
+ORDER BY 1;
 SELECT 'restaurantpro_app can CREATE in schema ' || n.nspname
 FROM pg_namespace n
 WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg\_%'

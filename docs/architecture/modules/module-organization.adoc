@@ -7,6 +7,11 @@
 
 * `c.x.b.o.OrganizationApi`
 |Bean references
-|* `c.x.b.a.AuditLog` (in Audit)
+|* `c.x.b.s.tenancy.TenantScopes` (in Shared kernel)
+* `c.x.b.a.AuditLog` (in Audit)
 * `c.x.b.a.AccessPolicy` (in Access)
+* `c.x.b.t.TenancyApi` (in Tenancy)
+|Events listened to
+|* `c.x.b.o.model.event.TerminalRevoked` (async) 
+* `c.x.b.t.model.event.TenantProvisioned` (async) 
 |===
