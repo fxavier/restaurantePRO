@@ -6,6 +6,7 @@
 -- enrolment between the key's registration at Keycloak and the commit. A used code keeps its hash and that key until
 -- it expires or is replaced, so the same device retrying after a lost answer gets the same answer (G5 review 5). The device's own TERMINAL or BRIDGE membership
 -- is kept so revocation revokes it in the same transaction.
+-- Runs after V2005: it drops the device-token key V2005 rebuilt as UNIQUE (tenant_id, device_token_hash).
 ALTER TABLE organization.terminal
     DROP CONSTRAINT terminal_active_has_token_ck,
     DROP CONSTRAINT terminal_device_token_hash_format_ck,
