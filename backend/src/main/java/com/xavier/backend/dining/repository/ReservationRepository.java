@@ -36,17 +36,29 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
     Optional<Instant> nextForTable(UUID tableId, Instant after, Instant until);
 
     /**
-     * BOOKED reservations whose no-show grace has passed at {@code now} (the store's setting, else
-     * {@code defaultGrace}), locked {@code FOR UPDATE SKIP LOCKED} (D46): a row a request is changing is left for
-     * the next run.
+     * BOOKED, and its no-show grace (the store's setting, else {@code :defaultGrace}) has passed at {@code :now}: the
+     * one definition of "due" shared by the two locking queries below.
      */
-    @Query(nativeQuery = true, value = """
-            SELECT r.id FROM dining.reservation r
+    String DUE_FOR_NO_SHOW = """
+            FROM dining.reservation r
             LEFT JOIN dining.dining_settings s ON s.store_id = r.store_id
             WHERE r.status = 'BOOKED' AND r.starts_at <= :now
               AND r.starts_at + make_interval(mins => coalesce(s.no_show_grace_minutes, :defaultGrace)) <= :now
+            """;
+
+    /**
+     * Up to {@code limit} reservations due for no-show, locked {@code FOR UPDATE SKIP LOCKED} (D46): a row a request
+     * is changing is left for the next run.
+     */
+    @Query(nativeQuery = true, value = "SELECT r.id " + DUE_FOR_NO_SHOW + """
             ORDER BY r.starts_at, r.id
             LIMIT :limit
             FOR UPDATE OF r SKIP LOCKED""")
     List<UUID> lockDueForNoShow(Instant now, int defaultGrace, int limit);
+
+    /** {@code id} locked {@code FOR UPDATE SKIP LOCKED} if it is still due for no-show; no other row is locked. */
+    @Query(nativeQuery = true, value = "SELECT r.id " + DUE_FOR_NO_SHOW + """
+              AND r.id = :id
+            FOR UPDATE OF r SKIP LOCKED""")
+    Optional<UUID> lockIfDueForNoShow(UUID id, Instant now, int defaultGrace);
 }
