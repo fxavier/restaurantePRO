@@ -4,6 +4,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 
 import com.xavier.backend.TestcontainersConfiguration;
 import org.junit.jupiter.api.Test;
@@ -15,8 +16,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 /**
  * Local development ({@code restaurantpro.dev.open-api-docs=true}, set by run-local.sh): the docs load before login,
- * while data endpoints still need a token. (Swagger UI still echoes an XSRF-TOKEN cookie, by the
- * {@code springdoc.swagger-ui.csrf} setting of application.yaml, which S72 may not edit; the API ignores it.)
+ * while data endpoints still need a token. The API is stateless with no CSRF (R6), so Swagger UI echoes no XSRF cookie.
  */
 @SpringBootTest(properties = "restaurantpro.dev.open-api-docs=true")
 @AutoConfigureMockMvc
@@ -34,9 +34,9 @@ class ApiDocsOpenInDevTest {
     }
 
     @Test
-    void swaggerUiSendsTheCsrfTokenOnWrites() throws Exception {
+    void swaggerUiEchoesNoCsrfCookie() throws Exception {
         mvc.perform(get("/swagger-ui/swagger-initializer.js"))
                 .andExpect(status().isOk())
-                .andExpect(content().string(containsString("XSRF-TOKEN")));
+                .andExpect(content().string(not(containsString("XSRF-TOKEN"))));
     }
 }
