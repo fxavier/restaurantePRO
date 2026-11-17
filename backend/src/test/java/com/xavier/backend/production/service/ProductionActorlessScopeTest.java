@@ -13,6 +13,7 @@ import com.xavier.backend.production.ProductionModuleTest;
 import com.xavier.backend.production.TcpFakePrinter;
 import com.xavier.backend.settlement.model.event.ReceiptSlipRequested;
 import com.xavier.backend.shared.tenancy.StrictTenantScope;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -51,6 +52,9 @@ class ProductionActorlessScopeTest {
 
     @Autowired
     PrintWorker worker;
+
+    @Autowired
+    TenantScopes tenants;
 
     @Autowired
     ProductionFixtures fixtures;
@@ -163,13 +167,14 @@ class ProductionActorlessScopeTest {
      * then be unset. The scope ends with the setup, so the test body is actor-less and unscoped again.
      */
     private <T> T asFixture(Callable<T> setup) {
-        return StoreScopeTestSupport.inStrictFixture(() -> {
-            try {
-                return setup.call();
-            } catch (Exception e) {
-                throw new IllegalStateException(e);
-            }
-        });
+        return StoreScopeTestSupport.inStrictFixture(() -> TenantTestSupport.inTenant(tenants,
+                TenantTestSupport.BOOTSTRAP, () -> {
+                    try {
+                        return setup.call();
+                    } catch (Exception e) {
+                        throw new IllegalStateException(e);
+                    }
+                }));
     }
 
     private Map<UUID, String> jobsOf(List<UUID> payments) {
