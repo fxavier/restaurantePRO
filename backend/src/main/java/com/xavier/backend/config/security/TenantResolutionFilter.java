@@ -8,6 +8,7 @@ import com.xavier.backend.access.SystemScope;
 import com.xavier.backend.shared.tenancy.MembershipKind;
 import com.xavier.backend.shared.tenancy.TenantContext;
 import com.xavier.backend.shared.tenancy.TenantScopes;
+import com.xavier.backend.tenancy.MembershipSelectionRequiredException;
 import com.xavier.backend.tenancy.TenancyApi;
 import com.xavier.backend.tenancy.model.dto.Membership;
 import com.xavier.backend.tenancy.model.dto.TenantStatus;
@@ -105,7 +106,7 @@ final class TenantResolutionFilter extends OncePerRequestFilter {
         try {
             membership = tenancy.resolve(issuer, jwt.getSubject(), requested.orElse(null),
                     realm == Realm.OPS ? SUPPORT : ACCOUNT);
-        } catch (IllegalStateException several) {
+        } catch (MembershipSelectionRequiredException several) {
             problems.refuse(response, HttpStatus.BAD_REQUEST, "TENANT_SELECTION_REQUIRED",
                     "Choose a tenant with X-Tenant-Id; GET /api/v1/auth/tenants lists yours.");
             return;
