@@ -1,0 +1,44 @@
+spring:
+  application:
+    name: bff
+  security:
+    oauth2:
+      client:
+        registration:
+          # Registration id "keycloak" matches the redirect URI registered on backoffice-bff
+          # (deploy/keycloak/realm-restaurantpro.json): {baseUrl}/login/oauth2/code/keycloak
+          keycloak:
+            provider: keycloak
+            client-id: backoffice-bff
+            client-authentication-method: private_key_jwt
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+            scope: openid
+        provider:
+          keycloak:
+            issuer-uri: ${RESTAURANTPRO_OIDC_TENANT_ISSUER}
+
+server:
+  # Matches the redirect URI and web origin registered on backoffice-bff
+  port: 8443
+  servlet:
+    session:
+      # D175: SSO idle 30 min
+      timeout: 30m
+      cookie:
+        # __Host- prefix: Secure, Path=/ and no Domain, so a sibling subdomain cannot set or read it
+        name: __Host-bff-session
+        http-only: true
+        secure: true
+        same-site: lax
+        path: /
+
+restaurantpro:
+  bff:
+    backend-url: ${RESTAURANTPRO_BACKEND_URL:http://localhost:8080}
+    # A private JWK (RSA or EC, with "kid") registered on backoffice-bff for private_key_jwt.
+    client-key-file: ${RESTAURANTPRO_BFF_CLIENT_KEY_FILE}
+    backend-timeout: PT30S
+    idp-connect-timeout: PT5S
+    idp-read-timeout: PT10S
+    max-request-body: 1MB
