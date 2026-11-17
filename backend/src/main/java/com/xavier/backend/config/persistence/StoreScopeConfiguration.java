@@ -29,10 +29,11 @@ public class StoreScopeConfiguration {
     @Bean
     static TenantBindingTransactionManager transactionManager(ObjectProvider<TenantScopes> tenants,
                                                               ObjectProvider<StoreScopes> stores,
+                                                              ObjectProvider<MeterRegistry> meters,
                                                               Environment environment,
                                                               ObjectProvider<TransactionManagerCustomizers>
                                                                       customizers) {
-        TenantBindingTransactionManager transactionManager = new TenantBindingTransactionManager(tenants, stores,
+        TenantBindingTransactionManager transactionManager = new TenantBindingTransactionManager(tenants, stores, meters,
                 StoreScopeEnforcement.of(environment));
         customizers.ifAvailable(each -> each.customize(transactionManager));
         return transactionManager;

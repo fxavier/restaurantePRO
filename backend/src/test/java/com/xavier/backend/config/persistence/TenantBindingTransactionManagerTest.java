@@ -73,6 +73,8 @@ class TenantBindingTransactionManagerTest {
     ObjectProvider<StoreScopes> storeProvider;
     @Autowired
     EntityManagerFactory entityManagerFactory;
+    @Autowired
+    io.micrometer.core.instrument.MeterRegistry meters;
 
     @BeforeAll
     static void scratchTable() {
@@ -307,6 +309,25 @@ class TenantBindingTransactionManagerTest {
         } catch (Exception e) {
             throw new IllegalStateException(e);
         }
+    }
+
+    /**
+     * S77 (F1): a startup-only scope, so no scheduled job of this context begins one at the same time; on its own
+     * thread, as a job runs (the test thread carries the test's mock request, so it would count as a request).
+     */
+    @Test
+    void oneBeginCountsOneTransactionUnderItsOriginKindAndNoTenant() throws Exception {
+        TransactionCount count = new TransactionCount(meters);
+        Map<String, Long> before = count.snapshot();
+
+        CompletableFuture.runAsync(() -> tenants.run(TenantTestSupport.A, SystemScope.REPORTING_RECOVERY,
+                () -> new TransactionTemplate(transactions).executeWithoutResult(status -> pid())))
+                .get(30, TimeUnit.SECONDS);
+
+        assertThat(count.since(before)).containsEntry("system:REPORTING_RECOVERY", 1L);
+        assertThat(meters.find(TenantBindingTransactionManager.TRANSACTIONS).counters()).isNotEmpty()
+                .allSatisfy(counter -> assertThat(counter.getId().getTags())
+                        .extracting(io.micrometer.core.instrument.Tag::getKey).containsExactly("origin"));
     }
 
     @Test
