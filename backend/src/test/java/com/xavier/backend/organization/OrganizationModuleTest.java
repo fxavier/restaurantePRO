@@ -12,14 +12,14 @@ import org.springframework.modulith.test.ApplicationModuleTest;
 import org.springframework.test.context.TestPropertySource;
 
 /**
- * Boots the organization module (+ shared, access, audit) on the shared Testcontainers PostgreSQL, with
+ * Boots the organization module (+ shared, access, audit, tenancy) on the shared Testcontainers PostgreSQL, with
  * bootstrap settings so the company exists. One annotation keeps every organization test on one cached
  * context. The database is shared by the whole test JVM: never assume empty tables.
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
-@ApplicationModuleTest(extraIncludes = {"shared", "access", "audit"})
+@ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "tenancy"})
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, MutableClock.Config.class})
 @TestPropertySource(properties = {

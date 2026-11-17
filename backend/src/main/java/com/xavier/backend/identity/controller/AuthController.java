@@ -18,8 +18,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * The caller's session and the POS PIN login (spec §9 "Sessões", D26, D182). BackOffice login is Keycloak's, through
- * the BFF (D175, P69). The POS routes here are interim until S73 (terminal identified by its R2 device token; the POS
- * session token answered by the login and sent back as {@code X-Pos-Session}).
+ * the BFF (D175, P69). The POS routes here run on the terminal's own token (D182): the PIN login answers the POS session
+ * token, which the terminal sends back as {@code X-Pos-Session} with its token on every POS request.
  */
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -39,11 +39,10 @@ class AuthController {
         this.logouts = logouts;
     }
 
-    /** The terminal is identified by its device token (from enrollment); a missing header is refused like a bad one. */
+    /** The terminal is the one of the request's token (its {@code TERMINAL} membership). */
     @PostMapping("/pos-login")
-    SessionView posLogin(@RequestHeader(name = "X-Terminal-Token", required = false) String terminalToken,
-                         @Valid @RequestBody PosLoginRequest body) {
-        return posLogins.login(terminalToken, body.employeeCode(), body.pin());
+    SessionView posLogin(@Valid @RequestBody PosLoginRequest body) {
+        return posLogins.login(body.employeeCode(), body.pin());
     }
 
     /** After a manager's PIN reset: the same POS session now holds the employee's authorities. */

@@ -7,14 +7,16 @@ import com.xavier.backend.identity.repository.EmployeeStoreAssignmentRepository;
 import com.xavier.backend.organization.OrganizationApi;
 import com.xavier.backend.organization.model.dto.StoreSummary;
 import com.xavier.backend.organization.model.dto.TerminalSummary;
+import com.xavier.backend.shared.tenancy.MembershipKind;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
- * POS login: employee code + PIN on an enrolled terminal (D26; the terminal is still its R2 device token until S73).
- * It opens a POS session scoped to the terminal's store ({@link TerminalSessionService}, D182): the employee's
+ * POS login: employee code + PIN on an enrolled terminal (D26, D182), on top of the terminal's own token: the terminal
+ * is the principal of the request's {@code TERMINAL} membership, never a value of the request. It opens a POS session scoped to the terminal's store ({@link TerminalSessionService}, D182): the employee's
  * authorities in that store only (D27 amended), resolved again on every request, and none at all while the employee
  * still has a PIN a manager set ({@code mustChangePin}, see {@link PinChangeService}). Every refusal is the same
  * {@link InvalidCredentialsException} (401); the reason goes to a WARN log line, never the PIN or a token.
@@ -30,10 +32,12 @@ public class PosLoginService {
     private final AuthorityResolver authorities;
     private final LoginAudit audit;
     private final TerminalSessionService sessions;
+    private final TenantScopes tenants;
 
     PosLoginService(OrganizationApi organization, PinVerification pins,
                     EmployeeStoreAssignmentRepository assignments, AuthorityResolver authorities, LoginAudit audit,
-                    TerminalSessionService sessions) {
+                    TerminalSessionService sessions, TenantScopes tenants) {
+        this.tenants = tenants;
         this.organization = organization;
         this.pins = pins;
         this.assignments = assignments;
@@ -47,9 +51,11 @@ public class PosLoginService {
      *
      * @return the session, with its POS session token
      */
-    public SessionView login(String deviceToken, String employeeCode, String pin) {
-        TerminalSummary terminal = organization.findTerminalByDeviceToken(deviceToken)
-                .orElseThrow(() -> refused(employeeCode, null, "unknown, revoked or missing terminal token"));
+    public SessionView login(String employeeCode, String pin) {
+        TerminalSummary terminal = tenants.current().filter(context -> context.kind() == MembershipKind.TERMINAL)
+                .flatMap(context -> organization.findTerminal(context.principalId()))
+                .filter(TerminalSummary::activeTerminal)
+                .orElseThrow(() -> refused(employeeCode, null, "no enrolled terminal behind the request's token"));
         if (!organization.findStore(terminal.storeId()).map(StoreSummary::active).orElse(false)) {
             throw refused(employeeCode, terminal, "store inactive");
         }

@@ -5,7 +5,7 @@
  * named interfaces. Everything else is internal.
  */
 @ApplicationModule(displayName = "Organization",
-        allowedDependencies = {"shared", "audit", "access", "tenancy :: event"})
+        allowedDependencies = {"shared", "audit", "access", "tenancy", "tenancy :: dto", "tenancy :: event"})
 package com.xavier.backend.organization;
 
 import org.springframework.modulith.ApplicationModule;

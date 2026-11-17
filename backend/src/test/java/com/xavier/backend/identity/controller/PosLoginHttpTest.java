@@ -85,16 +85,18 @@ class PosLoginHttpTest {
         Employee employee = fixtures.employee(PIN, storeA, IdentityFixtures.WAITER);
 
         mvc.perform(posLoginRequest(null, employee.code(), PIN)).andExpect(status().isUnauthorized());
-        mvc.perform(posLoginRequest("not-a-device-token", employee.code(), PIN)).andExpect(status().isUnauthorized());
+        // a valid token of a client that is no enrolled terminal (no TERMINAL membership, D182)
+        mvc.perform(posLoginRequest(new Terminal(UUID.randomUUID(), storeA, "pos-" + UUID.randomUUID()),
+                employee.code(), PIN)).andExpect(status().isForbidden());
         fixtures.revoke(terminalA);
-        mvc.perform(posLoginRequest(terminalA.token(), employee.code(), PIN)).andExpect(status().isUnauthorized());
+        mvc.perform(posLoginRequest(terminalA, employee.code(), PIN)).andExpect(status().isForbidden());
     }
 
     @Test
     void anEmployeeNotAssignedToTheTerminalsStoreIsRefused() throws Exception {
         Employee elsewhere = fixtures.employee(PIN, fixtures.store(), IdentityFixtures.WAITER);
 
-        mvc.perform(posLoginRequest(terminalA.token(), elsewhere.code(), PIN)).andExpect(status().isUnauthorized());
+        mvc.perform(posLoginRequest(terminalA, elsewhere.code(), PIN)).andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -102,7 +104,7 @@ class PosLoginHttpTest {
         Employee employee = fixtures.employee(PIN, storeA, IdentityFixtures.WAITER);
         fixtures.deactivateStore(storeA);
 
-        mvc.perform(posLoginRequest(terminalA.token(), employee.code(), PIN)).andExpect(status().isUnauthorized());
+        mvc.perform(posLoginRequest(terminalA, employee.code(), PIN)).andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -110,7 +112,7 @@ class PosLoginHttpTest {
         Employee employee = fixtures.employee(PIN, storeA, IdentityFixtures.WAITER);
 
         for (int i = 0; i < 5; i++) {
-            mvc.perform(posLoginRequest(terminalA.token(), employee.code(), WRONG_PIN))
+            mvc.perform(posLoginRequest(terminalA, employee.code(), WRONG_PIN))
                     .andExpect(status().isUnauthorized());
         }
 
@@ -121,7 +123,7 @@ class PosLoginHttpTest {
                 .param("id", employee.id().toString()).param("terminal", terminalA.id()).param("store", storeA)
                 .query(Long.class).single()).isEqualTo(1);
         // locked: even the right PIN is refused
-        mvc.perform(posLoginRequest(terminalA.token(), employee.code(), PIN)).andExpect(status().isUnauthorized());
+        mvc.perform(posLoginRequest(terminalA, employee.code(), PIN)).andExpect(status().isUnauthorized());
         assertThat(output.getAll()).contains("POS login refused").doesNotContain("\"" + WRONG_PIN + "\"")
                 .doesNotContain("pin=" + WRONG_PIN);
     }
@@ -130,11 +132,11 @@ class PosLoginHttpTest {
     void aCorrectPinResetsTheFailureCount() throws Exception {
         Employee employee = fixtures.employee(PIN, storeA, IdentityFixtures.WAITER);
         for (int i = 0; i < 4; i++) {
-            mvc.perform(posLoginRequest(terminalA.token(), employee.code(), WRONG_PIN));
+            mvc.perform(posLoginRequest(terminalA, employee.code(), WRONG_PIN));
         }
 
         fixtures.posLogin(terminalA, employee, PIN);
-        mvc.perform(posLoginRequest(terminalA.token(), employee.code(), WRONG_PIN));
+        mvc.perform(posLoginRequest(terminalA, employee.code(), WRONG_PIN));
 
         assertThat(locked(employee)).isFalse();
         assertThat(failedAttempts(employee)).isEqualTo(1);
@@ -165,7 +167,7 @@ class PosLoginHttpTest {
                         .contentType(MediaType.APPLICATION_JSON).content("{\"pin\": \"135790\"}"))
                 .andExpect(status().isOk());
 
-        mvc.perform(posLoginRequest(terminalA.token(), employee.code(), PIN)).andExpect(status().isUnauthorized());
+        mvc.perform(posLoginRequest(terminalA, employee.code(), PIN)).andExpect(status().isUnauthorized());
         fixtures.posLogin(terminalA, employee, "135790");
         assertThat(audits("EMPLOYEE_PIN_RESET", employee)).isEqualTo(1);
     }
@@ -176,7 +178,7 @@ class PosLoginHttpTest {
         CountDownLatch start = new CountDownLatch(1);
         Callable<Integer> attempt = () -> {
             start.await();
-            return mvc.perform(posLoginRequest(terminalA.token(), employee.code(), WRONG_PIN))
+            return mvc.perform(posLoginRequest(terminalA, employee.code(), WRONG_PIN))
                     .andReturn().getResponse().getStatus();
         };
 
@@ -195,6 +197,7 @@ class PosLoginHttpTest {
         assertThat(locked(employee)).as("all five failures counted").isTrue();
     }
 
+    /** D182: the revoked terminal is refused at once (its membership); its sessions are then ended too. */
     @Test
     void revokingTheTerminalEndsItsPosSessions() throws Exception {
         Employee employee = fixtures.employee(PIN, storeA, IdentityFixtures.WAITER);
@@ -203,8 +206,10 @@ class PosLoginHttpTest {
 
         fixtures.revoke(terminalA);
 
-        Awaitility.await().atMost(Duration.ofSeconds(10)).untilAsserted(() ->
-                mvc.perform(get("/api/v1/auth/pos-session").with(session)).andExpect(status().isUnauthorized()));
+        mvc.perform(get("/api/v1/auth/pos-session").with(session)).andExpect(status().isForbidden());
+        Awaitility.await().atMost(Duration.ofSeconds(10)).until(() -> jdbc.sql(
+                        "SELECT count(*) FROM identity.terminal_session WHERE terminal_id = :terminal")
+                .param("terminal", terminalA.id()).query(Long.class).single() == 0);
     }
 
     @Test
@@ -247,7 +252,7 @@ class PosLoginHttpTest {
     private Employee lockedEmployee() throws Exception {
         Employee employee = fixtures.employee(PIN, storeA, IdentityFixtures.WAITER);
         for (int i = 0; i < 5; i++) {
-            mvc.perform(posLoginRequest(terminalA.token(), employee.code(), WRONG_PIN));
+            mvc.perform(posLoginRequest(terminalA, employee.code(), WRONG_PIN));
         }
         assertThat(locked(employee)).isTrue();
         return employee;

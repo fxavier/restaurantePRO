@@ -26,14 +26,16 @@ public final class TrustedRealms {
 
     /**
      * @param tenantIssuer the {@code restaurantpro} issuer; blank = not trusted
-     * @param opsIssuer    the {@code restaurantpro-ops} issuer; blank = not trusted
-     * @param keys         the key source of an issuer
+     * @param opsIssuer     the {@code restaurantpro-ops} issuer; blank = not trusted
+     * @param devicesIssuer the {@code restaurantpro-devices} issuer (terminals and bridges); blank = not trusted
+     * @param keys          the key source of an issuer
      */
-    public static TrustedRealms of(String tenantIssuer, String opsIssuer,
+    public static TrustedRealms of(String tenantIssuer, String opsIssuer, String devicesIssuer,
                                    Function<String, JWKSource<SecurityContext>> keys) {
         Map<Realm, Issuer> issuers = new EnumMap<>(Realm.class);
         put(issuers, Realm.TENANT, tenantIssuer, keys);
         put(issuers, Realm.OPS, opsIssuer, keys);
+        put(issuers, Realm.DEVICES, devicesIssuer, keys);
         return new TrustedRealms(issuers);
     }
 

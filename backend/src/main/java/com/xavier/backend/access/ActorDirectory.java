@@ -21,8 +21,9 @@ public interface ActorDirectory {
     Optional<Actor> support(UUID grantId);
 
     /**
-     * The employee of an interim POS session token ({@code X-Pos-Session}, until S73), on its terminal and store; the
-     * session's idle time restarts.
+     * The employee of a POS session token ({@code X-Pos-Session}, D182) opened on {@code terminalId} (the terminal of
+     * the request's {@code TERMINAL} membership), on that terminal's store; the session's idle time restarts. A session
+     * of another terminal is empty, as an unknown or expired one.
      */
-    Optional<Actor> posSession(String token);
+    Optional<Actor> posSession(String token, UUID terminalId);
 }

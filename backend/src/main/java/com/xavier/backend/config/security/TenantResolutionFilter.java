@@ -38,9 +38,10 @@ import org.springframework.web.filter.OncePerRequestFilter;
 /**
  * D177: the tenant of a request comes from an authorised membership of the token's {@code (iss, sub)}, never from the
  * request alone. After the bearer token is valid (D176): {@code X-Tenant-Id}, when present, only selects among the
- * caller's memberships (malformed → 400 {@code TENANT_SELECTION_INVALID}); the membership is read on every request
+ * caller's memberships (a device has exactly one and never selects, D182) (malformed → 400 {@code TENANT_SELECTION_INVALID}); the membership is read on every request
  * ({@code tenancy.resolve_membership}, P73 as amended: no cache), with the kinds of the token's realm (tenant realm:
- * {@code ACCOUNT}; ops realm: {@code SUPPORT} only). None → 403 {@code TENANT_FORBIDDEN}, one body for a foreign
+ * {@code ACCOUNT}; ops realm: {@code SUPPORT} only; devices realm: {@code TERMINAL} on POS routes, {@code BRIDGE} on
+ * bridge routes). None → 403 {@code TENANT_FORBIDDEN}, one body for a foreign
  * and a random tenant (no oracle); several and no selection → 400 {@code TENANT_SELECTION_REQUIRED}, listing nothing;
  * a suspended or closed tenant → 403 {@code TENANT_SUSPENDED}/{@code TENANT_CLOSED}. Support needs a second factor
  * on every request (D183). Then the {@link Actor} is built from the tenant's own rows inside the tenant's binding (RLS
@@ -54,6 +55,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 final class TenantResolutionFilter extends OncePerRequestFilter {
 
     static final String TENANT_HEADER = "X-Tenant-Id";
+    static final String POS_SESSION = "X-Pos-Session";
     static final String MDC_TENANT = "tenant_id";
     static final String PLATFORM_OPERATOR = "platform-operator";
     static final String ORGANIZATION_CLAIM = "organization";
@@ -93,6 +95,12 @@ final class TenantResolutionFilter extends OncePerRequestFilter {
             platform(jwt, request, response, chain);
             return;
         }
+        String issuer = jwt.getClaimAsString("iss");
+        Realm realm = realms.realmOf(issuer).orElseThrow(); // the decoder accepted only a trusted issuer
+        if (realm == Realm.DEVICES) {
+            device(jwt, issuer, request, response, chain);
+            return;
+        }
         Optional<UUID> requested;
         try {
             requested = selection(request);
@@ -101,15 +109,9 @@ final class TenantResolutionFilter extends OncePerRequestFilter {
                     "X-Tenant-Id is not a valid tenant id.");
             return;
         }
-        String issuer = jwt.getClaimAsString("iss");
-        Realm realm = realms.realmOf(issuer).orElseThrow(); // the decoder accepted only a trusted issuer
-        Optional<Membership> membership;
-        try {
-            membership = tenancy.resolve(issuer, jwt.getSubject(), requested.orElse(null),
-                    realm == Realm.OPS ? SUPPORT : ACCOUNT);
-        } catch (MembershipSelectionRequiredException several) {
-            problems.refuse(response, HttpStatus.BAD_REQUEST, "TENANT_SELECTION_REQUIRED",
-                    "Choose a tenant with X-Tenant-Id; GET /api/v1/auth/tenants lists yours.");
+        Optional<Membership> membership = resolve(jwt, issuer, requested.orElse(null),
+                realm == Realm.OPS ? SUPPORT : ACCOUNT, response);
+        if (membership == null) {
             return;
         }
         if (membership.isEmpty()) {
@@ -137,7 +139,64 @@ final class TenantResolutionFilter extends OncePerRequestFilter {
             forbidden(response, jwt, requested);
             return;
         }
-        runAs(new ActorAuthentication(actor.get(), context, assurance), request, response, chain);
+        runAs(new ActorAuthentication(actor.get(), context, assurance), context, request, response, chain);
+    }
+
+    /**
+     * The membership of {@code (issuer, sub)} of {@code kinds}, or {@code null} once a refusal is written (several
+     * memberships and no selection, D177 step 5).
+     */
+    private Optional<Membership> resolve(Jwt jwt, String issuer, UUID requested, Set<MembershipKind> kinds,
+                                         HttpServletResponse response) throws IOException {
+        try {
+            return tenancy.resolve(issuer, jwt.getSubject(), requested, kinds);
+        } catch (MembershipSelectionRequiredException several) {
+            problems.refuse(response, HttpStatus.BAD_REQUEST, "TENANT_SELECTION_REQUIRED",
+                    "Choose a tenant with X-Tenant-Id; GET /api/v1/auth/tenants lists yours.");
+            return null;
+        }
+    }
+
+    /**
+     * A terminal or a print bridge (D182, D187): the client's one membership of the route family's kind
+     * ({@code TERMINAL} on POS routes, {@code BRIDGE} on bridge routes), never a selection ({@code X-Tenant-Id} is
+     * ignored: a device belongs to one tenant). A bridge acts as itself. A terminal acts as itself only for the PIN
+     * login; every other POS route runs as the employee of {@code X-Pos-Session}, which must be a live session opened
+     * on this very terminal, else 401 {@code POS_SESSION_INVALID} (hand-off b).
+     */
+    private void device(Jwt jwt, String issuer, HttpServletRequest request, HttpServletResponse response,
+                        FilterChain chain) throws IOException, ServletException {
+        MembershipKind kind = RouteFamily.of(request).filter(family -> family == RouteFamily.BRIDGE).isPresent()
+                ? MembershipKind.BRIDGE : MembershipKind.TERMINAL;
+        Optional<Membership> membership = resolve(jwt, issuer, null, Set.of(kind), response);
+        if (membership == null) {
+            return;
+        }
+        if (membership.isEmpty()) {
+            forbidden(response, jwt, Optional.empty());
+            return;
+        }
+        Membership member = membership.get();
+        if (member.tenantStatus() != TenantStatus.ACTIVE) {
+            notActive(response, member);
+            return;
+        }
+        TenantContext context = new TenantContext(member.tenantId(), kind, member.principalId(),
+                "devices:" + jwt.getSubject());
+        if (kind == MembershipKind.BRIDGE || RouteFamily.POS_LOGIN.equals(RouteFamily.pathOf(request))) {
+            JwtAuthenticationToken device = new JwtAuthenticationToken(jwt, List.of());
+            device.setDetails(context);
+            runAs(device, context, request, response, chain);
+            return;
+        }
+        String session = request.getHeader(POS_SESSION);
+        Optional<Actor> employee = session == null || session.isBlank() ? Optional.empty()
+                : tenants.callIn(context, () -> actors.posSession(session.strip(), member.principalId()));
+        if (employee.isEmpty()) {
+            problems.refuse(response, HttpStatus.UNAUTHORIZED, "POS_SESSION_INVALID", "Log in on the terminal again.");
+            return;
+        }
+        runAs(new ActorAuthentication(employee.get(), context, Assurance.NONE), context, request, response, chain);
     }
 
     /** D177 step 8: a mismatch is logged and counted, never acted on (no tenant label on the metric, rule 7). */
@@ -157,13 +216,13 @@ final class TenantResolutionFilter extends OncePerRequestFilter {
                 });
     }
 
-    private void runAs(ActorAuthentication resolved, HttpServletRequest request, HttpServletResponse response,
-                       FilterChain chain) throws IOException, ServletException {
+    private void runAs(Authentication resolved, TenantContext tenant, HttpServletRequest request,
+                       HttpServletResponse response, FilterChain chain) throws IOException, ServletException {
         SecurityContext previous = SecurityContextHolder.getContext();
         SecurityContext context = SecurityContextHolder.createEmptyContext();
         context.setAuthentication(resolved);
         SecurityContextHolder.setContext(context);
-        MDC.put(MDC_TENANT, resolved.tenant().tenantId().toString());
+        MDC.put(MDC_TENANT, tenant.tenantId().toString());
         try {
             chain.doFilter(request, response);
         } finally {
