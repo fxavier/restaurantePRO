@@ -56,6 +56,7 @@ final class TenantResolutionFilter extends OncePerRequestFilter {
     static final String TENANT_HEADER = "X-Tenant-Id";
     static final String MDC_TENANT = "tenant_id";
     static final String PLATFORM_OPERATOR = "platform-operator";
+    static final String ORGANIZATION_CLAIM = "organization";
 
     private static final Logger log = LoggerFactory.getLogger(TenantResolutionFilter.class);
     private static final Set<MembershipKind> ACCOUNT = Set.of(MembershipKind.ACCOUNT);
@@ -120,6 +121,7 @@ final class TenantResolutionFilter extends OncePerRequestFilter {
             notActive(response, member);
             return;
         }
+        checkOrganizationClaim(jwt, issuer, member);
         Assurance assurance = assuranceOf(jwt);
         if (member.kind() == MembershipKind.SUPPORT && !assurance.hasSecondFactor()) {
             problems.stepUpChallenge(response); // D183: support always works with a second factor
@@ -136,6 +138,23 @@ final class TenantResolutionFilter extends OncePerRequestFilter {
             return;
         }
         runAs(new ActorAuthentication(actor.get(), context, assurance), request, response, chain);
+    }
+
+    /** D177 step 8: a mismatch is logged and counted, never acted on (no tenant label on the metric, rule 7). */
+    private void checkOrganizationClaim(Jwt jwt, String issuer, Membership member) {
+        Object claim = jwt.getClaims().get(ORGANIZATION_CLAIM);
+        if (claim == null) {
+            return;
+        }
+        tenancy.membershipSummaries(issuer, jwt.getSubject()).stream()
+                .filter(summary -> summary.tenantId().equals(member.tenantId()))
+                .filter(summary -> OrganizationClaim.mismatches(claim, summary))
+                .findFirst()
+                .ifPresent(summary -> {
+                    log.warn("The token's organization claim does not name its tenant's organization: sub={} "
+                            + "tenant={}", jwt.getSubject(), member.tenantId());
+                    meters.counter("tenant_claim_mismatch_total").increment();
+                });
     }
 
     private void runAs(ActorAuthentication resolved, HttpServletRequest request, HttpServletResponse response,
