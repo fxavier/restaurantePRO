@@ -7,7 +7,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Base64;
-import java.util.List;
+import java.util.Optional;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -15,15 +15,13 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * The backend's bridge API (D187), outbound only: claim the store's jobs ({@code GET /api/v1/bridge/jobs}, a long
- * poll) and report a send's outcome ({@code POST /api/v1/bridge/jobs/{id}/outcome}), each with a fresh access token
+ * The backend's bridge API (D187), outbound only: claim the store's next job ({@code GET /api/v1/bridge/jobs}, answered
+ * at once: a job or 204) and report a send's outcome ({@code POST /api/v1/bridge/jobs/{id}/outcome}), each with a fresh access token
  * of the bridge's client. The bridge never names its store or tenant: its membership does.
  */
 final class BackendClient {
 
     static final JsonMapper JSON = JsonMapper.builder().build();
-    /** Beyond the longest wait the backend holds a claim (30 s). */
-    private static final Duration CLAIM_TIMEOUT = Duration.ofSeconds(45);
     private static final Duration CALL_TIMEOUT = Duration.ofSeconds(15);
 
     private final URI backend;
@@ -36,11 +34,14 @@ final class BackendClient {
         this.accessTokens = accessTokens;
     }
 
-    /** The jobs the backend leased to this bridge, waiting up to {@code wait} for one. */
-    List<ClaimedJob> claim(Duration wait) throws IOException, InterruptedException {
-        HttpResponse<String> response = send(HttpRequest.newBuilder(backend.resolve("/api/v1/bridge/jobs?waitSeconds="
-                + wait.toSeconds())).timeout(CLAIM_TIMEOUT).GET());
-        return JSON.readTree(response.body()).valueStream().map(BackendClient::job).toList();
+    /** The next job the backend leases to this bridge, if one is due. */
+    Optional<ClaimedJob> claimOne() throws IOException, InterruptedException {
+        HttpResponse<String> response = send(HttpRequest.newBuilder(backend.resolve("/api/v1/bridge/jobs?limit=1"))
+                .timeout(CALL_TIMEOUT).GET());
+        if (response.statusCode() == 204) {
+            return Optional.empty();
+        }
+        return JSON.readTree(response.body()).valueStream().map(BackendClient::job).findFirst();
     }
 
     /** What the send of {@code job} achieved; a repeat changes nothing at the backend. */

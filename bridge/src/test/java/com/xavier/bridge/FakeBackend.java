@@ -16,7 +16,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * The backend's bridge API on 127.0.0.1, as {@code BridgeJobController} answers it (D187): each claim hands out the next
- * queued batch (then none), each outcome and enrolment is kept. What every request carried is recorded.
+ * queued batch (then 204, nothing due), each outcome and enrolment is kept. What every request carried is recorded.
  */
 final class FakeBackend implements AutoCloseable {
 
@@ -64,7 +64,11 @@ final class FakeBackend implements AutoCloseable {
             synchronized (this) {
                 next = batches.isEmpty() ? List.of() : batches.removeFirst();
             }
-            respond(exchange, 200, JSON.writeValueAsString(next));
+            if (next.isEmpty()) {
+                respond(exchange, 204, "");
+            } else {
+                respond(exchange, 200, JSON.writeValueAsString(next));
+            }
         } else if (path.endsWith("/outcome")) {
             respond(exchange, outcomeStatus, "");
         } else if (path.equals("/api/v1/bridge/enrolment")) {

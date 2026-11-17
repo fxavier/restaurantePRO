@@ -10,12 +10,12 @@ import java.time.Duration;
  * ({@code packaging/}). {@code enrol <code>} enrols it once; with no argument it runs. Configuration, from the
  * environment: {@code RESTAURANTPRO_BRIDGE_BACKEND_URL} (the API), {@code RESTAURANTPRO_BRIDGE_ISSUER} (the
  * {@code restaurantpro-devices} realm), {@code RESTAURANTPRO_BRIDGE_CLIENT_ID} (answered by the enrolment) and
- * {@code RESTAURANTPRO_BRIDGE_KEY_FILE} (the private key's file).
+ * {@code RESTAURANTPRO_BRIDGE_KEY_FILE} (the private key's file); optional {@code RESTAURANTPRO_BRIDGE_POLL_INTERVAL}
+ * (default 2 s).
  */
 public final class BridgeMain {
 
-    private static final Duration IDLE_WAIT = Duration.ofSeconds(25);
-    private static final Duration BACKOFF = Duration.ofSeconds(5);
+    private static final Duration DEFAULT_POLL = Duration.ofSeconds(2);
 
     private BridgeMain() {
     }
@@ -31,8 +31,15 @@ public final class BridgeMain {
         AccessTokens tokens = new AccessTokens(URI.create(required("RESTAURANTPRO_BRIDGE_ISSUER")),
                 required("RESTAURANTPRO_BRIDGE_CLIENT_ID"), DeviceKeys.load(keyFile), Clock.systemUTC());
         try (PrinterSender printers = new PrinterSender(Duration.ofSeconds(2), Duration.ofSeconds(5))) {
-            new BridgeAgent(new BackendClient(backend, tokens), printers, IDLE_WAIT).run(BACKOFF);
+            new BridgeAgent(new BackendClient(backend, tokens), printers, pollInterval())
+                    .run(new Backoff(Duration.ofSeconds(2), Duration.ofSeconds(60)));
         }
+    }
+
+    /** {@code RESTAURANTPRO_BRIDGE_POLL_INTERVAL} (ISO-8601, e.g. {@code PT2S}): how often an idle bridge asks. */
+    private static Duration pollInterval() {
+        String value = System.getenv("RESTAURANTPRO_BRIDGE_POLL_INTERVAL");
+        return value == null || value.isBlank() ? DEFAULT_POLL : Duration.parse(value);
     }
 
     private static String required(String name) {
