@@ -97,6 +97,25 @@ Throughput: P1/P2 8.9 requests/s each (90 cycles); P3 115.8 (pool 20, 1 207 cycl
 - **Membership resolution is not the cause:** 1.0 `resolve_membership` call per request, 0.3–0.4 ms of database time each.
 - **RLS is not the cause:** P2 − P1 is within noise again (−8 to +64 ms at p95, all P2 < 200 ms).
 
+## Measuring A92 (S77, design §4) — procedure for the next run
+
+S77 cut the database work (`db_transactions_total{origin}` on the management port's `/actuator/prometheus`): a POS read is 3 transactions (authentication 2, the read 1), an idempotent command 4, event delivery 3 per listener invocation, and the background jobs ~10.6 transactions/s at 20 idle tenants (0.48/s per added tenant; was ~89 and 4.4). `GET /pos/catalog` now parses its snapshot after the read's transaction. The runs above were all on one host, and **A92 cannot be claimed from a single-host run.**
+
+1. **Topology.** Three hosts, or the target hardware: a load host; an application host (the production jar and configuration, pool 20); a database host (native PostgreSQL 18 or the P75 managed instance, with its pooler in the path if P75 uses one). Record the app-to-database RTT on the application host: `deploy/load/r6-capture.sh rtt --db <uri>`.
+2. **Load generator.** `R6TenantLoadSmoke`'s client aimed at a remote URL (`-Dload.target`, API-only seeding), as the design says. **Not built yet:** that switch belongs in `backend/src/test/java/com/xavier/backend/e2e/R6TenantLoadSmoke.java`, outside S77's write scope. It also needs tokens the remote stack accepts: today the smoke signs them with the test key that only its own in-JVM context trusts, so either the remote stack's realms issue them (Keycloak clients for the load accounts and devices) or the target trusts a load-test issuer for the run. That is a decision for the architect, not a test setting.
+3. **Validity.** Run `r6-capture.sh sample` on the load host as well: its maximum load per CPU stays below 0.5, with no swapping. Achieved throughput is at least 95 % of offered; otherwise the run is reported as saturated, not as a pass or a fail.
+4. **Procedure.** Seed 20 × 10 with 100 items and the background jobs on; 120 s warm-up; 3 × 300 s closed phases (think time 1000 ms); one open-model phase at a fixed 200 requests/s (coordinated omission); P1 and P2 on the same hosts.
+5. **Pass criterion.** Every gated operation has a client-side p95 below 500 ms in all 3 closed phases and in the open phase. Cross-check with the server-side `http.server.requests` percentiles (histogram enabled for this run only).
+6. **Captured, per phase**, with `deploy/load/r6-capture.sh` (`--db` a monitoring or superuser URI, password from `PGPASSFILE`; `--metrics http://<app>:8081/actuator/prometheus`, token from `METRICS_TOKEN_FILE`):
+   ```bash
+   r6-capture.sh start  --db "$DB" --metrics "$M" --out reports/p3-1          # resets pg_stat_statements, snapshots
+   r6-capture.sh sample --db "$DB" --metrics "$M" --out reports/p3-1 --seconds 300 &
+   # ... the phase runs ...
+   r6-capture.sh finish --db "$DB" --metrics "$M" --out reports/p3-1          # top 20 statements, transactions by origin
+   ```
+   Also take a 60 s JFR mid-phase on the application host (`jcmd <pid> JFR.start duration=60s filename=p3.jfr`) and the GC log; compare the database CPU per request between P1 and P2 (the RLS CPU).
+7. **Decide afterwards, in an ADR if needed:** pool and Tomcat sizing and the number of instances, per Little's law (connections ≈ requests/s × connection hold time).
+
 ## Verdict
 
 - **A77 (RLS cost, 10 terminals, one company): met.** Every P2 p95 < 500 ms (A77's discount route 101 ms in run 1); P2−P1 within noise in both runs.
