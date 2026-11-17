@@ -22,6 +22,7 @@ import org.springframework.test.web.servlet.MockMvc;
  * repeat, or one for a job no longer PROCESSING, changes nothing), and a bridge reports only its own store's jobs.
  */
 @DeviceHttpTest
+@org.junit.jupiter.api.extension.ExtendWith(com.xavier.backend.production.service.PausedPrintStandIns.class)
 class BridgeOutcomeTest {
 
     @Autowired

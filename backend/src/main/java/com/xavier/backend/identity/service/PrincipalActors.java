@@ -113,6 +113,7 @@ class PrincipalActors implements ActorDirectory {
                 || assignments.findByEmployeeIdAndStoreId(live.getEmployeeId(), live.getStoreId()).isEmpty()) {
             return Optional.empty();
         }
+        MustChangePinFlag.record(employee.get().isMustChangePin());
         Set<String> granted = employee.get().isMustChangePin() ? Set.of()
                 : authorities.ofEmployeeInStore(live.getEmployeeId(), live.getStoreId());
         return Optional.of(Actor.employee(live.getEmployeeId(), live.getTerminalId(), live.getStoreId(), granted));

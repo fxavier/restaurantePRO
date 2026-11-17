@@ -122,10 +122,11 @@ public class IdempotencyService {
         requireValidKey(key);
         String hash = hash(target, requestBody);
 
-        boolean createdNow = Boolean.TRUE.equals(
-                inOwnTransaction.execute(tx -> store.claim(scope, key, hash, clock.instant())));
-        IdempotencyRecordStore.StoredRecord existing = find(scope, key)
-                .orElseThrow(() -> new IllegalStateException("idempotency record vanished: " + scope));
+        // the claim commits before the action; its read shares the claim's transaction (S77)
+        IdempotencyRecordStore.Claim claim = inOwnTransaction.execute(tx -> store.claimOrFind(scope, key, hash,
+                clock.instant()));
+        boolean createdNow = claim.createdNow();
+        IdempotencyRecordStore.StoredRecord existing = claim.record();
         if (!existing.requestHash().equals(hash)) {
             log.warn("Idempotency key reused for a different request: scope={} key={}", scope, key);
             throw new IdempotencyKeyReusedException();

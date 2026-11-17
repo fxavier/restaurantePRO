@@ -37,6 +37,13 @@ public class InProcessPrintBridge implements DisposableBean {
 
     static final int MAX_CLAIM = 10;
 
+    /**
+     * One lock for every stand-in of the JVM (every cached context has one): a pause taken under it means no stand-in
+     * is claiming now and none starts until it ends.
+     */
+    private static final Object CLAIMS = new Object();
+    private static int pauses;
+
     private static final Logger log = LoggerFactory.getLogger(InProcessPrintBridge.class);
 
     private final PrintQueue queue;
@@ -72,7 +79,13 @@ public class InProcessPrintBridge implements DisposableBean {
         if (free == 0 || senders.isShutdown()) {
             return 0;
         }
-        List<Dispatch> claimed = queue.claimDue(Math.min(free, MAX_CLAIM));
+        List<Dispatch> claimed;
+        synchronized (CLAIMS) {
+            if (pauses > 0) {
+                return 0;
+            }
+            claimed = queue.claimDue(Math.min(free, MAX_CLAIM));
+        }
         for (Dispatch dispatch : claimed) {
             freeSenders.acquireUninterruptibly();
             // the sender records its send in the claimer's scope (PRINT_WORKER), on the sender thread (D166)
@@ -101,6 +114,22 @@ public class InProcessPrintBridge implements DisposableBean {
         } catch (RuntimeException e) {
             log.warn("Claiming after a send failed; the next poll claims instead", e);
         }
+    }
+
+    /**
+     * Stops every stand-in of the JVM from claiming (scheduled runs and the claim after a send alike) until the
+     * returned handle is closed: a suite that is the bridge itself claims its jobs alone ({@link PausedPrintStandIns}).
+     * Returns once no stand-in is claiming.
+     */
+    public static AutoCloseable pauseEverywhere() {
+        synchronized (CLAIMS) {
+            pauses++;
+        }
+        return () -> {
+            synchronized (CLAIMS) {
+                pauses--;
+            }
+        };
     }
 
     /** In-flight sends finish or are abandoned; an abandoned one is PROCESSING and becomes UNKNOWN after restart. */

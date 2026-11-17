@@ -3,6 +3,7 @@ package com.xavier.backend.identity.controller;
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Actor;
 import com.xavier.backend.access.ActorKind;
+import com.xavier.backend.identity.service.MustChangePinFlag;
 import com.xavier.backend.identity.service.PinChangeService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -21,7 +22,9 @@ import tools.jackson.databind.json.JsonMapper;
  * served (choose the PIN, read the session, log out); everything else gets a 403 that says why. Defence in depth:
  * such a session also holds no permission at all ({@code PrincipalActors}), so every use case refuses it anyway; this
  * filter only gives the client a clear answer. Registered by Spring Boot as a servlet filter after the security
- * chain, so it sees the resolved actor (and the POS chain's tenant).
+ * chain, so it sees the resolved actor (and the POS chain's tenant). The flag is the one {@code PrincipalActors} read
+ * while resolving the session ({@link MustChangePinFlag}, no transaction of its own, S77); an actor resolved another
+ * way is looked up.
  */
 @Component
 class MustChangePinFilter extends OncePerRequestFilter {
@@ -43,7 +46,7 @@ class MustChangePinFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         Actor actor = accessPolicy.currentIfPresent().orElse(null);
         if (actor != null && actor.kind() == ActorKind.EMPLOYEE && !isAuthRoute(request)
-                && pins.mustChangePin(actor.employeeId())) {
+                && MustChangePinFlag.of(request).orElseGet(() -> pins.mustChangePin(actor.employeeId()))) {
             response.setStatus(HttpStatus.FORBIDDEN.value());
             response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
             json.writeValue(response.getOutputStream(), ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN,

@@ -4,6 +4,8 @@ import com.xavier.backend.access.StoreScope;
 import com.xavier.backend.access.StoreScopes;
 import com.xavier.backend.shared.tenancy.TenantContext;
 import com.xavier.backend.shared.tenancy.TenantScopes;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.persistence.EntityTransaction;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -16,6 +18,7 @@ import org.springframework.orm.jpa.JpaTransactionManager;
 import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.web.context.request.RequestContextHolder;
 
 /**
  * D178 (as amended): the only {@code PlatformTransactionManager}. Every transaction, JPA, {@code JdbcClient},
@@ -40,15 +43,48 @@ public class TenantBindingTransactionManager extends JpaTransactionManager {
     static final String BIND = "SELECT set_config('app.tenant_id', ?, true), set_config('app.all_stores', ?, true), "
             + "set_config('app.store_ids', ?, true), set_config('app.scope_origin', ?, true)";
 
+    /** S77 (F1): exported as {@code db_transactions_total{kind}}; never a tenant label (P74). */
+    static final String TRANSACTIONS = "db_transactions";
+    static final String KIND_TAG = "kind";
+
+    private static final String REGISTRY = "org.springframework.modulith.";
+    private static final String SYSTEM = "system:";
+
     private final transient ObjectProvider<TenantScopes> tenants;
     private final transient ObjectProvider<StoreScopes> stores;
+    private final transient ObjectProvider<MeterRegistry> meters;
     private final StoreScopeEnforcement enforcement;
 
     public TenantBindingTransactionManager(ObjectProvider<TenantScopes> tenants, ObjectProvider<StoreScopes> stores,
                                            StoreScopeEnforcement enforcement) {
+        this(tenants, stores, null, enforcement);
+    }
+
+    /** With {@code meters}, every begin counts one {@value #TRANSACTIONS} under its origin kind (S77). */
+    public TenantBindingTransactionManager(ObjectProvider<TenantScopes> tenants, ObjectProvider<StoreScopes> stores,
+                                           ObjectProvider<MeterRegistry> meters, StoreScopeEnforcement enforcement) {
         this.tenants = tenants;
         this.stores = stores;
+        this.meters = meters;
         this.enforcement = enforcement;
+    }
+
+    /**
+     * The low-cardinality kind a begin is counted under: {@code registry} (Spring Modulith's own publication
+     * transitions), {@code request} (while serving an HTTP request, or in an actor's scope), {@code listener},
+     * {@code system:<SCOPE>} (the reviewed {@code SystemScope} names), else {@code unbound}.
+     */
+    static String originKind(String definitionName, String scopeOrigin, boolean inRequest) {
+        if (definitionName != null && definitionName.startsWith(REGISTRY)) {
+            return "registry";
+        }
+        if (inRequest || scopeOrigin.startsWith("account:") || scopeOrigin.startsWith("employee:")) {
+            return "request";
+        }
+        if (scopeOrigin.startsWith("listener:")) {
+            return "listener";
+        }
+        return scopeOrigin.startsWith(SYSTEM) ? scopeOrigin : "unbound";
     }
 
     @Override
@@ -60,6 +96,7 @@ public class TenantBindingTransactionManager extends JpaTransactionManager {
                 throw new IllegalStateException("The EntityManagerFactory exposes no DataSource to bind");
             }
             bind(DataSourceUtils.getConnection(dataSource));
+            count(definition);
         } catch (RuntimeException | SQLException | Error e) {
             abandon(transaction);
             throw new CannotCreateTransactionException("Could not bind the transaction's tenant and store scope "
@@ -70,10 +107,9 @@ public class TenantBindingTransactionManager extends JpaTransactionManager {
     /** Writes the four settings into {@code connection}, the transaction's own. */
     protected void bind(Connection connection) throws SQLException {
         TenantScopes tenantScopes = tenants.getIfAvailable();
-        StoreScopes storeScopes = stores.getIfAvailable();
         String tenant = tenantScopes == null ? "" : tenantScopes.current().map(TenantContext::tenantId)
                 .map(Object::toString).orElse("");
-        StoreScope scope = storeScopes == null ? StoreScope.UNSET : effective(storeScopes.current());
+        StoreScope scope = storeScope();
         try (PreparedStatement statement = connection.prepareStatement(BIND)) {
             statement.setString(1, tenant);
             statement.setString(2, scope.allStoresSetting());
@@ -81,6 +117,21 @@ public class TenantBindingTransactionManager extends JpaTransactionManager {
             statement.setString(4, scope.origin());
             statement.execute();
         }
+    }
+
+    private StoreScope storeScope() {
+        StoreScopes storeScopes = stores.getIfAvailable();
+        return storeScopes == null ? StoreScope.UNSET : effective(storeScopes.current());
+    }
+
+    private void count(TransactionDefinition definition) {
+        MeterRegistry registry = meters == null ? null : meters.getIfAvailable();
+        if (registry == null) {
+            return;
+        }
+        Counter.builder(TRANSACTIONS).tag(KIND_TAG, originKind(definition.getName(), storeScope().origin(),
+                        RequestContextHolder.getRequestAttributes() != null))
+                .description("Database transactions begun, by origin kind (S77)").register(registry).increment();
     }
 
     private StoreScope effective(StoreScope scope) {

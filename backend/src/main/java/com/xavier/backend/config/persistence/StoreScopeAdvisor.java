@@ -46,7 +46,8 @@ import org.springframework.modulith.events.ApplicationModuleListener;
  *       listener's transaction. Republication and the D88 recovery go through the same proxy, and the serialized event
  *       carries its tenant;</li>
  *   <li>a {@link SystemScoped} method of reach {@code ALL} runs once per ACTIVE tenant ({@link ActiveTenants}), from a
- *       rotating start, each under a {@link JobLeases} lease and in its own binding; one tenant's failure is counted
+ *       rotating start, each under a {@link JobLeases} lease and in its own binding (the directory and the leases are
+ *       one transaction, their release one more, S77; a tenant starts only while half its lease is left); one tenant's failure is counted
  *       ({@value #TENANT_FAILURES}{job}, never a tenant label, P74), logged with the tenant and does not stop the
  *       others. It returns the last tenant's result. Called by a thread that is already bound to a tenant (a request,
  *       a test), it runs once, in that tenant. {@link SystemScope#BOOTSTRAP} runs in the bootstrap tenant only;</li>
@@ -150,42 +151,49 @@ class StoreScopeAdvisor extends AbstractPointcutAdvisor {
             log.warn("{} did not run: no tenant directory in this context", job);
             return result;
         }
-        List<UUID> ids = active.ids();
+        JobLeases jobLeases = leases.getIfAvailable();
+        // S77 (F3): the directory and every tenant's lease in one transaction, and one release after the tick
+        JobLeases.Batch batch = jobLeases == null ? null : jobLeases.acquire(job, active::ids);
+        List<UUID> ids = batch == null ? active.ids() : batch.tenants();
         if (ids.isEmpty()) {
             return result;
         }
         int start = Math.floorMod(rotation.computeIfAbsent(job, key -> new AtomicInteger()).getAndIncrement(),
                 ids.size());
-        JobLeases jobLeases = leases.getIfAvailable();
         String origin = scope.scope().origin();
-        for (int i = 0; i < ids.size(); i++) {
-            UUID tenantId = ids.get((start + i) % ids.size());
-            try {
-                // ponytail: the lease is taken once per run, not renewed while it runs; a run longer than
-                // restaurantpro.jobs.lease-ttl lets a second instance start the same tenant (follow-up: renew, or
-                // size the ttl above the longest run)
-                if (jobLeases != null && !jobLeases.tryAcquire(job, tenantId)) {
-                    log.debug("{} skipped tenant {}: another instance holds its lease", job, tenantId);
-                    continue;
+        try {
+            for (int i = 0; i < ids.size(); i++) {
+                UUID tenantId = ids.get((start + i) % ids.size());
+                if (batch != null && !batch.mayStart()) {
+                    // D185: a tenant starts only with half its lease left; the rest run at the next tick. ponytail: a
+                    // lease is not renewed while a run lasts, so one run longer than the ttl still lets a second
+                    // instance start the same tenant (follow-up: renew, or size the ttl above the longest run)
+                    log.warn("{} stopped before tenant {}: the tick outlasted half of restaurantpro.jobs.lease-ttl", job,
+                            tenantId);
+                    break;
                 }
-            } catch (RuntimeException e) {
-                failed(job, tenantId, e);
-                continue;
+                result = runFor(invocation, job, scope, tenantScopes, tenantId, origin, result);
             }
-            try {
-                // a fresh invocation per tenant: one invocation proceeds once, and a second proceed() would skip
-                // every interceptor after this one (the method's own @Transactional among them)
-                MethodInvocation run = ((ProxyMethodInvocation) invocation).invocableClone();
-                result = counted(origin, () -> tenantScopes.call(tenantId, scope, () -> proceed(run)));
-            } catch (Error e) {
-                throw e;
-            } catch (Throwable e) {
-                failed(job, tenantId, e);
-            } finally {
-                release(jobLeases, job, tenantId);
-            }
+        } finally {
+            release(jobLeases, job, ids);
         }
         return result;
+    }
+
+    /** One tenant's run, in its own binding; a failure is counted and logged, and the others still run. */
+    private Object runFor(MethodInvocation invocation, String job, SystemScope scope, TenantScopes tenantScopes,
+                          UUID tenantId, String origin, Object previous) {
+        try {
+            // a fresh invocation per tenant: one invocation proceeds once, and a second proceed() would skip
+            // every interceptor after this one (the method's own @Transactional among them)
+            MethodInvocation run = ((ProxyMethodInvocation) invocation).invocableClone();
+            return counted(origin, () -> tenantScopes.call(tenantId, scope, () -> proceed(run)));
+        } catch (Error e) {
+            throw e;
+        } catch (Throwable e) {
+            failed(job, tenantId, e);
+            return previous;
+        }
     }
 
     private void failed(String job, UUID tenantId, Throwable error) {
@@ -198,14 +206,14 @@ class StoreScopeAdvisor extends AbstractPointcutAdvisor {
         log.error("System job {} failed for tenant {}; the other tenants still ran", job, tenantId, error);
     }
 
-    private static void release(JobLeases jobLeases, String job, UUID tenantId) {
+    private static void release(JobLeases jobLeases, String job, List<UUID> tenantIds) {
         if (jobLeases == null) {
             return;
         }
         try {
-            jobLeases.release(job, tenantId);
+            jobLeases.release(job, tenantIds);
         } catch (RuntimeException e) {
-            log.warn("Could not release the lease of {} for tenant {}; it expires on its own", job, tenantId, e);
+            log.warn("Could not release the leases of {}; they expire on their own", job, e);
         }
     }
 

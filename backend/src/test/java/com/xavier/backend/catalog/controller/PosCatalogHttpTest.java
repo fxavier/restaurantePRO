@@ -1,5 +1,6 @@
 package com.xavier.backend.catalog.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static com.xavier.backend.catalog.Actors.inStore;
 import static com.xavier.backend.catalog.Actors.pos;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -27,6 +28,33 @@ class PosCatalogHttpTest {
 
     @Autowired
     JdbcClient jdbc;
+
+    @Autowired
+    tools.jackson.databind.json.JsonMapper json;
+
+    /** The response as it was before S77 (F6): the stored snapshot parsed into a tree, then written by the mapper. */
+    record TreeResponse(UUID releaseId, UUID storeId, long version, java.time.Instant effectiveAt,
+                        tools.jackson.databind.JsonNode catalog) {
+    }
+
+    /** S77 (F6): the wire bytes of the POS catalog do not change, whatever the server does with the snapshot. */
+    @Test
+    void theCatalogsWireJsonIsTheStoredSnapshotWrittenAsATree() throws Exception {
+        UUID store = publications().sellableStore().store();
+        UUID release = publications().publishNew(store);
+        java.util.Map<String, Object> row = com.xavier.backend.OwnerDatabase.shared().jdbc().sql("""
+                        SELECT catalog_version, effective_at, snapshot::text AS snapshot
+                        FROM catalog.configuration_release WHERE id = ?""").param(release).query().singleRow();
+        String expected = json.writeValueAsString(new TreeResponse(release, store,
+                ((Number) row.get("catalog_version")).longValue(),
+                ((java.sql.Timestamp) row.get("effective_at")).toInstant(),
+                json.readTree((String) row.get("snapshot"))));
+
+        String body = mvc.perform(get(POS_CATALOG).with(pos(store, Permission.CATALOG_VIEW)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+
+        assertThat(body).isEqualTo(expected);
+    }
 
     @Test
     void aPosSessionReadsItsStoresCatalogWithoutNamingTheStore() throws Exception {
