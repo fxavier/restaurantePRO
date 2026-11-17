@@ -11,7 +11,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.xavier.backend.OwnerDatabase;
 import com.xavier.backend.access.Permission;
+import com.xavier.backend.config.security.Devices;
 import com.xavier.backend.organization.MutableClock;
 import com.xavier.backend.organization.OrganizationModuleTest;
 import java.nio.charset.StandardCharsets;
@@ -82,68 +84,43 @@ class TerminalHttpTest {
     }
 
     @Test
-    void aTerminalEnrollsOnceWithAOneTimeCodeAndOnlyHashesAreStored(CapturedOutput output) throws Exception {
+    void aCodeIsShownOnceAndOnlyItsSecretsHashAndAPendingMembershipAreStored(CapturedOutput output)
+            throws Exception {
         UUID terminal = registerTerminal();
 
         JsonNode issued = issueCode(terminal);
         String code = issued.get("code").asString();
         assertThat(Instant.parse(issued.get("expiresAt").asString())).isEqualTo(clock.instant().plus(Duration.ofHours(24)));
-        assertThat(column("enrollment_code_hash", terminal)).isEqualTo(sha256(code));
 
-        JsonNode enrolled = JSON.readTree(mvc.perform(enroll(code))
-                .andExpect(status().isOk())
-                .andExpect(header().string("Cache-Control", containsString("no-store")))
-                .andExpect(jsonPath("$.terminalId").value(terminal.toString()))
-                .andExpect(jsonPath("$.storeId").value(store.toString()))
-                .andReturn().getResponse().getContentAsString());
-        String token = enrolled.get("deviceToken").asString();
-
-        assertThat(token).hasSizeGreaterThanOrEqualTo(43); // 256 random bits
-        assertThat(column("device_token_hash", terminal)).isEqualTo(sha256(token));
-        assertThat(column("enrollment_code_hash", terminal)).isNull(); // consumed
+        assertThat(code).hasSize(24);
+        assertThat(column("enrollment_code_hash", terminal)).isEqualTo(sha256(code.substring(8)));
         assertThat(jdbc.sql("SELECT t::text FROM organization.terminal t WHERE id = :id").param("id", terminal)
-                .query(String.class).single()).doesNotContain(token).doesNotContain(code);
-
-        // the code works once, and the token is never handed out again
-        mvc.perform(enroll(code)).andExpect(status().isUnprocessableContent());
+                .query(String.class).single()).doesNotContain(code).doesNotContain(code.substring(8));
+        assertThat(OwnerDatabase.shared().jdbc().sql("SELECT count(*) FROM tenancy.tenant_membership "
+                        + "WHERE issuer = 'urn:restaurantpro:enrolment-code' AND subject = ? AND principal_id = ? "
+                        + "AND kind = 'TERMINAL' AND status = 'ACTIVE' AND valid_until IS NOT NULL")
+                .param(code.substring(0, 8)).param(terminal).query(Long.class).single()).isEqualTo(1);
         String listing = mvc.perform(get(TERMINALS).param("storeId", store.toString())
                         .with(inStore(store, Permission.TERMINAL_MANAGE)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].status").value("ACTIVE"))
+                .andExpect(jsonPath("$.content[0].status").value("REGISTERED"))
+                .andExpect(jsonPath("$.content[0].kind").value("POS"))
                 .andReturn().getResponse().getContentAsString();
-        assertThat(listing).doesNotContain(token);
-
-        assertThat(output.getAll()).doesNotContain(code).doesNotContain(token);
+        assertThat(listing).doesNotContain(code.substring(8));
+        assertThat(output.getAll()).doesNotContain(code.substring(8));
         assertThat(audits("TERMINAL_ENROLLMENT_CODE_ISSUED", terminal.toString())).isEqualTo(1);
-        assertThat(audits("TERMINAL_ENROLLED", terminal.toString())).isEqualTo(1);
     }
 
     @Test
-    void twoDevicesRacingWithOneCodeEnrollOnlyOnce() throws Exception {
+    void aNewCodeRevokesThePendingMembershipOfTheOldOne() throws Exception {
         UUID terminal = registerTerminal();
-        String code = issueCode(terminal).get("code").asString();
-        CountDownLatch start = new CountDownLatch(1);
-        Callable<MockHttpServletResponse> attempt = () -> {
-            start.await();
-            return mvc.perform(enroll(code)).andReturn().getResponse();
-        };
+        String first = issueCode(terminal).get("code").asString();
 
-        List<MockHttpServletResponse> responses;
-        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
-            Future<MockHttpServletResponse> first = pool.submit(attempt);
-            Future<MockHttpServletResponse> second = pool.submit(attempt);
-            start.countDown();
-            responses = List.of(first.get(30, TimeUnit.SECONDS), second.get(30, TimeUnit.SECONDS));
-        }
+        issueCode(terminal);
 
-        assertThat(responses).extracting(MockHttpServletResponse::getStatus).containsOnlyOnce(200);
-        MockHttpServletResponse loser = responses.stream().filter(r -> r.getStatus() != 200).findFirst().orElseThrow();
-        assertThat(loser.getStatus()).isIn(409, 422);
-        assertThat(loser.getContentType()).isEqualTo(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
-        assertThat(column("device_token_hash", terminal)).isNotNull();
-        assertThat(jdbc.sql("SELECT count(*) FROM organization.terminal WHERE id = :id AND device_token_hash IS NOT NULL")
-                .param("id", terminal).query(Long.class).single()).isEqualTo(1);
-        assertThat(audits("TERMINAL_ENROLLED", terminal.toString())).isEqualTo(1);
+        assertThat(OwnerDatabase.shared().jdbc().sql("SELECT status FROM tenancy.tenant_membership "
+                        + "WHERE issuer = 'urn:restaurantpro:enrolment-code' AND subject = ?")
+                .param(first.substring(0, 8)).query(String.class).single()).isEqualTo("REVOKED");
     }
 
     @Test
@@ -153,7 +130,7 @@ class TerminalHttpTest {
 
         clock.advance(Duration.ofHours(24));
 
-        mvc.perform(enroll(code)).andExpect(status().isUnprocessableContent());
+        mvc.perform(enroll(code)).andExpect(status().isBadRequest());
         assertThat(column("status", terminal)).isEqualTo("REGISTERED");
     }
 
@@ -163,10 +140,10 @@ class TerminalHttpTest {
         mvc.perform(enroll("NOT-A-REAL-CODE").with(request -> {
             request.setRemoteAddr("192.0.2.7");
             return request;
-        })).andExpect(status().isUnprocessableContent());
+        })).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("ENROLMENT_CODE_INVALID"));
 
         assertThat(output.getAll())
-                .contains("Terminal enrollment refused")
+                .contains("Device enrolment refused")
                 .contains("192.0.2.7")
                 .doesNotContain("NOT-A-REAL-CODE");
     }
@@ -174,7 +151,7 @@ class TerminalHttpTest {
     @Test
     void aRevokedTerminalCannotBeRevokedAgainOrGetANewCode() throws Exception {
         UUID terminal = registerTerminal();
-        mvc.perform(enroll(issueCode(terminal).get("code").asString())).andExpect(status().isOk());
+        issueCode(terminal);
 
         mvc.perform(post(TERMINALS + "/" + terminal + "/revoke").with(inStore(store, Permission.TERMINAL_MANAGE))
                         .with(csrf()))
@@ -251,12 +228,13 @@ class TerminalHttpTest {
     }
 
     /**
-     * The enroll route is open in production ({@code /api/v1/auth/**}, see TerminalEnrollmentSecurityTest);
-     * this module test boots without the config module, so it sends an actor with no permissions.
+     * A device's enrolment (open in production, see TerminalEnrollmentSecurityTest; this module test boots without
+     * the config module, under Boot's default chain: an actor with no permission and a CSRF token). Only refusals
+     * are sent here: completing one needs the devices realm ({@code TerminalEnrolmentThrottleTest}).
      */
     static MockHttpServletRequestBuilder enroll(String code) {
-        return post("/api/v1/auth/terminals/enroll").with(admin()).with(csrf())
-                .contentType(MediaType.APPLICATION_JSON).content("{\"code\": \"%s\"}".formatted(code));
+        return post("/api/v1/pos/enrolment").with(admin()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content(JSON.writeValueAsString(java.util.Map.of("code", code, "publicJwk", Devices.publicJwk())));
     }
 
     String column(String name, UUID terminal) {

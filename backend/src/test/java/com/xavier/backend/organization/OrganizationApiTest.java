@@ -62,28 +62,9 @@ class OrganizationApiTest {
     }
 
     @Test
-    void findsOnlyActiveTerminalsByTheirDeviceToken() {
-        StoreSummary store = newStore("Africa/Maputo");
-        TerminalSummary terminal = terminals.create(new TerminalCreateRequest(store.id(), "POS1", "Bar"));
-        String token = terminals.enroll(terminals.issueEnrollmentCode(terminal.id()).code(), "192.0.2.1").deviceToken();
-
-        assertThat(organization.findTerminalByDeviceToken(token)).hasValueSatisfying(found -> {
-            assertThat(found.id()).isEqualTo(terminal.id());
-            assertThat(found.storeId()).isEqualTo(store.id());
-            assertThat(found.status()).isEqualTo("ACTIVE");
-        });
-        assertThat(organization.findTerminalByDeviceToken("not-a-token")).isEmpty();
-        assertThat(organization.findTerminalByDeviceToken("")).isEmpty();
-        assertThat(organization.findTerminalByDeviceToken(null)).isEmpty();
-
-        terminals.revoke(terminal.id());
-        assertThat(organization.findTerminalByDeviceToken(token)).isEmpty();
-    }
-
-    @Test
     void findsATerminalByIdWhateverItsStatus() throws Exception {
         StoreSummary store = newStore("Africa/Maputo");
-        TerminalSummary terminal = terminals.create(new TerminalCreateRequest(store.id(), "POS2", "Esplanada"));
+        TerminalSummary terminal = terminals.create(new TerminalCreateRequest(store.id(), "POS2", "Esplanada", null));
         SecurityContextHolder.clearContext();
 
         assertThat(organization.findTerminal(terminal.id())).hasValueSatisfying(found -> {
@@ -96,24 +77,25 @@ class OrganizationApiTest {
     }
 
     @Test
-    void anEnrolledTerminalIsActiveAndARevokedOneIsStillFoundButInactive() {
+    void aRevokedTerminalIsStillFoundButInactive() {
         StoreSummary store = newStore("Africa/Maputo");
-        TerminalSummary terminal = terminals.create(new TerminalCreateRequest(store.id(), "POS3", "Sala"));
-        terminals.enroll(terminals.issueEnrollmentCode(terminal.id()).code(), "192.0.2.1");
-
-        assertThat(organization.findTerminal(terminal.id())).hasValueSatisfying(found ->
-                assertThat(found.active()).isTrue());
+        TerminalSummary terminal = terminals.create(new TerminalCreateRequest(store.id(), "POS3", "Sala", null));
 
         terminals.revoke(terminal.id());
-        assertThat(organization.findTerminal(terminal.id())).hasValueSatisfying(found ->
-                assertThat(found.active()).isFalse());
+
+        assertThat(organization.findTerminal(terminal.id())).hasValueSatisfying(found -> {
+            assertThat(found.status()).isEqualTo("REVOKED");
+            assertThat(found.active()).isFalse();
+        });
     }
 
     @Test
     void theTerminalJsonKeepsItsR2Shape() {
-        TerminalSummary terminal = new TerminalSummary(UUID.randomUUID(), UUID.randomUUID(), "POS1", "Bar", "ACTIVE");
+        TerminalSummary terminal = new TerminalSummary(UUID.randomUUID(), UUID.randomUUID(), "POS1", "Bar", "ACTIVE",
+                "POS");
 
-        assertThat(json.writeValueAsString(terminal)).contains("\"status\":\"ACTIVE\"").doesNotContain("active\"");
+        assertThat(json.writeValueAsString(terminal)).contains("\"status\":\"ACTIVE\"").contains("\"kind\":\"POS\"")
+                .doesNotContain("active\"").doesNotContain("activeBridge").doesNotContain("activeTerminal");
     }
 
     @Test

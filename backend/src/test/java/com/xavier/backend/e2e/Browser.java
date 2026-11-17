@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -19,7 +20,8 @@ import tools.jackson.databind.json.JsonMapper;
 /**
  * One HTTP client with its own credentials, like one tab of a client, against the real embedded server (D176: no
  * cookie, no CSRF on the API). A BackOffice tab sends {@code Authorization: Bearer <access token>}, a fresh test token
- * of its Keycloak user on every request (as the BFF relays one, P69); a POS tab sends {@code X-Pos-Session} after its
+ * of its Keycloak user on every request (as the BFF relays one, P69); a POS tab sends its terminal's token and
+ * {@code X-Pos-Session} after its
  * PIN login (D182, interim until S73). Every response is recorded as "METHOD path [step] -> status" in the journey the
  * caller prints.
  */
@@ -39,8 +41,11 @@ final class Browser {
     private volatile Supplier<String> bearer;
     /** The POS session token (a POS tab), or {@code null}. */
     private volatile String posSession;
-    /** The R2 device token of the terminal this POS tab enrolled (interim until S73), or {@code null}. */
-    private volatile String deviceToken;
+    /** A fresh access token per request of the terminal this POS tab enrolled (D182), or {@code null}. */
+    private volatile Supplier<String> terminalTokens;
+    /** The installation's owner connection and clock, for what Keycloak and enrolment leave behind (fixtures). */
+    private volatile JdbcClient owner;
+    private volatile Supplier<java.time.Instant> now = java.time.Instant::now;
     /** The client address Caddy would forward ({@code X-Forwarded-For}); {@code null}: none, loopback. */
     private volatile String clientAddress;
 
@@ -59,6 +64,8 @@ final class Browser {
     Browser sibling(String siblingName) {
         Browser sibling = new Browser(siblingName, port, journey);
         sibling.clientAddress = clientAddress;
+        sibling.owner = owner;
+        sibling.now = now;
         return sibling;
     }
 
@@ -67,7 +74,9 @@ final class Browser {
         Browser moved = new Browser(name, otherPort, journey);
         moved.bearer = bearer;
         moved.posSession = posSession;
-        moved.deviceToken = deviceToken;
+        moved.terminalTokens = terminalTokens;
+        moved.owner = owner;
+        moved.now = now;
         moved.clientAddress = clientAddress;
         return moved;
     }
@@ -104,14 +113,30 @@ final class Browser {
         return this;
     }
 
-    /** This POS tab's terminal is enrolled with {@code token}. */
-    Browser enrolled(String token) {
-        deviceToken = token;
+    /** This POS tab's terminal is enrolled: {@code tokens} issues its access tokens (D182). */
+    Browser enrolled(Supplier<String> tokens) {
+        terminalTokens = tokens;
         return this;
     }
 
-    String deviceToken() {
-        return deviceToken;
+    /** {@code Authorization} of this POS tab's terminal (the PIN login sends it without a POS session). */
+    Map<String, String> terminalAuthorization() {
+        return Map.of("Authorization", "Bearer " + terminalTokens.get());
+    }
+
+    /** Fixtures act as {@code owner} on a server whose clock {@code now} reads. */
+    Browser withFixtures(JdbcClient owner, Supplier<java.time.Instant> now) {
+        this.owner = owner;
+        this.now = now;
+        return this;
+    }
+
+    JdbcClient owner() {
+        return owner;
+    }
+
+    java.time.Instant now() {
+        return now.get();
     }
 
     /** No credentials any more (logged out). */
@@ -129,6 +154,10 @@ final class Browser {
             headers.put("Authorization", "Bearer " + tokens.get());
         }
         if (posSession != null) {
+            Supplier<String> terminal = terminalTokens;
+            if (terminal != null) {
+                headers.put("Authorization", "Bearer " + terminal.get());
+            }
             headers.put("X-Pos-Session", posSession);
         }
         return headers;

@@ -11,9 +11,9 @@ import jakarta.servlet.Filter;
 import org.junit.jupiter.api.Test;
 
 /**
- * Security rule 1 (S71 review): no request runs in a constant tenant. The interim filter that bound every request to
- * the bootstrap tenant is gone; the only constant left is the POS chain's, until S73 ({@link InterimPosBootstrapTenant},
- * built by {@code SecurityConfig}'s POS chain alone): no other servlet filter may name the bootstrap tenant.
+ * Security rule 1 (S71 review, S73): no request runs in a constant tenant. The interim filters that bound requests to
+ * the bootstrap tenant are gone (S71's for every request, S72's for POS until S73 moved POS to the terminal's
+ * membership): no servlet filter may name the bootstrap tenant.
  */
 class NoConstantRequestTenantTest {
 
@@ -21,32 +21,18 @@ class NoConstantRequestTenantTest {
             .importPackages("com.xavier.backend");
 
     @Test
-    void theInterimBootstrapTenantFilterOfS71IsGone() {
+    void theInterimBootstrapTenantFiltersAreGone() {
         assertThatThrownBy(() -> Class.forName("com.xavier.backend.shared.tenancy.BootstrapTenantRequests"))
+                .isInstanceOf(ClassNotFoundException.class);
+        assertThatThrownBy(() -> Class.forName("com.xavier.backend.config.security.InterimPosBootstrapTenant"))
                 .isInstanceOf(ClassNotFoundException.class);
     }
 
     @Test
-    void onlyTheInterimPosFilterBindsTheBootstrapTenantToARequest() {
+    void noFilterBindsTheBootstrapTenantToARequest() {
         noClasses().that().implement(Filter.class)
-                .and().doNotHaveFullyQualifiedName(InterimPosBootstrapTenant.class.getName())
                 .should().dependOnClassesThat().haveFullyQualifiedName(BootstrapTenant.class.getName())
-                .because("a request's tenant comes from its membership (D177); S73 removes the POS exception")
+                .because("a request's tenant comes from its membership (D177), a terminal's too (D182)")
                 .check(MAIN);
-    }
-
-    @Test
-    void onlyThePosChainBuildsTheInterimFilter() {
-        noClasses().that().doNotHaveFullyQualifiedName(SecurityConfig.class.getName())
-                .and().doNotHaveFullyQualifiedName(InterimPosBootstrapTenant.class.getName())
-                .should().callConstructor(InterimPosBootstrapTenant.class, TenantScopesType.get())
-                .check(MAIN);
-    }
-
-    /** The constructor's parameter type, by name (the filter's constructor takes {@code TenantScopes}). */
-    private static final class TenantScopesType {
-        static Class<?> get() {
-            return com.xavier.backend.shared.tenancy.TenantScopes.class;
-        }
     }
 }

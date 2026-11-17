@@ -3,14 +3,13 @@ package com.xavier.backend.organization.service;
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.audit.AuditLog;
-import com.xavier.backend.organization.exception.InvalidEnrollmentCodeException;
 import com.xavier.backend.organization.exception.StoreNotFoundException;
 import com.xavier.backend.organization.exception.TerminalCodeTakenException;
 import com.xavier.backend.organization.exception.TerminalNotFoundException;
+import com.xavier.backend.organization.model.EnrolmentCode;
 import com.xavier.backend.organization.model.Terminal;
 import com.xavier.backend.organization.model.dto.EnrollmentCodeResponse;
 import com.xavier.backend.organization.model.dto.TerminalCreateRequest;
-import com.xavier.backend.organization.model.dto.TerminalEnrollmentResponse;
 import com.xavier.backend.organization.model.dto.TerminalSummary;
 import com.xavier.backend.organization.model.event.TerminalRevoked;
 import com.xavier.backend.organization.repository.StoreRepository;
@@ -18,25 +17,26 @@ import com.xavier.backend.organization.repository.TerminalRepository;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
 import com.xavier.backend.shared.tenancy.TenantScopes;
 import com.xavier.backend.shared.web.PageResponse;
+import com.xavier.backend.tenancy.TenancyApi;
+import com.xavier.backend.tenancy.model.dto.MembershipGrant;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Terminal registration and lifecycle (spec §5, D26). Every use case needs {@code TERMINAL_MANAGE} in the store. */
+/**
+ * Store device registration and lifecycle (spec §5, D26, D182, D187): POS terminals and print bridges. Every use case
+ * needs {@code TERMINAL_MANAGE} in the device's store. The device redeems its code with {@link DeviceEnrolmentService}.
+ */
 @Service
 public class TerminalService {
 
     static final Duration ENROLLMENT_CODE_VALIDITY = Duration.ofHours(24);
-
-    private static final Logger log = LoggerFactory.getLogger(TerminalService.class);
 
     private final TerminalRepository terminals;
     private final StoreRepository stores;
@@ -45,10 +45,13 @@ public class TerminalService {
     private final ApplicationEventPublisher events;
     private final Clock clock;
     private final TenantScopes tenants;
+    private final TenancyApi tenancy;
 
     TerminalService(TerminalRepository terminals, StoreRepository stores, AccessPolicy accessPolicy,
-                    AuditLog auditLog, ApplicationEventPublisher events, Clock clock, TenantScopes tenants) {
+                    AuditLog auditLog, ApplicationEventPublisher events, Clock clock, TenantScopes tenants,
+                    TenancyApi tenancy) {
         this.tenants = tenants;
+        this.tenancy = tenancy;
         this.terminals = terminals;
         this.stores = stores;
         this.accessPolicy = accessPolicy;
@@ -66,8 +69,8 @@ public class TerminalService {
         if (terminals.existsByStoreIdAndCode(request.storeId(), request.code().strip())) {
             throw new TerminalCodeTakenException(request.code());
         }
-        Terminal terminal = saveNewTerminal(
-                Terminal.register(request.storeId(), request.code(), request.name(), clock.instant()));
+        Terminal terminal = saveNewTerminal(Terminal.register(request.storeId(), request.kind(), request.code(),
+                request.name(), clock.instant()));
         audit("TERMINAL_CREATED", terminal);
         return terminal.toSummary();
     }
@@ -78,56 +81,38 @@ public class TerminalService {
         return PageResponse.from(terminals.findByStoreId(storeId, pageable).map(Terminal::toSummary));
     }
 
-    /** A new one-time code for a terminal that is not enrolled yet; valid {@link #ENROLLMENT_CODE_VALIDITY}. */
+    /**
+     * A new one-time code for a device that is not revoked (an enrolled one is enrolled again with it: its key was
+     * lost), valid {@link #ENROLLMENT_CODE_VALIDITY}. The code's selector becomes the subject of a pending membership
+     * of the device's kind, which is how the device's unauthenticated enrolment finds its tenant (D177, D182); an
+     * earlier open code is replaced and its pending membership revoked.
+     */
     @Transactional
     public EnrollmentCodeResponse issueEnrollmentCode(UUID terminalId) {
         Terminal terminal = terminal(terminalId);
         accessPolicy.require(Permission.TERMINAL_MANAGE, terminal.getStoreId());
-        String code = TerminalSecrets.newEnrollmentCode();
-        Instant expiresAt = clock.instant().plus(ENROLLMENT_CODE_VALIDITY);
-        terminal.issueEnrollmentCode(TerminalSecrets.hashEnrollmentCode(code), expiresAt, clock.instant());
+        EnrolmentCode code = EnrolmentCode.generate();
+        Instant now = clock.instant();
+        Instant expiresAt = now.plus(ENROLLMENT_CODE_VALIDITY);
+        UUID pending = tenancy.grant(new MembershipGrant(DeviceEnrolmentService.ENROLMENT_ISSUER, code.selector(),
+                terminal.getKind().membership(), terminal.getId(), now, expiresAt));
+        terminal.issueEnrollmentCode(code.secretHash(), expiresAt, pending, now).ifPresent(tenancy::revoke);
         terminals.saveAndFlush(terminal);
         audit("TERMINAL_ENROLLMENT_CODE_ISSUED", terminal);
-        return new EnrollmentCodeResponse(terminal.getId(), code, expiresAt);
+        return new EnrollmentCodeResponse(terminal.getId(), code.text(), expiresAt);
     }
 
     /**
-     * The device exchanges its one-time code for a device token. No session is needed: the code is the
-     * credential. Unknown, expired and used codes all get the same answer, and each refusal is logged (never
-     * the code) so repeated guessing is visible.
-     *
-     * @param remoteAddress where the attempt came from, for the log only
-     */
-    @Transactional
-    public TerminalEnrollmentResponse enroll(String code, String remoteAddress) {
-        String codeHash = TerminalSecrets.hashEnrollmentCode(code);
-        Instant now = clock.instant();
-        Terminal terminal = terminals.findByEnrollmentCodeHash(codeHash)
-                .filter(candidate -> candidate.canEnrollWith(codeHash, now))
-                .orElse(null);
-        if (terminal == null) {
-            log.warn("Terminal enrollment refused (unknown, expired or used code) from {}", remoteAddress);
-            throw new InvalidEnrollmentCodeException();
-        }
-        String token = TerminalSecrets.newDeviceToken();
-        terminal.enroll(codeHash, TerminalSecrets.hashDeviceToken(token), now);
-        terminals.saveAndFlush(terminal); // two devices racing with one code: @Version lets only one win
-        // nobody is logged in on a device that enrolls: a system row on that terminal
-        auditLog.recordAsSystem("TERMINAL_ENROLLED", "Terminal", terminal.getId().toString(), terminal.getStoreId(),
-                terminal.getId(), null, Map.of("code", terminal.getCode()));
-        return new TerminalEnrollmentResponse(terminal.getId(), terminal.getStoreId(), token);
-    }
-
-    /**
-     * The terminal can no longer log in; its device token stops working. Final: enroll a new terminal instead.
-     * Publishes {@link TerminalRevoked} so the sessions already open on it end too.
+     * The device can no longer act: its membership (and an open code's) is revoked in this transaction, so its next
+     * request is refused whatever token it holds (D182); {@link TerminalRevoked} then disables its Keycloak client
+     * ({@link DeviceClientDisabling}) and ends the POS sessions open on it. Final: register a new device instead.
      */
     @Transactional
     public TerminalSummary revoke(UUID terminalId) {
         Terminal terminal = terminal(terminalId);
         accessPolicy.require(Permission.TERMINAL_MANAGE, terminal.getStoreId());
         Instant now = clock.instant();
-        terminal.revoke(now);
+        terminal.revoke(now).forEach(tenancy::revoke);
         terminals.saveAndFlush(terminal);
         audit("TERMINAL_REVOKED", terminal);
         events.publishEvent(new TerminalRevoked(tenants.requireTenant(), terminal.getId(), terminal.getStoreId(), now));

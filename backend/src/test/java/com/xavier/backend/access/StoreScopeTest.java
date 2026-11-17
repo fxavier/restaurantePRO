@@ -113,7 +113,7 @@ class StoreScopeTest {
                 .containsExactlyInAnyOrder(SystemScope.BOOTSTRAP, SystemScope.PROVISIONING, SystemScope.PRINT_WORKER,
                         SystemScope.PAYMENT_RECOVERY, SystemScope.RESERVATIONS, SystemScope.STOCK_RECONCILE,
                         SystemScope.REPORTING_RECOVERY, SystemScope.METRICS, SystemScope.ALERTS,
-                        SystemScope.IDEMPOTENCY_RETENTION);
+                        SystemScope.IDEMPOTENCY_RETENTION, SystemScope.DEVICE_ENROLMENT);
         assertThat(SystemScope.values()).filteredOn(s -> s.reach() == SystemScope.Reach.NONE)
                 .containsExactlyInAnyOrder(SystemScope.EVENT_MAINTENANCE, SystemScope.PLATFORM,
                         SystemScope.HOUSEKEEPING);

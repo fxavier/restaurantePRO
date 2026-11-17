@@ -24,7 +24,7 @@ class TenantListController {
 
     @GetMapping("/api/v1/auth/tenants")
     List<TenantChoice> tenants(@AuthenticationPrincipal Jwt jwt) {
-        return tenancy.memberships(jwt.getClaimAsString("iss"), jwt.getSubject()).stream()
-                .map(membership -> new TenantChoice(membership.tenantId(), membership.kind())).toList();
+        return tenancy.membershipSummaries(jwt.getClaimAsString("iss"), jwt.getSubject()).stream()
+                .map(TenantChoice::from).toList();
     }
 }

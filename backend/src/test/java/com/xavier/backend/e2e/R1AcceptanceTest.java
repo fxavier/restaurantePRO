@@ -145,18 +145,16 @@ class R1AcceptanceTest {
         UUID storeB = id(office.post("/api/v1/backoffice/stores", store("B"), 201));
         assertThat(auditsBy(adminId, "STORE_CREATED", storeA)).isEqualTo(1);
 
-        // 4. Terminal + one-time enrollment code; the POS device enrolls with it and gets its token once
+        // 4. Terminal + one-time enrolment code; the POS device enrols into its own Keycloak client (D182: what the
+        // enrolment leaves behind is written as the owner, the enrolment itself is TerminalEnrolmentThrottleTest's)
         UUID terminal = id(office.post("/api/v1/backoffice/terminals",
                 Map.of("storeId", storeA, "code", "POS1", "name", "Bar"), 201));
-        String code = office.post("/api/v1/backoffice/terminals/" + terminal + "/enrollment-code", null, 200)
-                .get("code").asString();
+        office.post("/api/v1/backoffice/terminals/" + terminal + "/enrollment-code", null, 200);
         Browser pos = new Browser("pos", port, journey);
         pos.get("/api/v1/auth/session", 401);
-        String deviceToken = pos.post("/api/v1/auth/terminals/enroll", Map.of("code", code), 200)
-                .get("deviceToken").asString();
-        pos.post("/api/v1/auth/terminals/enroll", Map.of("code", code), 422, "enroll again with the used code");
+        pos.enrolled(Installation.enrolled(office, terminal));
         assertThat(auditsBy(adminId, "TERMINAL_CREATED", terminal)).isEqualTo(1);
-        assertThat(audits("TERMINAL_ENROLLED", terminal.toString())).isEqualTo(1);
+        assertThat(auditsBy(adminId, "TERMINAL_ENROLLMENT_CODE_ISSUED", terminal)).isEqualTo(1);
 
         // 5. A waiter (Empregado de sala) of store A, with a PIN
         String waiterCode = "W" + UUID.randomUUID().toString().substring(0, 6);
@@ -223,9 +221,9 @@ class R1AcceptanceTest {
 
         // 9. POS: PIN login on the enrolled terminal; the session is bound to the terminal's store
         pos.post("/api/v1/auth/pos-login", Map.of("employeeCode", waiterCode, "pin", PIN), 401, Csrf.SEND,
-                Map.of(), "pos-login without X-Terminal-Token");
+                Map.of(), "pos-login without the terminal's token");
         JsonNode posSession = pos.post("/api/v1/auth/pos-login", Map.of("employeeCode", waiterCode, "pin", PIN),
-                200, Csrf.SEND, Map.of("X-Terminal-Token", deviceToken), "pos-login");
+                200, Csrf.SEND, pos.terminalAuthorization(), "pos-login");
         pos.posSession(posSession.get("posSession").asString());
         assertThat(posSession.get("storeId").asString()).isEqualTo(storeA.toString());
         assertThat(posSession.get("terminalId").asString()).isEqualTo(terminal.toString());
@@ -283,16 +281,13 @@ class R1AcceptanceTest {
         assertThat(jdbc.sql("SELECT count(*) FROM catalog.configuration_release WHERE store_id = :s")
                 .param("s", storeA).query(Long.class).single()).isEqualTo(1);
 
-        // 13. Revoking the terminal ends its POS session and its device token stops working
+        // 13. Revoking the terminal refuses its very next request (its membership, D182), whatever token it holds
         assertThat(office.post("/api/v1/backoffice/terminals/" + terminal + "/revoke", null, 200)
                 .get("status").asString()).isEqualTo("REVOKED");
-        Awaitility.await().atMost(Duration.ofSeconds(10))
-                .until(() -> pos.send("GET", "/api/v1/auth/pos-session", null, Csrf.OMIT, Map.of()).statusCode()
-                        == 401);
-        journey.add("session after revoke -> 401");
-        pos.get("/api/v1/pos/catalog?storeId=" + storeA, 401);
-        pos.post("/api/v1/auth/pos-login", Map.of("employeeCode", waiterCode, "pin", PIN), 401, Csrf.SEND,
-                Map.of("X-Terminal-Token", deviceToken), "pos-login with the revoked terminal's token");
+        pos.get("/api/v1/auth/pos-session", 403);
+        pos.get("/api/v1/pos/catalog?storeId=" + storeA, 403);
+        pos.post("/api/v1/auth/pos-login", Map.of("employeeCode", waiterCode, "pin", PIN), 403, Csrf.SEND,
+                pos.terminalAuthorization(), "pos-login with the revoked terminal's token");
         assertThat(auditsBy(adminId, "TERMINAL_REVOKED", terminal)).isEqualTo(1);
 
         // The BackOffice user is untouched, and the store list answers (what the backup drill compares)

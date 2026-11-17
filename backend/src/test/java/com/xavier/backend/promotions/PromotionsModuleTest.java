@@ -21,7 +21,7 @@ import org.springframework.test.context.TestPropertySource;
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
-@ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization", "customers", "catalog"})
+@ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization", "tenancy", "customers", "catalog"})
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, PromotionsFixtures.class, PromotionsNoticeTest.NoticeStream.class})
 @TestPropertySource(properties = {

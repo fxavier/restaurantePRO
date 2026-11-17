@@ -39,6 +39,8 @@ public final class TestJwtFactory {
 
     public static final String TENANT_ISSUER = "https://auth.restaurantpro.test/realms/restaurantpro";
     public static final String OPS_ISSUER = "https://auth.restaurantpro.test/realms/restaurantpro-ops";
+    /** The realm of terminals and print bridges (O1 resolution: {@code restaurantpro-devices}). */
+    public static final String DEVICES_ISSUER = "https://auth.restaurantpro.test/realms/restaurantpro-devices";
     public static final String AUDIENCE = "restaurantpro-api";
     public static final String BFF = "backoffice-bff";
 
@@ -66,7 +68,7 @@ public final class TestJwtFactory {
         claims.put("jti", UUID.randomUUID().toString());
     }
 
-    /** The public keys the test decoder trusts (both realms). */
+    /** The public keys the test decoder trusts (every realm). */
     public static JWKSource<SecurityContext> keys() {
         return KEYS;
     }
@@ -79,6 +81,23 @@ public final class TestJwtFactory {
     /** As {@link #account(String)}, with {@code now} as the authentication and issue time. */
     public static TestJwtFactory account(String subject, Instant now) {
         return new TestJwtFactory(TENANT_ISSUER, subject, now);
+    }
+
+    /**
+     * A device of the devices realm (D182, D187): a client-credentials token of {@code clientId} ({@code pos-<id>} or
+     * {@code bridge-<id>}), whose subject is the client's service-account user. No user authentication: no {@code acr}.
+     */
+    public static TestJwtFactory device(String clientId, String subject) {
+        return device(clientId, subject, Instant.now());
+    }
+
+    /** As {@link #device(String, String)}, issued at {@code now} (a server on a moved clock). */
+    public static TestJwtFactory device(String clientId, String subject, Instant now) {
+        TestJwtFactory factory = new TestJwtFactory(DEVICES_ISSUER, subject, now);
+        factory.claims.put("azp", clientId);
+        factory.claims.remove("acr");
+        factory.claims.remove("auth_time");
+        return factory;
     }
 
     /** A support person of the ops realm (D183), authenticated now with a second factor. */

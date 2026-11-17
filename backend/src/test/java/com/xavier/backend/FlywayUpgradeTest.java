@@ -159,13 +159,37 @@ class FlywayUpgradeTest {
     }
 
     /**
-     * The installation of {@link #theOldStoreOrAllPoliciesAreReplacedOnAnInstalledDatabase}: main before S70, so
-     * without S70's V1009/V5008 and without anything of R6, which came after (V1010 carries V1009's helper; an R6
-     * migration names {@code tenant_id} or the PLATFORM registry of V1010). Derived from the migration itself, so no
-     * converting slice edits this test.
+     * The head of each module's block (ADR 0001: one version block per module) in the installation before S70: main
+     * at f32e4b5 (the RLS-run baseline) without S70's V1009 and V5008. Fixed history: it never changes, so no later
+     * migration, whatever its text, can be mistaken for a pre-S70 one. {@code from}/{@code to}: the block's versions.
+     */
+    private record PreS70Block(int from, int to, int head) {
+    }
+
+    private static final List<PreS70Block> PRE_S70_HEADS = List.of(
+            new PreS70Block(1000, 1099, 1008),   // shared (S70 added V1009)
+            new PreS70Block(1100, 1199, 1106),   // audit
+            new PreS70Block(2000, 2999, 2004),   // organization
+            new PreS70Block(3000, 3999, 3015),   // identity
+            new PreS70Block(4000, 4999, 4007),   // dining
+            new PreS70Block(5000, 5999, 5007),   // catalog (S70 added V5008)
+            new PreS70Block(6000, 6999, 6030),   // orders
+            new PreS70Block(7000, 7999, 7010),   // production
+            new PreS70Block(8000, 8999, 8011),   // cash
+            new PreS70Block(9000, 9999, 9060),   // settlement
+            new PreS70Block(10000, 10999, 10012), // fiscal
+            new PreS70Block(11000, 11999, 11004), // customers
+            new PreS70Block(12000, 12999, 12023), // promotions
+            new PreS70Block(13000, 13999, 13081), // inventory
+            new PreS70Block(14000, 14999, 14006)); // reporting (tenancy, 15xxx, did not exist)
+
+    /**
+     * The installation of {@link #theOldStoreOrAllPoliciesAreReplacedOnAnInstalledDatabase}: main before S70, so every
+     * version up to its block's frozen head ({@link #PRE_S70_HEADS}); S70 and all of R6 came after.
      */
     static boolean installedBeforeS70(int version, String sql) {
-        return version != 1009 && version != 5008 && !sql.contains("tenant_id") && !sql.contains("rls_platform_table");
+        return PRE_S70_HEADS.stream().anyMatch(block -> version >= block.from() && version <= block.to()
+                && version <= block.head());
     }
 
     @Test
@@ -178,6 +202,15 @@ class FlywayUpgradeTest {
                 .isFalse();
         assertThat(installedBeforeS70(1012, "SELECT shared.rls_revoke_platform_writes(table_name) "
                 + "FROM shared.rls_platform_table")).isFalse();
+        // S73's V2006 names neither tenant_id nor the PLATFORM registry; it still came after S70
+        assertThat(installedBeforeS70(2006, "ALTER TABLE organization.terminal DROP COLUMN device_token_hash"))
+                .isFalse();
+        assertThat(installedBeforeS70(7012, "ALTER TABLE production.print_job ADD COLUMN claimed_by UUID"))
+                .isFalse();
+        assertThat(installedBeforeS70(15001, "CREATE SCHEMA tenancy")).isFalse();
+        assertThat(installedBeforeS70(1106, "")).as("audit's head before S70").isTrue();
+        assertThat(installedBeforeS70(1107, "")).as("audit's R6 migration").isFalse();
+        assertThat(installedBeforeS70(13081, "")).isTrue();
     }
 
     /**

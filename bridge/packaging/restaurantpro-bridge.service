@@ -1,0 +1,21 @@
+# The print bridge as a systemd service on an always-on device of the store's LAN (D187). Outbound HTTPS to the API
+# and Keycloak only; TCP 9100 to the store's printers. Install the jar at /opt/restaurantpro-bridge/bridge.jar, put
+# the settings in /etc/restaurantpro-bridge.env (see README.md) and enrol once as the service user:
+#   sudo -u restaurantpro-bridge env $(cat /etc/restaurantpro-bridge.env) java -jar bridge.jar enrol <code>
+[Unit]
+Description=restaurantPRO print bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=restaurantpro-bridge
+EnvironmentFile=/etc/restaurantpro-bridge.env
+ExecStart=/usr/bin/java -jar /opt/restaurantpro-bridge/bridge.jar
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadOnlyPaths=/var/lib/restaurantpro-bridge
+
+[Install]
+WantedBy=multi-user.target

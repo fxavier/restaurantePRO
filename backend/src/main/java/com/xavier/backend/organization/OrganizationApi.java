@@ -5,14 +5,12 @@ import com.xavier.backend.organization.exception.StoreNotFoundException;
 import com.xavier.backend.organization.model.CompanyProfile;
 import com.xavier.backend.organization.model.Store;
 import com.xavier.backend.organization.model.Terminal;
-import com.xavier.backend.organization.model.TerminalStatus;
 import com.xavier.backend.organization.model.dto.CompanyProfileView;
 import com.xavier.backend.organization.model.dto.StoreSummary;
 import com.xavier.backend.organization.model.dto.TerminalSummary;
 import com.xavier.backend.organization.repository.CompanyProfileRepository;
 import com.xavier.backend.organization.repository.StoreRepository;
 import com.xavier.backend.organization.repository.TerminalRepository;
-import com.xavier.backend.organization.service.TerminalSecrets;
 import com.xavier.backend.shared.tenancy.TenantScopes;
 import java.time.ZoneId;
 import java.util.Optional;
@@ -22,8 +20,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * What other modules may ask the organization module (spec §8.2: IDs and public APIs, no shared entities).
- * Read-only and without authorization: callers authorize their own use case first (D27), and POS login (S2)
- * looks a terminal up before anyone is authenticated.
+ * Read-only and without authorization: callers authorize their own use case first (D27), and POS login (S2) and a
+ * print bridge look their own device up by the id of the request's membership.
  */
 @Service
 @Transactional(readOnly = true)
@@ -58,18 +56,10 @@ public class OrganizationApi {
         return stores.findById(storeId).map(Store::getTimezone).orElseThrow(() -> new StoreNotFoundException(storeId));
     }
 
-    /** The enrolled, not revoked terminal that owns {@code deviceToken}; empty for anything else. */
-    public Optional<TerminalSummary> findTerminalByDeviceToken(String deviceToken) {
-        if (deviceToken == null || deviceToken.isBlank()) {
-            return Optional.empty();
-        }
-        return terminals.findByDeviceTokenHashAndStatus(TerminalSecrets.hashDeviceToken(deviceToken),
-                TerminalStatus.ACTIVE).map(Terminal::toSummary);
-    }
-
     /**
-     * Any terminal by id, whatever its status (an export labels the terminal of an old fact even after it was
-     * revoked). {@link TerminalSummary#active()} tells whether it is enrolled and not revoked.
+     * Any store device by id (a terminal or a print bridge), whatever its status (an export labels the terminal of an
+     * old fact even after it was revoked). {@link TerminalSummary#activeTerminal()} and
+     * {@link TerminalSummary#activeBridge()} tell whether it is enrolled, not revoked, and of that kind.
      */
     public Optional<TerminalSummary> findTerminal(UUID terminalId) {
         return terminals.findById(terminalId).map(Terminal::toSummary);
