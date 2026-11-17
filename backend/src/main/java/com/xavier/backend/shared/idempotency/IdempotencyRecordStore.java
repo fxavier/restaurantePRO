@@ -35,6 +35,10 @@ class IdempotencyRecordStore {
         }
     }
 
+    /** The outcome of {@link #claimOrFind}: whether this call created the record, and the record as committed. */
+    record Claim(boolean createdNow, StoredRecord record) {
+    }
+
     private static final String SELECT = """
             SELECT request_hash, status, response_status, response_body::text AS response_body, response_location,
                    lease_owner, lease_until
@@ -58,6 +62,16 @@ class IdempotencyRecordStore {
                         """)
                 .param("scope", scope).param("key", key).param("hash", requestHash).param("now", Timestamp.from(now))
                 .update() == 1;
+    }
+
+    /**
+     * {@link #claim}, then the record, in the caller's one transaction (S77): under {@code READ COMMITTED} the insert
+     * waits for a concurrent claim of the same key to end, and the read that follows sees it once committed.
+     */
+    Claim claimOrFind(String scope, String key, String requestHash, Instant now) {
+        boolean createdNow = claim(scope, key, requestHash, now);
+        return new Claim(createdNow, find(scope, key)
+                .orElseThrow(() -> new IllegalStateException("idempotency record vanished: " + scope)));
     }
 
     /**
