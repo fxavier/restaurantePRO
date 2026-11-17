@@ -283,9 +283,10 @@ class R6AcceptanceTest {
         a.pos.get(POS + "/tables?storeId=" + a.store1, 200);
         onlyOwn(owner, a, accountant, Installation.CATALOG + "/items", "catalog.item",
                 Map.of("X-Tenant-Id", a.tenant.toString()));
-        // jobs (D185): a run releases its lease at its end (lease_until = its end). A run of A that ended 3 s after
-        // the suspension proves the reach-ALL jobs ticked since (PrintWorker every second); no run of B ended later
-        // than 2 s after it (a run in flight at the suspension lasts milliseconds), while B's had run before.
+        // jobs (D185): a tick releases its leases at its end (lease_until = its end). A tick of A that ended 3 s after
+        // the suspension proves the reach-ALL jobs ticked since (the test print bridge every second, the payment
+        // sweeper every 5 s; PrintWorker every 15 s since S77); no tick of B ended later than 2 s after it (a tick in
+        // flight at the suspension lasts milliseconds), while B's had run before.
         Awaitility.await().atMost(ASYNC).until(() -> count(owner, "SELECT count(*) FROM shared.job_lease "
                 + "WHERE tenant_id = ? AND lease_until > CAST(? AS timestamptz) + interval '3 seconds'",
                 a.tenant, suspended) > 0);
