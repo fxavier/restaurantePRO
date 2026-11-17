@@ -2,7 +2,6 @@ package com.xavier.bff;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.oauth2.client.ClientAuthorizationException;
@@ -10,7 +9,6 @@ import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.client.annotation.RegisteredOAuth2AuthorizedClient;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
@@ -18,6 +16,9 @@ import java.io.IOException;
 /** Token relay of the routes the backoffice-bff token may call (D176: {@code /backoffice/**} and {@code /auth/**}). */
 @RestController
 class RelayController {
+
+    /** Spring Security's error code when the token endpoint could not be reached or answered with an error status. */
+    private static final String INVALID_TOKEN_RESPONSE = "invalid_token_response";
 
     private final BackendRelay relay;
 
@@ -32,20 +33,26 @@ class RelayController {
         return relay.relay(request, client.getAccessToken().getTokenValue(), TenantController.selected(session));
     }
 
-    /** No usable token any more (refresh refused after reuse detection, or Keycloak not answering in time). */
+    /**
+     * The refresh failed. A transport failure or a 5xx of Keycloak surfaces as Spring's {@code invalid_token_response}
+     * and leaves the session's tokens in place: the IdP is unavailable. Anything else (refresh refused after reuse
+     * detection, for example) means the session can no longer get a token.
+     */
     @ExceptionHandler(ClientAuthorizationException.class)
-    ProblemDetail sessionExpired() {
-        return BffProblem.SESSION_EXPIRED.toProblemDetail();
+    ResponseEntity<ProblemDetail> refreshFailed(ClientAuthorizationException failure) {
+        BffProblem problem = INVALID_TOKEN_RESPONSE.equals(failure.getError().getErrorCode())
+                ? BffProblem.IDP_UNAVAILABLE
+                : BffProblem.SESSION_EXPIRED;
+        return problem.toResponse();
     }
 
     @ExceptionHandler(IOException.class)
-    ProblemDetail backendUnreachable() {
-        return BffProblem.BACKEND_UNAVAILABLE.toProblemDetail();
+    ResponseEntity<ProblemDetail> backendUnreachable() {
+        return BffProblem.BACKEND_UNAVAILABLE.toResponse();
     }
 
     @ExceptionHandler(BackendRelay.RequestBodyTooLargeException.class)
-    @ResponseStatus(HttpStatus.CONTENT_TOO_LARGE)
-    ProblemDetail tooLarge() {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.CONTENT_TOO_LARGE, "The request body is larger than the BFF relays");
+    ResponseEntity<ProblemDetail> tooLarge() {
+        return BffProblem.PAYLOAD_TOO_LARGE.toResponse();
     }
 }

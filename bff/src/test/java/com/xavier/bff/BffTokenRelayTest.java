@@ -178,15 +178,20 @@ class BffTokenRelayTest extends BffTestSupport {
     }
 
     @Test
-    void aHungIdentityProviderFailsTheCallFast() throws Exception {
+    void aHungIdentityProviderAnswersIdpUnavailableFastAndKeepsTheSession() throws Exception {
         AUTHORIZATION_SERVER.issueNextAccessTokenValidFor(5);
         MockHttpSession session = login();
         AUTHORIZATION_SERVER.hangTokenEndpoint();
 
         assertTimeoutPreemptively(Duration.ofSeconds(8), () ->
-                mvc.perform(get("/api/v1/backoffice/stores").session(session)).andExpect(status().isUnauthorized()));
-
+                mvc.perform(get("/api/v1/backoffice/stores").session(session))
+                        .andExpect(status().isServiceUnavailable())
+                        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                        .andExpect(jsonPath("$.code").value("IDP_UNAVAILABLE")));
         assertThat(BACKEND.received()).isEmpty();
+
+        AUTHORIZATION_SERVER.reset();
+        mvc.perform(get("/api/v1/backoffice/stores").session(session)).andExpect(status().isOk());
     }
 
     @Test
@@ -240,7 +245,9 @@ class BffTokenRelayTest extends BffTestSupport {
 
         mvc.perform(post("/api/v1/backoffice/items").session(session).with(xsrf())
                         .contentType(MediaType.APPLICATION_JSON).content(overOneMebibyte))
-                .andExpect(status().isPayloadTooLarge());
+                .andExpect(status().isPayloadTooLarge())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.code").value("BFF_PAYLOAD_TOO_LARGE"));
 
         assertThat(BACKEND.received()).isEmpty();
     }
