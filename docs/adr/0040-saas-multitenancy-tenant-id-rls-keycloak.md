@@ -34,3 +34,7 @@ Up to 2026-11-13 the product was installed per company (spec §2: "Não existem 
 - Every table gets a migration (fast default, no row rewrite, no immutable-row update). Every event carries `tenantId`. Every cache key, SSE topic, idempotency scope and storage prefix includes the tenant.
 - A tenant-level restore is a procedure (PITR into staging, then a tenant-filtered copy), not a button.
 - Proofs: `TenantResolutionTest`, `TenantBindingTransactionManagerTest`, `TenantIsolationTest` per module, `RowLevelSecurityCoverageTest`, `CompositeForeignKeyCoverageTest`, `JwtValidationTest`, `PosTerminalAuthTest`, `StepUpTest`, `ActorlessTenantScopeTest`, the PgBouncer and tenant-restore drills.
+
+## Deviations
+
+- **F22 (user decision, G6 review, 2026-11-17):** `CompanyBootstrapRunner` and `SystemScope.BOOTSTRAP` remain in R6 until F22 is done (before the pilot). They only create the bootstrap tenant's company from environment settings at startup; every other tenant is created by platform onboarding (D181). Follow-up [F22](../issues/r6-followups/F22-company-bootstrap-pre-saas-path.md) is the next one.

@@ -513,7 +513,11 @@ The same applies to `inventory.stock_transfer_stores`.
 | Tests: store scope in tests (D171) | bootstrap-tenant fallback, `@StrictTenantScope`, tenants A/B with identical codes, `jwt()`/`TestJwtFactory`, Keycloak container only for identity/e2e (D189) | S71 / S72 |
 | Operations: metric labels | never `tenant_id` (P74) | S71 |
 
+**Deviations accepted for R6:**
+- **F22 (user decision, G6 review, 2026-11-17):** `CompanyBootstrapRunner` and `SystemScope.BOOTSTRAP` remain in R6 until F22 is done (before the pilot). They only create the bootstrap tenant's company from environment settings at startup; every other tenant is created by platform onboarding (D181). Next follow-up: F22.
+
 **R6 build amendments (2026-11-15 to 2026-11-17, recorded in the run ledger; S76):**
+- *D186/D149 (user decision, G6 review, 2026-11-17):* platform alerts (conditions of the installation, not of one company: backups, disk, the event registry, alert-source failures outside a tenant) are visible only to platform operators; a tenant's users see only their own tenant's alerts. Implemented by S76b.
 - *D179/D180 Indexes:* the per-table recipe gains an explicit step: every `store_id`-led (or business-key-led) index is rebuilt leading with `tenant_id` (two slices missed it at review).
 - *Platform writes:* a platform `SECURITY DEFINER` function called in a tenant-bound transaction raises `TN004` → 403 `PLATFORM_FORBIDDEN` (S75); `/platform/**` runs unbound (`SystemScope.PLATFORM`, S72).
 - *BFF (P69):* error codes `BFF_SESSION_EXPIRED` (401) and `BACKEND_UNAVAILABLE` (502); logout ends the Keycloak session back-channel with no `id_token_hint` in URLs; one instance until a shared session store is decided (follow-up F04).
