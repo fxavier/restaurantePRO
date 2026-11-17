@@ -6,7 +6,7 @@
 #   r6-capture.sh rtt    --db URI                         app-to-database round trip: median of 1000 `SELECT 1` on
 #                                                          one session (run it ON THE APPLICATION HOST)
 #   r6-capture.sh start  --db URI --metrics URL --out DIR  before a phase: resets pg_stat_statements, snapshots
-#                                                          pg_stat_database and db_transactions_total{origin}
+#                                                          pg_stat_database and db_transactions_total{kind}
 #   r6-capture.sh sample --db URI --metrics URL --out DIR --seconds N
 #                                                          during a phase, every 2 s: the application role's backends
 #                                                          by state and wait event, Hikari active/idle/pending, this
@@ -49,7 +49,7 @@ has_statements() {
     [ "$(sql "SELECT count(*) FROM pg_extension WHERE extname = 'pg_stat_statements'")" = 1 ]
 }
 
-# db_transactions_total{origin} as "origin value" lines (the backend's S77 counter)
+# db_transactions_total{kind} as "kind value" lines (the backend's S77 counter)
 transactions_by_origin() {
     local auth=()
     if [ -n "${METRICS_TOKEN_FILE:-}" ]; then
@@ -57,7 +57,7 @@ transactions_by_origin() {
     fi
     curl -fsS "${auth[@]}" "$metrics" | awk '
         /^db_transactions_total\{/ {
-            match($0, /origin="[^"]*"/); origin = substr($0, RSTART + 8, RLENGTH - 9)
+            match($0, /kind="[^"]*"/); origin = substr($0, RSTART + 6, RLENGTH - 7)
             total[origin] += $NF
         }
         END { for (o in total) printf "%s %d\n", o, total[o] }' | sort

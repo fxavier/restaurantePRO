@@ -327,7 +327,7 @@ class TenantBindingTransactionManagerTest {
         assertThat(count.since(before)).containsEntry("system:REPORTING_RECOVERY", 1L);
         assertThat(meters.find(TenantBindingTransactionManager.TRANSACTIONS).counters()).isNotEmpty()
                 .allSatisfy(counter -> assertThat(counter.getId().getTags())
-                        .extracting(io.micrometer.core.instrument.Tag::getKey).containsExactly("origin"));
+                        .extracting(io.micrometer.core.instrument.Tag::getKey).containsExactly("kind"));
     }
 
     @Test

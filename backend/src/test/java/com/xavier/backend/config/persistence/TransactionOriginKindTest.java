@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
 
 /**
- * S77 (F1): {@code db_transactions{origin}} groups every begin under a low-cardinality kind, never a tenant, an actor or
+ * S77 (F1): {@code db_transactions{kind}} groups every begin under a low-cardinality kind, never a tenant, an actor or
  * a listener name (P74).
  */
 class TransactionOriginKindTest {

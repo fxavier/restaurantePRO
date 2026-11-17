@@ -43,9 +43,9 @@ public class TenantBindingTransactionManager extends JpaTransactionManager {
     static final String BIND = "SELECT set_config('app.tenant_id', ?, true), set_config('app.all_stores', ?, true), "
             + "set_config('app.store_ids', ?, true), set_config('app.scope_origin', ?, true)";
 
-    /** S77 (F1): exported as {@code db_transactions_total{origin}}; never a tenant label (P74). */
+    /** S77 (F1): exported as {@code db_transactions_total{kind}}; never a tenant label (P74). */
     static final String TRANSACTIONS = "db_transactions";
-    static final String ORIGIN_TAG = "origin";
+    static final String KIND_TAG = "kind";
 
     private static final String REGISTRY = "org.springframework.modulith.";
     private static final String SYSTEM = "system:";
@@ -129,7 +129,7 @@ public class TenantBindingTransactionManager extends JpaTransactionManager {
         if (registry == null) {
             return;
         }
-        Counter.builder(TRANSACTIONS).tag(ORIGIN_TAG, originKind(definition.getName(), storeScope().origin(),
+        Counter.builder(TRANSACTIONS).tag(KIND_TAG, originKind(definition.getName(), storeScope().origin(),
                         RequestContextHolder.getRequestAttributes() != null))
                 .description("Database transactions begun, by origin kind (S77)").register(registry).increment();
     }

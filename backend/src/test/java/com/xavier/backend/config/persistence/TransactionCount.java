@@ -6,7 +6,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Reads {@code db_transactions{origin}} (S77): the transactions begun so far, per origin kind. Take a {@link #snapshot}
+ * Reads {@code db_transactions{kind}} (S77): the transactions begun so far, per origin kind. Take a {@link #snapshot}
  * before the work and ask {@link #since} after it.
  */
 public final class TransactionCount {
@@ -21,7 +21,7 @@ public final class TransactionCount {
     public Map<String, Long> snapshot() {
         Map<String, Long> counts = new HashMap<>();
         for (Counter counter : registry.find(TenantBindingTransactionManager.TRANSACTIONS).counters()) {
-            counts.merge(counter.getId().getTag(TenantBindingTransactionManager.ORIGIN_TAG),
+            counts.merge(counter.getId().getTag(TenantBindingTransactionManager.KIND_TAG),
                     (long) counter.count(), Long::sum);
         }
         return counts;
