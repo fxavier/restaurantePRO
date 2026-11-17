@@ -1,9 +1,11 @@
 # shellcheck shell=bash
 # The database roles of ADR 0039 (D163), as the restore checks and the drills check them. Sourced, never run.
 
-# Functions only the superuser console may run (EXECUTE revoked from PUBLIC by V1007, V1105, V3013/V3015; and the
-# stand-in of test/sample.sql). A restore that drops privileges hands them back to PUBLIC, so to the pool.
-RP_CONSOLE_FUNCTIONS="shared.end_account_sessions(uuid) audit.record_console_event(text,text,text,text) identity.mfa_break_glass_reset(text,text) shared.end_sessions_console()"
+# Functions only the superuser console may run (EXECUTE revoked from PUBLIC by V1105). A restore that drops privileges
+# hands them back to PUBLIC, so to the pool. R6: the Spring Session console functions (V1007) and the local MFA
+# break-glass (V3013) are dropped by S72's V1011/V3016; MFA resets are Keycloak admin actions (D184). The check skips a
+# listed function that does not exist.
+RP_CONSOLE_FUNCTIONS="audit.record_console_event(text,text,text,text)"
 
 # $1 container, [$2 database]: one line per violation of D163, nothing when it holds. As the superuser, over the
 # container's local socket.

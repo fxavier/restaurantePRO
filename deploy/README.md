@@ -58,7 +58,7 @@ Since row-level security (ADR 0039, D163) the database has three roles. The back
 
 | Role | What it is for | Password |
 | --- | --- | --- |
-| `restaurantpro` | The PostgreSQL superuser. Only for operations: `backup.sh`, `basebackup.sh`, `restore.sh`, `pitr-restore.sh`, `verify-*.sh`, `mfa-break-glass.sh`, `db-provision` and your own `psql`. Only the `postgres` and `db-provision` containers get its secret. | `secrets/db_password` |
+| `restaurantpro` | The PostgreSQL superuser. Only for operations: `backup.sh`, `basebackup.sh`, `restore.sh`, `pitr-restore.sh`, `verify-*.sh`, `tenant-export.sh`, `tenant-restore.sh`, `db-provision` and your own `psql`. Only the `postgres` and `db-provision` containers get its secret. | `secrets/db_password` |
 | `restaurantpro_owner` | Owns every schema, table, sequence and function of the application, and runs the Flyway migrations at backend startup. It has `BYPASSRLS`, so migrations and data fixes see every store. | `secrets/db_owner_password` |
 | `restaurantpro_app` | The backend's connection pool. It owns nothing, has only `SELECT`, `INSERT`, `UPDATE` and `DELETE` on the application's tables (no DDL, no `TRUNCATE`, no writes to the Flyway history) and is bound by row-level security: every connection sees only the stores of whoever it works for. | `secrets/db_app_password` |
 
@@ -335,7 +335,7 @@ Before D98, the `pg-wal-archive` volume and an unencrypted `backups/` held plain
 
 `./restore.sh [--force] [--identity KEY_FILE] [--secrets DIR] ARCHIVE` decrypts `.age` archives (with the private key file, mode 0600 or 0400, outside `deploy/` and the archive's directory), checks the sidecar, the checksums and the dump, then restores in a single transaction: either everything is restored or nothing changes. It refuses a database that already holds tables unless you pass `--force`. With `--force` it restores into a staging database, then closes the target's connections, renames the target aside, renames the staging database into its place, and drops the old one. Nothing created after the backup survives, which is what a rollback needs. If the restore fails or is interrupted before the swap, the target stays as it was. If it is killed during the swap, no data is lost: the next run of `restore.sh` names the leftover databases (`restaurantpro_old_<pid>`, `restaurantpro_restore_<pid>`) and tells you how to rename one back.
 
-**Roles.** `restore.sh` provisions the database roles ("Database roles") with `secrets/db_owner_password` and `secrets/db_app_password` (or those in `--secrets DIR`) before `pg_restore`, because the dump grants privileges to `restaurantpro_app`, and again after it, because the restored objects belong to the superuser (`pg_restore --no-owner`) until provisioning hands them to `restaurantpro_owner`. It refuses to start, leaving the target untouched, when either file is missing. The privileges of the dump are kept on purpose: the console functions (`mfa-break-glass.sh` and the session and audit console calls) have `EXECUTE` revoked from everyone, and a restore without privileges would give it back to the backend's role. A restore made with `pg_restore` by hand, without the provisioning, leaves objects owned by the superuser, and the backend refuses to start until `./postgres/provision.sh --container <postgres container>` has run.
+**Roles.** `restore.sh` provisions the database roles ("Database roles") with `secrets/db_owner_password` and `secrets/db_app_password` (or those in `--secrets DIR`) before `pg_restore`, because the dump grants privileges to `restaurantpro_app`, and again after it, because the restored objects belong to the superuser (`pg_restore --no-owner`) until provisioning hands them to `restaurantpro_owner`. It refuses to start, leaving the target untouched, when either file is missing. The privileges of the dump are kept on purpose: the console functions (the audit console call) have `EXECUTE` revoked from everyone, and a restore without privileges would give it back to the backend's role. A restore made with `pg_restore` by hand, without the provisioning, leaves objects owned by the superuser, and the backend refuses to start until `./postgres/provision.sh --container <postgres container>` has run.
 
 Restore the live installation:
 
@@ -461,13 +461,11 @@ The sensitive actions are those of the permissions that change who can do what, 
 
 **Recovery.** A recovery code works once, in place of a TOTP code, at login or for a sensitive action. A user who still has access can replace all recovery codes, after entering a fresh code. A user who lost both the phone and the codes asks an administrator (`USER_MANAGE`) for a **reset** of their second factor, with a reason: it revokes the factor and the recovery codes, ends the user's sessions, is audited (`MFA_RESET`) and returns an enrolment code. Give it to the user out of band (phone, in person), never by the same e-mail as the password. No one can reset their own account: use a recovery code.
 
-**Break-glass.** When the last administrator lost the phone and the codes, the infrastructure administrator, with a shell on the server, runs:
-
-```bash
-./mfa-break-glass.sh <username> "<reason>"
-```
-
-It revokes that account's factor and writes a system audit row (`MFA_BREAK_GLASS_RESET`) in one transaction, through `docker exec … psql`. The account then enrols again from the LAN. Anyone with a shell on the server and Docker can do this, which is why that access is a separate, smaller group (spec §10). `./mfa-break-glass.sh --self-test` checks the script.
+**Break-glass (R6, D184).** The second factor lives in Keycloak, so a lost factor is reset there, not on the database: a
+Keycloak administrator of the realm opens the user (Users → the user → Credentials), deletes the OTP credential and
+sets the required action *Configure OTP*, or ends the user's sessions (Sessions → Sign out). For the last
+administrator of a company, the platform's Keycloak administrator does it. The local `mfa-break-glass.sh` and its
+database function are gone (S72's V3016 drops the local MFA tables).
 
 ## Single sign-on (optional)
 

@@ -5,6 +5,7 @@ import com.xavier.backend.shared.tenancy.MembershipKind;
 import com.xavier.backend.shared.tenancy.TenantScopes;
 import com.xavier.backend.tenancy.model.dto.Membership;
 import com.xavier.backend.tenancy.model.dto.MembershipGrant;
+import com.xavier.backend.tenancy.model.dto.MembershipSummary;
 import com.xavier.backend.tenancy.model.dto.TenantStatus;
 import com.xavier.backend.tenancy.model.event.MembershipRevoked;
 import java.sql.Timestamp;
@@ -51,6 +52,21 @@ public class TenancyApi {
     @Transactional(readOnly = true)
     public List<Membership> memberships(String issuer, String subject) {
         return resolveAll(issuer, subject, null, ALL_KINDS);
+    }
+
+    /**
+     * Every ACTIVE membership valid now of {@code (issuer, subject)} with its tenant's code, name and Keycloak
+     * organization; never a tenant the subject does not belong to.
+     */
+    @Transactional(readOnly = true)
+    public List<MembershipSummary> membershipSummaries(String issuer, String subject) {
+        return jdbc.sql("SELECT tenant_id, code, legal_name, kind, keycloak_org_id, tenant_status "
+                        + "FROM tenancy.list_memberships(:issuer, :subject)")
+                .param("issuer", issuer).param("subject", subject)
+                .query((rs, row) -> new MembershipSummary(rs.getObject("tenant_id", UUID.class), rs.getString("code"),
+                        rs.getString("legal_name"), MembershipKind.valueOf(rs.getString("kind")),
+                        rs.getString("keycloak_org_id"), TenantStatus.valueOf(rs.getString("tenant_status"))))
+                .list();
     }
 
     /**

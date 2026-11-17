@@ -1,0 +1,45 @@
+{
+  "realm": "restaurantpro-devices",
+  "displayName": "restaurantPRO devices",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": false,
+  "resetPasswordAllowed": false,
+  "rememberMe": false,
+  "bruteForceProtected": true,
+  "accessTokenLifespan": 300,
+  "revokeRefreshToken": true,
+  "refreshTokenMaxReuse": 0,
+  "clients": [
+    {
+      "clientId": "device-provisioner",
+      "name": "restaurantPRO backend: creates and disables the pos-* and bridge-* clients (O1 option 3)",
+      "enabled": true,
+      "publicClient": false,
+      "bearerOnly": false,
+      "clientAuthenticatorType": "client-jwt",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "fullScopeAllowed": true,
+      "protocol": "openid-connect",
+      "attributes": {
+        "token.endpoint.auth.signing.alg": "ES256",
+        "use.jwks.string": "false",
+        "use.jwks.url": "false"
+      }
+    }
+  ],
+  "users": [
+    {
+      "username": "service-account-device-provisioner",
+      "enabled": true,
+      "serviceAccountClientId": "device-provisioner",
+      "clientRoles": {
+        "realm-management": ["manage-clients", "view-clients"]
+      }
+    }
+  ]
+}

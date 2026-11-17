@@ -34,7 +34,11 @@ public class RowLevelSecurityCoverageTest {
             "tenancy.grant_membership(uuid,text,text,text,uuid,timestamp with time zone,timestamp with time zone)",
             "tenancy.revoke_membership(uuid)",
             "tenancy.tenant_status(uuid)",
-            "tenancy.activate_tenant(uuid)");
+            "tenancy.activate_tenant(uuid)",
+            "tenancy.list_memberships(text,text)",
+            "tenancy.create_tenant(text,text,text,text,text)",
+            "tenancy.set_tenant_status(uuid,text,text,text)",
+            "tenancy.record_platform_event(uuid,text,text,text)");
 
     /**
      * R6: the modules converted to tenant tables, derived from the database (no list a slice edits): a schema with at
