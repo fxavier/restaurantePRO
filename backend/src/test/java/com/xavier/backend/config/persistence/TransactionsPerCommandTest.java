@@ -33,9 +33,8 @@ import tools.jackson.databind.JsonNode;
  * S77 (A92, F5): the transactions one POS request begins, through the real security chain (the terminal's token and
  * {@code X-Pos-Session}), counted by {@code db_transactions} under origin {@code request} (authentication, the use case,
  * idempotency). Event delivery runs after the response on other threads ({@code listener}, {@code registry}): a batch's
- * is pinned per listener invocation, Spring Modulith's own cost. Authentication of a POS request is three:
- * {@code TenancyApi.resolve}, {@code PrincipalActors.posSession} and {@code MustChangePinFilter}'s
- * {@code PinChangeService.mustChangePin} (the S77 design counted two; the third is an identity follow-up).
+ * is pinned per listener invocation, Spring Modulith's own cost. Authentication of a POS request is two:
+ * {@code TenancyApi.resolve} and {@code PrincipalActors.posSession} (which also answers {@code MustChangePinFilter}).
  */
 @DeviceHttpTest
 class TransactionsPerCommandTest {
@@ -78,21 +77,21 @@ class TransactionsPerCommandTest {
     }
 
     @Test
-    void readingTheTablesOrTheCatalogBeginsAtMostFourTransactions() throws Exception {
+    void readingTheTablesOrTheCatalogBeginsAtMostThreeTransactions() throws Exception {
         assertThat(requestTransactions(get(POS + "/tables?storeId=" + store).with(waiter), 200))
-                .as("authentication 3, the read 1").isLessThanOrEqualTo(4);
+                .as("authentication 2, the read 1").isLessThanOrEqualTo(3);
         assertThat(requestTransactions(get(POS + "/catalog").with(waiter), 200))
-                .as("authentication 3, the read 1").isLessThanOrEqualTo(4);
+                .as("authentication 2, the read 1").isLessThanOrEqualTo(3);
     }
 
     @Test
-    void addingALineBeginsAtMostFiveTransactions() throws Exception {
+    void addingALineBeginsAtMostFourTransactions() throws Exception {
         UUID order = openedOrder();
 
         long begun = requestTransactions(addLine(order), 201);
 
-        assertThat(begun).as("authentication 3, the idempotency claim (and its read) 1, the action 1")
-                .isLessThanOrEqualTo(5);
+        assertThat(begun).as("authentication 2, the idempotency claim (and its read) 1, the action 1")
+                .isLessThanOrEqualTo(4);
     }
 
     @Test

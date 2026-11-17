@@ -84,6 +84,23 @@ class PinChangeHttpTest {
                 .andExpect(jsonPath("$.permissions", containsInAnyOrder(IdentityFixtures.waiterAuthorities(store))));
     }
 
+    /** S77: the refusal does not depend on how the filter learns the flag; every route but /auth/** gets it. */
+    @Test
+    void aSessionThatMustChangeItsPinIsRefusedEverywhereButTheAuthRoutes() throws Exception {
+        Employee employee = resetEmployee(IdentityFixtures.WAITER);
+        RequestPostProcessor session = fixtures.posLogin(terminal, employee, RESET_PIN);
+
+        for (String route : java.util.List.of(POS_ROUTE, "/api/v1/pos/tables?storeId=" + store,
+                "/api/v1/pos/catalog")) {
+            mvc.perform(get(route).with(session))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.detail").value(containsString("change your PIN")));
+        }
+        mvc.perform(get("/api/v1/auth/pos-session").with(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mustChangePin").value(true));
+    }
+
     @Test
     void theNewPinMustDifferFromTheOneTheManagerSet() throws Exception {
         Employee employee = resetEmployee(IdentityFixtures.WAITER);
