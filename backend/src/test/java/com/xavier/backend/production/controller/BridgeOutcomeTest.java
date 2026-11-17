@@ -71,13 +71,27 @@ class BridgeOutcomeTest {
         assertThat(BridgeJobs.job(job)).containsEntry("status", "UNKNOWN");
     }
 
+    /** Review 6: only the bridge that claimed a job reports it; a job nobody claimed is nobody's to report. */
     @Test
     void anOutcomeForAJobNeverClaimedChangesNothing() throws Exception {
         UUID job = jobs.queuedJob(printer);
 
-        jobs.outcome(bridge.bearer(), job, "ACCEPTED").andExpect(status().isNoContent());
+        jobs.outcome(bridge.bearer(), job, "ACCEPTED").andExpect(status().isNotFound());
 
         assertThat(BridgeJobs.job(job)).containsEntry("status", "QUEUED").containsEntry("attempts", 0);
+    }
+
+    /** Review 6: another bridge of the same store cannot report a job this bridge claimed (404, as another store). */
+    @Test
+    void anotherBridgeOfTheSameStoreCannotReportTheJob() throws Exception {
+        Device second = new Devices(mvc).enrolledBridge(store);
+        UUID job = claimedJob();
+
+        jobs.outcome(second.bearer(), job, "ACCEPTED").andExpect(status().isNotFound());
+
+        assertThat(BridgeJobs.job(job)).containsEntry("status", "PROCESSING");
+        jobs.outcome(bridge.bearer(), job, "ACCEPTED").andExpect(status().isNoContent());
+        assertThat(BridgeJobs.job(job)).containsEntry("status", "SENT");
     }
 
     @Test

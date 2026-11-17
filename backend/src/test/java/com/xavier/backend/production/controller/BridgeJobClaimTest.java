@@ -60,13 +60,38 @@ class BridgeJobClaimTest {
         assertThat(BridgeJobs.job(job)).containsEntry("status", "PROCESSING").containsEntry("attempts", 1);
     }
 
+    /**
+     * Review 1 (D50 §7.2): one job per claim, so a claimed job's lease starts when its own send can start: a slow
+     * printer never keeps a second leased job waiting until its lease runs out (UNKNOWN, then a double print).
+     */
+    @Test
+    void aClaimLeasesOneJobAtATime() throws Exception {
+        UUID first = jobs.queuedJob(jobs.printer(store, "192.168.1.53", 9100));
+        UUID second = jobs.queuedJob(jobs.printer(store, "192.168.1.54", 9100));
+
+        JsonNode claimed = jobs.claimed(bridge.bearer());
+
+        assertThat(claimed).hasSize(1);
+        UUID other = claimed.get(0).get("id").asString().equals(first.toString()) ? second : first;
+        assertThat(BridgeJobs.job(other)).containsEntry("status", "QUEUED").containsEntry("attempts", 0)
+                .containsEntry("started_at", null);
+    }
+
+    /** Review 2: a claim never holds a server thread: nothing due is 204 at once, whatever the bridge asks. */
+    @Test
+    void anIdleClaimAnswersAtOnceWithNoContent() throws Exception {
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(BridgeJobs.JOBS)
+                        .param("waitSeconds", "30").with(bridge.bearer()))
+                .andExpect(status().isNoContent());
+    }
+
     @Test
     void aClaimedJobIsNotClaimedAgain() throws Exception {
         UUID job = jobs.queuedJob(jobs.printer(store, "192.168.1.51", 9100));
         jobs.claimed(bridge.bearer());
 
-        assertThat(jobs.claimed(bridge.bearer()).valueStream().map(j -> j.get("id").asString()))
-                .doesNotContain(job.toString());
+        jobs.claim(bridge.bearer()).andExpect(status().isNoContent());
+        assertThat(BridgeJobs.job(job)).containsEntry("status", "PROCESSING");
     }
 
     @Test
@@ -74,8 +99,7 @@ class BridgeJobClaimTest {
         UUID otherStore = new IdentityFixtures(mvc).store();
         UUID otherJob = jobs.queuedJob(jobs.printer(otherStore, "192.168.2.50", 9100));
 
-        assertThat(jobs.claimed(bridge.bearer()).valueStream().map(j -> j.get("id").asString()))
-                .doesNotContain(otherJob.toString());
+        jobs.claim(bridge.bearer()).andExpect(status().isNoContent());
         assertThat(BridgeJobs.job(otherJob)).containsEntry("status", "QUEUED").containsEntry("attempts", 0);
     }
 
@@ -83,9 +107,8 @@ class BridgeJobClaimTest {
     void aBridgeOfAnotherTenantNeverClaimsThisTenantsJob() throws Exception {
         UUID job = jobs.queuedJob(jobs.printer(store, "192.168.1.52", 9100));
 
-        JsonNode foreign = jobs.claimed(BridgeJobs.bridgeOfAnotherTenant(Members.activeTenant()));
+        jobs.claim(BridgeJobs.bridgeOfAnotherTenant(Members.activeTenant())).andExpect(status().isNoContent());
 
-        assertThat(foreign.valueStream().map(j -> j.get("id").asString())).doesNotContain(job.toString());
         assertThat(BridgeJobs.job(job)).containsEntry("status", "QUEUED");
     }
 

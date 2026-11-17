@@ -11,76 +11,56 @@ import com.xavier.backend.production.repository.PrintJobRepository;
 import com.xavier.backend.shared.tenancy.MembershipKind;
 import com.xavier.backend.shared.tenancy.TenantContext;
 import com.xavier.backend.shared.tenancy.TenantScopes;
-import java.time.Clock;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.Base64;
-import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
 /**
  * The print bridge's side of the queue (D187). The caller is the bridge of the request's {@code BRIDGE} membership,
  * an enrolled, not revoked print bridge of one store; everything it does runs in that store's scope, so row-level
- * security itself keeps it to its own store's (and tenant's) jobs. A claim takes the store's due jobs with a lease
- * ({@link PrintQueue#claimDue}: {@code FOR UPDATE SKIP LOCKED}, one per printer, PROCESSING) and, when there are none,
- * waits for up to {@code wait}, looking again every {@code poll} (a long poll: the bridge's connection is outbound
- * only). No transaction is held while waiting.
+ * security itself keeps it to its own store's (and tenant's) jobs. A claim takes at most one due job with a lease
+ * ({@link PrintQueue#claimDue}: {@code FOR UPDATE SKIP LOCKED}, PROCESSING, the bridge recorded as its claimant) and
+ * answers at once: one job per claim, so a job's lease starts only when its own send can start (review 1), and no
+ * server thread waits for work (review 2: an idle bridge polls). Only the claiming bridge reports the outcome.
  */
 @Service
 public class BridgeJobService {
-
-    static final Duration MAX_WAIT = Duration.ofSeconds(30);
-    static final int MAX_CLAIM = 10;
 
     private final PrintQueue queue;
     private final PrintJobRepository jobs;
     private final OrganizationApi organization;
     private final TenantScopes tenants;
     private final StoreScopes stores;
-    private final Clock clock;
-    private final Duration poll;
 
     BridgeJobService(PrintQueue queue, PrintJobRepository jobs, OrganizationApi organization, TenantScopes tenants,
-                     StoreScopes stores, Clock clock,
-                     @Value("${restaurantpro.production.bridge.poll:PT1S}") Duration poll) {
+                     StoreScopes stores) {
         this.queue = queue;
         this.jobs = jobs;
         this.organization = organization;
         this.tenants = tenants;
         this.stores = stores;
-        this.clock = clock;
-        this.poll = poll;
     }
 
-    /** The calling bridge's due jobs, at most {@code limit}, waiting up to {@code wait} for one. */
-    public List<BridgeJobView> claim(int limit, Duration wait) throws InterruptedException {
+    /** The calling bridge's next due job, leased to it; empty when none is due. */
+    public Optional<BridgeJobView> claim() {
         TerminalSummary bridge = callingBridge();
-        int count = Math.clamp(limit, 1, MAX_CLAIM);
-        Instant deadline = clock.instant().plus(wait.compareTo(MAX_WAIT) > 0 ? MAX_WAIT : wait);
-        while (true) {
-            List<BridgeJobView> claimed = inStore(bridge, () -> queue.claimDue(count)).stream()
-                    .map(BridgeJobService::view).toList();
-            Duration left = Duration.between(clock.instant(), deadline);
-            if (!claimed.isEmpty() || left.isNegative() || left.isZero()) {
-                return claimed;
-            }
-            Thread.sleep(left.compareTo(poll) < 0 ? left : poll);
-        }
+        return inStore(bridge, () -> queue.claimDue(1, bridge.id())).stream().map(BridgeJobService::view)
+                .findFirst();
     }
 
     /**
-     * The send's outcome of a job the bridge claimed. Recorded once, while the job is PROCESSING (a repeat, a late
-     * report after the lease ran out, or one for a job never claimed changes nothing, D50 §7.2).
+     * The send's outcome of a job the bridge claimed. Recorded once, while the job is PROCESSING (a repeat, or a late
+     * report after the lease ran out, changes nothing, D50 §7.2).
      *
-     * @throws ProductionNotFoundException for a job the bridge cannot see (another store's or tenant's: the same 404)
+     * @throws ProductionNotFoundException for a job this bridge does not hold: another store's or tenant's, another
+     *                                     bridge's, or one nobody claimed (the same 404)
      */
     public void recordOutcome(UUID jobId, BridgeOutcomeRequest outcome) {
         TerminalSummary bridge = callingBridge();
         inStore(bridge, () -> {
-            if (!jobs.existsById(jobId)) {
+            if (jobs.findById(jobId).filter(job -> job.isClaimedBy(bridge.id())).isEmpty()) {
                 throw new ProductionNotFoundException("PrintJob", jobId);
             }
             queue.record(jobId, new SendResult(outcome.outcome(), outcome.paperNearEnd()));
