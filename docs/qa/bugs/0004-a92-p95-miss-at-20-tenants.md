@@ -1,6 +1,6 @@
 # BUG-0004: p95 misses §12 at 20 tenants × 10 terminals (A92)
 
-- **Status:** open — likely cause identified (2026-11-17 runs 3 and 4 on an idle machine), not fixed.
+- **Status:** open — likely cause identified (2026-11-17 runs 3 and 4 on an idle machine); **addressed by S77** (approved by the user): measurement topology first (load generator and database off the server's host), then fewer round trips per request (transaction bind, idempotency, event-registry transactions) and the per-tenant background polling. Design summary: `.scratch/sdlc/restaurantpro-backend-r6/s77-design.approved.md` (run ledger, main checkout).
 - **Severity:** High (release gate: spec §12, A92). No functional error: 0 failed requests in every phase.
 - **Breaks:** spec §12 "p95 < 500 ms para comandos locais simples"; multitenancy-decisions A92 ("p95 < 500 ms for simple commands and queries with 20 tenants × 10 terminals"); PRD user story 32.
 - **Environment:** `r6/s76-integrate` (main `9817098` + #112 + #113), `R6TenantLoadSmoke` at `e9e6853`; laptop Intel i9-9880H, 16 logical CPUs, 16 GB, macOS 15.3, Java 25.0.4.1, PostgreSQL 18.6 in Docker Desktop (16 CPUs, 7.7 GB); server, database and 200 clients on one machine; a parallel test suite (S76b) ran during part of run 1 and all of run 2.

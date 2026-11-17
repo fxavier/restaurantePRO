@@ -207,6 +207,8 @@ Every S74 slice: the migration recipe for each table of its modules; its module'
 | 2026-11-15 | **S73 is also blocked by S74a** (`production/`) **and S75** (the real `IdentityProviderAdmin`) | disjoint write sets |
 | 2026-11-17 | **S74x** (new node, test-only): fiscal fixture ids and a production fixture predating S74d's tenant protection | integrated suite on `main` |
 | 2026-11-17 | **S76b** (new node): eight small follow-ups (BFF 503/413 codes, support audit kind, `shared/V1014`, gauge staleness, no-show row lock, bridge idle-claim test, dead properties, devices realm file) beside S76 | keep S76 to integration |
+| 2026-11-17 | **Alerts (D186/D149, user decision at G6):** platform alerts only to platform operators; tenants see only their own alerts; implemented by S76b | no tenant sees installation-wide conditions |
+| 2026-11-17 | **Deviation (user decision at G6):** `CompanyBootstrapRunner` and `SystemScope.BOOTSTRAP` stay until F22 (next follow-up, before the pilot) | they only create the bootstrap tenant's company from the environment |
 | 2026-11-17 | **A92 baseline method** (S76): a no-RLS run is correct only while one company has data (the tenant predicate of tenant-wide tables is RLS's alone; with `BYPASSRLS` and three tenants the CASH method lookup returns three rows). The baseline is therefore P1 = 1 tenant × 10 without RLS, P2 = the same with RLS (the RLS cost, and A77's configuration), P3 = 20 × 10 with RLS (the A92 gate); see `deploy/load/r6-load-plan.md` | measured |
 
 ## Blocked-by graph and parallel groups

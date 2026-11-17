@@ -75,8 +75,10 @@ import tools.jackson.databind.JsonNode;
  *       round prints styled and wrapped; a cash payment kicks the drawer once, a card payment does not; paper out on
  *       the kitchen leaves the next job unsent in RETRY_WAIT {@code PAPER_OUT} and a print-queue alert (A63, A65,
  *       A66).</li>
- *   <li>The seven §12 alerts provoked and listed by {@code GET /backoffice/alerts}; the Prometheus text scraped with the
- *       token holds every metric the Prometheus rules use ({@link AlertRulesReferenceExistingMetricsTest}, A63, A64).</li>
+ *   <li>The seven §12 alerts provoked: the tenant's own listed by {@code GET /backoffice/alerts}, the platform's
+ *       (backup, disk, events) by {@code GET /platform/alerts} for platform operators only (R6); the Prometheus text
+ *       scraped with the token holds every metric the Prometheus rules use ({@link AlertRulesReferenceExistingMetricsTest},
+ *       A63, A64).</li>
  * </ol>
  * Provoked at the boundary rather than through HTTP, as no API can cause them: the backup status file (written as
  * {@code verify-backups.sh} would), an exhausted event publication (a row as Modulith leaves it), the export failure
@@ -92,6 +94,9 @@ import tools.jackson.databind.JsonNode;
 @Import({Installation.FreshDatabase.class, SettlementTestClock.Config.class, FakePaymentProvider.Config.class})
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class R5AcceptanceTest {
+
+    /** The §12 alerts of the platform itself: listed to platform operators, never in a tenant's BackOffice. */
+    static final String[] PLATFORM_CODES = {"BACKUP_LATE", "BACKUP_PROBLEM", "DISK_SPACE_LOW", "EVENTS_FAILED"};
 
     @Autowired
     PostgreSQLContainer freshPostgres;
@@ -457,17 +462,19 @@ class R5AcceptanceTest {
                         now.minus(Duration.ofMinutes(5))));
         clock.advance(Duration.ofMinutes(2)); // the reader reads at most once a minute
 
+        // the tenant's own alerts in its BackOffice; the platform's to platform operators only (R6 user decision)
         List<JsonNode> listed = alerts();
-        Map<String, String> byCode = new LinkedHashMap<>();
-        listed.forEach(a -> byCode.put(a.get("code").asString(), a.get("storeId").isNull() ? null
-                : a.get("storeId").asString()));
-        assertThat(byCode).containsKeys("BACKUP_LATE", "BACKUP_PROBLEM", "DISK_SPACE_LOW", "EVENTS_FAILED",
-                "PAYMENTS_IN_DOUBT", "CASH_DISCREPANCY", "EXPORT_FAILED");
+        Map<String, String> byCode = byCode(listed);
+        assertThat(byCode).containsKeys("PAYMENTS_IN_DOUBT", "CASH_DISCREPANCY", "EXPORT_FAILED")
+                .doesNotContainKeys(PLATFORM_CODES);
         assertThat(byCode.keySet()).containsAnyOf("PRINT_QUEUE_STALLED", "PRINT_JOBS_ATTENTION");
         assertThat(byCode).containsEntry("PAYMENTS_IN_DOUBT", storeA.toString())
-                .containsEntry("CASH_DISCREPANCY", storeA.toString()).containsEntry("BACKUP_LATE", null)
-                .containsEntry("EVENTS_FAILED", null);
+                .containsEntry("CASH_DISCREPANCY", storeA.toString());
         assertThat(listed.getFirst().get("severity").asString()).as("CRITICAL first").isEqualTo("CRITICAL");
+        List<JsonNode> platform = platformAlerts();
+        assertThat(byCode(platform)).containsKeys(PLATFORM_CODES).containsEntry("BACKUP_LATE", null)
+                .containsEntry("EVENTS_FAILED", null);
+        assertThat(platform.getFirst().get("severity").asString()).as("CRITICAL first").isEqualTo("CRITICAL");
 
         // the scrape: 401 without the token, 200 with it, holding every metric the Prometheus rules use
         assertThat(scrape(null).statusCode()).isEqualTo(401);
@@ -480,7 +487,8 @@ class R5AcceptanceTest {
 
         // the failed publication cleared: its alert goes
         jdbc.sql("DELETE FROM event_publication WHERE id = ?").param(publication).update();
-        assertThat(alerts()).noneSatisfy(a -> assertThat(a.get("code").asString()).isEqualTo("EVENTS_FAILED"));
+        assertThat(platformAlerts()).noneSatisfy(a -> assertThat(a.get("code").asString())
+                .isEqualTo("EVENTS_FAILED"));
     }
 
     // ---- helpers ----
@@ -564,6 +572,23 @@ class R5AcceptanceTest {
     private List<JsonNode> alerts() throws Exception {
         clock.advance(Duration.ofSeconds(31));
         return StreamSupport.stream(office.get(BO + "/alerts", 200).get("alerts").spliterator(), false).toList();
+    }
+
+    /** The platform's alerts, as a platform operator (ops realm, {@code platform-operator}) lists them. */
+    private List<JsonNode> platformAlerts() throws Exception {
+        clock.advance(Duration.ofSeconds(31));
+        Browser operator = new Browser("platform-operator", port, journey)
+                .signedIn(() -> TestJwtFactory.support("operator-" + UUID.randomUUID(), clock.instant())
+                        .claim("realm_access", Map.of("roles", List.of("platform-operator"))).encode());
+        return StreamSupport.stream(operator.get("/api/v1/platform/alerts", 200).get("alerts").spliterator(), false)
+                .toList();
+    }
+
+    private static Map<String, String> byCode(List<JsonNode> alerts) {
+        Map<String, String> byCode = new LinkedHashMap<>();
+        alerts.forEach(a -> byCode.put(a.get("code").asString(), a.get("storeId").isNull() ? null
+                : a.get("storeId").asString()));
+        return byCode;
     }
 
     private HttpResponse<String> scrape(String token) throws Exception {
