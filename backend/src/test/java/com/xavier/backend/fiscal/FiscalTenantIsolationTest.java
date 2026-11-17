@@ -50,9 +50,10 @@ class FiscalTenantIsolationTest {
     static final UUID A = TenantTestSupport.A;
     static final UUID B = TenantTestSupport.B;
 
-    static final UUID A_STORE = UUID.fromString("0190b700-0000-7000-8000-0000000000a1");
-    static final UUID B_STORE = UUID.fromString("0190b700-0000-7000-8000-0000000000b1");
-    static final UUID SHARED_SOURCE = UUID.fromString("0190b700-0000-7000-8000-000000000f01");
+    // drawn per run: the shared database also holds other suites' stores and sources
+    static UUID A_STORE;
+    static UUID B_STORE;
+    static UUID SHARED_SOURCE;
 
     static final List<String> TABLES = List.of("fiscal_series", "fiscal_document", "fiscal_document_line",
             "fiscal_document_tax", "fiscal_document_payment", "fiscal_document_print");
@@ -77,8 +78,12 @@ class FiscalTenantIsolationTest {
     @BeforeAll
     static void twoTenantsWithTheSameSeriesCode() {
         TenantTestSupport.ensureTenants();
-        a = seed(A, A_STORE, "Company A", "FISC-A");
-        b = seed(B, B_STORE, "Company B", "FISC-B");
+        A_STORE = UUID.randomUUID();
+        B_STORE = UUID.randomUUID();
+        SHARED_SOURCE = UUID.randomUUID();
+        String run = A_STORE.toString().substring(24);
+        a = seed(A, A_STORE, "Company A", "FISC-A-" + run);
+        b = seed(B, B_STORE, "Company B", "FISC-B-" + run);
     }
 
     /** As the application role in {@code tenant}: no tenant_id is written, the column default takes the bound one. */
