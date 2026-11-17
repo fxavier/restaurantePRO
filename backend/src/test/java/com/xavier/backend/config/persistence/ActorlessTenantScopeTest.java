@@ -137,11 +137,11 @@ class ActorlessTenantScopeTest {
     @Test
     void aTenantWhoseLeaseAnotherInstanceHoldsIsSkipped() {
         JobLeases other = new JobLeases(jdbc, transactions, Duration.ofMinutes(2), "another-instance");
-        assertThat(other.tryAcquire(JOB, T2)).isTrue();
+        assertThat(other.acquire(JOB, () -> List.of(T2)).tenants()).containsExactly(T2);
         try {
             jobs.sweep();
         } finally {
-            other.release(JOB, T2);
+            other.release(JOB, List.of(T2));
         }
 
         assertThat(SEEN).extracting(Seen::bound).containsExactlyInAnyOrder(TenantTestSupport.BOOTSTRAP, T1);

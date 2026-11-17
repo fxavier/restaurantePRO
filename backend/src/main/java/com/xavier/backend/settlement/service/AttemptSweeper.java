@@ -39,6 +39,7 @@ public class AttemptSweeper {
     private final AttemptTransitions transitions;
     private final SettlementProperties properties;
     private final TransactionTemplate inTransaction;
+    private final TransactionTemplate inReadTransaction;
     private final Clock clock;
     private final int batch;
     private final TenantScopes tenants;
@@ -54,6 +55,8 @@ public class AttemptSweeper {
         this.transitions = transitions;
         this.properties = properties;
         this.inTransaction = new TransactionTemplate(transactionManager);
+        this.inReadTransaction = new TransactionTemplate(transactionManager);
+        this.inReadTransaction.setReadOnly(true);
         this.clock = clock;
     }
 
@@ -63,12 +66,16 @@ public class AttemptSweeper {
     public void sweep() {
         Instant now = clock.instant();
         UUID tenant = tenants.requireTenant();
-        for (Keyed created : page(tenant, AttemptStatus.CREATED, now.minus(properties.createdGrace()))) {
+        Duration lost = properties.providerTimeout().plus(properties.pendingMargin());
+        // S77 (F4): both pages in one read-only transaction; the submissions call the provider, so after it ends
+        List<List<Keyed>> due = inReadTransaction.execute(tx -> List.of(
+                page(tenant, AttemptStatus.CREATED, now.minus(properties.createdGrace())),
+                page(tenant, AttemptStatus.PENDING, now.minus(lost))));
+        for (Keyed created : due.get(0)) {
             log.info("Payment attempt {} was never submitted; submitting it again", created.id());
             submitter.submit(created.id());
         }
-        Duration lost = properties.providerTimeout().plus(properties.pendingMargin());
-        for (Keyed stale : page(tenant, AttemptStatus.PENDING, now.minus(lost))) {
+        for (Keyed stale : due.get(1)) {
             UUID pending = stale.id();
             try {
                 inTransaction.executeWithoutResult(tx -> transitions.expire(pending,
