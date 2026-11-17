@@ -21,9 +21,7 @@ One stack per company (spec §2): Caddy (HTTPS on the LAN), the backend, and Pos
    openssl rand -hex 24 > secrets/db_owner_password             # restaurantpro_owner: Flyway (ADR 0039, "Database roles")
    openssl rand -hex 24 > secrets/db_app_password               # restaurantpro_app: the backend's pool
    printf '%s' 'choose-a-strong-initial-password' > secrets/admin_initial_password
-   openssl rand -base64 32 | tr -d '\n' > secrets/mfa_key       # encrypts the TOTP secrets (R5, "Second factor (MFA)")
    openssl rand -hex 32 | tr -d '\n' > secrets/metrics_token    # Prometheus scrape token (R5, "Alerts")
-   : > secrets/oidc_client_secret                               # empty unless you enable single sign-on
    chmod 644 secrets/*           # 644, not 600: the containers read them as non-root users; the 700 directory protects them on the host
    ls -ld status                 # ships with the package, mode 755; if missing: mkdir -m 755 status
    chown <backup user> status    # verify-backups.sh (run as the backup user) writes the status file there
@@ -442,6 +440,8 @@ chown <backup user> status    # e.g. restaurantpro: verify-backups.sh writes sta
 ```
 
 An `.env` from before R5 keeps the R4 behaviour: no second factor (`RESTAURANTPRO_MFA_MODE` defaults to `OFF` in Compose), no single sign-on. To turn on the second factor, set `RESTAURANTPRO_MFA_MODE=SENSITIVE` and your `RESTAURANTPRO_LAN_CIDRS` in `.env` and run `docker compose up -d`, then have every administrator enrol from the LAN before working from outside (from outside, enrolment needs an enrolment code; see "Second factor (MFA)"). Keep `secrets/mfa_key` as carefully as the database password: it is in every `backup.sh` archive (`secrets/`), and without it no enrolled factor can be read, so every account must be reset. Never change it on a running installation. After the upgrade, run `./verify-backups.sh` once by hand so the status file exists.
+
+From R6 on, Keycloak signs users in (MFA and step-up included), so this release's `compose.yaml` no longer uses `secrets/mfa_key` or `secrets/oidc_client_secret`, nor the `RESTAURANTPRO_MFA_*`, `RESTAURANTPRO_LAN_CIDRS` and R5 `RESTAURANTPRO_OIDC_*` names in `.env`. Keep `secrets/mfa_key` while a rollback to R5 is still possible: the R5 package needs it.
 
 ## Second factor (MFA)
 

@@ -5,7 +5,8 @@
 #   lint        every deploy script is shellcheck-clean (shellcheck -x)
 #   compose     docker compose config renders with a throwaway env file, without and with the monitoring profile:
 #               the backend gets the frozen env names (R5 alerts and metrics, R6 Keycloak issuers) and none of the
-#               retired R5 MFA, LAN or OIDC names, the R5 secrets and ./status read-only (never
+#               retired R5 MFA, LAN or OIDC names, the metrics_token secret (not the retired mfa_key or
+#               oidc_client_secret) and ./status read-only (never
 #               created by Docker); prometheus is opt-in, pinned to PROM_IMAGE below, internal network only, no
 #               published port, with the metrics_token secret and ./monitoring read-only
 #   config      promtool check config (prometheus.yml and the rule files it names): scrapes backend:8081
@@ -153,8 +154,10 @@ problem="$(jq -r --arg img "$PROM_IMAGE" '
   .services.backend as $b | .services.prometheus as $p |
   [ (if $b.environment.RESTAURANTPRO_METRICS_TOKEN_FILE != "/run/secrets/metrics_token" then "metrics token file is not the metrics_token secret" else empty end),
     (if $b.environment.RESTAURANTPRO_ALERTS_BACKUP_STATUS_FILE != "/run/restaurantpro/status/backup-status.json" then "the backup status file path is not the D151 one" else empty end),
-    (if ([$b.secrets[].source] | index("mfa_key") == null or index("metrics_token") == null or index("oidc_client_secret") == null)
-       then "the backend lacks one of the secrets mfa_key, metrics_token, oidc_client_secret" else empty end),
+    (if ([$b.secrets[].source] | index("metrics_token") == null) then "the backend lacks the secret metrics_token" else empty end),
+    (if ([$b.secrets[].source] | index("mfa_key") != null or index("oidc_client_secret") != null)
+       then "the backend still gets a retired R5 secret (mfa_key or oidc_client_secret)" else empty end),
+    (if (.secrets | has("mfa_key") or has("oidc_client_secret")) then "compose still declares a retired R5 secret" else empty end),
     (if ([$b.volumes[]? | select(.target == "/run/restaurantpro/status" and .read_only == true and .bind.create_host_path == false
            and (.source | endswith("/status")))] | length) != 1
        then "the backend does not mount ./status read-only at /run/restaurantpro/status (without create_host_path)" else empty end),
