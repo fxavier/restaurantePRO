@@ -4,11 +4,12 @@ import java.time.Instant;
 import java.util.List;
 
 /**
- * The port to the identity provider's admin API (D175, D181, D182, D187), used through the {@code tenancy-provisioner}
- * service account only: organizations, organization members, user invitations (execute-actions email), user sessions
- * and the {@code pos-*}/{@code bridge-*} clients. Keycloak never owns authority (D175): nothing here grants a
- * permission. Every call is an external call (D48: persist, call, record), never inside a transaction. Until S75 ships
- * the {@code RestClient} adapter every method answers 503 {@code IDP_UNAVAILABLE}.
+ * The port to the identity provider's admin API (D175, D181, D182, D187), through two service accounts: organizations,
+ * organization members, user invitations (execute-actions email) and user sessions as {@code tenancy-provisioner} in
+ * the tenant realm, and the {@code pos-*}/{@code bridge-*} clients as {@code device-provisioner} in the
+ * {@code restaurantpro-devices} realm ({@code adapter.KeycloakIdentityProviderAdmin}). Keycloak never owns authority
+ * (D175): nothing here grants a permission. Every call is an external call (D48: persist, call, record), never inside
+ * a transaction. An account whose base URL or key is not configured answers 503 {@code IDP_UNAVAILABLE}.
  */
 public interface IdentityProviderAdmin {
 

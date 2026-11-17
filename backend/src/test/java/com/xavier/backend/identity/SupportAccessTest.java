@@ -152,6 +152,25 @@ class SupportAccessTest {
                 .andExpect(jsonPath("$.code").value("TENANT_FORBIDDEN"));
     }
 
+    /** D183: every support action is audited in the tenant with actor kind SUPPORT, the session start included. */
+    @Test
+    void aSupportActionIsAuditedAsSupport() throws Exception {
+        granted();
+        String code = "S" + UUID.randomUUID().toString().substring(0, 8);
+
+        mvc.perform(post("/api/v1/backoffice/catalog/families").with(supportToken().bearer())
+                        .header("X-Tenant-Id", tenant.toString()).contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"code": "%s", "name": "Support family"}""".formatted(code)))
+                .andExpect(status().isCreated());
+
+        assertThat(OwnerDatabase.shared().jdbc().sql("SELECT action || ' ' || actor_kind FROM audit.audit_event "
+                        + "WHERE tenant_id = ? AND actor_id = ? AND action IN ('FAMILY_CREATED', "
+                        + "'SUPPORT_SESSION_STARTED') ORDER BY action")
+                .param(tenant).param(supportAccount).query(String.class).list())
+                .containsExactly("FAMILY_CREATED SUPPORT", "SUPPORT_SESSION_STARTED SUPPORT");
+    }
+
     @Test
     void theFirstSupportActionIsAuditedAndAlertedToTheAdministrators() throws Exception {
         UUID grant = granted();

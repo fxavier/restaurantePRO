@@ -78,10 +78,12 @@ public class ReservationNoShowJob {
         return marked;
     }
 
-    /** One reservation in its own transaction, still due once its row is locked again (a request may have moved it). */
+    /**
+     * One reservation in its own transaction, still due once its row alone is locked again (a request may have moved
+     * it); the run's other due rows stay free for requests meanwhile.
+     */
     private int markOne(UUID id, Instant now) {
-        if (!reservations.lockDueForNoShow(now, ReservationWindow.DEFAULT_GRACE_MINUTES, batchPerTenant)
-                .contains(id)) {
+        if (reservations.lockIfDueForNoShow(id, now, ReservationWindow.DEFAULT_GRACE_MINUTES).isEmpty()) {
             return 0;
         }
         Reservation reservation = reservations.findById(id).orElseThrow();

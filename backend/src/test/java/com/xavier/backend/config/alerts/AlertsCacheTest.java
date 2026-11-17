@@ -32,12 +32,27 @@ class AlertsCacheTest {
     final AtomicInteger calls = new AtomicInteger();
     final OperationalAlert alert = new OperationalAlert("PAYMENTS_IN_DOUBT", AlertSeverity.CRITICAL,
             UUID.randomUUID(), 1, NOW, "In doubt.");
-    final AlertSource counting = () -> {
+    final AlertSource counting = tenantSource(() -> {
         calls.incrementAndGet();
         return List.of(alert);
-    };
+    });
 
     final TenantScopes tenants = new TenantScopes(StoreScopeTestSupport.scopes(), Optional::empty);
+
+    /** A {@link AlertSource.Scope#TENANT} source answering {@code alerts}. */
+    private static AlertSource tenantSource(java.util.function.Supplier<List<OperationalAlert>> alerts) {
+        return new AlertSource() {
+            @Override
+            public Scope scope() {
+                return Scope.TENANT;
+            }
+
+            @Override
+            public List<OperationalAlert> alerts() {
+                return alerts.get();
+            }
+        };
+    }
 
     private AlertsService service(AlertSource... sources) {
         return new AlertsService(List.of(sources), null, StoreScopeTestSupport.scopes(), tenants, clock);
@@ -49,8 +64,8 @@ class AlertsCacheTest {
 
     @Test
     void eachTenantGetsItsOwnSnapshotComputedInItself() {
-        AlertSource perTenant = () -> List.of(new OperationalAlert("OF_TENANT", AlertSeverity.WARNING, null, 1, NOW,
-                "of " + tenants.requireTenant()));
+        AlertSource perTenant = tenantSource(() -> List.of(new OperationalAlert("OF_TENANT", AlertSeverity.WARNING,
+                null, 1, NOW, "of " + tenants.requireTenant())));
         AlertsService service = service(perTenant);
 
         Snapshot a = in(TenantTestSupport.A, service);
@@ -97,9 +112,9 @@ class AlertsCacheTest {
 
     @Test
     void aFailingSourceBecomesOneWarningAndTheOthersStillReport() {
-        AlertSource failing = () -> {
+        AlertSource failing = tenantSource(() -> {
             throw new IllegalStateException("database down");
-        };
+        });
         AlertsService service = service(failing, counting);
 
         assertThat(in(TenantTestSupport.A, service).alerts())

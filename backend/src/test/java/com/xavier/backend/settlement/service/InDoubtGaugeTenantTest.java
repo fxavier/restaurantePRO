@@ -44,8 +44,12 @@ class InDoubtGaugeTenantTest {
         clock.reset();
     }
 
+    /**
+     * D186, security rule 7: the gauges are metrics of every tenant's stores (no tenant label), but the overdue alert
+     * answers for the bound tenant only.
+     */
     @Test
-    void aTenantsInDoubtAttemptsStayReportedAfterAnotherTenantsRun() {
+    void aTenantsInDoubtAttemptsStayReportedAfterAnotherTenantsRunButOnlyToThatTenant() {
         TenantTestSupport.ensureTenants();
         UUID storeA = UUID.randomUUID();
         UUID storeB = UUID.randomUUID();
@@ -59,7 +63,28 @@ class InDoubtGaugeTenantTest {
         assertThat(value("payment_attempts_in_doubt", storeB)).isEqualTo(1);
         assertThat(value("payment_attempts_in_doubt_overdue", storeA)).isEqualTo(1);
         assertThat(value("payment_attempts_in_doubt_overdue", storeB)).isEqualTo(1);
-        assertThat(gauge.overdueAtLastRefresh()).extracting(OverdueInStore::storeId).contains(storeA, storeB);
+        assertThat(overdueStores(A)).contains(storeA).doesNotContain(storeB);
+        assertThat(overdueStores(B)).contains(storeB).doesNotContain(storeA);
+    }
+
+    /**
+     * The staleness follows the configured poll interval (PT1H in module tests): a tenant whose last run is under three
+     * intervals old is still reported, however long the interval.
+     */
+    @Test
+    void aTenantStaysReportedForUpToThreePollIntervals() {
+        TenantTestSupport.ensureTenants();
+        UUID storeA = UUID.randomUUID();
+        UUID storeB = UUID.randomUUID();
+        attemptInDoubt(A, storeA, clock.instant());
+        attemptInDoubt(B, storeB, clock.instant());
+        TenantTestSupport.inTenant(tenants, A, gauge::refresh);
+
+        clock.advance(Duration.ofHours(3).minusSeconds(1));
+        TenantTestSupport.inTenant(tenants, B, gauge::refresh);
+
+        assertThat(value("payment_attempts_in_doubt", storeA)).isEqualTo(1);
+        assertThat(overdueStores(A)).contains(storeA);
     }
 
     /** A tenant that stops being run (suspended, closed) stops being reported once its last run is stale. */
@@ -72,17 +97,23 @@ class InDoubtGaugeTenantTest {
         attemptInDoubt(B, storeB, clock.instant());
         TenantTestSupport.inTenant(tenants, A, gauge::refresh);
 
-        clock.advance(Duration.ofMinutes(10)); // past the window, A is not run again
+        clock.advance(Duration.ofHours(3).plusSeconds(1)); // past three poll intervals, A is not run again
         TenantTestSupport.inTenant(tenants, B, gauge::refresh);
 
         assertThat(meters.find("payment_attempts_in_doubt").tag("store", storeA.toString()).gauge()).isNull();
         assertThat(meters.find("payment_attempts_in_doubt").tag("store", storeB.toString()).gauge()).isNotNull();
-        assertThat(gauge.overdueAtLastRefresh()).extracting(OverdueInStore::storeId).contains(storeB)
-                .doesNotContain(storeA);
+        assertThat(overdueStores(A)).doesNotContain(storeA);
+        assertThat(overdueStores(B)).contains(storeB);
+    }
+
+    /** The stores with overdue attempts as of the last refresh, asked bound to {@code tenant}. */
+    private java.util.List<UUID> overdueStores(UUID tenant) {
+        return TenantTestSupport.inTenant(tenants, tenant, gauge::overdueAtLastRefresh).stream()
+                .map(OverdueInStore::storeId).toList();
     }
 
     /** An UNKNOWN attempt of {@code store} in {@code tenant}, 40 minutes old at {@code now}. */
-    static void attemptInDoubt(UUID tenant, UUID store, Instant now) {
+    public static void attemptInDoubt(UUID tenant, UUID store, Instant now) {
         try (AppRoleSession app = AppRoleSession.open().tenant(tenant).allStores()) {
             Timestamp created = Timestamp.from(now.minus(Duration.ofMinutes(40)));
             app.jdbc().sql("""

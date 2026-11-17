@@ -17,7 +17,10 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -138,6 +141,46 @@ class ReservationNoShowJobTest {
 
         jobAt(Duration.ofMinutes(32)).markDue();
         assertThat(fixtures.reservationStatus(reservation)).isEqualTo("NO_SHOW");
+    }
+
+    /**
+     * Marking one reservation locks that row only: another due reservation stays free for a request meanwhile (it
+     * is the run's next one, not part of this transaction).
+     */
+    @Test
+    void markingOneReservationLocksOnlyItsOwnRow() throws Exception {
+        UUID otherStore = fixtures.newStore();
+        UUID other = fixtures.book(otherStore, startsAt);
+        Map<UUID, UUID> storeOf = Map.of(reservation, store, other, otherStore);
+        List<UUID> heldByTheJob = new CopyOnWriteArrayList<>();
+        DiningChanges probing = org.mockito.Mockito.spy(changes);
+        org.mockito.Mockito.doAnswer(call -> {
+            UUID marking = call.getArgument(2);
+            UUID next = marking.equals(reservation) ? other : reservation;
+            if ("BOOKED".equals(fixtures.reservationStatus(next)) && !lockableByARequest(next, storeOf.get(next))) {
+                heldByTheJob.add(next);
+            }
+            return call.callRealMethod();
+        }).when(probing).recordAsSystem(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
+        ReservationNoShowJob job = new ReservationNoShowJob(reservations, probing, transactionManager,
+                Clock.fixed(startsAt.plus(Duration.ofMinutes(31)), ZoneOffset.UTC), 100);
+
+        assertThat(job.markDue()).isEqualTo(2);
+
+        assertThat(heldByTheJob).isEmpty();
+    }
+
+    /** A request of {@code reservationStore}, on a thread of its own, locks the row unless someone else holds it. */
+    private boolean lockableByARequest(UUID id, UUID reservationStore) throws Exception {
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        try (ExecutorService pool = Executors.newSingleThreadExecutor()) {
+            return pool.submit(TenantTestSupport.inBootstrap(() -> scopes.callForStore(reservationStore,
+                    "test:probe", () -> tx.execute(status -> jdbc.sql(
+                                    "SELECT id FROM dining.reservation WHERE id = :id FOR UPDATE SKIP LOCKED")
+                            .param("id", id).query(UUID.class).optional().isPresent())))).get(30, TimeUnit.SECONDS);
+        }
     }
 
     /** One reservation that cannot be marked must not roll back, nor block, the others of the run. */

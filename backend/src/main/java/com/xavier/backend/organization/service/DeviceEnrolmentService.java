@@ -149,7 +149,7 @@ public class DeviceEnrolmentService {
         }
         Instant now = clock.instant();
         UUID membership = tenancy.grant(new MembershipGrant(devicesIssuer, subject, kind.membership(),
-                terminal.getId(), now, null));
+                terminal.getId(), null));
         if (!terminal.completeEnrolment(thumbprint, membership, now)) {
             throw new InvalidEnrollmentCodeException();
         }

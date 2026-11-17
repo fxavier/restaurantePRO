@@ -3,6 +3,8 @@ package com.xavier.backend.shared.ops;
 import com.xavier.backend.shared.exception.BusinessRuleException;
 import com.xavier.backend.shared.exception.ConflictException;
 import com.xavier.backend.shared.exception.NotFoundException;
+import com.xavier.backend.shared.tenancy.TenantContext;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
@@ -13,6 +15,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 import org.springframework.security.access.AccessDeniedException;
@@ -20,8 +23,9 @@ import org.springframework.stereotype.Component;
 
 /**
  * The {@code EXPORT_FAILED} alert of D150. Every CSV export runs through {@link #monitor}: it counts
- * {@code exports_total{kind, outcome=success|failure}} and remembers, in memory, the last failure per kind. A failure
- * in the last 24 h is an installation-wide WARNING; a restart forgets it (the counter's history is in Prometheus).
+ * {@code exports_total{kind, outcome=success|failure}} and remembers, in memory, the last failure per tenant and kind.
+ * A failure in the last 24 h is a tenant-wide WARNING of the tenant whose export failed, never another's (security
+ * rule 7, D186); a restart forgets it (the counter's history, without a tenant label, is in Prometheus).
  * The six series (kind × outcome) are registered at 0 when the monitor is built.
  * Kinds are a closed set so the {@code kind} label stays bounded (§12).
  */
@@ -40,11 +44,17 @@ public class ExportMonitor implements AlertSource {
 
     private final MeterRegistry meters;
     private final Clock clock;
-    private final Map<String, Instant> lastFailure = new ConcurrentHashMap<>();
+    private final TenantScopes tenants;
+    private final Map<FailureKey, Instant> lastFailure = new ConcurrentHashMap<>();
 
-    ExportMonitor(MeterRegistry meters, Clock clock) {
+    /** Whose export of which kind failed; {@code tenantId} is {@code null} for an export run with no tenant bound. */
+    private record FailureKey(UUID tenantId, String kind) {
+    }
+
+    ExportMonitor(MeterRegistry meters, Clock clock, TenantScopes tenants) {
         this.meters = meters;
         this.clock = clock;
+        this.tenants = tenants;
         // every series exists at 0 from the start, so Prometheus's increase() sees the first failure after a restart
         for (String kind : KINDS) {
             for (String outcome : OUTCOMES) {
@@ -72,7 +82,7 @@ public class ExportMonitor implements AlertSource {
                  | ExportAborted refusal) {
             throw refusal;
         } catch (RuntimeException e) {
-            lastFailure.merge(kind, clock.instant(), (a, b) -> a.isAfter(b) ? a : b);
+            lastFailure.merge(new FailureKey(boundTenant(), kind), clock.instant(), (a, b) -> a.isAfter(b) ? a : b);
             count(kind, "failure");
             throw e;
         }
@@ -96,14 +106,29 @@ public class ExportMonitor implements AlertSource {
         }
     }
 
-    /** One installation-wide WARNING per kind whose last failure is at most 24 h before {@code now}, in no order. */
+    /**
+     * One tenant-wide WARNING per kind whose last failure in the bound tenant is at most 24 h before {@code now}, in no
+     * order.
+     */
     public List<OperationalAlert> recentFailures(Instant now) {
         Instant from = now.minus(WINDOW);
+        UUID tenant = tenants.requireTenant();
         return lastFailure.entrySet().stream()
+                .filter(failure -> tenant.equals(failure.getKey().tenantId()))
                 .filter(failure -> !failure.getValue().isBefore(from))
                 .map(failure -> new OperationalAlert(ALERT_CODE, AlertSeverity.WARNING, null, 1, failure.getValue(),
-                        "The last " + failure.getKey() + " export failed."))
+                        "The last " + failure.getKey().kind() + " export failed."))
                 .toList();
+    }
+
+    /** The tenant the failed export ran in; never throws, so the export's own failure is what the caller sees. */
+    private UUID boundTenant() {
+        return tenants.current().map(TenantContext::tenantId).orElse(null);
+    }
+
+    @Override
+    public Scope scope() {
+        return Scope.TENANT;
     }
 
     @Override

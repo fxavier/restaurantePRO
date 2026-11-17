@@ -292,9 +292,7 @@ for i in $INSTALLATIONS; do
   openssl rand -hex 24 | tr -d '\n' >"$WORK/$i/secrets/db_password"
   make_role_secrets "$WORK/$i/secrets" # ADR 0039: db_owner_password, db_app_password
   printf 'initial-%s' "$(openssl rand -hex 12)" >"$WORK/$i/secrets/admin_initial_password"
-  openssl rand -base64 32 | tr -d '\n' >"$WORK/$i/secrets/mfa_key" # R5 (D143)
   openssl rand -hex 32 | tr -d '\n' >"$WORK/$i/secrets/metrics_token" # R5 (D152)
-  : >"$WORK/$i/secrets/oidc_client_secret" # R5 (D144): single sign-on off
   mkdir -m 755 "$WORK/$i/status" # R5 (D151): the backup status directory, mounted read-only into the backend
   chmod 644 "$WORK/$i/secrets/"* # read by non-root users inside the containers; the 0700 directory protects them
 done
@@ -368,9 +366,9 @@ for i in $INSTALLATIONS; do
     esac
   done <"$WORK/$i.mounts"
   # postgres: db_password and the recipients; db-provision: db_password, db_owner_password, db_app_password;
-  # backend: db_owner_password, db_app_password, admin_initial_password, mfa_key, metrics_token,
-  # oidc_client_secret and the backup status directory.
-  ((private == 12)) || fail "rp-$i mounts $private secret, recipients or status paths, expected 12"
+  # backend: db_owner_password, db_app_password, admin_initial_password, metrics_token and the backup status
+  # directory.
+  ((private == 10)) || fail "rp-$i mounts $private secret, recipients or status paths, expected 10"
   ! grep -q "^rp-$i-backend-1|.*|/run/secrets/db_password$" "$WORK/$i.mounts" || fail "rp-$i's backend holds the superuser's db_password"
   grep -q "^rp-$i-backend-1|.*|/run/secrets/db_app_password$" "$WORK/$i.mounts" || fail "rp-$i's backend has no db_app_password (control)"
 done

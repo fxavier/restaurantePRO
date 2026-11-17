@@ -103,6 +103,11 @@ public @interface AlertsIntegrationTest {
     final class FixedTestAlerts implements AlertSource {
 
         @Override
+        public Scope scope() {
+            return Scope.TENANT;
+        }
+
+        @Override
         public List<OperationalAlert> alerts() {
             return List.of(
                     new OperationalAlert("TEST_STORE_A", AlertSeverity.WARNING, UUID.fromString(STORE_A), 1,
@@ -117,12 +122,22 @@ public @interface AlertsIntegrationTest {
     final class FailingTestSource implements AlertSource {
 
         @Override
+        public Scope scope() {
+            return Scope.TENANT;
+        }
+
+        @Override
         public List<OperationalAlert> alerts() {
             throw new IllegalStateException("the test source always fails");
         }
     }
 
     final class CountingTestSource implements AlertSource {
+
+        @Override
+        public Scope scope() {
+            return Scope.TENANT;
+        }
 
         final AtomicInteger calls = new AtomicInteger();
 

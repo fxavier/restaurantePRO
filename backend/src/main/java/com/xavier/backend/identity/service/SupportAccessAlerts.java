@@ -31,6 +31,11 @@ class SupportAccessAlerts implements AlertSource {
     }
 
     @Override
+    public Scope scope() {
+        return Scope.TENANT;
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public List<OperationalAlert> alerts() {
         List<SupportGrant> inUse = grants.findInUse(clock.instant());

@@ -62,8 +62,7 @@ class AdministratorProvisioning {
         UUID administrator = transaction.execute(status -> administratorAccount(event.adminEmail()));
         String subject = tenancy.idp().inviteUser(event.adminEmail(), null);
         transaction.executeWithoutResult(status -> {
-            tenancy.grant(new MembershipGrant(tenantIssuer, subject, MembershipKind.ACCOUNT, administrator,
-                    clock.instant(), null));
+            tenancy.grant(new MembershipGrant(tenantIssuer, subject, MembershipKind.ACCOUNT, administrator, null));
             tenancy.activate(event.tenantId());
         });
         log.info("Tenant {} provisioned: administrator account {} invited and its membership granted",

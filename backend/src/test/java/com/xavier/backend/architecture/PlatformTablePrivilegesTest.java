@@ -97,6 +97,20 @@ class PlatformTablePrivilegesTest {
                 .query(String.class).list()).hasSize(WRITTEN_BY_THE_APPLICATION.size() * 3);
     }
 
+    /** Provisioning runs them as a superuser: an object planted earlier on its search_path must not be resolved. */
+    @Test
+    void thePlatformWriteFunctionsPinTheirSearchPath() {
+        assertThat(installation.sql("""
+                        SELECT p.proname || ' ' || coalesce(array_to_string(p.proconfig, ','), '')
+                        FROM pg_catalog.pg_proc p
+                        WHERE p.pronamespace = 'shared'::regnamespace
+                          AND p.proname IN ('rls_platform_writable', 'rls_revoke_platform_writes')
+                        ORDER BY 1""")
+                .query(String.class).list())
+                .containsExactly("rls_platform_writable search_path=pg_catalog",
+                        "rls_revoke_platform_writes search_path=pg_catalog");
+    }
+
     /** {@code provision-roles.sql} on this test's database, as {@code DatabaseRoles#provision} runs it on the shared one. */
     private static void provision() throws Exception {
         ExecResult result = POSTGRES.execInContainer("psql", "-X", "-q", "-U", POSTGRES.getUsername(), "-d", DATABASE,

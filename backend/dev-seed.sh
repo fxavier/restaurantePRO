@@ -2,10 +2,12 @@
 # Local development seed (DEV ONLY): fills the dev database of ./run-local.sh with a ready-to-use store through the
 # HTTP API (no SQL, so every business rule applies), with fixed logins and PINs printed at the end.
 #
-# Usage, from backend/, with the app running and the admin's first login done:
+# Usage, from backend/, with the app running:
 #   ./dev-seed.sh [--base-url http://localhost:8080]
-# The admin's password is prompted for (no echo), or read from the file named by SEED_ADMIN_PASSWORD_FILE; it is
-# never taken from the command line. SEED_ADMIN_USERNAME defaults to admin.
+# R6: not usable yet. deploy/load/DevSeed.java still signs in with the R5 local login (an admin username and password,
+# POST /api/v1/auth/login), which R6 removed: users sign in through Keycloak and the API takes only its bearer tokens.
+# It works again once DevSeed signs in with a Keycloak token (follow-up). It never takes a password from the
+# command line.
 #
 # Creates store DEV "Restaurante Dev" (Africa/Maputo): terminals POS-1 and POS-2 enrolled (device tokens written to
 # .dev-seed/terminals.txt, git-ignored), 8 tables, kitchen/bar/counter printers on HOLD (nothing is printed), series FR,

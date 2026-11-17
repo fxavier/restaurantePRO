@@ -17,7 +17,6 @@ import com.xavier.backend.tenancy.model.dto.MembershipGrant;
 import com.xavier.backend.tenancy.model.dto.MembershipSummary;
 import com.xavier.backend.tenancy.model.dto.TenantStatus;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.Set;
 import java.util.UUID;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
@@ -95,9 +94,9 @@ class TenancyFunctionsTest {
         grantIn(TenantTestSupport.A, subject, MembershipKind.ACCOUNT, UUID.randomUUID(), null);
         UUID revoked = grantIn(TenantTestSupport.B, subject, MembershipKind.ACCOUNT, UUID.randomUUID(), null);
         TenantTestSupport.inTenant(tenants, TenantTestSupport.B, () -> tenancy.revoke(revoked));
-        TenantTestSupport.inTenant(tenants, expiredIn, () -> tenancy.grant(new MembershipGrant(ISSUER, subject,
-                MembershipKind.ACCOUNT, UUID.randomUUID(), Instant.now().minus(Duration.ofHours(2)),
-                Instant.now().minus(Duration.ofHours(1)))));
+        UUID expired = grantIn(expiredIn, subject, MembershipKind.ACCOUNT, UUID.randomUUID(), Duration.ofHours(1));
+        OwnerDatabase.shared().jdbc().sql("UPDATE tenancy.tenant_membership SET valid_from = now() - interval '2 hours', "
+                + "valid_until = now() - interval '1 hour' WHERE id = ?").param(expired).update();
         grantIn(TenantTestSupport.B, UUID.randomUUID().toString(), MembershipKind.ACCOUNT, UUID.randomUUID(), null);
 
         assertThat(tenancy.membershipSummaries(ISSUER, subject)).containsExactly(new MembershipSummary(
@@ -117,7 +116,7 @@ class TenancyFunctionsTest {
         assertThat(tenancy.resolve(ISSUER, subject, null, TENANT_REALM)).as("B could not revoke A's").isPresent();
         AppRoleSession.assertRefused(() -> tenancy.revoke(inA), StoreScopeViolations.Kind.TENANT_MISSING);
         try (AppRoleSession app = AppRoleSession.open().tenant(TenantTestSupport.A)) {
-            assertState(() -> app.jdbc().sql("SELECT tenancy.grant_membership(?, ?, ?, 'ACCOUNT', ?, now(), NULL)")
+            assertState(() -> app.jdbc().sql("SELECT tenancy.grant_membership(?, ?, ?, 'ACCOUNT', ?, NULL::interval)")
                     .param(TenantTestSupport.B).param(ISSUER).param(UUID.randomUUID().toString())
                     .param(UUID.randomUUID()).query().listOfRows(), "42501");
         }
@@ -134,9 +133,8 @@ class TenancyFunctionsTest {
         assertState(() -> grantIn(TenantTestSupport.A, subject, MembershipKind.SUPPORT, UUID.randomUUID(), null),
                 "23514");
         assertState(() -> grantIn(TenantTestSupport.A, subject, MembershipKind.SUPPORT, UUID.randomUUID(),
-                Instant.now().plus(Duration.ofHours(25))), "23514");
-        grantIn(TenantTestSupport.A, subject, MembershipKind.SUPPORT, UUID.randomUUID(),
-                Instant.now().plus(Duration.ofHours(8)));
+                Duration.ofHours(25)), "23514");
+        grantIn(TenantTestSupport.A, subject, MembershipKind.SUPPORT, UUID.randomUUID(), Duration.ofHours(8));
 
         assertThat(tenancy.resolve(ISSUER, subject, null, Set.of(MembershipKind.SUPPORT))).isPresent();
     }
@@ -206,9 +204,9 @@ class TenancyFunctionsTest {
                         error -> assertThat(error.code()).isEqualTo("IDP_UNAVAILABLE"));
     }
 
-    private UUID grantIn(UUID tenant, String subject, MembershipKind kind, UUID principal, Instant until) {
+    private UUID grantIn(UUID tenant, String subject, MembershipKind kind, UUID principal, Duration validFor) {
         return TenantTestSupport.inTenant(tenants, tenant, () -> tenancy.grant(new MembershipGrant(ISSUER, subject,
-                kind, principal, Instant.now().minusSeconds(1), until)));
+                kind, principal, validFor)));
     }
 
     private static void assertState(ThrowingCallable call, String sqlState) {

@@ -21,9 +21,5 @@ secrets:
     file: ${RP_ISOLATION_SECRETS:?the drill sets the installation's secret directory}/db_app_password
   admin_initial_password:
     file: ${RP_ISOLATION_SECRETS:?the drill sets the installation's secret directory}/admin_initial_password
-  mfa_key:
-    file: ${RP_ISOLATION_SECRETS:?the drill sets the installation's secret directory}/mfa_key
   metrics_token:
     file: ${RP_ISOLATION_SECRETS:?the drill sets the installation's secret directory}/metrics_token
-  oidc_client_secret:
-    file: ${RP_ISOLATION_SECRETS:?the drill sets the installation's secret directory}/oidc_client_secret

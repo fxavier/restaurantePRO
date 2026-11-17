@@ -21,9 +21,7 @@ One stack per company (spec §2): Caddy (HTTPS on the LAN), the backend, and Pos
    openssl rand -hex 24 > secrets/db_owner_password             # restaurantpro_owner: Flyway (ADR 0039, "Database roles")
    openssl rand -hex 24 > secrets/db_app_password               # restaurantpro_app: the backend's pool
    printf '%s' 'choose-a-strong-initial-password' > secrets/admin_initial_password
-   openssl rand -base64 32 | tr -d '\n' > secrets/mfa_key       # encrypts the TOTP secrets (R5, "Second factor (MFA)")
    openssl rand -hex 32 | tr -d '\n' > secrets/metrics_token    # Prometheus scrape token (R5, "Alerts")
-   : > secrets/oidc_client_secret                               # empty unless you enable single sign-on
    chmod 644 secrets/*           # 644, not 600: the containers read them as non-root users; the 700 directory protects them on the host
    ls -ld status                 # ships with the package, mode 755; if missing: mkdir -m 755 status
    chown <backup user> status    # verify-backups.sh (run as the backup user) writes the status file there
@@ -443,23 +441,24 @@ chown <backup user> status    # e.g. restaurantpro: verify-backups.sh writes sta
 
 An `.env` from before R5 keeps the R4 behaviour: no second factor (`RESTAURANTPRO_MFA_MODE` defaults to `OFF` in Compose), no single sign-on. To turn on the second factor, set `RESTAURANTPRO_MFA_MODE=SENSITIVE` and your `RESTAURANTPRO_LAN_CIDRS` in `.env` and run `docker compose up -d`, then have every administrator enrol from the LAN before working from outside (from outside, enrolment needs an enrolment code; see "Second factor (MFA)"). Keep `secrets/mfa_key` as carefully as the database password: it is in every `backup.sh` archive (`secrets/`), and without it no enrolled factor can be read, so every account must be reset. Never change it on a running installation. After the upgrade, run `./verify-backups.sh` once by hand so the status file exists.
 
+From R6 on, Keycloak signs users in (MFA and step-up included), so this release's `compose.yaml` no longer uses `secrets/mfa_key` or `secrets/oidc_client_secret`, nor the `RESTAURANTPRO_MFA_*`, `RESTAURANTPRO_LAN_CIDRS` and R5 `RESTAURANTPRO_OIDC_*` names in `.env`. Keep `secrets/mfa_key` while a rollback to R5 is still possible: the R5 package needs it.
+
 ## Second factor (MFA)
 
-BackOffice accounts can prove a second factor with a TOTP app (any RFC 6238 app: Google Authenticator, Microsoft Authenticator, FreeOTP, 1Password…). POS sessions (employee PIN) and POS approvals are never asked for one. The mode is a deployment setting in `.env`, not data, so an administrator session cannot switch it off (D140):
+From R6, Keycloak signs every BackOffice user in; the backend keeps no password, TOTP secret or session (D175, D184).
+Users reach the BackOffice through the BFF (`bff/`), which runs the login at Keycloak and holds the tokens; the browser
+never sees one. POS sessions (employee PIN) and POS approvals are unchanged.
 
-| `RESTAURANTPRO_MFA_MODE` | at login (password or single sign-on) | before a sensitive action |
-| --- | --- | --- |
-| `OFF` (Compose default) | no second factor, as in R4 | nothing |
-| `SENSITIVE` (`.env.example`, recommended) | a code when the request comes from **outside** the LAN, and always for a support account | a code no older than `RESTAURANTPRO_MFA_STEP_UP_MAX_AGE` (default `PT15M`), wherever the user is |
-| `ALL_BACKOFFICE` | a code at every BackOffice login | the same |
-
-The sensitive actions are those of the permissions that change who can do what, money routing or fiscal data: company, users, roles, employees, terminals, support access, fiscal settings, catalog publication, promotions, cash closing approval and adjustments, credit limits, payment methods, report and audit exports. The BackOffice asks for a code when one is needed and then repeats the action.
-
-**LAN and remote access.** A request is *remote* when its client address (as Caddy forwards it; Caddy replaces any `X-Forwarded-For` a client sends) is not in `RESTAURANTPRO_LAN_CIDRS`, a comma-separated list of CIDRs. When unset it is every private range, which is rarely what you want: narrow it to the store LANs. **Leave VPN address pools out of it.** A VPN client inside the list counts as local and logs in with a password alone. A session that never proved a second factor is refused (403 `MFA_REQUIRED`) the moment it is used from outside, so a cookie taken on the LAN is useless outside it.
-
-**Enrolment.** Each user enrols in the BackOffice: the current password, then the QR code in the app, then one code to confirm. The confirmation shows **10 recovery codes once**: print them or keep them in a password manager. From the LAN, an account that must have a second factor and has none is sent to enrolment right after login. From outside, enrolment needs a one-time **enrolment code** (valid 24 hours) from an administrator, so a stolen password cannot enrol the thief's phone. A support account always enrols with an enrolment code.
-
-**Recovery.** A recovery code works once, in place of a TOTP code, at login or for a sensitive action. A user who still has access can replace all recovery codes, after entering a fresh code. A user who lost both the phone and the codes asks an administrator (`USER_MANAGE`) for a **reset** of their second factor, with a reason: it revokes the factor and the recovery codes, ends the user's sessions, is audited (`MFA_RESET`) and returns an enrolment code. Give it to the user out of band (phone, in person), never by the same e-mail as the password. No one can reset their own account: use a recovery code.
+- **MFA is mandatory for every BackOffice account.** Keycloak's browser flow uses *Level of Authentication*: LoA 1 is
+  the password (`acr` "1"), LoA 2 adds an OTP app or WebAuthn (`acr` "2", maximum age 300 s). Enrolment, recovery and
+  the OTP apps are Keycloak's (required action *Configure OTP*).
+- **Step-up.** A sensitive permission (D142) needs a token with `acr` 2 and `auth_time` no older than
+  `restaurantpro.security.step-up-max-age` (5 min). Otherwise the backend answers 401
+  `insufficient_user_authentication` (RFC 9470) with `MFA_STEP_UP_REQUIRED`; the SPA sends the user through the BFF's
+  `/bff/step-up` and repeats the request with the same `Idempotency-Key`. Support access needs `acr` 2 on every request.
+- **Configuration** is the realm exports in `deploy/keycloak/` (see its README) and the issuers in `.env`
+  (`RESTAURANTPRO_OIDC_TENANT_ISSUER`, `_OPS_ISSUER`, `_DEVICES_ISSUER`). The R5 `RESTAURANTPRO_MFA_*` and
+  `RESTAURANTPRO_LAN_CIDRS` settings are gone: there is no LAN rule, every BackOffice login is remote.
 
 **Break-glass (R6, D184).** The second factor lives in Keycloak, so a lost factor is reset there, not on the database: a
 Keycloak administrator of the realm opens the user (Users → the user → Credentials), deletes the OTP credential and
@@ -467,31 +466,12 @@ sets the required action *Configure OTP*, or ends the user's sessions (Sessions 
 administrator of a company, the platform's Keycloak administrator does it. The local `mfa-break-glass.sh` and its
 database function are gone (S72's V3016 drops the local MFA tables).
 
-## Single sign-on (optional)
+## Single sign-on
 
-Off by default: with `RESTAURANTPRO_OIDC_ENABLED` unset or `false`, the backend makes no call to any identity provider and the single sign-on routes answer 404. When on, BackOffice users can log in through **one** OpenID Connect provider for the installation (Keycloak, Microsoft Entra ID, Google Workspace or any other) (D144):
-
-- **Authentication only.** The provider proves who the user is. It never creates an account, and its groups, roles and claims are ignored: what a user may do in which store stays in restaurantPRO's own roles. A provider identity that is not linked to an account, an inactive account, and a support account are refused, and the refusal is audited (`OIDC_LOGIN_REFUSED`).
-- **Linking.** An administrator creates the account as today. The user logs in once with the password (and a second factor when the mode is not `OFF`), then links the provider identity from their own account settings: the provider's login page opens and the link is saved for that account. One link per account. Administrators with `USER_MANAGE` can see and remove a user's link.
-- **Password fallback.** The password keeps working. If the provider is down or unreachable, single sign-on answers "unavailable" and users log in with the password; the backend starts and runs without the provider.
-- **Second factor.** A single sign-on login is a first factor: the MFA mode applies on top of it. With `RESTAURANTPRO_OIDC_TRUST_IDP_MFA=true`, a provider that reports its own MFA in the ID token (`amr` with `mfa`, `otp`, `hwk` or `swk`) counts as the second factor instead (P55: off by default, because restaurantPRO cannot verify that claim).
-
-To enable it:
-
-1. Register a confidential web client at the provider, with the authorization-code flow, PKCE, and the redirect URI **`https://<RESTAURANTPRO_HOSTNAME>/api/v1/auth/oidc/callback`**. Scope `openid` is enough.
-2. Put the client secret in `secrets/oidc_client_secret` (no newline: `printf '%s' '<secret>' > secrets/oidc_client_secret`, mode 644 like the other secrets), and in `.env`: `RESTAURANTPRO_OIDC_ENABLED=true`, `RESTAURANTPRO_OIDC_ISSUER_URI` (the issuer exactly as the provider's discovery document states it), `RESTAURANTPRO_OIDC_CLIENT_ID`, and optionally `RESTAURANTPRO_OIDC_DISPLAY_NAME` (the button text), `RESTAURANTPRO_OIDC_SCOPES`, `RESTAURANTPRO_OIDC_POST_LOGIN_URI` (default `/backoffice/`).
-3. Give the backend a route to the provider. The backend sits on the `internal` network, which has **no route** to the LAN or the Internet, so as shipped it cannot reach any provider. This is deliberate: single sign-on is off by default, and restaurantPRO ships no override, so the backend gets a route only on an installation that enables it. The supported way is an override that attaches it to a network with a route, for example `compose.override.yaml` next to `compose.yaml` (Compose reads it automatically):
-
-   ```yaml
-   services:
-     backend:
-       networks: [internal, egress]
-   networks:
-     egress: {}
-   ```
-
-   This gives the backend outbound access to the LAN and the Internet; restrict it on the host firewall to the provider's address if you can. Then `docker compose up -d`.
-4. Link your own administrator account first, log out, and log in with the provider's button.
+There is no separate single sign-on any more: Keycloak is the identity provider, and the backend's R5 OIDC
+federation (`RESTAURANTPRO_OIDC_ENABLED` and the rest, `secrets/oidc_client_secret`, `/api/v1/auth/oidc/*`) is gone.
+A company that wants its own provider (Entra ID, Google…) connects it to Keycloak as an identity provider of the
+`restaurantpro` realm; restaurantPRO still decides what each user may do, from its own roles.
 
 ## Alerts
 
@@ -603,7 +583,7 @@ Measured in S54 on one laptop, with the backend jar, PostgreSQL and the 10 clien
 - A base backup is tied to the PostgreSQL major version (18). After a major upgrade, take a new base backup at once; older ones restore only with the old image.
 - `backup.sh` does not include the `caddy-data` volume (Caddy's local CA). Back it up by hand if replacing the server without re-trusting clients matters.
 - The Caddy container runs as root (image default) to bind ports 80 and 443.
-- Single sign-on needs a network route from the backend to the provider, which the shipped Compose file does not give (see "Single sign-on (optional)").
+- The backend must reach Keycloak (its issuers and keys); where production Keycloak runs is open item O3 (see "Single sign-on").
 - Single sign-on: the discovery and token calls to the provider have bounded timeouts (3 s connect, 5 s read), but the fetch of the provider's signing keys (JWKS), made by Spring Security when it checks the first ID token and again when the key id changes, has none. A provider that accepts the connection and never answers can hold that callback request (one request thread) indefinitely; password login and the POS are not affected. Follow-up: give the ID token decoder a client with the same timeouts.
 - `test/real-schema-drill.sh` predates R4: its HTTP journey writes only the R1-R3 tables, so the check that every table holds rows fails on the R4 and R5 tables, and its schema normaliser does not yet accept two re-deparsed expressions of R4 (a `CASE` with a cast array and regrouped `AND`s in a `CHECK`). The role checks it gained with ADR 0039 pass when those two checks are relaxed. **Open, for S70:** extend the journey to R4/R5 and the normaliser; until then the drill is red for these two pre-existing reasons. The restore half of A79 (a restored installation serves as `restaurantpro_app`) is proven by `test-two-installations.sh` (step 4).
 - The `docker` filesystem is left out of the backup status file when Docker's root directory is not on the host's filesystem (Docker Desktop): the disk alert then covers the backup directory and the backend's own disk only.

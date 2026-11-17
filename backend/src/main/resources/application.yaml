@@ -47,10 +47,6 @@ spring:
         # D88: Modulith resubmits only a publication that is not already RESUBMITTED. One left RESUBMITTED (a crash
         # between the resubmission and its delivery) is marked FAILED after this, so the recovery job retries it.
         resubmitted: PT10M
-  session:
-    jdbc:
-      table-name: shared.spring_session
-      initialize-schema: never
   data:
     web:
       pageable:
@@ -65,19 +61,6 @@ springdoc:
   # D10: schemas are named by their fully qualified class name; by simple name, records of the same name in two
   # modules (customers and delivery AddressRequest, the nested Line records) merge into one wrong schema.
   use-fqn: true
-  swagger-ui:
-    # Swagger UI echoes the XSRF-TOKEN cookie in X-XSRF-TOKEN, so "Try it out" works for writes (CSRF is on, D26).
-    csrf:
-      enabled: true
-
-server:
-  servlet:
-    session:
-      cookie:
-        # D25 / spec §10
-        secure: true
-        http-only: true
-        same-site: lax
 
 logging:
   structured:
@@ -126,8 +109,9 @@ restaurantpro:
     completed-retention: P30D
     purge-cron: "0 45 3 * * *"
   # R5: the environment names below are frozen by the R5 PRD (deploy/compose.yaml, S62). Spring's relaxed binding
-  # would not map them (RESTAURANTPRO_MFA_MODE is not restaurantpro.security.mfa.mode), so each is bound explicitly.
-  # FrozenConfigurationNamesTest proves every one. An empty value means "not set".
+  # would not map them (RESTAURANTPRO_ALERTS_CASH_DIFFERENCE_THRESHOLD is not restaurantpro.alerts.cash-difference-
+  # threshold), so each is bound explicitly. FrozenConfigurationNamesTest proves every one. An empty value means
+  # "not set". R6 (S72) retired the local MFA, LAN, OIDC and server-session settings: Keycloak signs users in.
   security:
     # R6 (spec "frozen contracts", D176/D184): Keycloak's two realms. Unset issuers make every API call 503
     # IDP_UNAVAILABLE (fail closed, S72); S71 only declares them.
@@ -139,25 +123,6 @@ restaurantpro:
     audience: restaurantpro-api
     clock-skew: PT30S
     step-up-max-age: PT5M
-    mfa:
-      # D138/D142: OFF, SENSITIVE or ALL_BACKOFFICE (deploy/.env.example sets SENSITIVE, P52)
-      mode: ${RESTAURANTPRO_MFA_MODE:OFF}
-      step-up-max-age: ${RESTAURANTPRO_MFA_STEP_UP_MAX_AGE:PT15M}
-      # file of the secret mfa_key; required unless the mode is OFF
-      key-file: ${RESTAURANTPRO_MFA_KEY_FILE:}
-    # D140: comma-separated CIDRs of the restaurant's LAN; unset = the D140 private and loopback ranges. Narrow it to
-    # the store LANs and leave VPN pools out, or a VPN user counts as local.
-    lan-cidrs: "${RESTAURANTPRO_LAN_CIDRS:127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7,fe80::/10}"
-    oidc:
-      # D144/P55: one optional OpenID Connect provider; off unless enabled
-      enabled: ${RESTAURANTPRO_OIDC_ENABLED:false}
-      issuer-uri: ${RESTAURANTPRO_OIDC_ISSUER_URI:}
-      client-id: ${RESTAURANTPRO_OIDC_CLIENT_ID:}
-      client-secret-file: ${RESTAURANTPRO_OIDC_CLIENT_SECRET_FILE:}
-      display-name: ${RESTAURANTPRO_OIDC_DISPLAY_NAME:SSO}
-      scopes: ${RESTAURANTPRO_OIDC_SCOPES:openid}
-      trust-idp-mfa: ${RESTAURANTPRO_OIDC_TRUST_IDP_MFA:false}
-      post-login-uri: ${RESTAURANTPRO_OIDC_POST_LOGIN_URI:/backoffice/}
   keycloak:
     # R6 (D181): the tenancy-provisioner service account of the IdentityProviderAdmin adapter (S75); its private key
     # comes from a secret file, never from the environment.
