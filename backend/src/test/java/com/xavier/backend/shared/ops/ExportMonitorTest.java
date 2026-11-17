@@ -16,6 +16,12 @@ import java.util.concurrent.atomic.AtomicReference;
 import com.xavier.backend.shared.exception.BusinessRuleException;
 import com.xavier.backend.shared.exception.ConflictException;
 import com.xavier.backend.shared.exception.NotFoundException;
+import com.xavier.backend.access.StoreScopes;
+import com.xavier.backend.shared.tenancy.MembershipKind;
+import com.xavier.backend.shared.tenancy.TenantContext;
+import com.xavier.backend.shared.tenancy.TenantScopes;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -26,9 +32,13 @@ import org.springframework.security.access.AccessDeniedException;
 class ExportMonitorTest {
 
     static final Instant T0 = Instant.parse("2026-11-12T10:00:00Z");
+    static final UUID A = UUID.fromString("0190b000-0000-7000-8000-00000000000a");
+    static final UUID B = UUID.fromString("0190b000-0000-7000-8000-00000000000b");
 
     final SimpleMeterRegistry meters = new SimpleMeterRegistry();
     final AtomicReference<Instant> now = new AtomicReference<>(T0);
+    /** The tenant the monitor sees bound; a test switches it to act in another tenant. */
+    final AtomicReference<UUID> bound = new AtomicReference<>(A);
     final ExportMonitor monitor = new ExportMonitor(meters, new Clock() {
         @Override
         public ZoneOffset getZone() {
@@ -44,7 +54,8 @@ class ExportMonitorTest {
         public Instant instant() {
             return now.get();
         }
-    });
+    }, new TenantScopes((StoreScopes) null,
+            () -> Optional.of(new TenantContext(bound.get(), MembershipKind.SYSTEM, null, "test"))));
 
     @Test
     void aSuccessfulExportReturnsItsResultAndCountsASuccess() {
@@ -57,7 +68,7 @@ class ExportMonitorTest {
     }
 
     @Test
-    void aFailedExportIsRethrownCountedAndRaisesAnInstallationWideWarning() {
+    void aFailedExportIsRethrownCountedAndRaisesATenantWideWarning() {
         IllegalStateException failure = new IllegalStateException("disk full");
 
         assertThatThrownBy(() -> monitor.monitor(ExportMonitor.AUDIT_CSV, () -> {
@@ -94,6 +105,19 @@ class ExportMonitorTest {
                         tuple("The last report_csv export failed.",
                                 T0.plus(Duration.ofHours(2))));
         assertThat(count("report_csv", "failure")).isEqualTo(2.0);
+    }
+
+    /** Security rule 7 (D186): B's failed export is B's alert, never A's. */
+    @Test
+    void aFailureInOneTenantIsNeverAnotherTenantsAlert() {
+        bound.set(B);
+        fail(ExportMonitor.REPORT_CSV);
+
+        bound.set(A);
+        assertThat(monitor.alerts()).isEmpty();
+        bound.set(B);
+        assertThat(monitor.alerts()).extracting(OperationalAlert::summary)
+                .containsExactly("The last report_csv export failed.");
     }
 
     /** A refusal (403, 404, 409, 422) is the caller's answer, not a failed export: no count, no alert. */

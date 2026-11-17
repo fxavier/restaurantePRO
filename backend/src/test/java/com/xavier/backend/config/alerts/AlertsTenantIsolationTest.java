@@ -10,6 +10,7 @@ import com.xavier.backend.cash.service.CashAlertsTestSupport;
 import com.xavier.backend.settlement.SettlementTestClock;
 import com.xavier.backend.settlement.service.InDoubtTestSupport;
 import com.xavier.backend.shared.ops.AlertSource;
+import com.xavier.backend.shared.ops.ExportMonitor;
 import com.xavier.backend.shared.ops.OperationalAlert;
 import com.xavier.backend.shared.tenancy.MembershipKind;
 import com.xavier.backend.shared.tenancy.TenantContext;
@@ -31,7 +32,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 
 /**
  * Security rule 7 (D186) for the alert outlet: one tenant's monitor never sees another tenant's alerts. The sources
- * are the real ones; tenants A and B each get a cash discrepancy and an overdue in-doubt attempt.
+ * are the real ones; tenants A and B each get a cash discrepancy, an overdue in-doubt attempt and a failed export.
  */
 @AlertsIntegrationTest
 class AlertsTenantIsolationTest {
@@ -48,6 +49,8 @@ class AlertsTenantIsolationTest {
     @Autowired
     StoreScopes scopes;
     @Autowired
+    ExportMonitor exports;
+    @Autowired
     SettlementTestClock clock;
 
     final List<UUID> storesOfA = new ArrayList<>();
@@ -61,6 +64,7 @@ class AlertsTenantIsolationTest {
         storesOfB.add(CashAlertsTestSupport.discrepancyIn(context, B, clock.instant()));
         storesOfA.add(InDoubtTestSupport.overdueAttemptIn(context, A, clock.instant()));
         storesOfB.add(InDoubtTestSupport.overdueAttemptIn(context, B, clock.instant()));
+        failAnExportIn(B);
     }
 
     @AfterEach
@@ -76,6 +80,8 @@ class AlertsTenantIsolationTest {
 
         assertThat(storesIn(seenByA)).containsAll(storesOfA).doesNotContainAnyElementsOf(storesOfB);
         assertThat(storesIn(seenByB)).containsAll(storesOfB).doesNotContainAnyElementsOf(storesOfA);
+        assertThat(codes(seenByA)).as("B's failed export").doesNotContain("EXPORT_FAILED");
+        assertThat(codes(seenByB)).contains("EXPORT_FAILED");
     }
 
     /** A's count (what the health check sums) does not grow when B gets more alerts. */
@@ -110,6 +116,7 @@ class AlertsTenantIsolationTest {
             List<OperationalAlert> answered = tenants.call(A, SystemScope.ALERTS,
                     () -> scopes.call(SystemScope.ALERTS, source::alerts));
             assertThat(storesIn(answered)).as(name).doesNotContainAnyElementsOf(storesOfB);
+            assertThat(codes(answered)).as(name + ": B's failed export").doesNotContain("EXPORT_FAILED");
         });
     }
 
@@ -121,6 +128,16 @@ class AlertsTenantIsolationTest {
                     () -> alerts.list().alerts());
         } finally {
             SecurityContextHolder.clearContext();
+        }
+    }
+
+    private void failAnExportIn(UUID tenant) {
+        try {
+            TenantTestSupport.inTenant(tenants, tenant, () -> exports.monitor(ExportMonitor.AUDIT_CSV, () -> {
+                throw new IllegalStateException("B's export fails");
+            }));
+        } catch (IllegalStateException expected) {
+            // the failure is the point: the monitor remembers it for B
         }
     }
 
