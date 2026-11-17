@@ -127,6 +127,11 @@ public class ExportMonitor implements AlertSource {
     }
 
     @Override
+    public Scope scope() {
+        return Scope.TENANT;
+    }
+
+    @Override
     public List<OperationalAlert> alerts() {
         return recentFailures(clock.instant());
     }

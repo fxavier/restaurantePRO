@@ -29,6 +29,11 @@ class DiskAlertSource implements AlertSource {
     }
 
     @Override
+    public Scope scope() {
+        return Scope.PLATFORM;
+    }
+
+    @Override
     public List<OperationalAlert> alerts() {
         List<Filesystem> low = reader.filesystems().stream()
                 .filter(filesystem -> filesystem.freeBelow(WARNING_BELOW_PERCENT)).toList();

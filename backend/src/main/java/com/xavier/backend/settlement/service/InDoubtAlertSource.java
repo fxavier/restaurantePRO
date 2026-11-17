@@ -21,6 +21,11 @@ class InDoubtAlertSource implements AlertSource {
     }
 
     @Override
+    public Scope scope() {
+        return Scope.TENANT;
+    }
+
+    @Override
     public List<OperationalAlert> alerts() {
         return gauge.overdueAtLastRefresh().stream()
                 .map(store -> new OperationalAlert("PAYMENTS_IN_DOUBT", AlertSeverity.CRITICAL, store.storeId(),

@@ -95,6 +95,11 @@ class CashDiscrepancyAlertSource implements AlertSource {
                         counts.getOrDefault(store, 0L))).toList(), true);
     }
 
+    @Override
+    public Scope scope() {
+        return Scope.TENANT;
+    }
+
     /** The bound tenant's discrepancies as of its last refresh (security rule 7: never another tenant's). */
     @Override
     public List<OperationalAlert> alerts() {

@@ -104,14 +104,15 @@ class AlertsTenantIsolationTest {
                 .toList();
     }
 
-    /** The AlertSource contract: every source, asked bound to A, answers nothing of B. */
+    /** The AlertSource contract: every TENANT source, asked bound to A, answers nothing of B. */
     @Test
     void everyAlertSourceAnswersForTheBoundTenantOnly() {
         Map<String, AlertSource> sources = context.getBeansOfType(AlertSource.class);
         assertThat(sources).isNotEmpty();
         sources.forEach((name, source) -> {
-            if (source.getClass().getEnclosingClass() == AlertsIntegrationTest.class) {
-                return; // the outlet suite's fixed test sources, not part of the contract
+            if (source.getClass().getEnclosingClass() == AlertsIntegrationTest.class
+                    || source.scope() != AlertSource.Scope.TENANT) {
+                return; // the outlet suite's fixed test sources; PLATFORM sources run with no tenant
             }
             List<OperationalAlert> answered = tenants.call(A, SystemScope.ALERTS,
                     () -> scopes.call(SystemScope.ALERTS, source::alerts));

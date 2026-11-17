@@ -35,6 +35,11 @@ class StoreScopeAlertSource implements AlertSource {
     }
 
     @Override
+    public Scope scope() {
+        return Scope.PLATFORM;
+    }
+
+    @Override
     public List<OperationalAlert> alerts() {
         List<OperationalAlert> alerts = new ArrayList<>();
         if (enforcement == StoreScopeEnforcement.PERMISSIVE) {

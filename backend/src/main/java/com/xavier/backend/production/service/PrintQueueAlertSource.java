@@ -26,6 +26,11 @@ public class PrintQueueAlertSource implements AlertSource {
     }
 
     @Override
+    public Scope scope() {
+        return Scope.TENANT;
+    }
+
+    @Override
     public List<OperationalAlert> alerts() {
         ProductionMetrics.QueueHealth health = metrics.refreshQueue();
         List<OperationalAlert> alerts = new ArrayList<>();

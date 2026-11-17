@@ -37,6 +37,11 @@ class BackupAlertSource implements AlertSource {
     }
 
     @Override
+    public Scope scope() {
+        return Scope.PLATFORM;
+    }
+
+    @Override
     public List<OperationalAlert> alerts() {
         if (!reader.configured()) {
             return List.of();

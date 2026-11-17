@@ -7,6 +7,7 @@ import com.xavier.backend.access.StoreScopes;
 import com.xavier.backend.access.SystemScope;
 import com.xavier.backend.shared.ops.AlertSeverity;
 import com.xavier.backend.shared.ops.AlertSource;
+import com.xavier.backend.shared.ops.AlertSource.Scope;
 import com.xavier.backend.shared.ops.OperationalAlert;
 import com.xavier.backend.shared.tenancy.TenantScopes;
 import java.time.Clock;
@@ -26,10 +27,11 @@ import org.springframework.util.ClassUtils;
 /**
  * The in-app outlet of D149: every {@link AlertSource} bean, computed at most every {@link #CACHE_FOR} so polling
  * never loads the database. A source that throws becomes one {@code ALERT_SOURCE_FAILED} warning (logged), never an
- * error. {@link #list} shows a {@code SYSTEM_MONITOR} holder the alerts of the stores it holds it in; tenant-wide
- * alerts (no store) only to a tenant-wide holder. The snapshot is per tenant (security rule 7, D186): computed in the
- * bound tenant and cached under its id, so one tenant's alerts never answer another's list. The health check sums the
- * ACTIVE tenants' snapshots, each computed in its own tenant.
+ * error. A tenant sees only its own alerts (R6 user decision): {@link #list} shows a {@code SYSTEM_MONITOR} holder the
+ * {@link Scope#TENANT} sources' alerts of the stores it holds it in, tenant-wide ones (no store) only to a tenant-wide
+ * holder; that snapshot is per tenant (security rule 7, D186), computed in the bound tenant and cached under its id.
+ * The {@link Scope#PLATFORM} sources' alerts are one snapshot computed with no tenant, listed to platform operators
+ * only ({@link #platformList}). The health check counts both.
  */
 @Service
 class AlertsService {
@@ -53,6 +55,8 @@ class AlertsService {
     private final TenantScopes tenants;
     private final Clock clock;
     private final Map<UUID, Snapshot> cached = new ConcurrentHashMap<>();
+    /** The platform snapshot, under its own key: no tenant id is ever this. */
+    private final Map<Scope, Snapshot> platform = new ConcurrentHashMap<>();
 
     AlertsService(List<AlertSource> sources, AccessPolicy accessPolicy, StoreScopes scopes, TenantScopes tenants,
                   Clock clock) {
@@ -87,7 +91,25 @@ class AlertsService {
                 return known;
             }
             // D166: computed tenant-wide (every store of the tenant), then filtered per actor by list()
-            return new Snapshot(now, scopes.call(SystemScope.ALERTS, () -> collect(now)));
+            return new Snapshot(now, scopes.call(SystemScope.ALERTS, () -> collect(Scope.TENANT, now)));
+        });
+    }
+
+    /** The platform's alerts, CRITICAL first, for a platform operator (no tenant, no store filter). */
+    AlertsView platformList() {
+        Snapshot snapshot = currentPlatform();
+        return new AlertsView(snapshot.generatedAt(), snapshot.alerts().stream().sorted(CRITICAL_FIRST).toList());
+    }
+
+    /** The platform snapshot, collected again when it is {@link #CACHE_FOR} old (or the clock went back). */
+    Snapshot currentPlatform() {
+        return platform.compute(Scope.PLATFORM, (key, known) -> {
+            Instant now = clock.instant();
+            if (known != null && !now.isBefore(known.generatedAt())
+                    && now.isBefore(known.generatedAt().plus(CACHE_FOR))) {
+                return known;
+            }
+            return new Snapshot(now, tenants.callUnbound(SystemScope.PLATFORM, () -> collect(Scope.PLATFORM, now)));
         });
     }
 
@@ -97,9 +119,12 @@ class AlertsService {
                 .mapToInt(tenant -> tenants.call(tenant, SystemScope.ALERTS, () -> current().alerts().size())).sum();
     }
 
-    private List<OperationalAlert> collect(Instant now) {
+    private List<OperationalAlert> collect(Scope scope, Instant now) {
         List<OperationalAlert> alerts = new ArrayList<>();
         for (AlertSource source : sources) {
+            if (source.scope() != scope) {
+                continue;
+            }
             String name = ClassUtils.getUserClass(source).getSimpleName();
             try {
                 alerts.addAll(source.alerts());
