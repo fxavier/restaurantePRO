@@ -9,6 +9,18 @@ Canonical terms from spec §8.1. Code uses the English name; the Portuguese term
 | Bootstrap tenant | Tenant inicial | tenancy | The one tenant that existing pre-SaaS data is migrated into (D180); afterwards an ordinary tenant. |
 | TenantMembership | Associação utilizador–empresa | tenancy | The authorised link `(issuer, subject) → tenant` (account, terminal, print bridge or time-boxed support). The only source of the request's tenant (D177). |
 | PrintBridge | Ponte de impressão | production | A Keycloak client on the store LAN that pulls print jobs over HTTPS and drives the printers and cash drawer (D187). |
+| TenantContext | Contexto do tenant | shared.tenancy | The one tenant a request, listener or job acts in, with who acts (an account, a terminal, a print bridge, support or the system). It is never taken from what a request says (D177). |
+| Membership resolution | Resolução da associação | config.security, tenancy | Finding, for every request, the caller's one active membership in the tenant it works in (an explicit choice only selects among the caller's own); no membership means the request is refused the same way for a foreign and an unknown tenant. Revocation and suspension apply on the next request (D177). |
+| Tenant binding | Vinculação do tenant | config.persistence | Fixing the tenant for one database transaction only, so it ends with the transaction and nothing reaches protected data without it (D178). |
+| Membership summary | Resumo de associação | tenancy | The list of a person's own companies (name, code, role of the membership, status) shown to choose where to work; it never shows other companies (D177). |
+| Pending enrolment membership | Associação de ativação pendente | organization, tenancy | The placeholder an open device enrolment code holds: it only says which company and device the code belongs to, so the code can be redeemed; it can act nowhere. |
+| TENANT table / PLATFORM table | Tabela de tenant / da plataforma | shared | Every table is one of the two (D179): a TENANT table holds one company's data and is isolated per company; a PLATFORM table holds no company's data (the tenant directory, shared reference data) and the application may only read it. |
+| Job lease | Concessão de tarefa | shared.tenancy | The right one backend instance holds, for a while, to run one scheduled job for one company, so two instances never run it at once for that company (D185). |
+| Devices realm | Realm de dispositivos | identity, organization | The Keycloak realm that holds only the store devices' identities, kept apart from people's realms (O1); POS and print-bridge calls are accepted only from it. |
+| Store device | Dispositivo de loja | organization | A POS terminal or print bridge registered in one store; once enrolled it acts only for that store of its company. |
+| POS session token | Sessão do POS | identity | What an employee's code + PIN login on an enrolled terminal opens: valid only on that terminal, ends after 30 min idle or 10 h (D182). |
+| Tenant export | Exportação do tenant | deploy | An encrypted copy of one company's data, without reading any other company's (D188), e.g. at contract end. |
+| Tenant restore | Restauro do tenant | deploy | Putting one suspended company back to an exported point in time without touching any other; it stays suspended until an operator reactivates it (D188). |
 | Store | Loja | organization | Operating unit of the company. Has timezone, business-day cutoff, currency. `storeId` scopes operations and permissions. |
 | Terminal | Terminal | organization | A registered POS station. Enrolled once with a one-time code; then authenticates as its own Keycloak confidential client with a private key (D182). |
 | BusinessDay | Dia comercial | organization (rule), cash (CashDay) | A trading day that may cross midnight; starts at the store's cutoff time. |
@@ -20,10 +32,10 @@ Canonical terms from spec §8.1. Code uses the English name; the Portuguese term
 | Approver | Aprovador | identity | Second employee whose credentials authorize a critical action; recorded in audit. |
 | Second factor / TOTP | Segundo fator | identity | *Superseded by D184: provided by Keycloak.* A time-based one-time code (RFC 6238, 6 digits, 30 s) from the account's authenticator app, proved after the password. One ACTIVE factor per account; its secret is stored encrypted. Asked at login per the installation's MFA mode (OFF, SENSITIVE, ALL_BACKOFFICE) and at every step-up. Never on the POS. |
 | Recovery code | Código de recuperação | identity | *Superseded by D184: provided by Keycloak.* One of ten single-use codes shown once at enrolment, accepted instead of a TOTP code. Stored hashed; a new set replaces the old. |
-| Enrolment code | Código de ativação | identity | *Superseded by D184: provided by Keycloak.* A one-time code an administrator issues with an MFA reset (24 h): it lets the account enrol from outside the LAN. Not a recovery code. |
-| Step-up | Reautenticação | access, identity | A fresh second factor (default 15 min old at most) that a BackOffice account must prove before using a sensitive permission (D142); the refusal is 403 `MFA_STEP_UP_REQUIRED`. |
-| Remote access | Acesso remoto | identity | A BackOffice request whose client address is outside `restaurantpro.security.lan-cidrs`; in mode SENSITIVE it needs a second factor at login. |
-| External identity | Identidade externa | identity | The link of one local account to one subject of the installation's OIDC provider. Federation only proves who logs in; authorities stay local RBAC. |
+| Enrolment code | Código de ativação | organization | The one-time code an administrator issues for a store device (D182, D187), made of a public selector and a secret; redeemed once, together with the device's own key. *(The R5 MFA enrolment code it once meant was superseded by D184.)* |
+| Step-up | Reautenticação | access, identity | Proving a recent second factor (at most 5 min old) at Keycloak before a sensitive action; the action then runs once (D184). |
+| Remote access | Acesso remoto | identity | *Superseded by D184 (R6): there is no LAN/remote rule; Keycloak's MFA applies everywhere.* |
+| External identity | Identidade externa | identity | *Superseded by D175 (R6): Keycloak is the identity provider; a tenant membership links a Keycloak subject to a local account.* |
 | RoomArea | Área / sala | dining | Dining room, terrace, counter. |
 | RestaurantTable | Mesa | dining | Physical table in a RoomArea. |
 | TableOccupation | Ocupação de mesa | dining | One use of a table by one Order: OPEN → CLOSED (reason ORDER_CLOSED, ORDER_CANCELLED or MOVED). At most one open per table. |

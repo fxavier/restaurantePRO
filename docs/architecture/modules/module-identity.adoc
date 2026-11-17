@@ -8,12 +8,14 @@
 * `c.x.b.i.ApproverVerifier`
 * `c.x.b.i.EmployeeDirectory`
 |Bean references
-|* `c.x.b.a.IdempotentRequests` (in Access)
-* `c.x.b.a.AccessPolicy` (in Access)
-* `c.x.b.a.AuditLog` (in Audit)
+|* `c.x.b.a.AccessPolicy` (in Access)
+* `c.x.b.a.IdempotentRequests` (in Access)
+* `c.x.b.t.TenancyApi` (in Tenancy)
 * `c.x.b.o.OrganizationApi` (in Organization)
+* `c.x.b.a.AuditLog` (in Audit)
+* `c.x.b.s.tenancy.TenantScopes` (in Shared kernel)
 |Events listened to
-|* `c.x.b.o.model.event.CompanyBootstrapped` (async) 
-* `c.x.b.o.model.event.StoreDeactivated` (async) 
+|* `c.x.b.o.model.event.CompanyProvisioned` (async) 
 * `c.x.b.o.model.event.TerminalRevoked` (async) 
+* `c.x.b.o.model.event.StoreDeactivated` (async) 
 |===

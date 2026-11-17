@@ -12,7 +12,7 @@
 #                own backup status directory); each backend holds no db_password and its pool sessions are
 #                restaurantpro_app only; each database's roles are as D163 (ADR 0039: the owner owns every object, the
 #                application role owns nothing and has no write on the Flyway history)
-#   credentials  A's admin password and A's session cookie get 401 on B, and the reverse; A's database passwords
+#   credentials  each API refuses a call without a token (R6: no password login or cookie); A's database passwords
 #                (the superuser's, the owner's and the application role's, ADR 0039) fail authentication on B's
 #                PostgreSQL, and the reverse (each with a positive control); A's Caddy root certificate does not
 #                verify B
@@ -394,34 +394,16 @@ pass "secrets, recipients and the backup status directory come from each install
 
 # --- 2. credentials ---------------------------------------------------------------------------------------------
 step credentials "A's credentials do not open B, and B's do not open A"
+# R6 (D175, D176): the API has no password login and no session cookie any more (Keycloak issues bearer tokens),
+# so the old admin-password and cookie cross-checks prove nothing; what still holds per installation is that the
+# API refuses a call without a token (401, or 503 IDP_UNAVAILABLE while no issuer is configured: fail closed).
+# Tenant isolation inside one installation is R6AcceptanceTest's and the tenant export/restore drills' (F21).
 for i in $INSTALLATIONS; do
-  JAR="$WORK/$i/cookies"
-  [[ "$(api "$i" "$WORK/$i/root.crt" GET /api/v1/auth/session)" == 401 ]] || fail "rp-$i: GET /auth/session without a session should be 401"
-  status=""
-  for attempt in $(seq 1 30); do # the admin is created by a listener just after the bootstrap commits
-    status="$(api "$i" "$WORK/$i/root.crt" POST /api/v1/auth/login "$(login_body "$WORK/$i/secrets/admin_initial_password")")"
-    [[ "$status" == 200 ]] && break
-    sleep 1
-  done
-  [[ "$status" == 200 ]] || fail "rp-$i: its own admin login gave $status after $attempt attempts"
-  [[ "$(api "$i" "$WORK/$i/root.crt" GET /api/v1/auth/session)" == 200 ]] || fail "rp-$i: its own session is not accepted"
+  JAR="$WORK/$i/no-jar"
+  got="$(api "$i" "$WORK/$i/root.crt" GET /api/v1/auth/session)"
+  [[ "$got" == 401 || "$got" == 503 ]] || fail "rp-$i: GET /auth/session without a token should be refused (401 or 503), got $got"
 done
-pass "each admin logs in on its own installation and its session cookie is accepted there (positive control)"
-for pair in "a b" "b a"; do
-  read -r own other <<<"$pair"
-  OWN="$(tr '[:lower:]' '[:upper:]' <<<"$own")"
-  JAR="$WORK/$own/probe-cookies"
-  rm -f "$JAR"
-  api "$other" "$WORK/$other/root.crt" GET /api/v1/auth/session >/dev/null # fresh XSRF-TOKEN, as a browser gets one
-  got="$(api "$other" "$WORK/$other/root.crt" POST /api/v1/auth/login "$(login_body "$WORK/$own/secrets/admin_initial_password")")"
-  [[ "$got" == 401 ]] || fail "$OWN's admin password on rp-$other: expected 401, got $got"
-  JAR="$WORK/$own/no-jar"
-  got="$(api "$other" "$WORK/$other/root.crt" GET /api/v1/auth/session '' "Cookie: $(cookie_header "$WORK/$own/cookies")")"
-  [[ "$got" == 401 ]] || fail "$OWN's session cookie on rp-$other: expected 401, got $got"
-  got="$(api "$own" "$WORK/$own/root.crt" GET /api/v1/auth/session '' "Cookie: $(cookie_header "$WORK/$own/cookies")")"
-  [[ "$got" == 200 ]] || fail "the same cookie header on rp-$own should be 200 (control), got $got"
-  pass "$OWN's admin password and session cookie get 401 on rp-$other (same username, admin)"
-done
+pass "each installation's API refuses a call without a bearer token (no password login or session cookie exists since R6)"
 for pair in "a b" "b a"; do
   read -r own other <<<"$pair"
   OWN="$(tr '[:lower:]' '[:upper:]' <<<"$own")"

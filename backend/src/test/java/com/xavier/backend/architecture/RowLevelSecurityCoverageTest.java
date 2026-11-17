@@ -82,6 +82,29 @@ public class RowLevelSecurityCoverageTest {
         TENANT_PROTECTED_TABLES.forEach(table -> assertThat(tenantProblems(table)).as(table).isEmpty());
     }
 
+    /**
+     * A88 strict (S76): R6 is complete, so every module schema of the migrations is converted (none is left for a
+     * later slice), the shared kernel and {@code public} are TENANT* or PLATFORM table by table, and no table of the
+     * installation is registered UNSCOPED any more.
+     */
+    @Test
+    void everySchemaIsConvertedAndNothingIsLeftUnscoped() {
+        Set<String> modules = new java.util.TreeSet<>(MigrationNumberingTest.BLOCKS.keySet());
+        modules.remove("shared");
+        assertThat(tenantProtectedModules()).as("converted module schemas")
+                .containsExactlyInAnyOrderElementsOf(modules);
+        assertModuleTenantProtected("shared");
+        assertModuleTenantProtected("public");
+        assertThat(unscopedTables()).as("tables still registered UNSCOPED").isEmpty();
+    }
+
+    /** The tables of the installation still registered UNSCOPED (the scratch schemas of running tests excluded). */
+    static List<String> unscopedTables() {
+        return OwnerDatabase.shared().jdbc().sql("""
+                        SELECT u.table_name::text FROM shared.rls_unscoped_table u
+                        WHERE u.table_name::text NOT LIKE 'rls\\_scratch%' ORDER BY 1""").query(String.class).list();
+    }
+
     /** D177: the application role holds no privilege on any tenancy table; it reaches them through functions. */
     @Test
     void theApplicationRoleHasNoPrivilegeOnTenancyTables() {
@@ -205,15 +228,12 @@ public class RowLevelSecurityCoverageTest {
         assertThat(definers).extracting(row -> (String) row.get("name")).isSubsetOf(SECURITY_DEFINER_ALLOWED)
                 .contains("shared.store_of(regclass,uuid)", "tenancy.resolve_membership(text,text,uuid,text[])",
                         "tenancy.active_tenant_ids()");
-        assertThat(definers).filteredOn(row -> !"inventory.stock_transfer_stores(uuid)".equals(row.get("name")))
-                .allSatisfy(row -> {
-                    assertThat((String) row.get("config")).as("%s pins search_path", row.get("name"))
-                            .isEqualTo("search_path=pg_catalog");
-                    assertThat(row.get("public_execute")).as("%s is not PUBLIC's", row.get("name"))
-                            .isEqualTo(false);
-                    assertThat(row.get("app_execute")).as("%s is the application role's", row.get("name"))
-                            .isEqualTo(true);
-                });
+        assertThat(definers).allSatisfy(row -> {
+            assertThat((String) row.get("config")).as("%s pins search_path", row.get("name"))
+                    .isEqualTo("search_path=pg_catalog");
+            assertThat(row.get("public_execute")).as("%s is not PUBLIC's", row.get("name")).isEqualTo(false);
+            assertThat(row.get("app_execute")).as("%s is the application role's", row.get("name")).isEqualTo(true);
+        });
     }
 
     @Test
