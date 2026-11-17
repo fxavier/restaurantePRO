@@ -439,7 +439,7 @@ The same applies to `inventory.stock_transfer_stores`.
 |---|---|---|
 | A80 | Two tenants with identical store, item, employee and fiscal-series codes coexist; each sees only its own data through every API route and every report. | §2 (amended) |
 | A81 | A request never selects a tenant on its own: a forged `X-Tenant-Id`, a body field or a path value naming another tenant → 403 or ignored; the same 403 body for an existing foreign tenant and a random UUID. | §2, §10 |
-| A82 | A resource of another tenant addressed by id → **404**; a resource of another store in the same tenant → **403** (D42). | §10 |
+| A82 | A resource of another tenant addressed by id → **404**; a resource of another store in the same tenant → **403** (D42). *Amended 2026-11-17 (S76, F25 decided): a store id given as an input or filter (`?storeId=`, `/stores/{id}`) outside the caller's store scope answers **403 whatever its tenant**, exactly as a random id (D42 checks the store input before any read, so there is no existence oracle); an all-stores caller gets 404 for another tenant's or a random store.* | §10 |
 | A83 | The tenant is bound with `SET LOCAL` semantics: after commit or rollback the connection carries no tenant; through PgBouncer in transaction mode, alternating tenants never mix. | §10 |
 | A84 | Database-level isolation without the application: with `AccessPolicy` bypassed through a test seam, reads, inserts, updates and child references across tenants are refused by RLS or by composite foreign keys. | §8, §10 |
 | A85 | JWT validation refuses every case of `JwtValidationTest`; the backend starts with Keycloak down. | §10 |

@@ -237,7 +237,7 @@ S73 is blocked by **S72** (identity, access), **S74a** (production) and **S75** 
 |---|---|
 | A80 | S74a–d, S76 |
 | A81 | S72, S76 |
-| A82 | S71, S74a–d, S76 |
+| A82 (*amended 2026-11-17: a store input outside the caller's scope → 403 whatever its tenant, as a random id; see the decision doc*) | S71, S74a–d, S76 |
 | A83 | S71 (transaction), S75 (PgBouncer), S76 |
 | A84 | S71, S72, S74a–d, S76 |
 | A85 | S72 |
@@ -266,7 +266,7 @@ Security-critical slices (S71, S72, S73, S75) and every review use the top model
 2. Every tenant table: `tenant_id NOT NULL DEFAULT shared.rls_tenant_id()`, restrictive `tenant_scope` with `FORCE`, `UNIQUE (tenant_id, id)`, `tenant_fixed`.
 3. Every in-module foreign key and business unique key includes `tenant_id`.
 4. No protected-table access outside a transaction; no `set_config(…, false)`; no session-level setting anywhere.
-5. Cross-tenant id → 404 with no existence hint; same-tenant other store → 403; one `TENANT_FORBIDDEN` body for foreign and random tenants.
+5. Cross-tenant id → 404 with no existence hint; same-tenant other store → 403; one `TENANT_FORBIDDEN` body for foreign and random tenants. *(Amended 2026-11-17: a store id as input/filter outside the caller's scope → 403 for any tenant, identical to a random id.)*
 6. Every event carries `tenantId`; every listener and job binds a tenant before its transaction; no cross-tenant scope for the application role.
 7. Every cache, SSE key, idempotency scope, log MDC and object-storage key includes the tenant; no `tenant_id` metric label.
 8. JWT validation complete and fail closed (alg allow-list, `iss`, `aud`, `azp` per route family, `typ`, time claims); claims never grant authority.
