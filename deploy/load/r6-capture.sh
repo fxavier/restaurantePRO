@@ -49,13 +49,24 @@ has_statements() {
     [ "$(sql "SELECT count(*) FROM pg_extension WHERE extname = 'pg_stat_statements'")" = 1 ]
 }
 
+# The metrics page. The token goes to curl in a header file only this user can read (-H @file), never on its argv,
+# where any local user could read it in the process list; the file is removed after the call.
+scrape() {
+    if [ -z "${METRICS_TOKEN_FILE:-}" ]; then
+        curl -fsS "$metrics"
+        return
+    fi
+    local header status=0
+    header=$(umask 077 && mktemp)
+    { printf 'Authorization: Bearer '; tr -d '\r\n' < "$METRICS_TOKEN_FILE"; printf '\n'; } > "$header"
+    curl -fsS -H @"$header" "$metrics" || status=$?
+    rm -f "$header"
+    return "$status"
+}
+
 # db_transactions_total{kind} as "kind value" lines (the backend's S77 counter)
 transactions_by_origin() {
-    local auth=()
-    if [ -n "${METRICS_TOKEN_FILE:-}" ]; then
-        auth=(-H "Authorization: Bearer $(cat "$METRICS_TOKEN_FILE")")
-    fi
-    curl -fsS "${auth[@]}" "$metrics" | awk '
+    scrape | awk '
         /^db_transactions_total\{/ {
             match($0, /kind="[^"]*"/); origin = substr($0, RSTART + 6, RLENGTH - 7)
             total[origin] += $NF
@@ -64,11 +75,7 @@ transactions_by_origin() {
 }
 
 hikari() {
-    local auth=()
-    if [ -n "${METRICS_TOKEN_FILE:-}" ]; then
-        auth=(-H "Authorization: Bearer $(cat "$METRICS_TOKEN_FILE")")
-    fi
-    curl -fsS "${auth[@]}" "$metrics" | awk '
+    scrape | awk '
         /^hikaricp_connections_(active|idle|pending)\{/ {
             name = $1; sub(/\{.*/, "", name); sub(/hikaricp_connections_/, "", name); value[name] += $NF
         }
@@ -88,7 +95,7 @@ case "$command" in
     rtt)
         script=$(mktemp)
         trap 'rm -f "$script"' EXIT
-        { echo '\timing on'; for _ in $(seq 1000); do echo 'SELECT 1;'; done; } > "$script"
+        { printf '%s\n' '\timing on'; for _ in $(seq 1000); do printf 'SELECT 1;\n'; done; } > "$script"
         psql "$db" -X -q -f "$script" | awk '/^Time:/ { print $2 }' | sort -n \
             | awk '{ t[NR] = $1 } END { printf "app-db RTT median %.3f ms over %d round trips\n", t[int((NR + 1) / 2)], NR }'
         ;;
