@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.organization.MutableClock;
 import com.xavier.backend.promotions.EarnCommand;
@@ -155,13 +156,13 @@ class LoyaltyEarnIdempotencyTest {
         CountDownLatch aMayCommit = new CountDownLatch(1);
         AtomicInteger aBackend = new AtomicInteger();
         try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
-            Future<EarnResult> a = pool.submit(() -> tx.execute(status -> {
+            Future<EarnResult> a = pool.submit(TenantTestSupport.inBootstrap(() -> tx.execute(status -> {
                 EarnResult earned = api.earnForOrder(loyalty.earnCommand(member, order, "57.00")).orElseThrow();
                 aBackend.set(jdbc.sql("SELECT pg_backend_pid()").query(Integer.class).single());
                 aEarned.countDown();
                 Races.await(aMayCommit);
                 return earned;
-            }));
+            })));
             assertThat(aEarned.await(30, TimeUnit.SECONDS)).isTrue();
 
             Future<Object> b = pool.submit(Races.outcome(tx, () -> api.earnForOrder(

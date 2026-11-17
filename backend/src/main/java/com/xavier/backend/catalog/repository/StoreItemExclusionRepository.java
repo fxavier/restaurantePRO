@@ -31,7 +31,7 @@ public interface StoreItemExclusionRepository extends JpaRepository<StoreItemExc
     @NativeQuery("""
             INSERT INTO catalog.store_item_exclusion (store_id, item_id, reason, excluded_at, excluded_by_account_id)
             VALUES (:storeId, :itemId, CAST(:reason AS varchar), :at, :accountId)
-            ON CONFLICT (store_id, item_id) DO UPDATE SET reason = EXCLUDED.reason
+            ON CONFLICT (tenant_id, store_id, item_id) DO UPDATE SET reason = EXCLUDED.reason
             WHERE store_item_exclusion.reason IS DISTINCT FROM EXCLUDED.reason""")
     int upsert(@Param("storeId") UUID storeId, @Param("itemId") UUID itemId, @Param("reason") String reason,
                @Param("at") Instant at, @Param("accountId") UUID accountId);

@@ -4,6 +4,7 @@ import static com.xavier.backend.promotions.loyalty.LoyaltyFixtures.redeemComman
 import static com.xavier.backend.promotions.loyalty.LoyaltyFixtures.reward;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import com.xavier.backend.promotions.LoyaltyApi;
 import com.xavier.backend.promotions.RedemptionResult;
 import com.xavier.backend.promotions.loyalty.exception.LoyaltyRuleException;
@@ -61,13 +62,13 @@ class LoyaltyRedeemRaceTest {
         CountDownLatch aMayCommit = new CountDownLatch(1);
         AtomicInteger aBackend = new AtomicInteger();
         try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
-            Future<RedemptionResult> a = pool.submit(() -> tx.execute(status -> {
+            Future<RedemptionResult> a = pool.submit(TenantTestSupport.inBootstrap(() -> tx.execute(status -> {
                 RedemptionResult redeemed = api.redeem(command());
                 aBackend.set(jdbc.sql("SELECT pg_backend_pid()").query(Integer.class).single());
                 aRedeemed.countDown();
                 Races.await(aMayCommit);
                 return redeemed;
-            }));
+            })));
             assertThat(aRedeemed.await(30, TimeUnit.SECONDS)).isTrue();
 
             Future<Object> b = pool.submit(Races.outcome(tx, () -> api.redeem(command())));

@@ -67,6 +67,20 @@ class AuditQueryTest {
                 .andExpect(jsonPath("$.content[0].storeId").value(storeA.toString()));
     }
 
+    /** D183: a support action is audited as SUPPORT, stored and filterable like the other kinds. */
+    @Test
+    void anEntryOfActorKindSupportIsStoredAndListed() throws Exception {
+        UUID support = audit.row(storeA, T0, action, "Order", UUID.randomUUID().toString(), UUID.randomUUID(),
+                "SUPPORT", null, "{}");
+        audit.row(storeA, T0, action);
+
+        mvc.perform(list().param("actorKind", "SUPPORT").with(account(VIEW)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].id").value(support.toString()))
+                .andExpect(jsonPath("$.content[0].actorKind").value("SUPPORT"));
+    }
+
     @Test
     void aStoreScopedAuditorNamingAnotherStoreIsForbidden() throws Exception {
         audit.row(storeB, T0, action);
@@ -240,7 +254,7 @@ class AuditQueryTest {
                         + "AND indexname = 'audit_event_store_action_ix'")
                 .query(String.class).single();
 
-        assertThat(definition).endsWith("(store_id, action, occurred_at)");
+        assertThat(definition).endsWith("(tenant_id, store_id, action, occurred_at)");
     }
 
     @Test
@@ -249,7 +263,7 @@ class AuditQueryTest {
                         + "AND indexname = 'audit_event_occurred_ix'")
                 .query(String.class).single();
 
-        assertThat(definition).endsWith("(occurred_at, id)");
+        assertThat(definition).endsWith("(tenant_id, occurred_at, id)");
     }
 
     MockHttpServletRequestBuilder list() {

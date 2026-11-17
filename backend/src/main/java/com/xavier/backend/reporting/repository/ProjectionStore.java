@@ -95,7 +95,7 @@ public class ProjectionStore {
                             family_code, promotion_code, operator_employee_id, approver_employee_id, net_quantity,
                             consumed_line_id, consumed_line_quantity, projected_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT (order_id, line_id) DO NOTHING""")
+                        ON CONFLICT (tenant_id, order_id, line_id) DO NOTHING""")
                 .params(o.orderId(), o.lineId(), o.storeId(), o.businessDate(), o.itemId(), o.familyCode(),
                         o.promotionCode(), o.operatorEmployeeId(), o.approverEmployeeId(), o.netQuantity(),
                         o.consumedLineId(), o.consumedLineQuantity(), Timestamp.from(projectedAt))
@@ -110,7 +110,7 @@ public class ProjectionStore {
                             customer_id, on_account, series_code, number, non_fiscal, currency, total_gross,
                             total_net, total_tax, projected_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT (document_id) DO NOTHING""")
+                        ON CONFLICT (tenant_id, document_id) DO NOTHING""")
                 .params(h.documentId(), h.storeId(), h.businessDate(), h.localDate(), h.localHour(),
                         Timestamp.from(h.issuedAt()), h.orderId(), h.partitionId(), h.terminalId(),
                         h.issuedByEmployeeId(), h.customerId(), h.onAccount(), h.seriesCode(), h.number(),
@@ -125,7 +125,7 @@ public class ProjectionStore {
                             local_hour, item_id, item_code, family_code, description, quantity, gross, net, tax,
                             tax_code, tax_rate, served_by_employee_id, area_id, area_code, mode, projected_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT (document_id, line_no) DO NOTHING""")
+                        ON CONFLICT (tenant_id, document_id, line_no) DO NOTHING""")
                 .params(h.documentId(), l.lineNo(), h.storeId(), h.businessDate(), h.localHour(), l.itemId(),
                         l.itemCode(), l.familyCode(), l.description(), l.quantity(), l.gross(), l.net(), l.tax(),
                         l.taxCode(), l.taxRate(), l.servedByEmployeeId(), l.areaId(), l.areaCode(), l.mode(),
@@ -138,7 +138,7 @@ public class ProjectionStore {
                         INSERT INTO reporting.sales_record_tax (document_id, tax_code, tax_rate, store_id,
                             business_date, net, tax, projected_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT (document_id, tax_code, tax_rate) DO NOTHING""")
+                        ON CONFLICT (tenant_id, document_id, tax_code, tax_rate) DO NOTHING""")
                 .params(h.documentId(), t.taxCode(), t.taxRate(), h.storeId(), h.businessDate(), t.net(), t.tax(),
                         Timestamp.from(projectedAt))
                 .update();
@@ -151,7 +151,7 @@ public class ProjectionStore {
                             local_hour, method_code, signed_amount, target_type, order_id, customer_id, employee_id,
                             terminal_id, projected_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT (source_type, source_id) DO NOTHING""")
+                        ON CONFLICT (tenant_id, source_type, source_id) DO NOTHING""")
                 .params(m.sourceType(), m.sourceId(), m.storeId(), m.businessDate(), m.localHour(),
                         m.methodCode(), m.signedAmount(), m.targetType(), m.orderId(), m.customerId(),
                         m.employeeId(), m.terminalId(), Timestamp.from(projectedAt))
@@ -164,7 +164,7 @@ public class ProjectionStore {
                         INSERT INTO reporting.credit_record (charge_id, store_id, business_date, customer_id,
                             order_id, amount, projected_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT (charge_id) DO NOTHING""")
+                        ON CONFLICT (tenant_id, charge_id) DO NOTHING""")
                 .params(c.chargeId(), c.storeId(), c.businessDate(), c.customerId(), c.orderId(), c.amount(),
                         Timestamp.from(projectedAt))
                 .update() == 1;
@@ -177,7 +177,7 @@ public class ProjectionStore {
                             description, quantity, gross, reason, wasted, after_dispatch, employee_id, approver_id,
                             projected_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT (void_id) DO NOTHING""")
+                        ON CONFLICT (tenant_id, void_id) DO NOTHING""")
                 .params(v.voidId(), v.storeId(), v.businessDate(), v.localHour(), v.itemCode(), v.description(),
                         v.quantity(), v.gross(), v.reason(), v.wasted(), v.afterDispatch(), v.employeeId(),
                         v.approverId(), Timestamp.from(projectedAt))
@@ -190,7 +190,7 @@ public class ProjectionStore {
                             family_code, line_id, warehouse_id, stock_item_id, type, quantity, value, source_type,
                             source_id, projected_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT (movement_id) DO NOTHING""")
+                        ON CONFLICT (tenant_id, movement_id) DO NOTHING""")
                 .params(c.movementId(), c.storeId(), c.businessDate(), c.saleItemId(), c.familyCode(), c.lineId(),
                         c.warehouseId(), c.stockItemId(), c.type(), c.quantity(), c.value(), c.sourceType(),
                         c.sourceId(), Timestamp.from(projectedAt))
@@ -203,7 +203,7 @@ public class ProjectionStore {
                             business_date, sale_item_id, family_code, line_id, warehouse_id, stock_item_id, quantity,
                             value, projected_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT (void_id, original_movement_id) DO NOTHING""")
+                        ON CONFLICT (tenant_id, void_id, original_movement_id) DO NOTHING""")
                 .params(w.voidId(), w.originalMovementId(), w.storeId(), w.businessDate(), w.saleItemId(),
                         w.familyCode(), w.lineId(), w.warehouseId(), w.stockItemId(), w.quantity(), w.value(),
                         Timestamp.from(projectedAt))
@@ -215,7 +215,7 @@ public class ProjectionStore {
                         INSERT INTO reporting.cost_variance_record (variance_id, source_type, source_id, store_id,
                             business_date, warehouse_id, stock_item_id, receipt_line_id, value, projected_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT (variance_id) DO NOTHING""")
+                        ON CONFLICT (tenant_id, variance_id) DO NOTHING""")
                 .params(v.varianceId(), v.sourceType(), v.sourceId(), v.storeId(), v.businessDate(),
                         v.warehouseId(), v.stockItemId(), v.receiptLineId(), v.value(), Timestamp.from(projectedAt))
                 .update();
@@ -227,7 +227,7 @@ public class ProjectionStore {
                             business_date, item_id, family_code, origin, kind, promotion_code, operator_employee_id,
                             approver_employee_id, quantity, discount_gross, projected_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT (source_type, source_id, line_id) DO NOTHING""")
+                        ON CONFLICT (tenant_id, source_type, source_id, line_id) DO NOTHING""")
                 .params(d.sourceType(), d.sourceId(), d.lineId(), d.storeId(), d.businessDate(), d.itemId(),
                         d.familyCode(), d.origin(), d.kind(), d.promotionCode(), d.operatorEmployeeId(),
                         d.approverEmployeeId(), d.quantity(), d.discountGross(), Timestamp.from(projectedAt))

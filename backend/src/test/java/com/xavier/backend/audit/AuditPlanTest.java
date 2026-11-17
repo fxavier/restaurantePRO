@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.xavier.backend.OwnerDatabase;
 import com.xavier.backend.TestcontainersConfiguration;
 import com.xavier.backend.access.StoreScopes;
+import com.xavier.backend.shared.tenancy.TenantScopes;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Arrays;
@@ -53,6 +55,9 @@ class AuditPlanTest {
     TransactionTemplate tx;
 
     @Autowired
+    TenantScopes tenants;
+
+    @Autowired
     StoreScopes scopes;
 
     UUID store;
@@ -67,21 +72,30 @@ class AuditPlanTest {
                 "PAYMENT_RECORDED", "DOCUMENT_ISSUED", "CASH_COUNTED", "PRICE_SET", "DISCOUNT_APPLIED"})
                 .map(action -> action + "_" + suffix).toList();
         voided = actions.getFirst();
-        for (UUID seeded : stores) {
-            OwnerDatabase.shared().jdbc().sql("""
-                    INSERT INTO audit.audit_event (id, occurred_at, actor_id, actor_kind, action, entity_type,
-                        entity_id, store_id)
-                    SELECT uuidv7(), CAST(:start AS timestamptz) + make_interval(mins => i), gen_random_uuid(), 'EMPLOYEE',
-                           (ARRAY[:actions])[1 + i % 8], 'Order', gen_random_uuid()::text, :store
-                    FROM generate_series(0, 1199) i""").param("start", Timestamp.from(Instant.parse(
-                    "2019-01-01T00:00:00Z"))).param("actions", actions).param("store", seeded)
-                    .update();
+        TenantTestSupport.ensureTenants();
+        for (UUID tenant : List.of(TenantTestSupport.A, TenantTestSupport.B)) {
+            for (UUID seeded : stores) {
+                seed(tenant, seeded, actions);
+            }
         }
+    }
+
+    /** The same trail in tenant B as in tenant A, the same stores and actions: the plan must not care (D189). */
+    private static void seed(UUID tenant, UUID seeded, List<String> actions) {
+        OwnerDatabase.shared().jdbc().sql("""
+                INSERT INTO audit.audit_event (id, tenant_id, occurred_at, actor_id, actor_kind, action, entity_type,
+                    entity_id, store_id)
+                SELECT uuidv7(), :tenant, CAST(:start AS timestamptz) + make_interval(mins => i), gen_random_uuid(),
+                       'EMPLOYEE', (ARRAY[:actions])[1 + i % 8], 'Order', gen_random_uuid()::text, :store
+                FROM generate_series(0, 1199) i""").param("tenant", tenant)
+                .param("start", Timestamp.from(Instant.parse("2019-01-01T00:00:00Z"))).param("actions", actions)
+                .param("store", seeded).update();
     }
 
     @Test
     void theAuditOfOneStoreAndOneActionUsesTheStoreActionIndex() {
-        String plan = scopes.callForStore(store, "plan-test", () -> tx.execute(status -> {
+        String plan = TenantTestSupport.inTenant(tenants, TenantTestSupport.A, () ->
+                scopes.callForStore(store, "plan-test", () -> tx.execute(status -> {
             OwnerDatabase.shared().jdbc().sql("ANALYZE audit.audit_event").update();
             assertThat(jdbc.sql("SELECT current_user").query(String.class).single())
                     .isEqualTo(TestcontainersConfiguration.APP_ROLE);
@@ -92,11 +106,11 @@ class AuditPlanTest {
                     .param("allStores", false).param("stores", List.of(store)).param("actorId", null)
                     .param("actorKind", null).param("action", voided).param("entityType", null)
                     .param("entityId", null).query(String.class).list());
-        }));
+        })));
 
         assertThat(plan).containsPattern("(Index Scan( Backward)? using|Bitmap Index Scan on) "
                         + "audit_event_store_action_ix")
-                .containsPattern("Index Cond: \\(\\(store_id = '" + store + "'::uuid\\) AND \\(\\(action\\)::text = '"
+                .containsPattern("Index Cond: \\(\\(tenant_id = \\(InitPlan \\d+\\)\\.col1\\) AND \\(store_id = '" + store + "'::uuid\\) AND \\(\\(action\\)::text = '"
                         + voided + "'::text\\)");
     }
 }

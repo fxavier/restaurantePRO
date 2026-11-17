@@ -4,6 +4,7 @@ import com.xavier.backend.access.TestAuthentications;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 
 import com.xavier.backend.access.Actor;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.HexFormat;
@@ -45,10 +46,10 @@ final class AuditFixtures {
              String actorKind, String reason, String detailsJson) {
         UUID id = UUID.randomUUID();
         jdbc.sql("""
-                        INSERT INTO audit.audit_event (id, occurred_at, actor_id, actor_kind, action, entity_type,
-                                                       entity_id, store_id, reason, details)
-                        VALUES (:id, :at, :actor, :kind, :action, :type, :entity, :store, :reason, :details::jsonb)""")
-                .param("id", id).param("at", Timestamp.from(at)).param("actor", actorId).param("kind", actorKind)
+                        INSERT INTO audit.audit_event (id, tenant_id, occurred_at, actor_id, actor_kind, action,
+                                                       entity_type, entity_id, store_id, reason, details)
+                        VALUES (:id, :tenant, :at, :actor, :kind, :action, :type, :entity, :store, :reason, :details::jsonb)""")
+                .param("id", id).param("tenant", TenantTestSupport.BOOTSTRAP).param("at", Timestamp.from(at)).param("actor", actorId).param("kind", actorKind)
                 .param("action", action).param("type", entityType).param("entity", entityId).param("store", storeId)
                 .param("reason", reason).param("details", detailsJson).update();
         return id;

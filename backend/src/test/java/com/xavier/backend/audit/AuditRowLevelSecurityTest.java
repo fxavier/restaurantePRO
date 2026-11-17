@@ -90,7 +90,10 @@ class AuditRowLevelSecurityTest {
                         SELECT polcmd::text AS cmd, pg_catalog.pg_get_expr(polqual, polrelid) AS qual,
                                pg_catalog.pg_get_expr(polwithcheck, polrelid) AS with_check
                         FROM pg_catalog.pg_policy WHERE polrelid = 'audit.audit_event'::regclass ORDER BY polcmd""")
-                .query().listOfRows()).as("SELECT and INSERT only, no UPDATE or DELETE policy").satisfiesExactly(
+                .query().listOfRows()).as("SELECT and INSERT only, no UPDATE or DELETE policy, and the restrictive tenant "
+                + "policy (R6) ANDed with them").satisfiesExactly(
+                tenant -> assertThat(tenant).containsEntry("cmd", "*")
+                        .containsEntry("qual", "(tenant_id = ( SELECT shared.rls_tenant_id() AS rls_tenant_id))"),
                 insert -> assertThat(insert).containsEntry("cmd", "a").containsEntry("with_check", "true"),
                 read -> assertThat(read).containsEntry("cmd", "r").containsEntry("qual", canonicalStoreScope()));
     }

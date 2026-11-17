@@ -1,6 +1,7 @@
 package com.xavier.backend.promotions.loyalty;
 
 import com.xavier.backend.shared.exception.CodedException;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.Callable;
@@ -19,7 +20,7 @@ final class Races {
 
     /** The result, or the coded refusal, of {@code action} in its own transaction. */
     static Callable<Object> outcome(TransactionTemplate tx, Callable<?> action) {
-        return () -> {
+        return TenantTestSupport.inBootstrap(() -> {
             try {
                 return tx.execute(status -> {
                     try {
@@ -33,7 +34,7 @@ final class Races {
             } catch (CodedException refused) {
                 return refused;
             }
-        };
+        });
     }
 
     static boolean blockedBy(JdbcClient jdbc, int pid) {
