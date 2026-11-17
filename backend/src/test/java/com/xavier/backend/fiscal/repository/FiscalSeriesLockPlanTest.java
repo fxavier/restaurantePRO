@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.xavier.backend.OwnerDatabase;
 import com.xavier.backend.fiscal.model.DocumentType;
 import com.xavier.backend.AppRoleSession;
+import com.xavier.backend.settlement.OwnerSeeds;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -15,8 +17,9 @@ import org.springframework.data.jpa.repository.Query;
  * D171 (S67), A77: the series lock of every issue ({@link FiscalSeriesRepository#lockActive}, {@code FOR UPDATE},
  * gapless numbering) stays on the partial index {@code fiscal_series_active_uk} under row-level security, as the
  * application role in a store scope ({@code booleq}, {@code texteq}, {@code uuid_eq} are leakproof, D169), so the lock
- * takes the one active row, not a scan. Deterministic: 2 000 inactive series and one active in one store, ANALYZE by
- * the owner, then EXPLAIN in one transaction with {@code enable_seqscan = off}.
+ * takes the one active row, not a scan. Deterministic: 2 000 inactive series and one active in one store of tenant A
+ * and as many in tenant B (D189: B's rows are present), ANALYZE by the owner, then EXPLAIN in one transaction with
+ * {@code enable_seqscan = off}, bound to tenant A.
  *
  * <p>D169 audit of fiscal: no query on a protected table relies on an index for a {@code numeric}, {@code jsonb} or
  * {@code LIKE} predicate ({@code number} is a {@code bigint}).
@@ -31,9 +34,11 @@ class FiscalSeriesLockPlanTest {
     @Test
     void theActiveSeriesIsLockedThroughThePartialIndexUnderAStoreScope() {
         UUID store = UUID.randomUUID();
-        seed(store);
+        TenantTestSupport.ensureTenants();
+        seed(TenantTestSupport.A, store);
+        seed(TenantTestSupport.B, UUID.randomUUID());
 
-        try (AppRoleSession app = AppRoleSession.open()) {
+        try (AppRoleSession app = AppRoleSession.open().tenant(TenantTestSupport.A)) {
             app.stores(store);
             List<String> plan = new ArrayList<>();
             List<Object> locked = new ArrayList<>();
@@ -58,12 +63,12 @@ class FiscalSeriesLockPlanTest {
                 "select s from FiscalSeries s where s.storeId = :storeId and s.documentType = :type and s.active = true");
     }
 
-    private static void seed(UUID store) {
-        OwnerDatabase.shared().jdbc().sql("""
+    private static void seed(UUID tenant, UUID store) {
+        OwnerSeeds.tx(tenant, owner -> owner.sql("""
                 INSERT INTO fiscal.fiscal_series (id, store_id, document_type, code, first_number, next_number, active,
                     version, created_at, updated_at)
                 SELECT gen_random_uuid(), :store, 'SALE', 'P' || n, 1, 1, n = 0, 0, now(), now()
-                FROM generate_series(0, 2000) AS n""").param("store", store).update();
+                FROM generate_series(0, 2000) AS n""").param("store", store).update());
         OwnerDatabase.shared().jdbc().sql("ANALYZE fiscal.fiscal_series").update();
     }
 }

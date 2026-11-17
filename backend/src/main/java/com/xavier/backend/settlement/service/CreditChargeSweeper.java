@@ -5,11 +5,16 @@ import com.xavier.backend.access.SystemScoped;
 import com.xavier.backend.settlement.model.CreditCharge;
 import com.xavier.backend.settlement.model.CreditChargeStatus;
 import com.xavier.backend.settlement.repository.CreditChargeRepository;
+import com.xavier.backend.settlement.repository.Keyed;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import com.xavier.backend.settlement.repository.PartitionRef;
 import java.time.Clock;
+import java.util.List;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -35,10 +40,16 @@ public class CreditChargeSweeper {
     private final TransactionTemplate inTransaction;
     private final SettlementProperties properties;
     private final Clock clock;
+    private final int batch;
+    private final TenantScopes tenants;
+    private final SweepCursors cursors = new SweepCursors();
 
     CreditChargeSweeper(CreditChargeRepository charges, SettlementLocks locks, CreditSaleSteps steps,
                         PlatformTransactionManager transactionManager, SettlementProperties properties,
-                        Clock clock) {
+                        Clock clock, @Value("${restaurantpro.jobs.batch-per-tenant:100}") int batch,
+                        TenantScopes tenants) {
+        this.batch = batch;
+        this.tenants = tenants;
         this.properties = properties;
         this.clock = clock;
         this.charges = charges;
@@ -51,7 +62,13 @@ public class CreditChargeSweeper {
     @Scheduled(fixedDelayString = "${restaurantpro.settlement.credit-sweep-interval:PT1M}",
             initialDelayString = "${restaurantpro.settlement.credit-sweep-interval:PT1M}")
     public void sweep() {
-        for (UUID chargeId : charges.findReservedWithDocument(clock.instant().minus(properties.creditSweepGrace()))) {
+        UUID tenant = tenants.requireTenant();
+        Keyed after = cursors.after(tenant, "charges");
+        List<Keyed> page = charges.findReservedWithDocument(clock.instant().minus(properties.creditSweepGrace()),
+                after.at(), after.id(), Pageable.ofSize(batch));
+        cursors.read(tenant, "charges", page, batch);
+        for (Keyed charge : page) {
+            UUID chargeId = charge.id();
             try {
                 inTransaction.executeWithoutResult(tx -> postIfIssued(chargeId));
             } catch (RuntimeException e) {

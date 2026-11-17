@@ -1,5 +1,6 @@
 package com.xavier.backend.settlement.controller;
 
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import static com.xavier.backend.cash.CashFixtures.idem;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -174,17 +175,20 @@ class StoreFirstAuthorizationHttpTest {
     private int whileTheOrderIsLocked(MockHttpServletRequestBuilder request) throws Exception {
         CountDownLatch locked = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
-        Future<?> holder = threads.submit(() -> new TransactionTemplate(transactionManager).executeWithoutResult(tx -> {
-            jdbc.sql("INSERT INTO settlement.order_settlement (order_id, created_at) VALUES (?, now()) "
-                    + "ON CONFLICT (order_id) DO NOTHING").param(sale.order()).update();
-            jdbc.sql("SELECT order_id FROM settlement.order_settlement WHERE order_id = ? FOR UPDATE")
-                    .param(sale.order()).query(UUID.class).single();
-            locked.countDown();
-            try {
-                release.await();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
+        Future<?> holder = threads.submit(TenantTestSupport.inBootstrap(() -> {
+            new TransactionTemplate(transactionManager).executeWithoutResult(tx -> {
+                jdbc.sql("INSERT INTO settlement.order_settlement (order_id, created_at) VALUES (?, now()) "
+                        + "ON CONFLICT (tenant_id, order_id) DO NOTHING").param(sale.order()).update();
+                jdbc.sql("SELECT order_id FROM settlement.order_settlement WHERE order_id = ? FOR UPDATE")
+                        .param(sale.order()).query(UUID.class).single();
+                locked.countDown();
+                try {
+                    release.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+            return null;
         }));
         try {
             assertThat(locked.await(LOCK_WAIT_SECONDS, TimeUnit.SECONDS)).isTrue();

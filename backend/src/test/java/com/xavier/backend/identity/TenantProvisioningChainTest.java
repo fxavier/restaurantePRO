@@ -141,7 +141,7 @@ class TenantProvisioningChainTest {
 
     private static long completed(UUID tenant) {
         return OwnerDatabase.shared().jdbc().sql("SELECT count(*) FROM event_publication WHERE event_type = ? "
-                        + "AND serialized_event LIKE ? AND completion_date IS NOT NULL")
+                        + "AND listener_id LIKE '%.identity.%' AND serialized_event LIKE ? AND completion_date IS NOT NULL")
                 .param(CompanyProvisioned.class.getName()).param("%" + tenant + "%").query(Long.class).single();
     }
 

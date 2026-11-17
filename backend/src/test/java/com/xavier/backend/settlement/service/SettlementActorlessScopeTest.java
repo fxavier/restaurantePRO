@@ -11,6 +11,7 @@ import com.xavier.backend.settlement.SettlementFixtures;
 import com.xavier.backend.settlement.SettlementFixtures.Sale;
 import com.xavier.backend.settlement.SettlementModuleTest;
 import com.xavier.backend.settlement.SettlementTestClock;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
 import java.util.UUID;
@@ -89,6 +90,31 @@ class SettlementActorlessScopeTest {
 
         assertThat(inDoubt(a)).isEqualTo(1);
         assertThat(inDoubt(b)).isEqualTo(1);
+    }
+
+    /**
+     * D185: the scheduler's one run covers every ACTIVE tenant, each in its own binding, and the one bean keeps what
+     * every tenant's run found (a later tenant's run does not wipe an earlier one's gauge rows).
+     */
+    @Test
+    void theInDoubtGaugeRunsOncePerActiveTenantAndKeepsAllOfThem() throws Exception {
+        UUID inA = UUID.randomUUID();
+        UUID inB = UUID.randomUUID();
+        try {
+            TenantTestSupport.ensureTenant(TenantTestSupport.A, "tenant-a", "ACTIVE");
+            TenantTestSupport.ensureTenant(TenantTestSupport.B, "tenant-b", "ACTIVE");
+            InDoubtGaugeTenantTest.attemptInDoubt(TenantTestSupport.A, inA, clock.instant());
+            InDoubtGaugeTenantTest.attemptInDoubt(TenantTestSupport.B, inB, clock.instant());
+
+            onAJobThread(gauge::refresh);
+
+            assertThat(meters.get("payment_attempts_in_doubt").tag("store", inA.toString()).gauge().value())
+                    .isEqualTo(1);
+            assertThat(meters.get("payment_attempts_in_doubt").tag("store", inB.toString()).gauge().value())
+                    .isEqualTo(1);
+        } finally {
+            TenantTestSupport.ensureTenants(); // back to PROVISIONING: other suites' jobs iterate the bootstrap only
+        }
     }
 
     @Test

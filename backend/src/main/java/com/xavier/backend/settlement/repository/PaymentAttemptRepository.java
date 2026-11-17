@@ -64,10 +64,17 @@ public interface PaymentAttemptRepository extends JpaRepository<PaymentAttempt, 
             order by a.nextPollAt nulls first""")
     List<UUID> findDueForPoll(@Param("now") Instant now, org.springframework.data.domain.Pageable limit);
 
-    /** D48 sweeper: attempts of {@code kind} in {@code status} not touched since {@code before}, oldest first. */
+    /**
+     * D48 sweeper: attempts of {@code kind} in {@code status} not touched since {@code before}, oldest first, the next
+     * {@code limit} after ({@code afterAt}, {@code afterId}) in that order (a keyset page, so a capped run never
+     * starves the newer ones).
+     */
     @Query("""
-            select a.id from PaymentAttempt a
-            where a.status = :status and a.methodKind = :kind and a.updatedAt < :before order by a.updatedAt""")
-    List<UUID> findStale(@Param("status") AttemptStatus status, @Param("kind") PaymentMethodKind kind,
-                         @Param("before") Instant before);
+            select new com.xavier.backend.settlement.repository.Keyed(a.id, a.updatedAt) from PaymentAttempt a
+            where a.status = :status and a.methodKind = :kind and a.updatedAt < :before
+                and (a.updatedAt > :afterAt or (a.updatedAt = :afterAt and a.id > :afterId))
+            order by a.updatedAt, a.id""")
+    List<Keyed> findStale(@Param("status") AttemptStatus status, @Param("kind") PaymentMethodKind kind,
+                          @Param("before") Instant before, @Param("afterAt") Instant afterAt,
+                          @Param("afterId") UUID afterId, org.springframework.data.domain.Pageable limit);
 }

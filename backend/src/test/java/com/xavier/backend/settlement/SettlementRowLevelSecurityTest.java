@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.entry;
 
 import com.xavier.backend.AppRoleSession;
 import com.xavier.backend.OwnerDatabase;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import com.xavier.backend.architecture.RowLevelSecurityCoverageTest;
 import java.math.BigDecimal;
 import java.util.List;
@@ -35,8 +36,8 @@ class SettlementRowLevelSecurityTest {
 
     @BeforeAll
     static void seed() {
-        attemptOfA = attempt(OwnerDatabase.shared().jdbc(), STORE_A, "10.00");
-        OwnerDatabase.shared().tx(owner -> {
+        attemptOfA = OwnerSeeds.call(TenantTestSupport.BOOTSTRAP, owner -> attempt(owner, STORE_A, "10.00"));
+        OwnerSeeds.tx(TenantTestSupport.BOOTSTRAP, owner -> {
             paymentOfA = payment(owner, attemptOfA, STORE_A, "10.00");
             allocation(owner, paymentOfA, "10.00");
             UUID attemptOfB = attempt(owner, STORE_B, "20.00");
@@ -62,7 +63,7 @@ class SettlementRowLevelSecurityTest {
                 entry("bill_partition_line", "CHILD:settlement.bill_partition"),
                 entry("reconciliation_resolution", "CHILD:settlement.reconciliation_entry"),
                 entry("tax_correction_resolution", "CHILD:settlement.tax_rounding_adjustment"),
-                entry("payment_method", "UNSCOPED"), entry("order_settlement", "UNSCOPED"));
+                entry("payment_method", "TENANT"), entry("order_settlement", "TENANT"));
         RowLevelSecurityCoverageTest.assertModuleClassified("settlement");
     }
 
@@ -159,8 +160,8 @@ class SettlementRowLevelSecurityTest {
 
     @Test
     void theRefundCeilingHoldsUnderAStoreScope() {
-        UUID attempt = attempt(OwnerDatabase.shared().jdbc(), STORE_A, "10.00");
-        UUID payment = OwnerDatabase.shared().call(owner -> {
+        UUID attempt = OwnerSeeds.call(TenantTestSupport.BOOTSTRAP, owner -> attempt(owner, STORE_A, "10.00"));
+        UUID payment = OwnerSeeds.call(TenantTestSupport.BOOTSTRAP, owner -> {
             UUID id = payment(owner, attempt, STORE_A, "10.00");
             allocation(owner, id, "10.00");
             return id;

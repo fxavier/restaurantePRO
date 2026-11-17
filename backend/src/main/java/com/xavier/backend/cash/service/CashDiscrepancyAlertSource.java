@@ -8,12 +8,15 @@ import com.xavier.backend.cash.repository.StoreCashDiscrepancy;
 import com.xavier.backend.shared.ops.AlertSeverity;
 import com.xavier.backend.shared.ops.AlertSource;
 import com.xavier.backend.shared.ops.OperationalAlert;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.MultiGauge;
 import io.micrometer.core.instrument.Tags;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -28,12 +31,16 @@ import org.springframework.stereotype.Component;
  * D150 CASH_DISCREPANCY (WARNING, per store): closings submitted or approved in the last 24 h whose Σ |difference|
  * exceeds {@code restaurantpro.alerts.cash-difference-threshold} (default 0, so any difference). Refreshed every
  * minute into the gauge {@code cash_closings_with_difference{store}}; a store once seen keeps reporting, at 0 when
- * clear. {@link #alerts} reads the last refresh.
+ * clear. {@link #alerts} reads the last refresh. The scheduler runs it once per tenant on this one bean (D185), so
+ * each tenant's last result is kept apart and the gauge and the alerts cover every tenant: a tenant's run replaces only
+ * its own.
  */
 @Component
 class CashDiscrepancyAlertSource implements AlertSource {
 
     static final Duration WINDOW = Duration.ofHours(24);
+    /** A tenant not run for this long (suspended, closed) is no longer reported: its state is dropped. */
+    static final Duration STALE_AFTER = Duration.ofMinutes(5);
     private static final Set<CashClosingStatus> COUNTED = Set.of(CashClosingStatus.SUBMITTED,
             CashClosingStatus.APPROVED);
 
@@ -41,13 +48,17 @@ class CashDiscrepancyAlertSource implements AlertSource {
     private final Clock clock;
     private final BigDecimal threshold;
     private final MultiGauge gauge;
-    private final Set<UUID> stores = ConcurrentHashMap.newKeySet();
-    private volatile List<StoreCashDiscrepancy> last = List.of();
+    private final TenantScopes tenants;
+    private final Map<UUID, Set<UUID>> storesOf = new ConcurrentHashMap<>();
+    private final Map<UUID, List<StoreCashDiscrepancy>> lastOf = new ConcurrentHashMap<>();
+    private final Map<UUID, Instant> ranAt = new ConcurrentHashMap<>();
 
     CashDiscrepancyAlertSource(CashClosingRepository closings, MeterRegistry meters, Clock clock,
-                               @Value("${restaurantpro.alerts.cash-difference-threshold:0}") BigDecimal threshold) {
+                               @Value("${restaurantpro.alerts.cash-difference-threshold:0}") BigDecimal threshold,
+                               TenantScopes tenants) {
         this.closings = closings;
         this.clock = clock;
+        this.tenants = tenants;
         this.threshold = threshold;
         this.gauge = MultiGauge.builder("cash_closings_with_difference")
                 .description("Cash closings submitted or approved in the last 24 h with a difference over the "
@@ -57,19 +68,32 @@ class CashDiscrepancyAlertSource implements AlertSource {
     @SystemScoped(SystemScope.ALERTS)
     @Scheduled(fixedDelayString = "PT1M")
     void refresh() {
-        List<StoreCashDiscrepancy> current = closings.discrepanciesSince(COUNTED, clock.instant().minus(WINDOW),
-                threshold);
+        UUID tenant = tenants.requireTenant();
+        Instant now = clock.instant();
+        ranAt.put(tenant, now);
+        ranAt.entrySet().removeIf(run -> {
+            boolean stale = run.getValue().isBefore(now.minus(STALE_AFTER));
+            if (stale) {
+                storesOf.remove(run.getKey());
+                lastOf.remove(run.getKey());
+            }
+            return stale;
+        });
+        List<StoreCashDiscrepancy> current = closings.discrepanciesSince(COUNTED, now.minus(WINDOW), threshold);
         Map<UUID, Long> perStore = current.stream()
                 .collect(Collectors.toMap(StoreCashDiscrepancy::storeId, StoreCashDiscrepancy::closings));
-        stores.addAll(perStore.keySet());
-        gauge.register(stores.stream().<MultiGauge.Row<?>>map(store -> MultiGauge.Row.of(
-                Tags.of("store", store.toString()), perStore.getOrDefault(store, 0L))).toList(), true);
-        last = current;
+        storesOf.computeIfAbsent(tenant, key -> ConcurrentHashMap.newKeySet()).addAll(perStore.keySet());
+        lastOf.put(tenant, current);
+        Map<UUID, Long> counts = new HashMap<>();
+        lastOf.values().forEach(found -> found.forEach(store -> counts.put(store.storeId(), store.closings())));
+        gauge.register(storesOf.values().stream().flatMap(Set::stream).distinct()
+                .<MultiGauge.Row<?>>map(store -> MultiGauge.Row.of(Tags.of("store", store.toString()),
+                        counts.getOrDefault(store, 0L))).toList(), true);
     }
 
     @Override
     public List<OperationalAlert> alerts() {
-        return last.stream()
+        return lastOf.values().stream().flatMap(List::stream)
                 .map(store -> new OperationalAlert("CASH_DISCREPANCY", AlertSeverity.WARNING, store.storeId(),
                         store.closings(), store.firstSubmittedAt(), store.closings()
                         + " cash closing(s) of the last 24 h with a difference over the threshold."))
