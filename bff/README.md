@@ -19,10 +19,12 @@ backend with the user's access token. The browser only ever holds the session co
 Any other path answers `403`. The BFF's own errors are ProblemDetails:
 
 - `401 BFF_SESSION_EXPIRED` for an anonymous call, which is never redirected (the SPA navigates to the login itself).
-  The same answer comes back when the token can no longer be refreshed, for example because Keycloak refused the
-  refresh or did not answer in time. The backend is not called.
+  The same answer comes back when the token can no longer be refreshed because Keycloak refused the refresh. The
+  backend is not called.
+- `503 IDP_UNAVAILABLE` when Keycloak does not answer the refresh in time or fails (a 5xx). The session and its
+  tokens are kept, so the SPA retries later. The backend is not called.
 - `502 BACKEND_UNAVAILABLE` when the backend cannot be reached.
-- `413` for a request body over `max-request-body`.
+- `413 BFF_PAYLOAD_TOO_LARGE` for a request body over `max-request-body`.
 
 A backend status Spring has no constant for (for example `499`) passes through unchanged.
 
