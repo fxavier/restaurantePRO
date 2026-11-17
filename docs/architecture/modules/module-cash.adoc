@@ -12,5 +12,6 @@
 * `c.x.b.a.AuditLog` (in Audit)
 * `c.x.b.o.OrganizationApi` (in Organization)
 * `c.x.b.i.ApproverVerifier` (in Identity)
+* `c.x.b.s.tenancy.TenantScopes` (in Shared kernel)
 * `c.x.b.s.persistence.StoreProbe` (in Shared kernel)
 |===

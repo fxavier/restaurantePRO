@@ -85,6 +85,9 @@ Every tenant-owned row carries `tenant_id`; PostgreSQL enforces a restrictive te
 | `TENANT_SCOPE_MISSING` | 500 | `RS003` (alert, D170 pattern) |
 | `TENANT_SCOPE_VIOLATION` | 500 | `42501` on a tenant policy, CRITICAL alert |
 | `STORE_SCOPE_MISSING`, `STORE_SCOPE_VIOLATION`, `STORE_CHANGE_REFUSED` | 500 | unchanged (RLS run) |
+| `PLATFORM_FORBIDDEN` (from `TN004`) | 403 | *amended 2026-11-16 (S75 G5):* a platform `SECURITY DEFINER` write (`tenancy.create_tenant`, `set_tenant_status`, `record_platform_event`) called inside a tenant-bound transaction raises SQLSTATE `TN004`, mapped to 403 `PLATFORM_FORBIDDEN` (defence in depth: `/platform/**` runs unbound) |
+| `BFF_SESSION_EXPIRED` | 401 | *amended 2026-11-15 (S72b):* the BFF has no live session, or its refresh token was refused; the SPA logs in again |
+| `BACKEND_UNAVAILABLE` | 502 | *amended 2026-11-15 (S72b):* the BFF cannot reach the backend |
 
 **Java contracts:**
 
@@ -119,7 +122,7 @@ Every tenant-owned row carries `tenant_id`; PostgreSQL enforces a restrictive te
 | `tenancy.grant_membership(…)`, `tenancy.revoke_membership(uuid)` | refuse unless the target tenant equals `rls_tenant_id()` (`RS003`/`42501`) | V15001 |
 | `tenancy.create_tenant(…)`, `tenancy.set_tenant_status(…)`, `tenancy.platform_audit_event` + `tenancy.record_platform_event(…)` | platform writes (append-only, D18 trigger) | V15002 |
 
-**Per-table migration recipe** (D180 as amended, every S74 slice and S71/S72 for their modules): `ADD COLUMN tenant_id uuid NOT NULL DEFAULT '<bootstrap>'` → `SET DEFAULT shared.rls_tenant_id()` → `UNIQUE (tenant_id, id)` on parents first → business unique keys rebuilt as `(tenant_id, …)` (create new, drop old) → in-module foreign keys composite `NOT VALID` → `VALIDATE` → drop the single-column one → the helper for the table's class → registries. No `UPDATE`. Entities map `tenant_id` read-only or not at all.
+**Per-table migration recipe** (D180 as amended, every S74 slice and S71/S72 for their modules): `ADD COLUMN tenant_id uuid NOT NULL DEFAULT '<bootstrap>'` → `SET DEFAULT shared.rls_tenant_id()` → `UNIQUE (tenant_id, id)` on parents first → business unique keys rebuilt as `(tenant_id, …)` (create new, drop old) → in-module foreign keys composite `NOT VALID` → `VALIDATE` → drop the single-column one → **every `store_id`-led (or other business-key-led) index rebuilt leading with `tenant_id` (D180 Indexes; *amended 2026-11-16: explicit step, after two slices missed it at review*)** → the helper for the table's class → registries. No `UPDATE`. Entities map `tenant_id` read-only or not at all.
 
 **Flyway versions per slice** (next free on f32e4b5; re-checked when each slice branches):
 
@@ -133,7 +136,9 @@ Every tenant-owned row carries `tenant_id`; PostgreSQL enforces a restrictive te
 | S74c | inventory `V13082`, customers `V11005` |
 | S74d | catalog `V5009`, promotions `V12024`, reporting `V14007`, audit `V1107` |
 | S75 | tenancy `V15002` |
-| S76 | shared `V1012` (drops `rls_unscoped_table`), only if needed |
+| S71b | shared `V1012` (*amended 2026-11-16, re-plan:* PLATFORM tables read-only for the application role, `rls_platform_writable` allow-list) |
+| S76 | shared `V1013` (*amended 2026-11-16: moved from V1012, taken by S71b*), drops `rls_unscoped_table`, only if needed — **not needed** (S76): the registry is empty and `RowLevelSecurityCoverageTest` keeps it so; dropping it needs `StoreScopeStartupCheck` and the shared test support changed (follow-up) |
+| S76b | shared `V1014` (*amended 2026-11-17, re-plan:* `search_path` pinned on the V1012 functions) |
 
 ---
 
@@ -191,6 +196,21 @@ Every S74 slice: the migration recipe for each table of its modules; its module'
 
 ---
 
+## Re-plans during the build (amended, recorded in the run ledger)
+
+| when | change | why |
+|---|---|---|
+| 2026-11-15 | **S72b** split out of S72: the BackOffice BFF (`bff/**`, own `pom.xml`, no Flyway), parallel in group 1; graph S71 → S72b → S76 | bound S72's size; disjoint write set |
+| 2026-11-15 | S72 ships a session-free interim POS (`X-Pos-Session` on `/pos/**` in the bootstrap tenant) until S73 | POS between S72 and S73 |
+| 2026-11-16 | **S71b** (new node): per-tenant PERMISSIVE audit row, `FlywayUpgradeTest` and `SharedKeycloak` robustness, PLATFORM tables read-only (`shared/V1012`, `provision-roles.sql` step 5d) | defects found while merging group 1 |
+| 2026-11-16 | **S75 is also blocked by S72** (it must test the real `/platform/**` chain, not a test-only one) | S75 G5 High |
+| 2026-11-15 | **S73 is also blocked by S74a** (`production/`) **and S75** (the real `IdentityProviderAdmin`) | disjoint write sets |
+| 2026-11-17 | **S74x** (new node, test-only): fiscal fixture ids and a production fixture predating S74d's tenant protection | integrated suite on `main` |
+| 2026-11-17 | **S76b** (new node): eight small follow-ups (BFF 503/413 codes, support audit kind, `shared/V1014`, gauge staleness, no-show row lock, bridge idle-claim test, dead properties, devices realm file) beside S76 | keep S76 to integration |
+| 2026-11-17 | **Alerts (D186/D149, user decision at G6):** platform alerts only to platform operators; tenants see only their own alerts; implemented by S76b | no tenant sees installation-wide conditions |
+| 2026-11-17 | **Deviation (user decision at G6):** `CompanyBootstrapRunner` and `SystemScope.BOOTSTRAP` stay until F22 (next follow-up, before the pilot) | they only create the bootstrap tenant's company from the environment |
+| 2026-11-17 | **A92 baseline method** (S76): a no-RLS run is correct only while one company has data (the tenant predicate of tenant-wide tables is RLS's alone; with `BYPASSRLS` and three tenants the CASH method lookup returns three rows). The baseline is therefore P1 = 1 tenant × 10 without RLS, P2 = the same with RLS (the RLS cost, and A77's configuration), P3 = 20 × 10 with RLS (the A92 gate); see `deploy/load/r6-load-plan.md` | measured |
+
 ## Blocked-by graph and parallel groups
 
 ```
@@ -219,7 +239,7 @@ S73 is blocked by **S72** (identity, access), **S74a** (production) and **S75** 
 |---|---|
 | A80 | S74a–d, S76 |
 | A81 | S72, S76 |
-| A82 | S71, S74a–d, S76 |
+| A82 (*amended 2026-11-17: a store input outside the caller's scope → 403 whatever its tenant, as a random id; see the decision doc*) | S71, S74a–d, S76 |
 | A83 | S71 (transaction), S75 (PgBouncer), S76 |
 | A84 | S71, S72, S74a–d, S76 |
 | A85 | S72 |
@@ -248,7 +268,7 @@ Security-critical slices (S71, S72, S73, S75) and every review use the top model
 2. Every tenant table: `tenant_id NOT NULL DEFAULT shared.rls_tenant_id()`, restrictive `tenant_scope` with `FORCE`, `UNIQUE (tenant_id, id)`, `tenant_fixed`.
 3. Every in-module foreign key and business unique key includes `tenant_id`.
 4. No protected-table access outside a transaction; no `set_config(…, false)`; no session-level setting anywhere.
-5. Cross-tenant id → 404 with no existence hint; same-tenant other store → 403; one `TENANT_FORBIDDEN` body for foreign and random tenants.
+5. Cross-tenant id → 404 with no existence hint; same-tenant other store → 403; one `TENANT_FORBIDDEN` body for foreign and random tenants. *(Amended 2026-11-17: a store id as input/filter outside the caller's scope → 403 for any tenant, identical to a random id.)*
 6. Every event carries `tenantId`; every listener and job binds a tenant before its transaction; no cross-tenant scope for the application role.
 7. Every cache, SSE key, idempotency scope, log MDC and object-storage key includes the tenant; no `tenant_id` metric label.
 8. JWT validation complete and fail closed (alg allow-list, `iss`, `aud`, `azp` per route family, `typ`, time claims); claims never grant authority.

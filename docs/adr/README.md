@@ -43,7 +43,7 @@ Each ADR records a decision as built, with its context and consequences. The ful
 | [0037](0037-operational-alerts.md) | Operational alerts: AlertSource, metrics, in-app list, backup status file | D149 ★, D150–D153 | Accepted 2026-11-12 (R5) |
 | [0038](0038-escpos-printer-profiles.md) | ESC/POS driver: printer profiles, styled tickets, status probe, drawer kick | D154 ★, D155–D158 | Accepted 2026-11-12 (R5) |
 | [0039](0039-row-level-security-on-store-id.md) | PostgreSQL row-level security on store_id as defence in depth: three database roles, scope set at connection checkout | D162 ★, D163 ★, D165 ★, D164, D166–D173 | Accepted 2026-11-15; amended by 0040 |
-| [0040](0040-saas-multitenancy-tenant-id-rls-keycloak.md) | SaaS multi-tenancy: shared schema with `tenant_id`, RLS bound with `SET LOCAL`, Keycloak as the IdP | D174 ★, D177 ★, D178 ★, D179 ★, D175, D176, D180–D190 | Proposed 2026-11-15 |
+| [0040](0040-saas-multitenancy-tenant-id-rls-keycloak.md) | SaaS multi-tenancy: shared schema with `tenant_id`, RLS bound with `SET LOCAL`, Keycloak as the IdP | D174 ★, D177 ★, D178 ★, D179 ★, D175, D176, D180–D190 | Accepted 2026-11-17 (R6, S76); amended 2026-11-16 (O1: devices realm) |
 
 ## Where the code deviates from a decision text
 

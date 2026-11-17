@@ -16,5 +16,9 @@ _Others_
 * `c.x.b.s.ops.AlertSource` (via `c.x.b.s.ops.ExportMonitor`)
 * `c.x.b.s.persistence.StoreProbe`
 * `c.x.b.s.persistence.StoreScopeViolations`
+* `c.x.b.s.tenancy.ActiveTenants`
+* `c.x.b.s.tenancy.JobLeases`
+* `c.x.b.s.tenancy.TenantFallback` (via `c.x.b.s.tenancy.NoTenantFallback`)
+* `c.x.b.s.tenancy.TenantScopes`
 * `c.x.b.s.web.GlobalExceptionHandler`
 |===
