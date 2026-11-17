@@ -1,5 +1,6 @@
 package com.xavier.backend.e2e;
 
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import static com.xavier.backend.e2e.Installation.CASHIER_ROLE;
 import static com.xavier.backend.e2e.Installation.MANAGER_ROLE;
 import static com.xavier.backend.e2e.Installation.id;
@@ -78,6 +79,14 @@ import tools.jackson.databind.node.ObjectNode;
 @Import({Installation.FreshDatabase.class, SettlementTestClock.Config.class})
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class R4AcceptanceTest {
+
+    @Autowired
+    PostgreSQLContainer freshPostgres;
+
+    /** The installation's owner connection, for what onboarding and Keycloak would have created. */
+    private JdbcClient owner() {
+        return Installation.owner(freshPostgres);
+    }
 
     static final String INITIAL_PASSWORD = "initial " + UUID.randomUUID();
     static final String NEW_PASSWORD = "changed " + UUID.randomUUID();
@@ -173,7 +182,7 @@ class R4AcceptanceTest {
     private void setUp() throws Exception {
         clock.moveTo(nextSixPmInTheStore());
         office = new Browser("backoffice", port, journey);
-        Installation.firstLogin(office, INITIAL_PASSWORD, NEW_PASSWORD);
+        Installation.firstLogin(office, owner(), clock::instant);
         storeA = store("A");
         storeB = store("B");
         UUID terminal = terminal(office, storeA, "POS1");
@@ -821,13 +830,7 @@ class R4AcceptanceTest {
     }
 
     private Browser backOfficeUser(String username, UUID employeeId) throws Exception {
-        String password = "pw " + UUID.randomUUID();
-        office.post(BO + "/users", Map.of("username", username, "initialPassword", password, "employeeId",
-                employeeId), 201);
-        Browser tab = office.sibling(username);
-        tab.get("/api/v1/auth/session", 401);
-        tab.post("/api/v1/auth/login", Map.of("username", username, "password", password), 200);
-        tab.post("/api/v1/auth/password", Map.of("currentPassword", password, "newPassword", password + " 2"), 200);
+        Browser tab = Installation.user(office, owner(), username, employeeId, username, clock::instant);
         return tab;
     }
 

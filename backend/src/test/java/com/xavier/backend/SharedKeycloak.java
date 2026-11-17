@@ -19,6 +19,14 @@ public final class SharedKeycloak {
     /** Keycloak 26.x, pinned (D175: minor upgrades are a planned change). */
     public static final String IMAGE = "quay.io/keycloak/keycloak:26.8.0";
 
+    /**
+     * How long {@code /health/ready} may take. {@code start-dev} first builds Keycloak (Quarkus augmentation), which
+     * is CPU-bound: 54 s on a quiet host, 293 s with six suites in parallel, and over 300 s once (augmentation alone
+     * 145 s, the server still initializing its database when a 5-minute wait gave up). A container that never
+     * becomes ready still fails the start, with its log; it is only reported later.
+     */
+    static final Duration STARTUP_TIMEOUT = Duration.ofMinutes(10);
+
     /** Where the pom puts {@code deploy/keycloak/realm-*.json} on the test classpath. */
     static final String CLASSPATH_DIRECTORY = "keycloak/";
 
@@ -59,7 +67,7 @@ public final class SharedKeycloak {
         private static SharedKeycloak start() {
             KeycloakContainer container = new KeycloakContainer(IMAGE).withRealmImportFiles(realmFiles().stream()
                     .map(file -> CLASSPATH_DIRECTORY + file).toArray(String[]::new))
-                    .withStartupTimeout(Duration.ofMinutes(5)); // a first start builds Keycloak, slow on a busy host
+                    .withStartupTimeout(STARTUP_TIMEOUT);
             container.start();
             return new SharedKeycloak(container);
         }

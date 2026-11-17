@@ -18,9 +18,10 @@ public interface SupportGrantRepository extends JpaRepository<SupportGrant, UUID
 
     Page<SupportGrant> findByAccountId(UUID accountId, Pageable pageable);
 
-    @Query("select g.id from SupportGrant g "
-            + "where g.revokedAt is null and g.expiredAt is null and g.validUntil <= :now order by g.validUntil")
-    List<UUID> findIdsDue(Instant now);
+    /** The grants support is acting on now (used, not ended): the {@code SUPPORT_ACCESS_ACTIVE} alert. */
+    @Query("select g from SupportGrant g where g.firstUsedAt is not null and g.revokedAt is null "
+            + "and g.expiredAt is null and g.validFrom <= :now and g.validUntil > :now")
+    List<SupportGrant> findInUse(Instant now);
 
     /**
      * Compare-and-set ACTIVE → EXPIRED; moves the version, so a concurrent revoke of the loaded grant gets a 409.

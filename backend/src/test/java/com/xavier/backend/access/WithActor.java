@@ -9,7 +9,7 @@ import java.lang.annotation.Target;
 import org.springframework.security.test.context.support.WithSecurityContext;
 
 /**
- * Runs a test as an authenticated {@link Actor}, without S2's login (PRD S0).
+ * Runs a test as an authenticated {@link Actor}, as the request pipeline resolves one, without a token (PRD S0).
  *
  * <pre>{@code
  * @WithActor(permissions = Permission.DINING_MANAGE, storeId = "0190a1b2-...")   // only in that store
@@ -50,4 +50,10 @@ public @interface WithActor {
 
     /** The actor's tenant (D177): the bootstrap tenant unless set ({@code TenantTestSupport}). */
     String tenantId() default "";
+
+    /**
+     * An account's level of authentication, proved when the test starts (D184): {@code "2"} (a second factor) by
+     * default, so sensitive permissions work; {@code "1"} for a password-only token. Ignored for a POS actor.
+     */
+    String acr() default "2";
 }

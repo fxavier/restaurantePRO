@@ -92,11 +92,6 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
         </dependency>
-        <!-- D25: server-side sessions that survive restarts and can be listed/revoked -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-session-jdbc</artifactId>
-        </dependency>
         <!-- D33: health/info/metrics on the management port -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

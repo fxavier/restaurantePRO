@@ -1,5 +1,6 @@
 package com.xavier.backend.audit;
 
+import com.xavier.backend.access.TestAuthentications;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 
 import com.xavier.backend.access.Actor;
@@ -12,7 +13,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
@@ -61,6 +61,6 @@ final class AuditFixtures {
 
     static RequestPostProcessor as(Actor actor) {
         List<SimpleGrantedAuthority> granted = actor.authorities().stream().map(SimpleGrantedAuthority::new).toList();
-        return authentication(UsernamePasswordAuthenticationToken.authenticated(actor, null, granted));
+        return authentication(TestAuthentications.of(actor));
     }
 }

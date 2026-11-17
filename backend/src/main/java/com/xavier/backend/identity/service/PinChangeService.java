@@ -44,7 +44,13 @@ public class PinChangeService {
         this.clock = clock;
     }
 
-    /** @return the session the employee now gets on this terminal, with their authorities in its store */
+    /** Whether the employee still has the PIN a manager set. */
+    @Transactional(readOnly = true)
+    public boolean mustChangePin(java.util.UUID employeeId) {
+        return employees.findById(employeeId).map(Employee::isMustChangePin).orElse(false);
+    }
+
+    /** @return the employee's session on this terminal, now with their authorities in its store */
     @Transactional
     public SessionView choosePin(String newPin) {
         Actor actor = accessPolicy.current();

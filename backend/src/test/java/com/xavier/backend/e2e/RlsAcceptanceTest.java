@@ -1,5 +1,6 @@
 package com.xavier.backend.e2e;
 
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import static com.xavier.backend.e2e.Installation.CASHIER_ROLE;
 import static com.xavier.backend.e2e.Installation.MANAGER_ROLE;
 import static com.xavier.backend.e2e.Installation.id;
@@ -59,6 +60,14 @@ import tools.jackson.databind.JsonNode;
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class RlsAcceptanceTest {
 
+    @Autowired
+    PostgreSQLContainer freshPostgres;
+
+    /** The installation's owner connection, for what onboarding and Keycloak would have created. */
+    private JdbcClient owner() {
+        return Installation.owner(freshPostgres);
+    }
+
     static final String INITIAL_PASSWORD = "initial " + UUID.randomUUID();
     static final String NEW_PASSWORD = "changed " + UUID.randomUUID();
     static final String CASHIER_PIN = "5172";
@@ -111,7 +120,7 @@ class RlsAcceptanceTest {
     private void run() throws Exception {
         // ---- setup by the installation-wide administrator ----
         office = new Browser("backoffice", port, journey);
-        Installation.firstLogin(office, INITIAL_PASSWORD, NEW_PASSWORD);
+        Installation.firstLogin(office, owner());
         storeA = Installation.store(office, "A");
         storeB = Installation.store(office, "B");
         storeC = Installation.store(office, "C");
@@ -276,13 +285,7 @@ class RlsAcceptanceTest {
             office.post(BO + "/employees/" + employee + "/assignments", Map.of("storeId", stores[i], "roleId",
                     MANAGER_ROLE), 201);
         }
-        String password = "pw " + UUID.randomUUID();
-        office.post(BO + "/users", Map.of("username", username, "initialPassword", password, "employeeId",
-                employee), 201);
-        Browser tab = office.sibling(username);
-        tab.get("/api/v1/auth/session", 401);
-        tab.post("/api/v1/auth/login", Map.of("username", username, "password", password), 200);
-        tab.post("/api/v1/auth/password", Map.of("currentPassword", password, "newPassword", password + " 2"), 200);
+        Browser tab = Installation.user(office, owner(), username, employee, username);
         return tab;
     }
 

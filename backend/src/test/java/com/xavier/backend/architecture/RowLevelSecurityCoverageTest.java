@@ -266,7 +266,7 @@ public class RowLevelSecurityCoverageTest {
         }
     }
 
-    /** Both registries are written by migrations only: the pool may read them, never add or remove a row. */
+    /** The registries are written by migrations only: the pool may read them, never add or remove a row. */
     @Test
     void theApplicationRoleCannotChangeTheRegistries() throws Exception {
         try (java.sql.Connection connection = java.sql.DriverManager.getConnection(
@@ -281,9 +281,17 @@ public class RowLevelSecurityCoverageTest {
                         ? "INSERT INTO " + registry + " VALUES ('organization.store', 'hidden by a bug')"
                         : "INSERT INTO " + registry + " VALUES ('organization.store')";
 
+                // refused either way: no privilege (a PLATFORM table, V1012) or row-level security, both 42501
                 assertThatThrownBy(() -> app.sql(insert).update()).as(insert).rootCause()
-                        .hasMessageContaining("violates row-level security policy");
-                assertThat(app.sql("DELETE FROM " + registry).update()).as("DELETE FROM %s", registry).isZero();
+                        .isInstanceOfSatisfying(java.sql.SQLException.class,
+                                refused -> assertThat(refused.getSQLState()).isEqualTo("42501"));
+                try {
+                    assertThat(app.sql("DELETE FROM " + registry).update()).as("DELETE FROM %s", registry).isZero();
+                } catch (org.springframework.dao.DataAccessException refused) {
+                    assertThat(refused.getMostSpecificCause()).as("DELETE FROM %s", registry)
+                            .isInstanceOfSatisfying(java.sql.SQLException.class,
+                                    e -> assertThat(e.getSQLState()).isEqualTo("42501"));
+                }
                 assertThat(app.sql("SELECT count(*) FROM " + registry).query(Long.class).single()).isEqualTo(before);
             }
         }
@@ -710,23 +718,38 @@ public class RowLevelSecurityCoverageTest {
     /** The deparsed tenant predicate of {@code shared.rls_protect_tenant}, as pg_get_expr prints it. */
     static final String CANONICAL_TENANT_PREDICATE = "(tenant_id = ( SELECT shared.rls_tenant_id() AS rls_tenant_id))";
 
-    /** A schema counts as converted as soon as one of its tables is a tenant table: no list to edit per slice. */
+    /**
+     * A schema counts as converted as soon as one of its tables is a tenant table, or when every table of it is
+     * PLATFORM; any other schema is not (yet). Scratch schemas only: a real module changes side when its slice merges.
+     */
     @Test
     void aSchemaWithATenantTableIsConvertedAndThenCheckedStrictly() {
         JdbcClient owner = OwnerDatabase.shared().jdbc();
-        dropScratch(owner);
+        String platformOnly = SCRATCH + "_platform";
+        String unconverted = SCRATCH + "_unconverted";
+        List<String> schemas = List.of(SCRATCH, platformOnly, unconverted);
+        schemas.forEach(schema -> dropScratch(owner, schema));
         try {
             OwnerDatabase.shared().tx(jdbc -> {
-                jdbc.sql("CREATE SCHEMA " + SCRATCH).update();
+                schemas.forEach(schema -> jdbc.sql("CREATE SCHEMA " + schema).update());
                 jdbc.sql("CREATE TABLE " + SCRATCH + ".company (id uuid PRIMARY KEY, "
                         + "tenant_id uuid NOT NULL DEFAULT shared.rls_tenant_id(), UNIQUE (tenant_id, id))").update();
                 jdbc.sql("SELECT shared.rls_protect_tenant_table('" + SCRATCH + ".company')").query().listOfRows();
+                jdbc.sql("CREATE TABLE " + SCRATCH + ".notes (id uuid PRIMARY KEY)").update();
+                jdbc.sql("CREATE TABLE " + platformOnly + ".registry (id uuid PRIMARY KEY)").update();
+                jdbc.sql("SELECT shared.rls_register_platform('" + platformOnly + ".registry', 'scratch')").query()
+                        .listOfRows();
+                jdbc.sql("CREATE TABLE " + unconverted + ".item (id uuid PRIMARY KEY, store_id uuid NOT NULL)")
+                        .update();
+                jdbc.sql("SELECT shared.rls_protect_store_table('" + unconverted + ".item')").query().listOfRows();
             });
 
-            assertThat(tenantProtectedModules()).contains(SCRATCH, "organization", "tenancy")
-                    .doesNotContain("shared", "orders");
+            assertThat(tenantProtectedModules()).contains(SCRATCH, platformOnly, "organization", "tenancy")
+                    .doesNotContain(unconverted);
+            assertThatThrownBy(() -> assertModuleTenantProtected(SCRATCH)).as("checked strictly once converted")
+                    .hasMessageContaining(SCRATCH + ".notes");
         } finally {
-            dropScratch(owner);
+            schemas.forEach(schema -> dropScratch(owner, schema));
         }
     }
 
@@ -779,12 +802,15 @@ public class RowLevelSecurityCoverageTest {
     }
 
     private static void dropScratch(JdbcClient owner) {
-        owner.sql("DELETE FROM shared.rls_unscoped_table WHERE table_name::text LIKE ?").param(SCRATCH + ".%")
-                .update();
-        owner.sql("DELETE FROM shared.rls_protected_table WHERE table_name::text LIKE ?").param(SCRATCH + ".%")
-                .update();
-        owner.sql("DELETE FROM shared.rls_tenant_table WHERE table_name::text LIKE ?").param(SCRATCH + ".%")
-                .update();
-        owner.sql("DROP SCHEMA IF EXISTS " + SCRATCH + " CASCADE").update();
+        dropScratch(owner, SCRATCH);
+    }
+
+    private static void dropScratch(JdbcClient owner, String schema) {
+        for (String registry : List.of("rls_unscoped_table", "rls_protected_table", "rls_tenant_table",
+                "rls_platform_table")) {
+            owner.sql("DELETE FROM shared." + registry + " WHERE table_name::text LIKE ?").param(schema + ".%")
+                    .update();
+        }
+        owner.sql("DROP SCHEMA IF EXISTS " + schema + " CASCADE").update();
     }
 }

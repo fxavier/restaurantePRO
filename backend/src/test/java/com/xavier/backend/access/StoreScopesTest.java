@@ -120,26 +120,6 @@ class StoreScopesTest {
                 .isEqualTo(1.0);
     }
 
-    @Test
-    void resolvingTheActorThatNeedsTheDatabaseDoesNotRecurse() {
-        Actor actor = Actor.account(ACCOUNT, Set.of(Permission.ORDER_VIEW.authority(STORE)));
-        AtomicReference<StoreScope> nested = new AtomicReference<>();
-        // Spring Security defers loading the context; loading it reads the session from JDBC, whose checkout asks
-        // for the scope again on this thread
-        SecurityContextHolder.setDeferredContext(() -> {
-            nested.set(scopes.current());
-            SecurityContext context = SecurityContextHolder.createEmptyContext();
-            context.setAuthentication(UsernamePasswordAuthenticationToken.authenticated(actor, null, java.util.List.of()));
-            return context;
-        });
-
-        StoreScope outer = scopes.current();
-
-        assertThat(nested.get().origin()).as("the session read while loading the actor: the fallback")
-                .isEqualTo("fallback");
-        assertThat(outer.origin()).isEqualTo("account:" + ACCOUNT);
-    }
-
     private static void authenticate(Actor actor) {
         SecurityContextHolder.getContext().setAuthentication(
                 UsernamePasswordAuthenticationToken.authenticated(actor, null, java.util.List.of()));

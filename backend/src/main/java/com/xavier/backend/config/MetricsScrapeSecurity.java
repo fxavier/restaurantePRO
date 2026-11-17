@@ -14,6 +14,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.beans.factory.annotation.Value;
+import com.xavier.backend.config.security.ApiSecurity;
 import org.springframework.boot.security.autoconfigure.actuate.web.servlet.EndpointRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -21,20 +22,19 @@ import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
  * D152 (amends D33): the Prometheus endpoint ({@code /actuator/prometheus}, management port) answers either a
- * {@code SYSTEM_MONITOR} session, as every other Actuator endpoint, or {@code Authorization: Bearer <token>} when
+ * {@code SYSTEM_MONITOR} holder's access token, as every other Actuator endpoint, or {@code Authorization: Bearer <token>} when
  * {@code restaurantpro.metrics.token-file} names the token's file (a Compose secret). The token is compared as SHA-256
- * digests in constant time, is never stored in a session, and grants nothing else: this chain matches only that
- * endpoint, so the header means nothing anywhere else. Anything else gets 401 (403 for a session without the
+ * digests in constant time, is never stored, and grants nothing else: this chain matches only that
+ * endpoint, so the header means nothing anywhere else. Anything else gets 401 (403 for a caller without the
  * permission). A configured file that is missing or empty stops the start (fail fast).
  */
 @Configuration(proxyBeanMethods = false)
@@ -46,22 +46,15 @@ class MetricsScrapeSecurity {
 
     @Bean
     @Order(0)
-    SecurityFilterChain prometheusScrapeSecurity(HttpSecurity http, ProblemDetailResponder problems,
+    SecurityFilterChain prometheusScrapeSecurity(HttpSecurity http, ApiSecurity api,
                                                   @Value("${restaurantpro.metrics.token-file:}") String tokenFile)
             throws Exception {
         Optional<byte[]> digest = tokenDigest(tokenFile);
         if (digest.isPresent()) {
-            http.addFilterBefore(new ScrapeTokenFilter(digest.get()), AnonymousAuthenticationFilter.class);
+            http.addFilterBefore(new ScrapeTokenFilter(digest.get()), BearerTokenAuthenticationFilter.class);
         }
-        return http.securityMatcher(EndpointRequest.to("prometheus"))
-                .csrf(csrf -> csrf.spa())
-                .formLogin(AbstractHttpConfigurer::disable)
-                .httpBasic(AbstractHttpConfigurer::disable)
-                .logout(AbstractHttpConfigurer::disable)
-                .requestCache(AbstractHttpConfigurer::disable)
-                .exceptionHandling(exceptions -> exceptions
-                        .authenticationEntryPoint(problems.unauthorized())
-                        .accessDeniedHandler(problems.forbidden()))
+        api.stateless(http.securityMatcher(EndpointRequest.to("prometheus")));
+        return api.backOfficeBearer(http)
                 .authorizeHttpRequests(requests -> requests.anyRequest()
                         .hasAnyAuthority(Permission.SYSTEM_MONITOR.authority(), SCRAPE_AUTHORITY))
                 .build();

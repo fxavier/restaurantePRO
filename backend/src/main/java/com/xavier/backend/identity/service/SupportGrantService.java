@@ -6,6 +6,11 @@ import com.xavier.backend.access.ActorKind;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.identity.exception.SupportAccountRequiredException;
+import com.xavier.backend.shared.tenancy.MembershipKind;
+import com.xavier.backend.tenancy.TenancyApi;
+import com.xavier.backend.shared.exception.UnavailableException;
+import com.xavier.backend.tenancy.model.dto.MembershipGrant;
+import org.springframework.beans.factory.annotation.Value;
 import com.xavier.backend.identity.exception.SupportGrantActiveException;
 import com.xavier.backend.identity.exception.SupportGrantNotFoundException;
 import com.xavier.backend.identity.exception.UserNotFoundException;
@@ -35,9 +40,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Support access (spec §5 "temporário, autorizado e auditado", P36, D83). An administrator ({@code
- * SUPPORT_ACCESS_MANAGE}, installation-wide) grants a support account access from now for at most 24 h, and may
- * revoke it early. A grant that ends (revoke here, expiry in {@link SupportGrantExpiry}) ends the account's sessions.
- * Every grant, revoke and expiry is audited; the details carry ids, instants and a session count, never a secret.
+ * SUPPORT_ACCESS_MANAGE}, tenant-wide) grants a support account access from now for at most 24 h, and may revoke it
+ * early. The grant names the support person's ops-realm subject and creates, in the same transaction, a {@code SUPPORT}
+ * membership valid exactly as long (D183): only that person, with an ops-realm token and a second factor, acts in
+ * this tenant, as the support account. Revoking the grant revokes the membership (refused on the next request); its
+ * end needs no job (the membership's {@code valid_until}). Every grant and revoke is audited; never a secret.
  */
 @Service
 public class SupportGrantService {
@@ -49,16 +56,19 @@ public class SupportGrantService {
     private final UserAccountRepository accounts;
     private final AccessPolicy accessPolicy;
     private final AuditLog auditLog;
-    private final SessionTermination sessions;
+    private final TenancyApi tenancy;
+    private final String opsIssuer;
     private final Clock clock;
 
     SupportGrantService(SupportGrantRepository grants, UserAccountRepository accounts, AccessPolicy accessPolicy,
-                        AuditLog auditLog, SessionTermination sessions, Clock clock) {
+                        AuditLog auditLog, TenancyApi tenancy,
+                        @Value("${restaurantpro.security.issuers.ops:}") String opsIssuer, Clock clock) {
         this.grants = grants;
         this.accounts = accounts;
         this.accessPolicy = accessPolicy;
         this.auditLog = auditLog;
-        this.sessions = sessions;
+        this.tenancy = tenancy;
+        this.opsIssuer = opsIssuer;
         this.clock = clock;
     }
 
@@ -77,16 +87,22 @@ public class SupportGrantService {
         }
         current.ifPresent(ended -> expire(ended.getId())); // past its end, not yet swept by the job
         SupportGrant grant = UniqueConstraints.saveAndFlush(grants,
-                SupportGrant.grant(account.getId(), Duration.ofMinutes(request.durationMinutes()),
-                        request.reason().strip(), granter.userId(), now),
+                SupportGrant.grant(account.getId(), request.subject().strip(),
+                        Duration.ofMinutes(request.durationMinutes()), request.reason().strip(), granter.userId(), now),
                 SupportGrantActiveException::new, "support_grant_one_active_uk");
+        if (opsIssuer.isBlank()) {
+            throw new UnavailableException("IDP_UNAVAILABLE", "The support realm is not configured.", Map.of());
+        }
+        grant.linkMembership(tenancy.grant(new MembershipGrant(opsIssuer, grant.getSubject(), MembershipKind.SUPPORT,
+                grant.getId(), now, grant.getValidUntil())));
+        grants.saveAndFlush(grant);
         auditLog.recordAsCurrentActor("SUPPORT_GRANT_CREATED", ENTITY, grant.getId().toString(), null, null,
                 grant.getReason(), Map.of("accountId", account.getId(), "validFrom", now,
                         "validUntil", grant.getValidUntil()));
         return grant.toSummary(now);
     }
 
-    /** Ends the grant now and the account's sessions with it. */
+    /** Ends the grant now, and its membership: support is refused on its next request. */
     @Transactional
     public SupportGrantSummary revoke(UUID grantId) {
         Actor revoker = requireGranter();
@@ -94,9 +110,11 @@ public class SupportGrantService {
         Instant now = clock.instant();
         grant.revoke(revoker.userId(), now);
         grants.saveAndFlush(grant);
-        int ended = sessions.endAccountSessions(grant.getAccountId());
+        if (grant.getMembershipId() != null) {
+            tenancy.revoke(grant.getMembershipId());
+        }
         auditLog.recordAsCurrentActor("SUPPORT_GRANT_REVOKED", ENTITY, grantId.toString(), null, null, null,
-                Map.of("accountId", grant.getAccountId(), "endedSessions", ended));
+                Map.of("accountId", grant.getAccountId()));
         return grant.toSummary(now);
     }
 
@@ -112,60 +130,8 @@ public class SupportGrantService {
     }
 
     /**
-     * The grant a support account may log in with now, if any. Not authorized: it is a step of login, which has no
-     * actor yet.
-     */
-    @Transactional(readOnly = true)
-    public Optional<UUID> usableGrantOf(UUID accountId) {
-        Instant now = clock.instant();
-        return grants.findByAccountIdAndRevokedAtIsNullAndExpiredAtIsNull(accountId)
-                .filter(grant -> grant.isUsableAt(now))
-                .map(SupportGrant::getId);
-    }
-
-    /**
-     * The grant a new session of this account rides on: empty for an ordinary account. For a support account without
-     * a usable grant (a race with the grant's end) the session is dead at once: no grant id, ended now.
-     */
-    @Transactional(readOnly = true)
-    public Optional<SupportSession> sessionGrantOf(UUID accountId) {
-        if (!accounts.findById(accountId).map(UserAccount::isSupport).orElse(false)) {
-            return Optional.empty();
-        }
-        Instant now = clock.instant();
-        return Optional.of(grants.findByAccountIdAndRevokedAtIsNullAndExpiredAtIsNull(accountId)
-                .filter(grant -> grant.isUsableAt(now))
-                .map(grant -> new SupportSession(grant.getId(), grant.getValidUntil(), grant.remainingAt(now)))
-                .orElse(new SupportSession(null, now, Duration.ZERO)));
-    }
-
-    /**
-     * Whether a support session may serve this request: its grant has not reached {@code validUntil} and is still
-     * ACTIVE (one primary-key read). Sessions are also deleted when a grant ends, but a revoke that commits while a
-     * login is still saving its session finds nothing to delete; this check does not depend on that.
-     */
-    @Transactional(readOnly = true)
-    public boolean sessionGrantHolds(UUID grantId, Instant validUntil) {
-        Instant now = clock.instant();
-        if (grantId == null || !now.isBefore(validUntil)) {
-            return false;
-        }
-        return grants.findById(grantId).map(grant -> grant.isUsableAt(now)).orElse(false);
-    }
-
-    /** The grant a support session was opened with, and how long the session may still stay idle. */
-    public record SupportSession(UUID grantId, Instant validUntil, Duration remaining) {
-    }
-
-    /** ACTIVE grants whose end has come, oldest end first. */
-    @Transactional(readOnly = true)
-    List<UUID> dueGrantIds() {
-        return grants.findIdsDue(clock.instant());
-    }
-
-    /**
-     * Expires one due grant (compare-and-set, so an overlapping run or a revoke that got there first changes
-     * nothing), ends its sessions and audits as the system.
+     * Expires one grant past its end (compare-and-set, so a revoke that got there first changes nothing) and audits as
+     * the system; its membership ended by itself at {@code valid_until}.
      *
      * @return whether this call expired it
      */
@@ -175,15 +141,14 @@ public class SupportGrantService {
             return false;
         }
         UUID accountId = grants.findById(grantId).orElseThrow().getAccountId();
-        int ended = sessions.endAccountSessions(accountId);
         auditLog.recordAsSystem("SUPPORT_GRANT_EXPIRED", ENTITY, grantId.toString(), null, null, null,
-                Map.of("accountId", accountId, "endedSessions", ended));
+                Map.of("accountId", accountId));
         return true;
     }
 
     /**
-     * {@code SUPPORT_ACCESS_MANAGE} installation-wide, held by a BackOffice account that is not itself a support
-     * account. A support session never holds the permission ({@code AuthorityResolver}); this check keeps that true
+     * {@code SUPPORT_ACCESS_MANAGE} tenant-wide, held by a BackOffice account that is not itself a support
+     * account. A support actor never holds the permission ({@code AuthorityResolver}); this check keeps that true
      * even if a session somehow did.
      */
     private Actor requireGranter() {
