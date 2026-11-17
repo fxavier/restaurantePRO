@@ -62,39 +62,39 @@ class InventoryRowLevelSecurityTest {
         JdbcClient owner = OwnerDatabase.shared().jdbc();
         item = UUID.randomUUID();
         owner.sql("""
-                        INSERT INTO inventory.stock_item (id, code, name, base_unit, kind, active, version, created_at,
-                            updated_at) VALUES (?, ?, 'Flour', 'g', 'PURCHASED', true, 0, ?, ?)""")
+                        INSERT INTO inventory.stock_item (tenant_id, id, code, name, base_unit, kind, active, version, created_at,
+                            updated_at) VALUES ('0190b000-0000-7000-8000-00000000000a', ?, ?, 'Flour', 'g', 'PURCHASED', true, 0, ?, ?)""")
                 .params(item, "RLS-" + item, ts(), ts()).update();
         warehouseA = warehouse(STORE_A);
         warehouseB = warehouse(STORE_B);
         balance(warehouseA, STORE_A);
         balance(warehouseB, STORE_B);
-        owner.sql("INSERT INTO inventory.stock_level (warehouse_id, stock_item_id, min_quantity, version) "
-                + "VALUES (?, ?, 5, 0)").params(warehouseB, item).update();
+        owner.sql("INSERT INTO inventory.stock_level (tenant_id, warehouse_id, stock_item_id, min_quantity, version) "
+                + "VALUES ('0190b000-0000-7000-8000-00000000000a', ?, ?, 5, 0)").params(warehouseB, item).update();
         routeB = UUID.randomUUID();
-        owner.sql("INSERT INTO inventory.consumption_route (id, store_id, destination_code, warehouse_id, version) "
-                + "VALUES (?, ?, NULL, ?, 0)").params(routeB, STORE_B, warehouseB).update();
+        owner.sql("INSERT INTO inventory.consumption_route (tenant_id, id, store_id, destination_code, warehouse_id, version) "
+                + "VALUES ('0190b000-0000-7000-8000-00000000000a', ?, ?, NULL, ?, 0)").params(routeB, STORE_B, warehouseB).update();
         supplier = UUID.randomUUID();
         owner.sql("""
-                        INSERT INTO inventory.supplier (id, code, name, active, created_at, updated_at, version)
-                        VALUES (?, ?, 'Mill', true, ?, ?, 0)""").params(supplier, "RLS-" + supplier, ts(), ts())
+                        INSERT INTO inventory.supplier (tenant_id, id, code, name, active, created_at, updated_at, version)
+                        VALUES ('0190b000-0000-7000-8000-00000000000a', ?, ?, 'Mill', true, ?, ?, 0)""").params(supplier, "RLS-" + supplier, ts(), ts())
                 .update();
         orderB = UUID.randomUUID();
         owner.sql("""
-                        INSERT INTO inventory.purchase_order (id, store_id, warehouse_id, supplier_id, number, status,
-                            created_at, version) VALUES (?, ?, ?, ?, 'PO-1', 'DRAFT', ?, 0)""")
+                        INSERT INTO inventory.purchase_order (tenant_id, id, store_id, warehouse_id, supplier_id, number, status,
+                            created_at, version) VALUES ('0190b000-0000-7000-8000-00000000000a', ?, ?, ?, ?, 'PO-1', 'DRAFT', ?, 0)""")
                 .params(orderB, STORE_B, warehouseB, supplier, ts()).update();
         owner.sql("""
-                        INSERT INTO inventory.purchase_order_line (id, purchase_order_id, stock_item_id, quantity,
-                            quantity_base, unit_cost) VALUES (?, ?, ?, 1, 1, 1)""")
+                        INSERT INTO inventory.purchase_order_line (tenant_id, id, purchase_order_id, stock_item_id, quantity,
+                            quantity_base, unit_cost) VALUES ('0190b000-0000-7000-8000-00000000000a', ?, ?, ?, 1, 1, 1)""")
                 .params(UUID.randomUUID(), orderB, item).update();
         transferAB = UUID.randomUUID();
         owner.sql("""
-                        INSERT INTO inventory.stock_transfer (id, from_warehouse_id, to_warehouse_id, from_store_id,
-                            to_store_id, status, created_at, version) VALUES (?, ?, ?, ?, ?, 'DRAFT', ?, 0)""")
+                        INSERT INTO inventory.stock_transfer (tenant_id, id, from_warehouse_id, to_warehouse_id, from_store_id,
+                            to_store_id, status, created_at, version) VALUES ('0190b000-0000-7000-8000-00000000000a', ?, ?, ?, ?, ?, 'DRAFT', ?, 0)""")
                 .params(transferAB, warehouseA, warehouseB, STORE_A, STORE_B, ts()).update();
-        owner.sql("INSERT INTO inventory.stock_transfer_line (transfer_id, stock_item_id, quantity_shipped) "
-                + "VALUES (?, ?, 1)").params(transferAB, item).update();
+        owner.sql("INSERT INTO inventory.stock_transfer_line (tenant_id, transfer_id, stock_item_id, quantity_shipped) "
+                + "VALUES ('0190b000-0000-7000-8000-00000000000a', ?, ?, 1)").params(transferAB, item).update();
     }
 
     @AfterAll
@@ -110,28 +110,34 @@ class InventoryRowLevelSecurityTest {
                 "stock_transfer_line");
     }
 
-    /** D167/D172: 16 STORE (warehouse with open reads), 1 SPECIAL, 7 CHILD protected; 10 registered unscoped. */
+    /**
+     * D167/D172 and R6 (S74c): 16 STORE (warehouse with open reads), 1 SPECIAL, 7 CHILD protected by their store
+     * policies; the nine formerly company-wide tables are TENANT class (protected too, no store predicate); every
+     * one of the 33 also carries the restrictive tenant policy. The stock units are the one PLATFORM code list.
+     */
     @Test
-    void inventoryProtectsTwentyFourTablesAndRegistersTen() {
+    void inventoryProtectsThirtyThreeTablesAndRegistersTheUnitsAsPlatform() {
         JdbcClient owner = OwnerDatabase.shared().jdbc();
+        List<String> storeProtected = List.of("warehouse", "consumption_route", "inventory_activation",
+                "stock_movement", "stock_balance", "balance_check", "consumed_line", "line_void",
+                "waste_record", "consumption_exception", "cost_variance", "preparation", "purchase_order",
+                "goods_receipt", "supplier_return", "stock_count", "stock_transfer", "stock_level",
+                "purchase_order_line", "goods_receipt_line", "receipt_cost_correction",
+                "supplier_return_line", "stock_count_line", "stock_transfer_line");
+        List<String> tenantOnly = List.of("stock_item", "stock_item_pack", "supplier", "supplier_item", "recipe",
+                "recipe_version", "recipe_ingredient", "consumption_policy_version", "consumption_policy_rule");
 
-        assertThat(owner.sql("""
-                        SELECT c.relname FROM shared.rls_protected_table p JOIN pg_catalog.pg_class c
-                            ON c.oid = p.table_name JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-                        WHERE n.nspname = 'inventory' ORDER BY 1""").query(String.class).list())
-                .containsExactlyInAnyOrder("warehouse", "consumption_route", "inventory_activation",
-                        "stock_movement", "stock_balance", "balance_check", "consumed_line", "line_void",
-                        "waste_record", "consumption_exception", "cost_variance", "preparation", "purchase_order",
-                        "goods_receipt", "supplier_return", "stock_count", "stock_transfer", "stock_level",
-                        "purchase_order_line", "goods_receipt_line", "receipt_cost_correction",
-                        "supplier_return_line", "stock_count_line", "stock_transfer_line");
-        assertThat(owner.sql("""
-                        SELECT c.relname FROM shared.rls_unscoped_table u JOIN pg_catalog.pg_class c
-                            ON c.oid = u.table_name JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-                        WHERE n.nspname = 'inventory' ORDER BY 1""").query(String.class).list())
-                .containsExactlyInAnyOrder("stock_unit", "stock_item", "stock_item_pack", "supplier",
-                        "supplier_item", "recipe", "recipe_version", "recipe_ingredient",
-                        "consumption_policy_version", "consumption_policy_rule");
+        assertThat(registered(owner, "rls_protected_table")).containsExactlyInAnyOrderElementsOf(
+                java.util.stream.Stream.concat(storeProtected.stream(), tenantOnly.stream()).toList());
+        assertThat(registered(owner, "rls_tenant_table")).hasSize(33);
+        assertThat(registered(owner, "rls_unscoped_table")).isEmpty();
+        assertThat(registered(owner, "rls_platform_table")).containsExactly("stock_unit");
+    }
+
+    private static List<String> registered(JdbcClient owner, String registry) {
+        return owner.sql("SELECT c.relname FROM shared." + registry + " r JOIN pg_catalog.pg_class c "
+                + "ON c.oid = r.table_name JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+                + "WHERE n.nspname = 'inventory' ORDER BY 1").query(String.class).list();
     }
 
     @Test
@@ -190,8 +196,8 @@ class InventoryRowLevelSecurityTest {
                 .update())).as("into another store").isEqualTo("42501");
         UUID other = UUID.randomUUID();
         OwnerDatabase.shared().jdbc().sql("""
-                        INSERT INTO inventory.stock_item (id, code, name, base_unit, kind, active, version, created_at,
-                            updated_at) VALUES (?, ?, 'Salt', 'g', 'PURCHASED', true, 0, ?, ?)""")
+                        INSERT INTO inventory.stock_item (tenant_id, id, code, name, base_unit, kind, active, version, created_at,
+                            updated_at) VALUES ('0190b000-0000-7000-8000-00000000000a', ?, ?, 'Salt', 'g', 'PURCHASED', true, 0, ?, ?)""")
                 .params(other, "RLS-" + other, ts(), ts()).update();
         assertThat(sqlState(() -> OwnerDatabase.shared().jdbc().sql(insertBalance())
                 .params(warehouseA, STORE_B, other, ts()).update()))
@@ -230,8 +236,8 @@ class InventoryRowLevelSecurityTest {
                 warehouseB)).isOne();
         UUID other = UUID.randomUUID();
         OwnerDatabase.shared().jdbc().sql("""
-                        INSERT INTO inventory.stock_item (id, code, name, base_unit, kind, active, version, created_at,
-                            updated_at) VALUES (?, ?, 'Sugar', 'g', 'PURCHASED', true, 0, ?, ?)""")
+                        INSERT INTO inventory.stock_item (tenant_id, id, code, name, base_unit, kind, active, version, created_at,
+                            updated_at) VALUES ('0190b000-0000-7000-8000-00000000000a', ?, ?, 'Sugar', 'g', 'PURCHASED', true, 0, ?, ?)""")
                 .params(other, "RLS-" + other, ts(), ts()).update();
         assertThat(sqlState(() -> storeA.sql("INSERT INTO inventory.stock_level (warehouse_id, stock_item_id, "
                 + "min_quantity, version) VALUES (?, ?, 1, 0)").params(warehouseB, other).update()))
@@ -269,8 +275,8 @@ class InventoryRowLevelSecurityTest {
                 .as("a transfer between two other stores").isEqualTo("42501");
         UUID other = UUID.randomUUID();
         OwnerDatabase.shared().jdbc().sql("""
-                        INSERT INTO inventory.stock_item (id, code, name, base_unit, kind, active, version, created_at,
-                            updated_at) VALUES (?, ?, 'Oil', 'ml', 'PURCHASED', true, 0, ?, ?)""")
+                        INSERT INTO inventory.stock_item (tenant_id, id, code, name, base_unit, kind, active, version, created_at,
+                            updated_at) VALUES ('0190b000-0000-7000-8000-00000000000a', ?, ?, 'Oil', 'ml', 'PURCHASED', true, 0, ?, ?)""")
                 .params(other, "RLS-" + other, ts(), ts()).update();
         assertThat(sqlState(() -> scoped(STORE_C).sql("INSERT INTO inventory.stock_transfer_line (transfer_id, "
                 + "stock_item_id, quantity_shipped) VALUES (?, ?, 1)").params(transferAB, other).update()))
@@ -281,8 +287,8 @@ class InventoryRowLevelSecurityTest {
         }
         UUID otherTransfer = UUID.randomUUID();
         OwnerDatabase.shared().jdbc().sql("""
-                        INSERT INTO inventory.stock_transfer (id, from_warehouse_id, to_warehouse_id, from_store_id,
-                            to_store_id, status, created_at, version) VALUES (?, ?, ?, ?, ?, 'DRAFT', ?, 0)""")
+                        INSERT INTO inventory.stock_transfer (tenant_id, id, from_warehouse_id, to_warehouse_id, from_store_id,
+                            to_store_id, status, created_at, version) VALUES ('0190b000-0000-7000-8000-00000000000a', ?, ?, ?, ?, ?, 'DRAFT', ?, 0)""")
                 .params(otherTransfer, warehouseA, warehouseB, STORE_A, STORE_B, ts()).update();
         assertThat(sqlState(() -> allStores().sql("UPDATE inventory.stock_transfer_line SET transfer_id = ? "
                 + "WHERE transfer_id = ?").params(otherTransfer, transferAB).update())).isEqualTo("RS002");
@@ -299,7 +305,7 @@ class InventoryRowLevelSecurityTest {
                             SELECT polcmd::text AS cmd, regexp_replace(pg_get_expr(polqual, polrelid), '\\s+', ' ', 'g')
                                        AS qual,
                                    regexp_replace(pg_get_expr(polwithcheck, polrelid), '\\s+', ' ', 'g') AS with_check
-                            FROM pg_catalog.pg_policy WHERE polrelid = CAST(? AS regclass)""")
+                            FROM pg_catalog.pg_policy WHERE polrelid = CAST(? AS regclass) AND polname <> 'tenant_scope'""")
                     .param("inventory." + table).query().singleRow();
             String qual = (String) policy.get("qual");
 
@@ -326,8 +332,8 @@ class InventoryRowLevelSecurityTest {
     private static UUID warehouse(UUID store) {
         UUID id = UUID.randomUUID();
         OwnerDatabase.shared().jdbc().sql("""
-                        INSERT INTO inventory.warehouse (id, store_id, code, name, active, version, created_at,
-                            updated_at) VALUES (?, ?, 'MAIN', 'Main', true, 0, ?, ?)""")
+                        INSERT INTO inventory.warehouse (tenant_id, id, store_id, code, name, active, version, created_at,
+                            updated_at) VALUES ('0190b000-0000-7000-8000-00000000000a', ?, ?, 'MAIN', 'Main', true, 0, ?, ?)""")
                 .params(id, store, ts(), ts()).update();
         return id;
     }
@@ -338,8 +344,9 @@ class InventoryRowLevelSecurityTest {
 
     private static String insertBalance() {
         return """
-                INSERT INTO inventory.stock_balance (warehouse_id, store_id, stock_item_id, quantity, value,
-                    average_cost, last_posting_seq, updated_at) VALUES (?, ?, ?, 0, 0, 0, 0, ?)""";
+                INSERT INTO inventory.stock_balance (tenant_id, warehouse_id, store_id, stock_item_id, quantity, value,
+                    average_cost, last_posting_seq, updated_at)
+                VALUES ('0190b000-0000-7000-8000-00000000000a', ?, ?, ?, 0, 0, 0, 0, ?)""";
     }
 
     private static java.sql.Timestamp ts() {
@@ -372,7 +379,7 @@ class InventoryRowLevelSecurityTest {
             jdbc.sql("SELECT set_config('app.all_stores', ?, false), set_config('app.store_ids', ?, false), "
                     + "set_config('app.scope_origin', 'test:inventory-rls', false), "
                     + "set_config('app.tenant_id', ?, false)").params(allStores, storeIds,
-                    TenantTestSupport.BOOTSTRAP.toString()).query().listOfRows();
+                    TenantTestSupport.A.toString()).query().listOfRows();
             return jdbc;
         } catch (SQLException e) {
             throw new IllegalStateException(e);

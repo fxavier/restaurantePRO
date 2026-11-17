@@ -4,6 +4,7 @@ import static com.xavier.backend.customers.CustomersFixtures.mzn;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.xavier.backend.customers.exception.CustomerRuleException;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
@@ -61,16 +62,17 @@ class CreditLimitRaceTest {
         CountDownLatch aMayCommit = new CountDownLatch(1);
         AtomicInteger aBackend = new AtomicInteger();
         try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
-            Future<ReservationView> a = pool.submit(() -> tx.execute(status -> {
+            Future<ReservationView> a = pool.submit(TenantTestSupport.inBootstrap(() -> tx.execute(status -> {
                 ReservationView reserved = customers.reserve(customer, mzn("60.00"), UUID.randomUUID());
                 aBackend.set(jdbc.sql("SELECT pg_backend_pid()").query(Integer.class).single());
                 aReserved.countDown();
                 await(aMayCommit);
                 return reserved;
-            }));
+            })));
             assertThat(aReserved.await(30, TimeUnit.SECONDS)).isTrue();
 
-            Future<Object> b = pool.submit(outcome(() -> customers.reserve(customer, mzn("60.00"), UUID.randomUUID())));
+            Future<Object> b = pool.submit(TenantTestSupport.inBootstrap(
+                    outcome(() -> customers.reserve(customer, mzn("60.00"), UUID.randomUUID()))));
             waitUntil(() -> b.isDone() || blockedBy(aBackend.get()));
 
             assertThat(b.isDone()).as("B must wait for A's lock on credit_account, not decide on its own").isFalse();
@@ -89,14 +91,14 @@ class CreditLimitRaceTest {
         CountDownLatch start = new CountDownLatch(1);
         try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
             Callable<Object> reserve = outcome(() -> customers.reserve(customer, mzn("60.00"), UUID.randomUUID()));
-            Future<Object> first = pool.submit(() -> {
+            Future<Object> first = pool.submit(TenantTestSupport.inBootstrap(() -> {
                 await(start);
                 return reserve.call();
-            });
-            Future<Object> second = pool.submit(() -> {
+            }));
+            Future<Object> second = pool.submit(TenantTestSupport.inBootstrap(() -> {
                 await(start);
                 return reserve.call();
-            });
+            }));
             start.countDown();
 
             List<Object> outcomes = List.of(first.get(30, TimeUnit.SECONDS), second.get(30, TimeUnit.SECONDS));
@@ -117,17 +119,20 @@ class CreditLimitRaceTest {
         CountDownLatch mayCommit = new CountDownLatch(1);
         AtomicInteger deactivator = new AtomicInteger();
         try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
-            Future<?> deactivation = pool.submit(() -> tx.executeWithoutResult(status -> {
-                jdbc.sql("UPDATE customers.customer SET active = false, version = version + 1 WHERE id = ?")
-                        .param(customer).update();
-                deactivator.set(jdbc.sql("SELECT pg_backend_pid()").query(Integer.class).single());
-                deactivated.countDown();
-                await(mayCommit);
+            Future<?> deactivation = pool.submit(TenantTestSupport.inBootstrap(() -> {
+                tx.executeWithoutResult(status -> {
+                    jdbc.sql("UPDATE customers.customer SET active = false, version = version + 1 WHERE id = ?")
+                            .param(customer).update();
+                    deactivator.set(jdbc.sql("SELECT pg_backend_pid()").query(Integer.class).single());
+                    deactivated.countDown();
+                    await(mayCommit);
+                });
+                return null;
             }));
             assertThat(deactivated.await(30, TimeUnit.SECONDS)).isTrue();
 
-            Future<Object> reservation = pool.submit(outcome(() -> customers.reserve(customer, mzn("10.00"),
-                    UUID.randomUUID())));
+            Future<Object> reservation = pool.submit(TenantTestSupport.inBootstrap(
+                    outcome(() -> customers.reserve(customer, mzn("10.00"), UUID.randomUUID()))));
             waitUntil(() -> reservation.isDone() || blockedBy(deactivator.get()));
 
             assertThat(reservation.isDone()).as("the reservation must wait for the deactivation").isFalse();

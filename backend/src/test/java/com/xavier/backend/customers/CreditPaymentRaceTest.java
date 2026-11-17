@@ -4,6 +4,7 @@ import static com.xavier.backend.customers.CustomersFixtures.mzn;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.xavier.backend.customers.exception.CustomerRuleException;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import com.xavier.backend.organization.MutableClock;
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -96,14 +97,14 @@ class CreditPaymentRaceTest {
     private static List<Object> together(Callable<Object> first, Callable<Object> second) throws Exception {
         CountDownLatch start = new CountDownLatch(1);
         try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
-            Future<Object> a = pool.submit(() -> {
+            Future<Object> a = pool.submit(TenantTestSupport.inBootstrap(() -> {
                 start.await();
                 return first.call();
-            });
-            Future<Object> b = pool.submit(() -> {
+            }));
+            Future<Object> b = pool.submit(TenantTestSupport.inBootstrap(() -> {
                 start.await();
                 return second.call();
-            });
+            }));
             start.countDown();
             return List.of(a.get(30, TimeUnit.SECONDS), b.get(30, TimeUnit.SECONDS));
         }

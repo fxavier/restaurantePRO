@@ -60,8 +60,8 @@ public class CustomerService {
         channel.authorize(accessPolicy, Permission.CUSTOMER_VIEW);
         CustomerQuery query = CustomerQuery.of(q);
         List<Customer> found = switch (query.kind()) {
-            case PHONE_SUFFIX -> customers.searchByPhoneSuffix(
-                    new StringBuilder(query.text()).reverse() + "%", query.text(), MAX_CANDIDATES);
+            case PHONE_SUFFIX -> customers.searchByPhoneSuffix(reversed(query.text()), reversedBefore(query.text()),
+                    query.text(), MAX_CANDIDATES);
             case NAME -> customers.searchByName(escapeLike(query.text()), query.text(), MAX_CANDIDATES);
         };
         Map<UUID, List<String>> phonesOf = phones.findByCustomerIdInOrderByPrimaryDescDigitsAsc(
@@ -70,6 +70,21 @@ public class CustomerService {
                         Collectors.mapping(CustomerPhone::getDigits, Collectors.toList())));
         return found.stream().map(c -> new CustomerCandidate(c.getId(), c.getName(), c.getTaxId(),
                 phonesOf.getOrDefault(c.getId(), List.of()), c.isActive())).toList();
+    }
+
+    private static String reversed(String digits) {
+        return new StringBuilder(digits).reverse().toString();
+    }
+
+    /**
+     * The first string after every one that starts with the reversed digits: the digits are ASCII, so bumping the last
+     * one gives the end of the prefix range {@code [reversed, reversedBefore)}. The range is written with the
+     * {@code ~>=~}/{@code ~<~} operators because {@code LIKE} is not leakproof, and under row-level security only a
+     * leakproof clause may drive an index (D169).
+     */
+    private static String reversedBefore(String digits) {
+        String reversed = reversed(digits);
+        return reversed.substring(0, reversed.length() - 1) + (char) (reversed.charAt(reversed.length() - 1) + 1);
     }
 
     /** The text is matched literally: {@code %}, {@code _} and the escape character are not wildcards. */

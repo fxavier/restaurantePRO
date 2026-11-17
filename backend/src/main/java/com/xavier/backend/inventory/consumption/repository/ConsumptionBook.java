@@ -38,7 +38,7 @@ public class ConsumptionBook {
     public void recordConsumedLine(UUID lineId, UUID batchId, UUID storeId, BigDecimal quantity, Instant confirmedAt) {
         jdbc.sql("""
                         INSERT INTO inventory.consumed_line (line_id, batch_id, store_id, quantity, confirmed_at)
-                        VALUES (?, ?, ?, ?, ?) ON CONFLICT (line_id) DO NOTHING""")
+                        VALUES (?, ?, ?, ?, ?) ON CONFLICT (tenant_id, line_id) DO NOTHING""")
                 .params(lineId, batchId, storeId, quantity, java.sql.Timestamp.from(confirmedAt)).update();
     }
 
@@ -59,7 +59,7 @@ public class ConsumptionBook {
                             (id, store_id, source_type, source_id, item_id, kind, batch_id, line_id, confirmed_at,
                              business_day, created_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT (source_type, source_id, kind) DO NOTHING""")
+                        ON CONFLICT (tenant_id, source_type, source_id, kind) DO NOTHING""")
                 .params(UuidVersion7Strategy.INSTANCE.generateUuid(null), storeId, sourceType, sourceId, itemId,
                         kind.name(), batchId, lineId, java.sql.Timestamp.from(confirmedAt), businessDay,
                         java.sql.Timestamp.from(now)).update() == 1;
@@ -77,7 +77,7 @@ public class ConsumptionBook {
     public void recordLineVoid(UUID voidId, UUID lineId, UUID storeId, Instant now) {
         jdbc.sql("""
                         INSERT INTO inventory.line_void (void_id, consumed_line_id, store_id, created_at)
-                        VALUES (?, ?, ?, ?) ON CONFLICT (void_id) DO NOTHING""")
+                        VALUES (?, ?, ?, ?) ON CONFLICT (tenant_id, void_id) DO NOTHING""")
                 .params(voidId, lineId, storeId, java.sql.Timestamp.from(now)).update();
     }
 
@@ -168,7 +168,7 @@ public class ConsumptionBook {
                              source_line_id, quantity, unit_cost, value, currency, business_date, occurred_at, reason,
                              created_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT (void_id, original_movement_id) DO NOTHING""")
+                        ON CONFLICT (tenant_id, void_id, original_movement_id) DO NOTHING""")
                 .params(UuidVersion7Strategy.INSTANCE.generateUuid(null), voidId, original.id(), original.storeId(),
                         original.warehouseId(), original.stockItemId(), original.saleItemId(), lineId, quantity,
                         original.unitCost(), value, original.currency(), businessDate,

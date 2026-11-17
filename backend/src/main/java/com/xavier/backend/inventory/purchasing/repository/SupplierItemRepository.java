@@ -29,7 +29,7 @@ public interface SupplierItemRepository extends JpaRepository<SupplierItem, UUID
             INSERT INTO inventory.supplier_item
                 (id, supplier_id, stock_item_id, pack_id, last_unit_cost, last_cost_at, version)
             VALUES (:id, :supplierId, :stockItemId, :packId, :unitCost, :at, 0)
-            ON CONFLICT (supplier_id, stock_item_id, coalesce(pack_id, '00000000-0000-0000-0000-000000000000'::uuid))
+            ON CONFLICT (tenant_id, supplier_id, stock_item_id, coalesce(pack_id, '00000000-0000-0000-0000-000000000000'::uuid))
             DO UPDATE SET last_unit_cost = excluded.last_unit_cost, last_cost_at = excluded.last_cost_at,
                           version = inventory.supplier_item.version + 1
             WHERE inventory.supplier_item.last_cost_at IS NULL
