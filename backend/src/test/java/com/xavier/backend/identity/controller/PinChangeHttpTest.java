@@ -101,6 +101,18 @@ class PinChangeHttpTest {
                 .andExpect(jsonPath("$.mustChangePin").value(true));
     }
 
+    /** G5: an actor resolved without the session's flag (here a test authentication) is looked up: fail closed. */
+    @Test
+    void anActorWithoutTheRecordedFlagIsStillRefusedWhenThePinMustChange() throws Exception {
+        Employee employee = resetEmployee(IdentityFixtures.WAITER);
+        com.xavier.backend.access.Actor actor = com.xavier.backend.access.Actor.employee(employee.id(), terminal.id(),
+                store, java.util.Set.of(IdentityFixtures.waiterAuthorities(store)));
+
+        mvc.perform(get(POS_ROUTE).with(com.xavier.backend.access.TestAuthentications.as(actor)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.detail").value(containsString("change your PIN")));
+    }
+
     @Test
     void theNewPinMustDifferFromTheOneTheManagerSet() throws Exception {
         Employee employee = resetEmployee(IdentityFixtures.WAITER);
