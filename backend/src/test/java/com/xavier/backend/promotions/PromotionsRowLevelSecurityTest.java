@@ -1,5 +1,6 @@
 package com.xavier.backend.promotions;
 
+import com.xavier.backend.access.TestAuthentications;
 import static com.xavier.backend.catalog.Actors.inStore;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -21,7 +22,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -137,7 +137,6 @@ class PromotionsRowLevelSecurityTest {
     }
 
     private static void actor(String... authorities) {
-        SecurityContextHolder.getContext().setAuthentication(UsernamePasswordAuthenticationToken.authenticated(
-                Actor.account(UUID.randomUUID(), Set.of(authorities)), null, List.of()));
+        SecurityContextHolder.getContext().setAuthentication(TestAuthentications.of(Actor.account(UUID.randomUUID(), Set.of(authorities))));
     }
 }

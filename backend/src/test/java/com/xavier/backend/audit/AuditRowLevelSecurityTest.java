@@ -1,5 +1,6 @@
 package com.xavier.backend.audit;
 
+import com.xavier.backend.access.TestAuthentications;
 import static com.xavier.backend.audit.AuditFixtures.uniqueAction;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -26,7 +27,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
@@ -125,17 +125,22 @@ class AuditRowLevelSecurityTest {
                 + "AND entity_id = 'no-actor'").param(action).query(Long.class).single()).isEqualTo(1);
     }
 
-    /** A login is audited before any actor exists: the insert policy needs no scope (D20, D41). */
+    /**
+     * A POS login is audited before the session's actor exists: the insert policy needs no store scope (D20, D41).
+     * BackOffice logins are Keycloak's (D175).
+     */
     @Test
-    void aLoginIsAuditedWithNoActor() throws Exception {
+    void aPosLoginIsAuditedBeforeItsActorExists() throws Exception {
         IdentityFixtures identity = new IdentityFixtures(mvc);
-        IdentityFixtures.User user = identity.newUser("initial password 1", Set.of(IdentityFixtures.MANAGER));
+        UUID store = identity.store();
+        IdentityFixtures.Terminal terminal = identity.enrolledTerminal(store);
+        IdentityFixtures.Employee employee = identity.employee("4826", store, IdentityFixtures.WAITER);
 
-        mvc.perform(IdentityFixtures.loginRequest(user.username(), "initial password 1")).andExpect(status().isOk());
+        identity.posLogin(terminal, employee, "4826");
 
         assertThat(OwnerDatabase.shared().jdbc().sql("""
                         SELECT count(*) FROM audit.audit_event
-                        WHERE action = 'USER_LOGGED_IN' AND entity_id = ?""").param(user.id().toString())
+                        WHERE action = 'EMPLOYEE_LOGGED_IN' AND entity_id = ?""").param(employee.id().toString())
                 .query(Long.class).single()).isEqualTo(1);
     }
 
@@ -183,8 +188,7 @@ class AuditRowLevelSecurityTest {
     }
 
     private static void actor(String... authorities) {
-        SecurityContextHolder.getContext().setAuthentication(UsernamePasswordAuthenticationToken.authenticated(
-                Actor.account(UUID.randomUUID(), Set.of(authorities)), null, List.of()));
+        SecurityContextHolder.getContext().setAuthentication(TestAuthentications.of(Actor.account(UUID.randomUUID(), Set.of(authorities))));
     }
 
 }

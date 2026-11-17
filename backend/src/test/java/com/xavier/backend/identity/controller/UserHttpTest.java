@@ -42,20 +42,21 @@ class UserHttpTest {
     JdbcClient jdbc;
 
     @Test
-    void aNewAccountMustChangeItsPasswordAndItsCreationIsAuditedWithoutThePassword() throws Exception {
+    void aNewAccountHoldsNoCredentialAndItsCreationIsAudited() throws Exception {
         String username = unique("Maria.");
 
         UUID id = IdentityFixtures.id(mvc.perform(create(username, PASSWORD))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.username").value(username.toLowerCase()))
-                .andExpect(jsonPath("$.mustChangePassword").value(true))
+                .andExpect(jsonPath("$.mustChangePassword").doesNotExist())
                 .andExpect(jsonPath("$.passwordHash").doesNotExist())
                 .andReturn().getResponse());
 
-        assertThat(jdbc.sql("SELECT password_hash FROM identity.user_account WHERE id = :id").param("id", id)
-                .query(String.class).single()).startsWith("{bcrypt}");
-        assertThat(jdbc.sql("SELECT details::text FROM audit.audit_event WHERE action = 'USER_CREATED' AND entity_id = :id")
-                .param("id", id.toString()).query(String.class).single()).doesNotContain(PASSWORD);
+        assertThat(jdbc.sql("SELECT count(*) FROM information_schema.columns WHERE table_schema = 'identity' "
+                + "AND table_name = 'user_account' AND column_name LIKE '%password%'").query(Long.class).single())
+                .as("Keycloak holds the credentials (D175)").isZero();
+        assertThat(jdbc.sql("SELECT count(*) FROM audit.audit_event WHERE action = 'USER_CREATED' AND entity_id = :id")
+                .param("id", id.toString()).query(Long.class).single()).isEqualTo(1);
     }
 
     @Test
@@ -80,16 +81,10 @@ class UserHttpTest {
     }
 
     @Test
-    void anInitialPasswordMustBeStrong() throws Exception {
-        mvc.perform(create(unique("u"), "short"))
-                .andExpect(status().isUnprocessableContent());
-    }
-
-    @Test
     void managingAccountsNeedsAnInstallationWideUserManage() throws Exception {
         mvc.perform(post(USERS).with(as(Set.of(Permission.USER_MANAGE.authority(UUID.randomUUID())))).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json("username", unique("u"), "initialPassword", PASSWORD)))
+                        .content(json("username", unique("u"))))
                 .andExpect(status().isForbidden());
     }
 
@@ -97,7 +92,7 @@ class UserHttpTest {
     void nobodyGivesAnAccountARoleWithPermissionsTheyDoNotHold() throws Exception {
         mvc.perform(post(USERS).with(as(Set.of(Permission.USER_MANAGE.authority()))).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json("username", unique("u"), "initialPassword", PASSWORD,
+                        .content(json("username", unique("u"),
                                 "roleIds", Set.of(IdentityFixtures.ADMINISTRATOR))))
                 .andExpect(status().isForbidden());
     }
@@ -107,17 +102,16 @@ class UserHttpTest {
         IdentityFixtures fixtures = new IdentityFixtures(mvc);
         UUID employee = fixtures.employee("4821", fixtures.store(), IdentityFixtures.WAITER).id();
         mvc.perform(post(USERS).with(admin()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
-                        .content(json("username", unique("u"), "initialPassword", PASSWORD, "employeeId", employee)))
+                        .content(json("username", unique("u"), "employeeId", employee)))
                 .andExpect(status().isCreated());
 
         mvc.perform(post(USERS).with(admin()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
-                        .content(json("username", unique("u"), "initialPassword", PASSWORD, "employeeId", employee)))
+                        .content(json("username", unique("u"), "employeeId", employee)))
                 .andExpect(status().isConflict());
     }
 
     private static MockHttpServletRequestBuilder create(String username, String password) {
         return post(USERS).with(admin()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
-                .content(json("username", username, "initialPassword", password,
-                        "roleIds", Set.of(IdentityFixtures.MANAGER)));
+                .content(json("username", username, "roleIds", Set.of(IdentityFixtures.MANAGER)));
     }
 }

@@ -11,31 +11,36 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Supplier;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * One HTTP client with its own cookie jar, like one browser tab of the SPA, against the real embedded server.
- *
- * <p>It keeps its own jar because {@code java.net.CookieManager} never sends a {@code Secure} cookie over plain HTTP;
- * in production Caddy terminates TLS in front of this same server, so a browser does send them. Like the SPA, any GET
- * hands out {@code XSRF-TOKEN} and every mutating request echoes it in {@code X-XSRF-TOKEN}. Every response is
- * recorded as "METHOD path [step] -> status" in the journey the caller prints.
+ * One HTTP client with its own credentials, like one tab of a client, against the real embedded server (D176: no
+ * cookie, no CSRF on the API). A BackOffice tab sends {@code Authorization: Bearer <access token>}, a fresh test token
+ * of its Keycloak user on every request (as the BFF relays one, P69); a POS tab sends {@code X-Pos-Session} after its
+ * PIN login (D182, interim until S73). Every response is recorded as "METHOD path [step] -> status" in the journey the
+ * caller prints.
  */
 final class Browser {
 
     static final JsonMapper JSON =
             JsonMapper.builder().enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS).build();
 
+    /** Kept so the journeys read as before; the API has no CSRF token any more (D176), so both send the same. */
     enum Csrf { SEND, OMIT }
 
     private final String name;
     private final int port;
     private final List<String> journey;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
-    private final Map<String, String> cookies = new LinkedHashMap<>();
-    private final Map<String, String> lastSetCookie = new LinkedHashMap<>();
+    /** A fresh access token per request (a BackOffice tab), or {@code null}. */
+    private volatile Supplier<String> bearer;
+    /** The POS session token (a POS tab), or {@code null}. */
+    private volatile String posSession;
+    /** The R2 device token of the terminal this POS tab enrolled (interim until S73), or {@code null}. */
+    private volatile String deviceToken;
     /** The client address Caddy would forward ({@code X-Forwarded-For}); {@code null}: none, loopback. */
     private volatile String clientAddress;
 
@@ -50,17 +55,19 @@ final class Browser {
         return Map.of("Idempotency-Key", UUID.randomUUID().toString());
     }
 
-    /** Another tab against the same server, recording into the same journey (its own cookie jar), same address. */
+    /** Another tab against the same server, recording into the same journey (no credentials yet), same address. */
     Browser sibling(String siblingName) {
         Browser sibling = new Browser(siblingName, port, journey);
         sibling.clientAddress = clientAddress;
         return sibling;
     }
 
-    /** The same tab (cookies and all) against another server: the client of a restarted instance. */
+    /** The same tab (credentials and all) against another server: the client of a restarted instance. */
     Browser movedTo(int otherPort) {
         Browser moved = new Browser(name, otherPort, journey);
-        moved.cookies.putAll(cookies);
+        moved.bearer = bearer;
+        moved.posSession = posSession;
+        moved.deviceToken = deviceToken;
         moved.clientAddress = clientAddress;
         return moved;
     }
@@ -83,17 +90,48 @@ final class Browser {
         return port;
     }
 
-    String cookie(String cookieName) {
-        return cookies.get(cookieName);
+    /** From now on this tab is the BackOffice user whose tokens {@code tokens} issues (a fresh one per request). */
+    Browser signedIn(Supplier<String> tokens) {
+        bearer = tokens;
+        posSession = null;
+        return this;
     }
 
-    /** The {@code Cookie} header this client sends (for a second connection of the same tab, e.g. SSE). */
-    String cookieHeader() {
-        return String.join("; ", cookies.entrySet().stream().map(c -> c.getKey() + "=" + c.getValue()).toList());
+    /** From now on this tab is the POS session {@code token} (from the PIN login). */
+    Browser posSession(String token) {
+        posSession = token;
+        bearer = null;
+        return this;
     }
 
-    String setCookieHeader(String cookieName) {
-        return lastSetCookie.get(cookieName);
+    /** This POS tab's terminal is enrolled with {@code token}. */
+    Browser enrolled(String token) {
+        deviceToken = token;
+        return this;
+    }
+
+    String deviceToken() {
+        return deviceToken;
+    }
+
+    /** No credentials any more (logged out). */
+    Browser signedOut() {
+        bearer = null;
+        posSession = null;
+        return this;
+    }
+
+    /** The credential headers this tab sends (for a second connection of the same tab, e.g. SSE). */
+    Map<String, String> credentials() {
+        Map<String, String> headers = new LinkedHashMap<>();
+        Supplier<String> tokens = bearer;
+        if (tokens != null) {
+            headers.put("Authorization", "Bearer " + tokens.get());
+        }
+        if (posSession != null) {
+            headers.put("X-Pos-Session", posSession);
+        }
+        return headers;
     }
 
     JsonNode get(String path, int expected) throws Exception {
@@ -148,34 +186,17 @@ final class Browser {
         if (body != null) {
             request.header("Content-Type", "application/json");
         }
-        if (!cookies.isEmpty()) {
-            request.header("Cookie", cookieHeader());
-        }
-        if (csrf == Csrf.SEND && cookies.containsKey("XSRF-TOKEN")) {
-            request.header("X-XSRF-TOKEN", cookies.get("XSRF-TOKEN"));
-        }
+        credentials().forEach(request::header);
         if (clientAddress != null) {
             request.header("X-Forwarded-For", clientAddress);
         }
         headers.forEach(request::header);
-        HttpResponse<String> response = http.send(request.build(), HttpResponse.BodyHandlers.ofString());
-        for (String header : response.headers().allValues("Set-Cookie")) {
-            String pair = header.contains(";") ? header.substring(0, header.indexOf(';')) : header;
-            String cookieName = pair.substring(0, pair.indexOf('='));
-            String value = pair.substring(pair.indexOf('=') + 1);
-            lastSetCookie.put(cookieName, header);
-            if (value.isEmpty() || header.toLowerCase().contains("max-age=0")) {
-                cookies.remove(cookieName);
-            } else {
-                cookies.put(cookieName, value);
-            }
-        }
-        return response;
+        return http.send(request.build(), HttpResponse.BodyHandlers.ofString());
     }
 
     /**
      * A {@code multipart/form-data} POST with one file part named {@code file} and the given form fields as query
-     * parameters (as the BackOffice upload form sends a provider statement), with the CSRF token and {@code headers}.
+     * parameters (as the BackOffice upload form sends a provider statement), with the credentials and {@code headers}.
      */
     JsonNode upload(String path, Map<String, String> fields, String filename, byte[] content, int expected,
                     Map<String, String> headers, String step) throws Exception {
@@ -192,12 +213,7 @@ final class Browser {
                 .timeout(Duration.ofSeconds(30))
                 .header("Content-Type", "multipart/form-data; boundary=" + boundary)
                 .POST(HttpRequest.BodyPublishers.ofByteArray(body.toByteArray()));
-        if (!cookies.isEmpty()) {
-            request.header("Cookie", cookieHeader());
-        }
-        if (cookies.containsKey("XSRF-TOKEN")) {
-            request.header("X-XSRF-TOKEN", cookies.get("XSRF-TOKEN"));
-        }
+        credentials().forEach(request::header);
         headers.forEach(request::header);
         HttpResponse<String> response = http.send(request.build(), HttpResponse.BodyHandlers.ofString());
         return expect(response, expected, step == null ? null : step);

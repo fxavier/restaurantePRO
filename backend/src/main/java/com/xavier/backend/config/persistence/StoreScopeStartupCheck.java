@@ -1,9 +1,13 @@
 package com.xavier.backend.config.persistence;
 
+import com.xavier.backend.access.SystemScope;
 import com.xavier.backend.audit.AuditLog;
+import com.xavier.backend.shared.tenancy.ActiveTenants;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,8 +32,10 @@ import org.springframework.transaction.support.TransactionTemplate;
  * restrictive {@code tenant_scope} policy, and a PLATFORM registration ({@code shared.rls_platform_table}) counts as a
  * classification.
  *
- * <p>D170: in {@code PERMISSIVE} mode it logs ERROR and writes one system audit row
- * {@value #PERMISSIVE_STARTED}; the alert is {@code config.alerts.StoreScopeAlertSource}'s.
+ * <p>D170: in {@code PERMISSIVE} mode it logs ERROR and writes the system audit row {@value #PERMISSIVE_STARTED}
+ * once per ACTIVE tenant, each bound to that tenant (D185: there is no installation-wide row, so every tenant's
+ * administrators see that the store scope was relaxed; with no active tenant nothing is written). The scope is
+ * {@link SystemScope#ALERTS}: the row belongs to the alert, which is {@code config.alerts.StoreScopeAlertSource}'s.
  */
 @Component
 @DependsOn("flywayInitializer")
@@ -45,13 +51,18 @@ class StoreScopeStartupCheck implements InitializingBean {
     private final StoreScopeEnforcement enforcement;
     private final AuditLog audit;
     private final PlatformTransactionManager transactions;
+    private final TenantScopes tenants;
+    private final ActiveTenants activeTenants;
 
     StoreScopeStartupCheck(DataSource dataSource, Environment environment, AuditLog audit,
-                           PlatformTransactionManager transactions) {
+                           PlatformTransactionManager transactions, TenantScopes tenants,
+                           ActiveTenants activeTenants) {
         this.dataSource = dataSource;
         this.enforcement = StoreScopeEnforcement.of(environment);
         this.audit = audit;
         this.transactions = transactions;
+        this.tenants = tenants;
+        this.activeTenants = activeTenants;
     }
 
     @Override
@@ -64,10 +75,15 @@ class StoreScopeStartupCheck implements InitializingBean {
         if (enforcement == StoreScopeEnforcement.PERMISSIVE) {
             log.error("Store-scope enforcement is PERMISSIVE: row-level security does not filter any store until a "
                     + "restart with ENFORCE (D170). AccessPolicy still decides.");
-            new TransactionTemplate(transactions).executeWithoutResult(status -> audit.recordAsSystem(
-                    PERMISSIVE_STARTED, "Installation", "store-scope", null, null,
-                    "restaurantpro.store-scope.enforcement=PERMISSIVE", Map.of()));
+            activeTenants.ids().forEach(this::auditPermissiveStart);
         }
+    }
+
+    /** In its own transaction begun with {@code tenant} bound, so the row is that tenant's (D185). */
+    private void auditPermissiveStart(UUID tenant) {
+        tenants.run(tenant, SystemScope.ALERTS, () -> new TransactionTemplate(transactions).executeWithoutResult(
+                status -> audit.recordAsSystem(PERMISSIVE_STARTED, "Installation", "store-scope", null, null,
+                        "restaurantpro.store-scope.enforcement=PERMISSIVE", Map.of())));
     }
 
     /** What is wrong for the connection's current role; empty when it may serve as the pool. */

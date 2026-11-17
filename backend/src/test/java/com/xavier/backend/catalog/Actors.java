@@ -1,5 +1,6 @@
 package com.xavier.backend.catalog;
 
+import com.xavier.backend.access.TestAuthentications;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 
 import com.xavier.backend.access.Actor;
@@ -10,8 +11,6 @@ import java.util.Arrays;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 /**
@@ -48,7 +47,6 @@ public final class Actors {
     }
 
     private static RequestPostProcessor authenticated(Actor actor, Set<String> authorities) {
-        return authentication(UsernamePasswordAuthenticationToken.authenticated(actor, null,
-                authorities.stream().map(SimpleGrantedAuthority::new).toList()));
+        return authentication(TestAuthentications.of(actor));
     }
 }

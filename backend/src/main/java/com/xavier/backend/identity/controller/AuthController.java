@@ -1,22 +1,13 @@
 package com.xavier.backend.identity.controller;
 
-import com.xavier.backend.identity.model.dto.LoginRequest;
-import com.xavier.backend.identity.model.dto.PasswordChangeRequest;
 import com.xavier.backend.identity.model.dto.PinChangeRequest;
 import com.xavier.backend.identity.model.dto.PosLoginRequest;
 import com.xavier.backend.identity.model.dto.SessionView;
 import com.xavier.backend.identity.service.LoginService;
-import com.xavier.backend.identity.service.PasswordService;
 import com.xavier.backend.identity.service.PinChangeService;
-import com.xavier.backend.identity.service.MfaSessionAttributes;
 import com.xavier.backend.identity.service.PosLoginService;
-import com.xavier.backend.identity.service.RemoteAddresses;
-import com.xavier.backend.identity.service.SessionHandles;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import jakarta.servlet.http.HttpSession;
+import com.xavier.backend.identity.service.PosLogoutService;
 import jakarta.validation.Valid;
-import java.time.Instant;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -26,81 +17,54 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Login flows (spec §9 "Sessões", D25, D26). The routes are open in the security chain (anyone may try to log
- * in) but CSRF still applies to every POST: the SPA reads the {@code XSRF-TOKEN} cookie from any earlier GET.
+ * The caller's session and the POS PIN login (spec §9 "Sessões", D26, D182). BackOffice login is Keycloak's, through
+ * the BFF (D175, P69). The POS routes here are interim until S73 (terminal identified by its R2 device token; the POS
+ * session token answered by the login and sent back as {@code X-Pos-Session}).
  */
 @RestController
 @RequestMapping("/api/v1/auth")
 class AuthController {
 
+    static final String POS_SESSION = "X-Pos-Session";
+
     private final LoginService logins;
     private final PosLoginService posLogins;
-    private final PasswordService passwords;
     private final PinChangeService pins;
-    private final LoginSessions sessions;
-    private final RemoteAddresses addresses;
+    private final PosLogoutService logouts;
 
-    AuthController(LoginService logins, PosLoginService posLogins, PasswordService passwords, PinChangeService pins,
-                   LoginSessions sessions, RemoteAddresses addresses) {
+    AuthController(LoginService logins, PosLoginService posLogins, PinChangeService pins, PosLogoutService logouts) {
         this.logins = logins;
         this.posLogins = posLogins;
-        this.passwords = passwords;
         this.pins = pins;
-        this.sessions = sessions;
-        this.addresses = addresses;
-    }
-
-    @PostMapping("/login")
-    SessionView login(@Valid @RequestBody LoginRequest body, HttpServletRequest request,
-                      HttpServletResponse response) {
-        SessionView session = logins.passwordLogin(body.username(), body.password(), request.getRemoteAddr(),
-                addresses.isRemote(request), body.enrolmentCode());
-        return session.withSessionHandle(SessionHandles.of(sessions.start(session, request, response)));
+        this.logouts = logouts;
     }
 
     /** The terminal is identified by its device token (from enrollment); a missing header is refused like a bad one. */
     @PostMapping("/pos-login")
     SessionView posLogin(@RequestHeader(name = "X-Terminal-Token", required = false) String terminalToken,
-                         @Valid @RequestBody PosLoginRequest body, HttpServletRequest request,
-                         HttpServletResponse response) {
-        SessionView session = posLogins.login(terminalToken, body.employeeCode(), body.pin());
-        return session.withSessionHandle(SessionHandles.of(sessions.start(session, request, response)));
+                         @Valid @RequestBody PosLoginRequest body) {
+        return posLogins.login(terminalToken, body.employeeCode(), body.pin());
     }
 
-    /**
-     * The account's other sessions end; this one is restarted (new id) with the account's real authorities, or in the
-     * second-factor state the installation asks for (D141). A proved second factor carries over.
-     */
-    @PostMapping("/password")
-    SessionView changePassword(@Valid @RequestBody PasswordChangeRequest body, HttpServletRequest request,
-                               HttpServletResponse response) {
-        HttpSession current = request.getSession(false);
-        Instant secondFactorAt = MfaSessionAttributes.secondFactorAt(current);
-        SessionView session = passwords.change(body.currentPassword(), body.newPassword(),
-                current == null ? null : current.getId(), MfaSessionAttributes.state(current),
-                addresses.isRemote(request), secondFactorAt);
-        return session.withSessionHandle(SessionHandles.of(sessions.start(session, secondFactorAt, request,
-                response)));
-    }
-
-    /** After a manager's PIN reset: this POS session is restarted (new id) with the employee's authorities. */
+    /** After a manager's PIN reset: the same POS session now holds the employee's authorities. */
     @PostMapping("/pos-pin")
-    SessionView choosePin(@Valid @RequestBody PinChangeRequest body, HttpServletRequest request,
-                          HttpServletResponse response) {
-        SessionView session = pins.choosePin(body.newPin());
-        return session.withSessionHandle(SessionHandles.of(sessions.start(session, request, response)));
+    SessionView choosePin(@Valid @RequestBody PinChangeRequest body) {
+        return pins.choosePin(body.newPin());
+    }
+
+    @GetMapping("/pos-session")
+    SessionView posSession() {
+        return logins.currentSession();
+    }
+
+    @PostMapping("/pos-logout")
+    ResponseEntity<Void> posLogout(@RequestHeader(POS_SESSION) String token) {
+        logouts.logout(token);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/session")
-    SessionView session(HttpServletRequest request) {
-        SessionView session = logins.currentSession();
-        return request.getSession(false) == null ? session
-                : session.withSessionHandle(SessionHandles.of(request.getSession(false).getId()));
-    }
-
-    @PostMapping("/logout")
-    ResponseEntity<Void> logout(HttpServletRequest request, HttpServletResponse response) {
-        sessions.end(request, response);
-        return ResponseEntity.noContent().build();
+    SessionView session() {
+        return logins.currentSession();
     }
 }

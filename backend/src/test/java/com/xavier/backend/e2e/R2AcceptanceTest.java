@@ -1,5 +1,6 @@
 package com.xavier.backend.e2e;
 
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import static com.xavier.backend.e2e.Installation.CASHIER_ROLE;
 import static com.xavier.backend.e2e.Installation.MANAGER_ROLE;
 import static com.xavier.backend.e2e.Installation.employee;
@@ -60,6 +61,14 @@ import tools.jackson.databind.JsonNode;
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class R2AcceptanceTest {
 
+    @Autowired
+    PostgreSQLContainer freshPostgres;
+
+    /** The installation's owner connection, for what onboarding and Keycloak would have created. */
+    private JdbcClient owner() {
+        return Installation.owner(freshPostgres);
+    }
+
     static final String INITIAL_PASSWORD = "initial " + UUID.randomUUID();
     static final String NEW_PASSWORD = "changed " + UUID.randomUUID();
     static final String CASHIER_PIN = "5172";
@@ -104,7 +113,7 @@ class R2AcceptanceTest {
     private void run() throws Exception {
         // ---- 1. R1 setup: admin, two stores, terminals, employees, a table and a published catalog ----
         Browser office = new Browser("backoffice", port, journey);
-        Installation.firstLogin(office, INITIAL_PASSWORD, NEW_PASSWORD);
+        Installation.firstLogin(office, owner());
         UUID storeA = Installation.store(office, "A");
         UUID storeB = Installation.store(office, "B");
         UUID terminal1 = terminal(office, storeA, "POS1");
@@ -145,7 +154,7 @@ class R2AcceptanceTest {
 
         // ---- 2. POS: PIN login, session, change streams, table, two rounds ----
         Browser cashier = posLogin(office, terminal1, cashierCode, CASHIER_PIN, "cashier");
-        UUID cashierId = UUID.fromString(cashier.get("/api/v1/auth/session", 200).get("employeeId").asString());
+        UUID cashierId = UUID.fromString(cashier.get("/api/v1/auth/pos-session", 200).get("employeeId").asString());
         Browser cashierB = posLogin(office, terminalB, cashierBCode, CASHIER_PIN, "cashier B");
         try (ChangeStream streamA = ChangeStream.subscribe(cashier);
              ChangeStream streamB = ChangeStream.subscribe(cashierB)) {
@@ -229,7 +238,7 @@ class R2AcceptanceTest {
 
             // ---- 4. pay in cash with change, the rest by card, issue the document, close the order ----
             office.command(POS + "/payment-attempts", Map.of("orderId", order, "methodCode", "CASH",
-                    "amount", new BigDecimal("200.00")), 403, "a BackOffice session paying at the POS (A12)");
+                    "amount", new BigDecimal("200.00")), 401, "a BackOffice token paying at the POS (A12): no POS session");
             Map<String, Object> cashBody = Map.of("orderId", order, "methodCode", "CASH",
                     "amount", new BigDecimal("200.00"), "tendered", new BigDecimal("250.00"));
             Map<String, String> cashKey = Browser.idem();

@@ -91,9 +91,9 @@ class SupportGrantSchemaTest {
     private UUID account(boolean support) {
         UUID id = UUID.randomUUID();
         jdbc.sql("""
-                        INSERT INTO identity.user_account (id, username, password_hash, must_change_password, active,
-                                                           support, version, created_at, updated_at)
-                        VALUES (:id, :username, '{bcrypt}$2a$x', false, true, :support, 0, now(), now())""")
+                        INSERT INTO identity.user_account (id, username, active, support, version, created_at,
+                                                           updated_at)
+                        VALUES (:id, :username, true, :support, 0, now(), now())""")
                 .param("id", id).param("username", "schema-" + id).param("support", support).update();
         return id;
     }

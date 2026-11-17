@@ -15,8 +15,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * The tenant of the current thread (D177, D178, D185) and the ways to bind one explicitly. Resolution order: the
  * innermost explicit binding (a system scope, a listener's event, a propagated task, or an explicit "no tenant"),
  * else the tenant of the authenticated principal ({@link TenantContext} as its details: {@code config.security}'s
- * resolution, {@code @WithActor} in tests), else the request's pre-resolution tenant ({@link BootstrapTenantRequests},
- * until S72 resolves it from the membership), else the {@link TenantFallback}. {@code TenantBindingTransactionManager}
+ * resolution of the membership, {@code @WithActor} in tests), else the {@link TenantFallback}. No request ever binds
+ * a constant tenant here (S72 removed the interim bootstrap-tenant filter; {@code NoConstantRequestTenantTest}). {@code TenantBindingTransactionManager}
  * writes {@link #current()} into {@code app.tenant_id} at every transaction begin.
  *
  * <p>A tenant cannot change inside a transaction: the code inside would join the outer transaction and keep its
@@ -32,9 +32,6 @@ public class TenantScopes {
     }
 
     private static final ThreadStack<Frame> EXPLICIT = new ThreadStack<>();
-    private static final ThreadLocal<TenantContext> REQUEST = new ThreadLocal<>();
-    private static final TenantContext PRE_RESOLUTION = new TenantContext(BootstrapTenant.ID, MembershipKind.SYSTEM,
-            null, "request:pre-resolution");
     private static final String TASK = "task:";
 
     private final ObjectProvider<StoreScopes> stores;
@@ -65,10 +62,6 @@ public class TenantScopes {
                 .map(authentication -> authentication.getDetails() instanceof TenantContext context ? context : null);
         if (principal.isPresent()) {
             return principal;
-        }
-        TenantContext request = REQUEST.get();
-        if (request != null) {
-            return Optional.of(request);
         }
         return fallback.whenUnbound();
     }
@@ -150,15 +143,6 @@ public class TenantScopes {
             task.run();
             return null;
         });
-    }
-
-    /** {@link BootstrapTenantRequests}: the request thread runs in the pre-resolution tenant until it ends. */
-    static void enterRequest() {
-        REQUEST.set(PRE_RESOLUTION);
-    }
-
-    static void leaveRequest() {
-        REQUEST.remove();
     }
 
     private <T> T inStoreScope(SystemScope scope, Supplier<T> action) {

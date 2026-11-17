@@ -1,5 +1,6 @@
 package com.xavier.backend.e2e;
 
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
@@ -40,6 +41,14 @@ import org.springframework.test.context.DynamicPropertySource;
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class R3ReportBenchmark {
 
+    @Autowired
+    PostgreSQLContainer freshPostgres;
+
+    /** The installation's owner connection, for what onboarding and Keycloak would have created. */
+    private JdbcClient owner() {
+        return Installation.owner(freshPostgres);
+    }
+
     static final String INITIAL_PASSWORD = "initial " + UUID.randomUUID();
     static final String NEW_PASSWORD = "changed " + UUID.randomUUID();
     static final int DOCUMENTS = Integer.getInteger("benchmark.documents", 150_000);
@@ -65,7 +74,7 @@ class R3ReportBenchmark {
     void oneStoreYearOfReports() throws Exception {
         List<String> setup = new ArrayList<>();
         Browser office = new Browser("backoffice", port, setup);
-        Installation.firstLogin(office, INITIAL_PASSWORD, NEW_PASSWORD);
+        Installation.firstLogin(office, owner());
         UUID store = Installation.store(office, "BENCH");
         long seeding = System.nanoTime();
         seed(store);

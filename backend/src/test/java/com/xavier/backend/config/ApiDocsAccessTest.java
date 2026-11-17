@@ -11,7 +11,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
 
-/** By default (every installation) Swagger UI and the OpenAPI document need a session like any other path. */
+/** By default (every installation) Swagger UI and the OpenAPI document need a token like any other path. */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
@@ -21,7 +21,7 @@ class ApiDocsAccessTest {
     MockMvc mvc;
 
     @Test
-    void theApiDocsNeedASessionByDefault() throws Exception {
+    void theApiDocsNeedATokenByDefault() throws Exception {
         mvc.perform(get("/swagger-ui/index.html")).andExpect(status().isUnauthorized());
         mvc.perform(get("/v3/api-docs")).andExpect(status().isUnauthorized());
     }
