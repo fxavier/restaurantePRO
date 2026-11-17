@@ -488,9 +488,9 @@ The same applies to `inventory.stock_transfer_stores`.
 | id | item | owner |
 |---|---|---|
 | O1 | Whether Keycloak fine-grained admin permissions v2 can restrict `tenancy-provisioner` to the `pos-*`/`bridge-*` clients (D182). If not, the user chooses between a broader provisioner role and a dedicated admin realm. | S73, stop and ask  **Resolved 2026-11-16 (R6 build, S75 evidence on Keycloak 26.8.0): FGAP v2 selects clients only by type or id, so `manage` on clients would let the provisioner rewrite other clients (admin console redirect URIs, `backoffice-bff`). Chosen: a dedicated realm `restaurantpro-devices` holding only `pos-*`/`bridge-*` clients and a `device-provisioner` with `manage-clients` in that realm only; `tenancy-provisioner` keeps organizations, members and invites in `restaurantpro` with no Clients permission. Amends D175 (realms, clients) and D182/D187 (terminal and bridge tokens carry the devices issuer). Alternatives rejected: broad rights + deny-list (fail-open for new clients); dynamic client registration (rotating registration tokens stored as secrets).** |
-| O2 | B8 spike result (D188 (a) or (b)). | S75 |
-| O3 | B6 production Keycloak hosting, after P75. | S75 / operations |
-| O4 | In-country data residency for the first contract (P75). | product |
+| O2 | B8 spike result (D188 (a) or (b)). | S75  **Open 2026-11-17 (S76): not run — it needs an AWS account (the user runs `deploy/drills/b8-rds/README.md`). The drills support both: `test-tenant-export.sh` passes in (a) and in fallback (b). Follow-up F17.** |
+| O3 | B6 production Keycloak hosting, after P75. | S75 / operations  **Open 2026-11-17: no decision; R6 ships the dev Compose Keycloak only. Follow-up F18.** |
+| O4 | In-country data residency for the first contract (P75). | product  **Open 2026-11-17: product decision. Follow-up F19.** |
 | O5 | A77 load gate carried from the RLS run into A92 (D189). | S76 |
 
 **`backend-conventions.md` rules that change** (the text changes land in the spec and are made by the named slice):
@@ -512,6 +512,14 @@ The same applies to `inventory.stock_transfer_stores`.
 | Caches (new) | no Spring/Caffeine cache outside the allow-list; in-memory keys include the tenant (D186) | S71 |
 | Tests: store scope in tests (D171) | bootstrap-tenant fallback, `@StrictTenantScope`, tenants A/B with identical codes, `jwt()`/`TestJwtFactory`, Keycloak container only for identity/e2e (D189) | S71 / S72 |
 | Operations: metric labels | never `tenant_id` (P74) | S71 |
+
+**R6 build amendments (2026-11-15 to 2026-11-17, recorded in the run ledger; S76):**
+- *D179/D180 Indexes:* the per-table recipe gains an explicit step: every `store_id`-led (or business-key-led) index is rebuilt leading with `tenant_id` (two slices missed it at review).
+- *Platform writes:* a platform `SECURITY DEFINER` function called in a tenant-bound transaction raises `TN004` → 403 `PLATFORM_FORBIDDEN` (S75); `/platform/**` runs unbound (`SystemScope.PLATFORM`, S72).
+- *BFF (P69):* error codes `BFF_SESSION_EXPIRED` (401) and `BACKEND_UNAVAILABLE` (502); logout ends the Keycloak session back-channel with no `id_token_hint` in URLs; one instance until a shared session store is decided (follow-up F04).
+- *Standard roles per tenant:* two extra PLATFORM tables, `identity.role_template(_permission)`, hold no tenant data; a migration that changes a seeded role's permissions updates its template too (S72).
+- *Re-plans:* S71b, S72b, S74x and S76b were added; S73 is also blocked by S74a and S75, S75 by S72; Flyway: S71b `shared/V1012`, S76 `V1013` (not needed), S76b `V1014`. See the PRD's "Re-plans during the build".
+- *A92 baseline:* a run without RLS is correct only while one company has data (the tenant predicate of tenant-wide tables is RLS's alone), so the no-RLS baseline is 1 tenant × 10 terminals, compared with RLS on the same data, and the A92 gate is a third phase at 20 × 10 (`deploy/load/r6-load-plan.md`).
 
 **Spec-time amendments (R6 G2, 2026-11-15, approved with the spec; frozen in [r6-multitenancy.md](../prd/r6-multitenancy.md)):**
 - *D178:* `shared.rls_tenant_id()` raises **`RS003`** (tenant not set), not `RS001`, so tenant and store failures are told apart (`TENANT_SCOPE_MISSING` vs `STORE_SCOPE_MISSING`).
