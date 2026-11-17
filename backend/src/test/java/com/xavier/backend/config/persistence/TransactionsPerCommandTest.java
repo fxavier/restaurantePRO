@@ -37,6 +37,8 @@ import tools.jackson.databind.JsonNode;
  * {@code TenancyApi.resolve} and {@code PrincipalActors.posSession} (which also answers {@code MustChangePinFilter}).
  */
 @DeviceHttpTest
+@org.springframework.test.context.TestPropertySource(properties = "restaurantpro.test.own-context=transactions-per-command")
+@org.springframework.test.annotation.DirtiesContext(classMode = org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_CLASS)
 class TransactionsPerCommandTest {
 
     static final String POS = "/api/v1/pos";
@@ -49,6 +51,14 @@ class TransactionsPerCommandTest {
     @Autowired
     MeterRegistry meters;
 
+    @Autowired
+    java.util.List<org.springframework.scheduling.config.ScheduledTaskHolder> scheduled;
+    @Autowired
+    org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler scheduler;
+
+    /** The stores this class created: their deliveries are the only ones this context runs. */
+    static final java.util.Set<UUID> STORES = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
     TransactionCount count;
     UUID store;
     UUID item;
@@ -59,10 +69,12 @@ class TransactionsPerCommandTest {
 
     @BeforeEach
     void aWaiterOnAnEnrolledTerminalOfASellingStore() throws Exception {
+        stopThisContextsScheduler();
         count = new TransactionCount(meters);
         Publications publications = new Publications(mvc, jdbc);
         Publications.SellableStore sellable = publications.sellableStore();
         store = sellable.store();
+        STORES.add(store);
         item = UUID.fromString(sellable.item().get("id").asString());
         publications.publishNew(store);
         area = created(post(DiningFixtures.AREAS).with(Actors.inStore(store, Permission.DINING_MANAGE))
@@ -102,52 +114,52 @@ class TransactionsPerCommandTest {
                                                               publication_date, status, completion_attempts)
                         VALUES (?, 'another.Test.listener', 'another.Event', '{}', now(), 'FAILED', 1)""")
                 .param(foreign).update();
+        // ... and other contexts keep moving theirs: the foreign row is resubmitted every 100 ms meanwhile
+        java.util.concurrent.ScheduledExecutorService churn = java.util.concurrent.Executors
+                .newSingleThreadScheduledExecutor();
+        churn.scheduleWithFixedDelay(() -> OwnerDatabase.shared().jdbc().sql(
+                        "UPDATE public.event_publication SET last_resubmission_date = now() WHERE id = ?")
+                .param(foreign).update(), 0, 100, java.util.concurrent.TimeUnit.MILLISECONDS);
         try {
             measureOneRound();
         } finally {
+            churn.shutdownNow();
             OwnerDatabase.shared().jdbc().sql("DELETE FROM public.event_publication WHERE id = ?").param(foreign)
                     .update();
         }
     }
 
-    /**
-     * One confirmed round, measured on a clean window: the counter is global to the JVM, so a window in which any
-     * other publication was published, completed or resubmitted (another context's listener) is measured again, at
-     * most three times.
-     */
+    /** One confirmed round: its listener and registry transactions, on this context's counter. */
     private void measureOneRound() throws Exception {
-        java.util.List<String> disturbed = new java.util.ArrayList<>();
-        for (int attempt = 1; attempt <= 3; attempt++) {
-            UUID order = openedOrder(newTable("R" + attempt)); // a round of its own: a free table, a new order
-            UUID line = id(json(mvc.perform(addLine(order)).andExpect(status().isCreated()).andReturn().getResponse()
-                    .getContentAsString()));
-            awaitOwnDeliveries(OffsetDateTime.MIN);
-            OffsetDateTime start = OwnerDatabase.shared().jdbc().sql("SELECT clock_timestamp()")
-                    .query(OffsetDateTime.class).single();
-            Map<String, Long> before = count.snapshot();
+        UUID order = openedOrder();
+        UUID line = id(json(mvc.perform(addLine(order)).andExpect(status().isCreated()).andReturn().getResponse()
+                .getContentAsString()));
+        awaitDeliveries(OffsetDateTime.MIN, STORES);
+        OffsetDateTime start = OwnerDatabase.shared().jdbc().sql("SELECT clock_timestamp()")
+                .query(OffsetDateTime.class).single();
+        Map<String, Long> before = count.snapshot();
 
-            mvc.perform(post(POS + "/orders/" + order + "/batches").with(waiter).with(csrf())
-                            .header("Idempotency-Key", UUID.randomUUID().toString())
-                            .contentType(MediaType.APPLICATION_JSON).content("""
-                                    {"orderVersion": 0, "catalogVersion": %d, "lineIds": ["%s"]}"""
-                                    .formatted(catalogVersion, line)))
-                    .andExpect(status().isCreated());
-            long invocations = awaitOwnDeliveries(start);
-            Map<String, Long> begun = count.since(before);
-            long foreign = foreignActivitySince(start);
-            if (foreign > 0) {
-                disturbed.add("attempt %d: %d other publications moved, counts %s".formatted(attempt, foreign, begun));
-                continue;
-            }
+        mvc.perform(post(POS + "/orders/" + order + "/batches").with(waiter).with(csrf())
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"orderVersion": 0, "catalogVersion": %d, "lineIds": ["%s"]}"""
+                                .formatted(catalogVersion, line)))
+                .andExpect(status().isCreated());
+        long invocations = awaitDeliveries(start, java.util.Set.of(store));
+        Map<String, Long> begun = count.since(before);
 
-            assertThat(invocations).as("the round's listener invocations").isPositive();
-            assertThat(begun.getOrDefault("registry", 0L)).as("markProcessing and markCompleted per invocation, "
-                    + "%d invocations: %s", invocations, begun).isEqualTo(2 * invocations);
-            assertThat(begun.getOrDefault("listener", 0L) + begun.getOrDefault("registry", 0L))
-                    .as("per invocation, %d invocations: %s", invocations, begun).isEqualTo(3 * invocations);
-            return;
-        }
-        throw new AssertionError("no clean window to measure in: " + disturbed);
+        assertThat(invocations).as("the round's listener invocations").isPositive();
+        assertThat(begun.getOrDefault("registry", 0L)).as("markProcessing and markCompleted per invocation, "
+                + "%d invocations: %s", invocations, begun).isEqualTo(2 * invocations);
+        assertThat(begun.getOrDefault("listener", 0L) + begun.getOrDefault("registry", 0L))
+                .as("per invocation, %d invocations: %s", invocations, begun).isEqualTo(3 * invocations);
+    }
+
+    /** This context's jobs would begin transactions on its counter at any moment: none runs from now on. */
+    private void stopThisContextsScheduler() {
+        scheduled.forEach(holder -> holder.getScheduledTasks().forEach(task -> task.cancel(false)));
+        Awaitility.await().atMost(Duration.ofSeconds(60))
+                .until(() -> scheduler.getScheduledThreadPoolExecutor().getActiveCount() == 0);
     }
 
     /** The transactions begun under origin {@code request} while {@code request} was served. */
@@ -175,21 +187,22 @@ class TransactionsPerCommandTest {
     }
 
     /**
-     * Waits until this test's publications since {@code since} (its store's events: every event carries its
-     * {@code storeId}, D166) are all completed and no more are added; other tests' leftovers are not waited on.
+     * Waits until the publications since {@code since} of {@code stores} (every event carries its {@code storeId},
+     * D166) are all completed and no more are added; other tests' rows are not waited on.
      *
      * @return how many there were (one per listener invocation)
      */
-    private long awaitOwnDeliveries(OffsetDateTime since) {
+    private long awaitDeliveries(OffsetDateTime since, java.util.Set<UUID> stores) {
         JdbcClient owner = OwnerDatabase.shared().jdbc();
+        String[] patterns = stores.stream().map(each -> "%" + each + "%").toArray(String[]::new);
         long[] seen = {-1, -1};
         try {
             Awaitility.await().atMost(Duration.ofSeconds(60)).pollInterval(Duration.ofMillis(200)).until(() -> {
                 Map<String, Object> row = owner.sql("""
                                 SELECT count(*) AS total, count(*) FILTER (WHERE completion_date IS NULL) AS open
                                 FROM public.event_publication
-                                WHERE publication_date >= ? AND serialized_event LIKE ?""")
-                        .param(since).param("%" + store + "%").query().singleRow();
+                                WHERE publication_date >= ? AND serialized_event LIKE ANY (?)""")
+                        .param(since).param(patterns).query().singleRow();
                 long total = ((Number) row.get("total")).longValue();
                 long open = ((Number) row.get("open")).longValue();
                 boolean settled = open == 0 && total == seen[0];
@@ -198,19 +211,10 @@ class TransactionsPerCommandTest {
                 return settled;
             });
         } catch (org.awaitility.core.ConditionTimeoutException e) {
-            throw new AssertionError("this test's publications since %s did not settle: %d, %d not completed"
-                    .formatted(since, seen[0], seen[1]), e);
+            throw new AssertionError("the publications of %s since %s did not settle: %d, %d not completed"
+                    .formatted(stores, since, seen[0], seen[1]), e);
         }
         return seen[0];
-    }
-
-    /** Publications of other tests published, completed or resubmitted since {@code since}. */
-    private long foreignActivitySince(OffsetDateTime since) {
-        return OwnerDatabase.shared().jdbc().sql("""
-                        SELECT count(*) FROM public.event_publication
-                        WHERE serialized_event NOT LIKE ?
-                          AND (publication_date >= ? OR completion_date >= ? OR last_resubmission_date >= ?)""")
-                .param("%" + store + "%").param(since).param(since).param(since).query(Long.class).single();
     }
 
     private UUID newTable(String code) throws Exception {
