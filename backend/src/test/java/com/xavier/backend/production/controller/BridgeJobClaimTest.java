@@ -2,6 +2,7 @@ package com.xavier.backend.production.controller;
 
 import static com.xavier.backend.identity.IdentityFixtures.admin;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -11,6 +12,7 @@ import com.xavier.backend.config.security.Devices;
 import com.xavier.backend.config.security.Devices.Device;
 import com.xavier.backend.config.security.Members;
 import com.xavier.backend.identity.IdentityFixtures;
+import java.time.Duration;
 import java.util.Base64;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,6 +29,8 @@ import tools.jackson.databind.JsonNode;
  */
 @DeviceHttpTest
 class BridgeJobClaimTest {
+
+    static final Duration IDLE_CLAIM_BOUND = Duration.ofSeconds(5);
 
     @Autowired
     MockMvc mvc;
@@ -77,12 +81,16 @@ class BridgeJobClaimTest {
                 .containsEntry("started_at", null);
     }
 
-    /** Review 2: a claim never holds a server thread: nothing due is 204 at once, whatever the bridge asks. */
+    /**
+     * Review 2: a claim never holds a server thread: nothing due is 204 at once, whatever the bridge asks. "At once" is
+     * bounded far below any long poll (which would wait for the asked 30 s, or its own seconds) and far above one query.
+     */
     @Test
-    void anIdleClaimAnswersAtOnceWithNoContent() throws Exception {
-        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(BridgeJobs.JOBS)
-                        .param("waitSeconds", "30").with(bridge.bearer()))
-                .andExpect(status().isNoContent());
+    void anIdleClaimAnswersAtOnceWithNoContent() {
+        assertTimeoutPreemptively(IDLE_CLAIM_BOUND, () -> mvc.perform(
+                        org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(BridgeJobs.JOBS)
+                                .param("waitSeconds", "30").with(bridge.bearer()))
+                .andExpect(status().isNoContent()));
     }
 
     @Test
