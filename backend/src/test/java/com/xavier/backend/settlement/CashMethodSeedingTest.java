@@ -10,6 +10,7 @@ import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.time.Duration;
 import java.util.UUID;
 import org.awaitility.Awaitility;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
@@ -31,11 +32,27 @@ class CashMethodSeedingTest {
     @Autowired
     TenantScopes tenants;
 
+    final java.util.List<UUID> provisioned = new java.util.ArrayList<>();
+
+    /**
+     * The identity listener of this context also handles these events (activating the tenant, creating its roles):
+     * leave neither an ACTIVE tenant (other suites' jobs would iterate it) nor an event another context republishes.
+     */
+    @AfterEach
+    void leaveNothingBehind() {
+        provisioned.forEach(tenant -> {
+            TenantTestSupport.ensureTenant(tenant, "cash-" + tenant, "CLOSED");
+            OwnerDatabase.shared().jdbc().sql("DELETE FROM event_publication WHERE serialized_event LIKE ?")
+                    .param("%" + tenant + "%").update();
+        });
+    }
+
     @Test
     void eachProvisionedTenantGetsItsOwnCashMethodOnceEvenOnRedelivery() {
         UUID one = UUID.randomUUID();
         UUID two = UUID.randomUUID();
         for (UUID tenant : new UUID[]{one, two}) {
+            provisioned.add(tenant);
             TenantTestSupport.ensureTenant(tenant, "cash-" + tenant, "PROVISIONING");
             publish(tenant);
         }

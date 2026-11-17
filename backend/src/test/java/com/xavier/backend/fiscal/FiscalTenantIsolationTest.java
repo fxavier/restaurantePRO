@@ -14,12 +14,11 @@ import com.xavier.backend.AppRoleSession;
 import com.xavier.backend.OwnerDatabase;
 import com.xavier.backend.access.Actor;
 import com.xavier.backend.access.Permission;
+import com.xavier.backend.access.TestAuthentications;
 import com.xavier.backend.architecture.CompositeForeignKeyCoverageTest;
 import com.xavier.backend.architecture.RowLevelSecurityCoverageTest;
 import com.xavier.backend.shared.persistence.StoreScopeViolations;
-import com.xavier.backend.shared.tenancy.MembershipKind;
 import com.xavier.backend.shared.tenancy.StrictTenantScope;
-import com.xavier.backend.shared.tenancy.TenantContext;
 import com.xavier.backend.shared.tenancy.TenantScopes;
 import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.util.List;
@@ -31,8 +30,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
@@ -49,6 +46,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 @StrictTenantScope
 class FiscalTenantIsolationTest {
 
+    static final Permission PERMISSION = Permission.FISCAL_MANAGE;
     static final UUID A = TenantTestSupport.A;
     static final UUID B = TenantTestSupport.B;
 
@@ -262,11 +260,7 @@ class FiscalTenantIsolationTest {
 
     /** An installation-wide account of {@code tenant} (its resolved membership as the principal's details). */
     private static RequestPostProcessor in(UUID tenant) {
-        String authority = Permission.FISCAL_MANAGE.authority();
-        Actor actor = Actor.account(UUID.randomUUID(), Set.of(authority));
-        UsernamePasswordAuthenticationToken token = UsernamePasswordAuthenticationToken.authenticated(actor, null,
-                List.of(new SimpleGrantedAuthority(authority)));
-        token.setDetails(new TenantContext(tenant, MembershipKind.ACCOUNT, actor.userId(), "test:isolation"));
-        return authentication(token);
+        Actor actor = Actor.account(UUID.randomUUID(), Set.of(PERMISSION.authority()));
+        return authentication(TestAuthentications.of(actor, tenant));
     }
 }
