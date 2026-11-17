@@ -12,10 +12,11 @@
 #      lib/roles.sh); the R5 data is still there
 #   4. a second `up` (db-provision runs again) changes no owner or privilege
 #   5. the backend refuses to start with a superuser, a BYPASSRLS role or the owner as its pool role
-#   6. rollback: the R5 deploy/ and image refuse the migrated database alone (R5's Flyway reports the RLS migrations,
-#      below its newest version, as applied but missing, and a stand-in migration above it as future), and start on it with compose.rollback-r5.yaml (README,
-#      "Rollback to R5"): health UP, as the superuser, whom row-level security never binds; nothing in the database
-#      is undone
+#   6. rollback as R6 defines it (PRD r6-multitenancy, "Rollback"): restore the pre-upgrade backup, taken from the
+#      R5 database before step 2 (pg_dump, custom format, as the superuser who owns R5's objects), into a new
+#      database volume, then start the R5 package on it: health UP as the superuser, the company and R5's Flyway
+#      head back, nothing of the upgrade left (no tenancy schema). An in-place
+#      rollback (R5 on the migrated database) is impossible after R6: the tenant defaults call rls_tenant_id().
 # Leaves nothing behind but the two images (a build cache). Every credential is throwaway and never printed.
 #
 # Usage: deploy/test-upgrade-roles.sh --r5-ref REF     REF = the R5 release (a tag or commit of this repository)
@@ -124,6 +125,11 @@ company="$(psql_in -c 'SELECT name FROM organization.company_profile')"
 r5_head="$(psql_in -c 'SELECT max(installed_rank) FROM flyway_schema_history')"
 ok "R5 ($r5_ref) up: the backend connects as the superuser, who owns everything; company bootstrapped; $r5_head Flyway rows"
 
+docker exec "$(new ps -q postgres)" pg_dump -U "$DB_USER" -d "$DB" -Fc >"$WORK/pre-upgrade.dump" \
+  || fail "the pre-upgrade backup failed"
+[[ -s "$WORK/pre-upgrade.dump" ]] || fail "the pre-upgrade backup is empty"
+ok "pre-upgrade backup taken ($(wc -c <"$WORK/pre-upgrade.dump" | tr -d ' ') bytes, pg_dump custom format)"
+
 step "2. upgrade: the two role secrets, then up with this compose.yaml"
 r5 down >/dev/null 2>&1 || fail "the R5 stack did not stop"
 make_role_secrets "$WORK/secrets"
@@ -168,28 +174,21 @@ new up -d --no-build --wait --wait-timeout 300 >>"$WORK/up.log" 2>&1 || fail "th
 [[ "$(pool_users)" == restaurantpro_app ]] || fail "after the refusals the backend's sessions are '$(pool_users)'"
 ok "the stack is back, as restaurantpro_app"
 
-step "6. rollback: the R5 deploy/ and image on the migrated database"
-# A later release's migration above R5's newest version (S69's V14006 over R5's V14005) is FUTURE to R5, not MISSING:
-# a stand-in row makes the rollback face both kinds, as on an installation that took the whole RLS run.
-psql_in -c "INSERT INTO flyway_schema_history (installed_rank, version, description, type, script, checksum, installed_by,
-              execution_time, success)
-            SELECT max(installed_rank) + 1, '99999', 'future stand-in', 'SQL', 'V99999__future_stand_in.sql', NULL,
-                   'restaurantpro_owner', 0, true FROM flyway_schema_history" >/dev/null
-new down >/dev/null 2>&1 || fail "the upgraded stack did not stop"
-if r5 up -d --no-build --wait --wait-timeout 180 >"$WORK/rollback.log" 2>&1; then
-  fail "the R5 release started without compose.rollback-r5.yaml: the drill's premise changed, review the README rollback"
-fi
-r5 logs --no-color backend >"$WORK/rollback-refused.log" 2>&1 || true
-grep -q 'FlywayValidateException' "$WORK/rollback-refused.log" \
-  || fail "the R5 release failed on the migrated database for another reason: $(grep -o 'Caused by: [^\\"]\{0,200\}' "$WORK/rollback-refused.log" | head -2)"
-ok "without the override, R5's Flyway refuses the migrated database: $(grep -o 'not resolved locally[^\\"]\{0,40\}' "$WORK/rollback-refused.log" | head -1)"
-r5 down >/dev/null 2>&1
-rollback() { r5 -f "$DEPLOY_DIR/compose.rollback-r5.yaml" "$@"; }
-if ! rollback up -d --no-build --wait --wait-timeout 300 >"$WORK/rollback.log" 2>&1; then
+step "6. rollback: restore the pre-upgrade backup, then the R5 package on it"
+new down -v >/dev/null 2>&1 || fail "the upgraded stack did not stop"
+r5 up -d --no-build --wait --wait-timeout 180 postgres >"$WORK/rollback.log" 2>&1 \
+  || { tail -10 "$WORK/rollback.log" >&2; fail "R5's database did not start on a new volume"; }
+[[ "$(psql_in -c "SELECT count(*) FROM pg_namespace WHERE nspname = 'organization'")" == 0 ]] \
+  || fail "the rollback database is not empty: the old volume was kept"
+docker exec -i "$(new ps -q postgres)" pg_restore -U "$DB_USER" -d "$DB" --exit-on-error <"$WORK/pre-upgrade.dump" \
+  || fail "pg_restore of the pre-upgrade backup failed"
+r5 up -d --no-build --wait --wait-timeout 300 >>"$WORK/rollback.log" 2>&1 || {
   tail -10 "$WORK/rollback.log" >&2
-  rollback logs --no-color backend 2>&1 | grep -o 'Caused by: [^\\"]\{0,240\}' | sort -u | head -5 >&2 || true
-  fail "the R5 release does not start on the migrated database with compose.rollback-r5.yaml"
-fi
+  r5 logs --no-color backend 2>&1 | grep -o 'Caused by: [^\"]\{0,240\}' | sort -u | head -5 >&2 || true
+  fail "the R5 release does not start on the restored pre-upgrade backup"; }
 [[ "$(pool_users)" == "$DB_USER" ]] || fail "the rolled-back backend's sessions are '$(pool_users)', expected the superuser"
 [[ "$(psql_in -c 'SELECT name FROM organization.company_profile')" == "$company" ]] || fail "the data is gone after the rollback"
-ok "R5 starts on the migrated database as the superuser (row-level security does not bind it); health UP; data kept"
+[[ "$(psql_in -c 'SELECT max(installed_rank) FROM flyway_schema_history')" == "$r5_head" ]] \
+  || fail "the restored Flyway history is not R5's ($r5_head rows)"
+[[ "$(psql_in -c "SELECT count(*) FROM pg_namespace WHERE nspname = 'tenancy'")" == 0 ]] || fail "the tenancy schema survived"
+ok "rollback: the pre-upgrade backup restored on a new volume; R5 healthy as the superuser; company and $r5_head Flyway rows back; no tenancy schema"
