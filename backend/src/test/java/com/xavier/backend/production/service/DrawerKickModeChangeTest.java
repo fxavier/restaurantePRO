@@ -38,7 +38,7 @@ class DrawerKickModeChangeTest {
     JdbcClient jdbc;
 
     @Autowired
-    PrintWorker worker;
+    InProcessPrintBridge worker;
 
     @Test
     void aRedirectFailsTheQueuedKickAndNeverMovesItToAnotherDrawer() throws Exception {

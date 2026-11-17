@@ -50,7 +50,7 @@ class ProductionActorlessScopeTest {
     PlatformTransactionManager transactionManager;
 
     @Autowired
-    PrintWorker worker;
+    InProcessPrintBridge worker;
 
     @Autowired
     ProductionFixtures fixtures;

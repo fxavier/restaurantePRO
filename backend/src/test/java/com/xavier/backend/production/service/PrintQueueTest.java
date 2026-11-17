@@ -56,7 +56,7 @@ class PrintQueueTest {
     ProductionFixtures fixtures;
 
     @Autowired
-    PrintWorker worker;
+    InProcessPrintBridge worker;
 
     @Autowired
     StoreScopes scopes;
@@ -299,7 +299,7 @@ class PrintQueueTest {
             fixtures.mode(shop.store(), bar, "NORMAL"); // the locked job is due for every claimer now
 
             List<Dispatch> claimed = CompletableFuture.supplyAsync(BootstrapSeed.supplyInBootstrap(() -> scopes.call(
-                    SystemScope.PRINT_WORKER, () -> queue.claimDue(PrintWorker.MAX_CLAIM)))).get(5, TimeUnit.SECONDS);
+                    SystemScope.PRINT_WORKER, () -> queue.claimDue(InProcessPrintBridge.MAX_CLAIM)))).get(5, TimeUnit.SECONDS);
 
             assertThat(claimed).extracting(Dispatch::jobId).doesNotContain(job);
             assertThat(fixtures.jobStatus(job)).isEqualTo("QUEUED");
@@ -356,12 +356,12 @@ class PrintQueueTest {
                     WHERE id = ?""").param(head).update();
             jdbc.sql("UPDATE production.printer SET mode = 'NORMAL' WHERE id = ?").param(bar).update();
 
-            assertThat(queue.claimDue(PrintWorker.MAX_CLAIM)).extracting(Dispatch::printerId)
+            assertThat(queue.claimDue(InProcessPrintBridge.MAX_CLAIM)).extracting(Dispatch::printerId)
                     .doesNotContain(bar);
 
             jdbc.sql("UPDATE production.print_job SET next_attempt_at = now() - interval '1 second' WHERE id = ?")
                     .param(head).update();
-            assertThat(queue.claimDue(PrintWorker.MAX_CLAIM)).extracting(Dispatch::jobId)
+            assertThat(queue.claimDue(InProcessPrintBridge.MAX_CLAIM)).extracting(Dispatch::jobId)
                     .contains(head).doesNotContain(newer);
         });
     }
@@ -383,7 +383,7 @@ class PrintQueueTest {
                     .param(sending).update();
             jdbc.sql("UPDATE production.printer SET mode = 'NORMAL' WHERE id = ?").param(bar).update();
 
-            assertThat(queue.claimDue(PrintWorker.MAX_CLAIM)).extracting(Dispatch::jobId)
+            assertThat(queue.claimDue(InProcessPrintBridge.MAX_CLAIM)).extracting(Dispatch::jobId)
                     .doesNotContain(next);
         });
     }
