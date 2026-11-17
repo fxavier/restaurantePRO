@@ -8,7 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.jayway.jsonpath.JsonPath;
 import com.xavier.backend.OwnerDatabase;
-import com.xavier.backend.TestcontainersConfiguration;
+import com.xavier.backend.config.security.SecurityHttpTest;
 import com.xavier.backend.organization.model.event.CompanyProvisioned;
 import com.xavier.backend.shared.tenancy.MembershipKind;
 import com.xavier.backend.shared.tenancy.StrictTenantScope;
@@ -32,9 +32,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.event.EventListener;
@@ -48,13 +46,12 @@ import org.springframework.test.web.servlet.ResultActions;
  * tenant PROVISIONING, its Keycloak organization once, {@code TenantProvisioned} → the organization module's company
  * profile and first store → {@code CompanyProvisioned}; a replay changes nothing), and suspension takes effect on the
  * next resolution (S72's filter answers 403 {@code TENANT_SUSPENDED} from it) and on jobs (the tenant leaves
- * {@code active_tenant_ids()}). Every platform action is audited in {@code tenancy.platform_audit_event}. The identity
+ * {@code active_tenant_ids()}). Over the real chain: the operator's token is an ops-realm platform-operator (S72).
+ * Every platform action is audited in {@code tenancy.platform_audit_event}. The identity
  * half (administrator, invite, ACCOUNT membership, activation) is S72's listener, proven by S72 and S76.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
-@Import({TestcontainersConfiguration.class, PlatformTestSecurity.class, RecordingIdentityProvider.class,
-        PlatformTenantLifecycleTest.Capture.class})
+@SecurityHttpTest
+@Import({RecordingIdentityProvider.class, PlatformTenantLifecycleTest.Capture.class})
 @StrictTenantScope
 class PlatformTenantLifecycleTest {
 
@@ -106,7 +103,7 @@ class PlatformTenantLifecycleTest {
                 "ONBOARDING_PUBLISHED");
         assertThat(OwnerDatabase.shared().jdbc().sql("SELECT DISTINCT operator FROM tenancy.platform_audit_event "
                 + "WHERE tenant_id = ?").param(tenant).query(String.class).list())
-                .containsExactly(PlatformTestSecurity.OPERATOR);
+                .containsExactly(PlatformTokens.OPERATOR);
 
         onboard(code, "Another Name Lda").andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("TENANT_CODE_TAKEN"));
@@ -181,7 +178,7 @@ class PlatformTenantLifecycleTest {
     void anUnknownTenantIsNotFoundAndAChangeNeedsAReason() throws Exception {
         change(UUID.randomUUID(), "suspend").andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("TENANT_NOT_FOUND"));
-        mvc.perform(post(TENANTS + "/{id}/suspend", UUID.randomUUID()).with(PlatformTestSecurity.operator())
+        mvc.perform(post(TENANTS + "/{id}/suspend", UUID.randomUUID()).with(PlatformTokens.operator())
                 .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\" \"}"))
                 .andExpect(status().isBadRequest());
     }
@@ -201,7 +198,7 @@ class PlatformTenantLifecycleTest {
     }
 
     private ResultActions onboard(String code, String legalName, String firstStoreName) throws Exception {
-        return mvc.perform(post(TENANTS).with(PlatformTestSecurity.operator()).contentType(MediaType.APPLICATION_JSON)
+        return mvc.perform(post(TENANTS).with(PlatformTokens.operator()).contentType(MediaType.APPLICATION_JSON)
                 .content("""
                         {"code":"%s","legalName":"%s","taxId":"400%s","country":"MZ","currency":"MZN",
                          "firstStoreName":"%s","adminEmail":"admin@%s.example"}"""
@@ -209,7 +206,7 @@ class PlatformTenantLifecycleTest {
     }
 
     private ResultActions change(UUID tenant, String action) throws Exception {
-        return mvc.perform(post(TENANTS + "/{id}/" + action, tenant).with(PlatformTestSecurity.operator())
+        return mvc.perform(post(TENANTS + "/{id}/" + action, tenant).with(PlatformTokens.operator())
                 .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"test: " + action + "\"}"));
     }
 
