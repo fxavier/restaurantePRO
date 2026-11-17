@@ -94,7 +94,7 @@ public class SupportGrantService {
             throw new UnavailableException("IDP_UNAVAILABLE", "The support realm is not configured.", Map.of());
         }
         grant.linkMembership(tenancy.grant(new MembershipGrant(opsIssuer, grant.getSubject(), MembershipKind.SUPPORT,
-                grant.getId(), now, grant.getValidUntil())));
+                grant.getId(), Duration.ofMinutes(request.durationMinutes()))));
         grants.saveAndFlush(grant);
         auditLog.recordAsCurrentActor("SUPPORT_GRANT_CREATED", ENTITY, grant.getId().toString(), null, null,
                 grant.getReason(), Map.of("accountId", account.getId(), "validFrom", now,

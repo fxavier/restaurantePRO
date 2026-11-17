@@ -95,7 +95,7 @@ public class TerminalService {
         Instant now = clock.instant();
         Instant expiresAt = now.plus(ENROLLMENT_CODE_VALIDITY);
         UUID pending = tenancy.grant(new MembershipGrant(DeviceEnrolmentService.ENROLMENT_ISSUER, code.selector(),
-                terminal.getKind().membership(), terminal.getId(), now, expiresAt));
+                terminal.getKind().membership(), terminal.getId(), ENROLLMENT_CODE_VALIDITY));
         terminal.issueEnrollmentCode(code.secretHash(), expiresAt, pending, now).ifPresent(tenancy::revoke);
         terminals.saveAndFlush(terminal);
         audit("TERMINAL_ENROLLMENT_CODE_ISSUED", terminal);

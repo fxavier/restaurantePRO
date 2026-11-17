@@ -23,7 +23,6 @@ import com.xavier.backend.tenancy.model.event.TenantProvisioned;
 import com.xavier.backend.tenancy.model.event.TenantReactivated;
 import com.xavier.backend.tenancy.model.event.TenantSuspended;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -161,7 +160,7 @@ class PlatformTenantLifecycleTest {
         UUID tenant = activeTenant();
         String subject = UUID.randomUUID().toString();
         TenantTestSupport.inTenant(tenants, tenant, () -> tenancy.grant(new MembershipGrant(ISSUER, subject,
-                MembershipKind.ACCOUNT, UUID.randomUUID(), Instant.now().minusSeconds(1), null)));
+                MembershipKind.ACCOUNT, UUID.randomUUID(), null)));
         try {
             assertThat(resolve(subject)).isEqualTo(TenantStatus.ACTIVE);
 

@@ -8,13 +8,13 @@ import com.xavier.backend.tenancy.model.dto.MembershipGrant;
 import com.xavier.backend.tenancy.model.dto.MembershipSummary;
 import com.xavier.backend.tenancy.model.dto.TenantStatus;
 import com.xavier.backend.tenancy.model.event.MembershipRevoked;
-import java.sql.Timestamp;
 import java.time.Clock;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -87,15 +87,16 @@ public class TenancyApi {
         return found.stream().findFirst();
     }
 
-    /** Grants (or reactivates) a membership in the bound tenant. @return its id */
+    /** Grants (or reactivates) a membership in the bound tenant, valid from now by the database's clock. @return its id */
     @Transactional
     public UUID grant(MembershipGrant grant) {
-        return jdbc.sql("SELECT tenancy.grant_membership(:tenant, :issuer, :subject, :kind, :principal, :from, "
-                        + "CAST(:until AS timestamptz))")
+        return jdbc.sql("SELECT tenancy.grant_membership(:tenant, :issuer, :subject, :kind, :principal, "
+                        + "CAST(:validForMicros AS bigint) * interval '1 microsecond')")
                 .param("tenant", tenants.requireTenant()).param("issuer", grant.issuer())
                 .param("subject", grant.subject()).param("kind", grant.kind().name())
-                .param("principal", grant.principalId()).param("from", Timestamp.from(grant.validFrom()))
-                .param("until", grant.validUntil() == null ? null : Timestamp.from(grant.validUntil()))
+                .param("principal", grant.principalId())
+                .param("validForMicros", grant.validFor() == null ? null
+                        : TimeUnit.NANOSECONDS.toMicros(grant.validFor().toNanos()))
                 .query(UUID.class).single();
     }
 
