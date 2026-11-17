@@ -1,2 +1,5 @@
 # D171: an application started or closed by a test body runs its startup and shutdown with production semantics.
 org.springframework.boot.SpringApplicationRunListener=com.xavier.backend.access.ApplicationLifecycleMarks
+
+# S72 (D184): fixtures prove a second factor on the running test's application clock
+org.springframework.test.context.TestExecutionListener=com.xavier.backend.access.TestClocks

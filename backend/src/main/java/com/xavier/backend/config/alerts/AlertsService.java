@@ -8,12 +8,16 @@ import com.xavier.backend.access.SystemScope;
 import com.xavier.backend.shared.ops.AlertSeverity;
 import com.xavier.backend.shared.ops.AlertSource;
 import com.xavier.backend.shared.ops.OperationalAlert;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -22,8 +26,10 @@ import org.springframework.util.ClassUtils;
 /**
  * The in-app outlet of D149: every {@link AlertSource} bean, computed at most every {@link #CACHE_FOR} so polling
  * never loads the database. A source that throws becomes one {@code ALERT_SOURCE_FAILED} warning (logged), never an
- * error. {@link #list} shows a {@code SYSTEM_MONITOR} holder the alerts of the stores it holds it in; installation-wide
- * alerts (no store) only to an installation-wide holder.
+ * error. {@link #list} shows a {@code SYSTEM_MONITOR} holder the alerts of the stores it holds it in; tenant-wide
+ * alerts (no store) only to a tenant-wide holder. The snapshot is per tenant (security rule 7, D186): computed in the
+ * bound tenant and cached under its id, so one tenant's alerts never answer another's list. The health check sums the
+ * ACTIVE tenants' snapshots, each computed in its own tenant.
  */
 @Service
 class AlertsService {
@@ -44,13 +50,16 @@ class AlertsService {
     private final List<AlertSource> sources;
     private final AccessPolicy accessPolicy;
     private final StoreScopes scopes;
+    private final TenantScopes tenants;
     private final Clock clock;
-    private Snapshot cached;
+    private final Map<UUID, Snapshot> cached = new ConcurrentHashMap<>();
 
-    AlertsService(List<AlertSource> sources, AccessPolicy accessPolicy, StoreScopes scopes, Clock clock) {
+    AlertsService(List<AlertSource> sources, AccessPolicy accessPolicy, StoreScopes scopes, TenantScopes tenants,
+                  Clock clock) {
         this.sources = List.copyOf(sources);
         this.accessPolicy = accessPolicy;
         this.scopes = scopes;
+        this.tenants = tenants;
         this.clock = clock;
     }
 
@@ -64,15 +73,28 @@ class AlertsService {
                 .toList());
     }
 
-    /** The cached snapshot, collected again when it is {@link #CACHE_FOR} old (or the clock went back). */
-    synchronized Snapshot current() {
-        Instant now = clock.instant();
-        if (cached == null || now.isBefore(cached.generatedAt())
-                || !now.isBefore(cached.generatedAt().plus(CACHE_FOR))) {
-            // D166: computed installation-wide (every store), then filtered per actor by list()
-            cached = new Snapshot(now, scopes.call(SystemScope.ALERTS, () -> collect(now)));
-        }
-        return cached;
+    /**
+     * The bound tenant's cached snapshot, collected again when it is {@link #CACHE_FOR} old (or the clock went back).
+     *
+     * @throws IllegalStateException when no tenant is bound
+     */
+    Snapshot current() {
+        UUID tenant = tenants.requireTenant();
+        return cached.compute(tenant, (id, known) -> {
+            Instant now = clock.instant();
+            if (known != null && !now.isBefore(known.generatedAt())
+                    && now.isBefore(known.generatedAt().plus(CACHE_FOR))) {
+                return known;
+            }
+            // D166: computed tenant-wide (every store of the tenant), then filtered per actor by list()
+            return new Snapshot(now, scopes.call(SystemScope.ALERTS, () -> collect(now)));
+        });
+    }
+
+    /** The active alerts of every tenant in {@code tenantIds}, each counted from its own snapshot (the health check). */
+    int activeIn(List<UUID> tenantIds) {
+        return tenantIds.stream()
+                .mapToInt(tenant -> tenants.call(tenant, SystemScope.ALERTS, () -> current().alerts().size())).sum();
     }
 
     private List<OperationalAlert> collect(Instant now) {

@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
@@ -43,15 +44,25 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  * <ul>
  *   <li>the last release, from the manifest {@code db/released-migrations.txt}, so every migration added since
  *       (R5's, once merged) is proven to apply on an installed database;</li>
- *   <li>a synthetic one holding back the newest migration of two low blocks, so the out-of-order path is proven on
- *       any branch, also before a release adds its first migration;</li>
+ *   <li>a synthetic one: every real migration installed, then two test-only migrations below its head
+ *       ({@code db/upgrade-test}), so the out-of-order path is proven on any branch, also before a release adds its
+ *       first migration;</li>
  *   <li>the same, refused when out-of-order is off (the blocker this setting fixes).</li>
  * </ul>
  */
 class FlywayUpgradeTest {
 
-    /** Newer migrations of low blocks, as a release adds them under an installed head of a higher block. */
-    static final Set<Integer> HELD_BACK = Set.of(1006, 8009);
+    /**
+     * Migrations a release adds under the installed head: the test-only {@code db/upgrade-test} ones, which touch only
+     * their own scratch objects, so no real migration that later builds on a held-back one can break the baseline.
+     */
+    static final Set<Integer> HELD_BACK = Set.of(901, 902);
+
+    private static final String SCRATCH_PAGE = "upgrade_scratch.page";
+
+    /** {@code shared.rls_protect_tenant}'s predicate as PostgreSQL prints it (RowLevelSecurityCoverageTest's). */
+    private static final String CANONICAL_TENANT_PREDICATE =
+            "(tenant_id = ( SELECT shared.rls_tenant_id() AS rls_tenant_id))";
 
     private static final Pattern VERSION = Pattern.compile("V(\\d+)__.+\\.sql");
 
@@ -101,7 +112,7 @@ class FlywayUpgradeTest {
 
     @Test
     void migrationsBelowTheInstalledHeadAreAppliedOutOfOrder() throws IOException {
-        copyMigrations((version, sql) -> !HELD_BACK.contains(version));
+        copyMigrationsWithUpgradeTest((version, sql) -> !HELD_BACK.contains(version));
         flyway(previousRelease, false).migrate();
 
         Flyway upgrade = flyway(currentRelease, outOfOrderOfApplicationYaml());
@@ -117,7 +128,7 @@ class FlywayUpgradeTest {
 
     @Test
     void withoutOutOfOrderTheSameUpgradeIsRefused() throws IOException {
-        copyMigrations((version, sql) -> !HELD_BACK.contains(version));
+        copyMigrationsWithUpgradeTest((version, sql) -> !HELD_BACK.contains(version));
         flyway(previousRelease, false).migrate();
 
         assertThatThrownBy(() -> flyway(currentRelease, false).migrate())
@@ -139,8 +150,7 @@ class FlywayUpgradeTest {
         flyway(currentRelease, outOfOrderOfApplicationYaml()).migrate();
 
         for (String table : List.of("catalog.quick_page", "catalog.automatic_item")) {
-            assertThat(policyNames(db, table)).as(table).containsExactly("store_or_all_delete", "store_or_all_insert",
-                    "store_or_all_read", "store_or_all_update");
+            assertStoreOrAllPolicies(db, table);
             assertThat(db.sql("SELECT count(*) FROM pg_catalog.pg_trigger WHERE tgrelid = ?::regclass "
                     + "AND tgname = 'store_scope_fixed'").param(table).query(Long.class).single()).isOne();
         }
@@ -150,11 +160,12 @@ class FlywayUpgradeTest {
 
     /**
      * The installation of {@link #theOldStoreOrAllPoliciesAreReplacedOnAnInstalledDatabase}: main before S70, so
-     * without S70's V1009/V5008 and without anything of R6, which came after (V1010 carries V1009's helper; every R6
-     * migration names {@code tenant_id}). Derived from the migration itself, so no converting slice edits this test.
+     * without S70's V1009/V5008 and without anything of R6, which came after (V1010 carries V1009's helper; an R6
+     * migration names {@code tenant_id} or the PLATFORM registry of V1010). Derived from the migration itself, so no
+     * converting slice edits this test.
      */
     static boolean installedBeforeS70(int version, String sql) {
-        return version != 1009 && version != 5008 && !sql.contains("tenant_id");
+        return version != 1009 && version != 5008 && !sql.contains("tenant_id") && !sql.contains("rls_platform_table");
     }
 
     @Test
@@ -165,6 +176,60 @@ class FlywayUpgradeTest {
                 .isTrue();
         assertThat(installedBeforeS70(1009, "CREATE OR REPLACE FUNCTION shared.rls_protect_store_or_all_table"))
                 .isFalse();
+        assertThat(installedBeforeS70(1012, "SELECT shared.rls_revoke_platform_writes(table_name) "
+                + "FROM shared.rls_platform_table")).isFalse();
+    }
+
+    /**
+     * Once a store-or-all table's module is converted (S74d for catalog), its restrictive {@code tenant_scope} joins
+     * the four store policies (D179): they stay pinned exactly, beside the canonical tenant policy.
+     */
+    @Test
+    void aConvertedStoreOrAllTableKeepsItsFourStorePoliciesBesideItsTenantScope() throws IOException {
+        JdbcClient db = currentInstallationWithScratchPage(
+                "tenant_id uuid NOT NULL DEFAULT shared.rls_tenant_id(), UNIQUE (tenant_id, id)");
+
+        assertStoreOrAllPolicies(db, SCRATCH_PAGE);
+    }
+
+    private JdbcClient currentInstallationWithScratchPage(String extraColumns) throws IOException {
+        copyMigrations((version, sql) -> true);
+        flyway(previousRelease, false).migrate();
+        JdbcClient db = JdbcClient.create(installation);
+        db.sql("CREATE SCHEMA upgrade_scratch").update();
+        db.sql("CREATE TABLE " + SCRATCH_PAGE + " (id uuid PRIMARY KEY, store_id uuid, " + extraColumns + ")")
+                .update();
+        db.sql("SELECT shared.rls_protect_store_or_all_table(CAST(? AS regclass))").param(SCRATCH_PAGE).query()
+                .listOfRows();
+        return db;
+    }
+
+    /** A tenant_scope that is not the canonical restrictive one does not pass for a converted table's. */
+    @Test
+    void aPermissiveTenantScopeBesideTheStorePoliciesIsRefused() throws IOException {
+        JdbcClient db = currentInstallationWithScratchPage("label text");
+        db.sql("CREATE POLICY tenant_scope ON " + SCRATCH_PAGE + " AS PERMISSIVE FOR ALL USING (true)").update();
+
+        assertThatThrownBy(() -> assertStoreOrAllPolicies(db, SCRATCH_PAGE)).hasMessageContaining("tenant_scope");
+    }
+
+    /**
+     * The four store-or-all policies exactly, and beside them at most the canonical restrictive {@code tenant_scope}
+     * of {@code shared.rls_protect_tenant} (a converted table).
+     */
+    private static void assertStoreOrAllPolicies(JdbcClient db, String table) {
+        assertThat(policyNames(db, table)).as(table).filteredOn(name -> !name.equals("tenant_scope"))
+                .containsExactly("store_or_all_delete", "store_or_all_insert", "store_or_all_read",
+                        "store_or_all_update");
+        for (Map<String, Object> tenantScope : db.sql("""
+                        SELECT polpermissive, polcmd::text AS command, pg_get_expr(polqual, polrelid) AS using_clause,
+                               pg_get_expr(polwithcheck, polrelid) AS check_clause
+                        FROM pg_catalog.pg_policy WHERE polrelid = CAST(? AS regclass) AND polname = 'tenant_scope'""")
+                .param(table).query().listOfRows()) {
+            assertThat(tenantScope).as("%s's tenant_scope is the canonical restrictive one", table)
+                    .containsExactlyInAnyOrderEntriesOf(Map.of("polpermissive", false, "command", "*",
+                            "using_clause", CANONICAL_TENANT_PREDICATE, "check_clause", CANONICAL_TENANT_PREDICATE));
+        }
     }
 
     private static List<String> policyNames(JdbcClient db, String table) {
@@ -190,8 +255,17 @@ class FlywayUpgradeTest {
 
     /** Every current migration into {@link #currentRelease}; those of the previous release into the other. */
     private void copyMigrations(BiPredicate<Integer, String> inPreviousRelease) throws IOException {
-        Resource[] migrations = new PathMatchingResourcePatternResolver()
-                .getResources("classpath*:db/migration/**/*.sql");
+        copyMigrations(inPreviousRelease, "classpath*:db/migration/**/*.sql");
+    }
+
+    /** {@link #copyMigrations} with the test-only migrations of {@code db/upgrade-test} beside the real ones. */
+    private void copyMigrationsWithUpgradeTest(BiPredicate<Integer, String> inPreviousRelease) throws IOException {
+        copyMigrations(inPreviousRelease, "classpath*:db/migration/**/*.sql");
+        copyMigrations(inPreviousRelease, "classpath*:db/upgrade-test/*.sql");
+    }
+
+    private void copyMigrations(BiPredicate<Integer, String> inPreviousRelease, String pattern) throws IOException {
+        Resource[] migrations = new PathMatchingResourcePatternResolver().getResources(pattern);
         assertThat(migrations).isNotEmpty();
         for (Resource migration : migrations) {
             String name = migration.getFilename();

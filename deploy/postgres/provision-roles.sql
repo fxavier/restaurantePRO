@@ -137,6 +137,17 @@ SELECT 'REVOKE ALL ON ALL TABLES IN SCHEMA tenancy FROM restaurantpro_app'
 WHERE EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = 'tenancy')
 \gexec
 
+-- 5d. R6 (D179): PLATFORM tables are shared by every tenant and have no tenant policy, so the pool may not write them
+-- (one tenant would change them for all). The grants above gave it DML on every table; shared.rls_revoke_platform_writes
+-- (V1012, also called when a migration registers a table PLATFORM) takes the writes back from each PLATFORM table
+-- outside its allow-list (shared.rls_platform_writable: the event registry and the job leases). Before V1012 there is
+-- nothing to call (the query would not parse), hence the \if; the migration then does it on its own.
+SELECT to_regprocedure('shared.rls_revoke_platform_writes(regclass)') IS NOT NULL AS provision_has_platform_revoke
+\gset
+\if :provision_has_platform_revoke
+SELECT shared.rls_revoke_platform_writes(table_name) FROM shared.rls_platform_table ORDER BY table_name::text;
+\endif
+
 -- 6. The same for what later migrations create (the owner runs them).
 ALTER DEFAULT PRIVILEGES FOR ROLE restaurantpro_owner GRANT USAGE ON SCHEMAS TO restaurantpro_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE restaurantpro_owner

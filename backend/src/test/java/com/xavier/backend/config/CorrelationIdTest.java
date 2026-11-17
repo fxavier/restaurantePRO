@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.xavier.backend.TestcontainersConfiguration;
+import com.xavier.backend.access.WithActor;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.slf4j.Logger;
@@ -34,6 +35,7 @@ class CorrelationIdTest {
     MockMvc mvc;
 
     @Test
+    @WithActor
     void aCallersCorrelationIdIsEchoedAndAvailableToLogs() throws Exception {
         mvc.perform(get("/api/v1/auth/correlation-probe").header(HEADER, "pos-7f3a-0001"))
                 .andExpect(status().isOk())
@@ -42,6 +44,7 @@ class CorrelationIdTest {
     }
 
     @Test
+    @WithActor
     void anIdIsGeneratedWhenTheCallerSendsNone() throws Exception {
         String generated = mvc.perform(get("/api/v1/auth/correlation-probe"))
                 .andExpect(status().isOk())
@@ -51,6 +54,7 @@ class CorrelationIdTest {
     }
 
     @Test
+    @WithActor
     void anUnsafeIdIsReplacedSoItCannotForgeLogLines() throws Exception {
         String returned = mvc.perform(get("/api/v1/auth/correlation-probe").header(HEADER, "x\"}\n{\"level\":\"FAKE"))
                 .andReturn().getResponse().getHeader(HEADER);
@@ -66,6 +70,7 @@ class CorrelationIdTest {
     }
 
     @Test
+    @WithActor
     void logLinesAreJsonWithTheCorrelationId(CapturedOutput output) throws Exception {
         mvc.perform(get("/api/v1/auth/correlation-probe").header(HEADER, "json-log-check"));
 

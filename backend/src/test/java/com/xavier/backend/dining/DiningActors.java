@@ -1,5 +1,6 @@
 package com.xavier.backend.dining;
 
+import com.xavier.backend.access.TestAuthentications;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 
 import com.xavier.backend.access.Actor;
@@ -12,8 +13,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
@@ -39,8 +38,7 @@ public final class DiningActors {
     public static RequestPostProcessor pos(UUID storeId, UUID employeeId, Permission... permissions) {
         Actor actor = Actor.employee(employeeId, TERMINAL_ID, storeId,
                 Arrays.stream(permissions).map(p -> p.authority(storeId)).collect(Collectors.toSet()));
-        return authentication(UsernamePasswordAuthenticationToken.authenticated(actor, null,
-                actor.authorities().stream().map(SimpleGrantedAuthority::new).toList()));
+        return authentication(TestAuthentications.of(actor));
     }
 
     /**
@@ -52,9 +50,7 @@ public final class DiningActors {
     public static <T> T runAsPos(UUID storeId, UUID employeeId, Supplier<T> action) {
         SecurityContext previous = SecurityContextHolder.getContext();
         SecurityContext context = SecurityContextHolder.createEmptyContext();
-        context.setAuthentication(UsernamePasswordAuthenticationToken.authenticated(
-                Actor.employee(employeeId, TERMINAL_ID, storeId, Set.of(Permission.ORDER_EDIT.authority())), null,
-                List.of()));
+        context.setAuthentication(TestAuthentications.of(Actor.employee(employeeId, TERMINAL_ID, storeId, Set.of(Permission.ORDER_EDIT.authority()))));
         SecurityContextHolder.setContext(context);
         try {
             return action.get();
@@ -65,7 +61,6 @@ public final class DiningActors {
 
     private static RequestPostProcessor as(UUID storeId, Set<String> authorities) {
         Actor actor = new Actor(ActorKind.ACCOUNT, USER_ID, null, null, storeId, authorities);
-        return authentication(UsernamePasswordAuthenticationToken.authenticated(actor, null,
-                authorities.stream().map(SimpleGrantedAuthority::new).toList()));
+        return authentication(TestAuthentications.of(actor));
     }
 }

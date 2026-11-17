@@ -1,5 +1,6 @@
 package com.xavier.backend.e2e;
 
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import static com.xavier.backend.e2e.Installation.CASHIER_ROLE;
 import static com.xavier.backend.e2e.Installation.MANAGER_ROLE;
 import static com.xavier.backend.e2e.Installation.id;
@@ -87,6 +88,14 @@ import tools.jackson.databind.JsonNode;
 @Import(Installation.FreshDatabase.class)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class R3LoadSmoke {
+
+    @Autowired
+    PostgreSQLContainer freshPostgres;
+
+    /** The installation's owner connection, for what onboarding and Keycloak would have created. */
+    private JdbcClient owner() {
+        return Installation.owner(freshPostgres);
+    }
 
     static final String INITIAL_PASSWORD = "initial " + UUID.randomUUID();
     static final String NEW_PASSWORD = "changed " + UUID.randomUUID();
@@ -207,7 +216,7 @@ class R3LoadSmoke {
     private List<Terminal> seed() throws Exception {
         List<String> setup = new ArrayList<>();
         office = new Browser("backoffice", port, setup);
-        Installation.firstLogin(office, INITIAL_PASSWORD, NEW_PASSWORD);
+        Installation.firstLogin(office, owner());
         store = Installation.store(office, "LOAD");
         area = id(office.post(BO + "/areas", Map.of("storeId", store, "code", "SALA", "name", "Sala"), 201));
         publishCatalog(new Random(SEED));

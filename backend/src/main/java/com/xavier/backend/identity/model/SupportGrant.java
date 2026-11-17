@@ -15,7 +15,7 @@ import org.hibernate.annotations.UuidGenerator;
 
 /**
  * Temporary, authorized and audited access for a support account (spec §5, P36, D83): from {@code validFrom} for
- * at most {@link #MAX_DURATION}. ACTIVE → EXPIRED (by time, {@code SupportGrantExpiry}) or ACTIVE → REVOKED (an
+ * at most {@link #MAX_DURATION}. ACTIVE → EXPIRED (by time: its membership's {@code valid_until}) or ACTIVE → REVOKED (an
  * administrator). An ended grant is never edited again. A support account logs in only while it holds a usable grant.
  */
 @Entity
@@ -50,6 +50,16 @@ public class SupportGrant {
 
     private Instant expiredAt;
 
+    /** The support person's ops-realm subject (D183): who may act on this grant. */
+    @Column(nullable = false, updatable = false, length = 255)
+    private String subject;
+
+    /** The {@code SUPPORT} membership this grant created in {@code tenancy} (revoked with the grant). */
+    private UUID membershipId;
+
+    /** When support first acted on the grant: the start the tenant's administrators are alerted to. */
+    private Instant firstUsedAt;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -60,12 +70,14 @@ public class SupportGrant {
         // JPA
     }
 
-    public static SupportGrant grant(UUID accountId, Duration duration, String reason, UUID grantedBy, Instant now) {
+    public static SupportGrant grant(UUID accountId, String subject, Duration duration, String reason,
+                                     UUID grantedBy, Instant now) {
         if (!duration.isPositive() || duration.compareTo(MAX_DURATION) > 0) {
             throw new SupportGrantTooLongException(MAX_DURATION.toMinutes());
         }
         SupportGrant grant = new SupportGrant();
         grant.accountId = accountId;
+        grant.subject = subject;
         grant.validFrom = now;
         grant.validUntil = now.plus(duration);
         grant.reason = reason;
@@ -81,6 +93,35 @@ public class SupportGrant {
         }
         revokedAt = now;
         revokedByAccountId = by;
+    }
+
+    /** The membership created for this grant; set once. */
+    public void linkMembership(UUID id) {
+        if (membershipId != null) {
+            throw new IllegalSupportGrantStateException();
+        }
+        membershipId = id;
+    }
+
+    /** Records support's first action on the grant. @return whether this was the first */
+    public boolean markUsed(Instant now) {
+        if (firstUsedAt != null) {
+            return false;
+        }
+        firstUsedAt = now;
+        return true;
+    }
+
+    public UUID getMembershipId() {
+        return membershipId;
+    }
+
+    public String getSubject() {
+        return subject;
+    }
+
+    public Instant getFirstUsedAt() {
+        return firstUsedAt;
     }
 
     /** EXPIRED as soon as {@code validUntil} passes, even before the job has set {@code expiredAt}. */

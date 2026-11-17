@@ -1,5 +1,6 @@
 package com.xavier.backend.fiscal;
 
+import com.xavier.backend.access.TestAuthentications;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 
 import com.xavier.backend.access.Actor;
@@ -10,9 +11,7 @@ import java.util.Arrays;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 /** Per-request actors for MockMvc (same principal and authority format as WithActor). */
@@ -53,7 +52,6 @@ public final class FiscalActors {
     }
 
     private static Authentication token(Actor actor, Set<String> authorities) {
-        return UsernamePasswordAuthenticationToken.authenticated(actor, null,
-                authorities.stream().map(SimpleGrantedAuthority::new).toList());
+        return TestAuthentications.of(actor);
     }
 }
