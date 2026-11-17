@@ -104,7 +104,8 @@ class AuditQueryTest {
 
     /**
      * D183: who acts in a SUPPORT membership is written as SUPPORT, though its actor is the tenant's support account
-     * (an ACCOUNT): the kind comes from the bound membership, for the use case's write and for {@code recordAs}.
+     * (an ACCOUNT): the kind comes from the bound membership, for the use case's write and for {@code recordAs}. In an
+     * ACCOUNT membership the same actor stays ACCOUNT.
      */
     @Test
     void anActionInASupportMembershipIsWrittenAsSupport() {
@@ -112,6 +113,8 @@ class AuditQueryTest {
         Actor actor = Actor.account(supportAccount, Set.of());
         TenantContext support = new TenantContext(TenantTestSupport.BOOTSTRAP, MembershipKind.SUPPORT,
                 UUID.randomUUID(), "test:support");
+        TenantContext ordinary = new TenantContext(TenantTestSupport.BOOTSTRAP, MembershipKind.ACCOUNT,
+                supportAccount, "test:account");
         SecurityContextHolder.getContext().setAuthentication(
                 new TestingAuthenticationToken(actor, null, List.of()));
         try {
@@ -120,13 +123,20 @@ class AuditQueryTest {
                 auditLog.recordAs(actor, action, "Order", "o-2", storeA, null, Map.of());
                 return null;
             }));
+            tenants.callIn(ordinary, () -> new TransactionTemplate(transactions).execute(status -> {
+                auditLog.recordAsCurrentActor(action, "Order", "o-3", storeA, null, null, Map.of());
+                auditLog.recordAs(actor, action, "Order", "o-4", storeA, null, Map.of());
+                return null;
+            }));
         } finally {
             SecurityContextHolder.clearContext();
         }
 
         assertThat(jdbc.sql("SELECT entity_id || ' ' || actor_kind FROM audit.audit_event WHERE action = ? "
                         + "AND actor_id = ? ORDER BY entity_id").param(action).param(supportAccount)
-                .query(String.class).list()).containsExactly("o-1 SUPPORT", "o-2 SUPPORT");
+                .query(String.class).list())
+                .as("SUPPORT in the support membership only; the same account in its own membership stays ACCOUNT")
+                .containsExactly("o-1 SUPPORT", "o-2 SUPPORT", "o-3 ACCOUNT", "o-4 ACCOUNT");
     }
 
     @Test
