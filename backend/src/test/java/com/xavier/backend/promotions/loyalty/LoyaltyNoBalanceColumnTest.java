@@ -9,7 +9,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 
 /**
  * D110: the points balance is never stored. The account holds status and enrollment only; the balance is Σ of
- * {@code loyalty_point_entry}, served by the {@code (customer_id, occurred_at) INCLUDE (points)} index.
+ * {@code loyalty_point_entry}, served by the {@code (tenant_id, customer_id, occurred_at) INCLUDE (points)} index.
  */
 @LoyaltyModuleTest
 class LoyaltyNoBalanceColumnTest {
@@ -51,6 +51,6 @@ class LoyaltyNoBalanceColumnTest {
                         WHERE schemaname = 'promotions' AND indexname = 'loyalty_point_entry_customer_ix'""")
                 .query(String.class).single();
 
-        assertThat(index).contains("(customer_id, occurred_at) INCLUDE (points)");
+        assertThat(index).contains("(tenant_id, customer_id, occurred_at) INCLUDE (points)");
     }
 }

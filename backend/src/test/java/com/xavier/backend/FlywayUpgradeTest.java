@@ -154,7 +154,7 @@ class FlywayUpgradeTest {
             assertThat(db.sql("SELECT count(*) FROM pg_catalog.pg_trigger WHERE tgrelid = ?::regclass "
                     + "AND tgname = 'store_scope_fixed'").param(table).query(Long.class).single()).isOne();
         }
-        assertThat(policyNames(db, "catalog.quick_page_entry")).containsExactly("store_or_all_parent_delete",
+        assertStorePolicies(db, "catalog.quick_page_entry", "store_or_all_parent_delete",
                 "store_or_all_parent_insert", "store_or_all_parent_read", "store_or_all_parent_update");
     }
 
@@ -218,9 +218,14 @@ class FlywayUpgradeTest {
      * of {@code shared.rls_protect_tenant} (a converted table).
      */
     private static void assertStoreOrAllPolicies(JdbcClient db, String table) {
+        assertStorePolicies(db, table, "store_or_all_delete", "store_or_all_insert", "store_or_all_read",
+                "store_or_all_update");
+    }
+
+    /** The store policies exactly, beside the canonical restrictive tenant_scope once the table's module converted. */
+    private static void assertStorePolicies(JdbcClient db, String table, String... storePolicies) {
         assertThat(policyNames(db, table)).as(table).filteredOn(name -> !name.equals("tenant_scope"))
-                .containsExactly("store_or_all_delete", "store_or_all_insert", "store_or_all_read",
-                        "store_or_all_update");
+                .containsExactly(storePolicies);
         for (Map<String, Object> tenantScope : db.sql("""
                         SELECT polpermissive, polcmd::text AS command, pg_get_expr(polqual, polrelid) AS using_clause,
                                pg_get_expr(polwithcheck, polrelid) AS check_clause
