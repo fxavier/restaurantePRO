@@ -146,6 +146,8 @@ class R6TenantLoadSmoke {
         final List<String> firstErrors = new CopyOnWriteArrayList<>();
         final AtomicInteger cycles = new AtomicInteger();
         long elapsedNanos;
+        /** Diagnostics sampled every 2 s while the phase runs (never asserted). */
+        final List<String> diagnosis = new ArrayList<>();
 
         Phase(String name) {
             this.name = name;
@@ -173,6 +175,8 @@ class R6TenantLoadSmoke {
         List<Terminal> first = seed(bootstrapAdmin, owner, 1);
         Duration seedOne = Duration.between(seedStart, Instant.now());
 
+        superuser.sql("ALTER DATABASE " + freshPostgres.getDatabaseName() + " SET track_functions = 'all'").update();
+        evictPool();
         run("warm-up (not reported)", first, WARM_UP);
         superuser.sql("ALTER ROLE restaurantpro_app BYPASSRLS").update();
         evictPool();
@@ -368,6 +372,14 @@ class R6TenantLoadSmoke {
                     return null;
                 }));
             }
+            Map<String, Long> idleStart = databaseCounters();
+            long idleBegan = System.nanoTime();
+            Thread.sleep(10_000); // an idle window: the background jobs' own transaction rate (diagnostics)
+            Map<String, Long> before = databaseCounters();
+            double backgroundPerSecond = (before.get("xacts") - idleStart.get("xacts"))
+                    / ((System.nanoTime() - idleBegan) / 1e9);
+            Sampler sampler = new Sampler();
+            Thread sampling = Thread.ofPlatform().daemon().start(sampler);
             long began = System.nanoTime();
             deadline[0] = began + length.toNanos();
             start.countDown();
@@ -375,8 +387,100 @@ class R6TenantLoadSmoke {
                 terminal.get();
             }
             phase.elapsedNanos = System.nanoTime() - began;
+            sampler.stop = true;
+            sampling.join();
+            Map<String, Long> after = databaseCounters();
+            long requests = phase.samples.values().stream().mapToLong(List::size).sum()
+                    + phase.cycles.get(); // + the unmeasured settlement read before each close
+            phase.diagnosis.add(sampler.summary());
+            long xacts = after.get("xacts") - before.get("xacts");
+            double background = backgroundPerSecond * phase.elapsedNanos / 1e9;
+            phase.diagnosis.add(("background jobs idle: %.1f transactions/s; per HTTP request after removing them: "
+                    + "%.2f transactions").formatted(backgroundPerSecond, (xacts - background) / requests));
+            phase.diagnosis.add("database per HTTP request: %.2f transactions (all), %.2f resolve_membership calls, %.1f ms DB time in it (xacts %d, requests ~%d)"
+                    .formatted(xacts / (double) requests,
+                            (after.get("resolveCalls") - before.get("resolveCalls")) / (double) requests,
+                            (after.get("resolveMs") - before.get("resolveMs")) / (double) requests,
+                            after.get("xacts") - before.get("xacts"), requests));
         }
         return phase;
+    }
+
+    /** Transactions of the database and calls of tenancy.resolve_membership (track_functions = all), as the superuser. */
+    private Map<String, Long> databaseCounters() {
+        JdbcClient superuser = superuser();
+        superuser.sql("SELECT pg_stat_force_next_flush()").query().listOfRows();
+        Map<String, Long> counters = new LinkedHashMap<>();
+        counters.put("xacts", superuser.sql("SELECT xact_commit + xact_rollback FROM pg_stat_database "
+                + "WHERE datname = current_database()").query(Long.class).single());
+        Map<String, Object> resolve = superuser.sql("""
+                SELECT coalesce(sum(calls), 0) AS calls, coalesce(sum(total_time), 0)::bigint AS ms
+                FROM pg_stat_user_functions WHERE schemaname = 'tenancy' AND funcname = 'resolve_membership'""")
+                .query().singleRow();
+        counters.put("resolveCalls", ((Number) resolve.get("calls")).longValue());
+        counters.put("resolveMs", ((Number) resolve.get("ms")).longValue());
+        return counters;
+    }
+
+    private JdbcClient superuser() {
+        return JdbcClient.create(new DriverManagerDataSource(freshPostgres.getJdbcUrl(), freshPostgres.getUsername(),
+                freshPostgres.getPassword()));
+    }
+
+    /** Every 2 s: the pool (active, idle, pending), the application's backends by state and wait event, CPU, load. */
+    private final class Sampler implements Runnable {
+        volatile boolean stop;
+        final List<int[]> pool = new ArrayList<>();
+        final Map<String, Integer> waits = new java.util.TreeMap<>();
+        final List<double[]> cpu = new ArrayList<>();
+        int samples;
+
+        @Override
+        public void run() {
+            HikariDataSource hikari;
+            try {
+                hikari = dataSource.unwrap(HikariDataSource.class);
+            } catch (java.sql.SQLException e) {
+                return;
+            }
+            JdbcClient superuser = superuser();
+            var os = (com.sun.management.OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
+            while (!stop) {
+                var bean = hikari.getHikariPoolMXBean();
+                pool.add(new int[] {bean.getActiveConnections(), bean.getIdleConnections(),
+                        bean.getThreadsAwaitingConnection()});
+                superuser.sql("""
+                        SELECT state || ':' || coalesce(wait_event_type || '/' || wait_event, 'CPU') AS w, count(*) AS n
+                        FROM pg_stat_activity WHERE datname = current_database() AND usename = 'restaurantpro_app'
+                          AND state <> 'idle' GROUP BY 1""").query().listOfRows().forEach(row -> waits.merge(
+                        (String) row.get("w"), ((Number) row.get("n")).intValue(), Integer::sum));
+                cpu.add(new double[] {os.getProcessCpuLoad(), os.getCpuLoad(), os.getSystemLoadAverage()});
+                samples++;
+                try {
+                    Thread.sleep(2000); // the sampling period (diagnostics, not a wait for a result)
+                } catch (InterruptedException e) {
+                    return;
+                }
+            }
+        }
+
+        String summary() {
+            double active = pool.stream().mapToInt(a -> a[0]).average().orElse(0);
+            int maxActive = pool.stream().mapToInt(a -> a[0]).max().orElse(0);
+            double pending = pool.stream().mapToInt(a -> a[2]).average().orElse(0);
+            int maxPending = pool.stream().mapToInt(a -> a[2]).max().orElse(0);
+            double jvm = cpu.stream().mapToDouble(c -> c[0]).average().orElse(0) * 100;
+            double system = cpu.stream().mapToDouble(c -> c[1]).average().orElse(0) * 100;
+            double load = cpu.stream().mapToDouble(c -> c[2]).average().orElse(0);
+            double maxLoad = cpu.stream().mapToDouble(c -> c[2]).max().orElse(0);
+            StringBuilder top = new StringBuilder();
+            waits.entrySet().stream().sorted(Map.Entry.<String, Integer>comparingByValue().reversed()).limit(6)
+                    .forEach(e -> top.append(e.getKey()).append('=')
+                            .append("%.1f".formatted(e.getValue() / (double) Math.max(1, samples))).append(' '));
+            return ("%d samples: pool active %.1f (max %d) / pending %.1f (max %d); JVM CPU %.0f%%, machine CPU %.0f%%, "
+                    + "load average %.1f (max %.1f); non-idle app backends per sample by state:wait: %s").formatted(
+                    samples, active, maxActive, pending, maxPending, jvm, system, load, maxLoad, top.toString().trim());
+        }
     }
 
     private void cycle(Phase phase, Terminal t, UUID table) throws Exception {
@@ -477,6 +581,9 @@ class R6TenantLoadSmoke {
                     : p95 < TARGET_MS ? "PASS" : "MISS";
             out.append("%-11s | %-22s | %-22s | %6d %-20s | %+6d | %s%n".formatted(operation, quartet(a1),
                     quartet(a2), a3.size(), quartet(a3), p(a2, 95) - p(a1, 95), verdict));
+        }
+        for (Phase phase : List.of(p1, p2, p3)) {
+            phase.diagnosis.forEach(line -> out.append("  [").append(phase.name).append("] ").append(line).append('\n'));
         }
         for (Phase phase : List.of(p1, p2, p3)) {
             out.append("%s: %d cycles, %.1f measured requests/s, %d errors%n".formatted(phase.name,

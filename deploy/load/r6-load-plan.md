@@ -66,8 +66,38 @@ Throughput: P1 9.2, P2 8.9, P3 91.9 measured requests/s (89, 90 and 1 000 cycles
 
 Not a configuration proposal: a check of whether the pool of 20 is what saturates P3. **Contaminated:** the parallel S76b suite (6 surefire JVMs, load average 10–12) ran during the whole run, so the numbers are not comparable with run 1. P3 p95 832–2 691 ms (CLOSE 10 219 ms), 74.1 measured requests/s, 0 errors; P1/P2 p95 49–375 ms. A larger pool did not remove the saturation under contention; the bottleneck is **not isolated** by these runs.
 
+### Runs 3 and 4 — 2026-11-17 14:50–15:10 UTC, idle machine (no other suite or agent; load average 2.8 before run 3), with diagnostics
+
+Same smoke, method and think time; it now also samples every 2 s the Hikari pool (active, idle, threads waiting), the application role's non-idle backends by state and wait event (`pg_stat_activity`), JVM/machine CPU and load average, and counts per phase the database transactions (`pg_stat_database`, minus the background rate measured in a 10 s idle window before the phase) and `tenancy.resolve_membership` calls (`track_functions = all`). An external sampler recorded load average and the PostgreSQL container's CPU (`docker stats`). Run 4 = run 3 with `-Dspring.datasource.hikari.maximum-pool-size=60` (test configuration only).
+
+p95 ms (P1 no RLS 1×10 / P2 RLS 1×10 / P3 RLS 20×10, pool 20 → P3 pool 60):
+
+| operation | P1 | P2 | P3 pool 20 | P3 pool 60 |
+|---|---|---|---|---|
+| tables | 65 | 64 | 951 MISS | 942 MISS |
+| catalog | 34 | 36 | 782 MISS | 673 MISS |
+| promotions | 29 | 32 | 606 MISS | 467 |
+| open | 112 | 176 | 642 MISS | 662 MISS |
+| line | 61 | 81 | 557 MISS | 569 MISS |
+| order | 39 | 51 | 413 | 460 |
+| confirm | 77 | 140 | 652 MISS | 847 MISS |
+| discounts (A77) | 74 | 87 | 1132 MISS | 1102 MISS |
+| settlement | 65 | 65 | 741 MISS | 717 MISS |
+| pay | 98 | 105 | 1468 MISS | 1458 MISS |
+| sales report | 28 | 31 | 499 | 416 |
+| close (reported) | 299 | 307 | 3244 | 3386 |
+
+Throughput: P1/P2 8.9 requests/s each (90 cycles); P3 115.8 (pool 20, 1 207 cycles) and 117.9 (pool 60). 0 errors. Load average during P3 17–23 (run 3), 12–16 (run 4); before P1 ≈ 3–6.
+
+**Diagnosis (P3).**
+- **Pool-bound, but not by database work.** Pool 20: active 18.3 of 20, 56 threads waiting on average (max 161). Of the busy connections, **11 are "idle in transaction / ClientRead"**: the transaction holds the connection while the application, not the database, is busy between statements; ~1.7 are actively running SQL. Pool 60: active 49.7, still 30 waiting, **34 idle in transaction**: a larger pool only moves the queue into open transactions, and p95 does not improve.
+- **The database is not saturated:** the PostgreSQL container at ~450–650 % of 1 600 % CPU; wait events are negligible (a little `LWLock/WALWrite` and `Lock/object` at pool 60).
+- **The machine is:** 85 % CPU during P3, with server, database and 200 client threads on one laptop; application threads that hold a transaction are starved between statements, which is what "idle in transaction / ClientRead" shows.
+- **Per request the database work is heavy:** ~13 transactions per HTTP request after removing the background (each with a `set_config` bind at begin: event listeners in their own transactions, the event publication registry, idempotency's short transactions); and the **background jobs alone cost ~10 transactions/s per active tenant** (≈ 190–200/s for 20 tenants idle: PrintWorker every second per tenant with lease acquire and release, sweepers, gauges).
+- **Membership resolution is not the cause:** 1.0 `resolve_membership` call per request, 0.3–0.4 ms of database time each.
+- **RLS is not the cause:** P2 − P1 is within noise again (−8 to +64 ms at p95, all P2 < 200 ms).
+
 ## Verdict
 
 - **A77 (RLS cost, 10 terminals, one company): met.** Every P2 p95 < 500 ms (A77's discount route 101 ms in run 1); P2−P1 within noise in both runs.
-- **A92 (20 × 10): MISS** on this machine (run 1, the cleaner one: every gated p95 934–2 454 ms) — [BUG-0004](../../docs/qa/bugs/0004-a92-p95-miss-at-20-tenants.md). Next steps before go-live, in order: a quiet machine (or the target hardware) with server, database and load generator on separate hosts; then profile P3 (pool wait time `hikaricp_connections_pending`, database CPU and lock waits, Tomcat threads) before changing anything; the decision about pool sizing per instance and the number of backend instances (D185 allows several) belongs to the architect.
-
+- **A92 (20 × 10): MISS** on this machine in every run (idle run 3: 8 of 10 gated operations, p95 557–1 468 ms) — [BUG-0004](../../docs/qa/bugs/0004-a92-p95-miss-at-20-tenants.md). Likely cause: application-side time inside open transactions on a CPU-saturated single host (server, database and load generator together), amplified by ~13 transactions per request and ~10 background transactions/s per tenant; not RLS, not membership resolution, not database CPU, and not the pool size (pool 60 changes nothing). Next, for the architect: rerun with the load generator and the database on separate hosts (or the target hardware); then profile the application (thread CPU, JDBC round trips per request) and decide on the per-tenant background polling (PrintWorker 1 s × tenants) and the transactions per command before any pool or instance sizing.
