@@ -11,7 +11,6 @@ import com.xavier.backend.TestcontainersConfiguration;
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.WithActor;
-import jakarta.servlet.http.Cookie;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,47 +50,28 @@ class SecurityConfigTest {
         assertThat(context.getBeanNamesForType(UserDetailsService.class)).isEmpty();
     }
 
+    /** D176: no session at all, so no {@code /auth/**} route is open any more (BackOffice login is Keycloak's). */
     @Test
-    void authEndpointsAreReachableWithoutASession() throws Exception {
-        mvc.perform(get("/api/v1/auth/security-probe"))
-                .andExpect(status().isOk());
+    void authEndpointsNeedATokenToo() throws Exception {
+        mvc.perform(get("/api/v1/auth/security-probe")).andExpect(status().isUnauthorized());
     }
 
+    /** D176: the credential is the Authorization header, so the API needs no CSRF token, sets no cookie. */
     @Test
     @WithActor
-    void aMutatingRequestWithoutTheCsrfTokenGets403ProblemDetail() throws Exception {
+    void aMutatingRequestNeedsNoCsrfTokenAndNoCookieIsSet() throws Exception {
         mvc.perform(post("/api/v1/backoffice/security-probe"))
-                .andExpect(status().isForbidden())
-                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.status").value(403));
-    }
-
-    @Test
-    @WithActor
-    void theSpaEchoesTheCsrfCookieAsAHeader() throws Exception {
-        Cookie csrfCookie = mvc.perform(get("/api/v1/backoffice/security-probe"))
                 .andExpect(status().isOk())
-                .andReturn().getResponse().getCookie("XSRF-TOKEN");
-        assertThat(csrfCookie).as("XSRF-TOKEN cookie readable by the SPA").isNotNull();
-        assertThat(csrfCookie.isHttpOnly()).isFalse();
-
-        mvc.perform(post("/api/v1/backoffice/security-probe")
-                        .cookie(csrfCookie)
-                        .header("X-XSRF-TOKEN", csrfCookie.getValue()))
-                .andExpect(status().isOk())
-                .andExpect(content().string("written"));
+                .andExpect(content().string("written"))
+                .andExpect(result -> assertThat(result.getResponse().getHeaders("Set-Cookie")).isEmpty());
     }
 
     @Test
     @WithActor(permissions = Permission.DINING_MANAGE, storeId = STORE_A)
     void aStoreScopedUseCaseAllowsOnlyTheActorsStore() throws Exception {
-        Cookie csrf = csrfCookie();
-
-        mvc.perform(post("/api/v1/backoffice/stores/{id}/security-probe", STORE_A)
-                        .cookie(csrf).header("X-XSRF-TOKEN", csrf.getValue()))
+        mvc.perform(post("/api/v1/backoffice/stores/{id}/security-probe", STORE_A))
                 .andExpect(status().isOk());
-        mvc.perform(post("/api/v1/backoffice/stores/{id}/security-probe", STORE_B)
-                        .cookie(csrf).header("X-XSRF-TOKEN", csrf.getValue()))
+        mvc.perform(post("/api/v1/backoffice/stores/{id}/security-probe", STORE_B))
                 .andExpect(status().isForbidden())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
     }
@@ -99,16 +79,9 @@ class SecurityConfigTest {
     @Test
     @WithActor(permissions = Permission.DINING_VIEW, storeId = STORE_A)
     void anActorWithoutThePermissionGets403() throws Exception {
-        Cookie csrf = csrfCookie();
-
-        mvc.perform(post("/api/v1/backoffice/stores/{id}/security-probe", STORE_A)
-                        .cookie(csrf).header("X-XSRF-TOKEN", csrf.getValue()))
+        mvc.perform(post("/api/v1/backoffice/stores/{id}/security-probe", STORE_A))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.status").value(403));
-    }
-
-    private Cookie csrfCookie() throws Exception {
-        return mvc.perform(get("/api/v1/backoffice/security-probe")).andReturn().getResponse().getCookie("XSRF-TOKEN");
     }
 
     /** Stands in for real controllers: a use case that authorizes through AccessPolicy. */

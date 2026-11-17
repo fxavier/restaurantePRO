@@ -348,9 +348,79 @@ class AccessPolicyTest {
                 .contains(STORE_B);
     }
 
+    // ---- D184: step-up from the token's acr and auth_time ----
+
+    private static ActorAuthentication authenticated(Actor actor, String acr, java.time.Instant authTime) {
+        return new ActorAuthentication(actor, new com.xavier.backend.shared.tenancy.TenantContext(
+                com.xavier.backend.shared.tenancy.TenantTestSupport.BOOTSTRAP,
+                com.xavier.backend.shared.tenancy.MembershipKind.ACCOUNT, actor.userId(), "test"),
+                new Assurance(acr, authTime));
+    }
+
+    private static final Actor PUBLISHER = Actor.account(UUID.randomUUID(),
+            Set.of(Permission.CATALOG_PUBLISH.authority(), Permission.CATALOG_VIEW.authority()));
+
+    @Test
+    void aSensitivePermissionWithAFreshSecondFactorPasses() {
+        runAs(authenticated(PUBLISHER, "2", java.time.Instant.now().minusSeconds(299)),
+                () -> assertThatCode(() -> accessPolicy.require(Permission.CATALOG_PUBLISH)).doesNotThrowAnyException());
+    }
+
+    @Test
+    void aPasswordOnlyTokenIsAskedToStepUp() {
+        runAs(authenticated(PUBLISHER, "1", java.time.Instant.now()), () -> assertThatThrownBy(() ->
+                accessPolicy.require(Permission.CATALOG_PUBLISH)).isInstanceOf(StepUpRequiredException.class)
+                .satisfies(e -> assertThat(((StepUpRequiredException) e).canStepUp()).isTrue()));
+    }
+
+    @Test
+    void aSecondFactorOlderThanTheMaxAgeIsAskedToStepUp() {
+        runAs(authenticated(PUBLISHER, "2", java.time.Instant.now().minusSeconds(301)), () -> assertThatThrownBy(
+                () -> accessPolicy.require(Permission.CATALOG_PUBLISH)).isInstanceOf(StepUpRequiredException.class));
+    }
+
+    @Test
+    void aTokenWithoutAuthTimeOrAnyOtherAuthenticationProvesNothing() {
+        runAs(authenticated(PUBLISHER, "2", null), () -> assertThatThrownBy(
+                () -> accessPolicy.require(Permission.CATALOG_PUBLISH)).isInstanceOf(StepUpRequiredException.class));
+        runAs(UsernamePasswordAuthenticationToken.authenticated(PUBLISHER, null, List.of()), () -> assertThatThrownBy(
+                () -> accessPolicy.require(Permission.CATALOG_PUBLISH)).isInstanceOf(StepUpRequiredException.class));
+    }
+
+    @Test
+    void aNonSensitivePermissionNeedsNoSecondFactor() {
+        runAs(authenticated(PUBLISHER, "1", java.time.Instant.now().minusSeconds(36_000)),
+                () -> assertThatCode(() -> accessPolicy.require(Permission.CATALOG_VIEW)).doesNotThrowAnyException());
+    }
+
+    @Test
+    void requireAnyAsksOnlyWhenEveryGrantingPermissionIsSensitive() {
+        Actor both = Actor.account(UUID.randomUUID(), Set.of(Permission.CASH_VIEW.authority(),
+                Permission.CASH_CLOSING_APPROVE.authority()));
+        Actor onlySensitive = Actor.account(UUID.randomUUID(), Set.of(Permission.CASH_CLOSING_APPROVE.authority()));
+        runAs(authenticated(both, "1", java.time.Instant.now()), () -> assertThatCode(() -> accessPolicy
+                .requireAny(uuid(STORE_A), Permission.CASH_VIEW, Permission.CASH_CLOSING_APPROVE))
+                .doesNotThrowAnyException());
+        runAs(authenticated(onlySensitive, "1", java.time.Instant.now()), () -> assertThatThrownBy(() -> accessPolicy
+                .requireAny(uuid(STORE_A), Permission.CASH_VIEW, Permission.CASH_CLOSING_APPROVE))
+                .isInstanceOf(StepUpRequiredException.class));
+    }
+
+    @Test
+    void aPosSessionOnASensitivePermissionOutsideThePosGateNeedsAnAccount() {
+        Actor employee = Actor.employee(UUID.randomUUID(), UUID.randomUUID(), uuid(STORE_A),
+                Set.of(Permission.CASH_CLOSING_APPROVE.authority(uuid(STORE_A))));
+        runAs(employee, () -> assertThatThrownBy(() -> accessPolicy.require(Permission.CASH_CLOSING_APPROVE,
+                uuid(STORE_A))).isInstanceOf(StepUpRequiredException.class)
+                .satisfies(e -> assertThat(((StepUpRequiredException) e).code()).isEqualTo("MFA_ACCOUNT_REQUIRED")));
+    }
+
     private static void runAs(Actor actor, Runnable check) {
-        SecurityContextHolder.getContext().setAuthentication(
-                UsernamePasswordAuthenticationToken.authenticated(actor, null, List.of()));
+        runAs(TestAuthentications.of(actor), check);
+    }
+
+    private static void runAs(org.springframework.security.core.Authentication authentication, Runnable check) {
+        SecurityContextHolder.getContext().setAuthentication(authentication);
         try {
             check.run();
         } finally {

@@ -1,5 +1,6 @@
 package com.xavier.backend.orders;
 
+import com.xavier.backend.access.TestAuthentications;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 
 import com.xavier.backend.access.Actor;
@@ -10,8 +11,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
@@ -25,16 +24,14 @@ public final class OrdersActors {
     /** An employee on {@code terminal} of {@code store}, with {@code permissions} in that store. */
     public static RequestPostProcessor pos(UUID store, UUID employee, UUID terminal, Permission... permissions) {
         Actor actor = actor(store, employee, terminal, permissions);
-        return authentication(UsernamePasswordAuthenticationToken.authenticated(actor, null,
-                actor.authorities().stream().map(SimpleGrantedAuthority::new).toList()));
+        return authentication(TestAuthentications.of(actor));
     }
 
     /** A BackOffice account with installation-wide {@code permissions}: never a POS session. */
     public static RequestPostProcessor backOffice(Permission... permissions) {
         Actor actor = Actor.account(UUID.randomUUID(),
                 Arrays.stream(permissions).map(Permission::authority).collect(Collectors.toSet()));
-        return authentication(UsernamePasswordAuthenticationToken.authenticated(actor, null,
-                actor.authorities().stream().map(SimpleGrantedAuthority::new).toList()));
+        return authentication(TestAuthentications.of(actor));
     }
 
     /**
@@ -45,8 +42,7 @@ public final class OrdersActors {
     public static <T> T runAsPos(UUID store, UUID employee, UUID terminal, Supplier<T> action) {
         SecurityContext previous = SecurityContextHolder.getContext();
         SecurityContext context = SecurityContextHolder.createEmptyContext();
-        context.setAuthentication(UsernamePasswordAuthenticationToken.authenticated(
-                actor(store, employee, terminal, Permission.PAYMENT_COLLECT), null, List.of()));
+        context.setAuthentication(TestAuthentications.of(actor(store, employee, terminal, Permission.PAYMENT_COLLECT)));
         SecurityContextHolder.setContext(context);
         try {
             return action.get();

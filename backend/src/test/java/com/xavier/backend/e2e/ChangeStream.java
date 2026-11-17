@@ -15,7 +15,7 @@ import tools.jackson.databind.JsonNode;
 
 /**
  * A POS tab's subscription to {@code GET /api/v1/pos/notifications} (D60) over a real connection, with the tab's
- * cookies, read line by line on a virtual thread. {@link #notices()} are the {@code data:} payloads seen so far.
+ * credentials, read line by line on a virtual thread. {@link #notices()} are the {@code data:} payloads seen so far.
  */
 final class ChangeStream implements AutoCloseable {
 
@@ -27,8 +27,10 @@ final class ChangeStream implements AutoCloseable {
     private final CompletableFuture<HttpResponse<Stream<String>>> response;
 
     private ChangeStream(Browser tab) {
-        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + tab.port() + PATH))
-                .header("Accept", "text/event-stream").header("Cookie", tab.cookieHeader()).GET().build();
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create("http://localhost:" + tab.port() + PATH))
+                .header("Accept", "text/event-stream").GET();
+        tab.credentials().forEach(builder::header);
+        HttpRequest request = builder.build();
         response = http.sendAsync(request, HttpResponse.BodyHandlers.ofLines());
         response.thenAcceptAsync(r -> r.body().forEach(line -> {
             long at = System.nanoTime();

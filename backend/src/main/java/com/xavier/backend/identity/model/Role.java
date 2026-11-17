@@ -21,12 +21,15 @@ import java.util.Set;
 import java.util.UUID;
 import org.hibernate.annotations.UuidGenerator;
 
-/** A named, editable set of {@link Permission}s (D27). Seven are seeded from spec §3 by Flyway. */
+/**
+ * A named, editable set of {@link Permission}s (D27), per tenant. The bootstrap tenant's seven are seeded from spec §3
+ * by Flyway; a tenant provisioned later starts with the same roles, copied from {@code identity.role_template}.
+ */
 @Entity
 @Table(schema = "identity", name = "role")
 public class Role {
 
-    /** The seeded "Administrador" role: every permission, read-only through the API. */
+    /** The bootstrap tenant's seeded "Administrador" role. */
     public static final UUID ADMINISTRATOR_ID = UUID.fromString("01900000-0000-7000-8000-000000000301");
 
     @Id
@@ -35,6 +38,10 @@ public class Role {
 
     @Column(nullable = false, length = 60)
     private String name;
+
+    /** The tenant's administrator role: every permission, read-only through the API; one per tenant. */
+    @Column(nullable = false, updatable = false)
+    private boolean administrator;
 
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(schema = "identity", name = "role_permission", joinColumns = @JoinColumn(name = "role_id"))
@@ -64,6 +71,13 @@ public class Role {
         return role;
     }
 
+    /** One of a provisioned tenant's standard roles, from its template (D181 onboarding). */
+    public static Role fromTemplate(String name, Set<Permission> permissions, boolean administrator, Instant now) {
+        Role role = define(name, permissions, now);
+        role.administrator = administrator;
+        return role;
+    }
+
     public void redefine(String newName, Set<Permission> newPermissions, Instant now) {
         if (isAdministrator()) {
             throw new ReadOnlyRoleException();
@@ -75,7 +89,7 @@ public class Role {
     }
 
     public boolean isAdministrator() {
-        return ADMINISTRATOR_ID.equals(id);
+        return administrator;
     }
 
     public RoleSummary toSummary() {

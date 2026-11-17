@@ -26,7 +26,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 /**
  * D177/D178/D185: what tenant a thread works in. Resolution order: an explicit binding, else the authenticated
- * principal's resolved tenant, else the request's pre-resolution tenant, else the fallback; a system scope binds the
+ * principal's resolved tenant, else the fallback; a system scope binds the
  * tenant and its store scope together; a tenant never changes inside a transaction; a task carries its submitter's
  * tenant and store scope; an event without a tenant is refused. No database: the bindings themselves.
  */
@@ -51,7 +51,6 @@ class TenantScopesTest {
     @AfterEach
     void clear() {
         SecurityContextHolder.clearContext();
-        TenantScopes.leaveRequest();
     }
 
     @Test
@@ -62,13 +61,9 @@ class TenantScopesTest {
     }
 
     @Test
-    void theResolutionOrderIsExplicitThenPrincipalThenRequestThenFallback() {
+    void theResolutionOrderIsExplicitThenPrincipalThenFallback() {
         fallback = Optional.of(fallbackContext);
         assertThat(tenants.requireTenant()).as("fallback").isEqualTo(BootstrapTenant.ID);
-
-        TenantScopes.enterRequest();
-        assertThat(tenants.current()).map(TenantContext::origin).as("the request's pre-resolution tenant")
-                .contains("request:pre-resolution");
 
         authenticateIn(A);
         assertThat(tenants.requireTenant()).as("the principal's resolved tenant").isEqualTo(A);

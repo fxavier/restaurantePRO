@@ -15,7 +15,6 @@ import com.xavier.backend.identity.IdentityFixtures;
 import com.xavier.backend.identity.IdentityFixtures.Employee;
 import com.xavier.backend.identity.IdentityFixtures.Terminal;
 import com.xavier.backend.identity.IdentityTest;
-import jakarta.servlet.http.Cookie;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
@@ -35,6 +34,7 @@ import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 @IdentityTest
 @ExtendWith(OutputCaptureExtension.class)
@@ -69,9 +69,9 @@ class PosLoginHttpTest {
                         .content(IdentityFixtures.json("storeId", storeB, "roleId", IdentityFixtures.MANAGER)))
                 .andExpect(status().isCreated());
 
-        Cookie session = fixtures.posLogin(terminalA, employee, PIN);
+        RequestPostProcessor session = fixtures.posLogin(terminalA, employee, PIN);
 
-        mvc.perform(get("/api/v1/auth/session").cookie(session))
+        mvc.perform(get("/api/v1/auth/pos-session").with(session))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.employeeId").value(employee.id().toString()))
                 .andExpect(jsonPath("$.terminalId").value(terminalA.id().toString()))
@@ -198,19 +198,19 @@ class PosLoginHttpTest {
     @Test
     void revokingTheTerminalEndsItsPosSessions() throws Exception {
         Employee employee = fixtures.employee(PIN, storeA, IdentityFixtures.WAITER);
-        Cookie session = fixtures.posLogin(terminalA, employee, PIN);
-        mvc.perform(get("/api/v1/auth/session").cookie(session)).andExpect(status().isOk());
+        RequestPostProcessor session = fixtures.posLogin(terminalA, employee, PIN);
+        mvc.perform(get("/api/v1/auth/pos-session").with(session)).andExpect(status().isOk());
 
         fixtures.revoke(terminalA);
 
         Awaitility.await().atMost(Duration.ofSeconds(10)).untilAsserted(() ->
-                mvc.perform(get("/api/v1/auth/session").cookie(session)).andExpect(status().isUnauthorized()));
+                mvc.perform(get("/api/v1/auth/pos-session").with(session)).andExpect(status().isUnauthorized()));
     }
 
     @Test
     void deactivatingTheEmployeeEndsTheirPosSessions() throws Exception {
         Employee employee = fixtures.employee(PIN, storeA, IdentityFixtures.WAITER);
-        Cookie session = fixtures.posLogin(terminalA, employee, PIN);
+        RequestPostProcessor session = fixtures.posLogin(terminalA, employee, PIN);
 
         mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
                         .put("/api/v1/backoffice/employees/" + employee.id()).with(admin()).with(csrf())
@@ -219,7 +219,7 @@ class PosLoginHttpTest {
                                 currentVersion(employee))))
                 .andExpect(status().isOk());
 
-        mvc.perform(get("/api/v1/auth/session").cookie(session)).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/auth/pos-session").with(session)).andExpect(status().isUnauthorized());
     }
 
     private long currentVersion(Employee employee) {
@@ -230,11 +230,11 @@ class PosLoginHttpTest {
     @Test
     void logoutOnTheTerminalEndsThePosSession() throws Exception {
         Employee employee = fixtures.employee(PIN, storeA, IdentityFixtures.WAITER);
-        Cookie session = fixtures.posLogin(terminalA, employee, PIN);
+        RequestPostProcessor session = fixtures.posLogin(terminalA, employee, PIN);
 
-        mvc.perform(post("/api/v1/auth/logout").cookie(session).with(csrf())).andExpect(status().isNoContent());
+        mvc.perform(post("/api/v1/auth/pos-logout").with(session).with(csrf())).andExpect(status().isNoContent());
 
-        mvc.perform(get("/api/v1/auth/session").cookie(session)).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/auth/pos-session").with(session)).andExpect(status().isUnauthorized());
         assertThat(jdbc.sql("""
                         SELECT action FROM audit.audit_event WHERE entity_id = :id AND actor_id = :employee
                           AND terminal_id = :terminal AND store_id = :store
