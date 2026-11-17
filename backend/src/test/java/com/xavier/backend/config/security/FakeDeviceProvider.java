@@ -21,6 +21,9 @@ public class FakeDeviceProvider {
     public static final Map<String, String> KEYS = new ConcurrentHashMap<>();
     public static final Set<String> CREATED = ConcurrentHashMap.newKeySet();
     public static final Set<String> DISABLED = ConcurrentHashMap.newKeySet();
+    /** clientId → how many times it was created (or found). */
+    public static final Map<String, java.util.concurrent.atomic.AtomicInteger> CREATE_CALLS =
+            new ConcurrentHashMap<>();
 
     /** The subject of the tokens of {@code clientId}. */
     public static String subjectOf(String clientId) {
@@ -58,6 +61,8 @@ public class FakeDeviceProvider {
             @Override
             public String createClient(String clientId) {
                 CREATED.add(clientId);
+                CREATE_CALLS.computeIfAbsent(clientId, ignored -> new java.util.concurrent.atomic.AtomicInteger())
+                        .incrementAndGet();
                 return subjectOf(clientId);
             }
 

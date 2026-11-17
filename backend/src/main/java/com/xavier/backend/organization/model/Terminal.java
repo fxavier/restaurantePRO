@@ -9,6 +9,8 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
@@ -65,6 +67,9 @@ public class Terminal {
 
     private UUID enrollmentMembershipId;
 
+    /** When the open code completed an enrolment; it then only replays that enrolment for the same key. */
+    private Instant enrollmentCompletedAt;
+
     private UUID membershipId;
 
     @Version
@@ -99,7 +104,9 @@ public class Terminal {
         /** Wrong, expired, no code, or another key than the pinned one. */
         REFUSED,
         /** The fifth wrong secret: the code is gone. */
-        BURNED
+        BURNED,
+        /** The right secret with the key the code already enrolled: a retry after a lost answer (review 5). */
+        REPLAYED
     }
 
     /**
@@ -118,6 +125,7 @@ public class Terminal {
         enrollmentMembershipId = pendingMembershipId;
         enrollmentFailures = 0;
         enrollmentKeyThumbprint = null;
+        enrollmentCompletedAt = null;
         updatedAt = now;
         return replaced;
     }
@@ -125,14 +133,19 @@ public class Terminal {
     /**
      * A device presents the code's secret with its public key. The right secret pins the key the first time; a wrong
      * secret, or the right one with another key, counts as a failure, and the {@value #MAX_FAILURES}th burns the code.
+     * Once the code enrolled a key, the right secret with that key replays the enrolment.
      */
     public Presentation presentCode(String secretHash, String keyThumbprint, Instant now) {
         if (!holdsLiveCode(now)) {
             return Presentation.REFUSED;
         }
-        if (!enrollmentCodeHash.equals(secretHash)
-                || enrollmentKeyThumbprint != null && !enrollmentKeyThumbprint.equals(keyThumbprint)) {
+        boolean rightSecret = MessageDigest.isEqual(enrollmentCodeHash.getBytes(StandardCharsets.US_ASCII),
+                secretHash.getBytes(StandardCharsets.US_ASCII));
+        if (!rightSecret || enrollmentKeyThumbprint != null && !enrollmentKeyThumbprint.equals(keyThumbprint)) {
             return fail(now);
+        }
+        if (enrollmentCompletedAt != null) {
+            return Presentation.REPLAYED;
         }
         enrollmentKeyThumbprint = keyThumbprint;
         updatedAt = now;
@@ -141,21 +154,26 @@ public class Terminal {
 
     /**
      * The enrolment ends: the key the code pinned is registered on the device's client, whose membership is
-     * {@code membershipId}. The code is consumed.
+     * {@code membershipId}. The code is used: from now on it only replays this enrolment for this key (until it
+     * expires or a new code replaces it), so a device that lost the answer can ask again.
      *
-     * @return the code's pending membership, for the caller to revoke; empty when the code is no longer this key's
-     *         (consumed by a concurrent attempt, replaced, or the device revoked meanwhile)
+     * @return false when the code is no longer this key's to complete (completed, replaced, expired, or the device
+     *         revoked meanwhile)
      */
-    public Optional<UUID> completeEnrolment(String keyThumbprint, UUID membershipId, Instant now) {
-        if (!holdsLiveCode(now) || !keyThumbprint.equals(enrollmentKeyThumbprint)) {
-            return Optional.empty();
+    public boolean completeEnrolment(String keyThumbprint, UUID membershipId, Instant now) {
+        if (!holdsLiveCode(now) || enrollmentCompletedAt != null || !keyThumbprint.equals(enrollmentKeyThumbprint)) {
+            return false;
         }
-        Optional<UUID> pending = pendingMembership();
-        clearCode();
         this.membershipId = membershipId;
+        enrollmentCompletedAt = now;
         status = TerminalStatus.ACTIVE;
         updatedAt = now;
-        return pending;
+        return true;
+    }
+
+    /** Whether the open code already enrolled the key {@code keyThumbprint}. */
+    public boolean isEnrolledWith(String keyThumbprint) {
+        return enrollmentCompletedAt != null && keyThumbprint.equals(enrollmentKeyThumbprint);
     }
 
     /**
@@ -240,6 +258,7 @@ public class Terminal {
         enrollmentMembershipId = null;
         enrollmentFailures = 0;
         enrollmentKeyThumbprint = null;
+        enrollmentCompletedAt = null;
     }
 
     private void requireNotRevoked(String action) {

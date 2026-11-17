@@ -3,7 +3,8 @@
 -- (the subject of a short-lived pending membership, which tells an unauthenticated enrolment its tenant) and a secret,
 -- kept here as its SHA-256 only; five failed attempts burn the code. The first attempt with the right secret pins the
 -- device's public key (its RFC 7638 thumbprint), so a second device holding the same code cannot take over the
--- enrolment between the key's registration at Keycloak and the commit. The device's own TERMINAL or BRIDGE membership
+-- enrolment between the key's registration at Keycloak and the commit. A used code keeps its hash and that key until
+-- it expires or is replaced, so the same device retrying after a lost answer gets the same answer (G5 review 5). The device's own TERMINAL or BRIDGE membership
 -- is kept so revocation revokes it in the same transaction.
 ALTER TABLE organization.terminal
     DROP CONSTRAINT terminal_active_has_token_ck,
@@ -19,6 +20,7 @@ ALTER TABLE organization.terminal
     ADD COLUMN enrollment_failures        INTEGER     NOT NULL DEFAULT 0,
     ADD COLUMN enrollment_key_thumbprint  VARCHAR(43),
     ADD COLUMN enrollment_membership_id   UUID,
+    ADD COLUMN enrollment_completed_at    TIMESTAMP WITH TIME ZONE,
     ADD COLUMN membership_id              UUID;
 ALTER TABLE organization.terminal
     ADD CONSTRAINT terminal_kind_ck CHECK (kind IN ('POS', 'PRINT_BRIDGE')),
@@ -29,6 +31,9 @@ ALTER TABLE organization.terminal
     ADD CONSTRAINT terminal_enrollment_code_not_revoked_ck CHECK (status <> 'REVOKED' OR enrollment_code_hash IS NULL),
     ADD CONSTRAINT terminal_enrollment_key_needs_code_ck
         CHECK (enrollment_key_thumbprint IS NULL OR enrollment_code_hash IS NOT NULL),
+    -- a used code keeps its secret's hash and the key it enrolled, to replay that enrolment after a lost answer
+    ADD CONSTRAINT terminal_enrollment_completed_has_key_ck
+        CHECK (enrollment_completed_at IS NULL OR enrollment_key_thumbprint IS NOT NULL),
     -- NOT VALID: a code issued before this migration has no pending membership; it can never be redeemed (nothing
     -- resolves its tenant) and is replaced or cleared by the next write of its row, which the check then covers. No
     -- UPDATE here (D180 recipe).

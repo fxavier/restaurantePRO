@@ -29,12 +29,24 @@ class TerminalTest {
         terminal.issueEnrollmentCode(SECRET, EXPIRES, PENDING, NOW);
 
         assertThat(terminal.presentCode(SECRET, KEY, NOW)).isEqualTo(Presentation.ACCEPTED);
-        assertThat(terminal.completeEnrolment(KEY, MEMBERSHIP, NOW)).contains(PENDING);
+        assertThat(terminal.completeEnrolment(KEY, MEMBERSHIP, NOW)).isTrue();
 
         assertThat(terminal.getStatus()).isEqualTo(TerminalStatus.ACTIVE);
         assertThat(terminal.wasEnrolled()).isTrue();
-        assertThat(terminal.presentCode(SECRET, KEY, NOW)).isEqualTo(Presentation.REFUSED);
-        assertThat(terminal.pendingMembership()).isEmpty();
+        assertThat(terminal.isEnrolledWith(KEY)).isTrue();
+    }
+
+    /** Review 5: after the enrolment, the same code and key replay it (a lost answer); another key is refused. */
+    @Test
+    void aCompletedEnrolmentReplaysForItsKeyOnly() {
+        terminal.issueEnrollmentCode(SECRET, EXPIRES, PENDING, NOW);
+        terminal.presentCode(SECRET, KEY, NOW);
+        terminal.completeEnrolment(KEY, MEMBERSHIP, NOW);
+
+        assertThat(terminal.presentCode(SECRET, KEY, NOW)).isEqualTo(Presentation.REPLAYED);
+        assertThat(terminal.presentCode(SECRET, OTHER_KEY, NOW)).isEqualTo(Presentation.REFUSED);
+        assertThat(terminal.completeEnrolment(OTHER_KEY, UUID.randomUUID(), NOW)).isFalse();
+        assertThat(terminal.isEnrolledWith(OTHER_KEY)).isFalse();
     }
 
     @Test
@@ -43,7 +55,7 @@ class TerminalTest {
         terminal.presentCode(SECRET, KEY, NOW);
 
         assertThat(terminal.presentCode(SECRET, OTHER_KEY, NOW)).isEqualTo(Presentation.REFUSED);
-        assertThat(terminal.completeEnrolment(OTHER_KEY, MEMBERSHIP, NOW)).isEmpty();
+        assertThat(terminal.completeEnrolment(OTHER_KEY, MEMBERSHIP, NOW)).isFalse();
         assertThat(terminal.presentCode(SECRET, KEY, NOW)).as("a retry with the first key")
                 .isEqualTo(Presentation.ACCEPTED);
     }
@@ -90,7 +102,7 @@ class TerminalTest {
         terminal.issueEnrollmentCode("d".repeat(64), EXPIRES, UUID.randomUUID(), NOW);
 
         assertThat(terminal.presentCode("d".repeat(64), OTHER_KEY, NOW)).isEqualTo(Presentation.ACCEPTED);
-        assertThat(terminal.completeEnrolment(OTHER_KEY, MEMBERSHIP, NOW)).isPresent();
+        assertThat(terminal.completeEnrolment(OTHER_KEY, MEMBERSHIP, NOW)).isTrue();
     }
 
     @Test

@@ -19,6 +19,8 @@ import com.xavier.backend.tenancy.TenancyApi;
 import com.xavier.backend.tenancy.model.dto.Membership;
 import com.xavier.backend.tenancy.model.dto.MembershipGrant;
 import com.xavier.backend.tenancy.model.dto.TenantStatus;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Map;
@@ -39,9 +41,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  * (D177). Then, in that tenant: (1) the secret is checked and the device's key pinned, failures counted and the fifth
  * burning the code — committed before any answer; (2) outside any transaction (D48), the device's client is created
  * (or found) in the devices realm and the key registered on it; (3) the device's own membership is granted to the
- * client's service account, the code consumed and its pending membership revoked, in one transaction. Retrying with
- * the same key after a crash between the steps ends in the same state; another key cannot finish an enrolment a first
- * key started. Every refusal is one answer ({@code ENROLMENT_CODE_INVALID}); the code is never logged.
+ * client's service account and the code marked used, in one transaction. Retrying with the same key after a crash
+ * between the steps, or after a lost answer, ends in the same state and the same answer (the used code replays its
+ * enrolment for its key until it expires); another key cannot finish an enrolment a first key started. Every refusal is one answer ({@code ENROLMENT_CODE_INVALID}); the code is never logged.
  */
 @Service
 public class DeviceEnrolmentService {
@@ -59,10 +61,15 @@ public class DeviceEnrolmentService {
     private final TransactionTemplate transaction;
     private final String devicesIssuer;
     private final Clock clock;
+    private final Counter refusals;
+    private final Counter burned;
 
     DeviceEnrolmentService(TerminalRepository terminals, TenancyApi tenancy, TenantScopes tenants,
                            EnrolmentThrottle throttle, AuditLog auditLog, PlatformTransactionManager transactions,
-                           @Value("${restaurantpro.security.issuers.devices:}") String devicesIssuer, Clock clock) {
+                           @Value("${restaurantpro.security.issuers.devices:}") String devicesIssuer, Clock clock,
+                           MeterRegistry meters) {
+        this.refusals = meters.counter("enrolment_refused_total");
+        this.burned = meters.counter("enrolment_code_burned_total");
         this.terminals = terminals;
         this.tenancy = tenancy;
         this.tenants = tenants;
@@ -90,6 +97,10 @@ public class DeviceEnrolmentService {
         String thumbprint = key.thumbprint();
         Presentation presented = tenants.call(pending.tenantId(), SystemScope.DEVICE_ENROLMENT,
                 () -> transaction.execute(status -> present(pending, kind, code, thumbprint)));
+        if (presented == Presentation.REPLAYED) {
+            return tenants.call(pending.tenantId(), SystemScope.DEVICE_ENROLMENT,
+                    () -> transaction.execute(status -> answer(terminals.findById(pending.principalId()).orElseThrow())));
+        }
         if (presented != Presentation.ACCEPTED) {
             throw refused(remoteAddress);
         }
@@ -120,6 +131,7 @@ public class DeviceEnrolmentService {
         Presentation presented = terminal.presentCode(code.secretHash(), thumbprint, clock.instant());
         terminals.saveAndFlush(terminal);
         if (presented == Presentation.BURNED) {
+            burned.increment();
             pendingId.ifPresent(tenancy::revoke);
             log.warn("Enrolment code of device {} burned after {} failed attempts", terminal.getId(),
                     Terminal.MAX_FAILURES);
@@ -132,20 +144,29 @@ public class DeviceEnrolmentService {
             throw new UnavailableException("IDP_UNAVAILABLE", "The devices realm is not configured.", Map.of());
         }
         Terminal terminal = terminals.lockById(pending.principalId()).orElseThrow(InvalidEnrollmentCodeException::new);
+        if (terminal.isEnrolledWith(thumbprint)) {
+            return answer(terminal); // the same key's concurrent retry completed it first
+        }
         Instant now = clock.instant();
         UUID membership = tenancy.grant(new MembershipGrant(devicesIssuer, subject, kind.membership(),
                 terminal.getId(), now, null));
-        UUID consumed = terminal.completeEnrolment(thumbprint, membership, now)
-                .orElseThrow(InvalidEnrollmentCodeException::new);
+        if (!terminal.completeEnrolment(thumbprint, membership, now)) {
+            throw new InvalidEnrollmentCodeException();
+        }
         terminals.saveAndFlush(terminal);
-        tenancy.revoke(consumed);
         auditLog.recordAsSystem("TERMINAL_ENROLLED", "Terminal", terminal.getId().toString(), terminal.getStoreId(),
                 kind == DeviceKind.POS ? terminal.getId() : null, null,
                 Map.of("code", terminal.getCode(), "kind", kind.name()));
+        return answer(terminal);
+    }
+
+    private static DeviceEnrolmentResponse answer(Terminal terminal) {
         return new DeviceEnrolmentResponse(terminal.getId(), terminal.getStoreId(), terminal.clientId());
     }
 
-    private static InvalidEnrollmentCodeException refused(String remoteAddress) {
+    /** Counted for alerting (D149), no tenant label (rule 7); the code itself is never logged. */
+    private InvalidEnrollmentCodeException refused(String remoteAddress) {
+        refusals.increment();
         log.warn("Device enrolment refused (unknown, expired, used or burned code) from {}", remoteAddress);
         return new InvalidEnrollmentCodeException();
     }

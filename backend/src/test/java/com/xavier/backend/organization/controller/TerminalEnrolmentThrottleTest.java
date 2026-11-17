@@ -55,11 +55,61 @@ class TerminalEnrolmentThrottleTest {
                 .doesNotContain("\"d\"");
         assertThat(membershipsOf(FakeDeviceProvider.subjectOf("pos-" + terminal), "TERMINAL")).isEqualTo(1);
         assertThat(OwnerDatabase.shared().jdbc().sql("SELECT count(*) FROM organization.terminal WHERE id = ? "
-                        + "AND status = 'ACTIVE' AND enrollment_code_hash IS NULL")
+                        + "AND status = 'ACTIVE'")
                 .param(terminal).query(Long.class).single()).isEqualTo(1);
-        devices.enrol(Devices.POS_ENROLMENT, code, key, Devices.randomAddress())
+        devices.enrol(Devices.POS_ENROLMENT, code, Devices.publicJwk(), Devices.randomAddress())
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("ENROLMENT_CODE_INVALID"));
+    }
+
+    /**
+     * Review 5: the device lost the 200 and retries with the same code and the same key: the same answer, and nothing
+     * new (no second client, key or membership). Another key with that code is still refused.
+     */
+    @Test
+    void aRetryWithTheSameKeyAfterTheEnrolmentGetsTheSameAnswer() throws Exception {
+        UUID terminal = devices.register(store, "POS");
+        String code = devices.code(terminal);
+        Map<String, Object> key = Devices.publicJwk();
+        String first = devices.enrol(Devices.POS_ENROLMENT, code, key, Devices.randomAddress())
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        int clientCalls = FakeDeviceProvider.CREATE_CALLS.get("pos-" + terminal).get();
+
+        devices.enrol(Devices.POS_ENROLMENT, code, key, Devices.randomAddress())
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().json(first));
+
+        assertThat(FakeDeviceProvider.CREATE_CALLS.get("pos-" + terminal).get()).isEqualTo(clientCalls);
+        assertThat(membershipsOf(FakeDeviceProvider.subjectOf("pos-" + terminal), "TERMINAL")).isEqualTo(1);
+        devices.enrol(Devices.POS_ENROLMENT, code, Devices.publicJwk(), Devices.randomAddress())
+                .andExpect(status().isBadRequest());
+        assertThat(FakeDeviceProvider.KEYS.get("pos-" + terminal)).contains((String) key.get("x"));
+    }
+
+    /** Review 4: refusals and burned codes are counted for alerting (no tenant label, rule 7). */
+    @Test
+    void refusalsAndBurnedCodesAreCounted() throws Exception {
+        UUID terminal = devices.register(store, "POS");
+        String code = devices.code(terminal);
+        String wrong = code.substring(0, 8) + "0".repeat(code.length() - 8);
+        double refused = count("enrolment_refused_total");
+        double burned = count("enrolment_code_burned_total");
+
+        for (int attempt = 0; attempt < 5; attempt++) {
+            devices.enrol(Devices.POS_ENROLMENT, wrong, Devices.publicJwk(), Devices.randomAddress());
+        }
+
+        assertThat(count("enrolment_refused_total")).isEqualTo(refused + 5);
+        assertThat(count("enrolment_code_burned_total")).isEqualTo(burned + 1);
+        assertThat(meters.find("enrolment_refused_total").counter().getId().getTags()).isEmpty();
+    }
+
+    @Autowired
+    io.micrometer.core.instrument.MeterRegistry meters;
+
+    private double count(String name) {
+        var counter = meters.find(name).counter();
+        return counter == null ? 0 : counter.count();
     }
 
     @Test
