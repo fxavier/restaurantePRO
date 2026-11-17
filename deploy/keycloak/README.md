@@ -1,7 +1,12 @@
 # Keycloak realms (R6, D175, P71)
 
-Minimal realm exports imported by the dev Compose file (S75) and by the shared Keycloak Testcontainer of the
-identity and end-to-end suites (`SharedKeycloak`, D189). Keycloak 26.x, pinned.
+Minimal realm exports, imported at first start by the development Keycloak of `backend/compose.yaml` (S75: it mounts
+this directory as `/opt/keycloak/data/import` and runs `start-dev --import-realm`; `backend/run-local.sh` then runs
+`deploy/keycloak-provisioners.sh`), and by the shared Keycloak Testcontainer of the identity and end-to-end suites
+(`SharedKeycloak`, D189). Keycloak 26.x, pinned. The production stack, `deploy/compose.yaml`, defines no Keycloak: it
+only receives the realms' issuer URLs (`RESTAURANTPRO_OIDC_*_ISSUER`), since where production Keycloak runs is open
+item O3. Against any Keycloak (`--url`), `deploy/keycloak-provisioners.sh` imports the devices realm if it is missing
+and registers the provisioners' keys.
 
 | file | realm | holds |
 | --- | --- | --- |
