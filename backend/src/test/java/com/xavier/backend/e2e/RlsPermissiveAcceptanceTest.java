@@ -1,5 +1,8 @@
 package com.xavier.backend.e2e;
 
+import org.springframework.jdbc.core.simple.JdbcClient;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+import org.springframework.beans.factory.annotation.Autowired;
 import static com.xavier.backend.e2e.Installation.MANAGER_ROLE;
 import static com.xavier.backend.e2e.Installation.id;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -31,6 +34,14 @@ import tools.jackson.databind.JsonNode;
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class RlsPermissiveAcceptanceTest {
 
+    @Autowired
+    PostgreSQLContainer freshPostgres;
+
+    /** The installation's owner connection, for what onboarding and Keycloak would have created. */
+    private JdbcClient owner() {
+        return Installation.owner(freshPostgres);
+    }
+
     static final String INITIAL_PASSWORD = "initial " + UUID.randomUUID();
     static final String NEW_PASSWORD = "changed " + UUID.randomUUID();
     static final String BO = "/api/v1/backoffice";
@@ -51,7 +62,7 @@ class RlsPermissiveAcceptanceTest {
     void thePermissiveSwitchStartsAlertsAndAuditsAndAccessPolicyStillDecides() throws Exception {
         try {
             Browser office = new Browser("backoffice", port, journey);
-            Installation.firstLogin(office, INITIAL_PASSWORD, NEW_PASSWORD);
+            Installation.firstLogin(office, owner());
 
             JsonNode permissive = null;
             for (JsonNode alert : office.get(BO + "/alerts", 200).get("alerts")) {
@@ -75,14 +86,7 @@ class RlsPermissiveAcceptanceTest {
                     "Sala B"), 201));
             UUID employee = id(office.post(BO + "/employees", Map.of("code", "GA", "name", "Ana", "pin", "9182",
                     "storeId", storeA, "roleId", MANAGER_ROLE), 201));
-            String password = "pw " + UUID.randomUUID();
-            office.post(BO + "/users", Map.of("username", "ana", "initialPassword", password, "employeeId",
-                    employee), 201);
-            Browser managerA = office.sibling("ana");
-            managerA.get("/api/v1/auth/session", 401);
-            managerA.post("/api/v1/auth/login", Map.of("username", "ana", "password", password), 200);
-            managerA.post("/api/v1/auth/password", Map.of("currentPassword", password, "newPassword",
-                    password + " 2"), 200);
+            Browser managerA = Installation.user(office, owner(), "ana", employee, "ana");
 
             managerA.get(Installation.CATALOG + "/price-lists/" + listB, 403);
             managerA.get(Installation.CATALOG + "/price-lists?storeId=" + storeB, 403);

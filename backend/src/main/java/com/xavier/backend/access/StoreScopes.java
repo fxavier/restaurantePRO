@@ -46,9 +46,8 @@ public class StoreScopes {
     }
 
     /**
-     * The scope a transaction begun now gets. Spring Security loads a request's context lazily, from the session in
-     * the database; the transaction of that read takes the fallback (the session tables are unscoped), so resolving
-     * the actor never recurses ({@link CurrentAuthentication}).
+     * The scope a transaction begun now gets: the innermost explicit scope, else the authenticated actor's, else the
+     * fallback.
      */
     public StoreScope current() {
         StoreScope explicit = EXPLICIT.peek();

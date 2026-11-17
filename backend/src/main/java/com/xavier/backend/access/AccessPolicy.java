@@ -1,7 +1,7 @@
 package com.xavier.backend.access;
 
 import java.time.Clock;
-import java.time.Instant;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
@@ -12,6 +12,7 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
@@ -42,11 +43,14 @@ import org.springframework.web.context.request.RequestContextHolder;
  * <p>Company-wide data (customers, P38) uses {@link #requireInAnyStore}; a query that filters rows by store (audit,
  * reports) asks {@link #scopeOf} where the actor holds the permission.
  *
- * <p>Step-up (D142): {@code require}, {@code requireAny}, {@code requireInAnyStore} and {@code scopeOf}, after the
- * permission check succeeds, refuse a BackOffice account whose granting permission is {@linkplain
- * Permission#sensitive() sensitive} (for {@code requireAny}: every granting one) unless {@link AuthenticationAssurance}
- * reports a second factor proved within its max age: {@link StepUpRequiredException} (403 {@code MFA_STEP_UP_REQUIRED}
- * or {@code MFA_ENROLMENT_REQUIRED}). A missing permission is still the plain 403 first. POS sessions are never asked.
+ * <p>Step-up (D142 as amended by D184): {@code require}, {@code requireAny}, {@code requireInAnyStore} and
+ * {@code scopeOf}, after the permission check succeeds, refuse a BackOffice account whose granting permission is
+ * {@linkplain Permission#sensitive() sensitive} (for {@code requireAny}: every granting one) unless its token proves a
+ * second factor ({@code acr ≥ 2}) authenticated within {@code restaurantpro.security.step-up-max-age} ({@code
+ * auth_time}): {@link StepUpRequiredException} (401, RFC 9470 challenge). The proof is the request's own
+ * {@link ActorAuthentication#assurance()}: any other authentication proves nothing (fail closed). A POS (PIN) session
+ * using a sensitive permission outside {@code requirePos*} is refused (403 {@code MFA_ACCOUNT_REQUIRED}); the POS gate
+ * itself never asks. A missing permission is still the plain 403 first.
  */
 @Component
 public class AccessPolicy {
@@ -54,16 +58,15 @@ public class AccessPolicy {
     private static final Logger log = LoggerFactory.getLogger(AccessPolicy.class);
     private static final String ANY_STORE = "(any store)";
     private static final String ACTIVE_STORE_ATTRIBUTE = AccessPolicy.class.getName() + ".activeStore.";
-    private static final String ASSURANCE_ATTRIBUTE = AccessPolicy.class.getName() + ".assurance";
 
     private final ObjectProvider<StoreActivity> storeActivity;
-    private final ObjectProvider<AuthenticationAssurance> assurance;
+    private final Duration stepUpMaxAge;
     private final Clock clock;
 
-    AccessPolicy(ObjectProvider<StoreActivity> storeActivity, ObjectProvider<AuthenticationAssurance> assurance,
-                 Clock clock) {
+    AccessPolicy(ObjectProvider<StoreActivity> storeActivity,
+                 @Value("${restaurantpro.security.step-up-max-age:PT5M}") String stepUpMaxAge, Clock clock) {
         this.storeActivity = storeActivity;
-        this.assurance = assurance;
+        this.stepUpMaxAge = Duration.parse(stepUpMaxAge);
         this.clock = clock;
     }
 
@@ -239,18 +242,13 @@ public class AccessPolicy {
     }
 
     /**
-     * D142: after a successful check, a BackOffice account whose granting permission is sensitive needs a second
-     * factor proved within {@link AssuranceState#maxAge()}, when {@link AuthenticationAssurance} enforces it. A POS
-     * (PIN) session reaching a sensitive permission here, outside the POS gate, is refused while step-up is enforced
-     * (D142 amended, S55 review): it cannot prove a second factor. {@code requirePos*} never comes here, so POS use
-     * cases and approver PINs are unchanged.
+     * D184: after a successful check, a BackOffice account whose granting permission is sensitive needs its token's
+     * second factor ({@code acr ≥ 2}) authenticated at most {@link #stepUpMaxAge} ago. A POS (PIN) session reaching a
+     * sensitive permission here, outside the POS gate, cannot prove one. {@code requirePos*} never comes here, so POS
+     * use cases and approver PINs are unchanged.
      */
     private void requireFreshSecondFactor(Actor actor, boolean sensitive, Object permission) {
         if (!sensitive) {
-            return;
-        }
-        AssuranceState state = assurance();
-        if (!state.enforced()) {
             return;
         }
         if (actor.kind() != ActorKind.ACCOUNT) {
@@ -258,35 +256,13 @@ public class AccessPolicy {
                     + "permission={}", actor.employeeId(), actor.terminalId(), permission);
             throw StepUpRequiredException.accountRequired();
         }
-        if (!state.enrolled()) {
-            log.info("Step-up refused: no second factor enrolled: user={} permission={}", actor.userId(), permission);
-            throw StepUpRequiredException.enrolmentRequired();
-        }
-        Instant provedAt = state.secondFactorAt();
-        if (provedAt == null || provedAt.plus(state.maxAge()).isBefore(clock.instant())) {
-            log.info("Step-up required: user={} permission={} secondFactorAt={}", actor.userId(), permission,
-                    provedAt);
+        Assurance proof = authentication() instanceof ActorAuthentication resolved ? resolved.assurance()
+                : Assurance.NONE;
+        if (!proof.isFreshSecondFactor(stepUpMaxAge, clock.instant())) {
+            log.info("Step-up required: user={} permission={} acr={} authTime={}", actor.userId(), permission,
+                    proof.acr(), proof.authTime());
             throw StepUpRequiredException.stepUpRequired();
         }
-    }
-
-    /** The session's assurance, asked once per request; no {@link AuthenticationAssurance} bean = not enforced. */
-    private AssuranceState assurance() {
-        AuthenticationAssurance source = assurance.getIfAvailable();
-        if (source == null) {
-            return AssuranceState.NOT_ENFORCED;
-        }
-        RequestAttributes request = RequestContextHolder.getRequestAttributes();
-        if (request == null) {
-            return source.current();
-        }
-        Object cached = request.getAttribute(ASSURANCE_ATTRIBUTE, RequestAttributes.SCOPE_REQUEST);
-        if (cached instanceof AssuranceState known) {
-            return known;
-        }
-        AssuranceState state = source.current();
-        request.setAttribute(ASSURANCE_ATTRIBUTE, state, RequestAttributes.SCOPE_REQUEST);
-        return state;
     }
 
     private boolean storeIsActive(UUID storeId) {

@@ -51,13 +51,13 @@ public class EmployeeService {
     private final PasswordEncoder encoder;
     private final AccessPolicy accessPolicy;
     private final AuditLog auditLog;
-    private final SessionTermination sessions;
+    private final TerminalSessionService posSessions;
     private final EmployeeControl control;
     private final Clock clock;
 
     EmployeeService(EmployeeRepository employees, EmployeeStoreAssignmentRepository assignments,
                     RoleRepository roles, OrganizationApi organization, PasswordEncoder encoder,
-                    AccessPolicy accessPolicy, AuditLog auditLog, SessionTermination sessions,
+                    AccessPolicy accessPolicy, AuditLog auditLog, TerminalSessionService posSessions,
                     EmployeeControl control, Clock clock) {
         this.employees = employees;
         this.assignments = assignments;
@@ -66,7 +66,7 @@ public class EmployeeService {
         this.encoder = encoder;
         this.accessPolicy = accessPolicy;
         this.auditLog = auditLog;
-        this.sessions = sessions;
+        this.posSessions = posSessions;
         this.control = control;
         this.clock = clock;
     }
@@ -92,7 +92,7 @@ public class EmployeeService {
         employees.saveAndFlush(employee);
         audit("EMPLOYEE_UPDATED", employee, null, Map.of("name", employee.getName(), "active", request.active()));
         if (!request.active()) {
-            sessions.endEmployeeSessions(employee.getId());
+            posSessions.endEmployee(employee.getId());
         }
         return employee.toSummary();
     }
@@ -132,7 +132,7 @@ public class EmployeeService {
         employee.resetPin(encoder.encode(pin), clock.instant());
         employees.saveAndFlush(employee);
         audit("EMPLOYEE_PIN_RESET", employee, null, Map.of());
-        sessions.endPosSessions(employee.getId());
+        posSessions.endEmployee(employee.getId());
         return employee.toSummary();
     }
 
@@ -159,7 +159,6 @@ public class EmployeeService {
                 .orElseThrow(() -> new AssignmentNotFoundException(assignmentId));
         accessPolicy.require(Permission.EMPLOYEE_MANAGE, assignment.getStoreId());
         assignments.delete(assignment);
-        sessions.endEmployeeSessions(employeeId);
         auditLog.recordAsCurrentActor("EMPLOYEE_UNASSIGNED", "Employee", employeeId.toString(),
                 assignment.getStoreId(), null, null, Map.of("roleId", assignment.getRoleId().toString()));
     }
