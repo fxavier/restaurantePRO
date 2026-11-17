@@ -114,7 +114,7 @@ class JobLeaseTest {
         JobLeases.Batch batch = first.acquire(job, () -> List.of(TENANT, TenantTestSupport.B));
 
         assertThat(batch.tenants()).as("B is instance 2's").containsExactly(TENANT);
-        assertThat(batch.live()).as("within its ttl").isTrue();
+        assertThat(batch.mayStart()).as("within the first half of its ttl").isTrue();
         assertThat(second.acquire(job, () -> List.of(TENANT, TenantTestSupport.B)).tenants())
                 .as("instance 2 renews B, and A is instance 1's").containsExactly(TenantTestSupport.B);
     }
@@ -157,6 +157,21 @@ class JobLeaseTest {
         }
     }
 
+    /** G5: a tenant starts only with at least half the lease left, so its run cannot outlast the lease early. */
+    @Test
+    void aBatchMayStartATenantOnlyDuringTheFirstHalfOfItsTtl() {
+        Duration ttl = Duration.ofMinutes(2);
+        long before = System.nanoTime();
+
+        JobLeases.Batch batch = first.acquire(job(), () -> List.of(TENANT));
+
+        long after = System.nanoTime();
+        assertThat(batch.startByNanos() - after).as("half the ttl from when the leases were taken, at most")
+                .isLessThanOrEqualTo(ttl.toNanos() / 2);
+        assertThat(batch.startByNanos() - before).as("half the ttl from the acquire's start, at least")
+                .isGreaterThanOrEqualTo(ttl.toNanos() / 2);
+    }
+
     @Test
     void aBatchIsNoLongerLiveOnceItsTtlHasPassed() {
         JobLeases shortLived = new JobLeases(JdbcClient.create(app), new DataSourceTransactionManager(app),
@@ -165,7 +180,7 @@ class JobLeaseTest {
         JobLeases.Batch batch = shortLived.acquire(job(), () -> List.of(TENANT));
 
         assertThat(batch.tenants()).containsExactly(TENANT);
-        org.awaitility.Awaitility.await().atMost(Duration.ofSeconds(10)).until(() -> !batch.live());
+        org.awaitility.Awaitility.await().atMost(Duration.ofSeconds(10)).until(() -> !batch.mayStart());
     }
 
     /** One instance's tick for one tenant: run the body only under the lease, then release it. */

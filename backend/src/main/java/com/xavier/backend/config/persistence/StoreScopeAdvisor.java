@@ -47,7 +47,7 @@ import org.springframework.modulith.events.ApplicationModuleListener;
  *       carries its tenant;</li>
  *   <li>a {@link SystemScoped} method of reach {@code ALL} runs once per ACTIVE tenant ({@link ActiveTenants}), from a
  *       rotating start, each under a {@link JobLeases} lease and in its own binding (the directory and the leases are
- *       one transaction, their release one more, S77; a tenant starts only while the leases are live); one tenant's failure is counted
+ *       one transaction, their release one more, S77; a tenant starts only while half its lease is left); one tenant's failure is counted
  *       ({@value #TENANT_FAILURES}{job}, never a tenant label, P74), logged with the tenant and does not stop the
  *       others. It returns the last tenant's result. Called by a thread that is already bound to a tenant (a request,
  *       a test), it runs once, in that tenant. {@link SystemScope#BOOTSTRAP} runs in the bootstrap tenant only;</li>
@@ -164,11 +164,11 @@ class StoreScopeAdvisor extends AbstractPointcutAdvisor {
         try {
             for (int i = 0; i < ids.size(); i++) {
                 UUID tenantId = ids.get((start + i) % ids.size());
-                if (batch != null && !batch.live()) {
-                    // D185: a tenant starts only under a live lease; the rest run at the next tick. ponytail: a
+                if (batch != null && !batch.mayStart()) {
+                    // D185: a tenant starts only with half its lease left; the rest run at the next tick. ponytail: a
                     // lease is not renewed while a run lasts, so one run longer than the ttl still lets a second
                     // instance start the same tenant (follow-up: renew, or size the ttl above the longest run)
-                    log.warn("{} stopped before tenant {}: the tick outlasted restaurantpro.jobs.lease-ttl", job,
+                    log.warn("{} stopped before tenant {}: the tick outlasted half of restaurantpro.jobs.lease-ttl", job,
                             tenantId);
                     break;
                 }

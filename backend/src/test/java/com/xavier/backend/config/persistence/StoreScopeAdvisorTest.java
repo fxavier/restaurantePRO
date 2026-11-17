@@ -128,9 +128,21 @@ class StoreScopeAdvisorTest {
         TenantScopes tenants;
         final List<UUID> ran = new ArrayList<>();
 
+        /** When set, the first run lasts until the monotonic clock passes it (a slow tenant), no sleep. */
+        volatile long firstRunUntilNanos;
+
         @SystemScoped(SystemScope.ALERTS)
         public void run() {
             ran.add(tenants.requireTenant());
+            if (ran.size() == 1 && firstRunUntilNanos != 0) {
+                while (System.nanoTime() - firstRunUntilNanos <= 0) {
+                    Thread.onSpinWait();
+                }
+            }
+        }
+
+        public void slowFirstRunUntil(long nanos) {
+            firstRunUntilNanos = nanos;
         }
 
         /** Through the proxy: a field read on it would be the proxy's own. */
@@ -142,17 +154,17 @@ class StoreScopeAdvisorTest {
     /** Leases that grant every tenant asked for, until {@code deadlineNanos}, and record what is released. */
     static final class GrantingLeases extends JobLeases {
 
-        final long deadlineNanos;
+        final long startByNanos;
         final List<UUID> released = new ArrayList<>();
 
-        GrantingLeases(long deadlineNanos) {
+        GrantingLeases(long startByNanos) {
             super(null, null, Duration.ofMinutes(2), "unit");
-            this.deadlineNanos = deadlineNanos;
+            this.startByNanos = startByNanos;
         }
 
         @Override
         public Batch acquire(String job, Supplier<List<UUID>> tenants) {
-            return new Batch(tenants.get(), deadlineNanos);
+            return new Batch(tenants.get(), startByNanos);
         }
 
         @Override
@@ -185,6 +197,20 @@ class StoreScopeAdvisorTest {
         job.run();
 
         assertThat(job.ran()).isEmpty();
+        assertThat(leases.released).containsExactlyInAnyOrderElementsOf(TENANTS);
+    }
+
+    /** G5: a tenant reached after the batch's start-by (ttl/2) is not started, and its lease is released. */
+    @Test
+    void aTenantReachedAfterHalfTheTtlIsNotStartedAndItsLeaseIsReleased() {
+        long startBy = System.nanoTime() + Duration.ofMillis(50).toNanos();
+        GrantingLeases leases = new GrantingLeases(startBy);
+        TenantJob job = tenantJob(leases);
+        job.slowFirstRunUntil(startBy);
+
+        job.run();
+
+        assertThat(job.ran()).as("only the first tenant started").hasSize(1);
         assertThat(leases.released).containsExactlyInAnyOrderElementsOf(TENANTS);
     }
 
