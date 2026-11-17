@@ -2,6 +2,7 @@ package com.xavier.backend.production.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.xavier.backend.AppRoleSession;
 import com.xavier.backend.OwnerDatabase;
 import com.xavier.backend.access.StoreScopeTestSupport;
 import com.xavier.backend.access.StrictStoreScope;
@@ -11,6 +12,7 @@ import com.xavier.backend.production.ProductionFixtures.Round;
 import com.xavier.backend.production.ProductionModuleTest;
 import com.xavier.backend.production.TcpFakePrinter;
 import com.xavier.backend.settlement.model.event.ReceiptSlipRequested;
+import com.xavier.backend.shared.tenancy.StrictTenantScope;
 import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -19,6 +21,8 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import org.awaitility.Awaitility;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
@@ -36,6 +40,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  */
 @ProductionModuleTest
 @StrictStoreScope
+@StrictTenantScope
 class ProductionActorlessScopeTest {
 
     @Autowired
@@ -51,6 +56,53 @@ class ProductionActorlessScopeTest {
     ProductionFixtures fixtures;
 
     final JdbcClient owner = OwnerDatabase.shared().jdbc();
+
+    static final UUID T1 = UUID.fromString("0190b400-0000-7000-8000-0000000000d7");
+    static final UUID T2 = UUID.fromString("0190b400-0000-7000-8000-0000000000d8");
+
+    @BeforeEach
+    void activeTenants() {
+        TenantTestSupport.ensureTenant(T1, "production-1", "ACTIVE");
+        TenantTestSupport.ensureTenant(T2, "production-2", "ACTIVE");
+    }
+
+    /** Back to no ACTIVE test tenant: the other suites' jobs iterate the bootstrap tenant only. */
+    @AfterEach
+    void closeTenants() {
+        TenantTestSupport.ensureTenant(T1, "production-1", "CLOSED");
+        TenantTestSupport.ensureTenant(T2, "production-2", "CLOSED");
+    }
+
+    /**
+     * R6 (D185): a listener runs in its event's tenant, so the ticket and job of a tenant's receipt slip carry that
+     * tenant, and the worker, run once per active tenant, sends each tenant's job on a sender thread that keeps the
+     * tenant (an unbound sender could not record the send).
+     */
+    @Test
+    void theReceiptSlipsOfTwoTenantsAreQueuedAndSentEachInItsOwnTenant() throws Exception {
+        try (TcpFakePrinter printer = TcpFakePrinter.accepting()) {
+            Map<UUID, UUID> paymentOf = Map.of(T1, UUID.randomUUID(), T2, UUID.randomUUID());
+            paymentOf.forEach((tenant, payment) -> {
+                UUID store = UUID.randomUUID();
+                UUID terminal = terminalWithPrinter(tenant, store, printer);
+                new TransactionTemplate(transactionManager).executeWithoutResult(status -> events.publishEvent(
+                        new ReceiptSlipRequested(tenant, payment, store, terminal, List.of("SLIP " + payment))));
+            });
+            Awaitility.await().atMost(Duration.ofSeconds(20)).until(() -> jobsOf(List.copyOf(paymentOf.values()))
+                    .size() == 2);
+
+            worker.poll();
+
+            Awaitility.await().atMost(Duration.ofSeconds(20)).until(() -> jobsOf(List.copyOf(paymentOf.values()))
+                    .values().stream().allMatch("SENT"::equals));
+            paymentOf.forEach((tenant, payment) -> assertThat(owner.sql("""
+                            SELECT t.tenant_id = :tenant AND j.tenant_id = :tenant
+                            FROM production.production_ticket t JOIN production.print_job j ON j.ticket_id = t.id
+                            WHERE t.source_type = 'RECEIPT_SLIP' AND t.source_id = :payment""")
+                    .param("tenant", tenant).param("payment", payment).query(Boolean.class).single())
+                    .as("the ticket and job of %s carry its tenant", tenant).isTrue());
+        }
+    }
 
     @Test
     void aReceiptSlipOfEachStoreIsQueuedInItsStoreAndSentByTheWorker() throws Exception {
@@ -131,15 +183,22 @@ class ProductionActorlessScopeTest {
     }
 
     private UUID terminalWithPrinter(UUID store, TcpFakePrinter fake) {
+        return terminalWithPrinter(TenantTestSupport.BOOTSTRAP, store, fake);
+    }
+
+    /** A printer and a terminal of {@code tenant}'s store, seeded as that tenant's application role. */
+    private UUID terminalWithPrinter(UUID tenant, UUID store, TcpFakePrinter fake) {
         UUID printer = UUID.randomUUID();
         UUID terminal = UUID.randomUUID();
-        owner.sql("""
-                INSERT INTO production.printer (id, store_id, code, name, host, port, code_page, active, mode,
-                    version, created_at, updated_at)
-                VALUES (?, ?, 'TILL', 'Till', ?, ?, 'CP860', true, 'NORMAL', 0, now(), now())""")
-                .param(printer).param(store).param(fake.host()).param(fake.port()).update();
-        owner.sql("INSERT INTO production.terminal_printer (terminal_id, store_id, printer_id) VALUES (?, ?, ?)")
-                .param(terminal).param(store).param(printer).update();
+        try (AppRoleSession app = AppRoleSession.open().tenant(tenant).allStores()) {
+            app.jdbc().sql("""
+                    INSERT INTO production.printer (id, store_id, code, name, host, port, code_page, active, mode,
+                        version, created_at, updated_at)
+                    VALUES (?, ?, 'TILL', 'Till', ?, ?, 'CP860', true, 'NORMAL', 0, now(), now())""")
+                    .param(printer).param(store).param(fake.host()).param(fake.port()).update();
+            app.jdbc().sql("INSERT INTO production.terminal_printer (terminal_id, store_id, printer_id) "
+                    + "VALUES (?, ?, ?)").param(terminal).param(store).param(printer).update();
+        }
         return terminal;
     }
 }

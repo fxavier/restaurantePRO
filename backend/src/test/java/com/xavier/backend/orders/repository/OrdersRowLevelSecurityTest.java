@@ -4,6 +4,7 @@ import static com.xavier.backend.AppRoleSession.assertRefused;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.xavier.backend.OwnerDatabase;
+import com.xavier.backend.orders.BootstrapSeed;
 import com.xavier.backend.architecture.RowLevelSecurityCoverageTest;
 import com.xavier.backend.AppRoleSession;
 import com.xavier.backend.shared.persistence.StoreProbe;
@@ -37,7 +38,7 @@ class OrdersRowLevelSecurityTest {
 
     final UUID storeA = UUID.randomUUID();
     final UUID storeB = UUID.randomUUID();
-    final JdbcClient owner = OwnerDatabase.shared().jdbc();
+    final JdbcClient owner = BootstrapSeed.jdbc();
 
     UUID orderA;
     UUID orderB;
@@ -66,14 +67,18 @@ class OrdersRowLevelSecurityTest {
         Map<String, String> policies = owner.sql("""
                         SELECT c.relname, p.polname FROM pg_catalog.pg_policy p
                             JOIN pg_catalog.pg_class c ON c.oid = p.polrelid
-                        WHERE c.relnamespace = 'orders'::regnamespace""")
+                        WHERE c.relnamespace = 'orders'::regnamespace AND p.polname <> 'tenant_scope'""")
                 .query((row, n) -> Map.entry(row.getString(1), row.getString(2))).list().stream()
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        assertThat(owner.sql("SELECT count(*) FROM pg_catalog.pg_policy p JOIN pg_catalog.pg_class c ON c.oid = p.polrelid "
+                + "WHERE c.relnamespace = 'orders'::regnamespace AND p.polname = 'tenant_scope' AND NOT p.polpermissive")
+                .query(Long.class).single()).as("R6: every orders table also carries the restrictive tenant policy")
+                .isEqualTo((long) 12);
         assertThat(policies).hasSize(12).containsAllEntriesOf(STORE_TABLES);
         CHILD_PARENTS.forEach((child, parent) -> {
             assertThat(policies).containsEntry(child, "parent_scope");
             assertThat(owner.sql("SELECT pg_catalog.pg_get_expr(polqual, polrelid) FROM pg_catalog.pg_policy "
-                    + "WHERE polrelid = CAST(? AS regclass)").param("orders." + child).query(String.class).single())
+                    + "WHERE polrelid = CAST(? AS regclass) AND polname <> 'tenant_scope'").param("orders." + child).query(String.class).single())
                     .as("%s looks up %s", child, parent).contains("FROM " + parent + " p");
         });
     }
@@ -142,13 +147,12 @@ class OrdersRowLevelSecurityTest {
 
     /** D42 under RLS: the order is hidden from store A's read, yet its store is probed (then 403, not 404). */
     @Test
-    void theProbeFindsAnotherStoresOrderDeliveryAndZone() {
+    void theProbeFindsAnotherStoresOrderAndZone() {
         UUID zoneB = zone(storeB);
         delivery(orderB, storeB, zoneB);
         StoreProbe probe = new StoreProbe(app.stores(storeA).jdbc());
 
         assertThat(probe.storeOf("orders.order_header", orderB)).contains(storeB);
-        assertThat(probe.storeOf("orders.delivery", orderB)).contains(storeB);
         assertThat(probe.storeOf("orders.delivery_zone", zoneB)).contains(storeB);
     }
 

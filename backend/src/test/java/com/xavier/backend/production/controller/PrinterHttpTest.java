@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.xavier.backend.orders.BootstrapSeed;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.fiscal.FiscalFixtures;
 import com.xavier.backend.production.ProductionFixtures;
@@ -151,8 +152,8 @@ class PrinterHttpTest {
         java.util.concurrent.CountDownLatch inserted = new java.util.concurrent.CountDownLatch(1);
         java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
         // another request of the store, on a thread of its own (no fixture fallback there)
-        java.util.concurrent.CompletableFuture<Void> other = java.util.concurrent.CompletableFuture.runAsync(() ->
-                scopes.callForStore(store, "test:other-request", () -> tx.execute(s -> {
+        java.util.concurrent.CompletableFuture<Void> other = java.util.concurrent.CompletableFuture.runAsync(
+                BootstrapSeed.inBootstrap(() -> scopes.callForStore(store, "test:other-request", () -> tx.execute(s -> {
                     jdbc.sql("INSERT INTO production.destination_route VALUES (?, 'BAR', ?)").param(store)
                             .param(kitchen).update();
                     inserted.countDown();
@@ -162,7 +163,7 @@ class PrinterHttpTest {
                         Thread.currentThread().interrupt();
                     }
                     return null;
-                })));
+                }))));
         assertThat(inserted.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
         java.util.concurrent.CompletableFuture.delayedExecutor(500, java.util.concurrent.TimeUnit.MILLISECONDS)
                 .execute(release::countDown);

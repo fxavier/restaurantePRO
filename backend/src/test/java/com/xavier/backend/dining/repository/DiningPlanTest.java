@@ -3,7 +3,10 @@ package com.xavier.backend.dining.repository;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.xavier.backend.OwnerDatabase;
+import com.xavier.backend.orders.BootstrapSeed;
 import com.xavier.backend.AppRoleSession;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import java.sql.SQLException;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
@@ -26,28 +29,37 @@ class DiningPlanTest {
     @BeforeAll
     static void seed() throws SQLException {
         store = UUID.randomUUID();
-        UUID area = UUID.randomUUID();
         OwnerDatabase.shared().tx(owner -> {
-            owner.sql("""
-                    INSERT INTO dining.room_area (id, store_id, code, name, active, version, created_at, updated_at)
-                    VALUES (?, ?, 'PLAN', 'Plan', true, 0, now(), now())""").param(area).param(store).update();
-            owner.sql("""
-                    INSERT INTO dining.restaurant_table (id, store_id, area_id, code, seats, active, version,
-                        created_at, updated_at)
-                    SELECT uuidv7(), :store, :area, 'P' || n, 4, true, 0, now(), now()
-                    FROM generate_series(1, 50) AS n""").param("store", store).param("area", area).update();
-            owner.sql("""
-                    INSERT INTO dining.table_occupation (id, store_id, table_id, order_id, guests, opened_at,
-                        opened_by_employee_id, closed_at, close_reason, version)
-                    SELECT uuidv7(), t.store_id, t.id, gen_random_uuid(), 2, TIMESTAMPTZ '2020-01-01 12:00Z',
-                        gen_random_uuid(), CASE WHEN n > 1 THEN TIMESTAMPTZ '2020-01-01 13:00Z' END,
-                        CASE WHEN n > 1 THEN 'ORDER_CLOSED' END, 0
-                    FROM dining.restaurant_table t, generate_series(1, 100) AS n
-                    WHERE t.store_id = :store""").param("store", store).update();
+            BootstrapSeed.bind(owner);
+            seedStore(owner, store);
+            // D189: the plan is measured in tenant A with another tenant's rows of the same shape present
+            BootstrapSeed.bind(owner, TenantTestSupport.B);
+            seedStore(owner, UUID.randomUUID());
         });
         table = OwnerDatabase.shared().jdbc().sql("SELECT id FROM dining.restaurant_table WHERE store_id = ? "
                 + "AND code = 'P1'").param(store).query(UUID.class).single();
         app = AppRoleSession.open().stores(store);
+    }
+
+    /** One store: an area, 50 tables, and 100 occupations per table of which one is open. */
+    private static void seedStore(JdbcClient owner, UUID store) {
+        UUID area = UUID.randomUUID();
+        owner.sql("""
+                INSERT INTO dining.room_area (id, store_id, code, name, active, version, created_at, updated_at)
+                VALUES (?, ?, 'PLAN', 'Plan', true, 0, now(), now())""").param(area).param(store).update();
+        owner.sql("""
+                INSERT INTO dining.restaurant_table (id, store_id, area_id, code, seats, active, version,
+                    created_at, updated_at)
+                SELECT uuidv7(), :store, :area, 'P' || n, 4, true, 0, now(), now()
+                FROM generate_series(1, 50) AS n""").param("store", store).param("area", area).update();
+        owner.sql("""
+                INSERT INTO dining.table_occupation (id, store_id, table_id, order_id, guests, opened_at,
+                    opened_by_employee_id, closed_at, close_reason, version)
+                SELECT uuidv7(), t.store_id, t.id, gen_random_uuid(), 2, TIMESTAMPTZ '2020-01-01 12:00Z',
+                    gen_random_uuid(), CASE WHEN n > 1 THEN TIMESTAMPTZ '2020-01-01 13:00Z' END,
+                    CASE WHEN n > 1 THEN 'ORDER_CLOSED' END, 0
+                FROM dining.restaurant_table t, generate_series(1, 100) AS n
+                WHERE t.store_id = :store""").param("store", store).update();
     }
 
     @AfterAll
@@ -68,6 +80,7 @@ class DiningPlanTest {
 
         assertThat(plan).as("the store_scope policy, once per statement").contains("InitPlan")
                 .containsPattern("(Index Scan using|Bitmap Index Scan on) table_occupation_open_table_uk")
-                .containsPattern("Index Cond: \\(table_id = '[0-9a-f-]+'::uuid\\)");
+                .containsPattern("Index Cond: \\(\\(tenant_id = \\(InitPlan \\d+\\)\\.col1\\) AND "
+                        + "\\(table_id = '[0-9a-f-]+'::uuid\\)\\)");
     }
 }

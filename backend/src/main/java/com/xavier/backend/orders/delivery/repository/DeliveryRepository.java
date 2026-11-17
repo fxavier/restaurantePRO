@@ -14,12 +14,6 @@ import org.springframework.data.repository.query.Param;
 
 public interface DeliveryRepository extends JpaRepository<Delivery, UUID> {
 
-    /**
-     * The table, for the D42 store probe ({@code shared.persistence.StoreProbe}): it sees every store, so another
-     * store's row is found (403), not mistaken for absent (404) under row-level security.
-     */
-    String TABLE = "orders.delivery";
-
     List<Delivery> findByStoreIdAndStatusInOrderByOrderId(UUID storeId, Collection<DeliveryStatus> statuses);
 
     /** The store's deliveries whose order's business day is in {@code [from, to]}, optionally of one courier. */

@@ -11,6 +11,7 @@ import com.xavier.backend.access.StoreScopes;
 import com.xavier.backend.dining.DiningFixtures;
 import com.xavier.backend.dining.DiningModuleTest;
 import com.xavier.backend.dining.repository.ReservationRepository;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -72,7 +73,7 @@ class ReservationNoShowJobTest {
 
     ReservationNoShowJob jobAt(Duration afterStart) {
         return new ReservationNoShowJob(reservations, changes, transactionManager,
-                Clock.fixed(startsAt.plus(afterStart), ZoneOffset.UTC));
+                Clock.fixed(startsAt.plus(afterStart), ZoneOffset.UTC), 100);
     }
 
     @Test
@@ -118,14 +119,14 @@ class ReservationNoShowJobTest {
         TransactionTemplate tx = new TransactionTemplate(transactionManager);
         try (ExecutorService pool = Executors.newSingleThreadExecutor()) {
             // a request of the reservation's store, on a thread of its own (no fixture fallback there)
-            Future<?> holder = pool.submit(() -> scopes.callForStore(store, "test:holder",
-                    () -> tx.execute(status -> {
+            Future<?> holder = pool.submit(TenantTestSupport.inBootstrap(() -> scopes.callForStore(store,
+                    "test:holder", () -> tx.execute(status -> {
                         jdbc.sql("SELECT id FROM dining.reservation WHERE id = :id FOR UPDATE")
                                 .param("id", reservation).query(UUID.class).single();
                         locked.countDown();
                         await(release);
                         return null;
-                    })));
+                    }))));
             assertThat(locked.await(30, TimeUnit.SECONDS)).isTrue();
 
             jobAt(Duration.ofMinutes(31)).markDue(); // would block here without SKIP LOCKED
@@ -137,6 +138,24 @@ class ReservationNoShowJobTest {
 
         jobAt(Duration.ofMinutes(32)).markDue();
         assertThat(fixtures.reservationStatus(reservation)).isEqualTo("NO_SHOW");
+    }
+
+    /** One reservation that cannot be marked must not roll back, nor block, the others of the run. */
+    @Test
+    void aFailingReservationDoesNotBlockTheOthersOfTheRun() throws Exception {
+        UUID other = fixtures.book(fixtures.newStore(), startsAt);
+        DiningChanges failing = org.mockito.Mockito.spy(changes);
+        org.mockito.Mockito.doThrow(new IllegalStateException("cannot audit")).when(failing).recordAsSystem(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq(reservation), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
+        ReservationNoShowJob job = new ReservationNoShowJob(reservations, failing, transactionManager,
+                Clock.fixed(startsAt.plus(Duration.ofMinutes(31)), ZoneOffset.UTC), 100);
+
+        job.markDue();
+
+        assertThat(fixtures.reservationStatus(other)).isEqualTo("NO_SHOW");
+        assertThat(fixtures.reservationStatus(reservation)).as("left for the next run").isEqualTo("BOOKED");
     }
 
     static void await(CountDownLatch latch) {

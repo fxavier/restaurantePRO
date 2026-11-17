@@ -3,6 +3,7 @@ package com.xavier.backend.production.repository;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.xavier.backend.OwnerDatabase;
+import com.xavier.backend.orders.BootstrapSeed;
 import com.xavier.backend.AppRoleSession;
 import java.sql.SQLException;
 import java.sql.Timestamp;
@@ -30,9 +31,10 @@ class PrintJobDuePlanTest {
     @BeforeAll
     static void seed() throws SQLException {
         UUID store = UUID.randomUUID();
-        UUID printer = ProductionRowLevelSecurityTest.printer(OwnerDatabase.shared().jdbc(), store);
+        UUID printer = ProductionRowLevelSecurityTest.printer(BootstrapSeed.jdbc(), store);
         UUID ticket = UUID.randomUUID();
         OwnerDatabase.shared().tx(owner -> {
+            BootstrapSeed.bind(owner);
             owner.sql("""
                     INSERT INTO production.production_ticket (id, store_id, source_type, source_id, destination, kind,
                         printer_id, suppressed, content, created_at, routing, content_format)
