@@ -124,6 +124,38 @@ class PlatformTenantLifecycleTest {
         close(tenant);
     }
 
+    /** D48: Keycloak unreachable mid-onboarding leaves a PROVISIONING tenant; the same command, replayed, completes it. */
+    @Test
+    void aReplayCompletesAHalfDoneOnboarding() throws Exception {
+        String code = "half-" + UUID.randomUUID().toString().substring(0, 8);
+        RecordingIdentityProvider.UNAVAILABLE_ONCE.add(code);
+
+        onboard(code, "Half Lda").andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("IDP_UNAVAILABLE"));
+
+        UUID tenant = OwnerDatabase.shared().jdbc().sql("SELECT id FROM tenancy.tenant WHERE code = ?").param(code)
+                .query(UUID.class).single();
+        assertThat(statusOf(tenant)).as("persisted before the external call").isEqualTo("PROVISIONING");
+        assertThat(events(TenantProvisioned.class, tenant)).as("the chain did not start").isEmpty();
+        assertThat(audit(tenant)).containsExactly("TENANT_CREATED");
+
+        onboard(code, "Half Lda").andExpect(status().isAccepted()).andExpect(jsonPath("$.id").value(tenant.toString()));
+
+        Awaitility.await().atMost(Duration.ofSeconds(20)).until(() -> "ACTIVE".equals(statusOf(tenant)));
+        assertThat(RecordingIdentityProvider.ORGANIZATIONS_CREATED).containsOnlyOnce(code);
+        assertThat(OwnerDatabase.shared().jdbc().sql("SELECT keycloak_org_id FROM tenancy.tenant WHERE id = ?")
+                .param(tenant).query(String.class).single()).isEqualTo("org-" + code);
+        assertThat(OwnerDatabase.shared().jdbc().sql("SELECT count(*) FROM organization.store WHERE tenant_id = ?")
+                .param(tenant).query(Long.class).single()).isEqualTo(1);
+        assertThat(OwnerDatabase.shared().jdbc().sql("SELECT count(*) FROM tenancy.tenant_membership "
+                        + "WHERE tenant_id = ? AND kind = 'ACCOUNT' AND status = 'ACTIVE'").param(tenant)
+                .query(Long.class).single()).isEqualTo(1);
+        assertThat(events(TenantProvisioned.class, tenant)).as("published once, by the replay").hasSize(1);
+        assertThat(events(CompanyProvisioned.class, tenant)).hasSize(1);
+        assertThat(audit(tenant)).containsExactly("TENANT_CREATED", "ORGANIZATION_LINKED", "ONBOARDING_PUBLISHED");
+        close(tenant);
+    }
+
     @Test
     void suspensionTakesEffectOnTheNextResolutionAndOnJobsAndIsReversible() throws Exception {
         UUID tenant = activeTenant();
