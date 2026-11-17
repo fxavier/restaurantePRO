@@ -44,11 +44,12 @@ import org.springframework.test.web.servlet.ResultActions;
 /**
  * D181 as amended, the platform half of the tenant lifecycle over HTTP: onboarding is one idempotent command (the
  * tenant PROVISIONING, its Keycloak organization once, {@code TenantProvisioned} → the organization module's company
- * profile and first store → {@code CompanyProvisioned}; a replay changes nothing), and suspension takes effect on the
+ * profile and first store → {@code CompanyProvisioned} → identity's administrator, ACCOUNT membership and activation;
+ * a replay changes nothing), and suspension takes effect on the
  * next resolution (S72's filter answers 403 {@code TENANT_SUSPENDED} from it) and on jobs (the tenant leaves
  * {@code active_tenant_ids()}). Over the real chain: the operator's token is an ops-realm platform-operator (S72).
  * Every platform action is audited in {@code tenancy.platform_audit_event}. The identity
- * half (administrator, invite, ACCOUNT membership, activation) is S72's listener, proven by S72 and S76.
+ * half is S72's listener (its own chain test proves its details); here it is observed end to end.
  */
 @SecurityHttpTest
 @Import({RecordingIdentityProvider.class, PlatformTenantLifecycleTest.Capture.class})
@@ -86,21 +87,29 @@ class PlatformTenantLifecycleTest {
                     assertThat(event.firstStoreName()).isEqualTo("Loja Central");
                 });
 
-        onboard(code, "Acme Lda").andExpect(status().isAccepted()).andExpect(jsonPath("$.id").value(tenant.toString()));
-        Awaitility.await().atMost(Duration.ofSeconds(20)).until(() -> completedProvisionings(tenant) == 2);
+        // identity's half (S72): the administrator, its invitation, the ACCOUNT membership, then ACTIVE (D181)
+        Awaitility.await().atMost(Duration.ofSeconds(20)).until(() -> "ACTIVE".equals(statusOf(tenant)));
+        assertThat(OwnerDatabase.shared().jdbc().sql("SELECT count(*) FROM tenancy.tenant_membership "
+                        + "WHERE tenant_id = ? AND kind = 'ACCOUNT' AND status = 'ACTIVE'").param(tenant)
+                .query(Long.class).single()).as("the administrator's membership").isEqualTo(1);
+
+        onboard(code, "Acme Lda").andExpect(status().isAccepted()).andExpect(jsonPath("$.id").value(tenant.toString()))
+                .andExpect(jsonPath("$.status").value("ACTIVE")); // a replay of a completed onboarding
 
         assertThat(RecordingIdentityProvider.ORGANIZATIONS_CREATED).as("the organization is created once")
                 .containsOnlyOnce(code);
         Map<String, Object> row = OwnerDatabase.shared().jdbc().sql("SELECT status, keycloak_org_id, legal_name "
                 + "FROM tenancy.tenant WHERE id = ?").param(tenant).query().singleRow();
-        assertThat(row).containsEntry("status", "PROVISIONING").containsEntry("keycloak_org_id", "org-" + code)
+        assertThat(row).containsEntry("status", "ACTIVE").containsEntry("keycloak_org_id", "org-" + code)
                 .containsEntry("legal_name", "Acme Lda");
         assertThat(OwnerDatabase.shared().jdbc().sql("SELECT count(*) FROM organization.store WHERE tenant_id = ?")
                 .param(tenant).query(Long.class).single()).as("one first store").isEqualTo(1);
         assertThat(Capture.SEEN).filteredOn(CompanyProvisioned.class::isInstance)
                 .map(CompanyProvisioned.class::cast).filteredOn(event -> event.tenantId().equals(tenant)).hasSize(1);
-        assertThat(audit(tenant)).containsExactly("TENANT_CREATED", "ORGANIZATION_LINKED", "ONBOARDING_PUBLISHED",
-                "ONBOARDING_PUBLISHED");
+        assertThat(audit(tenant)).as("the replay of a completed onboarding publishes nothing")
+                .containsExactly("TENANT_CREATED", "ORGANIZATION_LINKED", "ONBOARDING_PUBLISHED");
+        assertThat(Capture.SEEN).filteredOn(TenantProvisioned.class::isInstance)
+                .map(TenantProvisioned.class::cast).filteredOn(event -> event.tenantId().equals(tenant)).hasSize(1);
         assertThat(OwnerDatabase.shared().jdbc().sql("SELECT DISTINCT operator FROM tenancy.platform_audit_event "
                 + "WHERE tenant_id = ?").param(tenant).query(String.class).list())
                 .containsExactly(PlatformTokens.OPERATOR);
@@ -111,7 +120,7 @@ class PlatformTenantLifecycleTest {
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("TENANT_CODE_TAKEN"));
         assertThat(Capture.SEEN).filteredOn(TenantProvisioned.class::isInstance)
                 .map(TenantProvisioned.class::cast).filteredOn(event -> event.tenantId().equals(tenant))
-                .as("nothing published for the refused replay").hasSize(2);
+                .as("nothing published for the refused replays").hasSize(1);
         close(tenant);
     }
 
@@ -226,10 +235,9 @@ class PlatformTenantLifecycleTest {
                 + "ORDER BY occurred_at, id").param(tenant).query(String.class).list();
     }
 
-    private static long completedProvisionings(UUID tenant) {
-        return OwnerDatabase.shared().jdbc().sql("SELECT count(*) FROM event_publication WHERE event_type = ? "
-                        + "AND serialized_event LIKE ? AND completion_date IS NOT NULL")
-                .param(TenantProvisioned.class.getName()).param("%" + tenant + "%").query(Long.class).single();
+    private static String statusOf(UUID tenant) {
+        return OwnerDatabase.shared().jdbc().sql("SELECT status FROM tenancy.tenant WHERE id = ?").param(tenant)
+                .query(String.class).single();
     }
 
     private static <T> List<T> events(Class<T> type, UUID tenant) {
