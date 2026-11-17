@@ -4,7 +4,8 @@
 # no running stack, no network beyond pulling that image once. Steps, failing on the first miss:
 #   lint        every deploy script is shellcheck-clean (shellcheck -x)
 #   compose     docker compose config renders with a throwaway env file, without and with the monitoring profile:
-#               the backend gets the frozen R5 env names, the three R5 secrets and ./status read-only (never
+#               the backend gets the frozen env names (R5 alerts and metrics, R6 Keycloak issuers) and none of the
+#               retired R5 MFA, LAN or OIDC names, the R5 secrets and ./status read-only (never
 #               created by Docker); prometheus is opt-in, pinned to PROM_IMAGE below, internal network only, no
 #               published port, with the metrics_token secret and ./monitoring read-only
 #   config      promtool check config (prometheus.yml and the rule files it names): scrapes backend:8081
@@ -41,11 +42,14 @@ print_jobs_unresolved print_jobs_oldest_waiting_seconds event_publications event
 payment_attempts_in_doubt_overdue cash_closings_with_difference exports_total up"
 D150_CODES="BACKUP_MONITOR_STALE BACKUP_LATE BACKUP_PROBLEM DISK_SPACE_LOW PRINT_JOBS_ATTENTION PRINT_QUEUE_STALLED
 EVENTS_FAILED EVENTS_BACKLOG PAYMENTS_IN_DOUBT CASH_DISCREPANCY EXPORT_FAILED"
-# The R5 env names the backend must receive (PRD r5-stage5, "Frozen configuration names").
-FROZEN_ENV="RESTAURANTPRO_MFA_MODE RESTAURANTPRO_MFA_STEP_UP_MAX_AGE RESTAURANTPRO_MFA_KEY_FILE RESTAURANTPRO_LAN_CIDRS
+# The env names the backend must receive (PRD r5-stage5, "Frozen configuration names"; R6 Keycloak issuers).
+FROZEN_ENV="RESTAURANTPRO_ALERTS_BACKUP_STATUS_FILE RESTAURANTPRO_ALERTS_CASH_DIFFERENCE_THRESHOLD
+RESTAURANTPRO_METRICS_TOKEN_FILE RESTAURANTPRO_OIDC_TENANT_ISSUER RESTAURANTPRO_OIDC_OPS_ISSUER
+RESTAURANTPRO_OIDC_DEVICES_ISSUER"
+# R6 (S72) retired these R5 names (Keycloak signs users in): the backend reads none of them, so none is passed.
+RETIRED_ENV="RESTAURANTPRO_MFA_MODE RESTAURANTPRO_MFA_STEP_UP_MAX_AGE RESTAURANTPRO_MFA_KEY_FILE RESTAURANTPRO_LAN_CIDRS
 RESTAURANTPRO_OIDC_ENABLED RESTAURANTPRO_OIDC_ISSUER_URI RESTAURANTPRO_OIDC_CLIENT_ID RESTAURANTPRO_OIDC_CLIENT_SECRET_FILE
-RESTAURANTPRO_OIDC_DISPLAY_NAME RESTAURANTPRO_OIDC_SCOPES RESTAURANTPRO_OIDC_TRUST_IDP_MFA RESTAURANTPRO_OIDC_POST_LOGIN_URI
-RESTAURANTPRO_ALERTS_BACKUP_STATUS_FILE RESTAURANTPRO_ALERTS_CASH_DIFFERENCE_THRESHOLD RESTAURANTPRO_METRICS_TOKEN_FILE"
+RESTAURANTPRO_OIDC_DISPLAY_NAME RESTAURANTPRO_OIDC_SCOPES RESTAURANTPRO_OIDC_TRUST_IDP_MFA RESTAURANTPRO_OIDC_POST_LOGIN_URI"
 fault="${MONITORING_FAULT:-}"
 
 usage() { awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0" >&2; }
@@ -130,24 +134,25 @@ fi
 compose() { docker compose --project-directory "$DEPLOY_DIR" --env-file "$WORK/throwaway.env" "${compose_files[@]}" "$@"; }
 plain="$(env -u COMPOSE_PROFILES docker compose --project-directory "$DEPLOY_DIR" --env-file "$WORK/throwaway.env" \
   "${compose_files[@]}" config --services 2>&1)" || fail "docker compose config: $plain"
-[[ "$(sort <<<"$plain" | tr '\n' ' ')" == "backend caddy postgres " ]] \
-  || fail "without the monitoring profile, expected backend caddy postgres, got: $(tr '\n' ' ' <<<"$plain")"
+# db-provision (ADR 0039, D163): the one-shot that provisions the database roles before the backend starts.
+[[ "$(sort <<<"$plain" | tr '\n' ' ')" == "backend caddy db-provision postgres " ]] \
+  || fail "without the monitoring profile, expected backend caddy db-provision postgres, got: $(tr '\n' ' ' <<<"$plain")"
 compose --profile monitoring config --format json >"$WORK/compose.json" 2>"$WORK/compose.err" \
   || fail "docker compose --profile monitoring config: $(cat "$WORK/compose.err")"
-[[ "$(jq -r '.services | keys | join(" ")' "$WORK/compose.json")" == "backend caddy postgres prometheus" ]] \
-  || fail "with the monitoring profile, expected backend caddy postgres prometheus"
+[[ "$(jq -r '.services | keys | join(" ")' "$WORK/compose.json")" == "backend caddy db-provision postgres prometheus" ]] \
+  || fail "with the monitoring profile, expected backend caddy db-provision postgres prometheus"
 for name in $FROZEN_ENV; do
   jq -e --arg n "$name" '.services.backend.environment | has($n)' "$WORK/compose.json" >/dev/null \
     || fail "the backend does not receive $name"
 done
+for name in $RETIRED_ENV; do
+  jq -e --arg n "$name" '.services.backend.environment | has($n) | not' "$WORK/compose.json" >/dev/null \
+    || fail "the backend still receives the retired $name"
+done
 problem="$(jq -r --arg img "$PROM_IMAGE" '
   .services.backend as $b | .services.prometheus as $p |
-  [ (if $b.environment.RESTAURANTPRO_MFA_KEY_FILE != "/run/secrets/mfa_key" then "MFA key file is not the mfa_key secret" else empty end),
-    (if $b.environment.RESTAURANTPRO_METRICS_TOKEN_FILE != "/run/secrets/metrics_token" then "metrics token file is not the metrics_token secret" else empty end),
-    (if $b.environment.RESTAURANTPRO_OIDC_CLIENT_SECRET_FILE != "/run/secrets/oidc_client_secret" then "OIDC client secret file is not the oidc_client_secret secret" else empty end),
+  [ (if $b.environment.RESTAURANTPRO_METRICS_TOKEN_FILE != "/run/secrets/metrics_token" then "metrics token file is not the metrics_token secret" else empty end),
     (if $b.environment.RESTAURANTPRO_ALERTS_BACKUP_STATUS_FILE != "/run/restaurantpro/status/backup-status.json" then "the backup status file path is not the D151 one" else empty end),
-    (if $b.environment.RESTAURANTPRO_OIDC_ENABLED != "false" then "OIDC is not off by default" else empty end),
-    (if $b.environment.RESTAURANTPRO_MFA_MODE != "SENSITIVE" then ".env.example does not set MFA mode SENSITIVE (P52)" else empty end),
     (if ([$b.secrets[].source] | index("mfa_key") == null or index("metrics_token") == null or index("oidc_client_secret") == null)
        then "the backend lacks one of the secrets mfa_key, metrics_token, oidc_client_secret" else empty end),
     (if ([$b.volumes[]? | select(.target == "/run/restaurantpro/status" and .read_only == true and .bind.create_host_path == false
@@ -168,15 +173,15 @@ problem="$(jq -r --arg img "$PROM_IMAGE" '
     (if (.services | has("alertmanager")) then "an alertmanager service ships (P58: none)" else empty end)
   ] | first // empty' "$WORK/compose.json")"
 [[ -z "$problem" ]] || fail "$problem"
-# Defaults when .env sets none of the R5 names (an upgraded installation): MFA OFF, OIDC off, the D140 LAN list.
+# Defaults when .env sets none of the R5 names (an upgraded installation): threshold 0; unset issuers fail closed.
 grep -vE '^[[:space:]]*(RESTAURANTPRO_(MFA|LAN|OIDC|ALERTS)_|COMPOSE_PROFILES)' "$DEPLOY_DIR/.env.example" >"$WORK/upgraded.env"
 docker compose --project-directory "$DEPLOY_DIR" --env-file "$WORK/upgraded.env" -f "$DEPLOY_DIR/compose.yaml" config --format json \
   >"$WORK/upgraded.json" 2>"$WORK/compose.err" || fail "docker compose config with an R4 .env: $(cat "$WORK/compose.err")"
-jq -e '.services.backend.environment | .RESTAURANTPRO_MFA_MODE == "OFF" and .RESTAURANTPRO_OIDC_ENABLED == "false"
-  and .RESTAURANTPRO_LAN_CIDRS == "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7,fe80::/10"
-  and .RESTAURANTPRO_ALERTS_CASH_DIFFERENCE_THRESHOLD == "0" and .RESTAURANTPRO_MFA_STEP_UP_MAX_AGE == "PT15M"' \
-  "$WORK/upgraded.json" >/dev/null || fail "the defaults for an .env without the R5 names are not OFF / false / the D140 list / 0 / PT15M"
-ok "renders without and with the monitoring profile; R5 env names, secrets and the read-only status mount wired; prometheus pinned, internal, unpublished"
+jq -e '.services.backend.environment | .RESTAURANTPRO_ALERTS_CASH_DIFFERENCE_THRESHOLD == "0"
+  and .RESTAURANTPRO_OIDC_TENANT_ISSUER == "" and .RESTAURANTPRO_OIDC_OPS_ISSUER == ""
+  and .RESTAURANTPRO_OIDC_DEVICES_ISSUER == ""' \
+  "$WORK/upgraded.json" >/dev/null || fail "the defaults for an .env without the R5 names are not 0 / unset issuers"
+ok "renders without and with the monitoring profile; frozen env names (none retired), secrets and the read-only status mount wired; prometheus pinned, internal, unpublished"
 
 # ---------------------------------------------------------------------------------------------------------------
 step config
