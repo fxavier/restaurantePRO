@@ -13,10 +13,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
- * POS login: employee code + PIN on an enrolled terminal (D26). The session is scoped to the terminal's store:
- * it holds only the employee's authorities in that store (D27 amended), and none at all while the employee still has
- * a PIN a manager set ({@code mustChangePin}, see {@link PinChangeService}). Every refusal is the same
- * {@link InvalidCredentialsException} (401); the reason goes to a WARN log line, never the PIN or the token.
+ * POS login: employee code + PIN on an enrolled terminal (D26; the terminal is still its R2 device token until S73).
+ * It opens a POS session scoped to the terminal's store ({@link TerminalSessionService}, D182): the employee's
+ * authorities in that store only (D27 amended), resolved again on every request, and none at all while the employee
+ * still has a PIN a manager set ({@code mustChangePin}, see {@link PinChangeService}). Every refusal is the same
+ * {@link InvalidCredentialsException} (401); the reason goes to a WARN log line, never the PIN or a token.
  */
 @Service
 public class PosLoginService {
@@ -28,17 +29,24 @@ public class PosLoginService {
     private final EmployeeStoreAssignmentRepository assignments;
     private final AuthorityResolver authorities;
     private final LoginAudit audit;
+    private final TerminalSessionService sessions;
 
     PosLoginService(OrganizationApi organization, PinVerification pins,
-                    EmployeeStoreAssignmentRepository assignments, AuthorityResolver authorities, LoginAudit audit) {
+                    EmployeeStoreAssignmentRepository assignments, AuthorityResolver authorities, LoginAudit audit,
+                    TerminalSessionService sessions) {
         this.organization = organization;
         this.pins = pins;
         this.assignments = assignments;
         this.authorities = authorities;
         this.audit = audit;
+        this.sessions = sessions;
     }
 
-    /** Not transactional: the PIN check commits on its own so failures count even though this then throws. */
+    /**
+     * Not transactional: the PIN check commits on its own so failures count even though this then throws.
+     *
+     * @return the session, with its POS session token
+     */
     public SessionView login(String deviceToken, String employeeCode, String pin) {
         TerminalSummary terminal = organization.findTerminalByDeviceToken(deviceToken)
                 .orElseThrow(() -> refused(employeeCode, null, "unknown, revoked or missing terminal token"));
@@ -55,7 +63,8 @@ public class PosLoginService {
         Actor actor = Actor.employee(check.employeeId(), terminal.id(), terminal.storeId(), check.mustChangePin()
                 ? Set.of() : authorities.ofEmployeeInStore(check.employeeId(), terminal.storeId()));
         audit.loggedIn(actor);
-        return SessionView.employee(actor, check.name(), check.mustChangePin());
+        return SessionView.employee(actor, check.name(), check.mustChangePin())
+                .withPosSession(sessions.open(terminal.id(), terminal.storeId(), check.employeeId()));
     }
 
     private static InvalidCredentialsException refused(String employeeCode, TerminalSummary terminal, String reason) {

@@ -68,8 +68,8 @@ class LastAdministratorHttpTest {
 
     @Test
     void theLastActiveAdministratorCanBeNeitherDemotedNorDeactivated() throws Exception {
-        User first = fixtures.newUser("initial password 1", Set.of(IdentityFixtures.ADMINISTRATOR));
-        User last = fixtures.newUser("initial password 1", Set.of(IdentityFixtures.ADMINISTRATOR));
+        User first = fixtures.newUser(Set.of(IdentityFixtures.ADMINISTRATOR));
+        User last = fixtures.newUser(Set.of(IdentityFixtures.ADMINISTRATOR));
 
         mvc.perform(demote(first)).andExpect(status().isOk());
 
@@ -84,7 +84,7 @@ class LastAdministratorHttpTest {
     /** A support account never holds USER_MANAGE (D83), so it could not appoint a new administrator. */
     @Test
     void aSupportAccountWithTheAdministratorRoleDoesNotCountAsAnotherAdministrator() throws Exception {
-        User last = fixtures.newUser("initial password 1", Set.of(IdentityFixtures.ADMINISTRATOR));
+        User last = fixtures.newUser(Set.of(IdentityFixtures.ADMINISTRATOR));
         mvc.perform(post("/api/v1/backoffice/users").with(admin()).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json("username", IdentityFixtures.unique("sup"), "initialPassword",
@@ -97,8 +97,8 @@ class LastAdministratorHttpTest {
 
     @Test
     void twoConcurrentDemotionsCannotBothRemoveTheLastTwoAdministrators() throws Exception {
-        User one = fixtures.newUser("initial password 1", Set.of(IdentityFixtures.ADMINISTRATOR));
-        User other = fixtures.newUser("initial password 1", Set.of(IdentityFixtures.ADMINISTRATOR));
+        User one = fixtures.newUser(Set.of(IdentityFixtures.ADMINISTRATOR));
+        User other = fixtures.newUser(Set.of(IdentityFixtures.ADMINISTRATOR));
         MockHttpServletRequestBuilder demoteOne = demote(one);
         MockHttpServletRequestBuilder demoteOther = demote(other);
         CountDownLatch start = new CountDownLatch(1);

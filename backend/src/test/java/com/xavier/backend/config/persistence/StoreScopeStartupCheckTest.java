@@ -5,22 +5,32 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.xavier.backend.TestcontainersConfiguration;
+import com.xavier.backend.access.StoreScopes;
 import com.xavier.backend.audit.AuditLog;
+import com.xavier.backend.shared.tenancy.ActiveTenants;
+import com.xavier.backend.shared.tenancy.TenantScopes;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 import org.springframework.mock.env.MockEnvironment;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * D163 startup check (A69 backend part, A75 "dropping a policy makes the startup check refuse to start"). Each case
@@ -137,29 +147,74 @@ class StoreScopeStartupCheckTest {
     void theBackendRefusesToStartAsTheSuperuser() throws SQLException {
         try (Connection connection = superuser()) {
             StoreScopeStartupCheck check = new StoreScopeStartupCheck(new SingleConnectionDataSource(connection, true),
-                    new MockEnvironment(), mock(AuditLog.class), null);
+                    new MockEnvironment(), mock(AuditLog.class), null, null, null);
 
             assertThatThrownBy(check::afterPropertiesSet).isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("refuses to start").hasMessageContaining("superuser");
         }
     }
 
+    /**
+     * D170 under D185: the PERMISSIVE row is written once per ACTIVE tenant, each in a transaction begun while that
+     * tenant is bound (so {@code tenant_id DEFAULT shared.rls_tenant_id()} of a tenant-protected audit_event takes it,
+     * and each tenant's administrators see it). Asserted directly at the write, as the protected audit_event is S74d's.
+     */
     @Test
-    void permissiveModeStartsAndIsAuditedOnce() throws Exception {
+    void permissiveModeIsAuditedOncePerActiveTenantWhileThatTenantIsBound() throws Exception {
+        try (Connection connection = application()) {
+            var dataSource = new SingleConnectionDataSource(connection, true);
+            TenantScopes tenants = new TenantScopes((StoreScopes) null, Optional::empty);
+            List<String> writes = new ArrayList<>();
+            AuditLog audit = mock(AuditLog.class);
+            doAnswer(call -> writes.add(tenants.current().map(bound -> bound.tenantId().toString()).orElse("unbound")
+                    + (TransactionSynchronizationManager.isActualTransactionActive() ? " in a transaction" : " outside")))
+                    .when(audit).recordAsSystem(eq(StoreScopeStartupCheck.PERMISSIVE_STARTED), eq("Installation"),
+                            eq("store-scope"), isNull(), isNull(), any(), any());
+
+            new StoreScopeStartupCheck(dataSource, permissive(), audit, new DataSourceTransactionManager(dataSource),
+                    tenants, activeTenants(TenantTestSupport.BOOTSTRAP, TenantTestSupport.A)).afterPropertiesSet();
+
+            assertThat(writes).containsExactly(TenantTestSupport.BOOTSTRAP + " in a transaction",
+                    TenantTestSupport.A + " in a transaction");
+        }
+    }
+
+    /** No active tenant: nobody to tell, and no tenant to borrow; the ERROR log and the alert remain. */
+    @Test
+    void permissiveModeWithNoActiveTenantStartsAndWritesNoAuditRow() throws Exception {
         try (Connection connection = application()) {
             var dataSource = new SingleConnectionDataSource(connection, true);
             AuditLog audit = mock(AuditLog.class);
-            new StoreScopeStartupCheck(dataSource, new MockEnvironment()
-                    .withProperty(StoreScopeEnforcement.PROPERTY, "PERMISSIVE"), audit,
-                    new DataSourceTransactionManager(dataSource)).afterPropertiesSet();
-            AuditLog enforcing = mock(AuditLog.class);
-            new StoreScopeStartupCheck(dataSource, new MockEnvironment(), enforcing,
-                    new DataSourceTransactionManager(dataSource)).afterPropertiesSet();
 
-            verify(audit).recordAsSystem(eq(StoreScopeStartupCheck.PERMISSIVE_STARTED), eq("Installation"),
-                    eq("store-scope"), isNull(), isNull(), any(), any());
-            verify(enforcing, never()).recordAsSystem(any(), any(), any(), any(), any(), any(), any());
+            new StoreScopeStartupCheck(dataSource, permissive(), audit, new DataSourceTransactionManager(dataSource),
+                    new TenantScopes((StoreScopes) null, Optional::empty), activeTenants()).afterPropertiesSet();
+
+            verify(audit, never()).recordAsSystem(any(), any(), any(), any(), any(), any(), any());
         }
+    }
+
+    @Test
+    void enforcingModeWritesNoAuditRow() throws Exception {
+        try (Connection connection = application()) {
+            var dataSource = new SingleConnectionDataSource(connection, true);
+            AuditLog audit = mock(AuditLog.class);
+
+            new StoreScopeStartupCheck(dataSource, new MockEnvironment(), audit,
+                    new DataSourceTransactionManager(dataSource), new TenantScopes((StoreScopes) null, Optional::empty),
+                    activeTenants(TenantTestSupport.BOOTSTRAP)).afterPropertiesSet();
+
+            verify(audit, never()).recordAsSystem(any(), any(), any(), any(), any(), any(), any());
+        }
+    }
+
+    private static MockEnvironment permissive() {
+        return new MockEnvironment().withProperty(StoreScopeEnforcement.PROPERTY, "PERMISSIVE");
+    }
+
+    private static ActiveTenants activeTenants(UUID... ids) {
+        ActiveTenants active = mock(ActiveTenants.class);
+        when(active.ids()).thenReturn(List.of(ids));
+        return active;
     }
 
     private static List<String> asRole(String role, Function<JdbcClient, List<String>> check) throws SQLException {

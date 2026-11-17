@@ -10,14 +10,12 @@ import com.xavier.backend.identity.exception.RoleNotFoundException;
 import com.xavier.backend.identity.exception.SupportAccountLinkedException;
 import com.xavier.backend.identity.exception.UserNotFoundException;
 import com.xavier.backend.identity.exception.UsernameTakenException;
-import com.xavier.backend.identity.model.MfaFactorStatus;
 import com.xavier.backend.identity.model.Role;
 import com.xavier.backend.identity.model.UserAccount;
 import com.xavier.backend.identity.model.dto.UserCreateRequest;
 import com.xavier.backend.identity.model.dto.UserSummary;
 import com.xavier.backend.identity.model.dto.UserUpdateRequest;
 import com.xavier.backend.identity.repository.EmployeeRepository;
-import com.xavier.backend.identity.repository.MfaFactorRepository;
 import com.xavier.backend.identity.repository.RoleRepository;
 import com.xavier.backend.identity.repository.UserAccountRepository;
 import com.xavier.backend.shared.persistence.OptimisticLocking;
@@ -33,7 +31,6 @@ import java.util.stream.Collectors;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,34 +44,25 @@ public class UserAccountService {
     private final UserAccountRepository accounts;
     private final RoleRepository roles;
     private final EmployeeRepository employees;
-    private final PasswordEncoder encoder;
     private final AccessPolicy accessPolicy;
     private final AuditLog auditLog;
-    private final SessionTermination sessions;
     private final EmployeeControl employeeControl;
-    private final MfaFactorRepository factors;
     private final Clock clock;
 
     UserAccountService(UserAccountRepository accounts, RoleRepository roles, EmployeeRepository employees,
-                       PasswordEncoder encoder, AccessPolicy accessPolicy, AuditLog auditLog,
-                       SessionTermination sessions, EmployeeControl employeeControl, MfaFactorRepository factors,
-                       Clock clock) {
+                       AccessPolicy accessPolicy, AuditLog auditLog, EmployeeControl employeeControl, Clock clock) {
         this.accounts = accounts;
         this.roles = roles;
         this.employees = employees;
-        this.encoder = encoder;
         this.accessPolicy = accessPolicy;
         this.auditLog = auditLog;
-        this.sessions = sessions;
         this.employeeControl = employeeControl;
-        this.factors = factors;
         this.clock = clock;
     }
 
     @Transactional
     public UserSummary create(UserCreateRequest request) {
         accessPolicy.require(Permission.USER_MANAGE);
-        PasswordPolicy.requireStrong(request.initialPassword());
         String username = UserAccount.normalize(request.username());
         if (accounts.existsByUsername(username)) {
             throw new UsernameTakenException(username);
@@ -82,12 +70,11 @@ public class UserAccountService {
         requireLinks(request.employeeId(), request.roleIds());
         requireCanGrant(request.roleIds());
         requireCanLink(null, request.employeeId());
-        String hash = encoder.encode(request.initialPassword());
         UserAccount account = save(request.support()
-                ? supportAccount(username, hash, request)
-                : UserAccount.open(username, hash, request.employeeId(), request.roleIds(), clock.instant()));
+                ? supportAccount(username, request)
+                : UserAccount.open(username, request.employeeId(), request.roleIds(), clock.instant()));
         audit("USER_CREATED", account);
-        return account.toSummary(false);
+        return account.toSummary();
     }
 
     @Transactional
@@ -104,17 +91,13 @@ public class UserAccountService {
             accessPolicy.require(Permission.SUPPORT_ACCESS_MANAGE); // what a support account may do is D83's matter
         }
         boolean wasAdministrator = isActiveAdministrator(account);
-        boolean authoritiesMayShrink = !request.active() || !account.getRoleIds().equals(request.roleIds())
-                || !Objects.equals(account.getEmployeeId(), request.employeeId());
         account.update(request.employeeId(), request.roleIds(), request.active(), clock.instant());
         if (wasAdministrator && !isActiveAdministrator(account)) {
             requireAnotherActiveAdministrator(account);
         }
         save(account);
         audit("USER_UPDATED", account);
-        if (authoritiesMayShrink) {
-            sessions.endAccountSessions(account.getId()); // its sessions hold the authorities resolved at login
-        }
+        // no session holds the old authorities: every request builds its actor again (D177 step 7)
         return summary(account);
     }
 
@@ -127,23 +110,20 @@ public class UserAccountService {
     @Transactional(readOnly = true)
     public PageResponse<UserSummary> list(Pageable pageable) {
         accessPolicy.require(Permission.USER_MANAGE);
-        Page<UserAccount> page = accounts.findAll(pageable);
-        Set<UUID> enrolled = page.isEmpty() ? Set.of()
-                : factors.findEnrolledAmong(page.map(UserAccount::getId).toList());
-        return PageResponse.from(page.map(account -> account.toSummary(enrolled.contains(account.getId()))));
+        return PageResponse.from(accounts.findAll(pageable).map(UserAccount::toSummary));
     }
 
-    private UserSummary summary(UserAccount account) {
-        return account.toSummary(factors.existsByAccountIdAndStatus(account.getId(), MfaFactorStatus.ACTIVE));
+    private static UserSummary summary(UserAccount account) {
+        return account.toSummary();
     }
 
     /** Support accounts are an administrator's matter (D83): creating one needs {@code SUPPORT_ACCESS_MANAGE}. */
-    private UserAccount supportAccount(String username, String hash, UserCreateRequest request) {
+    private UserAccount supportAccount(String username, UserCreateRequest request) {
         accessPolicy.require(Permission.SUPPORT_ACCESS_MANAGE);
         if (request.employeeId() != null) {
             throw new SupportAccountLinkedException();
         }
-        return UserAccount.openSupport(username, hash, request.roleIds(), clock.instant());
+        return UserAccount.openSupport(username, request.roleIds(), clock.instant());
     }
 
     /** Nobody gives an account a role with a permission they do not hold installation-wide themselves. */
@@ -162,8 +142,9 @@ public class UserAccountService {
     }
 
     /** A support account is never the installation's administrator: it cannot manage users or roles (D83). */
-    private static boolean isActiveAdministrator(UserAccount account) {
-        return account.isActive() && !account.isSupport() && account.getRoleIds().contains(Role.ADMINISTRATOR_ID);
+    private boolean isActiveAdministrator(UserAccount account) {
+        return account.isActive() && !account.isSupport()
+                && roles.findAllById(account.getRoleIds()).stream().anyMatch(Role::isAdministrator);
     }
 
     /**
@@ -171,8 +152,8 @@ public class UserAccountService {
      * the second sees the first one's committed result.
      */
     private void requireAnotherActiveAdministrator(UserAccount account) {
-        roles.lockRow(Role.ADMINISTRATOR_ID);
-        if (accounts.countActiveNonSupportHoldersExcept(Role.ADMINISTRATOR_ID, account.getId()) == 0) {
+        UUID administrator = roles.lockAdministrator().orElseThrow(LastAdministratorException::new);
+        if (accounts.countActiveNonSupportHoldersExcept(administrator, account.getId()) == 0) {
             throw new LastAdministratorException();
         }
     }

@@ -7,7 +7,7 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * A new BackOffice account. It must change {@code initialPassword} at first login.
+ * A new BackOffice account; Keycloak holds its credentials (D175).
  *
  * @param employeeId optional: the employee whose store assignments this account holds
  * @param roleIds    installation-wide roles (all stores); may be empty
@@ -15,8 +15,7 @@ import java.util.UUID;
  *                   grant, is never linked to an employee; fixed for the account's life
  */
 public record UserCreateRequest(
-        @NotBlank @Size(max = 60) @Pattern(regexp = "[A-Za-z0-9._@-]+") String username,
-        @NotBlank @Size(max = 200) String initialPassword,
+        @NotBlank @Size(max = 254) @Pattern(regexp = "[A-Za-z0-9._@+-]+") String username,
         UUID employeeId,
         Set<UUID> roleIds,
         Boolean support) {

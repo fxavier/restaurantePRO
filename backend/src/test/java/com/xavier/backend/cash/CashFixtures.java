@@ -1,5 +1,6 @@
 package com.xavier.backend.cash;
 
+import com.xavier.backend.access.TestAuthentications;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -31,9 +32,7 @@ import java.util.stream.Collectors;
 import org.springframework.boot.test.context.TestComponent;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -270,8 +269,7 @@ public class CashFixtures {
     }
 
     public static Authentication authenticationOf(Actor actor) {
-        return UsernamePasswordAuthenticationToken.authenticated(actor, null,
-                actor.authorities().stream().map(SimpleGrantedAuthority::new).toList());
+        return TestAuthentications.of(actor);
     }
 
     /** A POS session: an employee on an enrolled terminal of a store. */

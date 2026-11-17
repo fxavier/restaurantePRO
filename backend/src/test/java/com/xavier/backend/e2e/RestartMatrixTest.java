@@ -14,6 +14,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
 
 import com.xavier.backend.BackendApplication;
+import com.xavier.backend.config.security.TestJwtFactory;
 import com.xavier.backend.e2e.Browser.Csrf;
 import com.xavier.backend.fiscal.FiscalApi;
 import com.xavier.backend.inventory.consumption.service.RoundConsumption;
@@ -120,6 +121,11 @@ import tools.jackson.databind.JsonNode;
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class RestartMatrixTest {
 
+    /** The installation's owner connection, for what onboarding and Keycloak would have created. */
+    private JdbcClient owner() {
+        return Installation.owner(freshPostgres);
+    }
+
     static final String INITIAL_PASSWORD = "initial " + UUID.randomUUID();
     static final String NEW_PASSWORD = "changed " + UUID.randomUUID();
     static final String CASHIER_PIN = "5172";
@@ -199,6 +205,7 @@ class RestartMatrixTest {
     private final List<String> journey = new ArrayList<>();
 
     Browser office;
+    String adminSubject;
     Browser cashier;
     UUID store;
     UUID terminal;
@@ -233,7 +240,10 @@ class RestartMatrixTest {
             try (ConfigurableApplicationContext restarted = restart()) {
                 restarted.getBean(SettlementTestClock.class).advance(Duration.ofMinutes(2));
                 Browser pos = cashier.movedTo(((WebServerApplicationContext) restarted).getWebServer().getPort());
-                Browser bo = office.movedTo(pos.port());
+                // the administrator's tokens now come on instance B's clock (each instance validates on its own)
+                SettlementTestClock restartedClock = restarted.getBean(SettlementTestClock.class);
+                Browser bo = office.movedTo(pos.port()).signedIn(() -> TestJwtFactory.account(adminSubject,
+                        restartedClock.instant()).encode());
                 recoveredI(i, restarted.getBean(RoundConsumption.class));
                 recoveredA(a);
                 recoveredB(b, pos);
@@ -263,7 +273,9 @@ class RestartMatrixTest {
 
     private void setUp() throws Exception {
         office = new Browser("backoffice", port, journey);
-        Installation.firstLogin(office, INITIAL_PASSWORD, NEW_PASSWORD);
+        Installation.firstLogin(office, owner(), clock::instant);
+        adminSubject = Installation.subjectOf(UUID.fromString(office.get("/api/v1/auth/session", 200).get("userId")
+                .asString()));
         store = Installation.store(office, "R");
         terminal = terminal(office, store, "POS1");
         String cashierCode = employee(office, store, "CX1", "Carla", CASHIER_PIN, CASHIER_ROLE);

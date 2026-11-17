@@ -13,7 +13,6 @@ import com.xavier.backend.identity.IdentityFixtures.Terminal;
 import com.xavier.backend.identity.IdentityTest;
 import com.xavier.backend.organization.model.event.StoreDeactivated;
 import com.xavier.backend.shared.tenancy.TenantTestSupport;
-import jakarta.servlet.http.Cookie;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -82,26 +81,26 @@ class StoreDeactivationHttpTest {
         Terminal elsewhere = fixtures.enrolledTerminal(otherStore);
         Employee employee = fixtures.employee(PIN, store, IdentityFixtures.WAITER);
         Employee other = fixtures.employee(PIN, otherStore, IdentityFixtures.WAITER);
-        Cookie onBar = fixtures.posLogin(bar, employee, PIN);
-        Cookie onKitchen = fixtures.posLogin(kitchen, employee, PIN);
-        Cookie inOtherStore = fixtures.posLogin(elsewhere, other, PIN);
+        RequestPostProcessor onBar = fixtures.posLogin(bar, employee, PIN);
+        RequestPostProcessor onKitchen = fixtures.posLogin(kitchen, employee, PIN);
+        RequestPostProcessor inOtherStore = fixtures.posLogin(elsewhere, other, PIN);
 
         fixtures.deactivateStore(store);
 
         Awaitility.await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
-            mvc.perform(get("/api/v1/auth/session").cookie(onBar)).andExpect(status().isUnauthorized());
-            mvc.perform(get("/api/v1/auth/session").cookie(onKitchen)).andExpect(status().isUnauthorized());
+            mvc.perform(get("/api/v1/auth/pos-session").with(onBar)).andExpect(status().isUnauthorized());
+            mvc.perform(get("/api/v1/auth/pos-session").with(onKitchen)).andExpect(status().isUnauthorized());
         });
-        mvc.perform(get("/api/v1/auth/session").cookie(inOtherStore)).andExpect(status().isOk());
+        mvc.perform(get("/api/v1/auth/pos-session").with(inOtherStore)).andExpect(status().isOk());
     }
 
     @Test
     void aRepeatedStoreDeactivatedEventIsHarmless() throws Exception {
         Terminal terminal = fixtures.enrolledTerminal(store);
-        Cookie session = fixtures.posLogin(terminal, fixtures.employee(PIN, store, IdentityFixtures.WAITER), PIN);
+        RequestPostProcessor session = fixtures.posLogin(terminal, fixtures.employee(PIN, store, IdentityFixtures.WAITER), PIN);
         fixtures.deactivateStore(store);
         Awaitility.await().atMost(Duration.ofSeconds(10)).untilAsserted(() ->
-                mvc.perform(get("/api/v1/auth/session").cookie(session)).andExpect(status().isUnauthorized()));
+                mvc.perform(get("/api/v1/auth/pos-session").with(session)).andExpect(status().isUnauthorized()));
 
         new TransactionTemplate(transactions).executeWithoutResult(tx ->
                 events.publishEvent(new StoreDeactivated(TenantTestSupport.BOOTSTRAP, store, Instant.now())));

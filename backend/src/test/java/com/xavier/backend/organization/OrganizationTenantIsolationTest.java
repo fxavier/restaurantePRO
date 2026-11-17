@@ -12,11 +12,10 @@ import com.xavier.backend.AppRoleSession;
 import com.xavier.backend.OwnerDatabase;
 import com.xavier.backend.access.Actor;
 import com.xavier.backend.access.Permission;
+import com.xavier.backend.access.TestAuthentications;
 import com.xavier.backend.architecture.RowLevelSecurityCoverageTest;
 import com.xavier.backend.shared.persistence.StoreScopeViolations;
-import com.xavier.backend.shared.tenancy.MembershipKind;
 import com.xavier.backend.shared.tenancy.StrictTenantScope;
-import com.xavier.backend.shared.tenancy.TenantContext;
 import com.xavier.backend.shared.tenancy.TenantScopes;
 import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.util.List;
@@ -26,8 +25,6 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
@@ -184,9 +181,6 @@ class OrganizationTenantIsolationTest {
     private static RequestPostProcessor in(UUID tenant, UUID store, Permission permission) {
         String authority = store == null ? permission.authority() : permission.authority(store);
         Actor actor = Actor.account(UUID.randomUUID(), Set.of(authority));
-        UsernamePasswordAuthenticationToken token = UsernamePasswordAuthenticationToken.authenticated(actor, null,
-                List.of(new SimpleGrantedAuthority(authority)));
-        token.setDetails(new TenantContext(tenant, MembershipKind.ACCOUNT, actor.userId(), "test:isolation"));
-        return authentication(token);
+        return authentication(TestAuthentications.of(actor, tenant));
     }
 }
