@@ -16,6 +16,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.awaitility.Awaitility;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -46,10 +47,24 @@ class TenantProvisioningChainTest {
     @Autowired
     MockMvc mvc;
 
+    /** The tenants this test created: closed even when an await times out, so no ACTIVE tenant is left behind. */
+    private final Map<UUID, String> created = new ConcurrentHashMap<>();
+
+    @AfterEach
+    void closeCreatedTenants() {
+        created.forEach((tenant, code) -> TenantTestSupport.ensureTenant(tenant, code, "CLOSED"));
+    }
+
+    private UUID provisioningTenant(String prefix) {
+        UUID tenant = UUID.randomUUID();
+        created.put(tenant, prefix + tenant);
+        TenantTestSupport.ensureTenant(tenant, prefix + tenant, "PROVISIONING");
+        return tenant;
+    }
+
     @Test
     void aProvisionedCompanyGetsItsAdministratorMembershipAndIsActivatedOnce() throws Exception {
-        UUID tenant = UUID.randomUUID();
-        TenantTestSupport.ensureTenant(tenant, "chain-" + tenant, "PROVISIONING");
+        UUID tenant = provisioningTenant("chain-");
         String email = "admin-" + tenant + "@chain.example";
         CompanyProvisioned provisioned = new CompanyProvisioned(tenant, UUID.randomUUID(), email);
 
@@ -81,7 +96,6 @@ class TenantProvisioningChainTest {
         assertThat(OwnerDatabase.shared().jdbc().sql("SELECT count(*) FROM tenancy.tenant_membership "
                 + "WHERE tenant_id = ?").param(tenant).query(Long.class).single()).isEqualTo(1);
         assertThat(status(tenant)).isEqualTo("ACTIVE");
-        TenantTestSupport.ensureTenant(tenant, "chain-" + tenant, "CLOSED"); // no ACTIVE tenant left behind
     }
 
     /** The roles the identity migrations seed (V3001, V3005, V3010, V3012), by name. */
@@ -90,10 +104,9 @@ class TenantProvisioningChainTest {
 
     @Test
     void eachProvisionedTenantGetsTheStandardRolesOnceWithTheSeededPermissions() {
-        UUID first = UUID.randomUUID();
-        UUID second = UUID.randomUUID();
+        UUID first = provisioningTenant("roles-");
+        UUID second = provisioningTenant("roles-");
         for (UUID tenant : List.of(first, second)) {
-            TenantTestSupport.ensureTenant(tenant, "roles-" + tenant, "PROVISIONING");
             publishIn(tenant, new CompanyProvisioned(tenant, UUID.randomUUID(), "admin-" + tenant + "@roles.example"));
         }
         Awaitility.await().atMost(Duration.ofSeconds(20))
@@ -106,7 +119,6 @@ class TenantProvisioningChainTest {
             assertThat(permissions(tenant)).as("the bootstrap tenant's seeded set").isEqualTo(seededPermissions());
             assertThat(OwnerDatabase.shared().jdbc().sql("SELECT count(*) FROM identity.role WHERE tenant_id = ? "
                     + "AND administrator").param(tenant).query(Long.class).single()).isEqualTo(1);
-            TenantTestSupport.ensureTenant(tenant, "roles-" + tenant, "CLOSED");
         }
     }
 
