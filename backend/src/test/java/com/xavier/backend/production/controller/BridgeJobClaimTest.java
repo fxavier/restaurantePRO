@@ -28,6 +28,7 @@ import tools.jackson.databind.JsonNode;
  * claims a job of another store of its tenant, nor of another tenant; a claimed job is not claimed twice.
  */
 @DeviceHttpTest
+@org.junit.jupiter.api.extension.ExtendWith(com.xavier.backend.production.service.PausedPrintStandIns.class)
 class BridgeJobClaimTest {
 
     static final Duration IDLE_CLAIM_BOUND = Duration.ofSeconds(5);
