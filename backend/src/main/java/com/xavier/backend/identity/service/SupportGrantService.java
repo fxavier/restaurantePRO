@@ -11,6 +11,7 @@ import com.xavier.backend.tenancy.TenancyApi;
 import com.xavier.backend.shared.exception.UnavailableException;
 import com.xavier.backend.tenancy.model.dto.MembershipGrant;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import com.xavier.backend.identity.exception.SupportGrantActiveException;
 import com.xavier.backend.identity.exception.SupportGrantNotFoundException;
 import com.xavier.backend.identity.exception.UserNotFoundException;
@@ -25,6 +26,7 @@ import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -59,10 +61,12 @@ public class SupportGrantService {
     private final TenancyApi tenancy;
     private final String opsIssuer;
     private final Clock clock;
+    private final JdbcClient jdbc;
 
     SupportGrantService(SupportGrantRepository grants, UserAccountRepository accounts, AccessPolicy accessPolicy,
                         AuditLog auditLog, TenancyApi tenancy,
-                        @Value("${restaurantpro.security.issuers.ops:}") String opsIssuer, Clock clock) {
+                        @Value("${restaurantpro.security.issuers.ops:}") String opsIssuer, Clock clock,
+                        JdbcClient jdbc) {
         this.grants = grants;
         this.accounts = accounts;
         this.accessPolicy = accessPolicy;
@@ -70,6 +74,7 @@ public class SupportGrantService {
         this.tenancy = tenancy;
         this.opsIssuer = opsIssuer;
         this.clock = clock;
+        this.jdbc = jdbc;
     }
 
     @Transactional
@@ -80,7 +85,7 @@ public class SupportGrantService {
         if (!account.isSupport()) {
             throw new SupportAccountRequiredException();
         }
-        Instant now = clock.instant();
+        Instant now = transactionStart();
         Optional<SupportGrant> current = grants.findByAccountIdAndRevokedAtIsNullAndExpiredAtIsNull(account.getId());
         if (current.isPresent() && current.get().isUsableAt(now)) {
             throw new SupportGrantActiveException();
@@ -100,6 +105,15 @@ public class SupportGrantService {
                 grant.getReason(), Map.of("accountId", account.getId(), "validFrom", now,
                         "validUntil", grant.getValidUntil()));
         return grant.toSummary(now);
+    }
+
+    /**
+     * The database's {@code now()}, fixed for the transaction: the instant {@code tenancy.grant_membership} dates the
+     * membership from (V15003), so the grant, its audit row and its membership name one window even when the
+     * application's clock disagrees with the database's.
+     */
+    private Instant transactionStart() {
+        return jdbc.sql("SELECT pg_catalog.now()").query(OffsetDateTime.class).single().toInstant();
     }
 
     /** Ends the grant now, and its membership: support is refused on its next request. */
