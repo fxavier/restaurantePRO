@@ -4,20 +4,21 @@
 |`com.xavier.backend.production`
 |Bean references
 |* `c.x.b.a.IdempotentRequests` (in Access)
+* `c.x.b.o.OrganizationApi` (in Organization)
+* `c.x.b.s.tenancy.TenantScopes` (in Shared kernel)
+* `c.x.b.a.StoreScopes` (in Access)
 * `c.x.b.a.AccessPolicy` (in Access)
 * `c.x.b.a.AuditLog` (in Audit)
 * `c.x.b.s.notify.ChangeNotifier` (in Shared kernel)
 * `c.x.b.s.persistence.StoreProbe` (in Shared kernel)
-* `c.x.b.a.StoreScopes` (in Access)
-* `c.x.b.o.OrganizationApi` (in Organization)
 * `c.x.b.o.OrdersProductionApi` (in Orders)
 |Events listened to
 |* `c.x.b.o.model.event.DeliveryDispatched` (async) 
 * `c.x.b.s.model.event.CashDrawerKickRequested` (async) 
-* `c.x.b.o.model.event.OrderBatchConfirmed` (async) 
 * `c.x.b.o.model.event.SubtotalRequested` (async) 
-* `c.x.b.o.model.event.OrderLinesVoided` (async) 
 * `c.x.b.f.model.event.FiscalDocumentIssued` (async) 
+* `c.x.b.o.model.event.OrderBatchConfirmed` (async) 
 * `c.x.b.f.model.event.FiscalDocumentReprintRequested` (async) 
+* `c.x.b.o.model.event.OrderLinesVoided` (async) 
 * `c.x.b.s.model.event.ReceiptSlipRequested` (async) 
 |===

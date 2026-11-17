@@ -14,6 +14,7 @@
 * `c.x.b.a.AccessPolicy` (in Access)
 * `c.x.b.i.EmployeeDirectory` (in Identity)
 * `c.x.b.s.persistence.StoreProbe` (in Shared kernel)
+* `c.x.b.s.tenancy.TenantScopes` (in Shared kernel)
 * `c.x.b.a.AuditLog` (in Audit)
 * `c.x.b.p.PromotionsApi` (in Promotions)
 * `c.x.b.p.LoyaltyApi` (in Promotions)

@@ -17,6 +17,9 @@
 * `c.x.b.s.persistence.StoreProbe` (in Shared kernel)
 * `c.x.b.a.AuditLog` (in Audit)
 * `c.x.b.i.ApproverVerifier` (in Identity)
+* `c.x.b.s.tenancy.TenantScopes` (in Shared kernel)
 * `c.x.b.a.StoreScopes` (in Access)
 * `c.x.b.s.notify.ChangeNotifier` (in Shared kernel)
+|Events listened to
+|* `c.x.b.o.model.event.CompanyProvisioned` (async) 
 |===
