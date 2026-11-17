@@ -52,6 +52,7 @@ class TransactionsPerCommandTest {
     TransactionCount count;
     UUID store;
     UUID item;
+    UUID area;
     UUID table;
     long catalogVersion;
     RequestPostProcessor waiter;
@@ -64,11 +65,9 @@ class TransactionsPerCommandTest {
         store = sellable.store();
         item = UUID.fromString(sellable.item().get("id").asString());
         publications.publishNew(store);
-        UUID area = created(post(DiningFixtures.AREAS).with(Actors.inStore(store, Permission.DINING_MANAGE))
+        area = created(post(DiningFixtures.AREAS).with(Actors.inStore(store, Permission.DINING_MANAGE))
                 .with(csrf()).contentType(MediaType.APPLICATION_JSON).content(DiningFixtures.newArea(store, "SALA")));
-        table = created(post(DiningFixtures.TABLES).with(Actors.inStore(store, Permission.DINING_MANAGE))
-                .with(csrf()).contentType(MediaType.APPLICATION_JSON)
-                .content(DiningFixtures.newTable(store, area, "M1", 4)));
+        table = newTable("M1");
         IdentityFixtures identity = new IdentityFixtures(mvc);
         waiter = identity.posLogin(identity.enrolledTerminal(store),
                 identity.employee(PIN, store, IdentityFixtures.WAITER), PIN);
@@ -119,7 +118,7 @@ class TransactionsPerCommandTest {
     private void measureOneRound() throws Exception {
         java.util.List<String> disturbed = new java.util.ArrayList<>();
         for (int attempt = 1; attempt <= 3; attempt++) {
-            UUID order = openedOrder();
+            UUID order = openedOrder(newTable("R" + attempt)); // a round of its own: a free table, a new order
             UUID line = id(json(mvc.perform(addLine(order)).andExpect(status().isCreated()).andReturn().getResponse()
                     .getContentAsString()));
             awaitOwnDeliveries(OffsetDateTime.MIN);
@@ -166,7 +165,11 @@ class TransactionsPerCommandTest {
     }
 
     private UUID openedOrder() throws Exception {
-        return created(post(POS + "/tables/" + table + "/open").with(waiter).with(csrf())
+        return openedOrder(table);
+    }
+
+    private UUID openedOrder(UUID at) throws Exception {
+        return created(post(POS + "/tables/" + at + "/open").with(waiter).with(csrf())
                 .header("Idempotency-Key", UUID.randomUUID().toString()).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"guests\": 2}"));
     }
@@ -208,6 +211,12 @@ class TransactionsPerCommandTest {
                         WHERE serialized_event NOT LIKE ?
                           AND (publication_date >= ? OR completion_date >= ? OR last_resubmission_date >= ?)""")
                 .param("%" + store + "%").param(since).param(since).param(since).query(Long.class).single();
+    }
+
+    private UUID newTable(String code) throws Exception {
+        return created(post(DiningFixtures.TABLES).with(Actors.inStore(store, Permission.DINING_MANAGE))
+                .with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content(DiningFixtures.newTable(store, area, code, 4)));
     }
 
     private UUID created(RequestBuilder request) throws Exception {
