@@ -10,6 +10,8 @@ import org.springframework.security.oauth2.client.annotation.RegisteredOAuth2Aut
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.ResourceAccessException;
 
 import java.io.IOException;
 
@@ -17,8 +19,6 @@ import java.io.IOException;
 @RestController
 class RelayController {
 
-    /** Spring Security's error code when the token endpoint could not be reached or answered with an error status. */
-    private static final String INVALID_TOKEN_RESPONSE = "invalid_token_response";
 
     private final BackendRelay relay;
 
@@ -34,16 +34,26 @@ class RelayController {
     }
 
     /**
-     * The refresh failed. A transport failure or a 5xx of Keycloak surfaces as Spring's {@code invalid_token_response}
-     * and leaves the session's tokens in place: the IdP is unavailable. Anything else (refresh refused after reuse
-     * detection, for example) means the session can no longer get a token.
+     * The refresh failed. Only a transport failure (timeout, refused connection: an I/O cause) or a 5xx of Keycloak
+     * means the IdP is unavailable: the session's tokens stay and the SPA retries later. Any refusal (400 invalid_grant
+     * after reuse detection, 401 or 403 for a disabled client or a rejected assertion) means the session can no longer
+     * get a token. Spring reports both kinds with one error code, so the cause decides.
      */
     @ExceptionHandler(ClientAuthorizationException.class)
     ResponseEntity<ProblemDetail> refreshFailed(ClientAuthorizationException failure) {
-        BffProblem problem = INVALID_TOKEN_RESPONSE.equals(failure.getError().getErrorCode())
-                ? BffProblem.IDP_UNAVAILABLE
-                : BffProblem.SESSION_EXPIRED;
-        return problem.toResponse();
+        return (identityProviderUnavailable(failure) ? BffProblem.IDP_UNAVAILABLE : BffProblem.SESSION_EXPIRED)
+                .toResponse();
+    }
+
+    private static boolean identityProviderUnavailable(Throwable failure) {
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            // a read timeout during the body surfaces as a bare RestClientException over a SocketTimeoutException
+            if (cause instanceof ResourceAccessException || cause instanceof HttpServerErrorException
+                    || cause instanceof IOException) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @ExceptionHandler(IOException.class)

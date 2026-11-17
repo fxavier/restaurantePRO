@@ -208,6 +208,33 @@ class BffTokenRelayTest extends BffTestSupport {
         assertThat(BACKEND.received()).isEmpty();
     }
 
+    /** A refused client (disabled, or its assertion rejected) never recovers by retrying: the user logs in again. */
+    @Test
+    void aClientRefusedByTheIdentityProviderAnswersSessionExpired() throws Exception {
+        AUTHORIZATION_SERVER.issueAccessTokensValidFor(5);
+        MockHttpSession session = login();
+        AUTHORIZATION_SERVER.answerRefreshWith(401, "{\"error\":\"unauthorized_client\"}");
+
+        mvc.perform(get("/api/v1/backoffice/stores").session(session))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("BFF_SESSION_EXPIRED"));
+
+        assertThat(BACKEND.received()).isEmpty();
+    }
+
+    @Test
+    void aFailingIdentityProviderAnswersIdpUnavailable() throws Exception {
+        AUTHORIZATION_SERVER.issueAccessTokensValidFor(5);
+        MockHttpSession session = login();
+        AUTHORIZATION_SERVER.answerRefreshWith(503, "{\"error\":\"temporarily_unavailable\"}");
+
+        mvc.perform(get("/api/v1/backoffice/stores").session(session))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("IDP_UNAVAILABLE"));
+
+        assertThat(BACKEND.received()).isEmpty();
+    }
+
     @Test
     void anAnonymousCallAnswersSessionExpiredWithoutCallingTheBackend() throws Exception {
         mvc.perform(get("/api/v1/backoffice/stores"))

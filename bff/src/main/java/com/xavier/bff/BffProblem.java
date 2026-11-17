@@ -13,7 +13,7 @@ enum BffProblem {
 
     /** No login, or the session's tokens can no longer be used or refreshed: the SPA logs in again. */
     SESSION_EXPIRED(HttpStatus.UNAUTHORIZED, "BFF_SESSION_EXPIRED", "The BFF session has no valid token; log in again"),
-    /** Keycloak did not answer the refresh in time, or failed: the session is kept and the SPA retries later. */
+    /** Keycloak did not answer the refresh in time, or answered 5xx: the session is kept and the SPA retries later. */
     IDP_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "IDP_UNAVAILABLE", "The identity provider could not be reached; try again"),
     BACKEND_UNAVAILABLE(HttpStatus.BAD_GATEWAY, "BACKEND_UNAVAILABLE", "The backend could not be reached"),
     PAYLOAD_TOO_LARGE(HttpStatus.CONTENT_TOO_LARGE, "BFF_PAYLOAD_TOO_LARGE", "The request body is larger than the BFF relays");

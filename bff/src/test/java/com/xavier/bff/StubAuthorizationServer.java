@@ -32,7 +32,7 @@ final class StubAuthorizationServer extends StubHttpServer {
     private final AtomicInteger issued = new AtomicInteger();
     private volatile String nonce;
     private volatile long accessTokenLifetimeSeconds = 300;
-    private volatile boolean refusingRefresh;
+    private volatile Response refreshAnswer;
     private volatile Long nextAccessTokenLifetimeSeconds;
     private volatile CountDownLatch refreshGate;
     private volatile CountDownLatch hang;
@@ -82,8 +82,14 @@ final class StubAuthorizationServer extends StubHttpServer {
         return tokenRequests().stream().filter(r -> "refresh_token".equals(r.form().get("grant_type"))).toList();
     }
 
+    /** Every refresh grant is refused as Keycloak refuses a revoked or reused refresh token (400 invalid_grant). */
     void refuseRefresh() {
-        refusingRefresh = true;
+        answerRefreshWith(400, "{\"error\":\"invalid_grant\",\"error_description\":\"Token is not active\"}");
+    }
+
+    /** Every refresh grant gets this answer instead of tokens (a refused client, a failing Keycloak). */
+    void answerRefreshWith(int status, String body) {
+        refreshAnswer = json(status, body);
     }
 
     String lastAccessToken() {
@@ -116,7 +122,7 @@ final class StubAuthorizationServer extends StubHttpServer {
         hang = null;
         nextAccessTokenLifetimeSeconds = null;
         accessTokenLifetimeSeconds = 300;
-        refusingRefresh = false;
+        refreshAnswer = null;
         nonce = null;
         clearReceived();
     }
@@ -153,8 +159,9 @@ final class StubAuthorizationServer extends StubHttpServer {
         if ("refresh_token".equals(form.get("grant_type"))) {
             awaitRefreshGate();
         }
-        if ("refresh_token".equals(form.get("grant_type")) && refusingRefresh) {
-            return json(400, "{\"error\":\"invalid_grant\",\"error_description\":\"Token is not active\"}");
+        Response refused = refreshAnswer;
+        if ("refresh_token".equals(form.get("grant_type")) && refused != null) {
+            return refused;
         }
         long lifetime = nextAccessTokenLifetimeSeconds != null ? nextAccessTokenLifetimeSeconds : accessTokenLifetimeSeconds;
         nextAccessTokenLifetimeSeconds = null;
