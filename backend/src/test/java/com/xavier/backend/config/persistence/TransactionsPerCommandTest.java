@@ -96,28 +96,59 @@ class TransactionsPerCommandTest {
 
     @Test
     void aConfirmedRoundsEventDeliveryCostsThreeTransactionsPerListenerInvocation() throws Exception {
-        UUID order = openedOrder();
-        UUID line = id(json(mvc.perform(addLine(order)).andExpect(status().isCreated()).andReturn().getResponse()
-                .getContentAsString()));
-        awaitDeliveries(OffsetDateTime.MIN);
-        OffsetDateTime start = OwnerDatabase.shared().jdbc().sql("SELECT clock_timestamp()")
-                .query(OffsetDateTime.class).single();
-        Map<String, Long> before = count.snapshot();
+        // the shared table holds what other tests left: a publication that failed and is never completed
+        UUID foreign = UUID.randomUUID();
+        OwnerDatabase.shared().jdbc().sql("""
+                        INSERT INTO public.event_publication (id, listener_id, event_type, serialized_event,
+                                                              publication_date, status, completion_attempts)
+                        VALUES (?, 'another.Test.listener', 'another.Event', '{}', now(), 'FAILED', 1)""")
+                .param(foreign).update();
+        try {
+            measureOneRound();
+        } finally {
+            OwnerDatabase.shared().jdbc().sql("DELETE FROM public.event_publication WHERE id = ?").param(foreign)
+                    .update();
+        }
+    }
 
-        mvc.perform(post(POS + "/orders/" + order + "/batches").with(waiter).with(csrf())
-                        .header("Idempotency-Key", UUID.randomUUID().toString())
-                        .contentType(MediaType.APPLICATION_JSON).content("""
-                                {"orderVersion": 0, "catalogVersion": %d, "lineIds": ["%s"]}"""
-                                .formatted(catalogVersion, line)))
-                .andExpect(status().isCreated());
-        long invocations = awaitDeliveries(start);
-        Map<String, Long> begun = count.since(before);
+    /**
+     * One confirmed round, measured on a clean window: the counter is global to the JVM, so a window in which any
+     * other publication was published, completed or resubmitted (another context's listener) is measured again, at
+     * most three times.
+     */
+    private void measureOneRound() throws Exception {
+        java.util.List<String> disturbed = new java.util.ArrayList<>();
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            UUID order = openedOrder();
+            UUID line = id(json(mvc.perform(addLine(order)).andExpect(status().isCreated()).andReturn().getResponse()
+                    .getContentAsString()));
+            awaitOwnDeliveries(OffsetDateTime.MIN);
+            OffsetDateTime start = OwnerDatabase.shared().jdbc().sql("SELECT clock_timestamp()")
+                    .query(OffsetDateTime.class).single();
+            Map<String, Long> before = count.snapshot();
 
-        assertThat(invocations).as("the round's listener invocations").isPositive();
-        assertThat(begun.getOrDefault("registry", 0L)).as("markProcessing and markCompleted, per invocation: %s",
-                begun).isEqualTo(2 * invocations);
-        assertThat(begun.getOrDefault("listener", 0L) + begun.getOrDefault("registry", 0L))
-                .as("per invocation: %s", begun).isEqualTo(3 * invocations);
+            mvc.perform(post(POS + "/orders/" + order + "/batches").with(waiter).with(csrf())
+                            .header("Idempotency-Key", UUID.randomUUID().toString())
+                            .contentType(MediaType.APPLICATION_JSON).content("""
+                                    {"orderVersion": 0, "catalogVersion": %d, "lineIds": ["%s"]}"""
+                                    .formatted(catalogVersion, line)))
+                    .andExpect(status().isCreated());
+            long invocations = awaitOwnDeliveries(start);
+            Map<String, Long> begun = count.since(before);
+            long foreign = foreignActivitySince(start);
+            if (foreign > 0) {
+                disturbed.add("attempt %d: %d other publications moved, counts %s".formatted(attempt, foreign, begun));
+                continue;
+            }
+
+            assertThat(invocations).as("the round's listener invocations").isPositive();
+            assertThat(begun.getOrDefault("registry", 0L)).as("markProcessing and markCompleted per invocation, "
+                    + "%d invocations: %s", invocations, begun).isEqualTo(2 * invocations);
+            assertThat(begun.getOrDefault("listener", 0L) + begun.getOrDefault("registry", 0L))
+                    .as("per invocation, %d invocations: %s", invocations, begun).isEqualTo(3 * invocations);
+            return;
+        }
+        throw new AssertionError("no clean window to measure in: " + disturbed);
     }
 
     /** The transactions begun under origin {@code request} while {@code request} was served. */
@@ -141,24 +172,42 @@ class TransactionsPerCommandTest {
     }
 
     /**
-     * Waits until every event publication since {@code since} is completed and none is added any more.
+     * Waits until this test's publications since {@code since} (its store's events: every event carries its
+     * {@code storeId}, D166) are all completed and no more are added; other tests' leftovers are not waited on.
      *
      * @return how many there were (one per listener invocation)
      */
-    private long awaitDeliveries(OffsetDateTime since) {
+    private long awaitOwnDeliveries(OffsetDateTime since) {
         JdbcClient owner = OwnerDatabase.shared().jdbc();
-        long[] seen = {-1};
-        Awaitility.await().atMost(Duration.ofSeconds(60)).pollInterval(Duration.ofMillis(200)).until(() -> {
-            Map<String, Object> row = owner.sql("""
-                            SELECT count(*) AS total, count(*) FILTER (WHERE completion_date IS NULL) AS open
-                            FROM public.event_publication WHERE publication_date >= ?""").param(since)
-                    .query().singleRow();
-            long total = ((Number) row.get("total")).longValue();
-            boolean settled = ((Number) row.get("open")).longValue() == 0 && total == seen[0];
-            seen[0] = total;
-            return settled;
-        });
+        long[] seen = {-1, -1};
+        try {
+            Awaitility.await().atMost(Duration.ofSeconds(60)).pollInterval(Duration.ofMillis(200)).until(() -> {
+                Map<String, Object> row = owner.sql("""
+                                SELECT count(*) AS total, count(*) FILTER (WHERE completion_date IS NULL) AS open
+                                FROM public.event_publication
+                                WHERE publication_date >= ? AND serialized_event LIKE ?""")
+                        .param(since).param("%" + store + "%").query().singleRow();
+                long total = ((Number) row.get("total")).longValue();
+                long open = ((Number) row.get("open")).longValue();
+                boolean settled = open == 0 && total == seen[0];
+                seen[0] = total;
+                seen[1] = open;
+                return settled;
+            });
+        } catch (org.awaitility.core.ConditionTimeoutException e) {
+            throw new AssertionError("this test's publications since %s did not settle: %d, %d not completed"
+                    .formatted(since, seen[0], seen[1]), e);
+        }
         return seen[0];
+    }
+
+    /** Publications of other tests published, completed or resubmitted since {@code since}. */
+    private long foreignActivitySince(OffsetDateTime since) {
+        return OwnerDatabase.shared().jdbc().sql("""
+                        SELECT count(*) FROM public.event_publication
+                        WHERE serialized_event NOT LIKE ?
+                          AND (publication_date >= ? OR completion_date >= ? OR last_resubmission_date >= ?)""")
+                .param("%" + store + "%").param(since).param(since).param(since).query(Long.class).single();
     }
 
     private UUID created(RequestBuilder request) throws Exception {
