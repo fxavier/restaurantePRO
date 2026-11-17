@@ -101,6 +101,15 @@ final class TenantResolutionFilter extends OncePerRequestFilter {
             device(jwt, issuer, request, response, chain);
             return;
         }
+        account(jwt, issuer, realm, request, response, chain);
+    }
+
+    /**
+     * A user of the tenant realm (ACCOUNT) or support of the ops realm (SUPPORT, second factor on every request,
+     * D183): the selected or only membership, its tenant ACTIVE, then the actor from the tenant's own rows.
+     */
+    private void account(Jwt jwt, String issuer, Realm realm, HttpServletRequest request, HttpServletResponse response,
+                         FilterChain chain) throws IOException, ServletException {
         Optional<UUID> requested;
         try {
             requested = selection(request);
