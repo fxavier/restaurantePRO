@@ -1,6 +1,6 @@
 # F20 — Deploy drills' D163 role check refuses R6's no-privilege `tenancy` schema
 
-**Status:** needs-triage
+**Status:** wontfix (done in S76, scope widened 2026-11-17; see BUG-0003)
 **Source:** S76 drill run; QA bug `docs/qa/bugs/0003-drill-role-check-predates-d177.md`
 **Recorded by:** S76 (R6 integrate), 2026-11-17
 

@@ -1,6 +1,6 @@
 # BUG-0003: the deploy drills' role check refuses R6's no-privilege `tenancy` schema
 
-- **Status:** open (follow-up [F20](../../issues/r6-followups/F20-drill-role-check-predates-d177.md)).
+- **Status:** fixed 2026-11-17 by S76 (scope widened by the orchestrator): `deploy/lib/roles.sh` requires **no** SELECT/INSERT/UPDATE/DELETE on `tenancy.*` and no EXECUTE on a non-definer tenancy function; red = the two drill runs below, green = `test-two-installations.sh` PASS and `test-upgrade-roles.sh` past the role checks (steps 1–5 ok; its step 6, rollback to R5 in place, fails for another reason: R6's rollback is a restore of the pre-upgrade backup, PRD "Rollback").
 - **Severity:** High for the release gate, none for the product. Two release drills (`test-two-installations.sh`, A55/A79; `test-upgrade-roles.sh`, A69) stop at their first role check, so the upgrade path and the restore-into-isolation evidence are not re-proven on R6. The database is right: the check is wrong.
 - **Breaks:** the R6 frozen contract (PRD r6-multitenancy, "roles": `restaurantpro_app` has **no privilege on `tenancy.*`**; D177, `RowLevelSecurityCoverageTest.theApplicationRoleHasNoPrivilegeOnTenancyTables`). The drill check predates it.
 - **Environment:** branch `r6/s76-integrate` at `2d5637d` (main `9817098` + #112 + #113), macOS 15.3 x86_64, 16 CPUs, Docker; the drills build the backend image from this tree.
