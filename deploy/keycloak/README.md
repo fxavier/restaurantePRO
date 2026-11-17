@@ -7,6 +7,7 @@ identity and end-to-end suites (`SharedKeycloak`, D189). Keycloak 26.x, pinned.
 | --- | --- | --- |
 | `realm-restaurantpro.json` | `restaurantpro` | every tenant's users, terminals and bridges; Organizations enabled (one organization per tenant) |
 | `realm-restaurantpro-ops.json` | `restaurantpro-ops` | platform operators (`platform-operator`) and support staff; never tenant users |
+| `realm-restaurantpro-devices.json` | `restaurantpro-devices` | terminals and print bridges (`pos-*`, `bridge-*` clients, created at run time); no user |
 
 Both have the `restaurantpro-api` audience client (bearer only; the BFF's audience mapper adds it to every access
 token), the `backoffice-bff` confidential client (authorization code + PKCE `S256`, `private_key_jwt`, default ACR `1`),
@@ -17,3 +18,9 @@ The tenant realm also enables fine-grained admin permissions (`adminPermissionsE
 `tenancy-provisioner` confidential client (service account, `client-jwt` with ES256, no browser, implicit or password
 flow); its key and its permissions are set by S75's `deploy/keycloak-provisioners.sh`, never in this file. The
 terminal (`pos-*`) and bridge (`bridge-*`) clients are created at run time by the provisioner (S73).
+
+The devices realm (S73/S75, O1 option 3) holds one client only, `device-provisioner`: confidential, `client-jwt`, a
+service account and no browser, implicit or password flow. Its one `users` entry is that client's service-account user
+(`serviceAccountClientId`, no credentials), which carries the `realm-management` roles `manage-clients` and
+`view-clients` it needs to create and remove the `pos-*` and `bridge-*` clients. No person signs in to this realm. Its
+key is registered by `deploy/keycloak-provisioners.sh`, as the `tenancy-provisioner` one is.
