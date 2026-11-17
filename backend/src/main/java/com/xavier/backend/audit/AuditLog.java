@@ -4,6 +4,9 @@ import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Actor;
 import com.xavier.backend.audit.model.AuditEvent;
 import com.xavier.backend.audit.repository.AuditEventRepository;
+import com.xavier.backend.shared.tenancy.MembershipKind;
+import com.xavier.backend.shared.tenancy.TenantContext;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import java.time.Clock;
 import java.util.Map;
 import java.util.UUID;
@@ -18,7 +21,8 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <ul>
  *   <li>{@link #recordAsCurrentActor}: what every use case uses. Who acted (id and kind) and on which terminal come
- *       from the session ({@link AccessPolicy#current()}); never pass them by hand.</li>
+ *       from the session ({@link AccessPolicy#current()}); never pass them by hand. In a SUPPORT membership the kind
+ *       is {@code SUPPORT} (D183).</li>
  *   <li>{@link #recordAsSystem}: a write nobody asked for in a session (bootstrap, scheduled job, listener,
  *       an unauthenticated device enrolment). {@code actor_kind = SYSTEM}, no actor.</li>
  *   <li>{@link #recordAs}: only for login and logout, whose actor is not (or no longer) the current principal.</li>
@@ -33,17 +37,22 @@ import tools.jackson.databind.json.JsonMapper;
 public class AuditLog {
 
     static final String SYSTEM = "SYSTEM";
+    /** D183: anyone acting in a SUPPORT membership; its actor is the tenant's support account (an ACCOUNT). */
+    static final String SUPPORT = "SUPPORT";
 
     private final AuditEventRepository events;
     private final JsonMapper json;
     private final Clock clock;
     private final AccessPolicy accessPolicy;
+    private final TenantScopes tenants;
 
-    AuditLog(AuditEventRepository events, JsonMapper json, Clock clock, AccessPolicy accessPolicy) {
+    AuditLog(AuditEventRepository events, JsonMapper json, Clock clock, AccessPolicy accessPolicy,
+             TenantScopes tenants) {
         this.events = events;
         this.json = json;
         this.clock = clock;
         this.accessPolicy = accessPolicy;
+        this.tenants = tenants;
     }
 
     /**
@@ -53,7 +62,7 @@ public class AuditLog {
     public void recordAsCurrentActor(String action, String entityType, String entityId, UUID storeId,
                                      UUID approverId, String reason, Map<String, Object> details) {
         Actor actor = accessPolicy.current();
-        record(new AuditEntry(actor.userId(), actor.kind().name(), approverId, action, entityType, entityId, storeId,
+        record(new AuditEntry(actor.userId(), actorKind(actor), approverId, action, entityType, entityId, storeId,
                 actor.terminalId(), reason, details));
     }
 
@@ -71,8 +80,15 @@ public class AuditLog {
     @Transactional(propagation = Propagation.MANDATORY)
     public void recordAs(Actor actor, String action, String entityType, String entityId, UUID storeId,
                          String reason, Map<String, Object> details) {
-        record(new AuditEntry(actor.userId(), actor.kind().name(), null, action, entityType, entityId, storeId,
+        record(new AuditEntry(actor.userId(), actorKind(actor), null, action, entityType, entityId, storeId,
                 actor.terminalId(), reason, details));
+    }
+
+    /** The actor's kind, except SUPPORT for anyone acting in the bound SUPPORT membership (D183). */
+    private String actorKind(Actor actor) {
+        boolean support = tenants.current().map(TenantContext::kind).filter(MembershipKind.SUPPORT::equals)
+                .isPresent();
+        return support ? SUPPORT : actor.kind().name();
     }
 
     @Transactional(propagation = Propagation.MANDATORY)

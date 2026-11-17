@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
  * {@link AuditLog#recordAs}, never fill this by hand (D41).
  *
  * @param actorId    who did it; {@code null} only for the system itself (bootstrap, scheduled jobs)
- * @param actorKind  {@code ACCOUNT}, {@code EMPLOYEE} or {@code SYSTEM}
+ * @param actorKind  {@code ACCOUNT}, {@code EMPLOYEE}, {@code SYSTEM} or {@code SUPPORT}
  * @param approverId supervisor whose credentials authorized it (D28), or {@code null}
  * @param action     past-tense verb in UPPER_SNAKE, e.g. {@code STORE_UPDATED}
  * @param entityType aggregate name from CONTEXT.md, e.g. {@code Store}
