@@ -135,6 +135,20 @@ class JobLeaseTest {
         assertThat(second.acquire(expired, () -> List.of(TENANT)).tenants()).containsExactly(TENANT);
     }
 
+    /** G5: a release frees only the releasing instance's own leases. */
+    @Test
+    void aReleaseLeavesTheLeasesAnotherInstanceHolds() {
+        String job = job();
+        assertThat(tryAcquire(first, job, TENANT)).isTrue();
+        assertThat(tryAcquire(second, job, TenantTestSupport.B)).isTrue();
+
+        first.release(job, List.of(TENANT, TenantTestSupport.B));
+
+        JobLeases third = leases("instance-3");
+        assertThat(third.acquire(job, () -> List.of(TENANT, TenantTestSupport.B)).tenants())
+                .as("A is free, B still instance 2's").containsExactly(TENANT);
+    }
+
     @Test
     void ofTwoInstancesRacingForTheSameTenantsEachTenantGoesToExactlyOne() throws Exception {
         List<UUID> tenants = List.of(TENANT, TenantTestSupport.B, UUID.randomUUID(), UUID.randomUUID());
