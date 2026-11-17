@@ -31,7 +31,7 @@ public class RowLevelSecurityCoverageTest {
             "inventory.stock_transfer_stores(uuid)",
             "tenancy.resolve_membership(text,text,uuid,text[])",
             "tenancy.active_tenant_ids()",
-            "tenancy.grant_membership(uuid,text,text,text,uuid,timestamp with time zone,timestamp with time zone)",
+            "tenancy.grant_membership(uuid,text,text,text,uuid,interval)",
             "tenancy.revoke_membership(uuid)",
             "tenancy.tenant_status(uuid)",
             "tenancy.activate_tenant(uuid)",
