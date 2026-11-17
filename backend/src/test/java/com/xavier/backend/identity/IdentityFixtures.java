@@ -93,21 +93,30 @@ public final class IdentityFixtures {
                 .andExpect(status().isOk());
     }
 
-    /** An enrolled terminal of {@code store}; returns its device token. */
+    /**
+     * An enrolled terminal of {@code store}, of the bootstrap tenant: registered through the API, then given what its
+     * enrolment leaves behind (D182) as the owner, as {@link #login} does for an account: the {@code TERMINAL}
+     * membership of its client's service account in the devices realm, and the terminal ACTIVE with that membership.
+     * The enrolment itself (code, key, Keycloak client) is proven by {@code TerminalEnrolmentThrottleTest}.
+     */
     public Terminal enrolledTerminal(UUID store) throws Exception {
         UUID terminal = id(mvc.perform(post("/api/v1/backoffice/terminals").with(admin()).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"storeId": "%s", "code": "%s", "name": "Bar"}""".formatted(store, unique("T"))))
                 .andExpect(status().isCreated()).andReturn().getResponse());
-        String code = JSON.readTree(mvc.perform(post("/api/v1/backoffice/terminals/" + terminal + "/enrollment-code")
-                        .with(admin()).with(csrf()))
-                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).get("code").asString();
-        String token = JSON.readTree(mvc.perform(post("/api/v1/auth/terminals/enroll").with(csrf())
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"code\": \"%s\"}".formatted(code)))
-                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString())
-                .get("deviceToken").asString();
-        return new Terminal(terminal, store, token);
+        String clientId = "pos-" + terminal;
+        UUID membership = UUID.randomUUID();
+        OwnerDatabase.shared().tx(jdbc -> {
+            jdbc.sql("INSERT INTO tenancy.tenant_membership (id, tenant_id, issuer, subject, kind, principal_id, status, "
+                            + "valid_from, created_at) VALUES (?, ?, ?, ?, 'TERMINAL', ?, 'ACTIVE', "
+                            + "now() - interval '1 minute', now())")
+                    .param(membership).param(TenantTestSupport.BOOTSTRAP).param(TestJwtFactory.DEVICES_ISSUER)
+                    .param(Terminal.subjectOf(clientId)).param(terminal).update();
+            jdbc.sql("UPDATE organization.terminal SET status = 'ACTIVE', membership_id = ? WHERE id = ?")
+                    .param(membership).param(terminal).update();
+        });
+        return new Terminal(terminal, store, clientId);
     }
 
     public void revoke(Terminal terminal) throws Exception {
@@ -157,26 +166,28 @@ public final class IdentityFixtures {
         return request -> TestJwtFactory.account(subject).bearer().postProcessRequest(request);
     }
 
-    /** A POS session of {@code employee} on {@code terminal} ({@code X-Pos-Session}). */
+    /** A POS session of {@code employee} on {@code terminal}: the terminal's token and {@code X-Pos-Session}. */
     public RequestPostProcessor posLogin(Terminal terminal, Employee employee, String pin) throws Exception {
-        return posSession(mvc.perform(posLoginRequest(terminal.token(), employee.code(), pin))
+        return posSession(terminal, mvc.perform(posLoginRequest(terminal, employee.code(), pin))
                 .andExpect(status().isOk()).andReturn().getResponse());
     }
 
-    /** The POS session a PIN login answered. */
-    public static RequestPostProcessor posSession(MockHttpServletResponse login) throws Exception {
+    /** The POS session a PIN login on {@code terminal} answered, with the terminal's token (D182). */
+    public static RequestPostProcessor posSession(Terminal terminal, MockHttpServletResponse login) throws Exception {
         String token = JSON.readTree(login.getContentAsString()).get("posSession").asString();
         return request -> {
+            terminal.bearer().postProcessRequest(request);
             request.addHeader("X-Pos-Session", token);
             return request;
         };
     }
 
+    /** The PIN login on {@code terminal}, with its token; {@code null} sends no token at all. */
     public static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder posLoginRequest(
-            String terminalToken, String employeeCode, String pin) throws Exception {
+            Terminal terminal, String employeeCode, String pin) throws Exception {
         var request = post("/api/v1/auth/pos-login").contentType(MediaType.APPLICATION_JSON)
                 .content(json("employeeCode", employeeCode, "pin", pin));
-        return terminalToken == null ? request : request.header("X-Terminal-Token", terminalToken);
+        return terminal == null ? request : request.with(terminal.bearer());
     }
 
     /** JSON object from key/value pairs; values may be null. */
@@ -192,7 +203,18 @@ public final class IdentityFixtures {
         return UUID.fromString(JSON.readTree(response.getContentAsString()).get("id").asString());
     }
 
-    public record Terminal(UUID id, UUID storeId, String token) {
+    /** An enrolled terminal and its Keycloak client in the devices realm. */
+    public record Terminal(UUID id, UUID storeId, String clientId) {
+
+        /** The service-account user of a device client (the {@code sub} of its tokens). */
+        public static String subjectOf(String clientId) {
+            return "svc-" + clientId;
+        }
+
+        /** A fresh access token of the terminal's client (client credentials, private_key_jwt). */
+        public RequestPostProcessor bearer() {
+            return TestJwtFactory.device(clientId, subjectOf(clientId)).bearer();
+        }
     }
 
     public record User(UUID id, String username) {

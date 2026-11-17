@@ -170,7 +170,7 @@ final class Installation {
                         + "now()) ON CONFLICT (issuer, subject, tenant_id) DO NOTHING")
                 .param(UUID.randomUUID()).param(BootstrapTenant.ID).param(TestJwtFactory.TENANT_ISSUER).param(subject)
                 .param(account).update();
-        return tab.signedIn(() -> TestJwtFactory.account(subject, now.get()).encode());
+        return tab.withFixtures(owner, now).signedIn(() -> TestJwtFactory.account(subject, now.get()).encode());
     }
 
     /** The Keycloak user an account signed in with ({@link #signIn}) is. */
@@ -198,17 +198,40 @@ final class Installation {
         return code;
     }
 
-    /** A new POS tab on {@code terminal}: enrolled with a fresh code, then the employee's PIN login. */
+    /**
+     * A new POS tab on {@code terminal}: a fresh one-time code, the terminal enrolled with it ({@link #enrolled}), then
+     * the employee's PIN login on the terminal's token.
+     */
     static Browser posLogin(Browser office, UUID terminal, String code, String pin, String name) throws Exception {
-        String enrollment = office.post("/api/v1/backoffice/terminals/" + terminal + "/enrollment-code", null, 200)
-                .get("code").asString();
+        office.post("/api/v1/backoffice/terminals/" + terminal + "/enrollment-code", null, 200);
         Browser pos = office.sibling(name);
         pos.get("/api/v1/auth/pos-session", 401);
-        String token = pos.post("/api/v1/auth/terminals/enroll", Map.of("code", enrollment), 200)
-                .get("deviceToken").asString();
+        pos.enrolled(enrolled(office, terminal));
         String session = pos.post("/api/v1/auth/pos-login", Map.of("employeeCode", code, "pin", pin), 200, Csrf.SEND,
-                Map.of("X-Terminal-Token", token), "pos-login").get("posSession").asString();
-        return pos.enrolled(token).posSession(session);
+                pos.terminalAuthorization(), "pos-login").get("posSession").asString();
+        return pos.posSession(session);
+    }
+
+    /**
+     * What a terminal's enrolment leaves behind (D182), written as the owner as onboarding's are ({@link #signIn}):
+     * the {@code TERMINAL} membership of its client's service account in the devices realm, the terminal ACTIVE with
+     * it. The enrolment itself (code, key, the Keycloak client) is {@code TerminalEnrolmentThrottleTest}'s.
+     *
+     * @return the terminal client's access tokens, issued on the server's clock
+     */
+    static Supplier<String> enrolled(Browser office, UUID terminal) {
+        String clientId = "pos-" + terminal;
+        String subject = "svc-" + clientId;
+        JdbcClient owner = office.owner();
+        owner.sql("INSERT INTO tenancy.tenant_membership (id, tenant_id, issuer, subject, kind, principal_id, status, "
+                        + "valid_from, created_at) SELECT ?, t.tenant_id, ?, ?, 'TERMINAL', t.id, 'ACTIVE', "
+                        + "now() - interval '1 minute', now() FROM organization.terminal t WHERE t.id = ? "
+                        + "ON CONFLICT (issuer, subject, tenant_id) DO NOTHING")
+                .param(UUID.randomUUID()).param(TestJwtFactory.DEVICES_ISSUER).param(subject).param(terminal).update();
+        owner.sql("UPDATE organization.terminal t SET status = 'ACTIVE', membership_id = m.id "
+                        + "FROM tenancy.tenant_membership m WHERE t.id = ? AND m.issuer = ? AND m.subject = ?")
+                .param(terminal).param(TestJwtFactory.DEVICES_ISSUER).param(subject).update();
+        return () -> TestJwtFactory.device(clientId, subject, office.now()).encode();
     }
 
     /**
@@ -217,8 +240,7 @@ final class Installation {
      */
     static Browser pinLoginAgain(Browser pos, String code, String pin) throws Exception {
         String session = pos.post("/api/v1/auth/pos-login", Map.of("employeeCode", code, "pin", pin), 200,
-                Csrf.SEND, Map.of("X-Terminal-Token", pos.deviceToken()), "pos-login again").get("posSession")
-                .asString();
+                Csrf.SEND, pos.terminalAuthorization(), "pos-login again").get("posSession").asString();
         return pos.posSession(session);
     }
 

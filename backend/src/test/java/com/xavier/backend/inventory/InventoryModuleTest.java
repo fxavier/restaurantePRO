@@ -24,7 +24,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
-@ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization"})
+@ApplicationModuleTest(extraIncludes = {"shared", "access", "audit", "organization", "tenancy"})
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, MutableClock.Config.class, InventoryFixtures.class})
 @TestPropertySource(properties = {

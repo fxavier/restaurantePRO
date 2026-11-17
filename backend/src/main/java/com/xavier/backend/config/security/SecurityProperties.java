@@ -12,11 +12,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 record SecurityProperties(Issuers issuers, String audience, Duration clockSkew, Duration stepUpMaxAge) {
 
     /** {@code restaurantpro.security.issuers.*}; a blank value means the realm is not trusted. */
-    record Issuers(String tenant, String ops) {
+    record Issuers(String tenant, String ops, String devices) {
     }
 
     SecurityProperties {
-        issuers = issuers == null ? new Issuers("", "") : issuers;
+        issuers = issuers == null ? new Issuers("", "", "") : issuers;
         Objects.requireNonNull(audience, "restaurantpro.security.audience");
         Objects.requireNonNull(clockSkew, "restaurantpro.security.clock-skew");
         Objects.requireNonNull(stepUpMaxAge, "restaurantpro.security.step-up-max-age");

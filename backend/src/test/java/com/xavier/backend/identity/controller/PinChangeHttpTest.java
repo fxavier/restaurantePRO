@@ -61,7 +61,7 @@ class PinChangeHttpTest {
     void afterAResetThePosSessionHoldsNothingUntilTheEmployeeSetsTheirOwnPin() throws Exception {
         Employee employee = resetEmployee(IdentityFixtures.WAITER);
 
-        RequestPostProcessor session = IdentityFixtures.posSession(mvc.perform(posLoginRequest(terminal.token(),
+        RequestPostProcessor session = IdentityFixtures.posSession(terminal, mvc.perform(posLoginRequest(terminal,
                         employee.code(), RESET_PIN))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.mustChangePin").value(true))
@@ -77,8 +77,8 @@ class PinChangeHttpTest {
                 .andExpect(jsonPath("$.permissions", containsInAnyOrder(IdentityFixtures.waiterAuthorities(store))));
 
         mvc.perform(get(POS_ROUTE).with(session)).andExpect(status().isOk()); // the same session, now with authority
-        mvc.perform(posLoginRequest(terminal.token(), employee.code(), RESET_PIN)).andExpect(status().isUnauthorized());
-        mvc.perform(posLoginRequest(terminal.token(), employee.code(), OWN_PIN))
+        mvc.perform(posLoginRequest(terminal, employee.code(), RESET_PIN)).andExpect(status().isUnauthorized());
+        mvc.perform(posLoginRequest(terminal, employee.code(), OWN_PIN))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.mustChangePin").value(false))
                 .andExpect(jsonPath("$.permissions", containsInAnyOrder(IdentityFixtures.waiterAuthorities(store))));

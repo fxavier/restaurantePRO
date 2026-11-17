@@ -11,7 +11,7 @@ import com.xavier.backend.orders.OrdersFixtures;
 import com.xavier.backend.orders.OrdersFixtures.Shop;
 import com.xavier.backend.production.model.PrintLine;
 import com.xavier.backend.production.model.StyledContent;
-import com.xavier.backend.production.service.PrintWorker;
+import com.xavier.backend.production.service.InProcessPrintBridge;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -43,9 +43,9 @@ public class ProductionFixtures {
     private final MockMvc mvc;
     private final JdbcClient jdbc;
     private final OrdersFixtures orders;
-    private final PrintWorker worker;
+    private final InProcessPrintBridge worker;
 
-    ProductionFixtures(MockMvc mvc, JdbcClient jdbc, OrdersFixtures orders, PrintWorker worker) {
+    ProductionFixtures(MockMvc mvc, JdbcClient jdbc, OrdersFixtures orders, InProcessPrintBridge worker) {
         this.mvc = mvc;
         this.jdbc = jdbc;
         this.orders = orders;

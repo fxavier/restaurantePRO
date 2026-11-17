@@ -1,9 +1,11 @@
 package com.xavier.backend.config.security;
 
-/** The two Keycloak realms the backend trusts (D175, P71). */
+/** The Keycloak realms the backend trusts (D175, P71; O1 resolution 2026-11-16). */
 enum Realm {
-    /** {@code restaurantpro}: every tenant's users (and, from S73, terminals and bridges). */
+    /** {@code restaurantpro}: every tenant's users. */
     TENANT,
     /** {@code restaurantpro-ops}: platform operators and support staff, never tenant users. */
-    OPS
+    OPS,
+    /** {@code restaurantpro-devices}: POS terminals ({@code pos-*}) and print bridges ({@code bridge-*}) only. */
+    DEVICES
 }

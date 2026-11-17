@@ -12,10 +12,10 @@ import java.util.function.Predicate;
  */
 enum RouteFamily {
 
-    /** {@code /backoffice/**} and {@code /auth/**} (except the interim POS device routes): the BFF only. */
+    /** {@code /backoffice/**} and {@code /auth/**} (except the POS routes under it): the BFF only. */
     BACKOFFICE(EnumSet.of(Realm.TENANT, Realm.OPS), "backoffice-bff"::equals),
-    /** {@code /bridge/**} (S73): print bridges, {@code bridge-<id>} clients of the tenant realm. */
-    BRIDGE(EnumSet.of(Realm.TENANT), azp -> azp.startsWith("bridge-")),
+    /** {@code /bridge/**}: print bridges, {@code bridge-<id>} clients of the devices realm (D187). */
+    BRIDGE(EnumSet.of(Realm.DEVICES), azp -> azp.startsWith("bridge-")),
     /**
      * {@code /platform/**} (S75): the ops realm with the {@code platform-operator} role ({@code TenantResolutionFilter};
      * a valid token of the tenant realm is 403 {@code PLATFORM_FORBIDDEN}, not 401). The ops console's client is not
@@ -23,16 +23,20 @@ enum RouteFamily {
      */
     PLATFORM(EnumSet.of(Realm.TENANT, Realm.OPS), azp -> true),
     /**
-     * {@code /pos/**} and the POS device routes under {@code /auth}: interim until S73, no bearer token yet; the
-     * employee's POS session ({@code X-Pos-Session}) authenticates (recorded deviation of S72).
+     * {@code /pos/**} and the POS session routes under {@code /auth}: terminals, {@code pos-<id>} clients of the devices
+     * realm (D182); the employee's POS session ({@code X-Pos-Session}) rides on the terminal's token.
      */
-    POS(EnumSet.noneOf(Realm.class), azp -> false);
+    POS(EnumSet.of(Realm.DEVICES), azp -> azp.startsWith("pos-"));
 
     static final String API = "/api/v1/";
     static final String TENANT_LIST = "/api/v1/auth/tenants";
-    /** The POS device routes under {@code /auth}, interim until S73 moves POS to the terminal token. */
-    static final Set<String> POS_AUTH_ROUTES = Set.of("/api/v1/auth/pos-login", "/api/v1/auth/pos-pin",
-            "/api/v1/auth/pos-logout", "/api/v1/auth/pos-session", "/api/v1/auth/terminals/enroll");
+    /** The PIN login: the terminal's token only, no POS session yet. */
+    static final String POS_LOGIN = "/api/v1/auth/pos-login";
+    /** The POS session routes under {@code /auth} (R2 paths kept): the PIN login, PIN choice, session and logout. */
+    static final Set<String> POS_AUTH_ROUTES = Set.of(POS_LOGIN, "/api/v1/auth/pos-pin", "/api/v1/auth/pos-logout",
+            "/api/v1/auth/pos-session");
+    /** A device's enrolment with its one-time code (D182): no token at all, the code is the credential. */
+    static final String[] ENROLMENT_ROUTES = {"/api/v1/pos/enrolment", "/api/v1/bridge/enrolment"};
 
     private final Set<Realm> realms;
     private final Predicate<String> authorizedParty;
@@ -75,7 +79,4 @@ enum RouteFamily {
         return request.getRequestURI().substring(request.getContextPath().length());
     }
 
-    static boolean isPos(HttpServletRequest request) {
-        return of(request).filter(family -> family == POS).isPresent();
-    }
 }

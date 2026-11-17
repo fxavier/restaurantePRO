@@ -20,7 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * POS sessions (D182; interim terminal identity until S73): opened by the PIN login with an opaque 256-bit token, of
+ * POS sessions (D182): opened by the PIN login on an enrolled terminal with an opaque 256-bit token, of
  * which only the SHA-256 is stored; resolved on every POS request ({@code X-Pos-Session}); ended on logout, on a PIN
  * reset, on deactivation, when the terminal is revoked (spec §5, D26) or the store deactivated (D45). No token, PIN or
  * hash is ever logged.
@@ -49,11 +49,16 @@ public class TerminalSessionService {
         return token;
     }
 
-    /** The live session of {@code token}, its idle time restarted; an expired one is deleted. */
+    /**
+     * The live session of {@code token} opened on {@code terminalId}, its idle time restarted; an expired one is
+     * deleted. A session of another terminal is not found and left untouched (hand-off b: a session token is never
+     * usable with another terminal's token).
+     */
     @Transactional
-    public Optional<TerminalSession> use(String token) {
+    public Optional<TerminalSession> use(String token, UUID terminalId) {
         String hash = hash(token);
-        Optional<TerminalSession> found = sessions.findById(hash);
+        Optional<TerminalSession> found = sessions.findById(hash)
+                .filter(session -> session.getTerminalId().equals(terminalId));
         if (found.isEmpty()) {
             return Optional.empty();
         }

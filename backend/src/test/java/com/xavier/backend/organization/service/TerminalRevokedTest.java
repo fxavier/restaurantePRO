@@ -33,8 +33,8 @@ class TerminalRevokedTest {
     void revokingATerminalPublishesTerminalRevoked(AssertablePublishedEvents events) {
         UUID store = stores.create(new StoreCreateRequest("R" + UUID.randomUUID().toString().substring(0, 8),
                 "Store", "Africa/Maputo", null)).id();
-        TerminalSummary terminal = terminals.create(new TerminalCreateRequest(store, "POS1", "Bar"));
-        terminals.enroll(terminals.issueEnrollmentCode(terminal.id()).code(), "192.0.2.1");
+        TerminalSummary terminal = terminals.create(new TerminalCreateRequest(store, "POS1", "Bar", null));
+        terminals.issueEnrollmentCode(terminal.id());
 
         terminals.revoke(terminal.id());
 

@@ -31,7 +31,7 @@ class DrawerKickNoRetryTest {
     FiscalFixtures stores;
 
     @Autowired
-    PrintWorker worker;
+    InProcessPrintBridge worker;
 
     @Test
     void aPrinterThatIsDownFailsTheKickAtItsFirstAttempt() throws Exception {

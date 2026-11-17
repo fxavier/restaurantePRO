@@ -14,7 +14,9 @@ package com.xavier.backend.access;
 public enum SystemScope {
     BOOTSTRAP(Reach.ALL, "creates the bootstrap tenant's company and first administrator before any actor exists"),
     PROVISIONING(Reach.ALL, "creates a new tenant's company profile and first store from TenantProvisioned (D181)"),
-    PRINT_WORKER(Reach.ALL, "claims and sends the print jobs of every store"),
+    PRINT_WORKER(Reach.ALL, "expires the lost print-job leases of every store (the bridges send, D187)"),
+    DEVICE_ENROLMENT(Reach.ALL, "redeems a device's one-time code in the tenant its pending membership names, before "
+            + "the device has a token (D182)"),
     PAYMENT_RECOVERY(Reach.ALL, "sweeps, resolves and counts the payment attempts in doubt of every store"),
     RESERVATIONS(Reach.ALL, "marks the no-shows of every store"),
     STOCK_RECONCILE(Reach.ALL, "reconciles the stock balances of every store"),

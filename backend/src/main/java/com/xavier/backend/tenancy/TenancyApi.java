@@ -74,15 +74,15 @@ public class TenancyApi {
      * {@code requested} when given.
      *
      * @return empty when there is none: the same answer for a foreign tenant and a random one (no oracle)
-     * @throws IllegalStateException when several match and none was requested (the caller answers
-     *                               {@code TENANT_SELECTION_REQUIRED}, listing nothing)
+     * @throws MembershipSelectionRequiredException when several match and none was requested (the caller answers
+     *                                               {@code TENANT_SELECTION_REQUIRED}, listing nothing)
      */
     @Transactional(readOnly = true)
     public Optional<Membership> resolve(String issuer, String subject, UUID requested, Set<MembershipKind> kinds) {
         List<Membership> found = resolveAll(issuer, subject, requested,
                 kinds.stream().map(MembershipKind::name).toArray(String[]::new));
         if (found.size() > 1) {
-            throw new IllegalStateException("Several memberships match and no tenant was selected");
+            throw new MembershipSelectionRequiredException();
         }
         return found.stream().findFirst();
     }

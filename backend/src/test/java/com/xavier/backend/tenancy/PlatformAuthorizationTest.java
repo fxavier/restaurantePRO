@@ -72,8 +72,9 @@ class PlatformAuthorizationTest {
         RequestPostProcessor session = fixtures.posLogin(terminal, cashier, "4821");
         UUID tenant = provisioningTenant();
 
+        // the session carries the terminal's devices-realm token, which no platform route accepts
         int refused = mvc.perform(post("/api/v1/platform/tenants/{id}/close", tenant).with(session)
-                        .header("X-Terminal-Token", terminal.token()).contentType(MediaType.APPLICATION_JSON)
+                        .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"reason\":\"a cashier\"}"))
                 .andReturn().getResponse().getStatus();
 

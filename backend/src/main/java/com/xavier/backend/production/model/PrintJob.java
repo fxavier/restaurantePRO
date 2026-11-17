@@ -66,6 +66,9 @@ public class PrintJob {
 
     private Instant startedAt;
 
+    /** The print bridge that holds the current claim (D187); only it reports the outcome. */
+    private UUID claimedBy;
+
     private Instant sentAt;
 
     @Column(length = 40)
@@ -117,10 +120,21 @@ public class PrintJob {
 
     /** QUEUED or RETRY_WAIT → PROCESSING: one more attempt starts now. */
     public void claim(Instant now) {
+        claim(now, null);
+    }
+
+    /** A claim by the print bridge {@code bridgeId} (D187): its lease starts now. */
+    public void claim(Instant now, UUID bridgeId) {
         require("be claimed", PrintJobStatus.QUEUED, PrintJobStatus.RETRY_WAIT);
         status = PrintJobStatus.PROCESSING;
         attempts++;
         startedAt = now;
+        claimedBy = bridgeId;
+    }
+
+    /** Whether {@code bridgeId} holds the job's current claim. */
+    public boolean isClaimedBy(UUID bridgeId) {
+        return bridgeId != null && bridgeId.equals(claimedBy);
     }
 
     /** The printer took the bytes and the connection closed cleanly. */

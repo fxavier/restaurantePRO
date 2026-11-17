@@ -19,9 +19,10 @@ import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * With the real security configuration: a device without any credential can enroll, guarded by its one-time code
- * alone (no CSRF on the API since D176: no cookie credential exists for a forged request to ride on). A wrong code
- * and a used code are refused; the BackOffice routes still need a token.
+ * With the real security configuration: a device without any credential reaches its enrolment route, guarded by its
+ * one-time code alone (no CSRF on the API since D176: no cookie credential exists for a forged request to ride on), and
+ * a wrong code is refused by the route, not by the chain; the BackOffice routes still need a token. A whole enrolment
+ * needs the devices realm: {@code TerminalEnrolmentThrottleTest}.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -40,17 +41,16 @@ class TerminalEnrollmentSecurityTest {
     MockMvc mvc;
 
     @Test
-    void aDeviceWithoutACredentialEnrollsOnlyWithItsOneTimeCode() throws Exception {
+    void aDeviceWithoutACredentialReachesItsEnrolmentAndAWrongCodeIsRefusedThere() throws Exception {
         String code = newEnrollmentCode();
+        String wrong = code.substring(0, 8) + "0".repeat(16);
 
-        mvc.perform(enroll("not-" + code)).andExpect(status().isUnprocessableContent()); // a wrong code
-        mvc.perform(enroll(code)).andExpect(status().isOk());
-        mvc.perform(enroll(code)).andExpect(status().isUnprocessableContent()); // used once
-    }
-
-    private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder enroll(String code) {
-        return post("/api/v1/auth/terminals/enroll").contentType(MediaType.APPLICATION_JSON)
-                .content("{\"code\": \"%s\"}".formatted(code));
+        for (String route : new String[] {"/api/v1/pos/enrolment", "/api/v1/bridge/enrolment"}) {
+            mvc.perform(post(route).contentType(MediaType.APPLICATION_JSON)
+                            .content(JSON.writeValueAsString(java.util.Map.of("code", wrong,
+                                    "publicJwk", com.xavier.backend.config.security.Devices.publicJwk()))))
+                    .andExpect(status().isBadRequest());
+        }
     }
 
     @Test

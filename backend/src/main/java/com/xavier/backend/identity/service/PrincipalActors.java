@@ -95,13 +95,13 @@ class PrincipalActors implements ActorDirectory {
     }
 
     /**
-     * A live POS session of an active employee still assigned to the session's store, on a terminal that is still
-     * enrolled; while the employee must change a manager-set PIN it holds no authority.
+     * A live POS session, opened on {@code terminalId}, of an active employee still assigned to the session's store, on
+     * a terminal that is still enrolled; while the employee must change a manager-set PIN it holds no authority.
      */
     @Override
     @Transactional
-    public Optional<Actor> posSession(String token) {
-        Optional<TerminalSession> session = posSessions.use(token);
+    public Optional<Actor> posSession(String token, UUID terminalId) {
+        Optional<TerminalSession> session = posSessions.use(token, terminalId);
         if (session.isEmpty()) {
             return Optional.empty();
         }

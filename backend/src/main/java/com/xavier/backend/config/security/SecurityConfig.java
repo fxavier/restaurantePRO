@@ -1,9 +1,7 @@
 package com.xavier.backend.config.security;
 
 import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
-import com.xavier.backend.access.ActorDirectory;
 import com.xavier.backend.access.Permission;
-import com.xavier.backend.shared.tenancy.TenantScopes;
 import jakarta.servlet.DispatcherType;
 import java.net.MalformedURLException;
 import java.net.URI;
@@ -14,13 +12,13 @@ import org.springframework.boot.security.autoconfigure.actuate.web.servlet.Endpo
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
-import org.springframework.security.web.util.matcher.RequestMatcher;
 
 /**
- * HTTP security (spec §10; D176, D177, D184). The backend is an OAuth2 resource server for Keycloak's two realms:
+ * HTTP security (spec §10; D176, D177, D182, D184, D187). The backend is an OAuth2 resource server for Keycloak's
+ * realms (users, operators, devices):
  * every API call carries {@code Authorization: Bearer <JWT>}, validated completely ({@link BearerAuthentication}),
  * then resolved to a tenant and an actor ({@link TenantResolutionFilter}). No server-side session, no cookie, no CSRF
  * on the API (the BFF keeps CSRF on its own cookie session, P69). Fine-grained authorization is not here: every use
@@ -28,10 +26,10 @@ import org.springframework.security.web.util.matcher.RequestMatcher;
  *
  * <ul>
  *   <li>Actuator (management port): {@code health} open, the rest needs {@link Permission#SYSTEM_MONITOR}.</li>
- *   <li>POS ({@link RouteFamily#POS}), <b>interim until S73</b>: the device-token PIN login and the POS session token
- *       ({@code X-Pos-Session}) in the bootstrap tenant ({@link InterimPosBootstrapTenant}); 401
- *       {@code POS_SESSION_INVALID} without a valid session.</li>
- *   <li>Everything else under the API: a bearer token of the path's family. Swagger UI and {@code /v3/api-docs} need
+ *   <li>Every API route: a bearer token of the path's family ({@link RouteFamily}): POS and bridge routes take only
+ *       the devices realm's {@code pos-*}/{@code bridge-*} clients, and a POS route also needs the employee's
+ *       {@code X-Pos-Session} of that terminal ({@link TenantResolutionFilter}). Only a device's enrolment with its
+ *       one-time code needs no token. Swagger UI and {@code /v3/api-docs} need
  *       one too, unless {@code restaurantpro.dev.open-api-docs=true} (local development only).</li>
  *   <li>{@code ASYNC} and {@code ERROR} dispatches are permitted: the original request was already authorized (the
  *       SSE change stream, D60, completes on an async dispatch).</li>
@@ -42,7 +40,6 @@ import org.springframework.security.web.util.matcher.RequestMatcher;
 class SecurityConfig {
 
     static final String[] API_DOCS_PATHS = {"/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs", "/v3/api-docs/**"};
-    static final String[] OPEN_POS_ROUTES = {"/api/v1/auth/pos-login", "/api/v1/auth/terminals/enroll"};
 
     /**
      * The production realms: each issuer's key set at {@code <issuer>/protocol/openid-connect/certs} (Keycloak),
@@ -51,7 +48,8 @@ class SecurityConfig {
      */
     @Bean
     TrustedRealms trustedRealms(SecurityProperties properties) {
-        return TrustedRealms.of(properties.issuers().tenant(), properties.issuers().ops(), issuer -> {
+        return TrustedRealms.of(properties.issuers().tenant(), properties.issuers().ops(),
+                properties.issuers().devices(), issuer -> {
             try {
                 return JWKSourceBuilder.create(URI.create(issuer + "/protocol/openid-connect/certs").toURL())
                         .retrying(false).build();
@@ -74,24 +72,6 @@ class SecurityConfig {
 
     @Bean
     @Order(2)
-    SecurityFilterChain posChain(HttpSecurity http, ApiSecurity api, TenantScopes tenants, ActorDirectory actors,
-                                    ProblemDetailResponder problems) throws Exception {
-        RequestMatcher pos = RouteFamily::isPos;
-        return api.stateless(http.securityMatcher(pos))
-                .addFilterBefore(new InterimPosBootstrapTenant(tenants), AnonymousAuthenticationFilter.class)
-                .addFilterAfter(new PosSessionFilter(actors, tenants), InterimPosBootstrapTenant.class)
-                .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint((request, response, e) ->
-                        problems.refuse(response, org.springframework.http.HttpStatus.UNAUTHORIZED,
-                                "POS_SESSION_INVALID", "Log in on the terminal again.")))
-                .authorizeHttpRequests(requests -> requests
-                        .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
-                        .requestMatchers(OPEN_POS_ROUTES).permitAll()
-                        .anyRequest().authenticated())
-                .build();
-    }
-
-    @Bean
-    @Order(3)
     SecurityFilterChain apiChain(HttpSecurity http, ApiSecurity api,
                                     @Value("${restaurantpro.dev.open-api-docs:false}") boolean openApiDocs)
             throws Exception {
@@ -99,6 +79,7 @@ class SecurityConfig {
         return api.bearerByPath(http)
                 .authorizeHttpRequests(requests -> {
                     requests.dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll();
+                    requests.requestMatchers(HttpMethod.POST, RouteFamily.ENROLMENT_ROUTES).permitAll();
                     if (openApiDocs) {
                         requests.requestMatchers(API_DOCS_PATHS).permitAll();
                     }

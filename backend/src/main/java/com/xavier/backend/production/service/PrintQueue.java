@@ -66,8 +66,14 @@ public class PrintQueue {
      */
     @Transactional
     public List<Dispatch> claimDue(int limit) {
+        return claimDue(limit, null);
+    }
+
+    /** {@link #claimDue(int)} by the print bridge {@code bridgeId}, which alone may then report the outcomes (D187). */
+    @Transactional
+    public List<Dispatch> claimDue(int limit, UUID bridgeId) {
         Instant now = clock.instant();
-        List<Dispatch> claimed = claimKicks(now, limit);
+        List<Dispatch> claimed = claimKicks(now, limit, bridgeId);
         // lockDue is a native query, so Hibernate flushes the kicks claimed above first: their printers are PROCESSING
         // and send nothing else this run
         List<PrintJob> due = jobs.lockDue(now, limit - claimed.size());
@@ -79,7 +85,7 @@ public class PrintQueue {
                 job.moveTo(printer.getRedirectPrinterId());
             } else {
                 ProductionTicket ticket = tickets.findById(job.getTicketId()).orElseThrow();
-                job.claim(now);
+                job.claim(now, bridgeId);
                 PrinterProfile profile = printer.profile();
                 claimed.add(new Dispatch(job.getId(), printer.getId(), printer.address(), renderer.render(
                         ticket.printout(), profile, printer.getCodePage(), ticket.printsCopyMarkFor(job.getKind())),
@@ -95,7 +101,7 @@ public class PrintQueue {
      * whose drawer was removed since, fails unsent; the others go out, one per printer per run, without a status
      * probe (an open cover or paper out does not stop a drawer).
      */
-    private List<Dispatch> claimKicks(Instant now, int limit) {
+    private List<Dispatch> claimKicks(Instant now, int limit, UUID bridgeId) {
         List<Dispatch> claimed = new ArrayList<>();
         Set<UUID> kicking = new HashSet<>();
         for (PrintJob kick : jobs.lockDueKicks(limit)) {
@@ -109,7 +115,7 @@ public class PrintQueue {
                 log.warn("Drawer kick {} failed unsent: {}", kick.getId(), refusal);
                 notifier.notifyAfterCommit(kick.getStoreId(), ChangeTopic.PRINT_JOBS, kick.getId());
             } else if (kicking.add(printer.getId())) {
-                kick.claim(now);
+                kick.claim(now, bridgeId);
                 claimed.add(new Dispatch(kick.getId(), printer.getId(), printer.address(),
                         DrawerKickService.payload(printer.profile()), false));
             }
