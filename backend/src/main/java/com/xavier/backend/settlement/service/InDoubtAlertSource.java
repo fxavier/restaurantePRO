@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
 /**
  * D150 PAYMENTS_IN_DOUBT: per store, the attempts in doubt for more than 30 minutes ({@link InDoubtGauge#ALERT_AFTER})
  * as of the gauge's last refresh, the signal of {@code payment_attempts_in_doubt_overdue{store}}. CRITICAL: a person
- * must query the provider or resolve them (D81). No query of its own.
+ * must query the provider or resolve them (D81). No query of its own; the bound tenant's attempts only.
  */
 @Component
 class InDoubtAlertSource implements AlertSource {

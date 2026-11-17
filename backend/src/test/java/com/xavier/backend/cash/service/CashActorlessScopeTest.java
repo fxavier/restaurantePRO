@@ -7,6 +7,7 @@ import com.xavier.backend.cash.CashFixtures;
 import com.xavier.backend.cash.CashFixtures.Pos;
 import com.xavier.backend.cash.CashModuleTest;
 import com.xavier.backend.cash.CashTestClock;
+import com.xavier.backend.shared.tenancy.TenantScopes;
 import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
@@ -35,6 +36,9 @@ class CashActorlessScopeTest {
     @Autowired
     CashTestClock clock;
 
+    @Autowired
+    TenantScopes tenants;
+
     @Test
     void theDiscrepancyRefreshSeesTheClosingsOfEveryStore() throws Exception {
         UUID a = storeWithAClosingFiveShort();
@@ -58,7 +62,8 @@ class CashActorlessScopeTest {
 
     /**
      * D185: the scheduler's one run covers every ACTIVE tenant, each in its own binding, and the one bean keeps what
-     * every tenant's run found (a later tenant's run does not wipe an earlier one's gauge row).
+     * every tenant's run found (a later tenant's run does not wipe an earlier one's gauge row); each tenant's alerts
+     * show to that tenant only.
      */
     @Test
     void theDiscrepancyRefreshRunsOncePerActiveTenantAndKeepsAllOfThem() throws Exception {
@@ -74,7 +79,10 @@ class CashActorlessScopeTest {
 
             assertThat(differences(inA)).isEqualTo(1);
             assertThat(differences(inB)).isEqualTo(1);
-            assertThat(source.alerts()).extracting(alert -> alert.storeId()).contains(inA, inB);
+            assertThat(TenantTestSupport.inTenant(tenants, TenantTestSupport.A, source::alerts))
+                    .extracting(alert -> alert.storeId()).contains(inA).doesNotContain(inB);
+            assertThat(TenantTestSupport.inTenant(tenants, TenantTestSupport.B, source::alerts))
+                    .extracting(alert -> alert.storeId()).contains(inB).doesNotContain(inA);
         } finally {
             TenantTestSupport.ensureTenants(); // back to PROVISIONING: other suites' jobs iterate the bootstrap only
         }

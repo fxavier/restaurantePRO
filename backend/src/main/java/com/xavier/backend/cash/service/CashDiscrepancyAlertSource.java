@@ -30,16 +30,16 @@ import org.springframework.stereotype.Component;
 /**
  * D150 CASH_DISCREPANCY (WARNING, per store): closings submitted or approved in the last 24 h whose Σ |difference|
  * exceeds {@code restaurantpro.alerts.cash-difference-threshold} (default 0, so any difference). Refreshed every
- * {@code restaurantpro.alerts.cash-discrepancy-interval} (default a minute) into the gauge {@code cash_closings_with_difference{store}}; a store once seen keeps reporting, at 0 when
- * clear. {@link #alerts} reads the last refresh. The scheduler runs it once per tenant on this one bean (D185), so
- * each tenant's last result is kept apart and the gauge and the alerts cover every tenant: a tenant's run replaces only
- * its own.
+ * {@code restaurantpro.alerts.cash-discrepancy-interval} (default a minute) into the gauge
+ * {@code cash_closings_with_difference{store}}; a store once seen keeps reporting, at 0 when clear. The scheduler runs
+ * it once per tenant on this one bean (D185), so each tenant's last result is kept apart and a tenant's run replaces
+ * only its own: the gauge (no tenant label) covers every tenant, {@link #alerts} only the bound one.
  */
 @Component
 class CashDiscrepancyAlertSource implements AlertSource {
 
     static final Duration WINDOW = Duration.ofHours(24);
-    /** A tenant not run for this many refresh intervals (suspended, closed) is no longer reported: its state is dropped. */
+    /** A tenant not run for this many refresh intervals (suspended, closed) is no longer reported: state dropped. */
     private static final int STALE_INTERVALS = 3;
     private static final Set<CashClosingStatus> COUNTED = Set.of(CashClosingStatus.SUBMITTED,
             CashClosingStatus.APPROVED);
@@ -57,7 +57,8 @@ class CashDiscrepancyAlertSource implements AlertSource {
     CashDiscrepancyAlertSource(CashClosingRepository closings, MeterRegistry meters, Clock clock,
                                @Value("${restaurantpro.alerts.cash-difference-threshold:0}") BigDecimal threshold,
                                TenantScopes tenants,
-                               @Value("${restaurantpro.alerts.cash-discrepancy-interval:PT1M}") Duration refreshInterval) {
+                               @Value("${restaurantpro.alerts.cash-discrepancy-interval:PT1M}")
+                               Duration refreshInterval) {
         this.closings = closings;
         this.clock = clock;
         this.tenants = tenants;
@@ -94,9 +95,10 @@ class CashDiscrepancyAlertSource implements AlertSource {
                         counts.getOrDefault(store, 0L))).toList(), true);
     }
 
+    /** The bound tenant's discrepancies as of its last refresh (security rule 7: never another tenant's). */
     @Override
     public List<OperationalAlert> alerts() {
-        return lastOf.values().stream().flatMap(List::stream)
+        return lastOf.getOrDefault(tenants.requireTenant(), List.of()).stream()
                 .map(store -> new OperationalAlert("CASH_DISCREPANCY", AlertSeverity.WARNING, store.storeId(),
                         store.closings(), store.firstSubmittedAt(), store.closings()
                         + " cash closing(s) of the last 24 h with a difference over the threshold."))

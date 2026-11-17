@@ -17,6 +17,7 @@ import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -49,8 +50,12 @@ class CashDiscrepancyTenantTest {
         clock.release();
     }
 
+    /**
+     * D186, security rule 7: the gauge is a metric of every tenant's stores (no tenant label), but the alerts answer
+     * for the bound tenant only: A never sees B's discrepancy, and A's survives B's run.
+     */
     @Test
-    void aTenantsDiscrepancyStaysAlertedAfterAnotherTenantsRun() {
+    void eachTenantSeesOnlyItsOwnDiscrepancyAfterTheOthersRun() {
         TenantTestSupport.ensureTenants();
         UUID storeA = UUID.randomUUID();
         UUID storeB = UUID.randomUUID();
@@ -60,7 +65,8 @@ class CashDiscrepancyTenantTest {
         TenantTestSupport.inTenant(tenants, A, source::refresh);
         TenantTestSupport.inTenant(tenants, B, source::refresh);
 
-        assertThat(source.alerts()).extracting(OperationalAlert::storeId).contains(storeA, storeB);
+        assertThat(alertedStores(source, A)).contains(storeA).doesNotContain(storeB);
+        assertThat(alertedStores(source, B)).contains(storeB).doesNotContain(storeA);
         assertThat(meters.get("cash_closings_with_difference").tag("store", storeA.toString()).gauge().value())
                 .isEqualTo(1);
         assertThat(meters.get("cash_closings_with_difference").tag("store", storeB.toString()).gauge().value())
@@ -81,7 +87,8 @@ class CashDiscrepancyTenantTest {
         TenantTestSupport.inTenant(tenants, B, source::refresh);
 
         assertThat(meters.find("cash_closings_with_difference").tag("store", storeA.toString()).gauge()).isNull();
-        assertThat(source.alerts()).extracting(OperationalAlert::storeId).contains(storeB).doesNotContain(storeA);
+        assertThat(alertedStores(source, A)).doesNotContain(storeA);
+        assertThat(alertedStores(source, B)).contains(storeB);
     }
 
     /**
@@ -101,15 +108,22 @@ class CashDiscrepancyTenantTest {
 
         clock.set(clock.instant().plus(Duration.ofMinutes(29)));
         TenantTestSupport.inTenant(tenants, B, slow::refresh);
-        assertThat(slow.alerts()).extracting(OperationalAlert::storeId).contains(storeA, storeB);
+        assertThat(alertedStores(slow, A)).contains(storeA);
 
         clock.set(clock.instant().plus(Duration.ofMinutes(2)));
         TenantTestSupport.inTenant(tenants, B, slow::refresh);
-        assertThat(slow.alerts()).extracting(OperationalAlert::storeId).contains(storeB).doesNotContain(storeA);
+        assertThat(alertedStores(slow, A)).doesNotContain(storeA);
+        assertThat(alertedStores(slow, B)).contains(storeB);
+    }
+
+    /** The stores {@code source}'s alerts name, asked bound to {@code tenant}. */
+    private List<UUID> alertedStores(CashDiscrepancyAlertSource source, UUID tenant) {
+        return TenantTestSupport.inTenant(tenants, tenant, source::alerts).stream().map(OperationalAlert::storeId)
+                .toList();
     }
 
     /** A SUBMITTED closing (at {@code now}) of a fresh store whose cash line is 5.00 short, in {@code tenant}. */
-    static void submittedClosingFiveShort(UUID tenant, UUID store, Instant now) {
+    public static void submittedClosingFiveShort(UUID tenant, UUID store, Instant now) {
         try (AppRoleSession app = AppRoleSession.open().tenant(tenant).allStores()) {
             UUID register = UUID.randomUUID();
             UUID day = UUID.randomUUID();

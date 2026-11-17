@@ -44,8 +44,12 @@ class InDoubtGaugeTenantTest {
         clock.reset();
     }
 
+    /**
+     * D186, security rule 7: the gauges are metrics of every tenant's stores (no tenant label), but the overdue alert
+     * answers for the bound tenant only.
+     */
     @Test
-    void aTenantsInDoubtAttemptsStayReportedAfterAnotherTenantsRun() {
+    void aTenantsInDoubtAttemptsStayReportedAfterAnotherTenantsRunButOnlyToThatTenant() {
         TenantTestSupport.ensureTenants();
         UUID storeA = UUID.randomUUID();
         UUID storeB = UUID.randomUUID();
@@ -59,7 +63,8 @@ class InDoubtGaugeTenantTest {
         assertThat(value("payment_attempts_in_doubt", storeB)).isEqualTo(1);
         assertThat(value("payment_attempts_in_doubt_overdue", storeA)).isEqualTo(1);
         assertThat(value("payment_attempts_in_doubt_overdue", storeB)).isEqualTo(1);
-        assertThat(gauge.overdueAtLastRefresh()).extracting(OverdueInStore::storeId).contains(storeA, storeB);
+        assertThat(overdueStores(A)).contains(storeA).doesNotContain(storeB);
+        assertThat(overdueStores(B)).contains(storeB).doesNotContain(storeA);
     }
 
     /**
@@ -79,7 +84,7 @@ class InDoubtGaugeTenantTest {
         TenantTestSupport.inTenant(tenants, B, gauge::refresh);
 
         assertThat(value("payment_attempts_in_doubt", storeA)).isEqualTo(1);
-        assertThat(gauge.overdueAtLastRefresh()).extracting(OverdueInStore::storeId).contains(storeA, storeB);
+        assertThat(overdueStores(A)).contains(storeA);
     }
 
     /** A tenant that stops being run (suspended, closed) stops being reported once its last run is stale. */
@@ -97,12 +102,18 @@ class InDoubtGaugeTenantTest {
 
         assertThat(meters.find("payment_attempts_in_doubt").tag("store", storeA.toString()).gauge()).isNull();
         assertThat(meters.find("payment_attempts_in_doubt").tag("store", storeB.toString()).gauge()).isNotNull();
-        assertThat(gauge.overdueAtLastRefresh()).extracting(OverdueInStore::storeId).contains(storeB)
-                .doesNotContain(storeA);
+        assertThat(overdueStores(A)).doesNotContain(storeA);
+        assertThat(overdueStores(B)).contains(storeB);
+    }
+
+    /** The stores with overdue attempts as of the last refresh, asked bound to {@code tenant}. */
+    private java.util.List<UUID> overdueStores(UUID tenant) {
+        return TenantTestSupport.inTenant(tenants, tenant, gauge::overdueAtLastRefresh).stream()
+                .map(OverdueInStore::storeId).toList();
     }
 
     /** An UNKNOWN attempt of {@code store} in {@code tenant}, 40 minutes old at {@code now}. */
-    static void attemptInDoubt(UUID tenant, UUID store, Instant now) {
+    public static void attemptInDoubt(UUID tenant, UUID store, Instant now) {
         try (AppRoleSession app = AppRoleSession.open().tenant(tenant).allStores()) {
             Timestamp created = Timestamp.from(now.minus(Duration.ofMinutes(40)));
             app.jdbc().sql("""

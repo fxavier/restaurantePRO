@@ -37,7 +37,7 @@ import org.springframework.stereotype.Component;
 class InDoubtGauge {
 
     static final Duration ALERT_AFTER = Duration.ofMinutes(30);
-    /** A tenant not run for this many poll intervals (suspended, closed) is no longer reported: its state is dropped. */
+    /** A tenant not run for this many poll intervals (suspended, closed) is no longer reported: state dropped. */
     private static final int STALE_INTERVALS = 3;
 
     private static final Logger log = LoggerFactory.getLogger(InDoubtGauge.class);
@@ -101,9 +101,13 @@ class InDoubtGauge {
                         + "it (D81)", a.id(), a.storeId(), a.createdAt(), ALERT_AFTER));
     }
 
-    /** Every tenant's overdue attempts per store as of its last {@link #refresh}, without a query. */
+    /**
+     * The bound tenant's overdue attempts per store as of its last {@link #refresh}, without a query (security rule 7:
+     * never another tenant's; the gauges, which carry no tenant label, cover every tenant).
+     */
     List<OverdueInStore> overdueAtLastRefresh() {
-        return perTenant.values().stream().flatMap(state -> state.lastOverdue.stream()).toList();
+        TenantState state = perTenant.get(tenants.requireTenant());
+        return state == null ? List.of() : state.lastOverdue;
     }
 
     private static Map<UUID, Long> perStore(List<InDoubtAttempt> attempts) {
