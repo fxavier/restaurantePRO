@@ -5,11 +5,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.xavier.backend.AppRoleSession;
 import com.xavier.backend.cash.CashModuleTest;
 import com.xavier.backend.cash.CashTestClock;
+import com.xavier.backend.cash.repository.CashClosingRepository;
 import com.xavier.backend.shared.ops.OperationalAlert;
 import com.xavier.backend.shared.tenancy.StrictTenantScope;
 import com.xavier.backend.shared.tenancy.TenantScopes;
 import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
@@ -38,6 +41,8 @@ class CashDiscrepancyTenantTest {
     MeterRegistry meters;
     @Autowired
     CashTestClock clock;
+    @Autowired
+    CashClosingRepository closings;
 
     @AfterEach
     void releaseClock() {
@@ -77,6 +82,30 @@ class CashDiscrepancyTenantTest {
 
         assertThat(meters.find("cash_closings_with_difference").tag("store", storeA.toString()).gauge()).isNull();
         assertThat(source.alerts()).extracting(OperationalAlert::storeId).contains(storeB).doesNotContain(storeA);
+    }
+
+    /**
+     * The staleness follows the configured refresh interval: with a 10-minute interval a tenant last run 29 minutes ago
+     * is still alerted, one last run 31 minutes ago is not.
+     */
+    @Test
+    void aTenantStaysReportedForUpToThreeRefreshIntervals() {
+        TenantTestSupport.ensureTenants();
+        CashDiscrepancyAlertSource slow = new CashDiscrepancyAlertSource(closings, new SimpleMeterRegistry(), clock,
+                BigDecimal.ZERO, tenants, Duration.ofMinutes(10));
+        UUID storeA = UUID.randomUUID();
+        UUID storeB = UUID.randomUUID();
+        submittedClosingFiveShort(A, storeA, clock.instant());
+        submittedClosingFiveShort(B, storeB, clock.instant());
+        TenantTestSupport.inTenant(tenants, A, slow::refresh);
+
+        clock.set(clock.instant().plus(Duration.ofMinutes(29)));
+        TenantTestSupport.inTenant(tenants, B, slow::refresh);
+        assertThat(slow.alerts()).extracting(OperationalAlert::storeId).contains(storeA, storeB);
+
+        clock.set(clock.instant().plus(Duration.ofMinutes(2)));
+        TenantTestSupport.inTenant(tenants, B, slow::refresh);
+        assertThat(slow.alerts()).extracting(OperationalAlert::storeId).contains(storeB).doesNotContain(storeA);
     }
 
     /** A SUBMITTED closing (at {@code now}) of a fresh store whose cash line is 5.00 short, in {@code tenant}. */

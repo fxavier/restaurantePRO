@@ -62,6 +62,26 @@ class InDoubtGaugeTenantTest {
         assertThat(gauge.overdueAtLastRefresh()).extracting(OverdueInStore::storeId).contains(storeA, storeB);
     }
 
+    /**
+     * The staleness follows the configured poll interval (PT1H in module tests): a tenant whose last run is under three
+     * intervals old is still reported, however long the interval.
+     */
+    @Test
+    void aTenantStaysReportedForUpToThreePollIntervals() {
+        TenantTestSupport.ensureTenants();
+        UUID storeA = UUID.randomUUID();
+        UUID storeB = UUID.randomUUID();
+        attemptInDoubt(A, storeA, clock.instant());
+        attemptInDoubt(B, storeB, clock.instant());
+        TenantTestSupport.inTenant(tenants, A, gauge::refresh);
+
+        clock.advance(Duration.ofHours(3).minusSeconds(1));
+        TenantTestSupport.inTenant(tenants, B, gauge::refresh);
+
+        assertThat(value("payment_attempts_in_doubt", storeA)).isEqualTo(1);
+        assertThat(gauge.overdueAtLastRefresh()).extracting(OverdueInStore::storeId).contains(storeA, storeB);
+    }
+
     /** A tenant that stops being run (suspended, closed) stops being reported once its last run is stale. */
     @Test
     void aTenantThatNoLongerRunsIsDroppedFromTheGaugeAndTheAlert() {
@@ -72,7 +92,7 @@ class InDoubtGaugeTenantTest {
         attemptInDoubt(B, storeB, clock.instant());
         TenantTestSupport.inTenant(tenants, A, gauge::refresh);
 
-        clock.advance(Duration.ofMinutes(10)); // past the window, A is not run again
+        clock.advance(Duration.ofHours(3).plusSeconds(1)); // past three poll intervals, A is not run again
         TenantTestSupport.inTenant(tenants, B, gauge::refresh);
 
         assertThat(meters.find("payment_attempts_in_doubt").tag("store", storeA.toString()).gauge()).isNull();

@@ -138,9 +138,9 @@ class CashDiscrepancyAlertSourceTest {
     void onlyADifferenceAboveTheThresholdCounts() throws Exception {
         fixtures.submittedClosing(operator, register, day);
         CashDiscrepancyAlertSource atFive = new CashDiscrepancyAlertSource(closings, new SimpleMeterRegistry(), clock,
-                new BigDecimal("5.00"), tenants);
+                new BigDecimal("5.00"), tenants, Duration.ofMinutes(1));
         CashDiscrepancyAlertSource belowFive = new CashDiscrepancyAlertSource(closings, new SimpleMeterRegistry(),
-                clock, new BigDecimal("4.99"), tenants);
+                clock, new BigDecimal("4.99"), tenants, Duration.ofMinutes(1));
 
         atFive.refresh();
         belowFive.refresh();

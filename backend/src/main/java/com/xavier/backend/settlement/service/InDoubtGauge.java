@@ -22,6 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -36,8 +37,8 @@ import org.springframework.stereotype.Component;
 class InDoubtGauge {
 
     static final Duration ALERT_AFTER = Duration.ofMinutes(30);
-    /** A tenant not run for this long (suspended, closed) is no longer reported: its state is dropped. */
-    static final Duration STALE_AFTER = Duration.ofMinutes(5);
+    /** A tenant not run for this many poll intervals (suspended, closed) is no longer reported: its state is dropped. */
+    private static final int STALE_INTERVALS = 3;
 
     private static final Logger log = LoggerFactory.getLogger(InDoubtGauge.class);
 
@@ -46,6 +47,7 @@ class InDoubtGauge {
     private final MultiGauge inDoubt;
     private final MultiGauge overdue;
     private final TenantScopes tenants;
+    private final Duration staleAfter;
     private final Map<UUID, TenantState> perTenant = new ConcurrentHashMap<>();
 
     /** A store's attempts that were overdue at the last refresh, and when the oldest of them was created. */
@@ -62,7 +64,9 @@ class InDoubtGauge {
         Instant ranAt = Instant.MIN;
     }
 
-    InDoubtGauge(MeterRegistry meters, PaymentAttemptRepository attempts, Clock clock, TenantScopes tenants) {
+    InDoubtGauge(MeterRegistry meters, PaymentAttemptRepository attempts, Clock clock, TenantScopes tenants,
+                 @Value("${restaurantpro.settlement.in-doubt-poll-interval:PT30S}") Duration pollInterval) {
+        this.staleAfter = pollInterval.multipliedBy(STALE_INTERVALS);
         this.attempts = attempts;
         this.clock = clock;
         this.tenants = tenants;
@@ -78,7 +82,7 @@ class InDoubtGauge {
         TenantState state = perTenant.computeIfAbsent(tenants.requireTenant(), tenant -> new TenantState());
         Instant now = clock.instant();
         state.ranAt = now;
-        perTenant.values().removeIf(other -> other.ranAt.isBefore(now.minus(STALE_AFTER)));
+        perTenant.values().removeIf(other -> other.ranAt.isBefore(now.minus(staleAfter)));
         Instant overdueBefore = now.minus(ALERT_AFTER);
         List<InDoubtAttempt> unknown = attempts.findInDoubt();
         List<InDoubtAttempt> late = unknown.stream().filter(a -> a.createdAt().isBefore(overdueBefore)).toList();

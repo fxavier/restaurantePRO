@@ -30,7 +30,7 @@ import org.springframework.stereotype.Component;
 /**
  * D150 CASH_DISCREPANCY (WARNING, per store): closings submitted or approved in the last 24 h whose Σ |difference|
  * exceeds {@code restaurantpro.alerts.cash-difference-threshold} (default 0, so any difference). Refreshed every
- * minute into the gauge {@code cash_closings_with_difference{store}}; a store once seen keeps reporting, at 0 when
+ * {@code restaurantpro.alerts.cash-discrepancy-interval} (default a minute) into the gauge {@code cash_closings_with_difference{store}}; a store once seen keeps reporting, at 0 when
  * clear. {@link #alerts} reads the last refresh. The scheduler runs it once per tenant on this one bean (D185), so
  * each tenant's last result is kept apart and the gauge and the alerts cover every tenant: a tenant's run replaces only
  * its own.
@@ -39,8 +39,8 @@ import org.springframework.stereotype.Component;
 class CashDiscrepancyAlertSource implements AlertSource {
 
     static final Duration WINDOW = Duration.ofHours(24);
-    /** A tenant not run for this long (suspended, closed) is no longer reported: its state is dropped. */
-    static final Duration STALE_AFTER = Duration.ofMinutes(5);
+    /** A tenant not run for this many refresh intervals (suspended, closed) is no longer reported: its state is dropped. */
+    private static final int STALE_INTERVALS = 3;
     private static final Set<CashClosingStatus> COUNTED = Set.of(CashClosingStatus.SUBMITTED,
             CashClosingStatus.APPROVED);
 
@@ -49,30 +49,33 @@ class CashDiscrepancyAlertSource implements AlertSource {
     private final BigDecimal threshold;
     private final MultiGauge gauge;
     private final TenantScopes tenants;
+    private final Duration staleAfter;
     private final Map<UUID, Set<UUID>> storesOf = new ConcurrentHashMap<>();
     private final Map<UUID, List<StoreCashDiscrepancy>> lastOf = new ConcurrentHashMap<>();
     private final Map<UUID, Instant> ranAt = new ConcurrentHashMap<>();
 
     CashDiscrepancyAlertSource(CashClosingRepository closings, MeterRegistry meters, Clock clock,
                                @Value("${restaurantpro.alerts.cash-difference-threshold:0}") BigDecimal threshold,
-                               TenantScopes tenants) {
+                               TenantScopes tenants,
+                               @Value("${restaurantpro.alerts.cash-discrepancy-interval:PT1M}") Duration refreshInterval) {
         this.closings = closings;
         this.clock = clock;
         this.tenants = tenants;
         this.threshold = threshold;
+        this.staleAfter = refreshInterval.multipliedBy(STALE_INTERVALS);
         this.gauge = MultiGauge.builder("cash_closings_with_difference")
                 .description("Cash closings submitted or approved in the last 24 h with a difference over the "
                         + "threshold").register(meters);
     }
 
     @SystemScoped(SystemScope.ALERTS)
-    @Scheduled(fixedDelayString = "PT1M")
+    @Scheduled(fixedDelayString = "${restaurantpro.alerts.cash-discrepancy-interval:PT1M}")
     void refresh() {
         UUID tenant = tenants.requireTenant();
         Instant now = clock.instant();
         ranAt.put(tenant, now);
         ranAt.entrySet().removeIf(run -> {
-            boolean stale = run.getValue().isBefore(now.minus(STALE_AFTER));
+            boolean stale = run.getValue().isBefore(now.minus(staleAfter));
             if (stale) {
                 storesOf.remove(run.getKey());
                 lastOf.remove(run.getKey());
