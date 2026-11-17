@@ -491,7 +491,7 @@ The same applies to `inventory.stock_transfer_stores`.
 | O2 | B8 spike result (D188 (a) or (b)). | S75  **Open 2026-11-17 (S76): not run — it needs an AWS account (the user runs `deploy/drills/b8-rds/README.md`). The drills support both: `test-tenant-export.sh` passes in (a) and in fallback (b). Follow-up F17.** |
 | O3 | B6 production Keycloak hosting, after P75. | S75 / operations  **Open 2026-11-17: no decision; R6 ships the dev Compose Keycloak only. Follow-up F18.** |
 | O4 | In-country data residency for the first contract (P75). | product  **Open 2026-11-17: product decision. Follow-up F19.** |
-| O5 | A77 load gate carried from the RLS run into A92 (D189). | S76  **Measured 2026-11-17 (S76, `R6TenantLoadSmoke`, `deploy/load/r6-load-plan.md`): A77 met — at 1 company × 10 terminals every p95 < 500 ms with RLS (discounts 101 ms) and RLS adds nothing measurable over a no-RLS baseline; A92 missed — at 20 × 10 every gated p95 934–2 454 ms (saturation ~92 requests/s on a shared laptop), BUG-0004, cause not isolated; rerun on a quiet machine or the target hardware.** |
+| O5 | A77 load gate carried from the RLS run into A92 (D189). | S76  **Measured 2026-11-17 (S76, `R6TenantLoadSmoke` run 3 on an idle machine, `deploy/load/r6-load-plan.md`): A77 met — at 1 company × 10 terminals every p95 ≤ 176 ms with RLS, and RLS adds nothing measurable over the no-RLS baseline; A92 missed — at 20 × 10, 9 of 11 gated operations p95 557–1 468 ms (BUG-0004: application time inside open transactions on a CPU-saturated single host; not RLS, membership resolution or pool size). Addressed by S77.** |
 
 **`backend-conventions.md` rules that change** (the text changes land in the spec and are made by the named slice):
 

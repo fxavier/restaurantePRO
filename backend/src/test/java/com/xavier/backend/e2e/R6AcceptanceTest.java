@@ -104,6 +104,8 @@ class R6AcceptanceTest {
         UUID table;
         UUID register;
         UUID kitchenPrinter;
+        UUID printer2;
+        UUID store2Job;
         UUID priceList1;
         UUID priceList2;
         UUID managerRole;
@@ -162,7 +164,12 @@ class R6AcceptanceTest {
         Awaitility.await().atMost(ASYNC).until(() -> count(owner,
                 "SELECT count(*) FROM event_publication WHERE completion_date IS NULL") == 0);
 
-        // ---- 3. A89: each bridge claims only its own store's jobs ----
+        // ---- 3. A89: each bridge claims only its own store's jobs: a test ticket queued in store 2 of each tenant
+        // (the same printer code) stays for store 2's bridge, never claimed by store 1's ----
+        for (Company c : List.of(a, b)) {
+            c.store2Job = id(c.admin.command(BO + "/printers/" + c.printer2 + "/test", null, 201,
+                    "test ticket in store 2 of " + c.label));
+        }
         List<UUID> claimedByA = drain(a.bridge);
         List<UUID> claimedByB = drain(b.bridge);
         assertThat(claimedByA).as("A's bridge claimed A's kitchen ticket").isNotEmpty();
@@ -171,8 +178,13 @@ class R6AcceptanceTest {
         assertThat(jobsOf(owner, claimedByB)).as("every job B's bridge got").containsOnly(b.tenant + "|" + b.store1);
         assertThat(count(owner, """
                 SELECT count(*) FROM production.print_job j JOIN production.printer p ON p.id = j.printer_id
-                WHERE p.tenant_id IN (?, ?) AND j.status = 'QUEUED'""", a.tenant, b.tenant))
-                .as("nothing left behind for either bridge").isZero();
+                WHERE p.tenant_id IN (?, ?) AND p.store_id IN (?, ?) AND j.status = 'QUEUED'""", a.tenant, b.tenant,
+                a.store1, b.store1)).as("nothing of store 1 left behind for either bridge").isZero();
+        for (Company c : List.of(a, b)) {
+            assertThat(owner.sql("SELECT status || '|' || attempts FROM production.print_job WHERE id = ?")
+                    .param(c.store2Job).query(String.class).single())
+                    .as("store 2's ticket of %s: never claimed by store 1's bridge", c.label).isEqualTo("QUEUED|0");
+        }
 
         // ---- 4. every route family and the report: only the caller's tenant (A80, A82) ----
         String days = "&from=" + LocalDate.now(ZoneId.of(Installation.ZONE)).minusDays(1) + "&to="
@@ -255,6 +267,7 @@ class R6AcceptanceTest {
         onlyOwn(owner, a, support, Installation.CATALOG + "/items", "catalog.item",
                 Map.of("X-Tenant-Id", a.tenant.toString()));
         JsonNode supportInB = problem(support, BO + "/stores", Map.of("X-Tenant-Id", b.tenant.toString()), 403);
+        assertThat(supportInB.get("code").asString()).as("support in B").isEqualTo("TENANT_FORBIDDEN");
         assertThat(comparable(supportInB)).as("support in B: as a random tenant")
                 .isEqualTo(comparable(problem(support, BO + "/stores",
                         Map.of("X-Tenant-Id", UUID.randomUUID().toString()), 403)));
@@ -333,6 +346,8 @@ class R6AcceptanceTest {
         office.put(BO + "/production-routes", Map.of("storeId", c.store1, "routes", List.of(
                 Map.of("destinationCode", "COZINHA", "printerId", c.kitchenPrinter),
                 Map.of("destinationCode", "BAR", "printerId", c.kitchenPrinter))), 200, "routes");
+        c.printer2 = id(office.command(BO + "/printers", Map.of("storeId", c.store2, "code", "COZ", "name",
+                "Cozinha 2", "host", "192.168.2.50", "port", 9100, "codePage", "CP860"), 201, "printer store 2"));
         c.register = id(office.command(BO + "/cash/registers", Map.of("storeId", c.store1, "code", "CX1",
                 "name", "Caixa 1"), 201, "register"));
         office.command(BO + "/fiscal/series", Map.of("storeId", c.store1, "code", "FR", "firstNumber", 1), 201,
