@@ -85,8 +85,10 @@ What it does:
    app or Playwright (for example `otpauth`) uses as is.
 2. It onboards the tenant through the public platform API (`POST /api/v1/platform/tenants`, D181), and replays that
    command until the tenant is `ACTIVE`. The operator is the client `e2e-seed` of `restaurantpro-ops`, created by the
-   script: a service account with `platform-operator` and the `restaurantpro-api` audience. Its secret is regenerated
-   for each run, kept in memory only, and regenerated again when the script ends. Onboarding invites the
+   script: a service account with `platform-operator` and the `restaurantpro-api` audience. It is enabled for the
+   run only. Its secret is regenerated for each run and kept in memory only (never in a file). When the script ends,
+   whatever happened, the secret is regenerated again and the client is disabled. A token issued during the run stays
+   valid until it expires (5 min), because the backend checks tokens offline. Onboarding invites the
    administrator's e-mail, finds the user of step 1, and grants it the tenant's ACCOUNT membership. The invitation
    e-mail goes to Mailpit, so the realm needs SMTP (`run-local.sh` passes `--smtp-host mailpit:1025` to the
    provisioners).
@@ -95,17 +97,24 @@ The script is idempotent. A rerun sets the password again and replaces the OTP c
 effect. It also replays the same onboarding, which D181 makes idempotent by tenant code and request. A rerun with the
 same code but another e-mail is refused (`TENANT_CODE_TAKEN`).
 
-Guard: before it uses any credential, the script refuses to run unless the Keycloak URL, the issuer that Keycloak
-announces for `restaurantpro`, and the backend URL are all on the loopback interface (`localhost`, `127.0.0.1` or
-`[::1]`). No secret is in the repository. The password and the TOTP secret come from the environment and are never
-printed or put on a command line (curl reads them on stdin).
+Guard: before it uses any credential, the script checks three URLs: the Keycloak URL, the issuer that Keycloak
+announces for `restaurantpro`, and the backend URL. It refuses to run unless each one matches, as a whole,
+`http(s)://` followed by `localhost`, `127.0.0.1` or `[::1]`, then an optional port and path. User info (`@`), a
+backslash, a query, a fragment or another scheme is refused, so `http://localhost:80@evil/` cannot pass.
+
+No secret is in the repository. The password, the TOTP secret, the tokens and the client secret are never printed,
+written to a file or put on a command line:
+
+- curl reads request bodies on stdin and the `Authorization` header from a process substitution;
+- jq reads the password and the TOTP secret from its environment.
 
 Keycloak refuses a TOTP code that has already been used (`otpPolicyCodeReusable` is false). A test that signs in twice
 within one 30 s period must wait for the next period.
 
 ### Verification
 
-`deploy/test-keycloak-e2e-seed.sh` runs against the running dev stack. On each run it picks a new tenant code,
+`deploy/test-keycloak-e2e-seed.sh --guard-only` runs the guard cases without a stack. Without that option, the script
+runs against the running dev stack. On each run it picks a new tenant code,
 e-mail, password and secret, and then checks, in order:
 
 1. The guard refuses a non-loopback Keycloak and a non-loopback backend.

@@ -15,6 +15,8 @@
 #
 # Usage: deploy/test-keycloak-e2e-seed.sh --url URL --admin-password-file FILE --backend-url URL [--dev-origin URL]
 #        (dev origin default http://localhost:5174). Needs curl, jq, openssl.
+#        deploy/test-keycloak-e2e-seed.sh --guard-only     the guard cases only, no stack needed (nothing listens on
+#                                                          the loopback port 9 they use; no other host is contacted)
 set -euo pipefail
 umask 077
 
@@ -24,6 +26,7 @@ url=""
 backend=""
 password_file=""
 origin="http://localhost:5174"
+guard_only=false
 
 die() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
@@ -34,17 +37,22 @@ while (($#)); do
     --backend-url) backend="${2%/}"; shift 2 ;;
     --admin-password-file) password_file="${2:?}"; shift 2 ;;
     --dev-origin) origin="${2%/}"; shift 2 ;;
+    --guard-only) guard_only=true; shift ;;
     *) die "unknown argument: $1" ;;
   esac
 done
-[[ -n "$url" && -n "$backend" && -f "$password_file" ]] \
-  || die "usage: --url URL --admin-password-file FILE --backend-url URL [--dev-origin URL]"
 work="$(mktemp -d)"
+if [[ "$guard_only" == true ]]; then
+  url="http://127.0.0.1:9" backend="http://127.0.0.1:9" password_file="$work/no-password"
+  : >"$password_file"
+fi
+[[ -n "$url" && -n "$backend" && -f "$password_file" ]] \
+  || die "usage: --url URL --admin-password-file FILE --backend-url URL [--dev-origin URL] | --guard-only"
 verify_client=""
 cleanup() {
   if [[ -n "$verify_client" ]]; then
     curl -fsS -o /dev/null -X DELETE "$url/admin/realms/$REALM/clients/$verify_client" \
-      -H "Authorization: Bearer $(admin_token)" || echo "could not remove the throw-away client" >&2
+      -H @<(printf 'Authorization: Bearer %s\n' "$(admin_token)") || echo "could not remove the throw-away client" >&2
   fi
   rm -rf "$work"
 }
@@ -127,15 +135,30 @@ claims() { cut -d. -f2 | tr '_-' '/+' | { read -r p; while ((${#p} % 4)); do p="
   | openssl base64 -d -A; }
 
 # --- guard -------------------------------------------------------------------------------------------------------
-if out="$(seed --url http://keycloak.example.com:8080 --backend-url "$backend" 2>&1)"; then
-  die "the seed ran against a non-loopback Keycloak"
-fi
-[[ "$out" == *refused* ]] || die "unexpected refusal: $out"
-if out="$(seed --url "$url" --backend-url https://api.example.com 2>&1)"; then
-  die "the seed ran against a non-loopback backend"
-fi
-[[ "$out" == *refused* ]] || die "unexpected refusal: $out"
-pass "guard: refuses a non-loopback Keycloak and backend"
+# $1 --url or --backend-url, $2 a URL that must be refused before any request (the other URL is the run's own)
+refuses() {
+  local out
+  if [[ "$1" == --url ]]; then
+    out="$(seed --url "$2" --backend-url "$backend" 2>&1)" && die "the seed ran with --url $2"
+  else
+    out="$(seed --url "$url" --backend-url "$2" 2>&1)" && die "the seed ran with --backend-url $2"
+  fi
+  [[ "$out" == *refused* ]] || die "$1 $2 was not refused by the guard: $out"
+}
+for bad in http://keycloak.example.com:8080 'http://localhost:80@evil.invalid/' 'http://localhost@evil.invalid' \
+  http://localhost.evil.invalid 'http://localhost#@evil.invalid' 'http://localhost\@evil.invalid' \
+  'http://[::1]@evil.invalid' ftp://localhost:8180 localhost:8180 'http://localhost:8180?x=@evil.invalid'; do
+  refuses --url "$bad"
+done
+for bad in https://api.example.com 'http://127.0.0.1:80@evil.invalid' 'http://localhost:8080\@evil.invalid'; do
+  refuses --backend-url "$bad"
+done
+pass "guard: refuses non-loopback hosts, userinfo (@), backslashes, other schemes, queries and fragments"
+# a loopback address passes the guard and fails only later, at the request (nothing listens on port 9)
+out="$(seed --url 'http://[::1]:9' --backend-url 'http://localhost:9/' 2>&1)" && die "the seed ran with no Keycloak"
+[[ "$out" != *refused* ]] || die "a loopback URL was refused: $out"
+pass "guard: accepts localhost, 127.0.0.1 and [::1]"
+[[ "$guard_only" == false ]] || exit 0
 
 # --- seed, twice --------------------------------------------------------------------------------------------------
 first="$(seed --url "$url" --backend-url "$backend")" || die "the seed failed"
@@ -144,7 +167,7 @@ second="$(seed --url "$url" --backend-url "$backend")" || die "the rerun of the 
 [[ "$(jq -r .tenantId <<<"$first")" == "$(jq -r .tenantId <<<"$second")" ]] || die "the rerun made another tenant"
 user="$(jq -r .adminUserId <<<"$second")"
 [[ "$(jq -r .adminUserId <<<"$first")" == "$user" ]] || die "the rerun made another user"
-otps="$(curl -fsS "$url/admin/realms/$REALM/users/$user/credentials" -H "Authorization: Bearer $(admin_token)" \
+otps="$(curl -fsS "$url/admin/realms/$REALM/users/$user/credentials" -H @<(printf 'Authorization: Bearer %s\n' "$(admin_token)") \
   | jq '[.[] | select(.type == "otp")] | length')"
 [[ "$otps" == 1 ]] || die "the user has $otps OTP credentials"
 pass "seed: tenant $(jq -r .tenantId <<<"$second") ACTIVE; a rerun keeps the tenant and the user, one OTP credential"
@@ -160,10 +183,10 @@ pass "dev origin: backoffice-bff sign-in (password + TOTP) returns to $origin/lo
 verify_id="e2e-verify-$run"
 jq -cn --arg id "$verify_id" --arg ru "$origin/verify" '{clientId: $id, publicClient: true, standardFlowEnabled: true,
   directAccessGrantsEnabled: false, implicitFlowEnabled: false, redirectUris: [$ru]}' \
-  | curl -fsS -o /dev/null "$url/admin/realms/$REALM/clients" -H "Authorization: Bearer $(admin_token)" \
+  | curl -fsS -o /dev/null "$url/admin/realms/$REALM/clients" -H @<(printf 'Authorization: Bearer %s\n' "$(admin_token)") \
       -H 'Content-Type: application/json' --data-binary @-
 verify_client="$(curl -fsS "$url/admin/realms/$REALM/clients?clientId=$verify_id" \
-  -H "Authorization: Bearer $(admin_token)" | jq -r '.[0].id')"
+  -H @<(printf 'Authorization: Bearer %s\n' "$(admin_token)") | jq -r '.[0].id')"
 sign_in "$verify_id" "$origin/verify"
 redirect="$REDIRECT"
 code="$(sed -n 's/.*[?&]code=\([^&]*\).*/\1/p' <<<"$redirect")"
