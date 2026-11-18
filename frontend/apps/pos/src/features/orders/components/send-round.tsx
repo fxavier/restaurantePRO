@@ -1,6 +1,6 @@
 import { ApiError } from '@restaurantpro/api-client';
 import { Button } from '@restaurantpro/ui';
-import { RotateCcw, X } from 'lucide-react';
+import { RotateCcw } from 'lucide-react';
 import { errorMessage } from '../../../lib/error-messages';
 import { isInProgress } from '../../../lib/use-intent';
 import { StaleOrderError, type useConfirmBatch } from '../hooks/use-confirm-batch';
@@ -27,12 +27,12 @@ export function SendRound({ send, disabled, blocked, sentBatchNo, onSend }: Prop
     <div className="flex flex-col gap-1">
       {awaitingRetry ? (
         <div className="flex gap-2">
-          <Button size="touch-primary" className="flex-1" onClick={send.retry} disabled={blocked}>
+          {/* Both 56 px, and narrow enough to share the panel's 328 px. */}
+          <Button size="touch-primary" className="min-w-0 flex-1 px-4" onClick={send.retry} disabled={blocked}>
             <RotateCcw aria-hidden="true" />
             Tentar novamente
           </Button>
-          <Button size="touch-primary" variant="outline" onClick={send.discard}>
-            <X aria-hidden="true" />
+          <Button size="touch-primary" variant="outline" className="px-4 text-base font-medium" onClick={send.discard}>
             Descartar
           </Button>
         </div>
