@@ -80,6 +80,7 @@ class PosOrderController {
     }
 
     @PostMapping(ORDERS + "/{id}/lines")
+    @ResponseStatus(HttpStatus.CREATED) // documents the 201 the ResponseEntity sends
     ResponseEntity<LineView> addLine(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
                                      @Valid @RequestBody AddLineRequest body, HttpServletRequest request) {
         return idempotent.execute("orders.line.add", key, request, body, LineView.class, () -> {
@@ -94,6 +95,7 @@ class PosOrderController {
     }
 
     @DeleteMapping(ORDERS + "/{id}/lines/{lineId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT) // documents the 204 the ResponseEntity sends
     ResponseEntity<Void> deleteLine(@PathVariable UUID id, @PathVariable UUID lineId,
                                     @Valid @RequestBody DeleteLineRequest body) {
         drafts.delete(id, lineId, body);
@@ -101,6 +103,7 @@ class PosOrderController {
     }
 
     @PostMapping("/api/v1/pos/tables/{tableId}/open")
+    @ResponseStatus(HttpStatus.CREATED) // documents the 201 the ResponseEntity sends
     ResponseEntity<OrderView> openTable(@PathVariable UUID tableId, @RequestHeader("Idempotency-Key") String key,
                                         @Valid @RequestBody OpenTableRequest body, HttpServletRequest request) {
         return idempotent.execute("orders.table.open", key, request, body, OrderView.class,
@@ -108,6 +111,7 @@ class PosOrderController {
     }
 
     @PostMapping(ORDERS)
+    @ResponseStatus(HttpStatus.CREATED) // documents the 201 the ResponseEntity sends
     ResponseEntity<OrderView> open(@RequestHeader("Idempotency-Key") String key,
                                    @Valid @RequestBody OpenOrderRequest body, HttpServletRequest request) {
         return idempotent.execute("orders.order.open", key, request, body, OrderView.class,
@@ -125,6 +129,7 @@ class PosOrderController {
     }
 
     @PostMapping(ORDERS + "/{id}/lines/macro")
+    @ResponseStatus(HttpStatus.CREATED) // documents the 201 the ResponseEntity sends
     ResponseEntity<OrderView> addMacro(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
                                        @Valid @RequestBody MacroRequest body, HttpServletRequest request) {
         return idempotent.execute("orders.lines.macro", key, request, body, OrderView.class,

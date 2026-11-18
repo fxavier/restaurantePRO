@@ -134,10 +134,19 @@ class OpenApiSnapshotTest {
     void operationsDocumentTheSuccessStatusTheySend() throws Exception {
         JsonNode docs = apiDocs();
 
-        assertThat(docs.at("/paths/~1api~1v1~1pos~1orders~1{id}~1batches/post/responses").propertyNames())
-                .containsExactly("201");
-        assertThat(docs.at("/paths/~1api~1v1~1auth~1pos-logout/post/responses").propertyNames())
-                .containsExactly("204");
+        for (String created : List.of("/api/v1/pos/orders", "/api/v1/pos/orders/{id}/batches",
+                "/api/v1/pos/orders/{id}/lines", "/api/v1/pos/orders/{id}/lines/macro",
+                "/api/v1/pos/tables/{tableId}/open", "/api/v1/backoffice/terminals")) {
+            assertThat(responses(docs, created, "post")).as("POST " + created).containsExactly("201");
+        }
+        assertThat(responses(docs, "/api/v1/pos/orders/{id}/lines/{lineId}", "delete")).containsExactly("204");
+        assertThat(responses(docs, "/api/v1/auth/pos-logout", "post")).containsExactly("204");
+    }
+
+    private static List<String> responses(JsonNode docs, String path, String method) {
+        JsonNode operation = docs.get("paths").get(path).get(method);
+        assertThat(operation).as(method + " " + path).isNotNull();
+        return new ArrayList<>(operation.get("responses").propertyNames());
     }
 
     private JsonNode apiDocs() throws Exception {
