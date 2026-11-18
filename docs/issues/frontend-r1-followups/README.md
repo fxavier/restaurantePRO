@@ -20,7 +20,7 @@ Recorded during the frontend R1 build (tickets 01–12, 2026-11-18). Each row is
 | FE-F15 | backend | no POS endpoint gives the store's name or timezone; times use the terminal's zone, the status bar shows no store | Medium | 10, 11 |
 | FE-F17 | backend | `TableMap` has no open-order id; the POS searches `GET /pos/orders?lifecycle=OPEN&size=200` | Medium | 11 |
 | FE-F18 | contract | ~~`PosCatalogResponse.catalog` typed as a JsonNode~~ resolved: documented as `CatalogSnapshot`, POS uses generated types | Medium | 11 |
-| FE-F19 | backend | terminal create / enrolment code / revoke take no `Idempotency-Key` (PRD AC2 "same key on resume" cannot apply) | Medium | 07 |
+| FE-F19 | backend | ~~terminal create / enrolment code / revoke take no `Idempotency-Key`~~ resolved: create and revoke require one (`execute`), the BackOffice keeps it per intent, on retry and in the step-up command; the code issue keeps none (ADR 0035), a repeat replaces the code. Open: in-progress and taken-code 409s are both uncoded (FE-F25, FE-F26) | Medium | 07 |
 | FE-F20 | e2e | all e2e stacks share one compose project name and fixed ports: only one can run at a time per machine | Low | 07, 12 |
 | FE-F21 | backend | terminal code unique constraint is case-sensitive (the form now upper-cases) | Low | 07 review |
 | FE-F22 | BFF | writes are bound to the pinned tenant but not to the pinned user: a second user of the same tenant logging in from another tab can have tab 1's write accepted as theirs | Low | FE-F16 review |

@@ -72,8 +72,7 @@ class TerminalHttpTest {
 
     @Test
     void aStoreAdminRegistersATerminalAndItIsAudited() throws Exception {
-        JsonNode terminal = JSON.readTree(mvc.perform(post(TERMINALS).with(inStore(store, Permission.TERMINAL_MANAGE))
-                        .with(csrf()).contentType(MediaType.APPLICATION_JSON).content(register(store, "POS1")))
+        JsonNode terminal = JSON.readTree(mvc.perform(registration(store, "POS1", newKey()))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.storeId").value(store.toString()))
                 .andExpect(jsonPath("$.code").value("POS1"))
@@ -153,14 +152,12 @@ class TerminalHttpTest {
         UUID terminal = registerTerminal();
         issueCode(terminal);
 
-        mvc.perform(post(TERMINALS + "/" + terminal + "/revoke").with(inStore(store, Permission.TERMINAL_MANAGE))
-                        .with(csrf()))
+        mvc.perform(revocation(terminal, newKey()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("REVOKED"));
 
         assertThat(audits("TERMINAL_REVOKED", terminal.toString())).isEqualTo(1);
-        mvc.perform(post(TERMINALS + "/" + terminal + "/revoke").with(inStore(store, Permission.TERMINAL_MANAGE))
-                .with(csrf())).andExpect(status().isConflict());
+        mvc.perform(revocation(terminal, newKey())).andExpect(status().isConflict());
         mvc.perform(post(TERMINALS + "/" + terminal + "/enrollment-code")
                 .with(inStore(store, Permission.TERMINAL_MANAGE)).with(csrf())).andExpect(status().isConflict());
     }
@@ -171,15 +168,16 @@ class TerminalHttpTest {
         UUID otherStore = UUID.randomUUID();
 
         mvc.perform(post(TERMINALS).with(inStore(otherStore, Permission.TERMINAL_MANAGE)).with(csrf())
+                        .header("Idempotency-Key", newKey())
                         .contentType(MediaType.APPLICATION_JSON).content(register(store, "POS9")))
                 .andExpect(status().isForbidden());
         mvc.perform(get(TERMINALS).param("storeId", store.toString())
                 .with(inStore(otherStore, Permission.TERMINAL_MANAGE))).andExpect(status().isForbidden());
         mvc.perform(post(TERMINALS + "/" + terminal + "/enrollment-code")
                 .with(inStore(otherStore, Permission.TERMINAL_MANAGE)).with(csrf())).andExpect(status().isForbidden());
-        mvc.perform(post(TERMINALS + "/" + terminal + "/revoke")
+        mvc.perform(post(TERMINALS + "/" + terminal + "/revoke").header("Idempotency-Key", newKey())
                 .with(inStore(otherStore, Permission.TERMINAL_MANAGE)).with(csrf())).andExpect(status().isForbidden());
-        mvc.perform(post(TERMINALS + "/" + terminal + "/revoke")
+        mvc.perform(post(TERMINALS + "/" + terminal + "/revoke").header("Idempotency-Key", newKey())
                 .with(inStore(store, Permission.STORE_MANAGE)).with(csrf())).andExpect(status().isForbidden());
     }
 
@@ -187,18 +185,71 @@ class TerminalHttpTest {
     void terminalCodesAreUniqueWithinAStore() throws Exception {
         registerTerminal();
 
+        mvc.perform(registration(store, "POS1", newKey())).andExpect(status().isConflict());
+    }
+
+    @Test
+    void aRegistrationRetriedWithItsKeyReplaysTheSameTerminalAndRegistersNoSecondOne() throws Exception {
+        String key = newKey();
+        var firstResponse = mvc.perform(registration(store, "POS1", key)).andExpect(status().isCreated())
+                .andReturn().getResponse();
+        String first = firstResponse.getContentAsString();
+
+        var replayResponse = mvc.perform(registration(store, "POS1", key)).andExpect(status().isCreated())
+                .andReturn().getResponse();
+        String replay = replayResponse.getContentAsString();
+
+        String id = JSON.readTree(first).get("id").asString();
+        assertThat(JSON.readTree(replay).get("id").asString()).isEqualTo(id);
+        assertThat(firstResponse.getHeader("Location")).isNotBlank().endsWith(id);
+        assertThat(replayResponse.getHeader("Location")).isEqualTo(firstResponse.getHeader("Location"));
+        assertThat(jdbc.sql("SELECT count(*) FROM organization.terminal WHERE store_id = :store")
+                .param("store", store).query(Long.class).single()).isEqualTo(1);
+        assertThat(audits("TERMINAL_CREATED", id)).isEqualTo(1);
+    }
+
+    @Test
+    void aRegistrationKeyReusedForAnotherTerminalIsRefused() throws Exception {
+        String key = newKey();
+        mvc.perform(registration(store, "POS1", key)).andExpect(status().isCreated());
+
+        mvc.perform(registration(store, "POS2", key)).andExpect(status().isUnprocessableContent());
+
+        assertThat(jdbc.sql("SELECT count(*) FROM organization.terminal WHERE store_id = :store")
+                .param("store", store).query(Long.class).single()).isEqualTo(1);
+    }
+
+    @Test
+    void aRevocationRetriedWithItsKeyReplaysItsAnswerAndChangesNothing() throws Exception {
+        UUID terminal = registerTerminal();
+        String key = newKey();
+        mvc.perform(revocation(terminal, key)).andExpect(status().isOk());
+
+        mvc.perform(revocation(terminal, key))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("REVOKED"));
+
+        assertThat(audits("TERMINAL_REVOKED", terminal.toString())).isEqualTo(1);
+    }
+
+    @Test
+    void registrationAndRevocationNeedAnIdempotencyKey() throws Exception {
+        UUID terminal = registerTerminal();
+
         mvc.perform(post(TERMINALS).with(inStore(store, Permission.TERMINAL_MANAGE)).with(csrf())
-                        .contentType(MediaType.APPLICATION_JSON).content(register(store, "POS1")))
-                .andExpect(status().isConflict());
+                        .contentType(MediaType.APPLICATION_JSON).content(register(store, "POS2")))
+                .andExpect(status().isBadRequest());
+        mvc.perform(post(TERMINALS + "/" + terminal + "/revoke").with(inStore(store, Permission.TERMINAL_MANAGE))
+                .with(csrf())).andExpect(status().isBadRequest());
+
+        assertThat(column("status", terminal)).isEqualTo("REGISTERED");
     }
 
     @Test
     void concurrentRegistrationsWithTheSameCodeGiveOneTerminalAndOneConflict() throws Exception {
         for (int round = 0; round < 10; round++) {
             String code = "R" + round;
-            List<Integer> statuses = StoreHttpTest.race(() -> mvc.perform(post(TERMINALS)
-                            .with(inStore(store, Permission.TERMINAL_MANAGE)).with(csrf())
-                            .contentType(MediaType.APPLICATION_JSON).content(register(store, code)))
+            List<Integer> statuses = StoreHttpTest.race(() -> mvc.perform(registration(store, code, newKey()))
                     .andReturn().getResponse().getStatus());
 
             assertThat(statuses).as("round %d", round).containsExactlyInAnyOrder(201, 409);
@@ -208,15 +259,29 @@ class TerminalHttpTest {
     @Test
     void aTerminalNeedsAnExistingStore() throws Exception {
         mvc.perform(post(TERMINALS).with(admin(Permission.TERMINAL_MANAGE)).with(csrf())
+                        .header("Idempotency-Key", newKey())
                         .contentType(MediaType.APPLICATION_JSON).content(register(UUID.randomUUID(), "POS1")))
                 .andExpect(status().isNotFound());
     }
 
     UUID registerTerminal() throws Exception {
-        String json = mvc.perform(post(TERMINALS).with(inStore(store, Permission.TERMINAL_MANAGE)).with(csrf())
-                        .contentType(MediaType.APPLICATION_JSON).content(register(store, "POS1")))
+        String json = mvc.perform(registration(store, "POS1", newKey()))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         return UUID.fromString(JSON.readTree(json).get("id").asString());
+    }
+
+    MockHttpServletRequestBuilder registration(UUID storeId, String code, String key) {
+        return post(TERMINALS).with(inStore(storeId, Permission.TERMINAL_MANAGE)).with(csrf())
+                .header("Idempotency-Key", key).contentType(MediaType.APPLICATION_JSON).content(register(storeId, code));
+    }
+
+    MockHttpServletRequestBuilder revocation(UUID terminal, String key) {
+        return post(TERMINALS + "/" + terminal + "/revoke").with(inStore(store, Permission.TERMINAL_MANAGE))
+                .with(csrf()).header("Idempotency-Key", key);
+    }
+
+    static String newKey() {
+        return UUID.randomUUID().toString();
     }
 
     JsonNode issueCode(UUID terminal) throws Exception {

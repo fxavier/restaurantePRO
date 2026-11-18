@@ -128,7 +128,8 @@ class BridgeJobClaimTest {
         jobs.claim(com.xavier.backend.config.security.TestJwtFactory.account("kc-" + UUID.randomUUID()).bearer())
                 .andExpect(status().isUnauthorized());
 
-        mvc.perform(post("/api/v1/backoffice/terminals/" + bridge.id() + "/revoke").with(admin()))
+        mvc.perform(post("/api/v1/backoffice/terminals/" + bridge.id() + "/revoke").with(admin())
+                        .header("Idempotency-Key", UUID.randomUUID().toString()))
                 .andExpect(status().isOk());
         jobs.claim(bridge.bearer()).andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("TENANT_FORBIDDEN"));
