@@ -34,6 +34,8 @@ type Options = {
 
 const RENEW_BEFORE_MS = 60_000;
 const RETRY_MS = 5_000;
+/** A Keycloak or proxy that accepts and never answers must not leave every call waiting (FC §8). */
+const TIMEOUT_MS = 10_000;
 const ASSERTION_TYPE = 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer';
 /** OAuth errors Keycloak answers for a disabled or deleted client: the terminal is revoked. */
 const REVOKED_ERRORS = new Set(['invalid_client', 'unauthorized_client']);
@@ -97,8 +99,14 @@ export function createTerminalTokens({ issuer, fetch = (...args) => globalThis.f
   type Outcome = { kind: 'token'; accessToken: string; expiresIn: number } | { kind: 'revoked' } | { kind: 'unavailable' };
 
   async function ask({ enrolment, privateKey }: NonNullable<typeof device>, now: number): Promise<Outcome> {
+    const timeout = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const assertion = await signClientAssertion({ clientId: enrolment.clientId, audience: issuer, privateKey, now });
+      timer = setTimeout(
+        () => timeout.abort(new DOMException('The token request timed out.', 'TimeoutError')),
+        TIMEOUT_MS,
+      );
       const response = await fetch(tokenEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -109,6 +117,7 @@ export function createTerminalTokens({ issuer, fetch = (...args) => globalThis.f
           client_assertion: assertion,
         }),
         credentials: 'omit',
+        signal: timeout.signal,
       });
       const body: unknown = await response.json().catch(() => undefined);
       if (response.ok && isTokenAnswer(body)) {
@@ -117,7 +126,9 @@ export function createTerminalTokens({ issuer, fetch = (...args) => globalThis.f
       if ((response.status === 400 || response.status === 401) && isRevocation(body)) return { kind: 'revoked' };
       return { kind: 'unavailable' };
     } catch {
-      return { kind: 'unavailable' };
+      return { kind: 'unavailable' }; // unreachable or timed out
+    } finally {
+      clearTimeout(timer);
     }
   }
 

@@ -126,6 +126,31 @@ describe('terminal tokens', () => {
     tokens.stop();
   });
 
+  it('gives up on a token request after 10 s without an answer: "Sem ligação", and calls stop waiting', async () => {
+    let calledAt = 0;
+    const silent = vi.fn(
+      (_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_, reject) => {
+          calledAt = Date.now();
+          init?.signal?.addEventListener('abort', () => reject(init.signal!.reason), { once: true });
+        }),
+    );
+    const tokens = createTerminalTokens({ issuer: ISSUER, fetch: silent });
+    let started = false;
+    void tokens.start(ENROLMENT, keyPair.privateKey).then(() => (started = true));
+    await vi.waitFor(() => expect(silent).toHaveBeenCalledTimes(1));
+
+    // vi.waitFor moves fake time while it polls: count the 10 s from the call itself.
+    await vi.advanceTimersByTimeAsync(9_999 - (Date.now() - calledAt));
+    expect(started).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(1);
+    await vi.waitFor(() => expect(started).toBe(true));
+    expect(tokens.status()).toBe('unavailable');
+    expect(silent.mock.calls[0]?.[1]?.signal).toBeDefined();
+    tokens.stop();
+  });
+
   it.each([
     [401, 'invalid_client'],
     [400, 'unauthorized_client'],

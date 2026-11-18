@@ -97,14 +97,21 @@ describe('withTerminalToken', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('passes requests through untouched before enrolment', async () => {
+  it('lets only the enrolment, which has no bearer by design, through before enrolment', async () => {
     const tokens = fakeTokens([undefined], false);
-    const { fetch, seen } = server(unauthorized());
+    const { fetch, seen } = server(Response.json({}));
 
-    await withTerminalToken(tokens, fetch)(new Request(URL_));
+    await withTerminalToken(tokens, fetch)(new Request('http://pos.test/api/v1/pos/enrolment', { method: 'POST' }));
 
     expect(tokens.ensureFresh).not.toHaveBeenCalled();
-    expect(tokens.renew).not.toHaveBeenCalled();
     expect(seen[0]?.headers.has('Authorization')).toBe(false);
+  });
+
+  it('sends nothing else without an enrolled, unrevoked terminal: it fails locally', async () => {
+    const tokens = fakeTokens([undefined], false);
+    const { fetch } = server();
+
+    await expect(withTerminalToken(tokens, fetch)(new Request(URL_))).rejects.toThrow(TypeError);
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

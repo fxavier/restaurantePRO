@@ -64,14 +64,12 @@ export async function errorFromResponse(response: Response): Promise<ApiError> {
   });
 }
 
-/** RFC 9110 §10.2.3: delay-seconds or an HTTP-date; a date already past means "now" (0). */
+/** RFC 9110 §10.2.3: delay-seconds or an HTTP-date. Nothing left to wait (0, or a past date) counts as absent. */
 function retryAfterSeconds(value: string | null): number | undefined {
   if (value === null) return undefined;
   const trimmed = value.trim();
-  if (/^\d+$/.test(trimmed)) return Number(trimmed);
-  const date = Date.parse(trimmed);
-  if (Number.isNaN(date)) return undefined;
-  return Math.max(0, Math.ceil((date - Date.now()) / 1000));
+  const seconds = /^\d+$/.test(trimmed) ? Number(trimmed) : Math.ceil((Date.parse(trimmed) - Date.now()) / 1000);
+  return seconds > 0 ? seconds : undefined;
 }
 
 function parseObject(text: string): Record<string, unknown> | undefined {

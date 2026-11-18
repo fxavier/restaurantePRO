@@ -21,7 +21,7 @@ export function EnrolPage() {
     <PosScreen>
       <section
         aria-labelledby="enrol-title"
-        className="flex w-full max-w-[808px] flex-col gap-4 rounded-xl border bg-background p-6"
+        className="flex w-full max-w-[840px] flex-col gap-4 rounded-xl border bg-background p-6"
       >
         <div className="flex flex-col gap-1">
           <h2 id="enrol-title" className="text-2xl font-semibold">

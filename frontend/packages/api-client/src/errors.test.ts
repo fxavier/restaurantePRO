@@ -107,7 +107,7 @@ describe('ApiError mapping', () => {
     expect(error).toMatchObject({ status: 429, code: 'ENROLMENT_THROTTLED', retryAfter: 42 });
   });
 
-  it('reads an HTTP-date Retry-After as the seconds left, never negative', async () => {
+  it('reads an HTTP-date Retry-After as the seconds left; one already past counts as absent', async () => {
     const inTwoMinutes = new Date(Date.now() + 120_000).toUTCString();
     const past = new Date(Date.now() - 60_000).toUTCString();
     const answer = (value: string) =>
@@ -120,7 +120,7 @@ describe('ApiError mapping', () => {
 
     expect(future.retryAfter).toBeGreaterThan(115);
     expect(future.retryAfter).toBeLessThanOrEqual(120);
-    expect(elapsed.retryAfter).toBe(0);
+    expect(elapsed.retryAfter).toBeUndefined();
   });
 
   it('leaves retryAfter undefined when the header is absent or unreadable', async () => {
@@ -130,8 +130,13 @@ describe('ApiError mapping', () => {
       fetch: respondWith(new Response(null, { status: 429, headers: { 'Retry-After': 'soon' } })),
     }).GET('/api/v1/auth/session'));
 
+    const zero = await failureOf(createApiClient({ baseUrl: BASE,
+      fetch: respondWith(new Response(null, { status: 429, headers: { 'Retry-After': '0' } })),
+    }).GET('/api/v1/auth/session'));
+
     expect(absent.retryAfter).toBeUndefined();
     expect(garbage.retryAfter).toBeUndefined();
+    expect(zero.retryAfter).toBeUndefined();
   });
 
   it('maps an answer without a problem body to HTTP_<status> and the status text', async () => {
