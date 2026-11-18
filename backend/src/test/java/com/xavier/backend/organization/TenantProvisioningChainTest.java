@@ -49,7 +49,7 @@ class TenantProvisioningChainTest {
     void aProvisionedTenantGetsItsCompanyAndFirstStoreThenCompanyProvisionedOnce() {
         UUID tenant = UUID.randomUUID();
         TenantTestSupport.ensureTenant(tenant, "chain-" + tenant, "PROVISIONING");
-        TenantProvisioned provisioned = new TenantProvisioned(tenant, "Chain Lda", "400123456", "MZ", "MZN",
+        TenantProvisioned provisioned = new TenantProvisioned(tenant, "org-chain", "Chain Lda", "400123456", "MZ", "MZN",
                 "Loja Baixa", "admin@chain.example");
 
         publishIn(tenant, provisioned);
@@ -57,6 +57,7 @@ class TenantProvisioningChainTest {
         CompanyProvisioned next = Awaitility.await().atMost(Duration.ofSeconds(20)).until(() -> Capture.SEEN
                 .stream().filter(event -> event.tenantId().equals(tenant)).findFirst().orElse(null), e -> e != null);
         assertThat(next.adminEmail()).isEqualTo("admin@chain.example");
+        assertThat(next.organizationId()).as("passed on for the invitation").isEqualTo("org-chain");
         CompanyProfileView company = TenantTestSupport.inTenant(tenants, tenant, organization::companyProfile);
         assertThat(company.name()).isEqualTo("Chain Lda");
         assertThat(company.taxId()).isEqualTo("400123456");

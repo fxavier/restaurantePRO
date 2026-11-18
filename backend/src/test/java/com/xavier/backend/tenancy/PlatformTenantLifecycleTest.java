@@ -91,6 +91,8 @@ class PlatformTenantLifecycleTest {
         assertThat(OwnerDatabase.shared().jdbc().sql("SELECT count(*) FROM tenancy.tenant_membership "
                         + "WHERE tenant_id = ? AND kind = 'ACCOUNT' AND status = 'ACTIVE'").param(tenant)
                 .query(Long.class).single()).as("the administrator's membership").isEqualTo(1);
+        assertThat(RecordingIdentityProvider.INVITATIONS).as("the administrator is invited into the tenant's organization")
+                .contains("admin@" + code + ".example -> org-" + code);
 
         onboard(code, "Acme Lda").andExpect(status().isAccepted()).andExpect(jsonPath("$.id").value(tenant.toString()))
                 .andExpect(jsonPath("$.status").value("ACTIVE")); // a replay of a completed onboarding

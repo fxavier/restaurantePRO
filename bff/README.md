@@ -59,7 +59,8 @@ names only the file path, never the key's content.
 
 The BFF listens on port `8443`, which matches the redirect URI and web origin registered in
 `deploy/keycloak/realm-restaurantpro.json`. Serve it over TLS (`SERVER_SSL_*`, or a TLS-terminating proxy that sends
-forwarded headers) and on the same origin as the SPA.
+forwarded headers) and on the same origin as the SPA. In development the SPA's Vite server (`http://localhost:5174`) is that
+origin, and the BFF runs without TLS behind its proxy: see "BackOffice dev origin" in `deploy/keycloak/README.md`.
 
 ## Run and test
 
