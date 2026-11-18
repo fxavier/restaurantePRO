@@ -91,7 +91,7 @@ React Router, data routers not required. Routes are flat and few.
 
 - Every endpoint whose contract requires `Idempotency-Key` gets one per **user intent**: created with `crypto.randomUUID()` when the user presses the button (each tap on a product is one intent), held with the pending mutation, reused for every retry of that intent, discarded on success or on a definitive business error (4xx other than 409).
 - The action's button is disabled while its request is in flight.
-- Mutations never retry automatically. A network error, 502 or 503 shows "Sem ligação" with "Tentar novamente", which resends with the **same key**. 409 "in progress" (a concurrent duplicate) waits 1 s and resends the same key, up to three times. 422 for a reused key is a client bug: logged without the body and shown as a generic error.
+- Mutations never retry automatically. A network error, 502, 503 or 504 shows "Sem ligação" with "Tentar novamente", which resends with the **same key**. 409 "in progress" (a concurrent duplicate) waits 1 s and resends the same key, up to three times. 422 for a reused key is a client bug: logged without the body and shown as a generic error.
 - The client sends a key exactly where the generated contract marks the header required, and nowhere else.
 - Every request has a timeout (API 15 s, terminal token 10 s; the whole answer; the SSE stream only until it starts); a timeout is an unknown outcome (status 0 NETWORK), retried with the same key.
 
@@ -107,7 +107,7 @@ React Router, data routers not required. Routes are flat and few.
 | 404 | the resource's "não encontrado" state |
 | 409 (version conflict, `PRICES_CHANGED`, `CATALOG_CHANGED`) | refetch, show what changed, let the user retry |
 | 429 | "Demasiadas tentativas" with `Retry-After` when present |
-| 0 / 502 / 503 (`BACKEND_UNAVAILABLE`, `IDP_UNAVAILABLE`) | "Sem ligação" banner; confirmations disabled |
+| 0 / 502 / 503 / 504 (`BACKEND_UNAVAILABLE`, `IDP_UNAVAILABLE`) | "Sem ligação" banner; confirmations disabled |
 | other 5xx | toast "Erro inesperado (código)"; nothing is assumed to have happened |
 
 Messages are Portuguese and live in the app: `apps/<app>/src/lib/error-messages.ts` maps known `code`s to text; unknown codes show `title`. `packages/api-client` stays language-neutral.

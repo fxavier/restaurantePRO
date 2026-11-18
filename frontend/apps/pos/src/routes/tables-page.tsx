@@ -1,16 +1,38 @@
 import { ApiError } from '@restaurantpro/api-client';
 import { Button, Skeleton } from '@restaurantpro/ui';
+import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { TableMapView } from '../features/dining/components/table-map-view';
 import { useTableMap } from '../features/dining/hooks/use-table-map';
+import type { DiningTable } from '../features/dining/table-map';
+import { OpenTableDialog } from '../features/orders/components/open-table-dialog';
 import { errorMessage, isOffline } from '../lib/error-messages';
 import { StatusBar } from './status-bar';
 
-/** `/tables`, the POS home (§4, FC §4): the store's table map, kept current by the change stream. */
+/**
+ * `/tables`, the POS home (§4, FC §4): the store's table map, kept current by the change stream. A free table opens
+ * with its guests; an occupied one goes to its order.
+ */
 export function TablesPage() {
   const map = useTableMap();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
+  const [opening, setOpening] = useState<DiningTable>();
+  // Tables whose opening had an unknown outcome here: a later "taken" may be this terminal's own opening.
+  const [mayHaveOpened, setMayHaveOpened] = useState<ReadonlySet<string>>(new Set());
+
+  /** Taken, perhaps by this terminal: the map read again, and an occupied table goes to its order. */
+  async function goToOrderIfTaken(tableId: string) {
+    const { data } = await map.refetch();
+    const table = data?.flatMap((area) => area.tables).find((candidate) => candidate.id === tableId);
+    if (table?.status === 'OCCUPIED') navigate(`/tables/${tableId}`);
+  }
+
+  function open(tableId: string) {
+    const table = map.data?.flatMap((area) => area.tables).find((candidate) => candidate.id === tableId);
+    if (table?.status === 'FREE') setOpening(table);
+    else navigate(`/tables/${tableId}`);
+  }
 
   return (
     <div className="flex min-h-screen flex-col bg-muted">
@@ -28,7 +50,7 @@ export function TablesPage() {
               area={params.get('area') ?? undefined}
               // The area is in the URL, so returning from a table opens the same one; switching adds no history.
               onArea={(area) => setParams({ area }, { replace: true })}
-              onOpen={(tableId) => navigate(`/tables/${tableId}`)}
+              onOpen={open}
             />
           )
         ) : map.isError ? (
@@ -49,6 +71,16 @@ export function TablesPage() {
           </div>
         )}
       </main>
+      {opening && (
+        <OpenTableDialog
+          table={opening}
+          onClose={() => setOpening(undefined)}
+          onOpened={(orderId) => navigate(`/orders/${orderId}`)}
+          mayHaveOpened={mayHaveOpened.has(opening.id)}
+          onUnknownOutcome={() => setMayHaveOpened((tables) => new Set(tables).add(opening.id))}
+          onTakenMaybeHere={() => void goToOrderIfTaken(opening.id)}
+        />
+      )}
     </div>
   );
 }
