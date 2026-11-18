@@ -27,8 +27,12 @@ function server(...answers: Response[]) {
   return { fetch, seen };
 }
 
+/** The security chain's refusal of a token: a 401 with a `WWW-Authenticate` challenge, before any handler ran. */
 const unauthorized = (code?: string) =>
-  Response.json({ title: 'Unauthorized', status: 401, ...(code ? { code } : {}) }, { status: 401 });
+  Response.json(
+    { title: 'Unauthorized', status: 401, ...(code ? { code } : {}) },
+    { status: 401, headers: { 'WWW-Authenticate': 'Bearer error="invalid_token"' } },
+  );
 
 const bearerOf = (request?: Request) => request?.headers.get('Authorization');
 
@@ -66,6 +70,20 @@ describe('withTerminalToken', () => {
     expect(response.status).toBe(401);
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(tokens.renew).toHaveBeenCalledTimes(1);
+  });
+
+  it('never repeats a 401 the handler answered (a wrong PIN, no challenge): the request was processed', async () => {
+    const tokens = fakeTokens(['jwt-1', 'jwt-2']);
+    const refusal = Response.json({ title: 'Unauthorized', status: 401, detail: 'Authentication is required.' }, { status: 401 });
+    const { fetch } = server(refusal);
+
+    const response = await withTerminalToken(tokens, fetch)(
+      new Request('http://pos.test/api/v1/auth/pos-login', { method: 'POST', body: '{}' }),
+    );
+
+    expect(response.status).toBe(401);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(tokens.renew).not.toHaveBeenCalled();
   });
 
   it('does not renew on POS_SESSION_INVALID: that is the employee session, not the terminal', async () => {
