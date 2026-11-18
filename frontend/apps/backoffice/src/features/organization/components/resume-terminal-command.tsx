@@ -13,7 +13,8 @@ type ResumeProps = { command: TerminalCommand; returnTo: string };
 
 /**
  * Back from a step-up (story 18, FC §6): the interrupted terminal command with its input kept, and "Continuar", which
- * sends the same request. The stored command is removed once it has run, or when the user cancels.
+ * sends the same request. The stored command is removed as soon as "Continuar" sends it, so a reload can never replay
+ * it; the restored context stays in memory for "Tentar novamente".
  */
 export function ResumeTerminalCommand({ command, returnTo }: ResumeProps) {
   const navigate = useNavigate();
@@ -39,6 +40,7 @@ export function ResumeTerminalCommand({ command, returnTo }: ResumeProps) {
             returnTo={returnTo}
             submitLabel="Continuar"
             defaultValues={{ code: command.body.code, name: command.body.name }}
+            onSend={clearPendingCommand}
             onCreated={finish}
           >
             {cancel}
@@ -67,9 +69,10 @@ function ResumeTerminalAction({ command, returnTo, cancel, onDone }: ActionProps
 
   const send = () => {
     const onError = (error: Error) => isStepUpRequired(error) && stepUp.prompt(error, command);
+    clearPendingCommand();
     if (command.type === 'issueCode') {
-      // The answer is the code: the command is forgotten before it is shown, and the page leaves when it closes.
-      issue.mutate(target, { onSuccess: clearPendingCommand, onError });
+      // The answer is the code; the page leaves when its dialog closes.
+      issue.mutate(target, { onError });
     } else {
       revoke.mutate(target, { onSuccess: onDone, onError });
     }

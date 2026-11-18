@@ -17,6 +17,8 @@ type RegisterTerminalFormProps = {
   submitLabel: string;
   onCreated: (terminal: TerminalSummary) => void;
   defaultValues?: RegisterTerminalValues;
+  /** Called just before each request leaves (the resume page forgets its stored command there). */
+  onSend?: () => void;
   /** Further actions beside the submit button (Cancelar). */
   children?: ReactNode;
 };
@@ -27,7 +29,15 @@ const FIELDS = new Set<string>(['code', 'name']);
  * Story 13: a POS terminal of the store, with its code (unique in the store) and name. Server field errors land on
  * their fields (story 19), a taken code on the code field; "Sem ligação" offers the same request again (story 20).
  */
-export function RegisterTerminalForm({ storeId, returnTo, submitLabel, onCreated, defaultValues, children }: RegisterTerminalFormProps) {
+export function RegisterTerminalForm({
+  storeId,
+  returnTo,
+  submitLabel,
+  onCreated,
+  defaultValues,
+  onSend,
+  children,
+}: RegisterTerminalFormProps) {
   const form = useForm<RegisterTerminalValues>({
     resolver: zodResolver(registerTerminalSchema),
     defaultValues: defaultValues ?? { code: '', name: '' },
@@ -35,7 +45,8 @@ export function RegisterTerminalForm({ storeId, returnTo, submitLabel, onCreated
   const create = useCreateTerminal();
   const stepUp = useTerminalStepUp(returnTo);
 
-  const send = (body: TerminalCreateRequest) =>
+  const send = (body: TerminalCreateRequest) => {
+    onSend?.();
     create.mutate(body, {
       onSuccess: onCreated,
       onError: (error) => {
@@ -43,6 +54,7 @@ export function RegisterTerminalForm({ storeId, returnTo, submitLabel, onCreated
         else showOnFields(form, error);
       },
     });
+  };
 
   const onSubmit = form.handleSubmit(({ code, name }) => send({ storeId, code, name, kind: 'POS' }));
   const generalError = create.error && !isStepUpRequired(create.error) && !onFields(create.error);

@@ -468,6 +468,33 @@ describe('the step-up resume page', () => {
     expect(revokes).toBe(0);
   });
 
+  it.each([
+    ['a code issue', `/api/v1/backoffice/terminals/${bar.id}/enrollment-code`, null, 'Emitir o código de registo do terminal Bar.'],
+    ['a revoke', `/api/v1/backoffice/terminals/${bar.id}/revoke`, null, 'Revogar o terminal Bar.'],
+    ['a registration', '/api/v1/backoffice/terminals', { storeId: baixa.id, code: 'CX2', name: 'Bar', kind: 'POS' }, 'Registar terminal'],
+  ])('forgets %s as soon as "Continuar" sends it, so a reload cannot replay it', async (_name, path, body, shown) => {
+    terminalsServer([bar]);
+    const storedWhenSent: (string | null)[] = [];
+    server.use(
+      http.post(api('/api/v1/backoffice/terminals*'), () => {
+        storedWhenSent.push(sessionStorage.getItem(KEY));
+        return HttpResponse.error();
+      }),
+    );
+    sessionStorage.setItem(KEY, JSON.stringify({ ...valid, path, body, savedAt: Date.now() }));
+
+    const { user } = renderApp('/step-up/resume');
+    expect(await screen.findByText(shown)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Continuar' }));
+
+    // No answer: the stored command is already gone, the restored context stays for a manual retry.
+    expect(await screen.findByText('Sem ligação — a operação não foi confirmada.')).toBeInTheDocument();
+    expect(storedWhenSent).toEqual([null]);
+    expect(sessionStorage.getItem(KEY)).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+    await waitFor(() => expect(storedWhenSent).toEqual([null, null]));
+  });
+
   it('lets the user cancel the pending command', async () => {
     terminalsServer([bar]);
     sessionStorage.setItem(KEY, JSON.stringify({ ...valid, savedAt: Date.now() }));
