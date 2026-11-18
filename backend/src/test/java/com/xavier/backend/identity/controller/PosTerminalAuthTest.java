@@ -78,6 +78,16 @@ class PosTerminalAuthTest {
     }
 
     @Test
+    void aPosSessionIgnoresATenantHeaderNamingAnotherTenant() throws Exception {
+        String session = login(terminal);
+
+        mvc.perform(get(POS_SESSION).with(terminal.bearer()).with(posSession(session))
+                        .header("X-Tenant-Id", TenantTestSupport.A.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tenantId").value(TenantTestSupport.BOOTSTRAP.toString()));
+    }
+
+    @Test
     void aPinLoginNeedsTheTerminalsToken() throws Exception {
         mvc.perform(loginRequest())
                 .andExpect(status().isUnauthorized());

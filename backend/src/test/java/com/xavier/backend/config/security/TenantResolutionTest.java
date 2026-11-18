@@ -92,6 +92,17 @@ class TenantResolutionTest {
     }
 
     @Test
+    void theSessionNamesTheOnlyMembershipsTenantWithoutAnyHeader() throws Exception {
+        UUID tenant = Members.activeTenant();
+        String subject = subject();
+        Members.member(tenant, subject);
+
+        mvc.perform(session(subject)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.tenantId").value(tenant.toString()))
+                .andExpect(jsonPath("$.tenantName").value("t-" + tenant));
+    }
+
+    @Test
     void theSessionNamesTheTenantTheRequestWasResolvedIn() throws Exception {
         UUID first = Members.activeTenant();
         UUID second = Members.activeTenant();

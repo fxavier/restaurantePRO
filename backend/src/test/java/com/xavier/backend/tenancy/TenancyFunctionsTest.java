@@ -176,6 +176,12 @@ class TenancyFunctionsTest {
                 () -> tenancy.legalName(TenantTestSupport.A))).isEqualTo("tenant-a");
         assertState(() -> TenantTestSupport.inTenant(tenants, TenantTestSupport.A,
                 () -> tenancy.legalName(TenantTestSupport.B)), "42501");
+        assertState(() -> TenantTestSupport.inTenant(tenants, TenantTestSupport.A,
+                () -> tenancy.legalName(UUID.randomUUID())), "42501");
+        try (AppRoleSession app = AppRoleSession.open().noTenant()) {
+            assertState(() -> app.jdbc().sql("SELECT tenancy.tenant_legal_name(?)").param(TenantTestSupport.A)
+                    .query(String.class).single(), "RS003");
+        }
     }
 
     @Test
