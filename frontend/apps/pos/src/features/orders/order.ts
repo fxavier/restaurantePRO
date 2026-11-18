@@ -34,6 +34,12 @@ export type Order = {
   guests?: number;
   orderNumber?: number;
   lifecycle: 'OPEN' | 'CLOSED' | 'CANCELLED';
+  /** The version a command on the order sends back (D17): a stale one is refused with 409. */
+  version: number;
+  /** The published catalog the drafts' previews come from; absent when there is no draft. */
+  catalogVersion?: number;
+  /** The promotion release the previews come from; absent when none is published (D104). */
+  promotionVersion?: number;
   /** The sum of the confirmed lines (D59), as the server computed it. */
   due?: MoneyValue;
   drafts: OrderLine[];
@@ -42,9 +48,9 @@ export type Order = {
   unbatched: OrderLine[];
 };
 
-/** An answer without its id, lifecycle or lines, or a line without its id, status or version, is an error. */
+/** An answer without its id, lifecycle, version or lines, or a line without its id, status or version, is an error. */
 export function toOrder(view: OrderView | undefined): Order {
-  if (!view?.id || !view.lifecycle || !Array.isArray(view.lines)) throw new Error('Incomplete order');
+  if (!view?.id || !view.lifecycle || view.version === undefined || !Array.isArray(view.lines)) throw new Error('Incomplete order');
   const lines = view.lines.map((line) => ({ line: toLine(line), batchId: line.batchId }));
   const rounds = (view.batches ?? [])
     .filter((batch) => batch.id && batch.batchNo !== undefined)
@@ -63,6 +69,9 @@ export function toOrder(view: OrderView | undefined): Order {
     guests: view.guests,
     orderNumber: view.orderNumber,
     lifecycle: view.lifecycle,
+    version: view.version,
+    catalogVersion: view.catalogVersion ?? undefined,
+    promotionVersion: view.promotionVersion ?? undefined,
     due: money(view.due),
     drafts: lines.filter(({ line }) => line.status === 'DRAFT').map(({ line }) => line),
     rounds,

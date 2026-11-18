@@ -127,7 +127,7 @@ No service worker, no offline queue, no optimistic update on a financial or prod
 ## 12. Money, time, locale, copy
 
 - One locale constant per app: `pt-MZ`. Copy is European Portuguese, written in the components, using the glossary's PT terms ([CONTEXT.md](../../CONTEXT.md)).
-- Money is the contract's `Money {amount, currency}` (amount a JSON number or string, as the endpoint defines). Display with `Intl.NumberFormat('pt-MZ', {style: 'currency', currency})`, the currency always from the API. The client does no money arithmetic; a draft total shown before confirmation is the server's preview (`LineView.preview`).
+- Money is the contract's `Money {amount, currency}` (amount a JSON number or string, as the endpoint defines). Display with `Intl.NumberFormat('pt-MZ', {style: 'currency', currency})`, the currency always from the API. The client does no money arithmetic, with one exception: echoing back an exact decimal sum of server amounts as a concurrency guard (`expectedGross`), computed with exact integers, never displayed and never authoritative. A draft total shown before confirmation is the server's preview (`LineView.preview`). (Follow-up FE-F27: the backend returns a draft total on `OrderView`, and the client echoes it.)
 - Instants are ISO-8601 UTC; display in the store's timezone (from the store) with `Intl.DateTimeFormat`. A business day (`LocalDate`) is displayed as given, never derived from the clock.
 
 ## 13. Accessibility (WCAG 2.2 AA)

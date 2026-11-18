@@ -12,6 +12,11 @@ describe('toOrder', () => {
     expect(order.due).toEqual({ amount: 1350, currency: 'MZN' });
   });
 
+  it('keeps the versions a round is confirmed with: the order\'s, the catalog\'s and the promotions\'', () => {
+    expect(toOrder({ ...ORDER, promotionVersion: 3 })).toMatchObject({ version: 4, catalogVersion: 7, promotionVersion: 3 });
+    expect(toOrder(ORDER).promotionVersion).toBeUndefined();
+  });
+
   it('a confirmed line shows its net quantity, and one outside any round is kept apart', () => {
     const moved = { ...LINE.steak, id: 'moved', batchId: undefined, quantity: 2, netQuantity: 1 };
     const order = toOrder(withLines(ORDER, [moved]));
@@ -19,8 +24,9 @@ describe('toOrder', () => {
     expect(order.unbatched).toEqual([expect.objectContaining({ id: 'moved', quantity: 1 })]);
   });
 
-  it('an answer without its lines, or a line without its version, is an error', () => {
+  it('an answer without its lines or version, or a line without its version, is an error', () => {
     expect(() => toOrder({ ...ORDER, lines: undefined })).toThrow('Incomplete order');
+    expect(() => toOrder({ ...ORDER, version: undefined })).toThrow('Incomplete order');
     expect(() => toOrder(withLines(ORDER, [{ ...LINE.coffee, version: undefined }]))).toThrow('Incomplete order');
   });
 

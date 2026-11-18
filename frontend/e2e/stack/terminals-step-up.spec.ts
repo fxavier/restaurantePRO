@@ -47,7 +47,8 @@ test('flow (a): register a terminal, then issue its code through step-up, once',
   const store = page.getByRole('combobox', { name: 'Loja' });
   await expect(store).toHaveValue(seeded.storeId()); // the run's company has one store, selected on its own
   await expect(page).toHaveURL(terminals);
-  await expect(page.getByText('Esta loja ainda não tem terminais.')).toBeVisible();
+  // The store already has the POS terminals the global setup seeded for ticket 12's specs; this flow checks its own.
+  await expect(page.getByRole('table', { name: 'Terminais da loja' })).toBeVisible();
   await expectNoAxeViolations(page);
 
   await page.getByRole('button', { name: 'Registar terminal' }).click();
@@ -83,9 +84,9 @@ test('flow (a): register a terminal, then issue its code through step-up, once',
   await expect(page).toHaveURL(terminals);
 
   // Ran once: one terminal, one 201; the code issued by exactly one answer, after the step-up challenge.
-  const rows = page.getByRole('table', { name: 'Terminais da loja' }).getByRole('row');
-  await expect(rows).toHaveCount(2);
-  await expect(rows.nth(1).getByRole('cell').nth(3)).toHaveText('Por ativar');
+  const rows = page.getByRole('table', { name: 'Terminais da loja' }).getByRole('row').filter({ hasText: name });
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first().getByRole('cell').nth(3)).toHaveText('Por ativar');
   expect(creates).toEqual([201]);
   expect(issues).toEqual([401, 200]);
 

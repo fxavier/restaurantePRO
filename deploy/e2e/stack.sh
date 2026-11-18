@@ -54,7 +54,10 @@ up() {
 
   if [[ "${E2E_SKIP_BUILD:-}" != 1 ]]; then
     log "building the POS and the BackOffice"
-    (cd "$FRONTEND" && pnpm --filter pos build && pnpm --filter backoffice build)
+    # The POS asks the devices realm for its terminal token from the browser (D182, FC §3): a production build has
+    # no .env.development, so the issuer is given here, as the deploy build gives its own.
+    (cd "$FRONTEND" && VITE_DEVICES_ISSUER="$KEYCLOAK_URL/realms/restaurantpro-devices" pnpm --filter pos build \
+      && pnpm --filter backoffice build)
   fi
   [[ -f "$FRONTEND/apps/pos/dist/index.html" && -f "$FRONTEND/apps/backoffice/dist/index.html" ]] \
     || die "no built SPA in frontend/apps/*/dist (run without E2E_SKIP_BUILD=1)"

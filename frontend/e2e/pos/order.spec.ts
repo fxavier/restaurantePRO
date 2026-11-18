@@ -270,3 +270,61 @@ test('screens for the PR, at 1024 × 768 and 1366 × 768', async ({ page }) => {
     await expect(page.getByRole('heading', { name: 'Mesa M2' })).toBeVisible();
   }
 });
+
+// "Pedir" (ticket 12): its answers in the built app, where jsdom cannot check the 56 px targets or the layout.
+const REPRICED = {
+  ...ORDER,
+  version: 5,
+  lines: LINES.map((line) => (line.id === id(801) ? { ...line, gross: { amount: 150, currency: 'MZN' } } : line)),
+};
+
+async function pedirAnswers(page: Page, answer: 'unavailable' | 'prices-changed') {
+  await page.route(`**/api/v1/pos/orders/${ORDER_ID}/batches`, async (route) => {
+    if (answer === 'unavailable') return route.fulfill({ status: 503, contentType: 'application/problem+json', json: { status: 503, title: 'Service Unavailable', code: 'BACKEND_UNAVAILABLE' } });
+    // The server repriced the drafts before refusing the round: the order read again carries the new gross.
+    await page.unroute(`**/api/v1/pos/orders/${ORDER_ID}`);
+    await page.route(`**/api/v1/pos/orders/${ORDER_ID}`, (r) => r.fulfill({ json: REPRICED }));
+    return route.fulfill({ status: 409, contentType: 'application/problem+json', json: { status: 409, title: 'Conflict', code: 'PRICES_CHANGED' } });
+  });
+}
+
+test('"Pedir" without an answer keeps the round unsent, with touch-sized "Tentar novamente" and "Descartar"', async ({ page }) => {
+  await atOrder(page);
+  await pedirAnswers(page, 'unavailable');
+  const panel = page.getByRole('complementary', { name: 'Pedido' });
+  const before = await box(page.getByRole('group', { name: 'Total' }));
+
+  await page.getByRole('button', { name: 'Pedir' }).click();
+
+  await expect(panel.getByRole('alert')).toHaveText('Sem ligação — a ronda não foi confirmada.');
+  await expect(panel.getByRole('list', { name: 'Por enviar' }).getByRole('listitem')).toHaveCount(3);
+  const panelBox = await box(panel);
+  for (const name of ['Tentar novamente', 'Descartar']) {
+    const button = await box(panel.getByRole('button', { name }));
+    expect(button.height).toBeGreaterThanOrEqual(56);
+    expect(button.x + button.width).toBeLessThanOrEqual(panelBox.x + panelBox.width);
+  }
+  // Nothing above the action moved.
+  expect(await box(page.getByRole('group', { name: 'Total' }))).toEqual(before);
+  await expectNoAxeViolations(page);
+  if (process.env.E2E_SCREENS) {
+    await page.screenshot({ path: `${process.env.E2E_SCREENS}/pedir-unknown-1024x768.png`, animations: 'disabled' });
+  }
+});
+
+test('"Pedir" refused for new prices shows each changed price beside the one shown before', async ({ page }) => {
+  await atOrder(page);
+  await pedirAnswers(page, 'prices-changed');
+  const panel = page.getByRole('complementary', { name: 'Pedido' });
+
+  await page.getByRole('button', { name: 'Pedir' }).click();
+
+  await expect(panel.getByRole('alert')).toHaveText('Os preços mudaram. Reveja os novos valores e carregue em Pedir de novo.');
+  const water = panel.getByRole('list', { name: 'Por enviar' }).getByRole('listitem').first();
+  await expect(water).toContainText('Preço alterado, antes 120,00');
+  await expect(panel.getByRole('button', { name: 'Pedir' })).toBeEnabled();
+  await expectNoAxeViolations(page);
+  if (process.env.E2E_SCREENS) {
+    await page.screenshot({ path: `${process.env.E2E_SCREENS}/pedir-prices-changed-1024x768.png`, animations: 'disabled' });
+  }
+});

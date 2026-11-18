@@ -18,6 +18,11 @@ export const seeded = {
   storeId: () => required('E2E_STORE_ID'),
   waiterCode: () => required('E2E_WAITER_CODE'),
   waiterPin: () => required('E2E_WAITER_PIN'),
+  /** A POS terminal of the store, its one-use enrolment code issued by the global setup. */
+  terminal: (name: 'A' | 'B' | 'C') => ({
+    id: required(`E2E_TERMINAL_${name}_ID`),
+    code: required(`E2E_TERMINAL_${name}_CODE`),
+  }),
 };
 
 export function required(name: string): string {

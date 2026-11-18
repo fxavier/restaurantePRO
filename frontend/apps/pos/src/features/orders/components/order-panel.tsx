@@ -1,4 +1,4 @@
-import { Badge, Button, Money } from '@restaurantpro/ui';
+import { Badge, Button, Money, type MoneyValue } from '@restaurantpro/ui';
 import { Minus, NotebookPen, Plus, Trash2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { clockTime, guestsLabel } from '../../dining/format';
@@ -22,6 +22,8 @@ type Props = {
   action: ReactNode;
   /** The way back to the tables, beside the order's title. */
   back: ReactNode;
+  /** After a price or catalog conflict: each draft's gross as shown before, so a changed one says so. */
+  shownBefore?: ReadonlyMap<string, MoneyValue | undefined>;
 };
 
 /** A draft's name comes from the catalog (a draft has no snapshot); a confirmed line's from its snapshot. */
@@ -37,7 +39,7 @@ export function lineName(line: OrderLine, catalog: PosCatalog | undefined): stri
  * "Enviado" (the confirmed lines, per round), then the server's total. Every amount is the server's; a draft's is its
  * provisional price.
  */
-export function OrderPanel({ order, catalog, commands, message, action, back }: Props) {
+export function OrderPanel({ order, catalog, commands, message, action, back, shownBefore }: Props) {
   const details = [order.guests !== undefined ? guestsLabel(order.guests) : undefined, order.orderNumber !== undefined ? `Pedido n.º ${order.orderNumber}` : undefined]
     .filter(Boolean)
     .join(' · ');
@@ -65,7 +67,14 @@ export function OrderPanel({ order, catalog, commands, message, action, back }: 
           ) : (
             <ul aria-label="Por enviar" className="flex flex-col">
               {order.drafts.map((line) => (
-                <DraftRow key={line.id} line={line} name={lineName(line, catalog)} catalog={catalog} commands={commands} />
+                <DraftRow
+                  key={line.id}
+                  line={line}
+                  name={lineName(line, catalog)}
+                  catalog={catalog}
+                  commands={commands}
+                  before={shownBefore?.has(line.id) ? { gross: shownBefore.get(line.id) } : undefined}
+                />
               ))}
             </ul>
           )}
@@ -147,7 +156,40 @@ function Details({ line, catalog }: { line: OrderLine; catalog: PosCatalog | und
   );
 }
 
-function DraftRow({ line, name, catalog, commands }: { line: OrderLine; name: string; catalog: PosCatalog | undefined; commands: DraftCommands }) {
+/** The same amount in the same currency (an equality, not arithmetic: "120.00" and 120 are one price). */
+function sameMoney(a: MoneyValue | undefined, b: MoneyValue | undefined): boolean {
+  if (!a || !b) return a === b;
+  return a.currency === b.currency && Number(a.amount) === Number(b.amount);
+}
+
+function PriceChange({ before, now }: { before: MoneyValue | undefined; now: MoneyValue | undefined }) {
+  if (sameMoney(before, now)) return null;
+  return (
+    <p className="text-sm font-medium">
+      Preço alterado
+      {before && (
+        <>
+          , antes <Money value={before} />
+        </>
+      )}
+    </p>
+  );
+}
+
+function DraftRow({
+  line,
+  name,
+  catalog,
+  commands,
+  before,
+}: {
+  line: OrderLine;
+  name: string;
+  catalog: PosCatalog | undefined;
+  commands: DraftCommands;
+  /** The gross shown before a price conflict, when there was one. */
+  before?: { gross: MoneyValue | undefined };
+}) {
   const { disabled, onQuantity, onRemove, onNote } = commands;
   const less = stepQuantity(line.quantity, -1);
   const more = stepQuantity(line.quantity, 1);
@@ -160,6 +202,7 @@ function DraftRow({ line, name, catalog, commands }: { line: OrderLine; name: st
         <Price line={line} />
       </div>{' '}
       <Details line={line} catalog={catalog} />
+      {before && <PriceChange before={before.gross} now={line.gross} />}
       <div className="flex gap-2">
         <Button
           variant="outline"
