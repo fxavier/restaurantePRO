@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ApiError } from '@restaurantpro/api-client';
 import { ConfirmButton, Form, FormControl, FormField, FormItem, FormLabel, FormMessage, Input } from '@restaurantpro/ui';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 import { isStepUpRequired } from '../../../lib/step-up';
 import { useCreateTerminal } from '../hooks/use-terminal-commands';
@@ -19,6 +19,8 @@ type RegisterTerminalFormProps = {
   defaultValues?: RegisterTerminalValues;
   /** Called just before each request leaves (the resume page forgets its stored command there). */
   onSend?: () => void;
+  /** The key of the intent being resumed (FC §6): sent again while the request is the same. */
+  idempotencyKey?: string;
   /** Further actions beside the submit button (Cancelar). */
   children?: ReactNode;
 };
@@ -36,6 +38,7 @@ export function RegisterTerminalForm({
   onCreated,
   defaultValues,
   onSend,
+  idempotencyKey,
   children,
 }: RegisterTerminalFormProps) {
   const form = useForm<RegisterTerminalValues>({
@@ -44,13 +47,20 @@ export function RegisterTerminalForm({
   });
   const create = useCreateTerminal();
   const stepUp = useTerminalStepUp(returnTo);
+  // One intent per request (FC §8): the same body goes again under the same key; a corrected one is a new intent.
+  const [intent, setIntent] = useState<{ body: TerminalCreateRequest; key: string } | undefined>(() =>
+    idempotencyKey && defaultValues ? { body: { storeId, ...defaultValues, kind: 'POS' }, key: idempotencyKey } : undefined,
+  );
 
   const send = (body: TerminalCreateRequest) => {
+    const current = intent && sameRequest(intent.body, body) ? intent : { body, key: crypto.randomUUID() };
+    setIntent(current);
+    const command = { type: 'create' as const, body, idempotencyKey: current.key };
     onSend?.();
-    create.mutate(body, {
+    create.mutate(command, {
       onSuccess: onCreated,
       onError: (error) => {
-        if (isStepUpRequired(error)) stepUp.prompt(error, { type: 'create', body });
+        if (isStepUpRequired(error)) stepUp.prompt(error, command);
         else showOnFields(form, error);
       },
     });
@@ -95,7 +105,7 @@ export function RegisterTerminalForm({
           </p>
         )}
         {generalError && (
-          <CommandError error={create.error} pending={create.isPending} onRetry={() => create.variables && send(create.variables)} />
+          <CommandError error={create.error} pending={create.isPending} onRetry={() => create.variables && send(create.variables.body)} />
         )}
         <div className="flex flex-wrap justify-end gap-2">
           {children}
@@ -107,6 +117,10 @@ export function RegisterTerminalForm({
       {stepUp.dialog}
     </Form>
   );
+}
+
+function sameRequest(a: TerminalCreateRequest, b: TerminalCreateRequest): boolean {
+  return a.storeId === b.storeId && a.code === b.code && a.name === b.name && a.kind === b.kind;
 }
 
 /** A 400 with field violations, or a taken code: the answer is shown on the fields, not as a general error. */

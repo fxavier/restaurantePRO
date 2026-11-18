@@ -72,7 +72,7 @@ async function seedStoreData(page: Page, tenantId: string) {
   const terminals: Record<string, string> = {};
   for (const name of TERMINALS) {
     const terminal = await post('/api/v1/backoffice/terminals', { code: `POS-${name}`, name: `POS ${name}`, storeId,
-      kind: 'POS' });
+      kind: 'POS' }, { 'Idempotency-Key': randomUUID() });
     const issued = await post(`/api/v1/backoffice/terminals/${terminal.id}/enrollment-code`);
     terminals[`E2E_TERMINAL_${name}_ID`] = terminal.id;
     terminals[`E2E_TERMINAL_${name}_CODE`] = issued.code;

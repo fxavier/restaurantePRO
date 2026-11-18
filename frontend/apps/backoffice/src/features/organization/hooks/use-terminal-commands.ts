@@ -4,12 +4,16 @@ import { createTerminal, issueEnrolmentCode, revokeTerminal } from '../terminal-
 import type { TerminalCreateRequest } from '../types';
 import { TERMINALS_KEY } from './use-terminals';
 
-/** Mutations never retry (FC §8): "Tentar novamente" resends `variables`, the same request. */
+/**
+ * Mutations never retry (FC §8): "Tentar novamente" resends `variables`, the same request under the same
+ * Idempotency-Key. The caller makes the key when the user starts the intent.
+ */
 export function useCreateTerminal() {
   const api = useApi();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (body: TerminalCreateRequest) => createTerminal(api, body),
+    mutationFn: ({ body, idempotencyKey }: { body: TerminalCreateRequest; idempotencyKey: string }) =>
+      createTerminal(api, body, idempotencyKey),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: TERMINALS_KEY }),
   });
 }
@@ -30,7 +34,8 @@ export function useRevokeTerminal() {
   const api = useApi();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ terminalId }: { terminalId: string; terminalName: string }) => revokeTerminal(api, terminalId),
+    mutationFn: ({ terminalId, idempotencyKey }: { terminalId: string; terminalName: string; idempotencyKey: string }) =>
+      revokeTerminal(api, terminalId, idempotencyKey),
     onSettled: () => queryClient.invalidateQueries({ queryKey: TERMINALS_KEY }),
   });
 }

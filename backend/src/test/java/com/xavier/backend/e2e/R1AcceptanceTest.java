@@ -147,8 +147,8 @@ class R1AcceptanceTest {
 
         // 4. Terminal + one-time enrolment code; the POS device enrols into its own Keycloak client (D182: what the
         // enrolment leaves behind is written as the owner, the enrolment itself is TerminalEnrolmentThrottleTest's)
-        UUID terminal = id(office.post("/api/v1/backoffice/terminals",
-                Map.of("storeId", storeA, "code", "POS1", "name", "Bar"), 201));
+        UUID terminal = id(office.command("/api/v1/backoffice/terminals",
+                Map.of("storeId", storeA, "code", "POS1", "name", "Bar"), 201, "register the terminal"));
         office.post("/api/v1/backoffice/terminals/" + terminal + "/enrollment-code", null, 200);
         Browser pos = new Browser("pos", port, journey);
         pos.get("/api/v1/auth/session", 401);
@@ -282,7 +282,8 @@ class R1AcceptanceTest {
                 .param("s", storeA).query(Long.class).single()).isEqualTo(1);
 
         // 13. Revoking the terminal refuses its very next request (its membership, D182), whatever token it holds
-        assertThat(office.post("/api/v1/backoffice/terminals/" + terminal + "/revoke", null, 200)
+        assertThat(office.command("/api/v1/backoffice/terminals/" + terminal + "/revoke", null, 200,
+                "revoke the terminal")
                 .get("status").asString()).isEqualTo("REVOKED");
         pos.get("/api/v1/auth/pos-session", 403);
         pos.get("/api/v1/pos/catalog?storeId=" + storeA, 403);

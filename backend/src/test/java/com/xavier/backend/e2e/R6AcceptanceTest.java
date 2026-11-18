@@ -357,10 +357,10 @@ class R6AcceptanceTest {
                 c.cashierRole);
         c.manager = manager(owner, c, "GA1");
 
-        UUID terminal = id(office.post(BO + "/terminals", Map.of("storeId", c.store1, "code", "POS1", "name",
-                "POS1"), 201));
-        UUID bridge = id(office.post(BO + "/terminals", Map.of("storeId", c.store1, "code", "BR1", "name", "BR1",
-                "kind", "PRINT_BRIDGE"), 201));
+        UUID terminal = id(office.command(BO + "/terminals", Map.of("storeId", c.store1, "code", "POS1", "name",
+                "POS1"), 201, "register the POS terminal"));
+        UUID bridge = id(office.command(BO + "/terminals", Map.of("storeId", c.store1, "code", "BR1", "name", "BR1",
+                "kind", "PRINT_BRIDGE"), 201, "register the print bridge"));
         Supplier<String> terminalTokens = enrol(office, terminal, Devices.POS_ENROLMENT);
         c.bridge = new Browser("bridge " + c.label, port, journey).withFixtures(owner, Instant::now)
                 .signedIn(enrol(office, bridge, Devices.BRIDGE_ENROLMENT));
