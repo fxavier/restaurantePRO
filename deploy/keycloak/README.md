@@ -22,7 +22,9 @@ files: clients authenticate with `private_key_jwt`, and no user is exported. S72
 The tenant realm also enables fine-grained admin permissions (`adminPermissionsEnabled`) and declares the
 `tenancy-provisioner` confidential client (service account, `client-jwt` with ES256, no browser, implicit or password
 flow); its key and its permissions are set by S75's `deploy/keycloak-provisioners.sh`, never in this file. The
-terminal (`pos-*`) and bridge (`bridge-*`) clients are created at run time by the provisioner (S73).
+terminal (`pos-*`) and bridge (`bridge-*`) clients are created at run time by the provisioner (S73). A `pos-*`
+client's one web origin is `restaurantpro.pos.origin` (`RESTAURANTPRO_POS_ORIGIN`, ADR 0041, G13), so the POS browser
+may call the token endpoint; a `bridge-*` client has none.
 
 The devices realm (S73/S75, O1 option 3) holds one client only, `device-provisioner`: confidential, `client-jwt`, a
 service account and no browser, implicit or password flow. Its one `users` entry is that client's service-account user
