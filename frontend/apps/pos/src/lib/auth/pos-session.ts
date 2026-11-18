@@ -23,8 +23,11 @@ export type PosSession = {
   endedBy(): EndReason | undefined;
   /** From the PIN login's answer, which carries the token. */
   start(view: SessionView): void;
-  /** From the PIN change's answer, which keeps the token. */
-  update(view: SessionView): void;
+  /**
+   * From the PIN change's answer, which keeps the token; only while `sent`, the token the request carried, is still
+   * the current one, so a late answer for an ended session never changes the next employee's.
+   */
+  update(view: SessionView, sent: string | undefined): void;
   end(reason: EndReason): void;
   subscribe(listener: () => void): () => void;
 };
@@ -54,8 +57,8 @@ export function createPosSession(): PosSession {
       endedBy = undefined;
       changed();
     },
-    update(view) {
-      if (!token) return;
+    update(view, sent) {
+      if (!token || sent !== token) return;
       employee = toEmployee(view);
       changed();
     },

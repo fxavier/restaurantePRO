@@ -34,8 +34,8 @@ const tap = (user: User, digits: string) =>
   );
 
 /** An enrolled terminal with its token, on the PIN pad. */
-async function atLogin(options: Parameters<typeof renderPos>[0] = {}) {
-  tokenEndpoint(token('jwt-1'));
+async function atLogin(options: Parameters<typeof renderPos>[0] = {}, tokens = [token('jwt-1')]) {
+  tokenEndpoint(...tokens);
   const rendered = await renderPos({ device: 'enrolled', path: '/login', ...options });
   await screen.findByLabelText('Código de empregado');
   return rendered;
@@ -142,7 +142,8 @@ describe('PIN login', () => {
 
   it('refuses a wrong PIN with one generic message, sent once, and empties the PIN', async () => {
     const logins = posLoginEndpoint(() => loginRefused());
-    const rendered = await atLogin();
+    // A renewal would hand out a new token, so a repeated submission would show here (it counts towards the lock).
+    const rendered = await atLogin({}, [token('jwt-1'), token('jwt-2')]);
 
     await logIn(rendered.user);
 
@@ -208,6 +209,10 @@ describe('PIN login', () => {
 });
 
 describe('a PIN a manager reset', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   async function mustChange() {
     posLoginEndpoint(() => session({ mustChangePin: true, permissions: [] }));
     const rendered = await atLogin();
@@ -255,6 +260,35 @@ describe('a PIN a manager reset', () => {
     await waitFor(() => expect(logouts).toHaveLength(1));
     expect(logouts[0]?.posSession).toBe(SESSION.posSession);
     expect(changes).toHaveLength(0);
+  });
+
+  it('a late PIN-change answer for a session that ended does not change the next employee', async () => {
+    let answer!: () => void;
+    const answered = new Promise<void>((resolve) => (answer = resolve));
+    const changes = choosePinEndpoint(async () => {
+      await answered;
+      return session({ posSession: undefined, mustChangePin: false });
+    });
+    const rendered = await mustChange();
+    const { user, services } = rendered;
+    await choose(user, NEW_PIN, NEW_PIN);
+    await waitFor(() => expect(changes).toHaveLength(1));
+    // Ana's session ends on the server while her answer is late.
+    posSessionEndpoint(() => problem(401, 'POS_SESSION_INVALID'));
+    await expect(services.api.GET('/api/v1/auth/pos-session')).rejects.toMatchObject({ code: 'POS_SESSION_INVALID' });
+    await screen.findByLabelText('Código de empregado');
+    posLoginEndpoint(() =>
+      session({ name: 'Bruno Costa', posSession: 'pos-session-bruno', mustChangePin: true, permissions: [] }),
+    );
+    await logIn(user);
+    await screen.findByText(/Bruno Costa, o seu PIN foi reposto/);
+
+    answer();
+    await waitFor(() => expect(services.session.employee()?.name).toBe('Bruno Costa'));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(services.session.employee()).toMatchObject({ name: 'Bruno Costa', mustChangePin: true });
+    expect(screen.getByText(/Bruno Costa, o seu PIN foi reposto/)).toBeInTheDocument();
   });
 
   it('needs 4 to 8 digits', async () => {
@@ -369,6 +403,46 @@ describe('leaving the terminal', () => {
     await act(() => vi.advanceTimersByTimeAsync(120_000));
 
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  describe('the query cache goes with the session', () => {
+    async function withCachedData(options: Parameters<typeof renderPos>[0] = {}) {
+      const rendered = await loggedIn(options);
+      rendered.queryClient.setQueryData(['pos', 'tables'], [{ id: 'table-1' }]);
+      expect(rendered.queryClient.getQueryCache().getAll()).toHaveLength(1);
+      return rendered;
+    }
+
+    it('on "Trocar empregado"', async () => {
+      posLogoutEndpoint();
+      const { user, queryClient } = await withCachedData();
+
+      await user.click(screen.getByRole('button', { name: 'Trocar empregado' }));
+
+      await screen.findByLabelText('Código de empregado');
+      expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
+    });
+
+    it('on the idle logout', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'], shouldAdvanceTime: true });
+      posLogoutEndpoint();
+      const { queryClient } = await withCachedData({ user: { advanceTimers: vi.advanceTimersByTime } });
+
+      await act(() => vi.advanceTimersByTimeAsync(90_000));
+
+      await screen.findByLabelText('Código de empregado');
+      expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
+    });
+
+    it('on POS_SESSION_INVALID', async () => {
+      const { services, queryClient } = await withCachedData();
+      posSessionEndpoint(() => problem(401, 'POS_SESSION_INVALID'));
+
+      await expect(services.api.GET('/api/v1/auth/pos-session')).rejects.toMatchObject({ code: 'POS_SESSION_INVALID' });
+
+      await screen.findByLabelText('Código de empregado');
+      expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
+    });
   });
 
   it('any call answered POS_SESSION_INVALID returns to the PIN pad', async () => {
