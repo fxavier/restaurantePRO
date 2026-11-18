@@ -1,4 +1,4 @@
-import { ApiError } from '@restaurantpro/api-client';
+import { ApiError, requestTimeout } from '@restaurantpro/api-client';
 import { type QueryKey, useQueryClient } from '@tanstack/react-query';
 import { createContext, type ReactNode, useContext, useEffect, useState } from 'react';
 import { useServices } from '../services';
@@ -23,6 +23,14 @@ function keysOf({ topic, id }: ChangeNotice): QueryKey[] {
 }
 
 const StreamStateContext = createContext<StreamState>('connecting');
+
+/**
+ * How long the stream may take to start (FC §8: a stream is timed only until it starts). Spring's `SseEmitter` sends
+ * its headers with its first write, and the backend writes nothing before its first heartbeat, 25 s after the
+ * subscription (ChangeNotifier; gap-sse-first-write). The API's 15 s would give up on every healthy stream first, and
+ * leave the POS "Sem ligação" for good: so the heartbeat, with room to spare.
+ */
+export const STREAM_START_TIMEOUT_MS = 40_000;
 
 /**
  * The POS session's one change stream (§9, FC §10), for as long as this stays mounted: from the login until the
@@ -50,7 +58,7 @@ export function LiveUpdates({ children }: { children: ReactNode }) {
             const { data } = await api.GET('/api/v1/pos/notifications', {
               parseAs: 'stream',
               signal,
-              middleware: [challenge],
+              middleware: [challenge, requestTimeout(STREAM_START_TIMEOUT_MS)],
             });
             if (!data) throw new Error('No event stream');
             return data;

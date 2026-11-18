@@ -1,4 +1,4 @@
-import { http, HttpResponse } from 'msw';
+import { delay, http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import type { components } from '@restaurantpro/api-client';
 
@@ -182,7 +182,8 @@ function openStream(request: Request): { stream: ChangeStream; response: Respons
   const body = new ReadableStream<Uint8Array>({
     start(c) {
       controller = c;
-      // Spring flushes the headers at once; MSW answers the fetch only with a first chunk, so an empty one stands in.
+      // The answer starts with a first chunk (MSW answers the fetch only then); an empty one stands in. The real
+      // backend writes nothing before its first heartbeat: see 'late-stream'.
       c.enqueue(new Uint8Array(0));
     },
     cancel: () => void (closed = true),
@@ -212,20 +213,29 @@ function openStream(request: Request): { stream: ChangeStream; response: Respons
 }
 
 /**
- * `GET /api/v1/pos/notifications`, answering from a queue whose last answer repeats: `'stream'` opens a stream the
- * test drives (in `streams`), a function answers otherwise (a refusal, a network error). `calls` counts every request.
+ * Spring's `SseEmitter` sends its headers with its first write, and the backend's first write is the heartbeat, 25 s
+ * after the subscription (ChangeNotifier): until then the request has no answer at all.
  */
-export function notificationsEndpoint(...answers: ('stream' | (() => Response))[]) {
+export const FIRST_HEARTBEAT_MS = 25_000;
+
+/**
+ * `GET /api/v1/pos/notifications`, answering from a queue whose last answer repeats: `'stream'` opens a stream the
+ * test drives (in `streams`); `'late-stream'` opens one only with the backend's first heartbeat, as the real backend
+ * does; a function answers otherwise (a refusal, a network error). `calls` counts every request.
+ */
+export function notificationsEndpoint(...answers: ('stream' | 'late-stream' | (() => Response))[]) {
   const queue = answers.length > 0 ? answers : ['stream' as const];
   const streams: ChangeStream[] = [];
   const calls = { count: 0 };
   server.use(
-    http.get('*/api/v1/pos/notifications', ({ request }) => {
+    http.get('*/api/v1/pos/notifications', async ({ request }) => {
       calls.count += 1;
       const answer = queue.length > 1 ? queue.shift()! : queue[0]!;
-      if (answer !== 'stream') return answer();
+      if (typeof answer === 'function') return answer();
+      if (answer === 'late-stream') await delay(FIRST_HEARTBEAT_MS);
       const { stream, response } = openStream(request);
       streams.push(stream);
+      if (answer === 'late-stream') stream.heartbeat();
       return response;
     }),
   );
