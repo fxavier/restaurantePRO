@@ -80,7 +80,7 @@ Create a folder only when it has content. Move code into `packages/ui` only once
   - A `409` response means the data changed. Refetch, show what changed, and let the user retry.
   - A payment in `UNKNOWN` state is shown as pending reconciliation (§7), never as failed, and the user is not offered a second charge.
 - **Security (§10).**
-  - Authentication uses server-side session cookies. Send `credentials: 'include'` and the CSRF header on every request that changes data, and never store tokens or PINs in `localStorage`.
+  - **BackOffice:** authentication uses the BFF's server-side session cookie. Send `credentials: 'include'` and the CSRF header on every request that changes data. **POS:** no cookies; every call sends the terminal's bearer token and `X-Pos-Session`, both kept in memory (D182, `docs/architecture/frontend-conventions.md` §6). Never store tokens or PINs in `localStorage`.
   - Hide or disable controls the user isn't permitted to use, but treat that only as convenience. The backend enforces permissions.
   - Never log a PIN or payment data.
 - **Money and time.**
@@ -90,7 +90,7 @@ Create a folder only when it has content. Move code into `packages/ui` only once
 ## UI rules
 
 - **POS.** POS screens are used by touch, under pressure.
-  - Touch targets are at least 44px. Actions that commit something take one deliberate tap, with no hidden gestures. Visual feedback is immediate and server-confirmed.
+  - Touch targets are at least 48px, and 56px for primary actions (`docs/design/frontend-design-system.md`). Actions that commit something take one deliberate tap, with no hidden gestures. Visual feedback is immediate and server-confirmed.
   - The POS also works with a keyboard and barcode scanner (§4).
   - Avoid layout shift when a state changes.
 - **BackOffice.** Tables need server-side pagination and filtering (§9). Forms validate with Zod and show the server's validation errors on the matching fields.
