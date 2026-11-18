@@ -15,9 +15,12 @@ and registers the provisioners' keys.
 | `realm-restaurantpro-devices.json` | `restaurantpro-devices` | terminals and print bridges (`pos-*`, `bridge-*` clients, created at run time); no user |
 
 Both have the `restaurantpro-api` audience client (bearer only; the BFF's audience mapper adds it to every access
-token), the `backoffice-bff` confidential client (authorization code + PKCE `S256`, `private_key_jwt`, default ACR `1`),
-and the browser flow `loa browser`: LoA 1 password, LoA 2 OTP with a 300 s maximum age (D184, RFC 9470). Token
-lifetimes: access 5 min, SSO idle 30 min, maximum 10 h, refresh tokens rotated on every use. No secret is in these
+token), the `backoffice-bff` confidential client (authorization code + PKCE `S256`, `private_key_jwt`, default ACR `2`, FE-F07),
+and the browser flow `loa browser`: LoA 1 password, LoA 2 OTP with a 300 s maximum age (D184, RFC 9470).
+*(As built, FE-F07: the default ACR is `2`, so a login that sends no `acr_values` (the BFF's plain
+`/oauth2/authorization/keycloak`) still runs the LoA 2 step and asks for the OTP after the password; its token carries
+`acr` `2`. Keycloak 26.8 applies the client's default ACR when the request names no level; `KeycloakLoginIT` proves it.)*
+Token lifetimes: access 5 min, SSO idle 30 min, maximum 10 h, refresh tokens rotated on every use. No secret is in these
 files: clients authenticate with `private_key_jwt`, and no user is exported. S72 owns the clients' redirect URIs and keys.
 The tenant realm also enables fine-grained admin permissions (`adminPermissionsEnabled`) and declares the
 `tenancy-provisioner` confidential client (service account, `client-jwt` with ES256, no browser, implicit or password
