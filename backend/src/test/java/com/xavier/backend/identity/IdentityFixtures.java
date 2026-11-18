@@ -101,6 +101,7 @@ public final class IdentityFixtures {
      */
     public Terminal enrolledTerminal(UUID store) throws Exception {
         UUID terminal = id(mvc.perform(post("/api/v1/backoffice/terminals").with(admin()).with(csrf())
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"storeId": "%s", "code": "%s", "name": "Bar"}""".formatted(store, unique("T"))))
@@ -120,7 +121,8 @@ public final class IdentityFixtures {
     }
 
     public void revoke(Terminal terminal) throws Exception {
-        mvc.perform(post("/api/v1/backoffice/terminals/" + terminal.id() + "/revoke").with(admin()).with(csrf()))
+        mvc.perform(post("/api/v1/backoffice/terminals/" + terminal.id() + "/revoke").with(admin()).with(csrf())
+                        .header("Idempotency-Key", UUID.randomUUID().toString()))
                 .andExpect(status().isOk());
     }
 

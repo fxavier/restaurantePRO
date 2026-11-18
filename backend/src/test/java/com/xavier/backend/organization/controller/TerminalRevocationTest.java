@@ -48,7 +48,8 @@ class TerminalRevocationTest {
         mvc.perform(get("/api/v1/auth/pos-session").with(terminal.bearer()).header("X-Pos-Session", session))
                 .andExpect(status().isOk());
 
-        mvc.perform(post("/api/v1/backoffice/terminals/" + terminal.id() + "/revoke").with(admin()))
+        mvc.perform(post("/api/v1/backoffice/terminals/" + terminal.id() + "/revoke").with(admin())
+                        .header("Idempotency-Key", UUID.randomUUID().toString()))
                 .andExpect(status().isOk());
 
         mvc.perform(get("/api/v1/auth/pos-session").with(terminal.bearer()).header("X-Pos-Session", session))
@@ -66,7 +67,8 @@ class TerminalRevocationTest {
     void aRevokedTerminalCannotBeGivenANewCode() throws Exception {
         UUID store = new IdentityFixtures(mvc).store();
         Device terminal = new Devices(mvc).enrolledTerminal(store);
-        mvc.perform(post("/api/v1/backoffice/terminals/" + terminal.id() + "/revoke").with(admin()))
+        mvc.perform(post("/api/v1/backoffice/terminals/" + terminal.id() + "/revoke").with(admin())
+                        .header("Idempotency-Key", UUID.randomUUID().toString()))
                 .andExpect(status().isOk());
 
         mvc.perform(post("/api/v1/backoffice/terminals/" + terminal.id() + "/enrollment-code").with(admin()))
