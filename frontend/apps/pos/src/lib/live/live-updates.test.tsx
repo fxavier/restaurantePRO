@@ -26,6 +26,22 @@ function fakeTimers() {
 
 const advance = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms));
 
+/**
+ * Advances fake time in 250 ms steps until `check` passes (at most 20 s): a slow runner takes more steps, never fails.
+ * The exact delays are asserted in change-stream.test.ts under pure fake time.
+ */
+async function advanceUntil(check: () => void) {
+  for (let waited = 0; ; waited += 250) {
+    try {
+      check();
+      return;
+    } catch (error) {
+      if (waited >= 20_000) throw error;
+      await advance(250);
+    }
+  }
+}
+
 /** On the map, with the stream answering `notifications`; `show` changes what the map endpoint answers from then on. */
 async function onTheMap(...notifications: Parameters<typeof notificationsEndpoint>) {
   tokenEndpoint(token('jwt-1'));
@@ -92,31 +108,12 @@ describe('live updates', () => {
     await waitFor(() => expect(connection()).toHaveTextContent('Sem ligação'));
     // Only the status bar says so: the full banner is for an unreachable backend or Keycloak.
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    // The exact 15 s and the reconnect backoff are timed in change-stream.test.ts; here, that polling happens.
     const before = requests.length;
-    await advance(14_000);
-    expect(requests).toHaveLength(before);
-    await advance(1_000);
-    expect(requests).toHaveLength(before + 1);
     await advance(15_000);
-    expect(requests).toHaveLength(before + 2);
-  });
-
-  it('reconnects with backoff 1, 2, 5, 10, 15 s, then every 15 s', async () => {
-    fakeTimers();
-    const at: number[] = [];
-    const { streams } = await onTheMap('stream', () => {
-      at.push(Date.now());
-      return problem(503, 'UNAVAILABLE');
-    });
-    const dropped = Date.now();
-
-    streams[0]!.drop();
-    await advance(1_000 + 2_000 + 5_000 + 10_000 + 15_000 + 15_000 + 500);
-
-    // Each wait counts from the failure before it, a few milliseconds after that request.
-    const waits = [at[0]! - dropped, ...at.slice(1).map((time, index) => time - at[index]!)];
-    expect(waits).toHaveLength(6);
-    waits.forEach((wait, index) => expect(wait).toBeCloseTo([1_000, 2_000, 5_000, 10_000, 15_000, 15_000][index]!, -2));
+    await waitFor(() => expect(requests.length).toBeGreaterThanOrEqual(before + 1));
+    await advance(15_000);
+    await waitFor(() => expect(requests.length).toBeGreaterThanOrEqual(before + 2));
   });
 
   it('on reconnect reads every POS query again, shows "Ligado" and stops polling', async () => {
@@ -128,15 +125,14 @@ describe('live updates', () => {
     const before = requests.length;
     show(M1_OCCUPIED);
 
-    await advance(1_000); // the first retry fails
-    await advance(2_000); // the second opens the stream
-    await waitFor(() => expect(connection()).toHaveTextContent('Ligado'));
+    // The first retry fails; the second opens the stream.
+    await advanceUntil(() => expect(connection()).toHaveTextContent('Ligado'));
 
     expect(streams).toHaveLength(2);
     await waitFor(() => expect(m1()).toHaveAccessibleName(/^Mesa M1 Ocupada/));
     expect(requests).toHaveLength(before + 1);
     await advance(30_000);
-    expect(requests).toHaveLength(before + 1);
+    expect(requests).toHaveLength(before + 1); // no polling once open
   });
 
   it('a stream the server completes (its 30-minute timeout) is opened again', async () => {
@@ -145,9 +141,8 @@ describe('live updates', () => {
     await waitFor(() => expect(connection()).toHaveTextContent('Ligado'));
 
     streams[0]!.end();
-    await advance(1_000);
 
-    await waitFor(() => expect(streams).toHaveLength(2));
+    await advanceUntil(() => expect(streams).toHaveLength(2));
     await waitFor(() => expect(connection()).toHaveTextContent('Ligado'));
   });
 
@@ -178,8 +173,8 @@ describe('live updates', () => {
       const before = requests.length;
       await advance(30_000);
 
+      await waitFor(() => expect(requests.length).toBeGreaterThanOrEqual(before + 2));
       expect(calls.count).toBe(1);
-      expect(requests).toHaveLength(before + 2);
       expect(connection()).toHaveTextContent('Atualizações indisponíveis');
     });
   }
@@ -190,9 +185,8 @@ describe('live updates', () => {
     const { calls } = await onTheMap(challenged, 'stream');
 
     await waitFor(() => expect(connection()).toHaveTextContent('Sem ligação'));
-    await advance(1_100);
 
-    await waitFor(() => expect(connection()).toHaveTextContent('Ligado'));
+    await advanceUntil(() => expect(connection()).toHaveTextContent('Ligado'));
     expect(calls.count).toBe(2);
   });
 

@@ -6,6 +6,11 @@ import { defineConfig } from 'vitest/config';
 // forwards only the two API prefixes the POS origin serves (FC §3).
 const backend = process.env.BACKEND_URL ?? 'http://localhost:8080';
 
+// A fixed zone, so times on the table map are deterministic (the store's zone is not in the POS contract yet). Set
+// here as well as in `test.env`: worker threads share this process's zone, and only forks read `test.env.TZ`.
+const TEST_TIME_ZONE = 'Africa/Maputo';
+if (process.env.VITEST) process.env.TZ = TEST_TIME_ZONE;
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
@@ -20,7 +25,6 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test-setup.ts'],
-    // A fixed zone, so times on the table map are deterministic: the store's zone is not in the POS contract yet.
-    env: { TZ: 'Africa/Maputo' },
+    env: { TZ: TEST_TIME_ZONE },
   },
 });
