@@ -1,0 +1,22 @@
+{
+  "name": "@restaurantpro/api-client",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "generate": "openapi-typescript openapi.json -o src/schema.d.ts",
+    "prepare": "pnpm run generate",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "openapi-typescript": "7.13.0",
+    "vitest": "5.1.0"
+  },
+  "dependencies": {
+    "openapi-fetch": "0.17.0"
+  }
+}
