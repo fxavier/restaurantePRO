@@ -82,7 +82,7 @@ export function createPosSession(): PosSession {
 
 /** The contract marks every field optional (springdoc); a login answer without these cannot be used. */
 function toEmployee(view: SessionView): Employee {
-  if (!view.employeeId || !view.storeId || view.name === undefined || view.storeName === undefined || !view.storeTimezone) {
+  if (!view.employeeId || !view.storeId || view.name == null || view.storeName == null || !view.storeTimezone) {
     throw new Error('Incomplete login answer');
   }
   return {
