@@ -19,7 +19,7 @@ Recorded during the frontend R1 build (tickets 01–12, 2026-11-18). Each row is
 | FE-F14 | test | backend test that a wrong-PIN 401 carries no `WWW-Authenticate` (the POS relies on it to never repeat a PIN) | Low | 09 review |
 | FE-F15 | backend | no POS endpoint gives the store's name or timezone; times use the terminal's zone, the status bar shows no store | Medium | 10, 11 |
 | FE-F17 | backend | `TableMap` has no open-order id; the POS searches `GET /pos/orders?lifecycle=OPEN&size=200` | Medium | 11 |
-| FE-F18 | contract | `PosCatalogResponse.catalog` is typed as a JsonNode; the POS types it by hand from `CatalogSnapshot` | Medium | 11 |
+| FE-F18 | contract | ~~`PosCatalogResponse.catalog` typed as a JsonNode~~ resolved: documented as `CatalogSnapshot`, POS uses generated types | Medium | 11 |
 | FE-F19 | backend | terminal create / enrolment code / revoke take no `Idempotency-Key` (PRD AC2 "same key on resume" cannot apply) | Medium | 07 |
 | FE-F20 | e2e | all e2e stacks share one compose project name and fixed ports: only one can run at a time per machine | Low | 07, 12 |
 | FE-F21 | backend | terminal code unique constraint is case-sensitive (the form now upper-cases) | Low | 07 review |
