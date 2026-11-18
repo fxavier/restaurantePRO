@@ -155,7 +155,7 @@ const MAP = {
       id: id(900),
       code: 'SALA',
       name: 'Sala',
-      tables: [table(1, 'M1'), table(2, 'M2', { status: 'OCCUPIED', guests: 3, openedAt: '2026-11-18T10:05:00Z' })],
+      tables: [table(1, 'M1'), table(2, 'M2', { status: 'OCCUPIED', guests: 3, openedAt: '2026-11-18T10:05:00Z', openOrderId: ORDER_ID })],
     },
   ],
 };
@@ -166,9 +166,6 @@ async function standIn(page: Page) {
   // The stream stays pending: this screen does not need a change.
   await page.route('**/api/v1/pos/notifications', () => undefined);
   await page.route('**/api/v1/pos/catalog', (route) => route.fulfill({ json: CATALOG }));
-  await page.route((url) => url.pathname === '/api/v1/pos/orders', (route) =>
-    route.fulfill({ json: { content: [{ id: ORDER_ID, tableId: id(2), lifecycle: 'OPEN' }], page: 0, size: 200, totalElements: 1 } }),
-  );
   await page.route(`**/api/v1/pos/orders/${ORDER_ID}`, (route) => route.fulfill({ json: ORDER }));
 }
 

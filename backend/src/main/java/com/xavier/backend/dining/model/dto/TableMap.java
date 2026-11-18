@@ -11,14 +11,16 @@ public record TableMap(UUID storeId, List<Area> areas) {
     }
 
     /**
-     * A table and its indicators. {@code openedAt}, {@code guests} and {@code openedByEmployeeId} describe the open
-     * occupation and are {@code null} when the table is FREE. Consumption and balance come from settlement's
-     * open-orders read; the POS composes the two (dining cannot see orders). {@code reserved} and
+     * A table and its indicators. {@code openedAt}, {@code guests}, {@code openedByEmployeeId} and
+     * {@code openOrderId} describe the open occupation and are {@code null} when the table is FREE;
+     * {@code openOrderId} is the order the occupation was opened for (§8.1, referenced by id, D6), so the POS opens
+     * it directly. Consumption and balance come from settlement's open-orders read; the POS composes the two
+     * (dining holds the order's id only, never its content). {@code reserved} and
      * {@code nextReservationAt} show a BOOKED reservation within the store's window (D126, P47), independent of the
      * other indicators.
      */
     public record Table(UUID id, String code, int seats, TableStatus status, boolean locked, boolean subtotalPrinted,
-                        Instant openedAt, Integer guests, UUID openedByEmployeeId, boolean reserved,
+                        Instant openedAt, Integer guests, UUID openedByEmployeeId, UUID openOrderId, boolean reserved,
                         Instant nextReservationAt) {
     }
 }

@@ -1,5 +1,5 @@
 import { Button } from '@restaurantpro/ui';
-import { CircleUser, LoaderCircle, RefreshCwOff, Users, Wifi, WifiOff } from 'lucide-react';
+import { CircleUser, LoaderCircle, RefreshCwOff, Store, Users, Wifi, WifiOff } from 'lucide-react';
 import { useEmployee } from '../lib/auth/use-employee';
 import { useEndSession } from '../lib/auth/use-end-session';
 import { useConnection } from '../lib/live/use-connection';
@@ -13,7 +13,7 @@ const LABELS = {
 } as const;
 
 /**
- * The POS status bar (DS layouts): the employee, the connection, and "Trocar empregado". "Ligado" means the change
+ * The POS status bar (DS layouts): the store, the employee, the connection, and "Trocar empregado". "Ligado" means the change
  * stream is open, so the screen is current; "Sem ligação" that it is down (the screen is polled) or that Keycloak is;
  * "Atualizações indisponíveis" that the backend refused the stream (polled only).
  */
@@ -25,6 +25,11 @@ export function StatusBar() {
   return (
     <header className="flex h-16 items-center gap-6 border-b bg-background px-4">
       <h1 className="text-lg font-semibold">restaurantPRO — Ponto de venda</h1>
+      <p className="flex items-center gap-2 font-medium">
+        <Store aria-hidden="true" className="size-6" />
+        <span className="sr-only">Loja:</span>
+        {employee?.storeName}
+      </p>
       <p className="flex items-center gap-2 font-medium">
         <CircleUser aria-hidden="true" className="size-6" />
         <span className="sr-only">Empregado:</span>

@@ -3,7 +3,7 @@ import { delay, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { problem, SESSION, tableMap, tablesEndpoint, token, tokenEndpoint } from '../../test/server';
 import { id, MAP } from '../../test/table-map';
-import { catalogEndpoint, json, openOrdersEndpoint, ORDER, ORDER_ID, orderEndpoint } from '../../test/order';
+import { catalogEndpoint, json, ORDER, ORDER_ID, orderEndpoint } from '../../test/order';
 import { renderPos } from '../../test/render-pos';
 
 async function atTables(...answers: (() => Response | Promise<Response>)[]) {
@@ -13,12 +13,12 @@ async function atTables(...answers: (() => Response | Promise<Response>)[]) {
   return { ...rendered, requests };
 }
 
-/** MAP with E1, on the terrace, occupied. */
+/** MAP with E1, on the terrace, occupied (its order is ORDER_ID, moved there for the test). */
 const E1_OCCUPIED = {
   ...MAP,
   areas: MAP.areas!.map((area) => ({
     ...area,
-    tables: area.tables!.map((t) => (t.code === 'E1' ? { ...t, status: 'OCCUPIED' as const, guests: 2 } : t)),
+    tables: area.tables!.map((t) => (t.code === 'E1' ? { ...t, status: 'OCCUPIED' as const, guests: 2, openOrderId: ORDER_ID } : t)),
   })),
 };
 
@@ -83,9 +83,14 @@ describe('table map', () => {
     expect(tile(/^Mesa M4 /)).toHaveAccessibleName('Mesa M4 Livre 1 lugar Reservada 21:00');
   });
 
-  it('an occupied tile opens its order, and "Voltar às mesas" comes back to the map', async () => {
+  it('names the store in the status bar', async () => {
+    await atTables();
+
+    expect(await screen.findByRole('banner')).toHaveTextContent('Loja Baixa');
+  });
+
+  it('an occupied tile opens its order by the id the map gives (no search), and "Voltar às mesas" comes back', async () => {
     catalogEndpoint();
-    openOrdersEndpoint([ORDER]);
     orderEndpoint(ORDER_ID, json(ORDER));
     const { user, router } = await atTables();
 
@@ -100,7 +105,6 @@ describe('table map', () => {
   it('returning from a table keeps the area that was open', async () => {
     const e1 = { ...ORDER, tableId: id(10), tableCode: 'E1' };
     catalogEndpoint();
-    openOrdersEndpoint([e1]);
     orderEndpoint(ORDER_ID, json(e1));
     const { user } = await atTables(tableMap(E1_OCCUPIED));
 

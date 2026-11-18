@@ -11,6 +11,8 @@ export type DiningTable = {
   guests?: number;
   /** ISO-8601 UTC. */
   openedAt?: string;
+  /** The order the table is open for; absent when FREE. */
+  openOrderId?: string;
   locked: boolean;
   subtotalPrinted: boolean;
   reserved: boolean;
@@ -41,6 +43,7 @@ function toTable(table: NonNullable<NonNullable<TableMapView['areas']>[number]['
     status: table.status,
     guests: table.guests,
     openedAt: table.openedAt,
+    openOrderId: table.openOrderId,
     locked: table.locked ?? false,
     subtotalPrinted: table.subtotalPrinted ?? false,
     reserved: table.reserved ?? false,
