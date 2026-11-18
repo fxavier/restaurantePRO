@@ -6,10 +6,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.xavier.backend.TestcontainersConfiguration;
+import com.xavier.backend.shared.Money;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Currency;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -53,6 +55,9 @@ class OpenApiSnapshotTest {
     @Autowired
     MockMvc mvc;
 
+    @Autowired
+    JsonMapper json;
+
     @Test
     void theCommittedSnapshotMatchesTheContract() throws Exception {
         String current = canonical(mvc.perform(get("/v3/api-docs")).andExpect(status().isOk())
@@ -75,20 +80,51 @@ class OpenApiSnapshotTest {
 
     /**
      * The headers the client must send are declared where they are read: Idempotency-Key and the approver's code and
-     * PIN by the controllers, X-Pos-Session by the tenant filter on every POS operation after the PIN login.
+     * PIN by the controllers as parameters. X-Pos-Session is read by the tenant filter on every POS operation after the
+     * PIN login and the client's middleware adds it, so it is a security scheme, not a parameter each call must pass.
      */
     @Test
     void posOperationsDeclareTheHeadersTheyRead() throws Exception {
-        JsonNode docs = CANONICAL.readTree(mvc.perform(get("/v3/api-docs")).andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString());
+        JsonNode docs = apiDocs();
 
+        JsonNode scheme = docs.at("/components/securitySchemes/posSession");
+        assertThat(List.of(scheme.path("type").asString(), scheme.path("in").asString(), scheme.path("name").asString()))
+                .containsExactly("apiKey", "header", "X-Pos-Session");
         assertThat(headers(docs, "/api/v1/pos/cash/movements", "post")).containsExactlyInAnyOrder(
-                "Idempotency-Key!", "X-Approver-Code", "X-Approver-Pin", "X-Pos-Session!");
-        assertThat(headers(docs, "/api/v1/auth/pos-session", "get")).containsExactly("X-Pos-Session!");
-        assertThat(headers(docs, "/api/v1/auth/pos-logout", "post")).containsExactly("X-Pos-Session!");
-        assertThat(headers(docs, "/api/v1/auth/pos-login", "post")).isEmpty();
-        assertThat(headers(docs, "/api/v1/pos/enrolment", "post")).isEmpty();
-        assertThat(headers(docs, "/api/v1/backoffice/stores", "get")).doesNotContain("X-Pos-Session!");
+                "Idempotency-Key!", "X-Approver-Code", "X-Approver-Pin");
+        assertThat(security(docs, "/api/v1/pos/cash/movements", "post")).containsExactly("posSession");
+        assertThat(security(docs, "/api/v1/auth/pos-session", "get")).containsExactly("posSession");
+        assertThat(security(docs, "/api/v1/auth/pos-logout", "post")).containsExactly("posSession");
+        assertThat(headers(docs, "/api/v1/auth/pos-session", "get")).isEmpty();
+        assertThat(headers(docs, "/api/v1/auth/pos-logout", "post")).as("read by the controller too").isEmpty();
+        assertThat(security(docs, "/api/v1/auth/pos-login", "post")).isEmpty();
+        assertThat(security(docs, "/api/v1/pos/enrolment", "post")).isEmpty();
+        assertThat(security(docs, "/api/v1/backoffice/stores", "get")).isEmpty();
+    }
+
+    /** Jackson writes a {@link Currency} as its ISO 4217 code, so the contract must type it as a string. */
+    @Test
+    void currencyIsDocumentedAsTheStringJacksonWrites() throws Exception {
+        JsonNode money = json.readTree(json.writeValueAsString(Money.of("12.50", Currency.getInstance("MZN"))));
+        assertThat(money.get("currency").isString()).as(money.toString()).isTrue();
+        assertThat(money.get("currency").asString()).isEqualTo("MZN");
+
+        JsonNode schema = apiDocs().at("/components/schemas/com.xavier.backend.shared.Money/properties/currency");
+        assertThat(schema.toString()).isEqualTo("{\"type\":\"string\"}");
+    }
+
+    private JsonNode apiDocs() throws Exception {
+        return CANONICAL.readTree(mvc.perform(get("/v3/api-docs")).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString());
+    }
+
+    /** The security schemes an operation requires, flattened over its alternatives. */
+    private static List<String> security(JsonNode docs, String path, String method) {
+        JsonNode operation = docs.get("paths").get(path).get(method);
+        assertThat(operation).as(method + " " + path).isNotNull();
+        List<String> schemes = new ArrayList<>();
+        operation.path("security").forEach(requirement -> schemes.addAll(requirement.propertyNames()));
+        return schemes;
     }
 
     /** The header parameters of an operation; a required one ends with "!". */
