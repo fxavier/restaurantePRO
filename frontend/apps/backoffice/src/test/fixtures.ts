@@ -11,13 +11,6 @@ type StorePage = Schemas['com.xavier.backend.shared.web.PageResponseCom.xavier.b
 export const ORIGIN = 'http://localhost';
 export const api = (path: string) => `${ORIGIN}${path}`;
 
-export const admin: SessionView = {
-  kind: 'ACCOUNT',
-  name: 'Ana Admin',
-  userId: '0b6c1b0e-0000-4000-8000-000000000001',
-  permissions: ['TERMINAL_MANAGE', 'STORE_MANAGE'],
-};
-
 export const companyA = {
   tenantId: 'aaaaaaaa-0000-4000-8000-000000000001',
   code: 'rest-a',
@@ -33,6 +26,20 @@ export const companyB = {
   kind: 'ACCOUNT',
   status: 'ACTIVE',
 } satisfies TenantChoice;
+
+/** The session names the company the request was resolved in (FE-F08). */
+export function sessionIn(company: TenantChoice, session: Partial<SessionView> = {}): SessionView {
+  return { ...admin, tenantId: company.tenantId, tenantName: company.legalName, ...session };
+}
+
+export const admin: SessionView = {
+  kind: 'ACCOUNT',
+  name: 'Ana Admin',
+  userId: '0b6c1b0e-0000-4000-8000-000000000001',
+  permissions: ['TERMINAL_MANAGE', 'STORE_MANAGE'],
+  tenantId: companyA.tenantId,
+  tenantName: companyA.legalName,
+};
 
 export function store(id: string, name: string, code = id): StoreSummary {
   return { id, code, name, active: true, timezone: 'Africa/Maputo', version: 0 };

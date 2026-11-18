@@ -8,7 +8,7 @@ test('a seeded administrator signs in with a password and a TOTP code; the BFF s
   await signInToBackOffice(page, seeded.adminEmail(), seeded.adminPassword(), seeded.adminTotpSecret(),
     testInfo.retry);
 
-  await expect(page.getByRole('heading', { level: 1, name: 'restaurantPRO — BackOffice' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Visão geral' })).toBeVisible();
   const cookies = await page.context().cookies(stack.backOffice());
   expect(cookies.find((c) => c.name === '__Host-bff-session')).toMatchObject({ httpOnly: true, secure: true });
   expect(cookies.find((c) => c.name === '__Host-XSRF-TOKEN')).toMatchObject({ httpOnly: false, secure: true });

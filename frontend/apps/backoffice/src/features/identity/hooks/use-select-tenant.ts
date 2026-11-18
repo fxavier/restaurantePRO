@@ -2,7 +2,6 @@ import type { ApiClient } from '@restaurantpro/api-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router';
 import { useApi } from '../../../lib/api';
-import { rememberTenant } from '../selected-tenant';
 
 /**
  * `PUT /bff/tenant` is the BFF's own route, outside the backend's OpenAPI contract. It goes through the same client, so
@@ -12,7 +11,8 @@ type BffTenantRoute = { PUT(path: '/bff/tenant', init: { body: { tenantId: strin
 
 /**
  * Selects the company in the BFF session (D177, FC §6), then forgets everything loaded for the previous one: every
- * query is reset and refetched, and the store selection is dropped, since stores belong to a company (story 6).
+ * query is reset and refetched (the session too, which then names the new company), and the store selection is
+ * dropped, since stores belong to a company (story 6).
  */
 export function useSelectTenant() {
   const api = useApi();
@@ -23,8 +23,7 @@ export function useSelectTenant() {
     mutationFn: async (tenantId: string) => {
       await (api as ApiClient & BffTenantRoute).PUT('/bff/tenant', { body: { tenantId } });
     },
-    onSuccess: async (_, tenantId) => {
-      rememberTenant(tenantId);
+    onSuccess: async () => {
       const reset = queryClient.resetQueries();
       navigate(pathname);
       await reset;

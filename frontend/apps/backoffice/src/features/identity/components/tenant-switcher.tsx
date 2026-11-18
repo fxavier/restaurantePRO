@@ -10,8 +10,7 @@ import {
 import { Building2, ChevronDown } from 'lucide-react';
 import { errorMessage } from '../../../lib/error-messages';
 import { useSelectTenant } from '../hooks/use-select-tenant';
-import { useTenants } from '../hooks/use-session';
-import { currentTenant } from '../selected-tenant';
+import { useSession, useTenants } from '../hooks/use-session';
 import { tenantStatusLabel } from './tenant-status';
 
 /**
@@ -20,15 +19,18 @@ import { tenantStatusLabel } from './tenant-status';
  */
 export function TenantSwitcher() {
   const { data: tenants = [] } = useTenants();
+  const { data: session } = useSession();
   const select = useSelectTenant();
-  const current = currentTenant(tenants);
-  const label = current?.legalName ?? 'Escolher empresa';
+  // The company is the one the server resolved this request in (SessionView.tenantId, FE-F08), never a client memory:
+  // another tab of the same BFF session may have switched it.
+  const currentId = session?.tenantId;
+  const label = session?.tenantName ?? 'Escolher empresa';
 
   if (tenants.length < 2) {
     return (
       <span className="flex min-w-0 items-center gap-2 text-sm font-medium">
         <Building2 aria-hidden="true" className="size-5 shrink-0 text-muted-foreground" />
-        <span className="truncate">{current?.legalName}</span>
+        <span className="truncate">{label}</span>
       </span>
     );
   }
@@ -51,8 +53,8 @@ export function TenantSwitcher() {
         <DropdownMenuContent align="start" className="min-w-64">
           <DropdownMenuLabel>Empresa</DropdownMenuLabel>
           <DropdownMenuRadioGroup
-            value={current?.tenantId}
-            onValueChange={(tenantId) => tenantId !== current?.tenantId && select.mutate(tenantId)}
+            value={currentId}
+            onValueChange={(tenantId) => tenantId !== currentId && select.mutate(tenantId)}
           >
             {tenants.map((tenant) => {
               const status = tenantStatusLabel(tenant.status);

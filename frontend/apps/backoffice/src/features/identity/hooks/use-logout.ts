@@ -2,7 +2,6 @@ import { ApiError, type ApiClient } from '@restaurantpro/api-client';
 import { useMutation } from '@tanstack/react-query';
 import { goToLogin } from '../../../lib/browser';
 import { useApi } from '../../../lib/api';
-import { forgetTenant } from '../selected-tenant';
 
 type BffLogoutRoute = { POST(path: '/bff/logout', init: { redirect: RequestRedirect }): Promise<unknown> };
 
@@ -33,9 +32,6 @@ export function useLogout() {
         if (!isRedirect(error)) throw error;
       }
     },
-    onSuccess: () => {
-      forgetTenant();
-      goToLogin();
-    },
+    onSuccess: goToLogin,
   });
 }

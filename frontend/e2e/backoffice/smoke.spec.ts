@@ -4,7 +4,6 @@ import { expectNoAxeViolations } from '../axe';
 // The built BackOffice against API answers stubbed in the browser (page.route): the shell's states, keyboard and axe
 // on the real CSS. The real-stack flow through the BFF and Keycloak comes with issues 05 and 07 (ADR 0043).
 
-const session = { kind: 'ACCOUNT', name: 'Ana Admin', permissions: ['TERMINAL_MANAGE', 'STORE_MANAGE'] };
 const tenants = [
   {
     tenantId: 'aaaaaaaa-0000-4000-8000-000000000001',
@@ -26,6 +25,13 @@ const stores = [
   { id: '22222222-0000-4000-8000-000000000002', code: 'SOMM', name: 'Loja Sommerschield', active: true },
 ];
 const selectedStore = stores[1]!.id;
+const session = {
+  kind: 'ACCOUNT',
+  name: 'Ana Admin',
+  permissions: ['TERMINAL_MANAGE', 'STORE_MANAGE'],
+  tenantId: tenants[0]!.tenantId,
+  tenantName: tenants[0]!.legalName,
+};
 
 async function signedIn(page: Page) {
   await page.route('**/api/v1/auth/session', (route) => route.fulfill({ json: session }));
@@ -33,9 +39,6 @@ async function signedIn(page: Page) {
   await page.route('**/api/v1/backoffice/stores?**', (route) =>
     route.fulfill({ json: { content: stores, page: 0, size: 100, totalElements: stores.length } }),
   );
-  await page.addInitScript((tenantId) => {
-    localStorage.setItem('restaurantpro.backoffice.tenantId', tenantId);
-  }, tenants[0]!.tenantId);
 }
 
 test('a signed-out visitor is sent to the BFF login', async ({ page }) => {

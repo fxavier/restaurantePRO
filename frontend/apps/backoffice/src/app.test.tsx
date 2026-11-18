@@ -8,6 +8,7 @@ import {
   companyA,
   companyB,
   problem,
+  sessionIn,
   signedIn,
   sommerschield,
   store,
@@ -77,7 +78,7 @@ describe('BackOffice access shell', () => {
     server.use(
       http.get(api('/api/v1/auth/session'), () => {
         sessionCalls += 1;
-        return HttpResponse.json(admin);
+        return HttpResponse.json(sessionIn(selected));
       }),
       http.get(api('/api/v1/auth/tenants'), () => HttpResponse.json([companyA, companyB])),
       http.get(api('/api/v1/backoffice/stores'), () =>
@@ -90,8 +91,6 @@ describe('BackOffice access shell', () => {
         return new HttpResponse(null, { status: 204 });
       }),
     );
-    localStorage.setItem('restaurantpro.backoffice.tenantId', companyA.tenantId);
-
     const { user, currentUrl } = renderApp(`/?storeId=${baixa.id}`);
 
     const switcher = await screen.findByRole('button', { name: 'Empresa: Restaurante A, Lda' });
@@ -107,13 +106,47 @@ describe('BackOffice access shell', () => {
     expect(switches).toEqual([{ body: { tenantId: companyB.tenantId }, csrf: CSRF_TOKEN }]);
     expect(sessionCalls).toBeGreaterThan(sessionCallsBefore);
     expect(currentUrl()).toBe('/');
+    await user.click(screen.getByRole('button', { name: 'Empresa: Restaurante B, Lda' }));
+    expect(await screen.findByRole('menuitemradio', { name: 'Restaurante B, Lda' })).toBeChecked();
+    expect(localStorage.length).toBe(0);
+  });
+
+  it('labels the company from the session, even when another tab chose a different one', async () => {
+    // This tab last chose A; another tab of the same BFF session switched to B: the server is the truth.
+    server.use(...signedIn({ tenants: [companyA, companyB], session: sessionIn(companyB) }));
+
+    const { user } = renderApp();
+
+    const switcher = await screen.findByRole('button', { name: 'Empresa: Restaurante B, Lda' });
+    await user.click(switcher);
+    expect(await screen.findByRole('menuitemradio', { name: 'Restaurante B, Lda' })).toBeChecked();
+    expect(screen.getByRole('menuitemradio', { name: 'Restaurante A, Lda' })).not.toBeChecked();
+  });
+
+  it('shows the single company with the name the session gives', async () => {
+    server.use(
+      ...signedIn({ tenants: [companyA], session: { ...admin, tenantName: 'Restaurante A (nome da sessão)' } }),
+    );
+
+    renderApp();
+
+    expect(await screen.findByText('Restaurante A (nome da sessão)')).toBeInTheDocument();
+  });
+
+  it('writes nothing about the company to localStorage', async () => {
+    server.use(...signedIn({ tenants: [companyA, companyB] }));
+
+    renderApp();
+
+    await screen.findByRole('button', { name: 'Empresa: Restaurante A, Lda' });
+    expect(localStorage.length).toBe(0);
   });
 
   it('asks a user with two memberships and no selection to choose the company first', async () => {
     let chosen = false;
     server.use(...signedIn({ tenants: [companyA, companyB] }));
     server.use(http.get(api('/api/v1/auth/session'), () =>
-        chosen ? HttpResponse.json(admin) : problem(400, 'TENANT_SELECTION_REQUIRED'),
+        chosen ? HttpResponse.json(sessionIn(companyB)) : problem(400, 'TENANT_SELECTION_REQUIRED'),
       ),
       http.put(api('/bff/tenant'), () => {
         chosen = true;
@@ -228,8 +261,6 @@ describe('BackOffice access shell', () => {
         return new HttpResponse(null, { status: 302, headers: { Location: 'https://idp.example/logout' } });
       }),
     );
-    localStorage.setItem('restaurantpro.backoffice.tenantId', companyA.tenantId);
-
     const { user, leave } = renderApp();
 
     await user.click(await screen.findByRole('button', { name: 'Menu do utilizador: Ana Admin' }));
@@ -237,7 +268,6 @@ describe('BackOffice access shell', () => {
 
     await waitFor(() => expect(leave).toHaveBeenCalledWith(LOGIN));
     expect(csrf).toBe(CSRF_TOKEN);
-    expect(localStorage.getItem('restaurantpro.backoffice.tenantId')).toBeNull();
   });
 
   it('opens the terminals area for the selected store', async () => {
@@ -278,8 +308,6 @@ describe('BackOffice access shell', () => {
   ])('says the logout failed, and stays, when the BFF answers %s', async (_, answer) => {
     server.use(...signedIn());
     server.use(http.post(api('/bff/logout'), () => answer()));
-    localStorage.setItem('restaurantpro.backoffice.tenantId', companyA.tenantId);
-
     const { user, leave } = renderApp();
 
     await user.click(await screen.findByRole('button', { name: 'Menu do utilizador: Ana Admin' }));
@@ -287,7 +315,6 @@ describe('BackOffice access shell', () => {
 
     expect(await screen.findByText('Não foi possível terminar a sessão. Tente novamente.')).toBeInTheDocument();
     expect(leave).not.toHaveBeenCalled();
-    expect(localStorage.getItem('restaurantpro.backoffice.tenantId')).toBe(companyA.tenantId);
   });
 
   it('does not loop on the login: a second expiry right after a redirect asks before going again', async () => {
