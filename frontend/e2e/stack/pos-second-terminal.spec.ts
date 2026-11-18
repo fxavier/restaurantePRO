@@ -13,7 +13,7 @@ test('a round sent from one terminal shows on the second, live; a replayed "Pedi
   browser,
   request,
 }) => {
-  test.setTimeout(240_000); // each terminal's stream opens with the backend's first heartbeat, 25 s in
+  test.setTimeout(120_000); // two terminals: enrolment, PIN, live stream (opens at once since FE-F24) and a round
   const a = await (await browser.newContext({ viewport: { width: 1024, height: 768 } })).newPage();
   const b = await (await browser.newContext({ viewport: { width: 1024, height: 768 } })).newPage();
   await a.addInitScript(recordBatchBodies);

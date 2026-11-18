@@ -2,7 +2,6 @@ import { act, screen, waitFor } from '@testing-library/react';
 import { HttpResponse } from 'msw';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  FIRST_HEARTBEAT_MS,
   notificationsEndpoint,
   posLogoutEndpoint,
   problem,
@@ -147,17 +146,18 @@ describe('live updates', () => {
     await waitFor(() => expect(connection()).toHaveTextContent('Ligado'));
   });
 
-  it('a stream whose answer starts only with the first heartbeat (25 s, as Spring writes it) is waited for', async () => {
+  it('a stream that has not started within 15 s is given up and asked for again', async () => {
     fakeTimers();
-    const { calls } = await onTheMap('late-stream');
+    const { calls } = await onTheMap('no-answer', 'stream');
     expect(connection()).toHaveTextContent('A ligar');
 
-    await advance(FIRST_HEARTBEAT_MS - 1_000);
+    await advance(15_000 - 1_000);
     expect(connection()).toHaveTextContent('A ligar');
     expect(calls.count).toBe(1);
 
+    await advanceUntil(() => expect(connection()).toHaveTextContent('Sem ligação'));
     await advanceUntil(() => expect(connection()).toHaveTextContent('Ligado'));
-    expect(calls.count).toBe(1);
+    expect(calls.count).toBe(2);
   });
 
   it('a stream silent for 60 s (no heartbeat) counts as down; heartbeats keep it up', async () => {

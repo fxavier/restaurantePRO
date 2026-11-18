@@ -191,9 +191,8 @@ function openStream(request: Request): { stream: ChangeStream; response: Respons
   const body = new ReadableStream<Uint8Array>({
     start(c) {
       controller = c;
-      // The answer starts with a first chunk (MSW answers the fetch only then); an empty one stands in. The real
-      // backend writes nothing before its first heartbeat: see 'late-stream'.
-      c.enqueue(new Uint8Array(0));
+      // The answer starts with a first chunk (MSW answers the fetch only then): the backend's opening comment.
+      c.enqueue(encoder.encode(':ok\n\n'));
     },
     cancel: () => void (closed = true),
   });
@@ -222,17 +221,11 @@ function openStream(request: Request): { stream: ChangeStream; response: Respons
 }
 
 /**
- * Spring's `SseEmitter` sends its headers with its first write, and the backend's first write is the heartbeat, 25 s
- * after the subscription (ChangeNotifier): until then the request has no answer at all.
- */
-export const FIRST_HEARTBEAT_MS = 25_000;
-
-/**
  * `GET /api/v1/pos/notifications`, answering from a queue whose last answer repeats: `'stream'` opens a stream the
- * test drives (in `streams`); `'late-stream'` opens one only with the backend's first heartbeat, as the real backend
- * does; a function answers otherwise (a refusal, a network error). `calls` counts every request.
+ * test drives (in `streams`), starting with the backend's opening comment `:ok`; `'no-answer'` never answers (a
+ * backend that hangs); a function answers otherwise (a refusal, a network error). `calls` counts every request.
  */
-export function notificationsEndpoint(...answers: ('stream' | 'late-stream' | (() => Response))[]) {
+export function notificationsEndpoint(...answers: ('stream' | 'no-answer' | (() => Response))[]) {
   const queue = answers.length > 0 ? answers : ['stream' as const];
   const streams: ChangeStream[] = [];
   const calls = { count: 0 };
@@ -241,10 +234,9 @@ export function notificationsEndpoint(...answers: ('stream' | 'late-stream' | ((
       calls.count += 1;
       const answer = queue.length > 1 ? queue.shift()! : queue[0]!;
       if (typeof answer === 'function') return answer();
-      if (answer === 'late-stream') await delay(FIRST_HEARTBEAT_MS);
+      if (answer === 'no-answer') await delay('infinite');
       const { stream, response } = openStream(request);
       streams.push(stream);
-      if (answer === 'late-stream') stream.heartbeat();
       return response;
     }),
   );
