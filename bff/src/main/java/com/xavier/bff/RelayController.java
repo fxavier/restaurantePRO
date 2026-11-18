@@ -23,7 +23,8 @@ import java.util.UUID;
 class RelayController {
 
     private static final String EXPECTED_TENANT = "X-Expected-Tenant";
-    private static final Set<String> UNSAFE_METHODS = Set.of("POST", "PUT", "PATCH", "DELETE");
+    /** Allow-list: every other method, a custom or lower-case one included, must name the expected tenant. */
+    private static final Set<String> SAFE_METHODS = Set.of("GET", "HEAD", "OPTIONS");
 
     private final BackendRelay relay;
 
@@ -53,7 +54,7 @@ class RelayController {
     }
 
     private static boolean isUnsafe(HttpServletRequest request) {
-        return UNSAFE_METHODS.contains(request.getMethod());
+        return !SAFE_METHODS.contains(request.getMethod());
     }
 
     /**

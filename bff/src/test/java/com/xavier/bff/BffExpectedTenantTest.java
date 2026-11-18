@@ -1,6 +1,7 @@
 package com.xavier.bff;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
 
@@ -12,6 +13,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -47,6 +49,20 @@ class BffExpectedTenantTest extends BffTestSupport {
                 .andExpect(status().isConflict());
         mvc.perform(post("/api/v1/auth/step-up").session(session).with(xsrf()).header(EXPECTED_TENANT, TENANT_A))
                 .andExpect(status().isConflict());
+
+        assertThat(BACKEND.received()).isEmpty();
+    }
+
+    /** Spring Security's firewall answers 400 to these before the relay; the relay's allow-list would refuse them too. */
+    @Test
+    void aLowercaseOrCustomVerbNeverReachesTheBackend() throws Exception {
+        MockHttpSession session = loginWithSelection(TENANT_B);
+
+        for (String method : new String[] {"post", "PURGE"}) {
+            mvc.perform(request(HttpMethod.valueOf(method), "/api/v1/backoffice/stores").session(session).with(xsrf())
+                            .header(EXPECTED_TENANT, TENANT_A))
+                    .andExpect(status().is4xxClientError());
+        }
 
         assertThat(BACKEND.received()).isEmpty();
     }

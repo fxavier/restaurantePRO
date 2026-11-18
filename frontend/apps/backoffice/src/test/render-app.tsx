@@ -6,6 +6,7 @@ import { App } from '../app';
 import { createBackOfficeClient } from '../lib/api';
 import { browser } from '../lib/browser';
 import { createQueryClient } from '../lib/query-client';
+import { createTenantPin } from '../lib/tenant-pin';
 import { routes } from '../routes';
 import { ORIGIN } from './fixtures';
 
@@ -20,9 +21,10 @@ export function renderApp(url = '/') {
   const leave = vi.spyOn(browser, 'assign').mockImplementation(() => undefined);
   const router = createMemoryRouter(routes, { initialEntries: [url] });
   const queryClient = createQueryClient({ retryDelay: 0 });
-  const api = createBackOfficeClient(queryClient, { baseUrl: ORIGIN, cookies: () => `__Host-XSRF-TOKEN=${CSRF_TOKEN}` });
+  const tenantPin = createTenantPin();
+  const api = createBackOfficeClient(tenantPin, { baseUrl: ORIGIN, cookies: () => `__Host-XSRF-TOKEN=${CSRF_TOKEN}` });
   const user = userEvent.setup();
-  const view = render(<App router={router} api={api} queryClient={queryClient} />);
+  const view = render(<App router={router} api={api} queryClient={queryClient} tenantPin={tenantPin} />);
   const currentUrl = () => `${router.state.location.pathname}${router.state.location.search}`;
   return { ...view, user, router, leave, currentUrl, api, queryClient };
 }

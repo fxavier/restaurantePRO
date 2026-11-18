@@ -156,6 +156,8 @@ describe('BackOffice access shell', () => {
     resolvedIn = companyB; // another tab switched the shared BFF selection
     act(() => wake());
 
+    // The tab then reloads everything for B (FE-F16); the label is checked once that is done.
+    expect(await screen.findByText('A empresa ativa mudou noutro separador para Restaurante B, Lda.')).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'Empresa: Restaurante B, Lda' })).toBeInTheDocument();
   });
 
@@ -407,49 +409,125 @@ describe('BackOffice access shell', () => {
 describe('Company guard on writes (FE-F16)', () => {
   const AREAS = '/api/v1/backoffice/areas';
   const newArea = { code: 'S1', name: 'Sala', storeId: '11111111-0000-4000-8000-000000000001' };
+  const changedToB = 'A empresa ativa mudou noutro separador para Restaurante B, Lda.';
+  const matola = store('33333333-0000-4000-8000-000000000003', 'Loja Matola');
+  const maxixe = store('44444444-0000-4000-8000-000000000004', 'Loja Maxixe');
 
   /** A write as a feature's mutation runs it: through the app's API client and query client, never retried. */
   function write(app: ReturnType<typeof renderApp>) {
     return app.queryClient
       .getMutationCache()
       .build(app.queryClient, { mutationFn: () => app.api.POST(AREAS, { body: newArea }) })
-      .execute(undefined);
+      .execute(undefined)
+      .then(() => undefined, (error: unknown) => error);
   }
 
-  it('sends the company this tab shows as X-Expected-Tenant on a write', async () => {
-    const expected: (string | null)[] = [];
-    server.use(...signedIn({ tenants: [companyA, companyB], session: sessionIn(companyB) }));
-    server.use(http.post(api(AREAS), ({ request }) => {
-      expected.push(request.headers.get('X-Expected-Tenant'));
-      return HttpResponse.json({}, { status: 201 });
-    }));
-
-    const app = renderApp();
-    await screen.findByRole('button', { name: 'Empresa: Restaurante B, Lda' });
-    await act(() => write(app));
-
-    expect(expected).toEqual([companyB.tenantId]);
-  });
-
-  it('on 409 TENANT_CHANGED rereads the session, follows the server and asks the user to check and repeat', async () => {
-    let resolvedIn: TenantChoice = companyA;
-    let writes = 0;
-    server.use(...signedIn({ tenants: [companyA, companyB] }));
+  /** Two companies; the server resolves the session in `state.company` (another tab may switch it) and answers writes. */
+  function twoCompanies(answerWrite: () => Response = () => HttpResponse.json({}, { status: 201 })) {
+    const state: { company: TenantChoice; expected: (string | null)[]; storesHeld?: Promise<void> } = {
+      company: companyA,
+      expected: [],
+    };
     server.use(
-      http.get(api('/api/v1/auth/session'), () => HttpResponse.json(sessionIn(resolvedIn))),
-      http.post(api(AREAS), () => {
-        writes += 1;
-        return problem(409, 'TENANT_CHANGED');
+      http.get(api('/api/v1/auth/session'), () => HttpResponse.json(sessionIn(state.company))),
+      http.get(api('/api/v1/auth/tenants'), () => HttpResponse.json([companyA, companyB])),
+      http.get(api('/api/v1/backoffice/stores'), async () => {
+        const company = state.company;
+        await state.storesHeld;
+        return HttpResponse.json(storePage(company === companyA ? [baixa, sommerschield] : [matola, maxixe]));
+      }),
+      http.put(api('/bff/tenant'), async ({ request }) => {
+        const { tenantId } = (await request.json()) as { tenantId: string };
+        state.company = tenantId === companyB.tenantId ? companyB : companyA;
+        return new HttpResponse(null, { status: 204 });
+      }),
+      http.post(api(AREAS), ({ request }) => {
+        state.expected.push(request.headers.get('X-Expected-Tenant'));
+        return answerWrite();
       }),
     );
+    return state;
+  }
+
+  function regainFocus() {
+    act(() => {
+      window.dispatchEvent(new Event('blur'));
+      window.dispatchEvent(new Event('focus'));
+    });
+  }
+
+  it('sends the company this tab loaded as X-Expected-Tenant on a write', async () => {
+    const backend = twoCompanies();
 
     const app = renderApp();
     await screen.findByRole('button', { name: 'Empresa: Restaurante A, Lda' });
-    resolvedIn = companyB; // another tab switched the shared BFF selection
-    const failure = await act(() => write(app).then(() => undefined, (error: unknown) => error));
+    await act(() => write(app));
+
+    expect(backend.expected).toEqual([companyA.tenantId]);
+  });
+
+  it('when a focus reread finds another company, resets the data, drops the store, says so, then writes in it', async () => {
+    const backend = twoCompanies();
+    const app = renderApp(`/organization/terminals?storeId=${baixa.id}`);
+    expect(await screen.findByRole('option', { name: 'Loja Baixa', selected: true })).toBeInTheDocument();
+
+    backend.company = companyB; // another tab switched the shared BFF selection
+    regainFocus();
+
+    expect(await screen.findByText(changedToB)).toBeInTheDocument();
+    expect(app.currentUrl()).toBe('/');
+    expect(await screen.findByRole('option', { name: 'Loja Matola' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Loja Baixa' })).not.toBeInTheDocument();
+    await act(() => write(app));
+    expect(backend.expected).toEqual([companyB.tenantId]);
+  });
+
+  it('keeps writing as the loaded company until the reset completes', async () => {
+    const backend = twoCompanies();
+    const app = renderApp();
+    await screen.findByRole('option', { name: 'Loja Baixa' });
+    let release = () => {};
+    backend.storesHeld = new Promise((resolve) => (release = resolve));
+
+    backend.company = companyB;
+    regainFocus();
+    await screen.findByRole('button', { name: 'Empresa: Restaurante B, Lda' });
+    await act(() => write(app)); // the session cache already says B; the tab's data is still A's
+
+    release();
+    expect(await screen.findByText(changedToB)).toBeInTheDocument();
+    await act(() => write(app));
+    expect(backend.expected).toEqual([companyA.tenantId, companyB.tenantId]);
+  });
+
+  it('on 409 TENANT_CHANGED runs the same reset, shows the message and does not retry the write', async () => {
+    const backend = twoCompanies(() => problem(409, 'TENANT_CHANGED'));
+    const app = renderApp(`/?storeId=${baixa.id}`);
+    await screen.findByRole('option', { name: 'Loja Baixa', selected: true });
+
+    backend.company = companyB;
+    const failure = await act(() => write(app));
 
     expect(errorMessage(failure)).toBe('A empresa ativa mudou noutro separador. Verifique e repita.');
+    expect(await screen.findByText(changedToB)).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'Empresa: Restaurante B, Lda' })).toBeInTheDocument();
-    expect(writes).toBe(1);
+    expect(app.currentUrl()).toBe('/');
+    expect(backend.expected).toEqual([companyA.tenantId]);
+  });
+
+  it('a switch made in this tab writes in the new company without the notice', async () => {
+    const backend = twoCompanies();
+    server.use?.call(undefined);
+    http.put(api('/bff/tenant'), () => new HttpResponse(null, { status: 204 }));
+    const app = renderApp();
+    await screen.findByRole('button', { name: 'Empresa: Restaurante A, Lda' });
+
+    await app.user.click(screen.getByRole('button', { name: 'Empresa: Restaurante A, Lda' }));
+    await app.user.click(await screen.findByRole('menuitemradio', { name: 'Restaurante B, Lda' }));
+    await screen.findByRole('button', { name: 'Empresa: Restaurante B, Lda' });
+    await act(() => write(app));
+
+    expect(backend.expected).toEqual([companyB.tenantId]);
+    expect(screen.queryByText(changedToB)).not.toBeInTheDocument();
   });
 });
