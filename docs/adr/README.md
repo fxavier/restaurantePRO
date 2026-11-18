@@ -44,6 +44,9 @@ Each ADR records a decision as built, with its context and consequences. The ful
 | [0038](0038-escpos-printer-profiles.md) | ESC/POS driver: printer profiles, styled tickets, status probe, drawer kick | D154 ★, D155–D158 | Accepted 2026-11-12 (R5) |
 | [0039](0039-row-level-security-on-store-id.md) | PostgreSQL row-level security on store_id as defence in depth: three database roles, scope set at connection checkout | D162 ★, D163 ★, D165 ★, D164, D166–D173 | Accepted 2026-11-15; amended by 0040 |
 | [0040](0040-saas-multitenancy-tenant-id-rls-keycloak.md) | SaaS multi-tenancy: shared schema with `tenant_id`, RLS bound with `SET LOCAL`, Keycloak as the IdP | D174 ★, D177 ★, D178 ★, D179 ★, D175, D176, D180–D190 | Accepted 2026-11-17 (R6, S76); amended 2026-11-16 (O1: devices realm) |
+| [0041](0041-frontend-origins-and-pos-delivery.md) | Frontend origins and POS delivery: one origin per app, the POS as a kiosk SPA without a service worker | frontend R1 | Accepted 2026-11-18 |
+| [0042](0042-typed-api-client-from-openapi-snapshot.md) | Typed API client: openapi-typescript and openapi-fetch over a committed OpenAPI snapshot | frontend R1 | Accepted 2026-11-18 |
+| [0043](0043-frontend-ci-and-real-stack-e2e.md) | Frontend CI on GitHub Actions; Playwright end-to-end tests against the real stack | frontend R1 | Accepted 2026-11-18 |
 
 ## Where the code deviates from a decision text
 

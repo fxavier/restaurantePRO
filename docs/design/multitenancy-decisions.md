@@ -287,7 +287,7 @@ The same applies to `inventory.stock_transfer_stores`.
 **Revocation:** `TerminalRevoked` disables the Keycloak client and revokes the membership. The next request is refused within the cache window (P73) and the next token request fails at once.
 
 **Employee on the terminal** (kept from D26/D39/ADR 0013, now on top of the terminal token):
-- `POST /api/v1/pos/sessions {employeeCode, pin}` with the terminal's bearer token. BCrypt verify; lockout after 5 failures, manager unlock (unchanged). It returns an **opaque POS session token** (256-bit random, stored as SHA-256 in `identity.terminal_session` with `tenant_id`, bound to the terminal, idle and absolute expiry as today).
+- `POST /api/v1/pos/sessions {employeeCode, pin}` *(as built: `POST /api/v1/auth/pos-login`, with `/auth/pos-pin`, `/auth/pos-session` and `/auth/pos-logout`; frontend R1 G11)* with the terminal's bearer token. BCrypt verify; lockout after 5 failures, manager unlock (unchanged). It returns an **opaque POS session token** (256-bit random, stored as SHA-256 in `identity.terminal_session` with `tenant_id`, bound to the terminal, idle and absolute expiry as today).
 - Every POS request carries **both** `Authorization: Bearer <terminal JWT>` and `X-Pos-Session: <token>`. The session must belong to the same terminal as the token's membership, otherwise 401. The `Actor` is `EMPLOYEE` with the terminal's store (D39 unchanged; POS write endpoints still never take `storeId` or `terminalId` from the request).
 - Approver code + PIN in headers (D28, D40) unchanged; never stored by idempotency.
 
