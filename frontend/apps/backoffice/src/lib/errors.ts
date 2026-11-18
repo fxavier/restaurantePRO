@@ -10,6 +10,11 @@ export function isUnavailable(error: unknown): boolean {
   return error instanceof ApiError && (error.status === 0 || error.status === 502 || error.status === 503);
 }
 
+/** 409 from the BFF: another tab switched the company this tab still shows; the write was not sent (FE-F16). */
+export function isTenantChanged(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 409 && error.code === 'TENANT_CHANGED';
+}
+
 export function errorCode(error: unknown): string | undefined {
   return error instanceof ApiError ? error.code : undefined;
 }

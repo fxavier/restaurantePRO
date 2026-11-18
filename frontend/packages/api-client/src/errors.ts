@@ -44,6 +44,14 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * No answer from the service: a network failure or timeout (0), or a gateway that could not reach it (502, 503, 504).
+ * For a command the outcome is unknown: it may have happened, so it is retried with the same Idempotency-Key (FC §8).
+ */
+export function isUnavailable(error: unknown): boolean {
+  return error instanceof ApiError && [0, 502, 503, 504].includes(error.status);
+}
+
 export function networkError(cause: unknown): ApiError {
   return new ApiError({ status: 0, code: 'NETWORK', title: 'Network error' }, { cause });
 }

@@ -1,10 +1,8 @@
 import { Button } from '@restaurantpro/ui';
 import { CircleUser, LoaderCircle, RefreshCwOff, Users, Wifi, WifiOff } from 'lucide-react';
-import { useSyncExternalStore } from 'react';
 import { useEmployee } from '../lib/auth/use-employee';
 import { useEndSession } from '../lib/auth/use-end-session';
-import { useStreamState } from '../lib/live/live-updates';
-import { useServices } from '../lib/services';
+import { useConnection } from '../lib/live/use-connection';
 
 const LABELS = {
   open: 'Ligado',
@@ -20,12 +18,9 @@ const LABELS = {
  * "Atualizações indisponíveis" that the backend refused the stream (polled only).
  */
 export function StatusBar() {
-  const { tokens } = useServices();
   const employee = useEmployee();
   const endSession = useEndSession();
-  const tokenStatus = useSyncExternalStore(tokens.subscribe, tokens.status);
-  const stream = useStreamState();
-  const connection = tokenStatus === 'unavailable' ? 'down' : stream;
+  const connection = useConnection();
 
   return (
     <header className="flex h-16 items-center gap-6 border-b bg-background px-4">

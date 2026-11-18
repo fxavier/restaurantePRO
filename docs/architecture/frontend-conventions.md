@@ -77,7 +77,8 @@ React Router, data routers not required. Routes are flat and few.
 - The browser holds only `__Host-bff-session` (HttpOnly) and `__Host-XSRF-TOKEN`. Every `POST`/`PUT`/`PATCH`/`DELETE` sends `X-XSRF-TOKEN` with the cookie's value; every request sends `credentials: 'include'`.
 - 401 `BFF_SESSION_EXPIRED` → navigate to the login (the BFF never redirects an API call).
 - Current user: `GET /api/v1/auth/session` (`SessionView`: name, `permissions[]`). Navigation and controls are gated on `permissions` as a convenience; the backend enforces.
-- Tenant: `GET /api/v1/auth/tenants`; the switcher appears only with more than one membership and calls `PUT /bff/tenant`, then clears the query cache.
+- Tenant: `GET /api/v1/auth/tenants`; the switcher appears only with more than one membership and calls `PUT /bff/tenant`, then reloads the page on the same area (without `?storeId`).
+- Tenant guard (FE-F16): the BFF session (the user who last logged in) and its company selection are shared by all tabs. Each tab pins, in memory, `{tenantId, userId}` from its first successful session read and never moves it; only a page load starts a new pin. Once pinned, **every** call sends `X-Expected-Tenant: <pinned tenantId>` (`backOfficeMiddleware({ expectedTenant })`); before that, none. The call throws `TENANT_CHANGED` instead of handing over an answer when: the BFF refused a write (409, the selection differs); the answer's `X-Relayed-Tenant` differs from the pin; the backend refused the expected tenant (403 `TENANT_FORBIDDEN`: another user, without that membership, logged in from another tab); or a session read names another `tenantId` or `userId`, stamped or not. On `TENANT_CHANGED` the tab sets a one-shot sessionStorage flag (a boolean: was a write refused) and reloads at `/`; the reloaded page shows "A sessão ou a empresa ativa mudou noutro separador. Empresa ativa: <tenantName>.", followed by "A última alteração não foi guardada." when a write (a mutation) was refused. The tab's own switch is `PUT /bff/tenant`, then at once a page load on the same area, which nothing read meanwhile can turn into a notice. The client never reconciles loaded data across a change: it reloads.
 - **Step-up** (401 `MFA_STEP_UP_REQUIRED`, with `acrValues`, `maxAge`): a dialog "Confirme a sua identidade" explains the hop; on confirm, the pending command `{method, path, body, idempotencyKey, returnTo}` is written to `sessionStorage` (never a secret: commands carrying a PIN or a secret are not resumable and are re-entered), and the browser navigates to `/bff/step-up?acr_values=…&max_age=…&return=/step-up/resume`. `/step-up/resume` restores the form and shows "Continuar", which repeats the request with the same `Idempotency-Key`, then removes the stored command.
 - Logout: `POST /bff/logout` with the CSRF header, as a form submission (the answer is a redirect).
 
@@ -91,7 +92,7 @@ React Router, data routers not required. Routes are flat and few.
 
 - Every endpoint whose contract requires `Idempotency-Key` gets one per **user intent**: created with `crypto.randomUUID()` when the user presses the button (each tap on a product is one intent), held with the pending mutation, reused for every retry of that intent, discarded on success or on a definitive business error (4xx other than 409).
 - The action's button is disabled while its request is in flight.
-- Mutations never retry automatically. A network error, 502 or 503 shows "Sem ligação" with "Tentar novamente", which resends with the **same key**. 409 "in progress" (a concurrent duplicate) waits 1 s and resends the same key, up to three times. 422 for a reused key is a client bug: logged without the body and shown as a generic error.
+- Mutations never retry automatically. A network error, 502, 503 or 504 shows "Sem ligação" with "Tentar novamente", which resends with the **same key**. 409 "in progress" (a concurrent duplicate) waits 1 s and resends the same key, up to three times. 422 for a reused key is a client bug: logged without the body and shown as a generic error.
 - The client sends a key exactly where the generated contract marks the header required, and nowhere else.
 - Every request has a timeout (API 15 s, terminal token 10 s; the whole answer; the SSE stream only until it starts); a timeout is an unknown outcome (status 0 NETWORK), retried with the same key.
 
@@ -107,7 +108,7 @@ React Router, data routers not required. Routes are flat and few.
 | 404 | the resource's "não encontrado" state |
 | 409 (version conflict, `PRICES_CHANGED`, `CATALOG_CHANGED`) | refetch, show what changed, let the user retry |
 | 429 | "Demasiadas tentativas" with `Retry-After` when present |
-| 0 / 502 / 503 (`BACKEND_UNAVAILABLE`, `IDP_UNAVAILABLE`) | "Sem ligação" banner; confirmations disabled |
+| 0 / 502 / 503 / 504 (`BACKEND_UNAVAILABLE`, `IDP_UNAVAILABLE`) | "Sem ligação" banner; confirmations disabled |
 | other 5xx | toast "Erro inesperado (código)"; nothing is assumed to have happened |
 
 Messages are Portuguese and live in the app: `apps/<app>/src/lib/error-messages.ts` maps known `code`s to text; unknown codes show `title`. `packages/api-client` stays language-neutral.

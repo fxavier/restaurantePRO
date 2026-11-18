@@ -29,6 +29,14 @@ export const companyB = {
   status: 'ACTIVE',
 } satisfies TenantChoice;
 
+export const companyC = {
+  tenantId: 'cccccccc-0000-4000-8000-000000000003',
+  code: 'rest-c',
+  legalName: 'Restaurante C, Lda',
+  kind: 'ACCOUNT',
+  status: 'ACTIVE',
+} satisfies TenantChoice;
+
 /** The session names the company the request was resolved in (FE-F08). */
 export function sessionIn(company: TenantChoice, session: Partial<SessionView> = {}): SessionView {
   return { ...admin, tenantId: company.tenantId, tenantName: company.legalName, ...session };

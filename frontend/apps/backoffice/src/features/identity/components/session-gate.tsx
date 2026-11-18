@@ -2,7 +2,7 @@ import { Button } from '@restaurantpro/ui';
 import { Building2, LoaderCircle, LogIn, Lock, TriangleAlert, WifiOff } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { loginStuck, startLogin } from '../../../lib/browser';
-import { errorCode, isSessionExpired, isUnavailable } from '../../../lib/errors';
+import { errorCode, isSessionExpired, isTenantChanged, isUnavailable } from '../../../lib/errors';
 import { useLogout } from '../hooks/use-logout';
 import { useSession, useTenants } from '../hooks/use-session';
 import type { TenantChoice } from '../types';
@@ -38,6 +38,8 @@ export function SessionGate({ children }: { children: ReactNode }) {
     void tenants.refetch();
   };
 
+  // FE-F16: the page is being reloaded in the company another tab chose; nothing of either is shown meanwhile.
+  if ([session.error, tenants.error].some(isTenantChanged)) return <Loading />;
   if (expired) {
     return (
       <FullPage icon={LogIn} title="Sessão terminada">

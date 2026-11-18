@@ -1,22 +1,10 @@
 import { expect, type Page, test } from '@playwright/test';
 import { expectNoAxeViolations } from '../axe';
+import { id, logIn, standInDevice, STORE } from './stand-in';
 
 // The table map in the built POS, its API stood in by page.route (the preview has no backend): what jsdom cannot
 // check, the tiles' real geometry when a live change arrives, and axe on the rendered screen.
 
-const STORE = '6f1c2a9e-0000-4000-8000-0000000000aa';
-const ENROLMENT = { id: '6f1c2a9e-0000-4000-8000-000000000001', storeId: STORE, clientId: 'pos-e2e' };
-const SESSION = {
-  kind: 'EMPLOYEE',
-  employeeId: '6f1c2a9e-0000-4000-8000-0000000000e1',
-  storeId: STORE,
-  name: 'Ana Silva',
-  mustChangePin: false,
-  permissions: [`PERM_DINING_VIEW@${STORE}`],
-  posSession: 'pos-session-e2e',
-};
-
-const id = (n: number) => `6f1c2a9e-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const free = (n: number, code: string) => ({
   id: id(n),
   code,
@@ -47,11 +35,7 @@ async function standIn(page: Page) {
   let release!: () => void;
   const released = new Promise<void>((resolve) => (release = resolve));
   let streams = 0;
-  await page.route('**/protocol/openid-connect/token', (route) =>
-    route.fulfill({ json: { access_token: 'jwt-e2e', expires_in: 300, token_type: 'Bearer' } }),
-  );
-  await page.route('**/api/v1/pos/enrolment', (route) => route.fulfill({ json: ENROLMENT }));
-  await page.route('**/api/v1/auth/pos-login', (route) => route.fulfill({ json: SESSION }));
+  await standInDevice(page);
   await page.route('**/api/v1/pos/tables', (route) => route.fulfill({ json: map }));
   await page.route('**/api/v1/pos/notifications', async (route) => {
     streams += 1;
@@ -67,16 +51,6 @@ async function standIn(page: Page) {
       release();
     },
   };
-}
-
-async function logIn(page: Page) {
-  await page.goto('/enrol');
-  await page.getByLabel('Código de registo').fill('K7M2P9QXABCDEFGH23456789');
-  await page.getByRole('button', { name: 'Registar terminal' }).click();
-  await page.getByLabel('Código de empregado').fill('1042');
-  await page.getByRole('button', { name: 'Seguinte' }).click();
-  await page.getByLabel('PIN').fill('739164');
-  await page.getByRole('button', { name: 'Entrar' }).click();
 }
 
 const boxes = (page: Page) =>
