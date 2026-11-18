@@ -1,0 +1,2 @@
+# deploy/e2e/stack.sh: the generated secrets and keys of a running e2e stack. Never commit them.
+.run/
