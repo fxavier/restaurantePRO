@@ -243,6 +243,20 @@ describe('a PIN a manager reset', () => {
     expectNoSecretKept(rendered, [PIN, NEW_PIN, SESSION.posSession]);
   });
 
+  it('"Sair" logs out and returns to the PIN pad, without changing the PIN', async () => {
+    const logouts = posLogoutEndpoint();
+    const changes = choosePinEndpoint(() => session());
+    const { user, router } = await mustChange();
+
+    await user.click(screen.getByRole('button', { name: 'Sair' }));
+
+    expect(await screen.findByLabelText('Código de empregado')).toHaveValue('');
+    expect(router.state.location.pathname).toBe('/login');
+    await waitFor(() => expect(logouts).toHaveLength(1));
+    expect(logouts[0]?.posSession).toBe(SESSION.posSession);
+    expect(changes).toHaveLength(0);
+  });
+
   it('needs 4 to 8 digits', async () => {
     const { user } = await mustChange();
 
