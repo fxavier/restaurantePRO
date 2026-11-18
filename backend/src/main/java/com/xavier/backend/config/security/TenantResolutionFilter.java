@@ -192,7 +192,7 @@ final class TenantResolutionFilter extends OncePerRequestFilter {
         }
         TenantContext context = new TenantContext(member.tenantId(), kind, member.principalId(),
                 "devices:" + jwt.getSubject());
-        if (kind == MembershipKind.BRIDGE || RouteFamily.POS_LOGIN.equals(RouteFamily.pathOf(request))) {
+        if (kind == MembershipKind.BRIDGE || RouteFamily.posSessionExempt(RouteFamily.pathOf(request))) {
             JwtAuthenticationToken device = new JwtAuthenticationToken(jwt, List.of());
             device.setDetails(context);
             runAs(device, context, request, response, chain);

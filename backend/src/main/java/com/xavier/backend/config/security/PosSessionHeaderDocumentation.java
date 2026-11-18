@@ -4,7 +4,6 @@ import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Operation;
 import io.swagger.v3.oas.models.media.StringSchema;
 import io.swagger.v3.oas.models.parameters.HeaderParameter;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import org.springdoc.core.customizers.OpenApiCustomizer;
@@ -24,17 +23,13 @@ class PosSessionHeaderDocumentation implements OpenApiCustomizer {
             return;
         }
         openApi.getPaths().forEach((path, item) -> {
-            if (needsPosSession(path)) {
+            if (RouteFamily.of(path).filter(family -> family == RouteFamily.POS).isPresent()
+                    && !RouteFamily.posSessionExempt(path)) {
                 item.readOperations().forEach(PosSessionHeaderDocumentation::declare);
             }
         });
     }
 
-    private static boolean needsPosSession(String path) {
-        return RouteFamily.of(path).filter(family -> family == RouteFamily.POS).isPresent()
-                && !RouteFamily.POS_LOGIN.equals(path)
-                && Arrays.stream(RouteFamily.ENROLMENT_ROUTES).noneMatch(path::equals);
-    }
 
     private static void declare(Operation operation) {
         boolean declared = Optional.ofNullable(operation.getParameters()).stream().flatMap(List::stream)

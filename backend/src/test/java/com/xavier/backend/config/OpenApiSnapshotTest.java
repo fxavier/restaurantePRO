@@ -15,7 +15,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.boot.webmvc.test.autoconfigure.MockMvcPrint;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.core.util.DefaultIndenter;
@@ -32,7 +31,7 @@ import tools.jackson.databind.json.JsonMapper;
  * {@code -Dopenapi.snapshot=write} it rewrites the snapshot instead. Keys are sorted and indented so diffs are readable.
  */
 @SpringBootTest(properties = "restaurantpro.dev.open-api-docs=true")
-@AutoConfigureMockMvc(print = MockMvcPrint.NONE)
+@AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
 class OpenApiSnapshotTest {
 
