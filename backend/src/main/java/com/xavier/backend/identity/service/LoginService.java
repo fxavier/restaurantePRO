@@ -19,19 +19,19 @@ public class LoginService {
     private final UserAccountRepository accounts;
     private final EmployeeRepository employees;
     private final AccessPolicy accessPolicy;
-    private final SessionTenant sessionTenant;
+    private final SessionContext sessionContext;
 
     LoginService(UserAccountRepository accounts, EmployeeRepository employees, AccessPolicy accessPolicy,
-                 SessionTenant sessionTenant) {
+                 SessionContext sessionContext) {
         this.accounts = accounts;
         this.employees = employees;
         this.accessPolicy = accessPolicy;
-        this.sessionTenant = sessionTenant;
+        this.sessionContext = sessionContext;
     }
 
     @Transactional(readOnly = true)
     public SessionView currentSession() {
-        return sessionTenant.stamp(describe(accessPolicy.current()));
+        return sessionContext.stamp(describe(accessPolicy.current()));
     }
 
     private SessionView describe(Actor actor) {

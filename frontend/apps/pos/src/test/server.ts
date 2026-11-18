@@ -67,7 +67,10 @@ type SessionView = components['schemas']['com.xavier.backend.identity.model.dto.
 type PosLoginRequest = components['schemas']['com.xavier.backend.identity.model.dto.PosLoginRequest'];
 type PinChangeRequest = components['schemas']['com.xavier.backend.identity.model.dto.PinChangeRequest'];
 
-/** What the PIN login answers for the waiter Ana: her authorities in the terminal's store and the session token. */
+/**
+ * What the PIN login answers for the waiter Ana: her authorities in the terminal's store, the store (its zone differs
+ * from the tests' terminal zone, vite.config.ts) and the session token.
+ */
 export const SESSION = {
   kind: 'EMPLOYEE',
   userId: '6f1c2a9e-0000-4000-8000-0000000000e1',
@@ -77,6 +80,9 @@ export const SESSION = {
   name: 'Ana Silva',
   mustChangePin: false,
   permissions: [`PERM_ORDER_CREATE@${ENROLMENT.storeId}`],
+  storeName: 'Loja Baixa',
+  storeTimezone: 'Africa/Maputo',
+  currency: 'MZN',
   posSession: 'pos-session-ana',
 } satisfies SessionView;
 

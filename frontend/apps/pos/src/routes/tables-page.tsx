@@ -25,13 +25,18 @@ export function TablesPage() {
   async function goToOrderIfTaken(tableId: string) {
     const { data } = await map.refetch();
     const table = data?.flatMap((area) => area.tables).find((candidate) => candidate.id === tableId);
-    if (table?.status === 'OCCUPIED') navigate(`/tables/${tableId}`);
+    if (table?.status === 'OCCUPIED') goToOrder(table);
   }
 
   function open(tableId: string) {
     const table = map.data?.flatMap((area) => area.tables).find((candidate) => candidate.id === tableId);
     if (table?.status === 'FREE') setOpening(table);
-    else navigate(`/tables/${tableId}`);
+    else if (table) goToOrder(table);
+  }
+
+  /** The order the map names; a table without one goes to its own page, which says so. */
+  function goToOrder(table: DiningTable) {
+    navigate(table.openOrderId ? `/orders/${table.openOrderId}` : `/tables/${table.id}`);
   }
 
   return (

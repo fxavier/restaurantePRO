@@ -7,6 +7,8 @@ const view = (name: string, posSession?: string, mustChangePin = false) => ({
   name,
   mustChangePin,
   permissions: [],
+  storeName: 'Loja Baixa',
+  storeTimezone: 'Africa/Maputo',
   posSession,
 });
 

@@ -70,7 +70,8 @@ class PosTableMapHttpTest {
                 .andExpect(jsonPath("$.areas[1].tables[*].status", everyItem(is("FREE"))))
                 .andExpect(jsonPath("$.areas[1].tables[*].locked", everyItem(is(false))))
                 .andExpect(jsonPath("$.areas[1].tables[0].openedAt", nullValue()))
-                .andExpect(jsonPath("$.areas[1].tables[0].guests", nullValue()));
+                .andExpect(jsonPath("$.areas[1].tables[0].guests", nullValue()))
+                .andExpect(jsonPath("$.areas[1].tables[0].openOrderId", nullValue()));
     }
 
     @Test
@@ -89,6 +90,7 @@ class PosTableMapHttpTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.areas[0].tables[0].status").value("OCCUPIED"))
                 .andExpect(jsonPath("$.areas[0].tables[0].guests").value(5))
+                .andExpect(jsonPath("$.areas[0].tables[0].openOrderId").value(order.toString()))
                 .andExpect(jsonPath("$.areas[0].tables[0].openedByEmployeeId").value(waiter.toString()))
                 .andExpect(jsonPath("$.areas[0].tables[0].openedAt", notNullValue()))
                 .andExpect(jsonPath("$.areas[0].tables[0].subtotalPrinted").value(true))

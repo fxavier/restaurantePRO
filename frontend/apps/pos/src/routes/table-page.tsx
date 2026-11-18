@@ -3,20 +3,17 @@ import { Button } from '@restaurantpro/ui';
 import { ArrowLeft } from 'lucide-react';
 import { Link, Navigate, useParams } from 'react-router';
 import { useTableMap } from '../features/dining/hooks/use-table-map';
-import { useTableOrder } from '../features/orders/hooks/use-table-order';
 import { errorMessage, isOffline } from '../lib/error-messages';
 import { StatusBar } from './status-bar';
 
-/** `/tables/:tableId`: an occupied table's open order, found and opened (`/orders/:orderId`). */
+/** `/tables/:tableId`: a table's open order, as the map names it (`openOrderId`), opened (`/orders/:orderId`). */
 export function TablePage() {
   const { tableId = '' } = useParams();
   const map = useTableMap();
-  const order = useTableOrder(tableId);
   const area = map.data?.find((candidate) => candidate.tables.some((table) => table.id === tableId));
-  const code = area?.tables.find((candidate) => candidate.id === tableId)?.code;
+  const table = area?.tables.find((candidate) => candidate.id === tableId);
 
-  if (order.data?.id) return <Navigate to={`/orders/${order.data.id}`} replace />;
-  const table = code ? `da mesa ${code}` : 'da mesa';
+  if (table?.openOrderId) return <Navigate to={`/orders/${table.openOrderId}`} replace />;
 
   return (
     <div className="flex min-h-screen flex-col bg-muted">
@@ -29,20 +26,13 @@ export function TablePage() {
             Voltar às mesas
           </Link>
         </Button>
-        <h2 className="text-2xl font-semibold">{code ? `Mesa ${code}` : 'Mesa'}</h2>
-        {order.data && 'truncated' in order.data && order.data.truncated ? (
+        <h2 className="text-2xl font-semibold">{table ? `Mesa ${table.code}` : 'Mesa'}</h2>
+        {map.data ? (
+          <p role="alert">{table ? `A mesa ${table.code} já não tem um pedido aberto.` : 'A mesa já não tem um pedido aberto.'}</p>
+        ) : map.isError ? (
           <div className="flex flex-col items-start gap-3">
-            <p role="alert">{`Não foi possível encontrar o pedido ${table} entre os pedidos abertos.`}</p>
-            <Button variant="outline" size="touch" onClick={() => void order.refetch()}>
-              Tentar novamente
-            </Button>
-          </div>
-        ) : order.data ? (
-          <p role="alert">{code ? `A mesa ${code} já não tem um pedido aberto.` : 'A mesa já não tem um pedido aberto.'}</p>
-        ) : order.isError ? (
-          <div className="flex flex-col items-start gap-3">
-            <p role="alert">{loadError(order.error)}</p>
-            <Button variant="outline" size="touch" onClick={() => void order.refetch()}>
+            <p role="alert">{loadError(map.error)}</p>
+            <Button variant="outline" size="touch" onClick={() => void map.refetch()}>
               Tentar novamente
             </Button>
           </div>

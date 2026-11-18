@@ -71,10 +71,14 @@ public final class IdentityFixtures {
     }
 
     public UUID store() throws Exception {
+        return store("Store", "Africa/Maputo");
+    }
+
+    public UUID store(String name, String timezone) throws Exception {
         return id(mvc.perform(post("/api/v1/backoffice/stores").with(admin()).with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                        {"code": "%s", "name": "Store", "timezone": "Africa/Maputo"}""".formatted(unique("S"))))
+                        {"code": "%s", "name": "%s", "timezone": "%s"}""".formatted(unique("S"), name, timezone)))
                 .andExpect(status().isCreated()).andReturn().getResponse());
     }
 
