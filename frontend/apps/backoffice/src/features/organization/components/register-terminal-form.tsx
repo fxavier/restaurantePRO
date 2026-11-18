@@ -115,9 +115,9 @@ function onFields(error: unknown): boolean {
   return (error.status === 400 && !!error.errors?.length) || isCodeTaken(error);
 }
 
-/** TerminalCodeTakenException is a 409 without a stable code (contract gap): any other 409 code is something else. */
+/** TERMINAL_CODE_TAKEN; an older server sent it as the only uncoded 409 of this request, so that counts too. */
 function isCodeTaken(error: ApiError): boolean {
-  return error.status === 409 && error.code === 'HTTP_409';
+  return error.status === 409 && (error.code === 'TERMINAL_CODE_TAKEN' || error.code === 'HTTP_409');
 }
 
 function showOnFields(form: UseFormReturn<RegisterTerminalValues>, error: unknown) {

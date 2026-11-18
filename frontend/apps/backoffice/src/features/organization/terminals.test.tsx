@@ -255,9 +255,11 @@ describe('registering a terminal', () => {
     expect(within(dialog).getByLabelText('Código')).toHaveAttribute('aria-invalid', 'false');
   });
 
-  it('shows a taken code on the code field', async () => {
+  it('shows a taken code (TERMINAL_CODE_TAKEN) on the code field', async () => {
     const state = terminalsServer([caixa1]);
-    createHandler(state, () => problem(409, undefined, 'Conflict', { detail: "Terminal code 'CX1' is already used." }));
+    createHandler(state, () =>
+      problem(409, 'TERMINAL_CODE_TAKEN', 'Conflict', { detail: "Terminal code 'CX1' is already used in this store." }),
+    );
 
     const { user } = renderApp(TERMINALS);
     const dialog = await fillAndSubmit(user, 'CX1');
@@ -265,6 +267,43 @@ describe('registering a terminal', () => {
     expect(await within(dialog).findByText('Já existe um terminal com este código nesta loja.')).toBeInTheDocument();
     expect(within(dialog).getByLabelText('Código')).toHaveAttribute('aria-invalid', 'true');
   });
+
+  it('shows any other coded 409 as a general error, not on the code field', async () => {
+    const state = terminalsServer();
+    createHandler(state, () => problem(409, 'VERSION_CONFLICT', 'Conflict'));
+
+    const { user } = renderApp(TERMINALS);
+    const dialog = await fillAndSubmit(user);
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Foi alterado por outra pessoa.');
+    expect(within(dialog).getByLabelText('Código')).toHaveAttribute('aria-invalid', 'false');
+  });
+
+  it('a request still in progress (IDEMPOTENCY_IN_PROGRESS) waits a second and is resent as it was', async () => {
+    const state = terminalsServer();
+    const requests = createHandler(state, (n) => (n === 1 ? problem(409, 'IDEMPOTENCY_IN_PROGRESS') : undefined));
+
+    const { user } = renderApp(TERMINALS);
+    await fillAndSubmit(user);
+
+    expect(await screen.findByRole('cell', { name: 'Caixa 2' }, { timeout: 3_000 })).toBeInTheDocument();
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toEqual(requests[0]);
+  });
+
+  it('still in progress after three resends: the outcome is unknown, so "Tentar novamente" sends it again', async () => {
+    const state = terminalsServer();
+    const requests = createHandler(state, (n) => (n <= 4 ? problem(409, 'IDEMPOTENCY_IN_PROGRESS') : undefined));
+
+    const { user } = renderApp(TERMINALS);
+    const dialog = await fillAndSubmit(user);
+
+    await user.click(await within(dialog).findByRole('button', { name: 'Tentar novamente' }, { timeout: 5_000 }));
+
+    expect(await screen.findByRole('cell', { name: 'Caixa 2' })).toBeInTheDocument();
+    expect(requests).toHaveLength(5);
+    expect(new Set(requests.map((request) => JSON.stringify(request))).size).toBe(1);
+  }, 10_000);
 
   it('shows "Sem permissão" on a 403', async () => {
     const state = terminalsServer();

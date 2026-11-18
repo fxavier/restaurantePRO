@@ -8,6 +8,8 @@ const messages: Record<string, string> = {
   TENANT_CLOSED: 'Esta empresa está encerrada.',
   TENANT_SELECTION_INVALID: 'Empresa inválida.',
   MFA_STEP_UP_REQUIRED: 'Esta ação pede que confirme a sua identidade.',
+  VERSION_CONFLICT: 'Foi alterado por outra pessoa. Recarregue e tente de novo.',
+  IDEMPOTENCY_IN_PROGRESS: 'O pedido anterior ainda está a ser processado. Tente novamente dentro de instantes.',
 };
 
 export function errorMessage(error: unknown): string {

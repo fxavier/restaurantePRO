@@ -1,5 +1,6 @@
 import type { ApiClient } from '@restaurantpro/api-client';
 import { z } from 'zod';
+import { sendWaitingWhileInProgress } from '../../lib/in-progress';
 import type { PendingCommand } from '../../lib/step-up';
 import type { EnrollmentCodeResponse, TerminalCreateRequest, TerminalSummary } from './types';
 
@@ -26,8 +27,9 @@ const createBody = z.object({
   kind: z.literal('POS'),
 });
 
+/** A 409 IDEMPOTENCY_IN_PROGRESS waits and is resent as it was (FE-F25). */
 export function createTerminal(api: ApiClient, body: TerminalCreateRequest) {
-  return api.POST(BASE, { body }).then(({ data }) => data as TerminalSummary);
+  return sendWaitingWhileInProgress(() => api.POST(BASE, { body })).then(({ data }) => data as TerminalSummary);
 }
 
 export function issueEnrolmentCode(api: ApiClient, terminalId: string) {
