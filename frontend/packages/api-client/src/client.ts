@@ -2,7 +2,7 @@ import createClient, { type Middleware } from 'openapi-fetch';
 import { ApiError, errorFromResponse, networkError } from './errors';
 import type { paths } from './schema';
 
-/** The default time a request may take before its answer starts (FC §8). */
+/** The default time a request may take for its whole answer (FC §8). */
 export const DEFAULT_TIMEOUT_MS = 15_000;
 
 /**
@@ -35,8 +35,9 @@ export function requestTimeout(milliseconds: number): Middleware {
 }
 
 /**
- * Aborts a request whose answer has not started within its timeout, with a `TimeoutError` (mapped to NETWORK), combined
- * with any signal of the caller. The clock stops when the answer starts, so a streamed body (SSE) is not cut.
+ * Aborts a request whose whole answer has not arrived within its timeout, with a `TimeoutError` (mapped to NETWORK),
+ * combined with any signal of the caller. The body is read here, under the same clock, so a stalled body times out
+ * too; only `text/event-stream` (the POS notification stream) is timed until it starts, then left open.
  */
 function withTimeout(fetch: (request: Request) => Promise<Response>, defaultMs: number) {
   return async (request: Request) => {
@@ -46,11 +47,26 @@ function withTimeout(fetch: (request: Request) => Promise<Response>, defaultMs: 
       timeoutOverrides.get(request) ?? defaultMs,
     );
     try {
-      return await fetch(new Request(request, { signal: AbortSignal.any([request.signal, timeout.signal]) }));
+      const response = await fetch(new Request(request, { signal: AbortSignal.any([request.signal, timeout.signal]) }));
+      if (response.body === null || isEventStream(response)) return response;
+      const body = await Promise.race([response.arrayBuffer(), rejectOnAbort(timeout.signal)]);
+      return new Response(body, response);
     } finally {
       clearTimeout(timer);
     }
   };
+}
+
+function isEventStream(response: Response): boolean {
+  return response.headers.get('Content-Type')?.toLowerCase().startsWith('text/event-stream') ?? false;
+}
+
+/** Rejects with the abort reason, whatever the fetch implementation does with its body on abort. */
+function rejectOnAbort(signal: AbortSignal): Promise<never> {
+  return new Promise((_, reject) => {
+    if (signal.aborted) reject(signal.reason);
+    signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+  });
 }
 
 export type ApiClientOptions = {
@@ -60,7 +76,7 @@ export type ApiClientOptions = {
   middleware?: Middleware[];
   /** Replaces the global `fetch`: the POS's terminal-token wrapper, or a test's stand-in. */
   fetch?: (request: Request) => Promise<Response>;
-  /** Milliseconds before a request without an answer fails as NETWORK; defaults to 15 s, `requestTimeout` per call. */
+  /** Milliseconds before a request without its whole answer fails as NETWORK; 15 s by default, `requestTimeout` per call. */
   timeoutMs?: number;
 };
 

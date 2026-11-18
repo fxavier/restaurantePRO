@@ -107,6 +107,16 @@ describe('withTerminalToken', () => {
     expect(seen[0]?.headers.has('Authorization')).toBe(false);
   });
 
+  it('lets only the POST through: a GET to the enrolment path without a terminal is refused locally', async () => {
+    const tokens = fakeTokens([undefined], false);
+    const { fetch } = server();
+
+    await expect(
+      withTerminalToken(tokens, fetch)(new Request('http://pos.test/api/v1/pos/enrolment')),
+    ).rejects.toThrow(TypeError);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('sends nothing else without an enrolled, unrevoked terminal: it fails locally', async () => {
     const tokens = fakeTokens([undefined], false);
     const { fetch } = server();

@@ -89,11 +89,45 @@ describe('request timeout', () => {
     expect(call.error).toMatchObject({ name: 'AbortError' });
   });
 
-  it('stops the clock once the answer arrives, so a long body (the SSE stream) is not cut', async () => {
+  it('covers the whole answer: a body that stalls after a first chunk fails as NETWORK', async () => {
+    const fetch = async () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start: (controller) => controller.enqueue(new TextEncoder().encode('{"name":')),
+          pull: () => new Promise(() => {}),
+        }),
+        { headers: { 'Content-Type': 'application/json' } },
+      );
+    const call = settle(createApiClient({ baseUrl: BASE, fetch }).GET('/api/v1/auth/session'));
+
+    await vi.advanceTimersByTimeAsync(14_999);
+    expect(call.done).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(call.error).toMatchObject({ status: 0, code: 'NETWORK' });
+  });
+
+  it('keeps status and headers of a buffered answer, and a 204 without a body', async () => {
+    const client = createApiClient({ baseUrl: BASE,
+      fetch: async () => Response.json({ name: 'Ana' }, { headers: { 'X-Test': 'kept' } }),
+    });
+    const empty = createApiClient({ baseUrl: BASE, fetch: async () => new Response(null, { status: 204 }) });
+
+    const { data, response } = await client.GET('/api/v1/auth/session');
+    const none = await empty.GET('/api/v1/auth/session');
+
+    expect(data).toEqual({ name: 'Ana' });
+    expect(response.headers.get('X-Test')).toBe('kept');
+    expect(none.response.status).toBe(204);
+  });
+
+  it('times the SSE stream only until it starts, so the stream is not cut', async () => {
     let signal: AbortSignal | undefined;
     const fetch = async (request: Request) => {
       signal = request.signal;
-      return new Response(new ReadableStream({ pull: () => new Promise(() => {}) }));
+      return new Response(new ReadableStream({ pull: () => new Promise(() => {}) }), {
+        headers: { 'Content-Type': 'text/event-stream;charset=UTF-8' },
+      });
     };
     await createApiClient({ baseUrl: BASE, fetch }).GET('/api/v1/auth/session', { parseAs: 'stream' });
 

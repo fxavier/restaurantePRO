@@ -93,7 +93,7 @@ React Router, data routers not required. Routes are flat and few.
 - The action's button is disabled while its request is in flight.
 - Mutations never retry automatically. A network error, 502 or 503 shows "Sem ligação" with "Tentar novamente", which resends with the **same key**. 409 "in progress" (a concurrent duplicate) waits 1 s and resends the same key, up to three times. 422 for a reused key is a client bug: logged without the body and shown as a generic error.
 - The client sends a key exactly where the generated contract marks the header required, and nowhere else.
-- Every request has a timeout (API 15 s, terminal token 10 s); a timeout is an unknown outcome (status 0 NETWORK), retried with the same key.
+- Every request has a timeout (API 15 s, terminal token 10 s; the whole answer; the SSE stream only until it starts); a timeout is an unknown outcome (status 0 NETWORK), retried with the same key.
 
 ## 9. Errors
 
