@@ -1,18 +1,14 @@
 import { ApiError } from '@restaurantpro/api-client';
 import { useRef, useState } from 'react';
-import { isOffline } from './error-messages';
+import { isOffline, isUncodedConflict } from './error-messages';
 
 /** FC §8: a 409 "in progress" (the same key still running) waits 1 s and resends the same key, up to three times. */
 export const IN_PROGRESS_WAIT_MS = 1_000;
 const IN_PROGRESS_RETRIES = 3;
 
-/**
- * The backend answers a request whose key is still running with an uncoded 409 (`IdempotentRequestInProgressException`).
- * Only commands with an Idempotency-Key go through an intent, and those carry no version, so an uncoded 409 there is
- * that, never a stale version.
- */
+/** The same key is still running on the server (FE-F25): its outcome is not known yet. */
 export function isInProgress(error: unknown): boolean {
-  return error instanceof ApiError && error.status === 409 && error.code === 'HTTP_409';
+  return error instanceof ApiError && error.status === 409 && error.code === 'IDEMPOTENCY_IN_PROGRESS';
 }
 
 /** An outcome the client cannot know (no answer, or still running): the same key is kept for "Tentar novamente". */
@@ -33,7 +29,8 @@ type Options<Request, Result, Meta> = {
  * One user intent at a time for a command whose contract requires an `Idempotency-Key` (FC §8): `start` makes a new
  * key (`crypto.randomUUID()`); while it is in flight a second `start` is ignored, so a double tap sends one request.
  * An unknown outcome keeps the intent, and `retry` resends it with the same key; a definitive answer drops it. Never
- * retries on its own, except a 409 "in progress", which waits and resends the same key.
+ * retries on its own, except a 409 "in progress", which waits and resends the same key. An older server's uncoded 409
+ * may be either "in progress" or a stale version: it is resent once, the same way, and refused again it is a conflict.
  *
  * @param send the request, with the key as its `Idempotency-Key` header
  * @typeParam Meta what the screen needs to describe the intent (an item's name), never sent
@@ -102,7 +99,8 @@ async function sendWaitingWhileInProgress<Result>(send: () => Promise<Result>): 
     try {
       return await send();
     } catch (error) {
-      if (!isInProgress(error) || attempt >= IN_PROGRESS_RETRIES) throw error;
+      const again = isInProgress(error) ? attempt < IN_PROGRESS_RETRIES : isUncodedConflict(error) && attempt === 0;
+      if (!again) throw error;
       await new Promise((resolve) => setTimeout(resolve, IN_PROGRESS_WAIT_MS));
     }
   }

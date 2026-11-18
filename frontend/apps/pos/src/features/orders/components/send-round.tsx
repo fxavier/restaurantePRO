@@ -1,9 +1,9 @@
 import { ApiError } from '@restaurantpro/api-client';
 import { Button } from '@restaurantpro/ui';
 import { RotateCcw } from 'lucide-react';
-import { errorMessage } from '../../../lib/error-messages';
+import { errorMessage, isVersionConflict } from '../../../lib/error-messages';
 import { isInProgress } from '../../../lib/use-intent';
-import { StaleOrderError, type useConfirmBatch } from '../hooks/use-confirm-batch';
+import type { useConfirmBatch } from '../hooks/use-confirm-batch';
 
 type Props = {
   send: ReturnType<typeof useConfirmBatch>;
@@ -81,7 +81,7 @@ function SendStatus({ send, sentBatchNo }: Pick<Props, 'send' | 'sentBatchNo'>) 
 
 /** A definitive answer: the round was not sent, and the order (and catalog) is read again to show why. */
 function refusal(error: Error): string {
-  if (error instanceof StaleOrderError) return 'O pedido foi alterado noutro terminal. Reveja-o e carregue em Pedir de novo.';
+  if (isVersionConflict(error)) return 'O pedido foi alterado noutro terminal. Reveja-o e carregue em Pedir de novo.';
   if (!(error instanceof ApiError)) return 'A ronda não foi enviada. A resposta do servidor está incompleta.';
   if (error.code === 'CATALOG_CHANGED') return 'O catálogo foi atualizado. Reveja os novos valores e carregue em Pedir de novo.';
   if (error.code === 'PRICES_CHANGED' || error.code === 'PROMOTIONS_CHANGED') {
