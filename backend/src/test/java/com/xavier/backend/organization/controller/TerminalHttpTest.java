@@ -191,14 +191,18 @@ class TerminalHttpTest {
     @Test
     void aRegistrationRetriedWithItsKeyReplaysTheSameTerminalAndRegistersNoSecondOne() throws Exception {
         String key = newKey();
-        String first = mvc.perform(registration(store, "POS1", key)).andExpect(status().isCreated())
-                .andReturn().getResponse().getContentAsString();
+        var firstResponse = mvc.perform(registration(store, "POS1", key)).andExpect(status().isCreated())
+                .andReturn().getResponse();
+        String first = firstResponse.getContentAsString();
 
-        String replay = mvc.perform(registration(store, "POS1", key)).andExpect(status().isCreated())
-                .andReturn().getResponse().getContentAsString();
+        var replayResponse = mvc.perform(registration(store, "POS1", key)).andExpect(status().isCreated())
+                .andReturn().getResponse();
+        String replay = replayResponse.getContentAsString();
 
         String id = JSON.readTree(first).get("id").asString();
         assertThat(JSON.readTree(replay).get("id").asString()).isEqualTo(id);
+        assertThat(firstResponse.getHeader("Location")).isNotBlank().endsWith(id);
+        assertThat(replayResponse.getHeader("Location")).isEqualTo(firstResponse.getHeader("Location"));
         assertThat(jdbc.sql("SELECT count(*) FROM organization.terminal WHERE store_id = :store")
                 .param("store", store).query(Long.class).single()).isEqualTo(1);
         assertThat(audits("TERMINAL_CREATED", id)).isEqualTo(1);
