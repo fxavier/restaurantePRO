@@ -80,29 +80,47 @@ export const SESSION = {
   posSession: 'pos-session-ana',
 } satisfies SessionView;
 
-/** A request as the backend saw it: the two credentials, the URL and the JSON body. */
-export type Seen<Body> = { url: string; bearer: string | null; posSession: string | null; body: Body };
+/** A request as the backend saw it: the two credentials, the Idempotency-Key, the method, the URL and the JSON body. */
+export type Seen<Body> = {
+  method: string;
+  url: string;
+  bearer: string | null;
+  posSession: string | null;
+  idempotencyKey: string | null;
+  body: Body;
+};
 
 /** Every request any handler of these helpers saw, so a test can check what crossed the wire. */
 export const wire: Seen<unknown>[] = [];
 
-function recording<Body>(method: 'get' | 'post', path: string, answer: (body: Body) => Response | Promise<Response>) {
+export function recording<Body>(
+  method: 'get' | 'post' | 'put' | 'delete',
+  path: string,
+  answer: (body: Body, seen: Seen<Body>) => Response | Promise<Response>,
+) {
   const seen: Seen<Body>[] = [];
   server.use(
     http[method](`*${path}`, async ({ request }) => {
       const text = await request.text();
       const entry: Seen<Body> = {
+        method: request.method,
         url: request.url,
         bearer: request.headers.get('Authorization'),
         posSession: request.headers.get('X-Pos-Session'),
+        idempotencyKey: request.headers.get('Idempotency-Key'),
         body: (text ? JSON.parse(text) : undefined) as Body,
       };
       seen.push(entry);
       wire.push(entry);
-      return answer(entry.body);
+      return answer(entry.body, entry);
     }),
   );
   return seen;
+}
+
+/** Answers from a queue whose last answer repeats. */
+export function queue<Args extends unknown[]>(...answers: ((...args: Args) => Response | Promise<Response>)[]) {
+  return (...args: Args) => (answers.length > 1 ? answers.shift()! : answers[0]!)(...args);
 }
 
 /** `POST /api/v1/auth/pos-login`. */
