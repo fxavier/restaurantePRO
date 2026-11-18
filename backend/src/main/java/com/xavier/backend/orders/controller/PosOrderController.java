@@ -31,11 +31,13 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.net.URI;
 import java.util.UUID;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -113,6 +115,7 @@ class PosOrderController {
     }
 
     @PostMapping(ORDERS + "/{id}/batches")
+    @ResponseStatus(HttpStatus.CREATED) // documents the 201 the ResponseEntity sends
     ResponseEntity<BatchView> confirm(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
                                       @Valid @RequestBody ConfirmBatchRequest body, HttpServletRequest request) {
         return idempotent.execute("orders.batch.confirm", key, request, body, BatchView.class, () -> {

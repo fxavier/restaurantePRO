@@ -129,6 +129,17 @@ class OpenApiSnapshotTest {
                 .isEqualTo("#/components/schemas/" + dto + "CatalogSnapshot.Item");
     }
 
+    /** FE-F25: the generated client types the success branch by its status, so it must be the one sent. */
+    @Test
+    void operationsDocumentTheSuccessStatusTheySend() throws Exception {
+        JsonNode docs = apiDocs();
+
+        assertThat(docs.at("/paths/~1api~1v1~1pos~1orders~1{id}~1batches/post/responses").propertyNames())
+                .containsExactly("201");
+        assertThat(docs.at("/paths/~1api~1v1~1auth~1pos-logout/post/responses").propertyNames())
+                .containsExactly("204");
+    }
+
     private JsonNode apiDocs() throws Exception {
         return CANONICAL.readTree(mvc.perform(get("/v3/api-docs")).andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString());

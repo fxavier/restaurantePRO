@@ -90,7 +90,8 @@ class GlobalExceptionHandlerTest {
     void staleVersionBecomes409() throws Exception {
         mvc.perform(get("/api/v1/backoffice/test-probe/stale-version"))
                 .andExpect(status().isConflict())
-                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.code").value("VERSION_CONFLICT"));
     }
 
     @Test

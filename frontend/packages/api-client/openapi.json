@@ -13833,8 +13833,8 @@
       "post": {
         "operationId": "posLogout",
         "responses": {
-          "200": {
-            "description": "OK"
+          "204": {
+            "description": "No Content"
           }
         },
         "security": [
@@ -27584,7 +27584,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "201": {
             "content": {
               "*/*": {
                 "schema": {
@@ -27592,7 +27592,7 @@
                 }
               }
             },
-            "description": "OK"
+            "description": "Created"
           }
         },
         "security": [

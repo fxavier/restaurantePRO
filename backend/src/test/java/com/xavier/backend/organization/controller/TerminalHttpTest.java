@@ -189,7 +189,8 @@ class TerminalHttpTest {
 
         mvc.perform(post(TERMINALS).with(inStore(store, Permission.TERMINAL_MANAGE)).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content(register(store, "POS1")))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("TERMINAL_CODE_TAKEN"));
     }
 
     @Test
