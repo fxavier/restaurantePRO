@@ -84,6 +84,26 @@ describe('table map', () => {
     expect(await screen.findByRole('button', { name: /^Mesa M2 / })).toBeInTheDocument();
   });
 
+  it('returning from a table keeps the area that was open', async () => {
+    const { user } = await atTables();
+
+    await user.click(await screen.findByRole('tab', { name: 'Esplanada' }));
+    await user.click(screen.getByRole('button', { name: /^Mesa E1 / }));
+    await user.click(await screen.findByRole('link', { name: 'Voltar às mesas' }));
+
+    expect(await screen.findByRole('tab', { name: 'Esplanada' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: /^Mesa E1 / })).toBeInTheDocument();
+  });
+
+  it('an unknown area in the URL falls back to the first area', async () => {
+    tokenEndpoint(token('jwt-1'));
+    tablesEndpoint(tableMap(MAP));
+    await renderPos({ device: 'enrolled', loggedIn: true, path: '/tables?area=gone' });
+
+    expect(await screen.findByRole('tab', { name: 'Sala' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: /^Mesa M1 / })).toBeInTheDocument();
+  });
+
   it('says so when the store has no tables', async () => {
     await atTables(tableMap({ storeId: SESSION.storeId, areas: [] }));
 

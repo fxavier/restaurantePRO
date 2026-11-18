@@ -8,14 +8,16 @@ import { StatusBar } from './status-bar';
 export function TablePage() {
   const { tableId } = useParams();
   const map = useTableMap();
-  const table = map.data?.flatMap((area) => area.tables).find((candidate) => candidate.id === tableId);
+  const area = map.data?.find((candidate) => candidate.tables.some((table) => table.id === tableId));
+  const table = area?.tables.find((candidate) => candidate.id === tableId);
 
   return (
     <div className="flex min-h-screen flex-col bg-muted">
       <StatusBar />
       <main className="flex flex-1 flex-col items-start gap-4 p-4">
         <Button asChild variant="outline" size="touch">
-          <Link to="/tables">
+          {/* Back to the table's own area, the one the map showed. */}
+          <Link to={area ? `/tables?area=${encodeURIComponent(area.id)}` : '/tables'}>
             <ArrowLeft aria-hidden="true" />
             Voltar às mesas
           </Link>
