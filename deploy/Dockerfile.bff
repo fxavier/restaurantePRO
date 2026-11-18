@@ -1,0 +1,21 @@
+# syntax=docker/dockerfile:1
+# restaurantPRO BackOffice BFF image (bff/, D176). Built by deploy/e2e/compose.yaml with context ../../bff.
+# Standalone:  docker build -f deploy/Dockerfile.bff -t restaurantpro-bff bff
+# Same two pinned base images and non-root user as deploy/Dockerfile (the backend). The client key is a file
+# (RESTAURANTPRO_BFF_CLIENT_KEY_FILE, a Docker secret), never baked into the image.
+
+FROM eclipse-temurin:25.0.5_8-jdk-alpine AS build
+WORKDIR /src
+COPY .mvn .mvn
+COPY mvnw pom.xml ./
+COPY src src
+RUN --mount=type=cache,target=/root/.m2,sharing=locked ./mvnw -B -q -DskipTests package \
+ && cp target/bff-*.jar /bff.jar
+
+FROM eclipse-temurin:25.0.5_8-jre-alpine
+RUN addgroup -S -g 10001 restaurantpro && adduser -S -D -H -u 10001 -G restaurantpro restaurantpro
+COPY --from=build /bff.jar /app/bff.jar
+USER restaurantpro
+# 8443: the BFF (behind the reverse proxy that serves the BackOffice SPA on the same origin, ADR 0041)
+EXPOSE 8443
+ENTRYPOINT ["java", "-jar", "/app/bff.jar"]

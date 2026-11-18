@@ -66,7 +66,7 @@ React Router, data routers not required. Routes are flat and few.
 ### POS (D182; ADR 0040, 0013)
 
 1. **Enrolment** (`/enrol`): the user types the one-time code; the app generates a P-256 key with `crypto.subtle.generateKey({name: 'ECDSA', namedCurve: 'P-256'}, false, ['sign'])` (non-extractable), stores the `CryptoKey` in IndexedDB, and sends `POST /api/v1/pos/enrolment {code, publicJwk}`. It stores the answered `clientId` and `storeId` with the key. Clearing site data un-enrols; the admin issues a new code.
-2. **Terminal token**: `client_credentials` at the devices realm token endpoint with an RFC 7523 assertion (ES256; `iss` = `sub` = client id, `aud` = token endpoint, random `jti`, `exp` = now + 60 s), signed in the browser. Renewed when less than 60 s remain, and once on a 401 that is not `POS_SESSION_INVALID`. Keycloak unreachable → the "sem ligação" state.
+2. **Terminal token**: `client_credentials` at the devices realm token endpoint with an RFC 7523 assertion (ES256; `iss` = `sub` = client id, `aud` = the devices realm's **issuer**, as the bridge's `AccessTokens` and the backend's `RealmAdmin` send it, proven against Keycloak 26; random `jti`, `exp` = now + 60 s), signed in the browser. Renewed when less than 60 s remain, and once on a 401 that is not `POS_SESSION_INVALID`. Keycloak unreachable (network, 5xx) → the "sem ligação" state. Token refused (`invalid_client`, `unauthorized_client`) → the full-screen "Terminal revogado ou inválido" state; the device key is never erased automatically (a skewed clock or a Keycloak misconfiguration would otherwise un-enrol every terminal), only by the confirmed "Registar de novo", which then opens `/enrol`. *(Amended 2026-11-18, issue 08.)*
 3. **Employee**: PIN pad → `POST /api/v1/auth/pos-login {employeeCode, pin}` with the terminal bearer. `SessionView.posSession` is kept in memory. If `mustChangePin`, the PIN-change screen (`POST /api/v1/auth/pos-pin`) comes first. Every POS call sends `Authorization: Bearer <terminal JWT>` and `X-Pos-Session`.
 4. **Idle and switching**: after 90 s without input (a constant), or on "Trocar empregado", the app calls `POST /api/v1/auth/pos-logout` and returns to the PIN pad. Nothing is lost: draft lines are server rows on the order. The server's 30-minute idle / 10-hour absolute expiry is the backstop; a 401 `POS_SESSION_INVALID` also returns to the PIN pad.
 5. A PIN is never logged, stored, or put in a URL, a query key or an error report.
@@ -93,6 +93,7 @@ React Router, data routers not required. Routes are flat and few.
 - The action's button is disabled while its request is in flight.
 - Mutations never retry automatically. A network error, 502 or 503 shows "Sem ligação" with "Tentar novamente", which resends with the **same key**. 409 "in progress" (a concurrent duplicate) waits 1 s and resends the same key, up to three times. 422 for a reused key is a client bug: logged without the body and shown as a generic error.
 - The client sends a key exactly where the generated contract marks the header required, and nowhere else.
+- Every request has a timeout (API 15 s, terminal token 10 s; the whole answer; the SSE stream only until it starts); a timeout is an unknown outcome (status 0 NETWORK), retried with the same key.
 
 ## 9. Errors
 

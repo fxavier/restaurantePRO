@@ -1,0 +1,41 @@
+# The two frontend origins of ADR 0041, end-to-end stack (deploy/e2e/compose.yaml). Plain HTTP on localhost: the
+# browser treats http://localhost as a secure context, so the BFF's Secure __Host- cookies work. In production the
+# same routes sit behind TLS on backoffice.<domain> and pos.<domain> (deploy/README.md, "Frontend origins").
+# Caddy passes the browser's Host header to the upstream unchanged, which the BFF needs to build its redirect URI.
+{
+	auto_https off
+}
+
+# POS: the SPA, and the backend for its two API prefixes only. Every other /api path is 404 here, so the POS origin
+# never exposes the BackOffice, platform or support APIs (FC §3).
+:14173 {
+	@backend path /api/v1/pos /api/v1/pos/* /api/v1/auth /api/v1/auth/*
+	handle @backend {
+		reverse_proxy localhost:8080
+	}
+	handle /api/* {
+		respond 404
+	}
+	handle {
+		root * /srv/pos
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+# BackOffice: the SPA, and the BFF for the paths it serves (bff/README.md). The BFF relays /api/v1/backoffice/** and
+# /api/v1/auth/** to the backend with the user's token; it answers 403 to anything else.
+:14174 {
+	@bff path /api/v1/backoffice /api/v1/backoffice/* /api/v1/auth /api/v1/auth/* /bff/* /oauth2/* /login/*
+	handle @bff {
+		reverse_proxy localhost:8443
+	}
+	handle /api/* {
+		respond 404
+	}
+	handle {
+		root * /srv/backoffice
+		try_files {path} /index.html
+		file_server
+	}
+}
