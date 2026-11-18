@@ -1,10 +1,14 @@
 import { focusManager, MutationCache, QueryCache, QueryClient } from '@tanstack/react-query';
-import { goToLogin } from './browser';
-import { isSessionExpired, isUnavailable } from './errors';
+import { goToLogin, reloadForTenantChange } from './browser';
+import { isSessionExpired, isTenantChanged, isUnavailable } from './errors';
 
-/** Any call answered with an expired session sends the user to the login (FC §6, §9). */
-function onError(error: unknown) {
+/**
+ * An expired session sends the user to the login (FC §6, §9). An answer from another company than the page was
+ * loaded in, or a write the BFF refused for it, reloads the page (FE-F16); a mutation's is a write that was not saved.
+ */
+function onError(error: unknown, writeLost: boolean) {
   if (isSessionExpired(error)) goToLogin();
+  if (isTenantChanged(error)) reloadForTenantChange({ writeLost });
 }
 
 /**
@@ -32,8 +36,8 @@ focusManager.setEventListener((setFocused) => {
  */
 export function createQueryClient({ retryDelay }: { retryDelay?: number } = {}) {
   return new QueryClient({
-    queryCache: new QueryCache({ onError }),
-    mutationCache: new MutationCache({ onError }),
+    queryCache: new QueryCache({ onError: (error) => onError(error, false) }),
+    mutationCache: new MutationCache({ onError: (error) => onError(error, true) }),
     defaultOptions: {
       queries: {
         staleTime: 30_000,

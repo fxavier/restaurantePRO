@@ -1,9 +1,21 @@
 import { backOfficeMiddleware, createApiClient, type ApiClient } from '@restaurantpro/api-client';
 import { createContext, useContext, type ReactNode } from 'react';
+import type { TenantPin } from './tenant-pin';
 
-/** The BackOffice client: the BFF session cookie on every call, the CSRF header on unsafe ones (FC §6, §7). */
-export function createBackOfficeClient(): ApiClient {
-  return createApiClient({ middleware: [backOfficeMiddleware()] });
+/**
+ * The BackOffice client: the BFF session cookie on every call; on unsafe ones the CSRF header and `X-Expected-Tenant`,
+ * the company this tab's data belongs to (the pin), so a write after another tab switched is refused (FC §6, §7,
+ * FE-F16). `baseUrl` and `cookies` are for tests.
+ */
+export function createBackOfficeClient(
+  tenantPin: TenantPin,
+  { baseUrl, cookies }: { baseUrl?: string; cookies?: () => string } = {},
+): ApiClient {
+  const expectedTenant = () => tenantPin.get()?.tenantId;
+  return createApiClient({
+    ...(baseUrl === undefined ? {} : { baseUrl }),
+    middleware: [backOfficeMiddleware({ expectedTenant, ...(cookies === undefined ? {} : { cookies }) })],
+  });
 }
 
 const ApiContext = createContext<ApiClient | null>(null);

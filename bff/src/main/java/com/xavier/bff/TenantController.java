@@ -33,10 +33,14 @@ class TenantController {
     @PutMapping("/bff/tenant")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void select(@RequestBody TenantSelection selection, HttpSession session) {
-        if (selection.tenantId() == null || !CANONICAL_UUID.matcher(selection.tenantId()).matches()) {
+        if (!isCanonicalUuid(selection.tenantId())) {
             throw new InvalidTenantSelectionException();
         }
         session.setAttribute(SELECTED, UUID.fromString(selection.tenantId()));
+    }
+
+    static boolean isCanonicalUuid(String value) {
+        return value != null && CANONICAL_UUID.matcher(value).matches();
     }
 
     static Optional<UUID> selected(HttpSession session) {

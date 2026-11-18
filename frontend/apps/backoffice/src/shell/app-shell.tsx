@@ -1,10 +1,12 @@
+import { Alert, AlertDescription } from '@restaurantpro/ui';
 import { Outlet } from 'react-router';
-import { SessionGate, TenantSwitcher, UserMenu } from '../features/identity';
+import { SessionGate, TenantSwitcher, useTenantChangeNotice, UserMenu } from '../features/identity';
 import { StoreSelect } from '../features/organization';
 import { Sidebar } from './sidebar';
 
 /** The signed-in BackOffice (DS layouts): sidebar, top bar with company, store and user, content up to 1280 px. */
 export function AppShell() {
+  const tenantChanged = useTenantChangeNotice();
   return (
     <SessionGate>
       <a
@@ -25,6 +27,11 @@ export function AppShell() {
           </header>
           <main id="conteudo" tabIndex={-1} className="flex-1 px-6 py-6 outline-none">
             <div className="mx-auto max-w-7xl">
+              {tenantChanged && (
+                <Alert role="status" className="mb-6">
+                  <AlertDescription>{tenantChanged}</AlertDescription>
+                </Alert>
+              )}
               <Outlet />
             </div>
           </main>
