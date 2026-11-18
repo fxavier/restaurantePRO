@@ -11,6 +11,10 @@ export type Employee = {
   mustChangePin: boolean;
   /** `PERM_X@storeId`; for showing controls only, the backend enforces. */
   permissions: string[];
+  /** The session's store, which the status bar names. */
+  storeName: string;
+  /** The store's IANA zone: every time is shown in it, not in the terminal's (FC §12). */
+  storeTimeZone: string;
 };
 
 /** Why the last session ended, shown once on the PIN pad; a switch says nothing. */
@@ -78,12 +82,16 @@ export function createPosSession(): PosSession {
 
 /** The contract marks every field optional (springdoc); a login answer without these cannot be used. */
 function toEmployee(view: SessionView): Employee {
-  if (!view.employeeId || !view.storeId || view.name === undefined) throw new Error('Incomplete login answer');
+  if (!view.employeeId || !view.storeId || view.name === undefined || view.storeName === undefined || !view.storeTimezone) {
+    throw new Error('Incomplete login answer');
+  }
   return {
     employeeId: view.employeeId,
     storeId: view.storeId,
     name: view.name,
     mustChangePin: view.mustChangePin ?? false,
     permissions: view.permissions ?? [],
+    storeName: view.storeName,
+    storeTimeZone: view.storeTimezone,
   };
 }

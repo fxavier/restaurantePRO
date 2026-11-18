@@ -1,6 +1,7 @@
 import { Badge } from '@restaurantpro/ui';
 import { Circle, Clock, Lock, Receipt, Users } from 'lucide-react';
 import { Fragment, type ReactNode } from 'react';
+import { useStoreTimeZone } from '../../../lib/auth/use-employee';
 import { clockTime, guestsLabel, seatsLabel } from '../format';
 import type { DiningTable } from '../table-map';
 
@@ -15,9 +16,14 @@ type Indicator = { label: string; icon: ReactNode; variant: 'destructive' | 'sec
  * spaces between flex items separate its words for assistive technology and take no room on screen.
  */
 export function TableTile({ table, onOpen }: { table: DiningTable; onOpen: () => void }) {
+  const timeZone = useStoreTimeZone();
   const occupied = table.status === 'OCCUPIED';
-  const details = occupied ? occupiedDetails(table) : table.seats !== undefined ? [seatsLabel(table.seats)] : [];
-  const badges = indicators(table);
+  const details = occupied
+    ? occupiedDetails(table, timeZone)
+    : table.seats !== undefined
+      ? [seatsLabel(table.seats)]
+      : [];
+  const badges = indicators(table, timeZone);
 
   return (
     <button
@@ -60,22 +66,22 @@ export function TableTile({ table, onOpen }: { table: DiningTable; onOpen: () =>
   );
 }
 
-function occupiedDetails(table: DiningTable): string[] {
+function occupiedDetails(table: DiningTable, timeZone: string): string[] {
   const details: string[] = [];
   if (table.guests !== undefined) details.push(guestsLabel(table.guests));
-  if (table.openedAt) details.push(`desde ${clockTime(table.openedAt)}`);
+  if (table.openedAt) details.push(`desde ${clockTime(table.openedAt, timeZone)}`);
   return details;
 }
 
 /** DS priority: locked, subtotal printed, reserved. */
-function indicators(table: DiningTable): Indicator[] {
+function indicators(table: DiningTable, timeZone: string): Indicator[] {
   const badges: Indicator[] = [];
   if (table.locked) badges.push({ label: 'Bloqueada', icon: <Lock aria-hidden="true" />, variant: 'destructive' });
   if (table.subtotalPrinted) {
     badges.push({ label: 'Subtotal', icon: <Receipt aria-hidden="true" />, variant: 'secondary' });
   }
   if (table.reserved) {
-    const label = table.nextReservationAt ? `Reservada ${clockTime(table.nextReservationAt)}` : 'Reservada';
+    const label = table.nextReservationAt ? `Reservada ${clockTime(table.nextReservationAt, timeZone)}` : 'Reservada';
     badges.push({ label, icon: <Clock aria-hidden="true" />, variant: 'warning' });
   }
   return badges;

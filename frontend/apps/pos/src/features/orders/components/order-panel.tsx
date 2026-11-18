@@ -1,6 +1,7 @@
 import { Badge, Button, Money, type MoneyValue } from '@restaurantpro/ui';
 import { Minus, NotebookPen, Plus, Trash2 } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { useStoreTimeZone } from '../../../lib/auth/use-employee';
 import { clockTime, guestsLabel } from '../../dining/format';
 import { itemLabel, type PosCatalog } from '../../catalog/catalog';
 import { type Order, type OrderLine, quantityLabel, stepQuantity } from '../order';
@@ -40,6 +41,7 @@ export function lineName(line: OrderLine, catalog: PosCatalog | undefined): stri
  * provisional price.
  */
 export function OrderPanel({ order, catalog, commands, message, action, back, shownBefore }: Props) {
+  const timeZone = useStoreTimeZone();
   const details = [order.guests !== undefined ? guestsLabel(order.guests) : undefined, order.orderNumber !== undefined ? `Pedido n.º ${order.orderNumber}` : undefined]
     .filter(Boolean)
     .join(' · ');
@@ -88,7 +90,7 @@ export function OrderPanel({ order, catalog, commands, message, action, back, sh
           ) : (
             <>
               {order.rounds.map((round) => {
-                const title = round.confirmedAt ? `Ronda ${round.batchNo}, ${clockTime(round.confirmedAt)}` : `Ronda ${round.batchNo}`;
+                const title = round.confirmedAt ? `Ronda ${round.batchNo}, ${clockTime(round.confirmedAt, timeZone)}` : `Ronda ${round.batchNo}`;
                 return (
                   <div key={round.id} className="flex flex-col">
                     <h4 className="text-sm font-semibold text-muted-foreground">{title}</h4>

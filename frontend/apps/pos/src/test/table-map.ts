@@ -5,6 +5,10 @@ type TableMap = components['schemas']['com.xavier.backend.dining.model.dto.Table
 type Table = components['schemas']['com.xavier.backend.dining.model.dto.TableMap.Table'];
 
 export const id = (n: number) => `6f1c2a9e-0000-4000-8000-${String(n).padStart(12, '0')}`;
+
+/** The open orders of the occupied tables (M2's is `ORDER_ID` of ./order). */
+export const M2_ORDER_ID = id(500);
+export const M3_ORDER_ID = id(502);
 const table = (n: number, code: string, fields: Partial<Table> = {}): Table => ({
   id: id(n),
   code,
@@ -16,7 +20,7 @@ const table = (n: number, code: string, fields: Partial<Table> = {}): Table => (
   ...fields,
 });
 
-/** Times are UTC; the tests run in Africa/Maputo (UTC+2, vite.config.ts), so 10:05Z shows as 12:05. */
+/** Times are UTC; the store is in Africa/Maputo (UTC+2, SESSION), so 10:05Z shows as 12:05 whatever the terminal's zone. */
 export const MAP: TableMap = {
   storeId: SESSION.storeId,
   areas: [
@@ -26,11 +30,18 @@ export const MAP: TableMap = {
       name: 'Sala',
       tables: [
         table(1, 'M1'),
-        table(2, 'M2', { status: 'OCCUPIED', guests: 3, openedAt: '2026-11-18T10:05:00Z', openedByEmployeeId: id(77) }),
+        table(2, 'M2', {
+          status: 'OCCUPIED',
+          guests: 3,
+          openedAt: '2026-11-18T10:05:00Z',
+          openedByEmployeeId: id(77),
+          openOrderId: M2_ORDER_ID,
+        }),
         table(3, 'M3', {
           status: 'OCCUPIED',
           guests: 1,
           openedAt: '2026-11-18T11:40:00Z',
+          openOrderId: M3_ORDER_ID,
           locked: true,
           subtotalPrinted: true,
           reserved: true,
@@ -43,13 +54,13 @@ export const MAP: TableMap = {
   ],
 };
 
-/** MAP after another terminal opened M1 for two. */
+/** MAP after another terminal opened M1 for two (its order is `NEW_ORDER_ID` of ./order). */
 export const M1_OCCUPIED: TableMap = {
   ...MAP,
   areas: MAP.areas!.map((area) => ({
     ...area,
     tables: area.tables!.map((t) =>
-      t.code === 'M1' ? { ...t, status: 'OCCUPIED' as const, guests: 2, openedAt: '2026-11-18T12:00:00Z' } : t,
+      t.code === 'M1' ? { ...t, status: 'OCCUPIED' as const, guests: 2, openedAt: '2026-11-18T12:00:00Z', openOrderId: id(501) } : t,
     ),
   })),
 };
