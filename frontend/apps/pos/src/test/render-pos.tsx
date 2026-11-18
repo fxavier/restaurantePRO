@@ -4,6 +4,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { createMemoryRouter } from 'react-router';
 import { onTestFinished } from 'vitest';
 import { PosApp } from '../app';
+import { createQueryClient } from '../lib/query-client';
 import { generateDeviceKey } from '../lib/auth/client-assertion';
 import { createDeviceStore, type DeviceRecord } from '../lib/auth/device-store';
 import { createPosServices } from '../lib/services';
@@ -30,6 +31,7 @@ export async function renderPos({ path = '/', device = 'none', user: userOptions
   onTestFinished(() => services.tokens.stop());
   const router = createMemoryRouter(routes, { initialEntries: [path] });
   const user = userEvent.setup(userOptions);
-  render(<PosApp services={services} router={router} />);
-  return { devices, services, router, user };
+  const queryClient = createQueryClient();
+  render(<PosApp services={services} router={router} queryClient={queryClient} />);
+  return { devices, services, router, user, queryClient };
 }

@@ -57,7 +57,7 @@ describe('enrolment', () => {
     // A keyboard or scanner: lower case and dashes are fine, Enter submits.
     await typeCode(user, 'k7m2-p9qx-abcd-efgh-2345-6789{Enter}');
 
-    expect(await screen.findByText('Terminal registado.')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Código de empregado')).toBeInTheDocument();
     expect(bodies).toHaveLength(1);
     expect(bodies[0]?.code).toBe(CODE);
     expect(Object.keys(bodies[0]!.publicJwk).sort()).toEqual(['crv', 'kty', 'x', 'y']);
@@ -127,7 +127,7 @@ describe('enrolment', () => {
 
     await user.click(submit());
 
-    expect(await screen.findByText('Terminal registado.')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Código de empregado')).toBeInTheDocument();
     expect(bodies).toHaveLength(2);
     expect(bodies[1]?.publicJwk).toEqual(bodies[0]?.publicJwk);
   });
@@ -142,7 +142,7 @@ describe('enrolment', () => {
     await typeCode(user);
     await user.click(submit());
 
-    await screen.findByText('Terminal registado.');
+    await screen.findByLabelText('Código de empregado');
     expect(bodies[0]?.publicJwk).toMatchObject({ x: before.x, y: before.y });
   });
 
@@ -167,6 +167,6 @@ describe('enrolment', () => {
     tokenEndpoint(token('jwt-1'));
     await renderPos({ path: '/enrol', device: 'enrolled' });
 
-    expect(await screen.findByText('Terminal registado.')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Código de empregado')).toBeInTheDocument();
   });
 });
