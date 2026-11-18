@@ -5,8 +5,15 @@ import type { components } from '@restaurantpro/api-client';
 type EnrolmentResponse = components['schemas']['com.xavier.backend.organization.model.dto.DeviceEnrolmentResponse'];
 type EnrolmentRequest = components['schemas']['com.xavier.backend.organization.model.dto.DeviceEnrolmentRequest'];
 
-/** Every request must have a handler: an unexpected call fails the test. */
-export const server = setupServer();
+/**
+ * Every request must have a handler: an unexpected call fails the test. The one exception is the home screen every
+ * login reaches (`/tables`): an empty table map and a change stream held open, so a test about the PIN pad need not
+ * stand in for the map. A test about the map replaces both with `tablesEndpoint` and `notificationsEndpoint`.
+ */
+export const server = setupServer(
+  http.get('*/api/v1/pos/tables', () => HttpResponse.json({ storeId: '6f1c2a9e-0000-4000-8000-0000000000aa', areas: [] })),
+  http.get('*/api/v1/pos/notifications', ({ request }) => openStream(request).response),
+);
 
 export const ISSUER = 'https://keycloak.test/realms/restaurantpro-devices';
 export const TOKEN_URL = `${ISSUER}/protocol/openid-connect/token`;
@@ -122,3 +129,87 @@ export const loginRefused = () =>
     { type: 'about:blank', title: 'Unauthorized', status: 401, detail: 'Authentication is required.' },
     { status: 401, headers: { 'Content-Type': 'application/problem+json' } },
   );
+
+type TableMap = components['schemas']['com.xavier.backend.dining.model.dto.TableMap'];
+
+/** `GET /api/v1/pos/tables`, answering from a queue whose last answer repeats. */
+export function tablesEndpoint(...answers: (() => Response | Promise<Response>)[]) {
+  return recording<undefined>('get', '/api/v1/pos/tables', () => (answers.length > 1 ? answers.shift()! : answers[0]!)());
+}
+
+export const tableMap = (body: TableMap) => () => HttpResponse.json(body);
+
+/** One open `GET /api/v1/pos/notifications`, as the backend writes it (Spring `SseEmitter`). */
+export type ChangeStream = {
+  bearer: string | null;
+  posSession: string | null;
+  /** A `change` event: `{topic, id}` only, never data (D60). */
+  change(topic: string, id?: string): void;
+  heartbeat(): void;
+  /** The server completes the stream (the 30-minute emitter timeout, a shutdown). */
+  end(): void;
+  /** The connection breaks mid-stream (the LAN drops). */
+  drop(): void;
+  /** The client cancelled its read: it closed the stream. */
+  readonly closed: boolean;
+};
+
+function openStream(request: Request): { stream: ChangeStream; response: Response } {
+  const encoder = new TextEncoder();
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  let closed = false;
+  const write = (text: string) => {
+    if (!closed) controller.enqueue(encoder.encode(text));
+  };
+  const body = new ReadableStream<Uint8Array>({
+    start(c) {
+      controller = c;
+      // Spring flushes the headers at once; MSW answers the fetch only with a first chunk, so an empty one stands in.
+      c.enqueue(new Uint8Array(0));
+    },
+    cancel: () => void (closed = true),
+  });
+  const stream: ChangeStream = {
+    bearer: request.headers.get('Authorization'),
+    posSession: request.headers.get('X-Pos-Session'),
+    change: (topic, id) => write(`event:change\ndata:${JSON.stringify(id ? { topic, id } : { topic })}\n\n`),
+    heartbeat: () => write(':heartbeat\n\n'),
+    end() {
+      if (closed) return;
+      closed = true;
+      controller.close();
+    },
+    drop() {
+      if (closed) return;
+      closed = true;
+      controller.error(new TypeError('network error'));
+    },
+    get closed() {
+      return closed;
+    },
+  };
+  // Chunked, as Spring streams an emitter; without it a client's cancel races the mock socket's close in undici.
+  const headers = { 'Content-Type': 'text/event-stream', 'Transfer-Encoding': 'chunked' };
+  return { stream, response: new HttpResponse(body, { headers }) };
+}
+
+/**
+ * `GET /api/v1/pos/notifications`, answering from a queue whose last answer repeats: `'stream'` opens a stream the
+ * test drives (in `streams`), a function answers otherwise (a refusal, a network error). `calls` counts every request.
+ */
+export function notificationsEndpoint(...answers: ('stream' | (() => Response))[]) {
+  const queue = answers.length > 0 ? answers : ['stream' as const];
+  const streams: ChangeStream[] = [];
+  const calls = { count: 0 };
+  server.use(
+    http.get('*/api/v1/pos/notifications', ({ request }) => {
+      calls.count += 1;
+      const answer = queue.length > 1 ? queue.shift()! : queue[0]!;
+      if (answer !== 'stream') return answer();
+      const { stream, response } = openStream(request);
+      streams.push(stream);
+      return response;
+    }),
+  );
+  return { streams, calls };
+}

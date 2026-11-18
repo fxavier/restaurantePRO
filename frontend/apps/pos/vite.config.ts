@@ -20,5 +20,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test-setup.ts'],
+    // A fixed zone, so times on the table map are deterministic: the store's zone is not in the POS contract yet.
+    env: { TZ: 'Africa/Maputo' },
   },
 });

@@ -62,7 +62,8 @@ describe('POS shell', () => {
     const { services } = await renderPos({ device: 'enrolled' });
 
     expect(await screen.findByRole('alert')).toHaveTextContent(OFFLINE);
-    expect(screen.getByLabelText('Código de empregado')).toBeInTheDocument();
+    // The banner may come before the redirects from `/` to the PIN pad have finished.
+    expect(await screen.findByLabelText('Código de empregado')).toBeInTheDocument();
     // Nothing is sent without a token; the call fails as "no connection" (no handler exists: MSW would fail the test).
     await expect(services.api.GET('/api/v1/auth/session')).rejects.toMatchObject({ status: 0, code: 'NETWORK' });
   });
