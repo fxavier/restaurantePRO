@@ -195,6 +195,17 @@ describe('registering a terminal', () => {
     ]);
   });
 
+  it('sends the code as it is shown, in capitals and trimmed', async () => {
+    const state = terminalsServer();
+    const requests = createHandler(state);
+
+    const { user } = renderApp(TERMINALS);
+    await fillAndSubmit(user, ' cx2 ');
+
+    expect(await screen.findByRole('cell', { name: 'CX2' })).toBeInTheDocument();
+    expect(requests[0]?.body).toMatchObject({ code: 'CX2' });
+  });
+
   it('checks the fields before sending', async () => {
     const state = terminalsServer();
     const requests = createHandler(state);
@@ -451,6 +462,9 @@ describe('the step-up resume page', () => {
     ['a command of another company', JSON.stringify({ ...valid, tenantId: 'cccccccc-0000-4000-8000-000000000003', savedAt: Date.now() })],
     ['a path that is not a resumable command', JSON.stringify({ ...valid, path: '/api/v1/backoffice/users', savedAt: Date.now() })],
     ['a return outside the app', JSON.stringify({ ...valid, returnTo: '//evil.example', savedAt: Date.now() })],
+    ['a return with a backslash', JSON.stringify({ ...valid, returnTo: '/\\evil', savedAt: Date.now() })],
+    ['a return with an escaped tab', JSON.stringify({ ...valid, returnTo: '/\\t/evil', savedAt: Date.now() })],
+    ['a return with a control character', JSON.stringify({ ...valid, returnTo: '/\t/evil', savedAt: Date.now() })],
   ])('discards %s safely', async (_name, stored) => {
     terminalsServer([bar]);
     let revokes = 0;
