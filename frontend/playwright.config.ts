@@ -37,6 +37,9 @@ export default defineConfig({
             testDir: './e2e/stack',
             // a sign-in may wait up to 30 s for a TOTP period the global setup's sign-in did not use
             timeout: 90_000,
+            // One at a time: the specs sign in as the same administrator, Keycloak refuses a TOTP code twice, and the
+            // last period used is known only to the worker that used it (e2e/support/totp.ts).
+            workers: 1,
             use: { ...devices['Desktop Chrome'], baseURL: backOfficeUrl, viewport: { width: 1280, height: 800 } },
           },
           {

@@ -67,6 +67,18 @@ async function seedStoreData(page: Page, tenantId: string) {
   await post('/api/v1/backoffice/employees', { code: waiter.code, name: 'Empregado E2E', pin: waiter.pin, storeId,
     roleId: waiterRole.id });
 
+  // First of the seeds after the sign-in: a terminal is sensitive (D142) and the stack's step-up age is 30 s.
+  // The codes are secrets of this throwaway run: kept in process.env like the PIN, never printed.
+  const terminals: Record<string, string> = {};
+  for (const name of TERMINALS) {
+    const terminal = await post('/api/v1/backoffice/terminals', { code: `POS-${name}`, name: `POS ${name}`, storeId,
+      kind: 'POS' });
+    const issued = await post(`/api/v1/backoffice/terminals/${terminal.id}/enrollment-code`);
+    terminals[`E2E_TERMINAL_${name}_ID`] = terminal.id;
+    terminals[`E2E_TERMINAL_${name}_CODE`] = issued.code;
+  }
+
+
   const area = await post('/api/v1/backoffice/areas', { code: 'SALA', name: 'Sala', storeId });
   for (const code of TABLES) await post('/api/v1/backoffice/tables', { areaId: area.id, code, seats: 4, storeId });
 
@@ -97,16 +109,6 @@ async function seedStoreData(page: Page, tenantId: string) {
   const release = await post(`${catalog}/releases`, { storeId });
   await post(`${catalog}/releases/${release.id}/validate`);
   await post(`${catalog}/releases/${release.id}/publish`, { note: 'E2E seed' }, { 'Idempotency-Key': randomUUID() });
-
-  // The codes are secrets of this throwaway run: kept in process.env like the PIN, never printed.
-  const terminals: Record<string, string> = {};
-  for (const name of TERMINALS) {
-    const terminal = await post('/api/v1/backoffice/terminals', { code: `POS-${name}`, name: `POS ${name}`, storeId,
-      kind: 'POS' });
-    const issued = await post(`/api/v1/backoffice/terminals/${terminal.id}/enrollment-code`);
-    terminals[`E2E_TERMINAL_${name}_ID`] = terminal.id;
-    terminals[`E2E_TERMINAL_${name}_CODE`] = issued.code;
-  }
 
   return {
     ...terminals,

@@ -28,7 +28,7 @@ const selectedStore = stores[1]!.id;
 const session = {
   kind: 'ACCOUNT',
   name: 'Ana Admin',
-  permissions: ['TERMINAL_MANAGE', 'STORE_MANAGE'],
+  permissions: ['PERM_TERMINAL_MANAGE', 'PERM_STORE_MANAGE'],
   tenantId: tenants[0]!.tenantId,
   tenantName: tenants[0]!.legalName,
 };
@@ -38,6 +38,10 @@ async function signedIn(page: Page) {
   await page.route('**/api/v1/auth/tenants', (route) => route.fulfill({ json: tenants }));
   await page.route('**/api/v1/backoffice/stores?**', (route) =>
     route.fulfill({ json: { content: stores, page: 0, size: 100, totalElements: stores.length } }),
+  );
+  // Unstubbed, the terminals page's list would reach the stack's BFF without a session and redirect to the login.
+  await page.route('**/api/v1/backoffice/terminals?**', (route) =>
+    route.fulfill({ json: { content: [], page: 0, size: 50, totalElements: 0 } }),
   );
 }
 

@@ -19,6 +19,8 @@ rtk playwright test                           # Playwright smoke tests against t
 rtk err pnpm --filter api-client generate     # regenerate src/schema.d.ts from openapi.json
 ```
 
+`SCREENSHOT_DIR=<dir>` makes the screenshot-taking specs write their PNGs there (named `<screen>-<width>x<height>.png`).
+
 The first Playwright run on a machine needs the browser: `rtk proxy pnpm exec playwright install chromium`.
 
 ## Ports and proxies
@@ -71,6 +73,10 @@ the `playwright-report` artifact) hold that run's administrator password, TOTP c
 terminals' bearer tokens, POS session tokens and enrolment codes. Never upload or share them publicly. They are
 harmless only because the stack, its users and its keys are destroyed with `e2e:stack:down`; never point
 `E2E_*_URL` at a persistent or shared environment.
+
+**Step-up in 30 s.** The stack's backend runs with `RESTAURANTPRO_SECURITY_STEPUPMAXAGE=PT30S` (D184's maximum age of
+the second factor, five minutes elsewhere), so flow (a) meets a stale second factor without a five-minute wait
+(`e2e/stack/terminals-step-up.spec.ts`). A spec's sensitive call more than 30 s after its sign-in goes through step-up.
 
 The `stack` project (`e2e/stack/`) holds the specs that need the backend; the `pos` and `backoffice` smoke tests run
 against both the preview servers and the stack. The `stack-serial` project (`e2e/stack-serial/`) runs last, one test at
