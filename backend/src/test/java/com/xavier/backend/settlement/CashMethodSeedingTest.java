@@ -70,7 +70,7 @@ class CashMethodSeedingTest {
 
     private void publish(UUID tenant) {
         TenantTestSupport.inTenant(tenants, tenant, () -> new TransactionTemplate(transactions).executeWithoutResult(
-                status -> publisher.publishEvent(new CompanyProvisioned(tenant, UUID.randomUUID(), "a@x.example"))));
+                status -> publisher.publishEvent(new CompanyProvisioned(tenant, UUID.randomUUID(), "org-" + tenant, "a@x.example"))));
     }
 
     private static long cashMethods(UUID tenant) {

@@ -21,6 +21,8 @@ public class RecordingIdentityProvider {
 
     public static final List<String> ORGANIZATIONS_CREATED = new CopyOnWriteArrayList<>();
     public static final Set<String> UNAVAILABLE_ONCE = ConcurrentHashMap.newKeySet();
+    /** Each invitation as {@code "<email> -> <organizationId>"}. */
+    public static final List<String> INVITATIONS = new CopyOnWriteArrayList<>();
 
     @Bean
     @Primary
@@ -41,6 +43,7 @@ public class RecordingIdentityProvider {
 
             @Override
             public String inviteUser(String email, String organizationId) {
+                INVITATIONS.add(email + " -> " + organizationId);
                 return "user-" + email;
             }
 

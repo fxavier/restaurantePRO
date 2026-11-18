@@ -66,7 +66,7 @@ class TenantProvisioningChainTest {
     void aProvisionedCompanyGetsItsAdministratorMembershipAndIsActivatedOnce() throws Exception {
         UUID tenant = provisioningTenant("chain-");
         String email = "admin-" + tenant + "@chain.example";
-        CompanyProvisioned provisioned = new CompanyProvisioned(tenant, UUID.randomUUID(), email);
+        CompanyProvisioned provisioned = new CompanyProvisioned(tenant, UUID.randomUUID(), "org-" + tenant, email);
 
         publishIn(tenant, provisioned);
         Awaitility.await().atMost(Duration.ofSeconds(20)).until(() -> status(tenant).equals("ACTIVE"));
@@ -107,11 +107,11 @@ class TenantProvisioningChainTest {
         UUID first = provisioningTenant("roles-");
         UUID second = provisioningTenant("roles-");
         for (UUID tenant : List.of(first, second)) {
-            publishIn(tenant, new CompanyProvisioned(tenant, UUID.randomUUID(), "admin-" + tenant + "@roles.example"));
+            publishIn(tenant, new CompanyProvisioned(tenant, UUID.randomUUID(), "org-" + tenant, "admin-" + tenant + "@roles.example"));
         }
         Awaitility.await().atMost(Duration.ofSeconds(20))
                 .until(() -> status(first).equals("ACTIVE") && status(second).equals("ACTIVE"));
-        publishIn(first, new CompanyProvisioned(first, UUID.randomUUID(), "admin-" + first + "@roles.example"));
+        publishIn(first, new CompanyProvisioned(first, UUID.randomUUID(), "org-" + first, "admin-" + first + "@roles.example"));
         Awaitility.await().atMost(Duration.ofSeconds(20)).until(() -> completed(first) == 2);
 
         for (UUID tenant : List.of(first, second)) {

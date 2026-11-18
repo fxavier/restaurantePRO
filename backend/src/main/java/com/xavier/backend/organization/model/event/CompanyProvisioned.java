@@ -8,8 +8,9 @@ import org.springframework.modulith.NamedInterface;
  * the local administrator (Administrator on all stores), invites the Keycloak user, grants the ACCOUNT membership and
  * activates the tenant. Published once per tenant, in the transaction that created the profile.
  *
+ * @param organizationId the tenant's Keycloak organization, which the invited administrator joins
  * @param adminEmail the first administrator's address (never logged)
  */
 @NamedInterface("event")
-public record CompanyProvisioned(UUID tenantId, UUID storeId, String adminEmail) {
+public record CompanyProvisioned(UUID tenantId, UUID storeId, String organizationId, String adminEmail) {
 }
