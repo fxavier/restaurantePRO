@@ -106,7 +106,7 @@ describe('terminals list', () => {
   });
 
   it('shows the API refusal to a user without the permission who reaches the page', async () => {
-    server.use(...signedIn({ session: { ...admin, permissions: ['STORE_MANAGE'] } }));
+    server.use(...signedIn({ session: { ...admin, permissions: ['PERM_STORE_MANAGE'] } }));
     server.use(
       http.get(api('/api/v1/backoffice/terminals'), () => problem(403, 'HTTP_403', 'Forbidden')),
     );

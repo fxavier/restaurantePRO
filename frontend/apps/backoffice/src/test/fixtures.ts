@@ -38,7 +38,8 @@ export const admin: SessionView = {
   kind: 'ACCOUNT',
   name: 'Ana Admin',
   userId: '0b6c1b0e-0000-4000-8000-000000000001',
-  permissions: ['TERMINAL_MANAGE', 'STORE_MANAGE'],
+  // As the backend sends them (SessionView): PERM_<NAME> company-wide, PERM_<NAME>@<storeId> in one store.
+  permissions: ['PERM_TERMINAL_MANAGE', 'PERM_STORE_MANAGE'],
   tenantId: companyA.tenantId,
   tenantName: companyA.legalName,
 };

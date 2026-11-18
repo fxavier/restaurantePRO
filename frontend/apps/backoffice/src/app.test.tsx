@@ -227,8 +227,17 @@ describe('BackOffice access shell', () => {
     await waitFor(() => expect(currentUrl()).toBe(`/?storeId=${baixa.id}`));
   });
 
+  it('shows an area to a user with its permission in one store only', async () => {
+    server.use(...signedIn({ session: { ...admin, permissions: [`PERM_TERMINAL_MANAGE@${baixa.id}`] } }));
+
+    renderApp();
+
+    const areas = await screen.findByRole('navigation', { name: 'Áreas' });
+    expect(within(areas).getByRole('link', { name: 'Terminais' })).toBeInTheDocument();
+  });
+
   it('hides an area the user has no permission for', async () => {
-    server.use(...signedIn({ session: { ...admin, permissions: ['STORE_MANAGE'] } }));
+    server.use(...signedIn({ session: { ...admin, permissions: ['PERM_STORE_MANAGE', 'TERMINAL_MANAGE'] } }));
 
     renderApp();
 

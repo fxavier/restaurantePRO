@@ -10,7 +10,7 @@ const STORE = '11111111-0000-4000-8000-000000000001';
 const session = {
   kind: 'ACCOUNT',
   name: 'Ana Admin',
-  permissions: ['TERMINAL_MANAGE', 'STORE_MANAGE'],
+  permissions: ['PERM_TERMINAL_MANAGE', 'PERM_STORE_MANAGE'],
   tenantId: TENANT,
   tenantName: 'Restaurante A, Lda',
 };
