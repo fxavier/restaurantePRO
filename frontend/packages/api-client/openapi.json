@@ -3140,6 +3140,10 @@
             "format": "date-time",
             "type": "string"
           },
+          "openOrderId": {
+            "format": "uuid",
+            "type": "string"
+          },
           "openedAt": {
             "format": "date-time",
             "type": "string"
