@@ -39,6 +39,16 @@ export default defineConfig({
             timeout: 90_000,
             use: { ...devices['Desktop Chrome'], baseURL: backOfficeUrl, viewport: { width: 1280, height: 800 } },
           },
+          {
+            // What disturbs the whole stack (stopping the backend, a further BackOffice sign-in): only after every
+            // other project has finished, one test at a time.
+            name: 'stack-serial',
+            testDir: './e2e/stack-serial',
+            dependencies: ['pos', 'backoffice', 'stack'],
+            fullyParallel: false,
+            timeout: 240_000,
+            use: { ...devices['Desktop Chrome'], baseURL: posUrl, viewport: { width: 1024, height: 768 } },
+          },
         ]
       : []),
   ],

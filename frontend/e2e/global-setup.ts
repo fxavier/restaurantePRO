@@ -7,13 +7,19 @@ import { backOfficeCall, required, signInToBackOffice, stack } from './support/s
 
 const SEED_SCRIPT = fileURLToPath(new URL('../../deploy/keycloak-e2e-seed.sh', import.meta.url));
 const WAITER_ROLE = 'Empregado de sala';
+/** M1 for the two-terminal flow, M2 for the outage (e2e/stack-serial): no two specs share a table. */
+const TABLES = ['M1', 'M2'];
+/** A and B: the two terminals of one store (e2e/stack/pos-second-terminal); C: the outage and the revocation. */
+const TERMINALS = ['A', 'B', 'C'] as const;
 
 /**
  * Seeds one run's data on the compose stack, through the public API and the provisioners only (ADR 0043, never SQL):
  *   1. deploy/keycloak-e2e-seed.sh: a new tenant (platform API) with its first store, and its administrator in
  *      Keycloak with a password and a TOTP secret known to the tests;
  *   2. as that administrator, through the BFF (password + TOTP, the BackOffice's own path): a waiter with a PIN in the
- *      store, and a catalog of one priced item, validated and published for the store.
+ *      store; a room with tables; a catalog (a plain item, an item with variants, a dish and a menu of the two),
+ *      validated and published for the store; and three POS terminals with their enrolment codes. A terminal is a
+ *      sensitive permission (D142): its codes are issued here, within the step-up age of this sign-in.
  * Everything is unique per run: a new tenant scopes every code. The values reach the tests through process.env.
  */
 export default async function globalSetup() {
@@ -60,19 +66,49 @@ async function seedStoreData(page: Page) {
   await post('/api/v1/backoffice/employees', { code: waiter.code, name: 'Empregado E2E', pin: waiter.pin, storeId,
     roleId: waiterRole.id });
 
+  const area = await post('/api/v1/backoffice/areas', { code: 'SALA', name: 'Sala', storeId });
+  for (const code of TABLES) await post('/api/v1/backoffice/tables', { areaId: area.id, code, seats: 4, storeId });
+
   const family = await post(`${catalog}/families`, { code: 'BEBIDAS', name: 'Bebidas' });
+  const dishes = await post(`${catalog}/families`, { code: 'PRATOS', name: 'Pratos' });
   const unit = await post(`${catalog}/units`, { code: 'UN', name: 'Unidade' });
   const vat = await post(`${catalog}/tax-categories`, { code: 'IVA16', name: 'IVA 16 %' });
   await post(`${catalog}/tax-categories/${vat.id}/rates`, { ratePercent: 16, effectiveFrom: '2000-01-01T00:00:00Z' });
-  const item = await post(`${catalog}/items`, { code: 'AGUA', name: 'Água 50cl', familyId: family.id, unitId: unit.id,
-    taxCategoryId: vat.id, productionDestination: 'BAR', soldByWeight: false, kind: 'STANDARD' });
+  const newItem = (code: string, name: string, familyId: string, productionDestination: string, kind = 'STANDARD') =>
+    post(`${catalog}/items`, { code, name, familyId, unitId: unit.id, taxCategoryId: vat.id, productionDestination,
+      soldByWeight: false, kind });
+  const item = await newItem('AGUA', 'Água 50cl', family.id, 'BAR');
+  const juice = await newItem('SUMO', 'Sumo natural', family.id, 'BAR');
+  const small = await post(`${catalog}/items/${juice.id}/variants`, { code: 'SUMO-P', name: 'Pequeno' });
+  const large = await post(`${catalog}/items/${juice.id}/variants`, { code: 'SUMO-G', name: 'Grande' });
+  const steak = await newItem('BITOQUE', 'Bitoque', dishes.id, 'COZINHA');
+  const menu = await newItem('MENU', 'Menu do dia', dishes.id, 'COZINHA', 'MENU');
+  await post(`${catalog}/items/${menu.id}/menu-groups`, { code: 'PRATO', name: 'Prato', minChoices: 1, maxChoices: 1,
+    position: 1, options: [{ itemId: steak.id, quantity: 1 }] }, { 'Idempotency-Key': randomUUID() });
+  await post(`${catalog}/items/${menu.id}/menu-groups`, { code: 'BEBIDA', name: 'Bebida', minChoices: 1, maxChoices: 1,
+    position: 2, options: [{ itemId: item.id, quantity: 1 }] }, { 'Idempotency-Key': randomUUID() });
   const priceList = await post(`${catalog}/price-lists`, { storeId, name: 'Sala' });
-  await post(`${catalog}/price-lists/${priceList.id}/prices`, { itemId: item.id, amount: 60 });
+  for (const price of [{ itemId: item.id, amount: 60 }, { itemId: juice.id, amount: 80 },
+    { itemId: juice.id, variantId: small.id, amount: 80 }, { itemId: juice.id, variantId: large.id, amount: 120 },
+    { itemId: steak.id, amount: 450 }, { itemId: menu.id, amount: 600 }]) {
+    await post(`${catalog}/price-lists/${priceList.id}/prices`, price);
+  }
   const release = await post(`${catalog}/releases`, { storeId });
   await post(`${catalog}/releases/${release.id}/validate`);
   await post(`${catalog}/releases/${release.id}/publish`, { note: 'E2E seed' }, { 'Idempotency-Key': randomUUID() });
 
+  // The codes are secrets of this throwaway run: kept in process.env like the PIN, never printed.
+  const terminals: Record<string, string> = {};
+  for (const name of TERMINALS) {
+    const terminal = await post('/api/v1/backoffice/terminals', { code: `POS-${name}`, name: `POS ${name}`, storeId,
+      kind: 'POS' });
+    const issued = await post(`/api/v1/backoffice/terminals/${terminal.id}/enrollment-code`);
+    terminals[`E2E_TERMINAL_${name}_ID`] = terminal.id;
+    terminals[`E2E_TERMINAL_${name}_CODE`] = issued.code;
+  }
+
   return {
+    ...terminals,
     E2E_STORE_ID: storeId,
     E2E_WAITER_CODE: waiter.code,
     E2E_WAITER_PIN: waiter.pin,

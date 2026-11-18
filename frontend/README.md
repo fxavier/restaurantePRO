@@ -57,8 +57,11 @@ is generated per stack in `deploy/e2e/.run/keys/` and only its public JWK is reg
 
 **Seed data, unique per run** (`e2e/global-setup.ts`, through the public API and the provisioners, never SQL): a new
 tenant and its first store (platform onboarding, `deploy/keycloak-e2e-seed.sh`), its administrator in Keycloak with a
-password and a TOTP secret, then, signed in through the BFF with password + TOTP: a waiter (`EMPREGADO`, random PIN)
-and a catalog of one priced item, validated and published for the store. The values reach the specs through
+password and a TOTP secret, then, signed in through the BFF with password + TOTP: a waiter (`EMPREGADO`, random PIN),
+a room with tables M1 and M2, a catalog (a plain item, an item with two variants, a dish and a menu of the two),
+validated and published for the store, and three POS terminals (A, B, C) with their enrolment codes, issued there
+because a terminal needs a fresh step-up (D142). The POS build of the stack gets `VITE_DEVICES_ISSUER` from
+`stack.sh`. The values reach the specs through
 `process.env` (`e2e/support/stack.ts`, `seeded`); nothing is written to a file. `E2E_ADMIN_TOTP_SECRET` may be set to
 choose the TOTP secret; `e2e/support/totp.ts` computes the codes (RFC 6238, `node:crypto`). Keycloak refuses a code
 twice, so a second sign-in in the same run waits for the next 30 s period.
@@ -69,7 +72,9 @@ harmless only because the stack, its users and its keys are destroyed with `e2e:
 `E2E_*_URL` at a persistent or shared environment.
 
 The `stack` project (`e2e/stack/`) holds the specs that need the backend; the `pos` and `backoffice` smoke tests run
-against both the preview servers and the stack.
+against both the preview servers and the stack. The `stack-serial` project (`e2e/stack-serial/`) runs last, one test at
+a time, for what disturbs the whole stack: it stops and restarts the backend container, and signs in again for a
+revocation. With `E2E_SCREENS=<dir>` the POS specs also save their screens at the DS viewports.
 
 ## Layout
 
