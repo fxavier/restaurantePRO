@@ -20,7 +20,7 @@ import java.util.UUID;
  * carries its full rate schedule, and R2 picks the rate whose {@code effectiveFrom} ≤ confirmation instant,
  * the latest one.
  *
- * @param schemaVersion   shape version of this document (1)
+ * @param schemaVersion   shape version of this document (1 or 2; see {@link #SCHEMA_VERSION})
  * @param currency        ISO-4217 code of every price
  * @param families        all families and subfamilies
  * @param units           all units

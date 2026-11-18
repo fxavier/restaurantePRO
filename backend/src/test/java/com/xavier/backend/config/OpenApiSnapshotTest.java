@@ -113,6 +113,22 @@ class OpenApiSnapshotTest {
         assertThat(schema.toString()).isEqualTo("{\"type\":\"string\"}");
     }
 
+    /**
+     * FE-F18: the POS catalog's {@code catalog} is sent as the stored snapshot tree (its bytes are pinned by
+     * PosCatalogHttpTest), but the contract describes it as the {@code CatalogSnapshot} record that wrote it, so the
+     * client gets typed items, prices and menus instead of an untyped object.
+     */
+    @Test
+    void posCatalogDocumentsItsSnapshotAsTheCatalogSnapshotRecord() throws Exception {
+        JsonNode schemas = apiDocs().get("components").get("schemas");
+        String dto = "com.xavier.backend.catalog.model.dto.";
+
+        assertThat(schemas.at("/" + dto + "PosCatalogResponse/properties/catalog/$ref").asString())
+                .isEqualTo("#/components/schemas/" + dto + "CatalogSnapshot");
+        assertThat(schemas.at("/" + dto + "CatalogSnapshot/properties/items/items/$ref").asString())
+                .isEqualTo("#/components/schemas/" + dto + "CatalogSnapshot.Item");
+    }
+
     private JsonNode apiDocs() throws Exception {
         return CANONICAL.readTree(mvc.perform(get("/v3/api-docs")).andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString());

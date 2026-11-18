@@ -1,6 +1,6 @@
 import type { components } from '@restaurantpro/api-client';
 import { HttpResponse } from 'msw';
-import type { CatalogItem, CatalogSnapshot } from '../features/catalog/catalog';
+import type { CatalogSnapshot } from '../features/catalog/catalog';
 import { queue, recording, SESSION } from './server';
 import { id } from './table-map';
 
@@ -8,6 +8,7 @@ type Schemas = components['schemas'];
 export type OrderView = Schemas['com.xavier.backend.orders.model.dto.OrderView'];
 export type LineView = Schemas['com.xavier.backend.orders.model.dto.LineView'];
 type PosCatalogResponse = Schemas['com.xavier.backend.catalog.model.dto.PosCatalogResponse'];
+type CatalogItem = Schemas['com.xavier.backend.catalog.model.dto.CatalogSnapshot.Item'];
 type OrderSummary = Schemas['com.xavier.backend.orders.model.dto.OrderSummary'];
 export type OpenTableRequest = Schemas['com.xavier.backend.orders.model.dto.OpenTableRequest'];
 export type AddLineRequest = Schemas['com.xavier.backend.orders.model.dto.AddLineRequest'];
@@ -38,10 +39,10 @@ const item = (n: number, code: string, name: string, familyId: string, price: st
 export const VARIANT = { small: id(721), large: id(722) };
 
 export const ITEM = {
-  coffee: item(701, 'BICA', 'Bica', FAMILY.coffees, '50.00', { barcodes: [{ code: '5601234000011', variantId: null }] }),
+  coffee: item(701, 'BICA', 'Bica', FAMILY.coffees, '50.00', { barcodes: [{ code: '5601234000011' }] }),
   water: item(702, 'AGUA', 'Água', FAMILY.drinks, '60.00', {
     variants: [
-      { id: VARIANT.small, code: 'AGUA-P', name: 'Pequena', price: null },
+      { id: VARIANT.small, code: 'AGUA-P', name: 'Pequena' },
       { id: VARIANT.large, code: 'AGUA-G', name: 'Grande', price: mzn('90.00') },
     ],
     barcodes: [{ code: '5601234000028', variantId: VARIANT.large }],
@@ -58,8 +59,8 @@ export const ITEM = {
         minChoices: 1,
         maxChoices: 1,
         options: [
-          { itemId: id(704), variantId: null, quantity: 1 },
-          { itemId: id(705), variantId: null, quantity: 1 },
+          { itemId: id(704), quantity: 1 },
+          { itemId: id(705), quantity: 1 },
         ],
       },
       {
@@ -69,8 +70,8 @@ export const ITEM = {
         maxChoices: 2,
         options: [
           { itemId: id(702), variantId: VARIANT.small, quantity: 1 },
-          { itemId: id(701), variantId: null, quantity: 1 },
-          { itemId: id(703), variantId: null, quantity: 1 },
+          { itemId: id(701), quantity: 1 },
+          { itemId: id(703), quantity: 1 },
         ],
       },
     ],
@@ -83,10 +84,10 @@ export const SNAPSHOT: CatalogSnapshot = {
   version: 7,
   currency: 'MZN',
   families: [
-    { id: FAMILY.drinks, code: 'BEBIDAS', name: 'Bebidas', parentId: null },
+    { id: FAMILY.drinks, code: 'BEBIDAS', name: 'Bebidas' },
     { id: FAMILY.coffees, code: 'CAFES', name: 'Cafés', parentId: FAMILY.drinks },
-    { id: FAMILY.dishes, code: 'PRATOS', name: 'Pratos', parentId: null },
-    { id: FAMILY.menus, code: 'MENUS', name: 'Menus', parentId: null },
+    { id: FAMILY.dishes, code: 'PRATOS', name: 'Pratos' },
+    { id: FAMILY.menus, code: 'MENUS', name: 'Menus' },
   ],
   items: Object.values(ITEM),
 };
@@ -96,8 +97,7 @@ export const CATALOG: PosCatalogResponse = {
   storeId: SESSION.storeId,
   version: 7,
   effectiveAt: '2026-11-18T06:00:00Z',
-  // The contract types the snapshot as a JsonNode (gap-catalog-snapshot): the backend sends the snapshot itself.
-  catalog: SNAPSHOT as unknown as PosCatalogResponse['catalog'],
+  catalog: SNAPSHOT,
 };
 
 export const ORDER_ID = id(500);
