@@ -161,7 +161,7 @@ public enum Permission {
     /** Rebuild stock balances, reprocess consumption exceptions. */
     INVENTORY_REBUILD;
 
-    static final String PREFIX = "PERM_";
+    private static final String PREFIX = "PERM_";
 
     /** D142 (P54): the permissions that need a fresh second factor; code-defined like the permissions themselves. */
     private static final Set<Permission> SENSITIVE = EnumSet.of(

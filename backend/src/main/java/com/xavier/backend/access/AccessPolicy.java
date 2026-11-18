@@ -173,12 +173,8 @@ public class AccessPolicy {
         if (actor.kind() != ActorKind.ACCOUNT) {
             throw denied(actor, "(BackOffice account)", ANY_STORE, ": a BackOffice account is required");
         }
-        boolean global = actor.authorities().stream().anyMatch(a -> a.startsWith(Permission.PREFIX) && !a.contains("@"));
-        Set<UUID> stores = actor.authorities().stream()
-                .filter(a -> a.startsWith(Permission.PREFIX) && a.contains("@"))
-                .map(a -> UUID.fromString(a.substring(a.indexOf('@') + 1)))
-                .collect(Collectors.toUnmodifiableSet());
-        return new AccessScope(global, stores);
+        StoreScope reach = StoreScope.of(actor); // the same rule as the connection's store scope (D162)
+        return new AccessScope(reach.allStores(), reach.stores());
     }
 
     /**
