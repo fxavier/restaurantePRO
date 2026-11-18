@@ -33,11 +33,13 @@ public class PosLoginService {
     private final LoginAudit audit;
     private final TerminalSessionService sessions;
     private final TenantScopes tenants;
+    private final SessionTenant sessionTenant;
 
     PosLoginService(OrganizationApi organization, PinVerification pins,
                     EmployeeStoreAssignmentRepository assignments, AuthorityResolver authorities, LoginAudit audit,
-                    TerminalSessionService sessions, TenantScopes tenants) {
+                    TerminalSessionService sessions, TenantScopes tenants, SessionTenant sessionTenant) {
         this.tenants = tenants;
+        this.sessionTenant = sessionTenant;
         this.organization = organization;
         this.pins = pins;
         this.assignments = assignments;
@@ -69,7 +71,7 @@ public class PosLoginService {
         Actor actor = Actor.employee(check.employeeId(), terminal.id(), terminal.storeId(), check.mustChangePin()
                 ? Set.of() : authorities.ofEmployeeInStore(check.employeeId(), terminal.storeId()));
         audit.loggedIn(actor);
-        return SessionView.employee(actor, check.name(), check.mustChangePin())
+        return sessionTenant.stamp(SessionView.employee(actor, check.name(), check.mustChangePin()))
                 .withPosSession(sessions.open(terminal.id(), terminal.storeId(), check.employeeId()));
     }
 

@@ -31,7 +31,8 @@ import org.springframework.context.annotation.Import;
  * application role, which holds no privilege on any tenancy table. A membership resolves only for its own (issuer,
  * subject), kinds and tenant, with the same empty answer for a foreign and a random tenant; writes act on the bound
  * tenant only (another tenant {@code 42501}, none {@code RS003}); a support grant lasts at most 24 h; only ACTIVE
- * tenants are iterated; activation leaves PROVISIONING only; an unconfigured identity provider fails closed.
+ * tenants are iterated; activation leaves PROVISIONING only; the status and legal name are the bound tenant's only;
+ * an unconfigured identity provider fails closed.
  */
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
@@ -166,6 +167,20 @@ class TenancyFunctionsTest {
         } finally {
             // no ACTIVE test tenant is left for the other suites' jobs
             TenantTestSupport.ensureTenant(provisioning, "functions-" + provisioning, "CLOSED");
+        }
+    }
+
+    @Test
+    void theBoundTenantsLegalNameIsReadableAndNoOtherTenants() {
+        assertThat(TenantTestSupport.inTenant(tenants, TenantTestSupport.A,
+                () -> tenancy.legalName(TenantTestSupport.A))).isEqualTo("tenant-a");
+        assertState(() -> TenantTestSupport.inTenant(tenants, TenantTestSupport.A,
+                () -> tenancy.legalName(TenantTestSupport.B)), "42501");
+        assertState(() -> TenantTestSupport.inTenant(tenants, TenantTestSupport.A,
+                () -> tenancy.legalName(UUID.randomUUID())), "42501");
+        try (AppRoleSession app = AppRoleSession.open().noTenant()) {
+            assertState(() -> app.jdbc().sql("SELECT tenancy.tenant_legal_name(?)").param(TenantTestSupport.A)
+                    .query(String.class).single(), "RS003");
         }
     }
 

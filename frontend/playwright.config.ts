@@ -1,9 +1,13 @@
 import { defineConfig, devices } from '@playwright/test';
 
-// Smoke tests run against the built apps served by `vite preview`. Issue 05 points them at the real origins of the
-// compose stack instead, through E2E_POS_URL and E2E_BACKOFFICE_URL (ADR 0043); no preview server is started then.
+// Two modes.
+// - Preview (default): the smoke tests against the built apps served by `vite preview`.
+// - Real stack (ADR 0043): E2E_POS_URL and E2E_BACKOFFICE_URL point at the origins of the compose stack
+//   (deploy/e2e/stack.sh up; `stack.sh test` sets them). No preview server is started; the global setup seeds this
+//   run's tenant, administrator, waiter and catalog, and the `stack` project runs the specs that need the backend.
 const posUrl = process.env.E2E_POS_URL ?? 'http://localhost:4173';
 const backOfficeUrl = process.env.E2E_BACKOFFICE_URL ?? 'http://localhost:4174';
+const realStack = !!process.env.E2E_POS_URL && !!process.env.E2E_BACKOFFICE_URL;
 const preview = !process.env.E2E_POS_URL && !process.env.E2E_BACKOFFICE_URL;
 
 export default defineConfig({
@@ -12,7 +16,10 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: { trace: 'retain-on-failure' },
+  globalSetup: realStack ? './e2e/global-setup.ts' : undefined,
   projects: [
+    // node-only helpers of the e2e (no browser)
+    { name: 'support', testDir: './e2e/support' },
     {
       name: 'pos',
       testDir: './e2e/pos',
@@ -23,6 +30,17 @@ export default defineConfig({
       testDir: './e2e/backoffice',
       use: { ...devices['Desktop Chrome'], baseURL: backOfficeUrl, viewport: { width: 1280, height: 800 } },
     },
+    ...(realStack
+      ? [
+          {
+            name: 'stack',
+            testDir: './e2e/stack',
+            // a sign-in may wait up to 30 s for a TOTP period the global setup's sign-in did not use
+            timeout: 90_000,
+            use: { ...devices['Desktop Chrome'], baseURL: backOfficeUrl, viewport: { width: 1280, height: 800 } },
+          },
+        ]
+      : []),
   ],
   webServer: preview
     ? [

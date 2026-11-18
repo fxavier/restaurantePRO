@@ -114,6 +114,13 @@ public class TenancyApi {
                 .query(String.class).single());
     }
 
+    /** The bound tenant's legal name, as {@link #membershipSummaries} lists it ({@code tenantId}: the bound one). */
+    @Transactional(readOnly = true)
+    public String legalName(UUID tenantId) {
+        return jdbc.sql("SELECT tenancy.tenant_legal_name(:tenant)").param("tenant", tenantId)
+                .query(String.class).single();
+    }
+
     /** The last step of onboarding: the bound tenant leaves PROVISIONING (idempotent once ACTIVE). */
     @Transactional
     public void activate(UUID tenantId) {

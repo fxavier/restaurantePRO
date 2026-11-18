@@ -15,9 +15,12 @@ and registers the provisioners' keys.
 | `realm-restaurantpro-devices.json` | `restaurantpro-devices` | terminals and print bridges (`pos-*`, `bridge-*` clients, created at run time); no user |
 
 Both have the `restaurantpro-api` audience client (bearer only; the BFF's audience mapper adds it to every access
-token), the `backoffice-bff` confidential client (authorization code + PKCE `S256`, `private_key_jwt`, default ACR `1`),
-and the browser flow `loa browser`: LoA 1 password, LoA 2 OTP with a 300 s maximum age (D184, RFC 9470). Token
-lifetimes: access 5 min, SSO idle 30 min, maximum 10 h, refresh tokens rotated on every use. No secret is in these
+token), the `backoffice-bff` confidential client (authorization code + PKCE `S256`, `private_key_jwt`, default ACR `2`, FE-F07),
+and the browser flow `loa browser`: LoA 1 password, LoA 2 OTP with a 300 s maximum age (D184, RFC 9470).
+*(As built, FE-F07: the default ACR is `2`, so a login that sends no `acr_values` (the BFF's plain
+`/oauth2/authorization/keycloak`) still runs the LoA 2 step and asks for the OTP after the password; its token carries
+`acr` `2`. Keycloak 26.8 applies the client's default ACR when the request names no level; `KeycloakLoginIT` proves it.)*
+Token lifetimes: access 5 min, SSO idle 30 min, maximum 10 h, refresh tokens rotated on every use. No secret is in these
 files: clients authenticate with `private_key_jwt`, and no user is exported. S72 owns the clients' redirect URIs and keys.
 The tenant realm also enables fine-grained admin permissions (`adminPermissionsEnabled`) and declares the
 `tenancy-provisioner` confidential client (service account, `client-jwt` with ES256, no browser, implicit or password
@@ -62,6 +65,23 @@ docker compose rm -sf keycloak keycloak-db && docker volume rm backend_restauran
 ```
 
 The volume name has the Compose project as its prefix (`backend` by default; see `docker volume ls`).
+
+## The BFF's key in development and end-to-end stacks (frontend R1, ticket 05)
+
+Nothing in the realm exports or in `keycloak-provisioners.sh` registers a key on `backoffice-bff`, so a locally run
+BFF cannot exchange its authorization code. `deploy/keycloak-bff-dev-key.sh` fixes that for loopback stacks only:
+
+```bash
+deploy/keycloak-bff-dev-key.sh --url http://localhost:8180 --admin-password-file <file> \
+  --key-file <dir outside the repository>/backoffice-bff.jwk [--origin http://localhost:5174]
+```
+
+It generates a P-256 private JWK (ES256, with a `kid`) in `--key-file` (0600; the BFF's
+`RESTAURANTPRO_BFF_CLIENT_KEY_FILE`), keeps it on later runs unless `--rotate`, and registers only the public JWK on
+the client. `--origin` also adds that BackOffice origin's redirect URI, web origin and post-logout URI to the client.
+It has the same loopback guard as the e2e seed (Keycloak URL, announced issuer, origin). `deploy/e2e/stack.sh up` runs
+it with the e2e origin `http://localhost:14174`. Production keys are installation secrets (deploy/README.md,
+"Frontend origins").
 
 ## End-to-end tenant administrator with a known OTP secret (frontend R1, G16)
 
