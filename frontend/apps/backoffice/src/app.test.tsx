@@ -460,7 +460,7 @@ describe('Company guard (FE-F16): a tab only ever shows and writes in the compan
     expect(screen.queryByRole('option', { name: 'Loja Matola' })).not.toBeInTheDocument();
   });
 
-  it('reloads the page on 409 TENANT_CHANGED, and the reloaded page says which company is now active', async () => {
+  it('reloads the page on 409 TENANT_CHANGED, and the reloaded page says which company is now active and that the write was lost', async () => {
     const bff = bffWithTwoCompanies({ refuseWrites: true });
     const app = renderApp();
     await screen.findByRole('option', { name: 'Loja Baixa' });
@@ -472,12 +472,14 @@ describe('Company guard (FE-F16): a tab only ever shows and writes in the compan
     app.unmount();
     bff.company = companyB;
     reloadPage();
-    expect(await screen.findByText('A empresa ativa mudou noutro separador para Restaurante B, Lda.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('A empresa ativa mudou noutro separador para Restaurante B, Lda. A última alteração não foi guardada.'),
+    ).toBeInTheDocument();
   });
 
   it('shows the notice once: the next page load does not repeat it', async () => {
     bffWithTwoCompanies();
-    sessionStorage.setItem('restaurantpro.backoffice.tenantChanged', '1');
+    sessionStorage.setItem('restaurantpro.backoffice.tenantChanged', 'false');
     const first = renderApp();
     await screen.findByText('A empresa ativa mudou noutro separador para Restaurante A, Lda.');
     first.unmount();

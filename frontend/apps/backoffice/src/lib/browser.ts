@@ -44,21 +44,23 @@ export function loginSucceeded() {
 
 /**
  * FE-F16: another tab switched the BFF's company. The page is reloaded at `/`, so nothing loaded for the old company
- * survives, and the reloaded page says so once: a flag in sessionStorage (no tenant data). At most once per page load.
+ * survives, and the reloaded page says so once: a flag in sessionStorage holding only whether a write was refused (no
+ * tenant or request data). At most once per page load.
  */
 const TENANT_CHANGED = 'restaurantpro.backoffice.tenantChanged';
 let reloading = false;
 
-export function reloadForTenantChange() {
+export function reloadForTenantChange({ writeLost }: { writeLost: boolean }) {
   if (reloading) return;
   reloading = true;
-  sessionStorage.setItem(TENANT_CHANGED, '1');
+  sessionStorage.setItem(TENANT_CHANGED, String(writeLost));
   browser.assign('/');
 }
 
-/** Whether this page load follows a tenant change in another tab. */
-export function tenantChangedBeforeLoad(): boolean {
-  return sessionStorage.getItem(TENANT_CHANGED) === '1';
+/** Whether this page load follows a tenant change in another tab, and whether a write was refused for it. */
+export function tenantChangedBeforeLoad(): { writeLost: boolean } | undefined {
+  const flag = sessionStorage.getItem(TENANT_CHANGED);
+  return flag === null ? undefined : { writeLost: flag === 'true' };
 }
 
 export function forgetTenantChange() {
