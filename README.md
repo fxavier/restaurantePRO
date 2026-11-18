@@ -14,5 +14,6 @@ Requires JDK 25 and Docker. From `backend/`:
 - Health: http://localhost:8081/actuator/health
 - If the dev database was created with another password: `docker compose down -v` (deletes local dev data only), then run `./run-local.sh` again.
 - Tests: `./mvnw clean test`. They start their own PostgreSQL through Testcontainers, so the dev database is not needed.
+- API contract snapshot (ADR 0042): `frontend/packages/api-client/openapi.json` is the committed OpenAPI document the frontend client is generated from. After a change to a route, DTO or header, refresh it from `backend/` with `rtk mvn test -Dtest=OpenApiSnapshotTest -Dopenapi.snapshot=write` (no running server needed; Docker is) and commit the diff. Without the flag, `OpenApiSnapshotTest` runs in the normal suite and fails when the committed snapshot is stale.
 
 This setup is for development only. Production runs from `deploy/`, where Swagger needs a token too; see `deploy/README.md`.
