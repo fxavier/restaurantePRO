@@ -13,6 +13,8 @@ export type OpenTableRequest = Schemas['com.xavier.backend.orders.model.dto.Open
 export type AddLineRequest = Schemas['com.xavier.backend.orders.model.dto.AddLineRequest'];
 export type UpdateLineRequest = Schemas['com.xavier.backend.orders.model.dto.UpdateLineRequest'];
 export type DeleteLineRequest = Schemas['com.xavier.backend.orders.model.dto.DeleteLineRequest'];
+export type ConfirmBatchRequest = Schemas['com.xavier.backend.orders.model.dto.ConfirmBatchRequest'];
+export type BatchView = Schemas['com.xavier.backend.orders.model.dto.BatchView'];
 
 const mzn = (amount: string) => ({ amount, currency: 'MZN' });
 
@@ -249,6 +251,10 @@ export const updateLineEndpoint = (orderId: string, lineId: string, ...answers: 
 /** `DELETE /api/v1/pos/orders/{id}/lines/{lineId}` (204). */
 export const deleteLineEndpoint = (orderId: string, lineId: string, ...answers: Answer<DeleteLineRequest>[]) =>
   recording<DeleteLineRequest>('delete', `/api/v1/pos/orders/${orderId}/lines/${lineId}`, queue(...answers));
+
+/** `POST /api/v1/pos/orders/{id}/batches` ("Pedir"). */
+export const batchEndpoint = (orderId: string, ...answers: Answer<ConfirmBatchRequest>[]) =>
+  recording<ConfirmBatchRequest>('post', `/api/v1/pos/orders/${orderId}/batches`, queue(...answers));
 
 export const json = (body: object) => () => HttpResponse.json(body);
 export const created = (body: object) => () => HttpResponse.json(body, { status: 201 });

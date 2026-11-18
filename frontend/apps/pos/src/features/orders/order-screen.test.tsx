@@ -19,6 +19,7 @@ import {
   withLines,
   orderEndpoint,
 } from '../../test/order';
+import { atOrder, drafts, panel, ready } from '../../test/order-screen';
 import { renderPos } from '../../test/render-pos';
 import { notificationsEndpoint, problem, tableMap, tablesEndpoint, token, tokenEndpoint } from '../../test/server';
 import { MAP } from '../../test/table-map';
@@ -33,29 +34,6 @@ const added: LineView = {
   gross: { amount: 450, currency: 'MZN' },
 };
 
-/** The order screen of M2, its order answering `answers` in turn (the last repeats). */
-async function atOrder(
-  answers: (() => Response | Promise<Response>)[] = [json(ORDER)],
-  options: Parameters<typeof renderPos>[0] = {},
-) {
-  tokenEndpoint(token('jwt-1'));
-  tablesEndpoint(tableMap(MAP));
-  const catalog = catalogEndpoint();
-  const order = orderEndpoint(ORDER_ID, ...answers);
-  const rendered = await renderPos({ device: 'enrolled', loggedIn: true, path: '/tables', ...options });
-  // The login lands on the map; from there, the order.
-  await screen.findByRole('heading', { name: 'Mesas' });
-  await act(() => rendered.router.navigate(`/orders/${ORDER_ID}`));
-  return { ...rendered, catalog, order };
-}
-
-async function ready() {
-  await screen.findByRole('heading', { name: 'Mesa M2' });
-  await screen.findByRole('button', { name: /^Bica/ });
-}
-
-const panel = () => screen.getByRole('complementary', { name: 'Pedido' });
-const drafts = () => within(panel()).getByRole('list', { name: 'Por enviar' });
 const products = () => screen.getByRole('list', { name: 'Artigos' });
 const tile = (name: RegExp) => within(products()).getByRole('button', { name });
 const familyRail = () => screen.getByRole('navigation', { name: 'Famílias' });
@@ -140,13 +118,6 @@ describe('order screen', () => {
 
     expect(within(panel()).getByText('Sem linhas por enviar.')).toBeInTheDocument();
     expect(within(panel()).getByText('Nada enviado ainda.')).toBeInTheDocument();
-  });
-
-  it('"Pedir" is reserved, disabled until the next step', async () => {
-    await atOrder();
-    await ready();
-
-    expect(within(panel()).getByRole('button', { name: 'Pedir' })).toBeDisabled();
   });
 
   it('browses the products by family; a subfamily\'s items show under its family; fees never show', async () => {

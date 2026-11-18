@@ -8,11 +8,13 @@ import { byCode, type CatalogItem, itemLabel, needsChoices, search } from '../..
 import { FamilyRail } from '../../catalog/components/family-rail';
 import { ProductGrid } from '../../catalog/components/product-grid';
 import { useCatalog } from '../../catalog/hooks/use-catalog';
+import { isCatalogConflict, type Shown, useConfirmBatch } from '../hooks/use-confirm-batch';
 import { useAddLine, useDraftLineCommands } from '../hooks/use-order-commands';
 import type { Order, OrderLine } from '../order';
 import { ChoiceSheet, type Choices } from './choice-sheet';
 import { NoteDialog } from './note-dialog';
 import { lineName, OrderPanel } from './order-panel';
+import { SendRound } from './send-round';
 
 type Props = {
   order: Order;
@@ -38,6 +40,14 @@ export function OrderScreen({ order, blocked, back }: Props) {
   const [notice, setNotice] = useState<string>();
   const [choosing, setChoosing] = useState<Choosing>();
   const [noteFor, setNoteFor] = useState<OrderLine>();
+  // What the last "Pedir" did: the round number the server answered (null: an answer without it), and after a price
+  // or catalog conflict, the prices shown before it, beside the new ones.
+  const [sentBatchNo, setSentBatchNo] = useState<number | null>();
+  const [shownBefore, setShownBefore] = useState<Shown['gross']>();
+  const send = useConfirmBatch(order.id, {
+    onSent: (batch) => setSentBatchNo(batch?.batchNo ?? null),
+    onRefused: (error, shown) => setShownBefore(isCatalogConflict(error) ? shown.gross : undefined),
+  });
   const searchField = useRef<HTMLInputElement>(null);
   const open = order.lifecycle === 'OPEN';
   const canCommand = open && !blocked;
@@ -50,7 +60,16 @@ export function OrderScreen({ order, blocked, back }: Props) {
 
   const shownFamily = family ?? catalog.data?.families[0]?.id;
 
+  /** Any other command makes the last "Pedir"'s outcome old news. */
+  function forgetLastSend() {
+    setSentBatchNo(undefined);
+    setShownBefore(undefined);
+    // A refusal is cleared; an unknown outcome stays, with its key, for "Tentar novamente".
+    if (!send.intent) send.discard();
+  }
+
   function addLine(item: CatalogItem, choices: Choices = {}) {
+    forgetLastSend();
     const label = itemLabel(catalog.data!, item.id, choices.variantId) ?? item.name;
     add.start({ itemId: item.id, quantity: 1, components: [], ...choices }, { label });
   }
@@ -74,17 +93,43 @@ export function OrderScreen({ order, blocked, back }: Props) {
     }
   }
 
+  function pedir() {
+    forgetLastSend();
+    if (order.catalogVersion === undefined) return;
+    send.start(
+      {
+        orderVersion: order.version,
+        catalogVersion: order.catalogVersion,
+        promotionVersion: order.promotionVersion,
+        lineIds: order.drafts.map((line) => line.id),
+      },
+      { gross: new Map(order.drafts.map((line) => [line.id, line.gross])) },
+    );
+  }
+
   const draftCommands = {
-    disabled: !canCommand || update.isPending || remove.isPending,
-    onQuantity: (line: OrderLine, quantity: number) =>
+    disabled: !canCommand || update.isPending || remove.isPending || send.pending,
+    onQuantity: (line: OrderLine, quantity: number) => {
+      forgetLastSend();
       update.mutate({
         lineId: line.id,
         body: { version: line.version, quantity, variantId: line.variantId, notes: line.notes },
-      }),
-    onRemove: (line: OrderLine) => remove.mutate({ lineId: line.id, version: line.version }),
+      });
+    },
+    onRemove: (line: OrderLine) => {
+      forgetLastSend();
+      remove.mutate({ lineId: line.id, version: line.version });
+    },
     onNote: (line: OrderLine) => setNoteFor(line),
   };
   const draftError = update.error ?? remove.error;
+  const canSend =
+    canCommand &&
+    order.drafts.length > 0 &&
+    order.catalogVersion !== undefined &&
+    add.intent === undefined &&
+    !update.isPending &&
+    !remove.isPending;
 
   return (
     <div className="grid min-h-0 flex-1 grid-cols-[160px_minmax(0,1fr)_360px]">
@@ -150,17 +195,8 @@ export function OrderScreen({ order, blocked, back }: Props) {
         commands={draftCommands}
         back={back}
         message={!open ? closedMessage(order) : draftError ? draftMessage(draftError) : undefined}
-        action={
-          // "Pedir" arrives with the next step (issue 12); its place is kept, so nothing moves then.
-          <div className="flex flex-col gap-1">
-            <Button size="touch-primary" className="w-full" disabled aria-describedby="order-send-note">
-              Pedir
-            </Button>
-            <p id="order-send-note" className="text-center text-sm text-muted-foreground">
-              O envio para a produção chega no próximo passo.
-            </p>
-          </div>
-        }
+        shownBefore={shownBefore}
+        action={<SendRound send={send} disabled={!canSend} blocked={!canCommand} sentBatchNo={sentBatchNo} onSend={pedir} />}
       />
       {choosing && catalog.data && (
         <ChoiceSheet
@@ -180,6 +216,7 @@ export function OrderScreen({ order, blocked, back }: Props) {
           notes={noteFor.notes}
           onCancel={() => setNoteFor(undefined)}
           onSave={(notes) => {
+            forgetLastSend();
             update.mutate({
               lineId: noteFor.id,
               body: { version: noteFor.version, quantity: noteFor.quantity, variantId: noteFor.variantId, notes },
