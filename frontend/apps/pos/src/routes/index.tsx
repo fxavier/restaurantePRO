@@ -1,6 +1,7 @@
 import { Navigate, type RouteObject } from 'react-router';
 import { EnrolPage } from './enrol-page';
 import { LoginPage } from './login-page';
+import { OrderPage } from './order-page';
 import { RequireDevice } from './require-device';
 import { RequireSession } from './require-session';
 import { TablePage } from './table-page';
@@ -18,6 +19,7 @@ export const routes: RouteObject[] = [
         children: [
           { path: '/tables', element: <TablesPage /> },
           { path: '/tables/:tableId', element: <TablePage /> },
+          { path: '/orders/:orderId', element: <OrderPage /> },
           { path: '*', element: <Navigate to="/tables" replace /> },
         ],
       },
