@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { refused, server, token, tokenEndpoint, unreachable } from './test/server';
@@ -67,18 +67,18 @@ describe('POS shell', () => {
     await expect(services.api.GET('/api/v1/auth/session')).rejects.toMatchObject({ status: 0, code: 'NETWORK' });
   });
 
-  it('returns a revoked terminal to enrolment, with an explanation, and forgets its key', async () => {
+  it('shows a refused terminal as revoked and keeps its key: nothing is erased automatically', async () => {
     tokenEndpoint(refused(401, 'invalid_client'));
-    const { devices } = await renderPos({ device: 'enrolled' });
+    const { devices, router } = await renderPos({ device: 'enrolled' });
 
-    expect(await screen.findByRole('heading', { level: 2, name: 'Registar este terminal' })).toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent(
-      'Este terminal foi desativado. Peça um novo código de registo ao administrador.',
-    );
-    await expect(devices.load()).resolves.toBeUndefined();
+    expect(await screen.findByRole('heading', { name: 'Terminal revogado ou inválido' })).toBeInTheDocument();
+    expect(screen.getByText(/Um administrador tem de emitir um novo código de registo/)).toBeInTheDocument();
+    expect(screen.queryByText('Terminal registado.')).not.toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/login');
+    expect((await devices.load())?.enrolment).toBeDefined();
   });
 
-  it('on a refused call renews once; a refused renewal means revoked, so back to enrolment', async () => {
+  it('on a refused call renews once; a refused renewal shows the revoked state, key kept', async () => {
     tokenEndpoint(token('jwt-1'), refused(400, 'unauthorized_client'));
     const bearers = sessionEndpoint(() =>
       HttpResponse.json({ title: 'Unauthorized', status: 401 }, { status: 401 }),
@@ -89,6 +89,32 @@ describe('POS shell', () => {
     await expect(services.api.GET('/api/v1/auth/session')).rejects.toMatchObject({ status: 401 });
 
     expect(bearers).toEqual(['Bearer jwt-1']);
+    expect(await screen.findByRole('heading', { name: 'Terminal revogado ou inválido' })).toBeInTheDocument();
+    expect((await devices.load())?.enrolment).toBeDefined();
+  });
+
+  it('"Registar de novo" asks first; cancelling keeps the key', async () => {
+    tokenEndpoint(refused(401, 'invalid_client'));
+    const { devices, user } = await renderPos({ device: 'enrolled' });
+    await screen.findByRole('heading', { name: 'Terminal revogado ou inválido' });
+
+    await user.click(screen.getByRole('button', { name: 'Registar de novo' }));
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
+
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect((await devices.load())?.enrolment).toBeDefined();
+  });
+
+  it('only the confirmed "Registar de novo" clears the device record and opens enrolment', async () => {
+    tokenEndpoint(refused(401, 'invalid_client'));
+    const { devices, user } = await renderPos({ device: 'enrolled' });
+    await screen.findByRole('heading', { name: 'Terminal revogado ou inválido' });
+
+    await user.click(screen.getByRole('button', { name: 'Registar de novo' }));
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Apagar e registar de novo' }));
+
     expect(await screen.findByRole('heading', { level: 2, name: 'Registar este terminal' })).toBeInTheDocument();
     await expect(devices.load()).resolves.toBeUndefined();
   });

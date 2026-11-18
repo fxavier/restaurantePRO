@@ -1,24 +1,21 @@
 import { ApiError } from '@restaurantpro/api-client';
-import { Navigate, useLocation, useNavigate } from 'react-router';
+import { Navigate, useNavigate } from 'react-router';
 import { EnrolmentForm } from '../features/organization/components/enrolment-form';
 import { useEnrol } from '../features/organization/hooks/use-enrol';
 import { useStoredDevice } from '../lib/auth/use-stored-device';
 import { errorMessage } from '../lib/error-messages';
 import { PosScreen } from './pos-screen';
 
-export const REVOKED = 'Este terminal foi desativado. Peça um novo código de registo ao administrador.';
-
 /** `/enrol` (D182, FC §6): a terminal without a device key; an enrolled one goes on to the PIN screen. */
 export function EnrolPage() {
   const device = useStoredDevice();
   const enrol = useEnrol();
   const navigate = useNavigate();
-  const revoked = (useLocation().state as { revoked?: boolean } | null)?.revoked === true;
 
   if (device.loading) return null;
   if (device.record?.enrolment && !enrol.isPending) return <Navigate to="/login" replace />;
 
-  const message = enrol.error ? enrolmentError(enrol.error) : revoked ? REVOKED : undefined;
+  const message = enrol.error ? enrolmentError(enrol.error) : undefined;
 
   return (
     <PosScreen>

@@ -5,7 +5,8 @@ import type { Enrolment } from './device-store';
  * - `idle`: no enrolled device yet (or stopped).
  * - `ready`: a token is held.
  * - `unavailable`: Keycloak did not answer usefully; retried every few seconds ("Sem ligação", FC §11).
- * - `revoked`: Keycloak refused the client (disabled or deleted, D182): the terminal must enrol again.
+ * - `revoked`: Keycloak refused the client (disabled or deleted, D182, or a skewed clock): no more requests; the key
+ *   is kept, and only the user's confirmed "Registar de novo" erases it.
  */
 export type TokenStatus = 'idle' | 'ready' | 'unavailable' | 'revoked';
 

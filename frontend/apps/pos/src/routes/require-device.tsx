@@ -3,10 +3,11 @@ import { useEffect, useSyncExternalStore } from 'react';
 import { Navigate, Outlet, useNavigate } from 'react-router';
 import { useStoredDevice } from '../lib/auth/use-stored-device';
 import { useServices } from '../lib/services';
+import { RevokedState } from './revoked-state';
 
 /**
  * The guard of every route but `/enrol` (FC §4): no enrolled device → `/enrol`. With one, it keeps the terminal token
- * (D182): "Sem ligação" while Keycloak is unreachable, and back to `/enrol`, key forgotten, when the token is refused.
+ * (D182): "Sem ligação" while Keycloak is unreachable; a refused token shows the revoked state, key kept.
  */
 export function RequireDevice() {
   const { tokens, devices } = useServices();
@@ -19,14 +20,16 @@ export function RequireDevice() {
     if (enrolled?.enrolment && !tokens.active()) void tokens.start(enrolled.enrolment, enrolled.keyPair.privateKey);
   }, [enrolled, tokens]);
 
-  useEffect(() => {
-    if (status !== 'revoked') return;
+  /** The only path that erases the device key (after the confirm dialog). Stopping last avoids a flash of the PIN screen. */
+  async function reEnrol() {
+    await devices.clear();
     tokens.stop();
-    void devices.clear().finally(() => navigate('/enrol', { replace: true, state: { revoked: true } }));
-  }, [status, tokens, devices, navigate]);
+    navigate('/enrol', { replace: true });
+  }
 
   if (device.loading) return null;
   if (!device.record?.enrolment) return <Navigate to="/enrol" replace />;
+  if (status === 'revoked') return <RevokedState onReEnrol={() => void reEnrol()} />;
   return (
     <>
       {status === 'unavailable' && (
