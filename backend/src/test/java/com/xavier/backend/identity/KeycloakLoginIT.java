@@ -161,6 +161,119 @@ class KeycloakLoginIT {
                 .andExpect(jsonPath("$.code").value("MFA_STEP_UP_REQUIRED"));
     }
 
+    /**
+     * D184 (FE-F07): MFA on every BackOffice login. A sign-in through {@code backoffice-bff}'s browser flow that asks
+     * for no level ({@code GET /oauth2/authorization/keycloak} sends no {@code acr_values}) still asks for the OTP
+     * after the password, and its access token carries {@code acr 2}: the client's default ACR is 2.
+     */
+    @Test
+    void aBrowserLoginWithoutAcrValuesAsksForTheOtpAndGetsAcr2() throws Exception {
+        String username = "it-mfa-" + UUID.randomUUID().toString().substring(0, 8);
+        String password = "Pw-" + UUID.randomUUID();
+        String totpSecret = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP";
+        String admin = adminToken();
+        String otp = JSON.writeValueAsString(Map.of("type", "otp", "userLabel", "it",
+                "secretData", JSON.writeValueAsString(Map.of("value", totpSecret)),
+                "credentialData", JSON.writeValueAsString(Map.of("subType", "totp", "digits", 6, "counter", 0,
+                        "period", 30, "algorithm", "HmacSHA1", "secretEncoding", "BASE32"))));
+        assertThat(adminCall(admin, "POST", "/users", Map.of("username", username, "enabled", true,
+                "email", username + "@it.example", "emailVerified", true, "firstName", "It", "lastName", "Mfa",
+                "credentials", java.util.List.of(Map.of("type", "password", "value", password, "temporary", false),
+                        JSON.readValue(otp, Map.class)))).statusCode()).isEqualTo(201);
+
+        Browser browser = new Browser();
+        String redirectUri = "http://localhost:5174/login/oauth2/code/keycloak";
+        String verifier = UUID.randomUUID() + "-" + UUID.randomUUID();
+        String challenge = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(java.security.MessageDigest
+                .getInstance("SHA-256").digest(verifier.getBytes(StandardCharsets.US_ASCII)));
+        String issuer = SharedKeycloak.instance().issuer(REALM);
+        HttpResponse<String> loginPage = browser.get(issuer
+                + "/protocol/openid-connect/auth?client_id=backoffice-bff&response_type=code&scope=openid"
+                + "&state=it&code_challenge_method=S256&code_challenge=" + challenge
+                + "&redirect_uri=" + URLEncoder.encode(redirectUri, StandardCharsets.UTF_8));
+        HttpResponse<String> afterPassword = browser.post(formAction(loginPage.body(), "kc-form-login"),
+                Map.of("username", username, "password", password));
+
+        assertThat(afterPassword.statusCode()).as("the password alone must not complete the login: %s",
+                afterPassword.headers().firstValue("Location").orElse("")).isEqualTo(200);
+        HttpResponse<String> afterOtp = browser.post(formAction(afterPassword.body(), "kc-otp-login-form"),
+                Map.of("otp", totp(totpSecret, java.time.Instant.now())));
+        String location = afterOtp.headers().firstValue("Location").orElseThrow();
+        String code = java.util.regex.Pattern.compile("[?&]code=([^&]+)").matcher(location).results()
+                .findFirst().orElseThrow().group(1);
+        HttpResponse<String> exchanged = HTTP.send(HttpRequest.newBuilder(URI.create(
+                        issuer + "/protocol/openid-connect/token"))
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .POST(form(Map.of("grant_type", "authorization_code", "client_id", "backoffice-bff",
+                        "client_secret", CLIENT_SECRET, "code", code, "redirect_uri", redirectUri,
+                        "code_verifier", verifier))).build(), HttpResponse.BodyHandlers.ofString());
+        assertThat(exchanged.statusCode()).as(exchanged.body()).isEqualTo(200);
+
+        assertThat(JWTParser.parse(JSON.readTree(exchanged.body()).get("access_token").asString())
+                .getJWTClaimsSet().getStringClaim("acr")).isEqualTo("2");
+    }
+
+    /**
+     * A browser's cookie jar for Keycloak's login pages, by hand: Keycloak marks its session cookies {@code Secure},
+     * and {@link java.net.CookieManager} never sends a secure cookie over the container's plain HTTP.
+     */
+    private static final class Browser {
+
+        private final Map<String, String> cookies = new java.util.LinkedHashMap<>();
+
+        HttpResponse<String> get(String uri) throws Exception {
+            return send(HttpRequest.newBuilder(URI.create(uri)).GET());
+        }
+
+        HttpResponse<String> post(String uri, Map<String, String> fields) throws Exception {
+            return send(HttpRequest.newBuilder(URI.create(uri))
+                    .header("Content-Type", "application/x-www-form-urlencoded").POST(form(fields)));
+        }
+
+        private HttpResponse<String> send(HttpRequest.Builder request) throws Exception {
+            if (!cookies.isEmpty()) {
+                request.header("Cookie", cookies.entrySet().stream().map(c -> c.getKey() + "=" + c.getValue())
+                        .collect(Collectors.joining("; ")));
+            }
+            HttpResponse<String> response = HTTP.send(request.build(), HttpResponse.BodyHandlers.ofString());
+            response.headers().allValues("Set-Cookie").forEach(header -> {
+                String pair = header.split(";", 2)[0];
+                cookies.put(pair.substring(0, pair.indexOf('=')), pair.substring(pair.indexOf('=') + 1));
+            });
+            return response;
+        }
+    }
+
+    private static String formAction(String page, String formId) {
+        return java.util.regex.Pattern.compile("<form [^>]*id=\"" + formId + "\"[^>]*action=\"([^\"]+)\"|"
+                        + "<form [^>]*action=\"([^\"]+)\"[^>]*id=\"" + formId + "\"")
+                .matcher(page).results().findFirst()
+                .map(m -> (m.group(1) != null ? m.group(1) : m.group(2)).replace("&amp;", "&"))
+                .orElseThrow(() -> new AssertionError("no form " + formId + " in the page"));
+    }
+
+    /** RFC 6238 with the realm's OTP policy: HmacSHA1, 6 digits, 30 s. */
+    private static String totp(String base32Secret, java.time.Instant at) throws Exception {
+        String alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+        java.io.ByteArrayOutputStream key = new java.io.ByteArrayOutputStream();
+        int buffer = 0;
+        int bits = 0;
+        for (char c : base32Secret.toCharArray()) {
+            buffer = (buffer << 5) | alphabet.indexOf(c);
+            bits += 5;
+            if (bits >= 8) {
+                bits -= 8;
+                key.write((buffer >> bits) & 0xff);
+            }
+        }
+        javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA1");
+        mac.init(new javax.crypto.spec.SecretKeySpec(key.toByteArray(), "HmacSHA1"));
+        byte[] hash = mac.doFinal(java.nio.ByteBuffer.allocate(8).putLong(at.getEpochSecond() / 30).array());
+        int offset = hash[hash.length - 1] & 0xf;
+        int binary = java.nio.ByteBuffer.wrap(hash, offset, 4).getInt() & 0x7fffffff;
+        return "%06d".formatted(binary % 1_000_000);
+    }
+
     /** An account of {@code tenant} whose ACCOUNT membership is the Keycloak user's, under the real issuer. */
     private static UUID member(UUID tenant, UUID... roles) {
         UUID account = Members.account(tenant, roles);
