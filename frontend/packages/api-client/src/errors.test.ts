@@ -92,6 +92,48 @@ describe('ApiError mapping', () => {
     });
   });
 
+  it('reads Retry-After in seconds on a 429', async () => {
+    const client = createApiClient({ baseUrl: BASE,
+      fetch: respondWith(
+        new Response(JSON.stringify({ title: 'Too Many Requests', status: 429, code: 'ENROLMENT_THROTTLED' }), {
+          status: 429,
+          headers: { 'Content-Type': 'application/problem+json', 'Retry-After': '42' },
+        }),
+      ),
+    });
+
+    const error = await failureOf(client.GET('/api/v1/auth/session'));
+
+    expect(error).toMatchObject({ status: 429, code: 'ENROLMENT_THROTTLED', retryAfter: 42 });
+  });
+
+  it('reads an HTTP-date Retry-After as the seconds left, never negative', async () => {
+    const inTwoMinutes = new Date(Date.now() + 120_000).toUTCString();
+    const past = new Date(Date.now() - 60_000).toUTCString();
+    const answer = (value: string) =>
+      new Response(null, { status: 429, statusText: 'Too Many Requests', headers: { 'Retry-After': value } });
+
+    const future = await failureOf(createApiClient({ baseUrl: BASE, fetch: respondWith(answer(inTwoMinutes)) })
+      .GET('/api/v1/auth/session'));
+    const elapsed = await failureOf(createApiClient({ baseUrl: BASE, fetch: respondWith(answer(past)) })
+      .GET('/api/v1/auth/session'));
+
+    expect(future.retryAfter).toBeGreaterThan(115);
+    expect(future.retryAfter).toBeLessThanOrEqual(120);
+    expect(elapsed.retryAfter).toBe(0);
+  });
+
+  it('leaves retryAfter undefined when the header is absent or unreadable', async () => {
+    const absent = await failureOf(createApiClient({ baseUrl: BASE, fetch: respondWith(problem(429, { title: 'x' })) })
+      .GET('/api/v1/auth/session'));
+    const garbage = await failureOf(createApiClient({ baseUrl: BASE,
+      fetch: respondWith(new Response(null, { status: 429, headers: { 'Retry-After': 'soon' } })),
+    }).GET('/api/v1/auth/session'));
+
+    expect(absent.retryAfter).toBeUndefined();
+    expect(garbage.retryAfter).toBeUndefined();
+  });
+
   it('maps an answer without a problem body to HTTP_<status> and the status text', async () => {
     const client = createApiClient({ baseUrl: BASE,
       fetch: respondWith(new Response('<html>Bad gateway</html>', { status: 502, statusText: 'Bad Gateway' })),

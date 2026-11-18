@@ -9,6 +9,7 @@ type ApiErrorFields = {
   errors?: FieldError[];
   acrValues?: string;
   maxAge?: number;
+  retryAfter?: number;
 };
 
 /**
@@ -26,6 +27,8 @@ export class ApiError extends Error {
   readonly errors?: FieldError[];
   readonly acrValues?: string;
   readonly maxAge?: number;
+  /** Seconds to wait before trying again, from the `Retry-After` header (a 429 or 503), when the server sent one. */
+  readonly retryAfter?: number;
 
   constructor(fields: ApiErrorFields, options?: ErrorOptions) {
     super(fields.detail ?? fields.title, options);
@@ -37,6 +40,7 @@ export class ApiError extends Error {
     this.errors = fields.errors;
     this.acrValues = fields.acrValues;
     this.maxAge = fields.maxAge;
+    this.retryAfter = fields.retryAfter;
   }
 }
 
@@ -56,7 +60,18 @@ export async function errorFromResponse(response: Response): Promise<ApiError> {
     errors: fieldErrors(body?.errors),
     acrValues: stringField(body, 'acrValues'),
     maxAge: typeof body?.maxAge === 'number' ? body.maxAge : undefined,
+    retryAfter: retryAfterSeconds(response.headers.get('Retry-After')),
   });
+}
+
+/** RFC 9110 §10.2.3: delay-seconds or an HTTP-date; a date already past means "now" (0). */
+function retryAfterSeconds(value: string | null): number | undefined {
+  if (value === null) return undefined;
+  const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) return Number(trimmed);
+  const date = Date.parse(trimmed);
+  if (Number.isNaN(date)) return undefined;
+  return Math.max(0, Math.ceil((date - Date.now()) / 1000));
 }
 
 function parseObject(text: string): Record<string, unknown> | undefined {
