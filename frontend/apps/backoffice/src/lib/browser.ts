@@ -57,6 +57,12 @@ export function reloadForTenantChange({ writeLost }: { writeLost: boolean }) {
   browser.assign('/');
 }
 
+/** The tab's own switch: the page is reloaded on `path`, and nothing read meanwhile counts as another tab's change. */
+export function reloadAfterOwnSwitch(path: string) {
+  reloading = true;
+  browser.assign(path);
+}
+
 /** Whether this page load follows a tenant change in another tab, and whether a write was refused for it. */
 export function tenantChangedBeforeLoad(): { writeLost: boolean } | undefined {
   const flag = sessionStorage.getItem(TENANT_CHANGED);

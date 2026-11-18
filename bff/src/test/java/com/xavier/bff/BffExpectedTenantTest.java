@@ -95,17 +95,55 @@ class BffExpectedTenantTest extends BffTestSupport {
         assertThat(relayed.headers()).doesNotContainKey("x-expected-tenant");
     }
 
+    /**
+     * Without a selection (a single-membership login, perhaps another user's in another tab) the tab's expected tenant
+     * is relayed as X-Tenant-Id: the backend checks it against the caller's memberships (D177), so a tab pinned to
+     * another user's company can neither read nor write in this user's company.
+     */
     @Test
-    void withoutASelectionAWriteIsRelayedAndTheHeaderStripped() throws Exception {
+    void withoutASelectionTheExpectedTenantIsRelayedAsTheTenantAndNamedOnTheAnswer() throws Exception {
         MockHttpSession session = login();
 
+        mvc.perform(get("/api/v1/backoffice/stores").session(session).header(EXPECTED_TENANT, TENANT_A))
+                .andExpect(status().isOk()).andExpect(header().string(RELAYED_TENANT, TENANT_A));
         mvc.perform(post("/api/v1/backoffice/stores").session(session).with(xsrf()).header(EXPECTED_TENANT, TENANT_A))
-                .andExpect(status().isOk());
-        mvc.perform(post("/api/v1/backoffice/stores").session(session).with(xsrf()))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk()).andExpect(header().string(RELAYED_TENANT, TENANT_A));
 
-        assertThat(BACKEND.received()).hasSize(2)
-                .allSatisfy(r -> assertThat(r.headers()).doesNotContainKeys("x-expected-tenant", "x-tenant-id"));
+        assertThat(BACKEND.received()).hasSize(2).allSatisfy(r -> {
+            assertThat(r.header("X-Tenant-Id")).isEqualTo(TENANT_A);
+            assertThat(r.headers()).doesNotContainKey("x-expected-tenant");
+        });
+    }
+
+    @Test
+    void withoutASelectionTheBackendsRefusalOfAForeignTenantPassesThrough() throws Exception {
+        MockHttpSession session = login();
+        BACKEND.willRespond(403, Map.of("Content-Type", "application/problem+json"),
+                "{\"status\":403,\"code\":\"TENANT_FORBIDDEN\"}");
+
+        mvc.perform(post("/api/v1/backoffice/stores").session(session).with(xsrf()).header(EXPECTED_TENANT, TENANT_A))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("TENANT_FORBIDDEN"));
+    }
+
+    @Test
+    void withoutASelectionOrHeaderNothingIsAddedOrNamed() throws Exception {
+        MockHttpSession session = login();
+
+        mvc.perform(post("/api/v1/backoffice/stores").session(session).with(xsrf()))
+                .andExpect(status().isOk()).andExpect(header().doesNotExist(RELAYED_TENANT));
+
+        assertThat(BACKEND.onlyRequest().headers()).doesNotContainKeys("x-expected-tenant", "x-tenant-id");
+    }
+
+    @Test
+    void aMalformedExpectedTenantIsRefusedWithoutReachingTheBackend() throws Exception {
+        MockHttpSession session = login();
+
+        mvc.perform(get("/api/v1/backoffice/stores").session(session).header(EXPECTED_TENANT, "not-a-uuid"))
+                .andExpect(status().isBadRequest());
+
+        assertThat(BACKEND.received()).isEmpty();
     }
 
     @Test

@@ -125,13 +125,13 @@ describe('BackOffice middleware', () => {
     expect(requests[0]?.headers.get('X-Expected-Tenant')).toBe(TENANT);
   });
 
-  it('sends no X-Expected-Tenant on a GET', async () => {
+  it('sends X-Expected-Tenant on a read too, once the tab is pinned', async () => {
     const { fetch, requests } = capturingFetch();
     const client = createApiClient({ baseUrl: BASE, fetch, middleware: [backOffice] });
 
     await client.GET('/api/v1/auth/session');
 
-    expect(requests[0]?.headers.has('X-Expected-Tenant')).toBe(false);
+    expect(requests[0]?.headers.get('X-Expected-Tenant')).toBe(TENANT);
   });
 
   it('reads the tenant on every request, so a write after a switch names the new tenant', async () => {
@@ -169,6 +169,23 @@ describe('BackOffice middleware', () => {
 
         await expect(client.GET('/api/v1/auth/session')).resolves.toMatchObject({ data: { stores: ['secret'] } });
       }
+    });
+
+    it('turns the backend refusing the expected tenant (403 TENANT_FORBIDDEN) into TENANT_CHANGED', async () => {
+      const forbidden = async () =>
+        Response.json({ status: 403, code: 'TENANT_FORBIDDEN', title: 'Forbidden' }, { status: 403 });
+      const client = createApiClient({ baseUrl: BASE, fetch: forbidden, middleware: [backOffice] });
+
+      await expect(client.GET('/api/v1/auth/session')).rejects.toMatchObject({ code: 'TENANT_CHANGED' });
+    });
+
+    it('leaves TENANT_FORBIDDEN alone before the tab has a tenant', async () => {
+      const forbidden = async () =>
+        Response.json({ status: 403, code: 'TENANT_FORBIDDEN', title: 'Forbidden' }, { status: 403 });
+      const unpinned = backOfficeMiddleware({ cookies: () => cookies, expectedTenant: () => undefined });
+      const client = createApiClient({ baseUrl: BASE, fetch: forbidden, middleware: [unpinned] });
+
+      await expect(client.GET('/api/v1/auth/session')).rejects.toMatchObject({ code: 'TENANT_FORBIDDEN' });
     });
 
     it('checks nothing before the tab has a tenant', async () => {

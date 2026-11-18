@@ -1,5 +1,5 @@
 import type { Middleware } from 'openapi-fetch';
-import { ApiError } from './errors';
+import { ApiError, errorFromResponse } from './errors';
 
 export type PosCredentials = {
   /** The terminal's access token from the devices realm, held in memory. */
@@ -33,10 +33,11 @@ export type BackOfficeOptions = {
 };
 
 /**
- * BackOffice (D184, FC §6): the BFF session cookie on every call, and on every unsafe one the CSRF header and
- * `X-Expected-Tenant`, so the BFF refuses (409 `TENANT_CHANGED`) a write after another tab switched company. An answer
- * the BFF relayed in another tenant (`X-Relayed-Tenant`) is never handed over: it throws the same `TENANT_CHANGED`
- * (FE-F16).
+ * BackOffice (D184, FC §6): the BFF session cookie on every call and the CSRF header on every unsafe one. Once the tab
+ * is pinned, every call names its tenant in `X-Expected-Tenant` (FE-F16). The call throws `TENANT_CHANGED` instead of
+ * handing over an answer when that tenant no longer holds: the BFF refused a write (409), it relayed the call in
+ * another tenant (`X-Relayed-Tenant`), or the backend refused the expected tenant to the session's user (403
+ * `TENANT_FORBIDDEN`: another user logged in from another tab).
  */
 export function backOfficeMiddleware({ expectedTenant, cookies = () => document.cookie }: BackOfficeOptions): Middleware {
   return {
@@ -45,15 +46,17 @@ export function backOfficeMiddleware({ expectedTenant, cookies = () => document.
       if (UNSAFE_METHODS.has(request.method)) {
         const token = readCookie(cookies(), CSRF_COOKIE);
         if (token) headers.set('X-XSRF-TOKEN', token);
-        const tenant = expectedTenant();
-        if (tenant) headers.set('X-Expected-Tenant', tenant);
       }
+      const tenant = expectedTenant();
+      if (tenant) headers.set('X-Expected-Tenant', tenant);
       return new Request(request, { headers, credentials: 'include' });
     },
-    onResponse({ response }) {
+    async onResponse({ request, response }) {
+      const expected = request.headers.get('X-Expected-Tenant');
+      if (!expected) return undefined;
       const relayed = response.headers.get('X-Relayed-Tenant');
-      const expected = expectedTenant();
-      if (relayed && expected && relayed.toLowerCase() !== expected.toLowerCase()) {
+      const relayedElsewhere = relayed !== null && relayed.toLowerCase() !== expected.toLowerCase();
+      if (relayedElsewhere || (response.status === 403 && (await errorFromResponse(response.clone())).code === 'TENANT_FORBIDDEN')) {
         throw new ApiError({ status: 409, code: 'TENANT_CHANGED', title: 'The selected tenant changed in another tab' });
       }
       return undefined;

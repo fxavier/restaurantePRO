@@ -13,6 +13,6 @@ export function useTenantChangeNotice(): string | undefined {
   }, [changed]);
   const tenantName = useSession().data?.tenantName;
   if (!changed || !tenantName) return undefined;
-  const notice = `A empresa ativa mudou noutro separador para ${tenantName}.`;
+  const notice = `A sessão ou a empresa ativa mudou noutro separador. Empresa ativa: ${tenantName}.`;
   return changed.writeLost ? `${notice} A última alteração não foi guardada.` : notice;
 }

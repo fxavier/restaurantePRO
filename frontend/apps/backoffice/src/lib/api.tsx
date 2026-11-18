@@ -11,7 +11,7 @@ export function createBackOfficeClient(
   tenantPin: TenantPin,
   { baseUrl, cookies }: { baseUrl?: string; cookies?: () => string } = {},
 ): ApiClient {
-  const expectedTenant = () => tenantPin.get();
+  const expectedTenant = () => tenantPin.get()?.tenantId;
   return createApiClient({
     ...(baseUrl === undefined ? {} : { baseUrl }),
     middleware: [backOfficeMiddleware({ expectedTenant, ...(cookies === undefined ? {} : { cookies }) })],

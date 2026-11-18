@@ -2,7 +2,7 @@ import type { ApiClient } from '@restaurantpro/api-client';
 import { useMutation } from '@tanstack/react-query';
 import { useLocation } from 'react-router';
 import { useApi } from '../../../lib/api';
-import { browser } from '../../../lib/browser';
+import { reloadAfterOwnSwitch } from '../../../lib/browser';
 
 /**
  * `PUT /bff/tenant` is the BFF's own route, outside the backend's OpenAPI contract. It goes through the same client, so
@@ -21,7 +21,8 @@ export function useSelectTenant() {
   return useMutation({
     mutationFn: async (tenantId: string) => {
       await (api as ApiClient & BffTenantRoute).PUT('/bff/tenant', { body: { tenantId } });
+      // At once, before any reread can answer in the new company and pass for another tab's switch.
+      reloadAfterOwnSwitch(pathname);
     },
-    onSuccess: () => browser.assign(pathname),
   });
 }

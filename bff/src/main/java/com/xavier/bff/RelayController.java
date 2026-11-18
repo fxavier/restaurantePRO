@@ -2,6 +2,7 @@ package com.xavier.bff;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.oauth2.client.ClientAuthorizationException;
@@ -37,20 +38,31 @@ class RelayController {
     ResponseEntity<byte[]> relay(@RegisteredOAuth2AuthorizedClient(SecurityConfig.REGISTRATION_ID) OAuth2AuthorizedClient client,
                                  HttpServletRequest request, HttpSession session) throws IOException {
         // Read once: the tenant checked is the tenant relayed, even if another tab switches meanwhile.
-        Optional<UUID> tenant = TenantController.selected(session);
-        if (isUnsafe(request) && tenant.isPresent() && !expects(request, tenant.get())) {
-            throw new TenantChangedException();
+        Optional<UUID> selected = TenantController.selected(session);
+        String expected = request.getHeader(EXPECTED_TENANT);
+        if (selected.isPresent()) {
+            if (isUnsafe(request) && !selected.get().toString().equalsIgnoreCase(expected)) {
+                throw new TenantChangedException();
+            }
+            return relay.relay(request, client.getAccessToken().getTokenValue(), selected);
         }
-        return relay.relay(request, client.getAccessToken().getTokenValue(), tenant);
+        return relay.relay(request, client.getAccessToken().getTokenValue(), expectedTenant(expected));
     }
 
     /**
-     * FE-F16: the session holds one selection shared by every tab, so a write must name the tenant its tab shows.
-     * Without a selection the backend resolves the caller's only membership, and there is nothing to compare.
+     * FE-F16: the selection is one per session, shared by every tab, so a write must name the tenant its tab shows.
+     * Without a selection the tab's expected tenant becomes the relayed one: the backend checks it against the caller's
+     * memberships (D177), so a tab pinned to a company the session's user does not belong to (another user logged in
+     * from another tab) is refused instead of acting in that user's only company.
      */
-    private static boolean expects(HttpServletRequest request, UUID selected) {
-        String expected = request.getHeader(EXPECTED_TENANT);
-        return expected != null && expected.equalsIgnoreCase(selected.toString());
+    private static Optional<UUID> expectedTenant(String expected) {
+        if (expected == null) {
+            return Optional.empty();
+        }
+        if (!TenantController.isCanonicalUuid(expected)) {
+            throw new TenantController.InvalidTenantSelectionException();
+        }
+        return Optional.of(UUID.fromString(expected));
     }
 
     private static boolean isUnsafe(HttpServletRequest request) {
@@ -86,6 +98,11 @@ class RelayController {
     }
 
     static final class TenantChangedException extends RuntimeException {
+    }
+
+    @ExceptionHandler(TenantController.InvalidTenantSelectionException.class)
+    ProblemDetail invalidExpectedTenant() {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "X-Expected-Tenant must be a UUID");
     }
 
     @ExceptionHandler(TenantChangedException.class)
