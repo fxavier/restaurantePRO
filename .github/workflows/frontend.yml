@@ -2,7 +2,8 @@
 # OpenAPI snapshot drift check (ADR 0042), on every pull request that touches the frontend or the backend (whose
 # controllers and DTOs are the contract the snapshot records).
 #
-# The Playwright end-to-end job against the compose stack is added by issue 05 (docs/issues/frontend-r1/05-...).
+# Then the Playwright end-to-end job against the real stack (deploy/e2e: PostgreSQL, Keycloak, the backend, the BFF and
+# both SPAs behind their origins, ADR 0041), with its own seeded data per run.
 # The backend's own test suite is not run here; a backend CI is a separate decision (ADR 0043).
 name: frontend
 
@@ -11,12 +12,24 @@ on:
     paths:
       - "frontend/**"
       - "backend/**"
+      - "bff/**"
+      - "deploy/e2e/**"
+      - "deploy/keycloak/**"
+      - "deploy/keycloak-*.sh"
+      - "deploy/Dockerfile*"
+      - "deploy/postgres/provision*"
       - ".github/workflows/frontend.yml"
   push:
     branches: [main]
     paths:
       - "frontend/**"
       - "backend/**"
+      - "bff/**"
+      - "deploy/e2e/**"
+      - "deploy/keycloak/**"
+      - "deploy/keycloak-*.sh"
+      - "deploy/Dockerfile*"
+      - "deploy/postgres/provision*"
       - ".github/workflows/frontend.yml"
 
 concurrency:
@@ -67,3 +80,45 @@ jobs:
       # Fails when frontend/packages/api-client/openapi.json differs from what the backend code produces, naming the
       # first differing line. Needs Docker for the Testcontainers database, which the hosted runner provides.
       - run: ./mvnw -B -ntp test -Dtest=OpenApiSnapshotTest
+
+  e2e:
+    name: end-to-end (real stack)
+    needs: checks
+    runs-on: ubuntu-latest # Docker and Compose v2 are on the hosted runner
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      # Builds both SPAs and the backend and BFF images, generates this run's secrets and keys (deploy/e2e/.run/),
+      # registers them in Keycloak and waits until every service is healthy.
+      - run: pnpm e2e:stack:up
+      # The smoke tests through the real origins, the BackOffice sign-in with OTP and the origin routing; the global
+      # setup seeds a new tenant, administrator, waiter and catalog for this run.
+      - run: pnpm e2e:stack
+      - name: Stack logs
+        if: failure()
+        run: ../deploy/e2e/stack.sh logs --no-color > e2e-stack.log 2>&1 || true
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+            frontend/e2e-stack.log
+          retention-days: 14
+      - name: Stop the stack
+        if: always()
+        run: pnpm e2e:stack:down
