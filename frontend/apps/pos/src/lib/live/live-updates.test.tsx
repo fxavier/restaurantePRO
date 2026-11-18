@@ -90,6 +90,8 @@ describe('live updates', () => {
     streams[0]!.drop();
 
     await waitFor(() => expect(connection()).toHaveTextContent('Sem ligação'));
+    // Only the status bar says so: the full banner is for an unreachable backend or Keycloak.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     const before = requests.length;
     await advance(14_000);
     expect(requests).toHaveLength(before);
@@ -163,6 +165,24 @@ describe('live updates', () => {
     await waitFor(() => expect(connection()).toHaveTextContent('Sem ligação'));
     expect(streams[0]!.closed).toBe(true);
   });
+
+  for (const [status, why] of [
+    [403, 'without DINING_VIEW or PRODUCTION_VIEW'],
+    [401, 'refused'],
+  ] as const) {
+    it(`a ${status} (${why}) stops reconnecting, says "Atualizações indisponíveis" and keeps polling every 15 s`, async () => {
+      fakeTimers();
+      const { calls, requests } = await onTheMap(() => problem(status, `HTTP_${status}`));
+
+      await waitFor(() => expect(connection()).toHaveTextContent('Atualizações indisponíveis'));
+      const before = requests.length;
+      await advance(30_000);
+
+      expect(calls.count).toBe(1);
+      expect(requests).toHaveLength(before + 2);
+      expect(connection()).toHaveTextContent('Atualizações indisponíveis');
+    });
+  }
 
   it('shows "Sem ligação" when the first subscription fails', async () => {
     await onTheMap(() => HttpResponse.error());

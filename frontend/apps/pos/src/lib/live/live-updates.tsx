@@ -1,3 +1,4 @@
+import { ApiError } from '@restaurantpro/api-client';
 import { type QueryKey, useQueryClient } from '@tanstack/react-query';
 import { createContext, type ReactNode, useContext, useEffect, useState } from 'react';
 import { useServices } from '../services';
@@ -47,6 +48,8 @@ export function LiveUpdates({ children }: { children: ReactNode }) {
         onOpen: () => void queryClient.invalidateQueries({ queryKey: ['pos'] }),
         onPoll: () => void queryClient.refetchQueries({ queryKey: ['pos'], type: 'active' }),
         onState: setState,
+        // 403: no DINING_VIEW or PRODUCTION_VIEW; 401: refused (POS_SESSION_INVALID already ends the session).
+        isRefusal: (error) => error instanceof ApiError && (error.status === 401 || error.status === 403),
       }),
     [api, queryClient],
   );

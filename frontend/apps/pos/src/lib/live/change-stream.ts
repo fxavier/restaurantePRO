@@ -1,7 +1,10 @@
 import { readEventStream } from '@restaurantpro/api-client';
 
-/** `connecting` until the first answer; `open` while a stream is read; `down` between a loss and the next opening. */
-export type StreamState = 'connecting' | 'open' | 'down';
+/**
+ * `connecting` until the first answer; `open` while a stream is read; `down` between a loss and the next opening;
+ * `refused` once the backend refused the stream (401, 403): no more attempts, polling only.
+ */
+export type StreamState = 'connecting' | 'open' | 'down' | 'refused';
 
 /** A change notice (D60): what changed, never the data. */
 export type ChangeNotice = { topic: string; id?: string };
@@ -21,13 +24,15 @@ type Options = {
   /** Every POLL_MS while the stream is down. */
   onPoll(): void;
   onState(state: StreamState): void;
+  /** True for a failure retrying cannot fix (the employee may not read the stream). */
+  isRefusal(error: unknown): boolean;
 };
 
 /**
  * Keeps one change stream open until stopped (FC §10): reconnects with backoff after a failure, an end or a silence,
  * and polls while down. Returns `stop`, after which nothing is called any more.
  */
-export function startChangeStream({ open, onChange, onOpen, onPoll, onState }: Options): () => void {
+export function startChangeStream({ open, onChange, onOpen, onPoll, onState, isRefusal }: Options): () => void {
   let stopped = false;
   let failures = 0;
   let current: AbortController | undefined;
@@ -39,7 +44,7 @@ export function startChangeStream({ open, onChange, onOpen, onPoll, onState }: O
     if (stopped || next === state) return;
     state = next;
     clearInterval(poll);
-    if (next === 'down') poll = setInterval(onPoll, POLL_MS);
+    if (next === 'down' || next === 'refused') poll = setInterval(onPoll, POLL_MS);
     onState(next);
   }
 
@@ -73,8 +78,12 @@ export function startChangeStream({ open, onChange, onOpen, onPoll, onState }: O
         },
         read,
       );
-    } catch {
-      // A refusal, no answer, or a read that broke: all the same, the stream is down.
+    } catch (error) {
+      // No answer, a 5xx, or a read that broke: down, and retried. A refusal is final for this session.
+      if (!stopped && isRefusal(error)) {
+        setState('refused');
+        return;
+      }
     } finally {
       clearTimeout(silence);
     }
