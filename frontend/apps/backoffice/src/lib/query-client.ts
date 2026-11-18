@@ -1,11 +1,9 @@
 import { focusManager, MutationCache, QueryCache, QueryClient } from '@tanstack/react-query';
 import { goToLogin } from './browser';
-import { isSessionExpired, isUnavailable } from './errors';
+import { isSessionExpired, isTenantChanged, isUnavailable } from './errors';
 
-/** Any call answered with an expired session sends the user to the login (FC §6, §9). */
-function onError(error: unknown) {
-  if (isSessionExpired(error)) goToLogin();
-}
+/** The signed-in user's `SessionView`; its `tenantId` is the company this tab shows (FE-F08, FE-F16). */
+export const SESSION_QUERY_KEY = ['auth', 'session'] as const;
 
 /**
  * "Focus" means the window has focus and the tab is visible. TanStack listens to `visibilitychange` only; switching
@@ -31,7 +29,15 @@ focusManager.setEventListener((setFocused) => {
  * on an answer; a mutation never retries (FC §8). `retryDelay` is for tests.
  */
 export function createQueryClient({ retryDelay }: { retryDelay?: number } = {}) {
-  return new QueryClient({
+  /**
+   * An expired session sends the user to the login (FC §6, §9). A write refused because another tab switched the
+   * company rereads the session, so the label follows the server; the write itself is not repeated (FE-F16).
+   */
+  const onError = (error: unknown) => {
+    if (isSessionExpired(error)) goToLogin();
+    if (isTenantChanged(error)) void client.invalidateQueries({ queryKey: SESSION_QUERY_KEY });
+  };
+  const client: QueryClient = new QueryClient({
     queryCache: new QueryCache({ onError }),
     mutationCache: new MutationCache({ onError }),
     defaultOptions: {
@@ -43,4 +49,5 @@ export function createQueryClient({ retryDelay }: { retryDelay?: number } = {}) 
       mutations: { retry: false },
     },
   });
+  return client;
 }

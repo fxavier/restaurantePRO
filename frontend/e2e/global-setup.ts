@@ -38,16 +38,17 @@ export default async function globalSetup() {
     const page = await browser.newPage();
     await signInToBackOffice(page, admin.E2E_ADMIN_EMAIL, admin.E2E_ADMIN_PASSWORD, admin.E2E_ADMIN_TOTP_SECRET);
     await backOfficeCall(page, 'PUT', '/bff/tenant', { tenantId });
-    Object.assign(process.env, await seedStoreData(page));
+    Object.assign(process.env, await seedStoreData(page, tenantId));
   } finally {
     await browser.close();
   }
 }
 
-async function seedStoreData(page: Page) {
+/** Seeds through the BFF as the SPA writes: every write names the selected company (X-Expected-Tenant, FE-F16). */
+async function seedStoreData(page: Page, tenantId: string) {
   const get = async (path: string) => (await backOfficeCall(page, 'GET', path)).json();
   const post = async (path: string, data?: unknown, headers?: Record<string, string>) =>
-    (await backOfficeCall(page, 'POST', path, data, headers)).json();
+    (await backOfficeCall(page, 'POST', path, data, { 'X-Expected-Tenant': tenantId, ...headers })).json();
   const catalog = '/api/v1/backoffice/catalog';
 
   const stores = await get('/api/v1/backoffice/stores');

@@ -7,8 +7,10 @@ import { createBackOfficeClient } from './lib/api';
 import { createQueryClient } from './lib/query-client';
 import { routes } from './routes';
 
+const queryClient = createQueryClient();
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App router={createBrowserRouter(routes)} api={createBackOfficeClient()} queryClient={createQueryClient()} />
+    <App router={createBrowserRouter(routes)} api={createBackOfficeClient(queryClient)} queryClient={queryClient} />
   </StrictMode>,
 );

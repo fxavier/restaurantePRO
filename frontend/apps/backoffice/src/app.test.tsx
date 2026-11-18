@@ -15,6 +15,7 @@ import {
   storePage,
   type TenantChoice,
 } from './test/fixtures';
+import { errorMessage } from './lib/error-messages';
 import { server } from './test/server';
 import { CSRF_TOKEN, renderApp } from './test/render-app';
 
@@ -400,5 +401,55 @@ describe('BackOffice access shell', () => {
     await screen.findByRole('option', { name: 'Loja Baixa' });
     await waitFor(() => expect(currentUrl()).toBe('/organization/terminals'));
     expect(screen.getByRole('option', { name: 'Escolher loja', selected: true })).toBeInTheDocument();
+  });
+});
+
+describe('Company guard on writes (FE-F16)', () => {
+  const AREAS = '/api/v1/backoffice/areas';
+  const newArea = { code: 'S1', name: 'Sala', storeId: '11111111-0000-4000-8000-000000000001' };
+
+  /** A write as a feature's mutation runs it: through the app's API client and query client, never retried. */
+  function write(app: ReturnType<typeof renderApp>) {
+    return app.queryClient
+      .getMutationCache()
+      .build(app.queryClient, { mutationFn: () => app.api.POST(AREAS, { body: newArea }) })
+      .execute(undefined);
+  }
+
+  it('sends the company this tab shows as X-Expected-Tenant on a write', async () => {
+    const expected: (string | null)[] = [];
+    server.use(...signedIn({ tenants: [companyA, companyB], session: sessionIn(companyB) }));
+    server.use(http.post(api(AREAS), ({ request }) => {
+      expected.push(request.headers.get('X-Expected-Tenant'));
+      return HttpResponse.json({}, { status: 201 });
+    }));
+
+    const app = renderApp();
+    await screen.findByRole('button', { name: 'Empresa: Restaurante B, Lda' });
+    await act(() => write(app));
+
+    expect(expected).toEqual([companyB.tenantId]);
+  });
+
+  it('on 409 TENANT_CHANGED rereads the session, follows the server and asks the user to check and repeat', async () => {
+    let resolvedIn: TenantChoice = companyA;
+    let writes = 0;
+    server.use(...signedIn({ tenants: [companyA, companyB] }));
+    server.use(
+      http.get(api('/api/v1/auth/session'), () => HttpResponse.json(sessionIn(resolvedIn))),
+      http.post(api(AREAS), () => {
+        writes += 1;
+        return problem(409, 'TENANT_CHANGED');
+      }),
+    );
+
+    const app = renderApp();
+    await screen.findByRole('button', { name: 'Empresa: Restaurante A, Lda' });
+    resolvedIn = companyB; // another tab switched the shared BFF selection
+    const failure = await act(() => write(app).then(() => undefined, (error: unknown) => error));
+
+    expect(errorMessage(failure)).toBe('A empresa ativa mudou noutro separador. Verifique e repita.');
+    expect(await screen.findByRole('button', { name: 'Empresa: Restaurante B, Lda' })).toBeInTheDocument();
+    expect(writes).toBe(1);
   });
 });
