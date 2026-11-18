@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CATALOG, FAMILY, ITEM, VARIANT } from '../../test/order';
-import { byCode, itemLabel, needsChoices, search, toCatalog } from './catalog';
+import { byCode, type CatalogSnapshot, itemLabel, needsChoices, search, toCatalog } from './catalog';
 
 const catalog = toCatalog(CATALOG);
 
@@ -15,6 +15,33 @@ describe('catalog', () => {
   it('an answer without its snapshot lists is an error, not a guess', () => {
     expect(() => toCatalog({ ...CATALOG, catalog: undefined })).toThrow('Incomplete catalog');
     expect(() => toCatalog(undefined)).toThrow('Incomplete catalog');
+  });
+
+  it('an item without its family, or a menu option without its item, is an error, not a guess', () => {
+    type Item = NonNullable<CatalogSnapshot['items']>[number];
+    const without = (item: Item) => ({ ...CATALOG, catalog: { ...CATALOG.catalog, items: [item] } });
+    expect(() => toCatalog(without({ ...ITEM.steak, familyId: undefined }))).toThrow('Incomplete catalog');
+    const menu = ITEM.menu;
+    const optionWithoutItem = { ...menu.menuGroups[0], options: [{ quantity: 1 }] };
+    expect(() => toCatalog(without({ ...menu, menuGroups: [optionWithoutItem] }))).toThrow('Incomplete catalog');
+  });
+
+  it('reads the nulls the backend writes for a top-level family, an unpriced variant and an item barcode', () => {
+    // Jackson writes an absent parent, price or variant as null; the contract marks no field nullable.
+    const wire = JSON.parse(
+      JSON.stringify({
+        ...CATALOG.catalog,
+        families: CATALOG.catalog?.families?.map((family) => ({ parentId: null, ...family })),
+        items: [
+          { ...ITEM.water, variants: ITEM.water.variants.map((variant) => ({ price: null, ...variant })) },
+          { ...ITEM.coffee, barcodes: [{ code: '5601234000011', variantId: null }] },
+        ],
+      }),
+    );
+    const read = toCatalog({ ...CATALOG, catalog: wire });
+    expect(read.families.map((family) => family.code)).toEqual(['BEBIDAS', 'PRATOS', 'MENUS']);
+    expect(read.item(ITEM.water.id)?.variants[0]?.price).toBeNull();
+    expect(byCode(read.items, '5601234000011')).toEqual({ item: read.item(ITEM.coffee.id) });
   });
 
   it('names an item with its variant', () => {
