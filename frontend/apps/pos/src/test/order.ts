@@ -224,10 +224,10 @@ type Answer<Body = undefined> = (body: Body) => Response | Promise<Response>;
 export const catalogEndpoint = (...answers: Answer[]) =>
   recording<undefined>('get', '/api/v1/pos/catalog', queue(...(answers.length ? answers : [() => HttpResponse.json(CATALOG)])));
 
-/** `GET /api/v1/pos/orders` (the open orders, to find a table's). */
-export const openOrdersEndpoint = (...orders: OrderView[]) =>
+/** `GET /api/v1/pos/orders` (the open orders, to find a table's); `totalElements` larger when the page is truncated. */
+export const openOrdersEndpoint = (orders: OrderView[], totalElements = orders.length) =>
   recording<undefined>('get', '/api/v1/pos/orders', () =>
-    HttpResponse.json({ content: orders.map(summaryOf), page: 0, size: 200, totalElements: orders.length }),
+    HttpResponse.json({ content: orders.map(summaryOf), page: 0, size: 200, totalElements }),
   );
 
 /** `GET /api/v1/pos/orders/{id}`. */

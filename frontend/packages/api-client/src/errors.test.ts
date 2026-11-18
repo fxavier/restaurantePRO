@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ApiError, createApiClient } from './index';
+import { ApiError, createApiClient, isUnavailable } from './index';
 
 const BASE = 'http://api.test';
 
@@ -179,5 +179,19 @@ describe('ApiError mapping', () => {
     const { data } = await client.GET('/api/v1/auth/session');
 
     expect(data).toEqual({ name: 'Ana' });
+  });
+});
+
+describe('isUnavailable', () => {
+  it.each([0, 502, 503, 504])('a %s is no answer: the outcome is unknown', (status) => {
+    expect(isUnavailable(new ApiError({ status, code: 'X', title: 'X' }))).toBe(true);
+  });
+
+  it.each([400, 409, 422, 500])('a %s is an answer', (status) => {
+    expect(isUnavailable(new ApiError({ status, code: 'X', title: 'X' }))).toBe(false);
+  });
+
+  it('anything but an ApiError is not', () => {
+    expect(isUnavailable(new Error('x'))).toBe(false);
   });
 });

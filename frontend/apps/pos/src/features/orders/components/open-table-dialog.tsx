@@ -14,7 +14,7 @@ import { type FormEvent, useState } from 'react';
 import { PinPad } from '../../identity/components/pin-pad';
 import { errorMessage, isOffline, OFFLINE } from '../../../lib/error-messages';
 import { useCommandsBlocked } from '../../../lib/live/use-connection';
-import { isInProgress } from '../../../lib/use-intent';
+import { isInProgress, isUnknownOutcome } from '../../../lib/use-intent';
 import type { DiningTable } from '../../dining/table-map';
 import { useOpenTable } from '../hooks/use-order-commands';
 
@@ -22,13 +22,24 @@ const LOCKED = 'A mesa está bloqueada. Um gerente tem de a desbloquear antes de
 /** OpenTableRequest: 1 to 999 guests. */
 const MAX_DIGITS = 3;
 
-type Props = { table: DiningTable; onClose: () => void; onOpened: (orderId: string) => void };
+type Props = {
+  table: DiningTable;
+  onClose: () => void;
+  onOpened: (orderId: string) => void;
+  /** An earlier opening of this table on this terminal had an unknown outcome: it may be this terminal's. */
+  mayHaveOpened: boolean;
+  /** An opening's outcome is unknown: the table may now be open by this terminal. */
+  onUnknownOutcome: () => void;
+  /** Refused as taken although this terminal may have opened it: the caller looks for the table's order. */
+  onTakenMaybeHere: () => void;
+};
 
 /**
  * Opening a free table (§4, PRD 36): the guests on a numeric pad (or a keyboard), then "Abrir mesa". A table the map
  * shows locked is refused at once, with the reason; one locked or taken meanwhile is refused by the server.
  */
-export function OpenTableDialog({ table, onClose, onOpened }: Props) {
+export function OpenTableDialog(props: Props) {
+  const { table, onClose } = props;
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent showCloseButton={false} className="sm:max-w-md">
@@ -45,16 +56,22 @@ export function OpenTableDialog({ table, onClose, onOpened }: Props) {
             </DialogFooter>
           </>
         ) : (
-          <GuestsForm table={table} onClose={onClose} onOpened={onOpened} />
+          <GuestsForm {...props} />
         )}
       </DialogContent>
     </Dialog>
   );
 }
 
-function GuestsForm({ table, onClose, onOpened }: Props) {
+function GuestsForm({ table, onClose, onOpened, mayHaveOpened, onUnknownOutcome, onTakenMaybeHere }: Props) {
   const [guests, setGuests] = useState('');
-  const open = useOpenTable(table.id, onOpened);
+  const open = useOpenTable(table.id, {
+    onOpened,
+    onError(error) {
+      if (isUnknownOutcome(error)) onUnknownOutcome();
+      else if (error instanceof ApiError && error.code === 'TABLE_OCCUPIED' && mayHaveOpened) onTakenMaybeHere();
+    },
+  });
   const blocked = useCommandsBlocked();
   const count = Number(guests);
   const valid = guests !== '' && count >= 1;

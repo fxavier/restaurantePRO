@@ -76,7 +76,7 @@ describe('opening a table', () => {
   });
 
   it('an occupied table lands in its open order', async () => {
-    const lookups = openOrdersEndpoint(NEW_ORDER, ORDER);
+    const lookups = openOrdersEndpoint([NEW_ORDER, ORDER]);
     orderEndpoint(ORDER_ID, json(ORDER));
     const { user, router } = await atTables();
 
@@ -89,7 +89,7 @@ describe('opening a table', () => {
   });
 
   it('an occupied table without an open order any more says so, with the way back', async () => {
-    openOrdersEndpoint(NEW_ORDER);
+    openOrdersEndpoint([NEW_ORDER]);
     const { user } = await atTables();
 
     await user.click(screen.getByRole('button', { name: /^Mesa M2 / }));
@@ -97,6 +97,51 @@ describe('opening a table', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('A mesa M2 já não tem um pedido aberto.');
     await user.click(screen.getByRole('link', { name: 'Voltar às mesas' }));
     expect(await screen.findByRole('button', { name: /^Mesa M2 / })).toBeInTheDocument();
+  });
+
+  it('a truncated page of open orders without the table\'s is a failure to retry, not "no open order"', async () => {
+    const lookups = openOrdersEndpoint([NEW_ORDER], 201);
+    const { user } = await atTables();
+
+    await user.click(screen.getByRole('button', { name: /^Mesa M2 / }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Não foi possível encontrar o pedido da mesa M2 entre os pedidos abertos.',
+    );
+    expect(screen.queryByText(/já não tem um pedido aberto/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+    await waitFor(() => expect(lookups).toHaveLength(2));
+  });
+
+  it('a table this terminal may have opened (an unknown outcome, then "Cancelar") goes to its order when found taken', async () => {
+    tokenEndpoint(token('jwt-1'));
+    let map = MAP;
+    tablesEndpoint(() => HttpResponse.json(map));
+    catalogEndpoint();
+    const opened = openTableEndpoint(
+      id(1),
+      () => HttpResponse.error(),
+      () => {
+        map = M1_OCCUPIED;
+        return problem(409, 'TABLE_OCCUPIED');
+      },
+    );
+    openOrdersEndpoint([{ ...NEW_ORDER, tableId: id(1) }]);
+    orderEndpoint(NEW_ORDER_ID, json(NEW_ORDER));
+    const { user, router } = await renderPos({ device: 'enrolled', loggedIn: true, path: '/tables' });
+
+    await user.click(await screen.findByRole('button', { name: /^Mesa M1 / }));
+    await enterGuests(user, '2');
+    await user.click(within(await guestsDialog()).getByRole('button', { name: 'Abrir mesa' }));
+    await within(await guestsDialog()).findByRole('alert');
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }));
+    await user.click(screen.getByRole('button', { name: /^Mesa M1 Livre/ }));
+    await enterGuests(user, '2');
+    await user.click(within(await guestsDialog()).getByRole('button', { name: 'Abrir mesa' }));
+
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/orders/${NEW_ORDER_ID}`));
+    expect(await screen.findByRole('complementary', { name: 'Pedido' })).toHaveTextContent('Mesa M1');
+    expect(opened).toHaveLength(2);
   });
 
   it('a locked free table is refused with the reason, without asking for guests', async () => {

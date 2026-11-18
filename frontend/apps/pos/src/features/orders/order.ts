@@ -105,3 +105,16 @@ function money(value: ContractMoney | undefined): MoneyValue | undefined {
 export function quantityLabel(quantity: number): string {
   return new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 3 }).format(quantity);
 }
+
+/** UpdateLineRequest: `@Digits(fraction = 3)`, so a quantity is a whole number of thousandths. */
+const THOUSANDTHS = 1_000;
+
+/**
+ * A draft's quantity stepped by `units` whole units, computed in integer thousandths so 1.3 − 1 is 0.3, not
+ * 0.30000000000000004 (which the backend refuses). The contract types the quantity as a JSON number, so the result is
+ * the number those thousandths name; undefined when it would not be positive (`@Positive`): remove the line instead.
+ */
+export function stepQuantity(quantity: number, units: number): number | undefined {
+  const next = Math.round(quantity * THOUSANDTHS) + units * THOUSANDTHS;
+  return next > 0 ? next / THOUSANDTHS : undefined;
+}

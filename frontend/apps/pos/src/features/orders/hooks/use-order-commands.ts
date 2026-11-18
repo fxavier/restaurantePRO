@@ -9,7 +9,10 @@ export type AddLineRequest = Schemas['com.xavier.backend.orders.model.dto.AddLin
 type UpdateLineRequest = Schemas['com.xavier.backend.orders.model.dto.UpdateLineRequest'];
 
 /** `POST /api/v1/pos/tables/{tableId}/open`: one intent per "Abrir mesa", resolving with the new order's id. */
-export function useOpenTable(tableId: string, onOpened: (orderId: string) => void) {
+export function useOpenTable(
+  tableId: string,
+  { onOpened, onError }: { onOpened: (orderId: string) => void; onError?: (error: Error) => void },
+) {
   const { api } = useServices();
   const queryClient = useQueryClient();
   return useIntent(
@@ -26,7 +29,10 @@ export function useOpenTable(tableId: string, onOpened: (orderId: string) => voi
         if (order?.id) onOpened(order.id);
       },
       // Whatever refused it (locked, just taken), the map is read again to show why.
-      onError: () => void queryClient.invalidateQueries({ queryKey: ['pos', 'tables'] }),
+      onError(error) {
+        void queryClient.invalidateQueries({ queryKey: ['pos', 'tables'] });
+        onError?.(error);
+      },
     },
   );
 }
@@ -47,7 +53,7 @@ export function useAddLine(orderId: string) {
           body,
         })
       ).data,
-    { onSuccess: refresh, onError: refresh },
+    { onSuccess: refresh, onError: refresh, onDiscard: refresh },
   );
 }
 

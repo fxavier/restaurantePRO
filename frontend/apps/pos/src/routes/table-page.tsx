@@ -15,7 +15,8 @@ export function TablePage() {
   const area = map.data?.find((candidate) => candidate.tables.some((table) => table.id === tableId));
   const code = area?.tables.find((candidate) => candidate.id === tableId)?.code;
 
-  if (order.data) return <Navigate to={`/orders/${order.data}`} replace />;
+  if (order.data?.id) return <Navigate to={`/orders/${order.data.id}`} replace />;
+  const table = code ? `da mesa ${code}` : 'da mesa';
 
   return (
     <div className="flex min-h-screen flex-col bg-muted">
@@ -29,7 +30,14 @@ export function TablePage() {
           </Link>
         </Button>
         <h2 className="text-2xl font-semibold">{code ? `Mesa ${code}` : 'Mesa'}</h2>
-        {order.data === null ? (
+        {order.data && 'truncated' in order.data && order.data.truncated ? (
+          <div className="flex flex-col items-start gap-3">
+            <p role="alert">{`Não foi possível encontrar o pedido ${table} entre os pedidos abertos.`}</p>
+            <Button variant="outline" size="touch" onClick={() => void order.refetch()}>
+              Tentar novamente
+            </Button>
+          </div>
+        ) : order.data ? (
           <p role="alert">{code ? `A mesa ${code} já não tem um pedido aberto.` : 'A mesa já não tem um pedido aberto.'}</p>
         ) : order.isError ? (
           <div className="flex flex-col items-start gap-3">

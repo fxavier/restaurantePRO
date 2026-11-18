@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BATCH_ID, LINE, ORDER, withLines } from '../../test/order';
-import { quantityLabel, toOrder } from './order';
+import { quantityLabel, stepQuantity, toOrder } from './order';
 
 describe('toOrder', () => {
   it('splits drafts from the rounds, each round with its confirmed lines, by round number', () => {
@@ -27,5 +27,19 @@ describe('toOrder', () => {
   it('formats a quantity in the store locale', () => {
     expect(quantityLabel(2)).toBe('2');
     expect(quantityLabel(0.5)).toBe('0,5');
+  });
+});
+
+describe('stepQuantity', () => {
+  it('steps a decimal quantity by one unit exactly, in thousandths', () => {
+    expect(stepQuantity(1.3, -1)).toBe(0.3);
+    expect(stepQuantity(2.3, -1)).toBe(1.3);
+    expect(stepQuantity(0.65, 1)).toBe(1.65);
+    expect(stepQuantity(2, 1)).toBe(3);
+  });
+
+  it('a quantity must stay positive (UpdateLineRequest @Positive)', () => {
+    expect(stepQuantity(1, -1)).toBeUndefined();
+    expect(stepQuantity(0.5, -1)).toBeUndefined();
   });
 });

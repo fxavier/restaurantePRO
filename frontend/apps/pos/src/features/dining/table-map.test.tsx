@@ -85,7 +85,7 @@ describe('table map', () => {
 
   it('an occupied tile opens its order, and "Voltar às mesas" comes back to the map', async () => {
     catalogEndpoint();
-    openOrdersEndpoint(ORDER);
+    openOrdersEndpoint([ORDER]);
     orderEndpoint(ORDER_ID, json(ORDER));
     const { user, router } = await atTables();
 
@@ -100,7 +100,7 @@ describe('table map', () => {
   it('returning from a table keeps the area that was open', async () => {
     const e1 = { ...ORDER, tableId: id(10), tableCode: 'E1' };
     catalogEndpoint();
-    openOrdersEndpoint(e1);
+    openOrdersEndpoint([e1]);
     orderEndpoint(ORDER_ID, json(e1));
     const { user } = await atTables(tableMap(E1_OCCUPIED));
 

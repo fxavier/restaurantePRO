@@ -3,7 +3,7 @@ import { Minus, NotebookPen, Plus, Trash2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { clockTime, guestsLabel } from '../../dining/format';
 import { itemLabel, type PosCatalog } from '../../catalog/catalog';
-import { type Order, type OrderLine, quantityLabel } from '../order';
+import { type Order, type OrderLine, quantityLabel, stepQuantity } from '../order';
 
 export type DraftCommands = {
   disabled: boolean;
@@ -149,6 +149,8 @@ function Details({ line, catalog }: { line: OrderLine; catalog: PosCatalog | und
 
 function DraftRow({ line, name, catalog, commands }: { line: OrderLine; name: string; catalog: PosCatalog | undefined; commands: DraftCommands }) {
   const { disabled, onQuantity, onRemove, onNote } = commands;
+  const less = stepQuantity(line.quantity, -1);
+  const more = stepQuantity(line.quantity, 1);
   return (
     <li className="flex flex-col gap-1 border-b py-2 last:border-b-0">
       <div className="flex items-start justify-between gap-2">
@@ -163,12 +165,12 @@ function DraftRow({ line, name, catalog, commands }: { line: OrderLine; name: st
           variant="outline"
           size="touch"
           aria-label={`Diminuir ${name}`}
-          disabled={disabled || line.quantity <= 1}
-          onClick={() => onQuantity(line, line.quantity - 1)}
+          disabled={disabled || less === undefined}
+          onClick={() => less !== undefined && onQuantity(line, less)}
         >
           <Minus aria-hidden="true" />
         </Button>
-        <Button variant="outline" size="touch" aria-label={`Aumentar ${name}`} disabled={disabled} onClick={() => onQuantity(line, line.quantity + 1)}>
+        <Button variant="outline" size="touch" aria-label={`Aumentar ${name}`} disabled={disabled || more === undefined} onClick={() => more !== undefined && onQuantity(line, more)}>
           <Plus aria-hidden="true" />
         </Button>
         <Button variant="outline" size="touch" aria-label={`Nota de ${name}`} disabled={disabled} onClick={() => onNote(line)}>

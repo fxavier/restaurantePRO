@@ -18,6 +18,15 @@ export function TablesPage() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [opening, setOpening] = useState<DiningTable>();
+  // Tables whose opening had an unknown outcome here: a later "taken" may be this terminal's own opening.
+  const [mayHaveOpened, setMayHaveOpened] = useState<ReadonlySet<string>>(new Set());
+
+  /** Taken, perhaps by this terminal: the map read again, and an occupied table goes to its order. */
+  async function goToOrderIfTaken(tableId: string) {
+    const { data } = await map.refetch();
+    const table = data?.flatMap((area) => area.tables).find((candidate) => candidate.id === tableId);
+    if (table?.status === 'OCCUPIED') navigate(`/tables/${tableId}`);
+  }
 
   function open(tableId: string) {
     const table = map.data?.flatMap((area) => area.tables).find((candidate) => candidate.id === tableId);
@@ -67,6 +76,9 @@ export function TablesPage() {
           table={opening}
           onClose={() => setOpening(undefined)}
           onOpened={(orderId) => navigate(`/orders/${orderId}`)}
+          mayHaveOpened={mayHaveOpened.has(opening.id)}
+          onUnknownOutcome={() => setMayHaveOpened((tables) => new Set(tables).add(opening.id))}
+          onTakenMaybeHere={() => void goToOrderIfTaken(opening.id)}
         />
       )}
     </div>

@@ -1,4 +1,4 @@
-import { ApiError } from '@restaurantpro/api-client';
+import { type ApiError, isUnavailable } from '@restaurantpro/api-client';
 
 /** Portuguese text for the backend's known codes (FC §9); unknown codes show the answer's title. */
 const MESSAGES: Record<string, string> = {
@@ -24,10 +24,10 @@ const MESSAGES: Record<string, string> = {
 export const OFFLINE = 'Sem ligação — nenhuma operação é confirmada';
 
 /**
- * @param offline the text for "no answer" (network, 502, 503), where the screen can say what did not happen
+ * @param offline the text for "no answer" (network, 502, 503, 504), where the screen can say what did not happen
  */
 export function isOffline(error: ApiError): boolean {
-  return error.status === 0 || error.status === 502 || error.status === 503;
+  return isUnavailable(error);
 }
 
 export function errorMessage(error: ApiError, { offline = `${OFFLINE}.` }: { offline?: string } = {}): string {

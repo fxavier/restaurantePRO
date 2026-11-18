@@ -4,8 +4,11 @@ import { useServices } from '../../../lib/services';
 /** The backend's largest page (D23): one page holds every open order of a store. */
 const PAGE_SIZE = 200;
 
+/** The table's open order; none (`id` null); or not on the page read, which the store's open orders overflowed. */
+export type TableOrder = { id: string } | { id: null; truncated: boolean };
+
 /**
- * The open order of a table, or `null` when it has none. The table map does not carry the order's id
+ * The open order of a table. The table map does not carry the order's id
  * (gap-table-open-order), so this reads the store's open orders (`GET /api/v1/pos/orders?lifecycle=OPEN`) and picks
  * the table's. Under the `['pos', 'orders']` prefix, so any `ORDER` change reads it again.
  */
@@ -22,6 +25,11 @@ export function useTableOrder(tableId: string) {
           signal,
         })
       ).data,
-    select: (page) => page?.content?.find((order) => order.tableId === tableId)?.id ?? null,
+    select: (page): TableOrder => {
+      const content = page?.content ?? [];
+      const id = content.find((order) => order.tableId === tableId)?.id;
+      if (id) return { id };
+      return { id: null, truncated: (page?.totalElements ?? 0) > content.length };
+    },
   });
 }

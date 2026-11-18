@@ -14,6 +14,7 @@ import {
   ORDER,
   ORDER_ID,
   updateLineEndpoint,
+  type UpdateLineRequest,
   VARIANT,
   withLines,
   orderEndpoint,
@@ -250,6 +251,36 @@ describe('order screen', () => {
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
   });
 
+  it('a 504 is an unknown outcome too: "Tentar novamente" with the same key', async () => {
+    const lines = addLineEndpoint(ORDER_ID, () => problem(504, 'HTTP_504'), created(added));
+    const { user } = await atOrder();
+    await ready();
+    await user.click(within(familyRail()).getByRole('button', { name: 'Pratos' }));
+
+    await user.click(tile(/^Bitoque/));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Sem ligação — Bitoque não foi confirmado.');
+    await user.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+
+    await waitFor(() => expect(lines).toHaveLength(2));
+    expect(lines[1]!.idempotencyKey).toBe(lines[0]!.idempotencyKey);
+  });
+
+  it('"Descartar" reads the order again: the discarded line may have been added', async () => {
+    addLineEndpoint(ORDER_ID, () => HttpResponse.error());
+    const { user, order } = await atOrder([json(ORDER), json(withLines(ORDER, [...ORDER.lines!, added]))]);
+    await ready();
+    await user.click(within(familyRail()).getByRole('button', { name: 'Pratos' }));
+    await user.click(tile(/^Bitoque/));
+    await screen.findByRole('alert');
+    await waitFor(() => expect(screen.queryByRole('status', { name: 'A adicionar' })).not.toBeInTheDocument());
+    const before = order.length;
+
+    await user.click(screen.getByRole('button', { name: 'Descartar' }));
+
+    await waitFor(() => expect(order.length).toBeGreaterThan(before));
+    await waitFor(() => expect(within(drafts()).getAllByRole('listitem')).toHaveLength(3));
+  });
+
   it('"Descartar" drops a failed intent; the next tap has a new key', async () => {
     const lines = addLineEndpoint(ORDER_ID, () => HttpResponse.error(), created(added));
     const { user } = await atOrder();
@@ -439,6 +470,32 @@ describe('order screen', () => {
     await user.click(within(drafts()).getByRole('button', { name: 'Diminuir Água Pequena' }));
     await waitFor(() => expect(updates).toHaveLength(2));
     expect(updates[1]!.body).toMatchObject({ version: 2, quantity: 2 });
+  });
+
+  it('decimal drafts step by exactly one: 1.3 − 1 = 0.3, 2.3 − 1 = 1.3, 0.65 + 1 = 1.65', async () => {
+    const water = { ...LINE.water, quantity: 1.3 };
+    const coffee = { ...LINE.coffee, quantity: 2.3 };
+    const juice = { ...LINE.coffee, id: '6f1c2a9e-0000-4000-8000-000000000809', itemId: ITEM.juice.id, quantity: 0.65 };
+    const sent: UpdateLineRequest[] = [];
+    for (const line of [water, coffee, juice]) {
+      updateLineEndpoint(ORDER_ID, line.id!, (body) => {
+        sent.push(body);
+        return HttpResponse.json(line);
+      });
+    }
+    const { user } = await atOrder([json(withLines(ORDER, [water, coffee, juice, LINE.steak]))]);
+    await ready();
+
+    await user.click(within(drafts()).getByRole('button', { name: 'Diminuir Água Pequena' }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    await waitFor(() => expect(within(drafts()).getByRole('button', { name: 'Diminuir Bica' })).toBeEnabled());
+    await user.click(within(drafts()).getByRole('button', { name: 'Diminuir Bica' }));
+    await waitFor(() => expect(sent).toHaveLength(2));
+    await waitFor(() => expect(within(drafts()).getByRole('button', { name: 'Aumentar Sumo de laranja' })).toBeEnabled());
+    await user.click(within(drafts()).getByRole('button', { name: 'Aumentar Sumo de laranja' }));
+    await waitFor(() => expect(sent).toHaveLength(3));
+
+    expect(sent.map((body) => body.quantity)).toEqual([0.3, 1.3, 1.65]);
   });
 
   it('a draft of one cannot go below one: it is removed instead', async () => {

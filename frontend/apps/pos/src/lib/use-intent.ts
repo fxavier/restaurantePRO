@@ -25,6 +25,8 @@ export type Intent<Request, Meta> = { key: string; request: Request; meta: Meta 
 type Options<Request, Result, Meta> = {
   onSuccess?: (result: Result, intent: Intent<Request, Meta>) => void;
   onError?: (error: Error, intent: Intent<Request, Meta>) => void;
+  /** A failed intent given up: it may still have happened, so what it changes is read again. */
+  onDiscard?: (intent: Intent<Request, Meta>) => void;
 };
 
 /**
@@ -38,7 +40,7 @@ type Options<Request, Result, Meta> = {
  */
 export function useIntent<Request, Result, Meta = undefined>(
   send: (request: Request, key: string) => Promise<Result>,
-  { onSuccess, onError }: Options<Request, Result, Meta> = {},
+  { onSuccess, onError, onDiscard }: Options<Request, Result, Meta> = {},
 ) {
   const [intent, setIntent] = useState<Intent<Request, Meta>>();
   const [last, setLast] = useState<Intent<Request, Meta>>();
@@ -82,6 +84,7 @@ export function useIntent<Request, Result, Meta = undefined>(
     /** Gives the failed intent up; the next `start` is a new intent. */
     discard() {
       if (inFlight.current) return;
+      if (intent) onDiscard?.(intent);
       setIntent(undefined);
       setError(undefined);
     },
