@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import {
@@ -19,6 +19,10 @@ import { server } from './test/server';
 import { CSRF_TOKEN, renderApp } from './test/render-app';
 
 const LOGIN = '/oauth2/authorization/keycloak';
+
+function setVisibility(state: DocumentVisibilityState) {
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+}
 
 describe('BackOffice access shell', () => {
   it('sends a signed-out user to the BFF login', async () => {
@@ -121,6 +125,37 @@ describe('BackOffice access shell', () => {
     await user.click(switcher);
     expect(await screen.findByRole('menuitemradio', { name: 'Restaurante B, Lda' })).toBeChecked();
     expect(screen.getByRole('menuitemradio', { name: 'Restaurante A, Lda' })).not.toBeChecked();
+  });
+
+  it.each([
+    [
+      'the window regains focus',
+      () => {
+        window.dispatchEvent(new Event('blur'));
+        window.dispatchEvent(new Event('focus'));
+      },
+    ],
+    [
+      'the tab becomes visible',
+      () => {
+        setVisibility('hidden');
+        document.dispatchEvent(new Event('visibilitychange'));
+        setVisibility('visible');
+        document.dispatchEvent(new Event('visibilitychange'));
+      },
+    ],
+  ])('rereads the session when %s, so a switch made in another tab shows at once', async (_, wake) => {
+    let resolvedIn: TenantChoice = companyA;
+    server.use(...signedIn({ tenants: [companyA, companyB] }));
+    server.use(http.get(api('/api/v1/auth/session'), () => HttpResponse.json(sessionIn(resolvedIn))));
+
+    renderApp();
+    await screen.findByRole('button', { name: 'Empresa: Restaurante A, Lda' });
+
+    resolvedIn = companyB; // another tab switched the shared BFF selection
+    act(() => wake());
+
+    expect(await screen.findByRole('button', { name: 'Empresa: Restaurante B, Lda' })).toBeInTheDocument();
   });
 
   it('shows the single company with the name the session gives', async () => {
