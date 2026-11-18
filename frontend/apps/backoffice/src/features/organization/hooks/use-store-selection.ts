@@ -15,7 +15,16 @@ export function useStoreSelection() {
       },
       { replace: true },
     );
-  return { storeId, selectStore };
+  const clearStore = () =>
+    setParams(
+      (previous) => {
+        const next = new URLSearchParams(previous);
+        next.delete(PARAM);
+        return next;
+      },
+      { replace: true },
+    );
+  return { storeId, selectStore, clearStore };
 }
 
 /** The search string that carries the store to another route. */

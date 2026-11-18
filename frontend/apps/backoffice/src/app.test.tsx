@@ -250,4 +250,93 @@ describe('BackOffice access shell', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Terminais' })).toBeInTheDocument();
     expect(currentUrl()).toBe(`/organization/terminals?storeId=${baixa.id}`);
   });
+  it.each([
+    ['a 502', () => problem(502, 'BACKEND_UNAVAILABLE')],
+    ['a network failure', () => HttpResponse.error()],
+  ])('shows "Sem ligação" when the company must be chosen but the list of companies fails with %s', async (_, answer) => {
+    let down = true;
+    server.use(...signedIn({ tenants: [companyA, companyB] }));
+    server.use(
+      http.get(api('/api/v1/auth/session'), () => problem(400, 'TENANT_SELECTION_REQUIRED')),
+      http.get(api('/api/v1/auth/tenants'), () => (down ? answer() : HttpResponse.json([companyA, companyB]))),
+    );
+
+    const { user } = renderApp();
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Sem ligação' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Sem acesso' })).not.toBeInTheDocument();
+
+    down = false;
+    await user.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Escolha a empresa' })).toBeInTheDocument();
+  });
+
+  it.each([
+    ['a 403', () => problem(403, 'FORBIDDEN')],
+    ['a network failure', () => HttpResponse.error()],
+  ])('says the logout failed, and stays, when the BFF answers %s', async (_, answer) => {
+    server.use(...signedIn());
+    server.use(http.post(api('/bff/logout'), () => answer()));
+    localStorage.setItem('restaurantpro.backoffice.tenantId', companyA.tenantId);
+
+    const { user, leave } = renderApp();
+
+    await user.click(await screen.findByRole('button', { name: 'Menu do utilizador: Ana Admin' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Terminar sessão' }));
+
+    expect(await screen.findByText('Não foi possível terminar a sessão. Tente novamente.')).toBeInTheDocument();
+    expect(leave).not.toHaveBeenCalled();
+    expect(localStorage.getItem('restaurantpro.backoffice.tenantId')).toBe(companyA.tenantId);
+  });
+
+  it('does not loop on the login: a second expiry right after a redirect asks before going again', async () => {
+    sessionStorage.setItem('restaurantpro.backoffice.loginRedirectAt', String(Date.now() - 5_000));
+    server.use(
+      http.get(api('/api/v1/auth/session'), () => problem(401, 'BFF_SESSION_EXPIRED')),
+      http.get(api('/api/v1/auth/tenants'), () => problem(401, 'BFF_SESSION_EXPIRED')),
+    );
+
+    const { user, leave } = renderApp();
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Sessão terminada' })).toBeInTheDocument();
+    expect(screen.getByText(/não foi possível manter a sessão/i)).toBeInTheDocument();
+    expect(leave).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Iniciar sessão' }));
+
+    expect(leave).toHaveBeenCalledWith(LOGIN);
+  });
+
+  it('redirects again when the previous login redirect is not recent', async () => {
+    sessionStorage.setItem('restaurantpro.backoffice.loginRedirectAt', String(Date.now() - 5 * 60_000));
+    server.use(
+      http.get(api('/api/v1/auth/session'), () => problem(401, 'BFF_SESSION_EXPIRED')),
+      http.get(api('/api/v1/auth/tenants'), () => problem(401, 'BFF_SESSION_EXPIRED')),
+    );
+
+    const { leave } = renderApp();
+
+    await waitFor(() => expect(leave).toHaveBeenCalledWith(LOGIN));
+  });
+
+  it('forgets the login redirect once the session works', async () => {
+    sessionStorage.setItem('restaurantpro.backoffice.loginRedirectAt', String(Date.now() - 5_000));
+    server.use(...signedIn());
+
+    renderApp();
+
+    await screen.findByRole('heading', { level: 1, name: 'Visão geral' });
+    expect(sessionStorage.getItem('restaurantpro.backoffice.loginRedirectAt')).toBeNull();
+  });
+
+  it('drops a ?storeId that is not one of the company stores', async () => {
+    server.use(...signedIn());
+
+    const { currentUrl } = renderApp('/organization/terminals?storeId=not-a-store-of-this-company');
+
+    await screen.findByRole('option', { name: 'Loja Baixa' });
+    await waitFor(() => expect(currentUrl()).toBe('/organization/terminals'));
+    expect(screen.getByRole('option', { name: 'Escolher loja', selected: true })).toBeInTheDocument();
+  });
 });

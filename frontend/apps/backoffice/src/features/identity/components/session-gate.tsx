@@ -1,6 +1,7 @@
 import { Button } from '@restaurantpro/ui';
 import { Building2, LoaderCircle, LogIn, Lock, TriangleAlert, WifiOff } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { loginStuck, startLogin } from '../../../lib/browser';
 import { errorCode, isSessionExpired, isUnavailable } from '../../../lib/errors';
 import { useLogout } from '../hooks/use-logout';
 import { useSession, useTenants } from '../hooks/use-session';
@@ -28,19 +29,30 @@ export function SessionGate({ children }: { children: ReactNode }) {
   const session = useSession();
   const tenants = useTenants();
   const error = session.error ?? tenants.error;
+  // Either call failing for want of a connection or a session wins over the other's answer: with the session's
+  // TENANT_SELECTION_REQUIRED and a failed company list, the user must see "Sem ligação", not "Sem acesso".
+  const expired = [session.error, tenants.error].some(isSessionExpired);
+  const unavailable = [session.error, tenants.error].some(isUnavailable);
   const retry = () => {
     void session.refetch();
     void tenants.refetch();
   };
 
-  if (error && isSessionExpired(error)) {
+  if (expired) {
     return (
       <FullPage icon={LogIn} title="Sessão terminada">
-        <p role="status">A redirecionar para o início de sessão…</p>
+        {loginStuck() ? (
+          <>
+            <p>Não foi possível manter a sessão depois de iniciar sessão. Verifique se o navegador aceita cookies.</p>
+            <Button onClick={startLogin}>Iniciar sessão</Button>
+          </>
+        ) : (
+          <p role="status">A redirecionar para o início de sessão…</p>
+        )}
       </FullPage>
     );
   }
-  if (error && isUnavailable(error)) {
+  if (unavailable) {
     return (
       <FullPage icon={WifiOff} title="Sem ligação">
         <p>Nenhuma operação é confirmada enquanto o serviço não responder.</p>

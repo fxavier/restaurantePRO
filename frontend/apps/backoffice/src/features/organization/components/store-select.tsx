@@ -12,13 +12,21 @@ import { useStores } from '../hooks/use-stores';
 export function StoreSelect() {
   const id = useId();
   const stores = useStores();
-  const { storeId, selectStore } = useStoreSelection();
+  const { storeId, selectStore, clearStore } = useStoreSelection();
   const only = stores.data?.length === 1 ? stores.data[0] : undefined;
-  const selected = stores.data?.some((store) => store.id === storeId) ? storeId : '';
+  const known = stores.data?.some((store) => store.id === storeId) ?? false;
+  const selected = known ? storeId : '';
 
+  // Once the list is loaded, a single store is selected on its own and a ?storeId that is not a store of this
+  // company (a stale link, another company's store) leaves the address.
   useEffect(() => {
-    if (only?.id && storeId !== only.id) selectStore(only.id);
-  }, [only?.id, storeId, selectStore]);
+    if (!stores.data) return;
+    if (only?.id) {
+      if (storeId !== only.id) selectStore(only.id);
+    } else if (storeId && !known) {
+      clearStore();
+    }
+  }, [stores.data, only?.id, storeId, known, selectStore, clearStore]);
 
   const icon = <Store aria-hidden="true" className="size-5 text-muted-foreground" />;
   if (stores.isError) {
