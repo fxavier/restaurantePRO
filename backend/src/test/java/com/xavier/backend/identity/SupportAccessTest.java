@@ -81,7 +81,9 @@ class SupportAccessTest {
         granted();
 
         mvc.perform(asSupport("/api/v1/auth/session", supportToken())).andExpect(status().isOk())
-                .andExpect(jsonPath("$.userId").value(supportAccount.toString()));
+                .andExpect(jsonPath("$.userId").value(supportAccount.toString()))
+                .andExpect(jsonPath("$.tenantId").value(tenant.toString()))
+                .andExpect(jsonPath("$.tenantName").value("t-" + tenant));
         mvc.perform(asSupport("/api/v1/backoffice/catalog/families", supportToken())).andExpect(status().isOk());
     }
 

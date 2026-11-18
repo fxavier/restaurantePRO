@@ -4019,6 +4019,13 @@
             "format": "uuid",
             "type": "string"
           },
+          "tenantId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "tenantName": {
+            "type": "string"
+          },
           "terminalId": {
             "format": "uuid",
             "type": "string"

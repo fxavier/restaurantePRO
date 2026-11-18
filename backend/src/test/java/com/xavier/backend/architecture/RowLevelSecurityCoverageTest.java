@@ -34,6 +34,7 @@ public class RowLevelSecurityCoverageTest {
             "tenancy.grant_membership(uuid,text,text,text,uuid,interval)",
             "tenancy.revoke_membership(uuid)",
             "tenancy.tenant_status(uuid)",
+            "tenancy.tenant_legal_name(uuid)",
             "tenancy.activate_tenant(uuid)",
             "tenancy.list_memberships(text,text)",
             "tenancy.create_tenant(text,text,text,text,text)",

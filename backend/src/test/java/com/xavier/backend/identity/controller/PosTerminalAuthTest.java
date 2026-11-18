@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.xavier.backend.OwnerDatabase;
 import com.xavier.backend.config.security.DeviceHttpTest;
 import com.xavier.backend.config.security.Devices;
 import com.xavier.backend.config.security.FakeDeviceProvider;
@@ -13,6 +14,7 @@ import com.xavier.backend.config.security.Devices.Device;
 import com.xavier.backend.config.security.TestJwtFactory;
 import com.xavier.backend.identity.IdentityFixtures;
 import com.xavier.backend.identity.IdentityFixtures.Employee;
+import com.xavier.backend.shared.tenancy.TenantTestSupport;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -61,6 +63,28 @@ class PosTerminalAuthTest {
                 .andExpect(jsonPath("$.employeeId").value(waiter.id().toString()))
                 .andExpect(jsonPath("$.terminalId").value(terminal.id().toString()))
                 .andExpect(jsonPath("$.storeId").value(store.toString()));
+    }
+
+    @Test
+    void aPosSessionNamesItsTerminalsTenant() throws Exception {
+        String session = login(terminal);
+        String legalName = OwnerDatabase.shared().jdbc().sql("SELECT legal_name FROM tenancy.tenant WHERE id = ?")
+                .param(TenantTestSupport.BOOTSTRAP).query(String.class).single();
+
+        mvc.perform(get(POS_SESSION).with(terminal.bearer()).with(posSession(session)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tenantId").value(TenantTestSupport.BOOTSTRAP.toString()))
+                .andExpect(jsonPath("$.tenantName").value(legalName));
+    }
+
+    @Test
+    void aPosSessionIgnoresATenantHeaderNamingAnotherTenant() throws Exception {
+        String session = login(terminal);
+
+        mvc.perform(get(POS_SESSION).with(terminal.bearer()).with(posSession(session))
+                        .header("X-Tenant-Id", TenantTestSupport.A.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tenantId").value(TenantTestSupport.BOOTSTRAP.toString()));
     }
 
     @Test
