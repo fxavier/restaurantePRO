@@ -11,6 +11,9 @@ restaurantpro:
     devices-admin:
       base-url: ""
       key-file: ""
+  pos:
+    # G13: the module and HTTP suites provision terminals through a fake; IdentityProviderAdminIT sets its own origin
+    origin: ""
   jobs:
     # R6 (D185): one JVM is one instance; a short lease keeps a test that holds one from blocking the next for long
     lease-ttl: PT30S

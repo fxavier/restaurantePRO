@@ -38,6 +38,14 @@ enum RouteFamily {
     /** A device's enrolment with its one-time code (D182): no token at all, the code is the credential. */
     static final String[] ENROLMENT_ROUTES = {"/api/v1/pos/enrolment", "/api/v1/bridge/enrolment"};
 
+    /**
+     * The device routes that take no {@code X-Pos-Session}: the PIN login (the terminal's token only) and the enrolment
+     * (no token at all). One rule for {@link TenantResolutionFilter} and the OpenAPI documentation.
+     */
+    static boolean posSessionExempt(String path) {
+        return POS_LOGIN.equals(path) || java.util.Arrays.stream(ENROLMENT_ROUTES).anyMatch(path::equals);
+    }
+
     private final Set<Realm> realms;
     private final Predicate<String> authorizedParty;
 

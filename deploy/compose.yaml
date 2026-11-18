@@ -147,6 +147,8 @@ services:
       RESTAURANTPRO_OIDC_TENANT_ISSUER: ${RESTAURANTPRO_OIDC_TENANT_ISSUER:-}
       RESTAURANTPRO_OIDC_OPS_ISSUER: ${RESTAURANTPRO_OIDC_OPS_ISSUER:-}
       RESTAURANTPRO_OIDC_DEVICES_ISSUER: ${RESTAURANTPRO_OIDC_DEVICES_ISSUER:-}
+      # G13 (ADR 0041): the POS origin, web origin of the pos-* clients; unset = terminals cannot be created
+      RESTAURANTPRO_POS_ORIGIN: ${RESTAURANTPRO_POS_ORIGIN:-}
       # R5 operational alerts (D149-D152): verify-backups.sh writes the status file into ./status (mounted below).
       RESTAURANTPRO_ALERTS_BACKUP_STATUS_FILE: /run/restaurantpro/status/backup-status.json
       RESTAURANTPRO_ALERTS_CASH_DIFFERENCE_THRESHOLD: ${RESTAURANTPRO_ALERTS_CASH_DIFFERENCE_THRESHOLD:-0}
