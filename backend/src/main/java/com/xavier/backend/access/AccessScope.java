@@ -6,7 +6,8 @@ import java.util.UUID;
 
 /**
  * Where the current actor holds a permission ({@link AccessPolicy#scopeOf}): installation-wide ({@code global}), and
- * the stores of its store-scoped grants. Never empty: {@code scopeOf} refuses an actor that holds it nowhere. A query
+ * the stores of its store-scoped grants. {@code scopeOf} never returns an empty one (it refuses an actor that holds it
+ * nowhere); {@link AccessPolicy#storesWithAnyGrant} may (an account with no grant at all). A query
  * filters its rows with {@link #includes}; a global holder also sees rows of no store (system, company).
  *
  * @param global {@code true} when the permission is granted installation-wide

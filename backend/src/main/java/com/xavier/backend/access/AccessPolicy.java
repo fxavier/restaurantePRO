@@ -161,6 +161,27 @@ public class AccessPolicy {
     }
 
     /**
+     * The stores where the current BackOffice account holds any permission at all, for a selector that only lists
+     * where it may act (the BackOffice store list, FE-F09): every store when it holds any installation-wide grant,
+     * else the stores of its store-scoped grants, possibly none (never refused: holding nothing is a valid answer).
+     * No permission is used, so no step-up. A POS session has no BackOffice store list.
+     *
+     * @throws AccessDeniedException (403, logged) for a POS session
+     */
+    public AccessScope storesWithAnyGrant() {
+        Actor actor = current();
+        if (actor.kind() != ActorKind.ACCOUNT) {
+            throw denied(actor, "(BackOffice account)", ANY_STORE, ": a BackOffice account is required");
+        }
+        boolean global = actor.authorities().stream().anyMatch(a -> a.startsWith(Permission.PREFIX) && !a.contains("@"));
+        Set<UUID> stores = actor.authorities().stream()
+                .filter(a -> a.startsWith(Permission.PREFIX) && a.contains("@"))
+                .map(a -> UUID.fromString(a.substring(a.indexOf('@') + 1)))
+                .collect(Collectors.toUnmodifiableSet());
+        return new AccessScope(global, stores);
+    }
+
+    /**
      * The gate of every POS use case (D39). Requires an {@link ActorKind#EMPLOYEE} session on an enrolled terminal
      * that holds {@code permission} in the session's store, and that store to be active (D45, through
      * {@link StoreActivity}, asked once per request). A BackOffice session is refused even with an
