@@ -457,8 +457,10 @@ never sees one. POS sessions (employee PIN) and POS approvals are unchanged.
   `insufficient_user_authentication` (RFC 9470) with `MFA_STEP_UP_REQUIRED`; the SPA sends the user through the BFF's
   `/bff/step-up` and repeats the request with the same `Idempotency-Key`. Support access needs `acr` 2 on every request.
 - **Configuration** is the realm exports in `deploy/keycloak/` (see its README) and the issuers in `.env`
-  (`RESTAURANTPRO_OIDC_TENANT_ISSUER`, `_OPS_ISSUER`, `_DEVICES_ISSUER`). The R5 `RESTAURANTPRO_MFA_*` and
-  `RESTAURANTPRO_LAN_CIDRS` settings are gone: there is no LAN rule, every BackOffice login is remote.
+  (`RESTAURANTPRO_OIDC_TENANT_ISSUER`, `_OPS_ISSUER`, `_DEVICES_ISSUER`), plus `RESTAURANTPRO_POS_ORIGIN`, the POS
+  app's origin, set as the web origin of every terminal's (`pos-*`) client so the browser can call the devices realm's
+  token endpoint (ADR 0041; unset = creating or enrolling a terminal is 503 `IDP_UNAVAILABLE`). The R5
+  `RESTAURANTPRO_MFA_*` and `RESTAURANTPRO_LAN_CIDRS` settings are gone: there is no LAN rule, every BackOffice login is remote.
 
 **Break-glass (R6, D184).** The second factor lives in Keycloak, so a lost factor is reset there, not on the database: a
 Keycloak administrator of the realm opens the user (Users → the user → Credentials), deletes the OTP credential and

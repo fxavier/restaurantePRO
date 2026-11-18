@@ -4,6 +4,7 @@ import com.xavier.backend.tenancy.IdentityProviderAdmin;
 import java.net.http.HttpClient;
 import java.time.Clock;
 import java.time.Duration;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -48,13 +49,15 @@ class KeycloakAdminConfiguration {
         }
     }
 
+    /** {@code posOrigin}: the POS app's origin, the web origin of every {@code pos-*} client (G13, ADR 0041). */
     @Bean
-    IdentityProviderAdmin identityProviderAdmin(KeycloakAdminProperties properties, Clock clock) {
+    IdentityProviderAdmin identityProviderAdmin(KeycloakAdminProperties properties, Clock clock,
+            @Value("${restaurantpro.pos.origin:}") String posOrigin) {
         JdkClientHttpRequestFactory requests = new JdkClientHttpRequestFactory(HttpClient.newBuilder()
                 .connectTimeout(CONNECT_TIMEOUT).followRedirects(HttpClient.Redirect.NEVER).build());
         requests.setReadTimeout(READ_TIMEOUT);
         RestClient.Builder http = RestClient.builder().requestFactory(requests);
         return new KeycloakIdentityProviderAdmin(new RealmAdmin(http, properties.tenantProvisioner(), clock),
-                new RealmAdmin(http, properties.deviceProvisioner(), clock));
+                new RealmAdmin(http, properties.deviceProvisioner(), clock), posOrigin);
     }
 }

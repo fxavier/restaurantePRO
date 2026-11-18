@@ -137,6 +137,11 @@ restaurantpro:
       realm: restaurantpro-devices
       client-id: device-provisioner
       key-file: ${RESTAURANTPRO_KEYCLOAK_DEVICES_ADMIN_KEY_FILE:}
+  pos:
+    # G13 (ADR 0041): the POS app's origin (scheme://host[:port], no path), set as the one web origin of every pos-*
+    # client so the browser may call the devices realm's token endpoint; bridge-* clients get none. Unset = creating
+    # or enrolling a terminal is 503 IDP_UNAVAILABLE (fail closed, as the admin accounts); not an origin = no start.
+    origin: ${RESTAURANTPRO_POS_ORIGIN:}
   jobs:
     # R6 (D185): a reach-ALL job takes a lease per (job, tenant) for this long (released when its run ends), and handles
     # at most this many items per tenant per tick (fairness).
