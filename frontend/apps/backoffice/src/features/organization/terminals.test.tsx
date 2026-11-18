@@ -1,0 +1,483 @@
+import { cleanup, screen, waitFor, within } from '@testing-library/react';
+import { http, HttpResponse } from 'msw';
+import { describe, expect, it } from 'vitest';
+import { resetLoginGuard } from '../../lib/browser';
+import {
+  admin,
+  api,
+  baixa,
+  problem,
+  signedIn,
+  stepUpRequired,
+  terminal,
+  terminalPage,
+  type TerminalSummary,
+} from '../../test/fixtures';
+import { CSRF_TOKEN, renderApp } from '../../test/render-app';
+import { server } from '../../test/server';
+
+const TERMINALS = `/organization/terminals?storeId=${baixa.id}`;
+const caixa1 = terminal('aaaa0000-0000-4000-8000-000000000001', 'CX1', 'Caixa 1', 'ACTIVE');
+const bar = terminal('aaaa0000-0000-4000-8000-000000000002', 'BAR', 'Bar', 'REGISTERED');
+const bridge = terminal('aaaa0000-0000-4000-8000-000000000003', 'PB1', 'Impressoras', 'REVOKED', baixa.id, 'PRINT_BRIDGE');
+
+/** The one-time enrolment code (Crockford base32, 8 + 16) and how the dialog groups it. */
+const CODE = 'ABCD1234EFGH5678JKMN9PQR';
+const GROUPED = 'ABCD 1234 EFGH 5678 JKMN 9PQR';
+const EXPIRES = '2026-11-19T08:00:00Z';
+
+type Seen = { url: string; body: unknown; idempotencyKey: string | null; csrf: string | null };
+
+async function seen(request: Request): Promise<Seen> {
+  const text = await request.clone().text();
+  return {
+    url: new URL(request.url).pathname + new URL(request.url).search,
+    body: text ? JSON.parse(text) : undefined,
+    idempotencyKey: request.headers.get('Idempotency-Key'),
+    csrf: request.headers.get('X-XSRF-TOKEN'),
+  };
+}
+
+/** A store's terminals that the create and revoke handlers change, as the server would. */
+function terminalsServer(initial: TerminalSummary[] = []) {
+  const state = { terminals: [...initial], lists: [] as string[] };
+  server.use(...signedIn());
+  server.use(
+    http.get(api('/api/v1/backoffice/terminals'), ({ request }) => {
+      state.lists.push(new URL(request.url).search);
+      return HttpResponse.json(terminalPage(state.terminals));
+    }),
+  );
+  return state;
+}
+
+/** Everything the browser keeps that a script or a later visitor could read. */
+function storedText() {
+  const all: string[] = [];
+  for (const storage of [localStorage, sessionStorage]) {
+    for (let i = 0; i < storage.length; i++) {
+      const key = storage.key(i)!;
+      all.push(key, storage.getItem(key) ?? '');
+    }
+  }
+  return all.join('\n');
+}
+
+function newPageLoad() {
+  cleanup();
+  resetLoginGuard();
+}
+
+describe('terminals list', () => {
+  it('asks for a store before listing anything', async () => {
+    const state = terminalsServer();
+
+    renderApp('/organization/terminals');
+
+    expect(await screen.findByText('Escolha uma loja na barra superior para ver os seus terminais.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Registar terminal' })).not.toBeInTheDocument();
+    expect(state.lists).toEqual([]);
+  });
+
+  it('says so when the store has no terminal yet', async () => {
+    terminalsServer();
+
+    renderApp(TERMINALS);
+
+    expect(await screen.findByText('Esta loja ainda não tem terminais.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Registar terminal' })).toBeEnabled();
+  });
+
+  it("lists the selected store's terminals with their kind and state, asking for a page in Spring's parameters", async () => {
+    const state = terminalsServer([caixa1, bar, bridge]);
+
+    renderApp(TERMINALS);
+
+    const table = await screen.findByRole('table', { name: 'Terminais da loja' });
+    const rows = within(table).getAllByRole('row').slice(1);
+    expect(rows.map((row) => within(row).getAllByRole('cell').slice(0, 4).map((cell) => cell.textContent))).toEqual([
+      ['Caixa 1', 'CX1', 'Terminal POS', 'Ativo'],
+      ['Bar', 'BAR', 'Terminal POS', 'Por ativar'],
+      ['Impressoras', 'PB1', 'Ponte de impressão', 'Revogado'],
+    ]);
+    expect(within(rows[2]!).queryByRole('button', { name: /Emitir código/ })).not.toBeInTheDocument();
+    expect(within(rows[2]!).queryByRole('button', { name: /Revogar/ })).not.toBeInTheDocument();
+    expect(state.lists).toEqual([`?storeId=${baixa.id}&page=0&size=50`]);
+  });
+
+  it('shows the API refusal to a user without the permission who reaches the page', async () => {
+    server.use(...signedIn({ session: { ...admin, permissions: ['STORE_MANAGE'] } }));
+    server.use(
+      http.get(api('/api/v1/backoffice/terminals'), () => problem(403, 'HTTP_403', 'Forbidden')),
+    );
+
+    renderApp(TERMINALS);
+
+    expect(await screen.findByText('Sem permissão para ver os terminais desta loja.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Registar terminal' })).not.toBeInTheDocument();
+  });
+
+  it('shows "Sem ligação" with a retry when the list cannot be reached', async () => {
+    let calls = 0;
+    server.use(...signedIn());
+    server.use(
+      http.get(api('/api/v1/backoffice/terminals'), () => {
+        calls += 1;
+        return calls <= 3 ? problem(502, 'BACKEND_UNAVAILABLE') : HttpResponse.json(terminalPage([caixa1]));
+      }),
+    );
+
+    const { user } = renderApp(TERMINALS);
+
+    expect(await screen.findByText('Sem ligação ao serviço.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+    expect(await screen.findByRole('cell', { name: 'Caixa 1' })).toBeInTheDocument();
+  });
+
+  it('asks for a fresh second factor when the list itself needs it, and comes back to this page', async () => {
+    server.use(...signedIn());
+    server.use(http.get(api('/api/v1/backoffice/terminals'), () => stepUpRequired(300)));
+
+    const { user, leave } = renderApp(TERMINALS);
+
+    expect(await screen.findByText('Para ver os terminais, confirme a sua identidade.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Confirmar identidade' }));
+    const target = new URL(leave.mock.calls[0]![0], 'http://localhost');
+    expect(target.pathname).toBe('/bff/step-up');
+    expect(Object.fromEntries(target.searchParams)).toEqual({ acr_values: '2', max_age: '300', return: TERMINALS });
+    expect(storedText()).toBe('');
+  });
+});
+
+describe('registering a terminal', () => {
+  function createHandler(state: ReturnType<typeof terminalsServer>, answer?: (n: number) => Response | undefined) {
+    const requests: Seen[] = [];
+    server.use(
+      http.post(api('/api/v1/backoffice/terminals'), async ({ request }) => {
+        requests.push(await seen(request));
+        const custom = answer?.(requests.length);
+        if (custom) return custom;
+        const body = requests.at(-1)!.body as { code: string; name: string };
+        const created = terminal(`bbbb0000-0000-4000-8000-00000000000${state.terminals.length}`, body.code, body.name);
+        state.terminals.push(created);
+        return HttpResponse.json(created, { status: 201 });
+      }),
+    );
+    return requests;
+  }
+
+  async function fillAndSubmit(user: ReturnType<typeof renderApp>['user'], code = 'CX2', name = 'Caixa 2') {
+    await user.click(await screen.findByRole('button', { name: 'Registar terminal' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Registar terminal' });
+    if (code) await user.type(within(dialog).getByLabelText('Código'), code);
+    if (name) await user.type(within(dialog).getByLabelText('Nome'), name);
+    await user.click(within(dialog).getByRole('button', { name: 'Registar' }));
+    return dialog;
+  }
+
+  it('registers a POS terminal in the selected store and shows it in the list', async () => {
+    const state = terminalsServer();
+    const requests = createHandler(state);
+
+    const { user } = renderApp(TERMINALS);
+    await fillAndSubmit(user);
+
+    expect(await screen.findByRole('cell', { name: 'Caixa 2' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Registar terminal' })).not.toBeInTheDocument();
+    expect(requests).toEqual([
+      {
+        url: '/api/v1/backoffice/terminals',
+        body: { storeId: baixa.id, code: 'CX2', name: 'Caixa 2', kind: 'POS' },
+        // The contract declares no Idempotency-Key here, so none is sent (FC §8).
+        idempotencyKey: null,
+        csrf: CSRF_TOKEN,
+      },
+    ]);
+  });
+
+  it('checks the fields before sending', async () => {
+    const state = terminalsServer();
+    const requests = createHandler(state);
+
+    const { user } = renderApp(TERMINALS);
+    const dialog = await fillAndSubmit(user, 'CX2', '');
+
+    expect(await within(dialog).findByText('Indique o nome.')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Nome')).toHaveAttribute('aria-invalid', 'true');
+    expect(requests).toEqual([]);
+  });
+
+  it("shows the server's validation error on its field", async () => {
+    const state = terminalsServer();
+    createHandler(state, () =>
+      problem(400, 'VALIDATION_FAILED', 'Invalid request', {
+        errors: [{ field: 'name', message: 'O nome tem caracteres inválidos.' }],
+      }),
+    );
+
+    const { user } = renderApp(TERMINALS);
+    const dialog = await fillAndSubmit(user);
+
+    expect(await within(dialog).findByText('O nome tem caracteres inválidos.')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Nome')).toHaveAttribute('aria-invalid', 'true');
+    expect(within(dialog).getByLabelText('Código')).toHaveAttribute('aria-invalid', 'false');
+  });
+
+  it('shows a taken code on the code field', async () => {
+    const state = terminalsServer([caixa1]);
+    createHandler(state, () => problem(409, undefined, 'Conflict', { detail: "Terminal code 'CX1' is already used." }));
+
+    const { user } = renderApp(TERMINALS);
+    const dialog = await fillAndSubmit(user, 'CX1');
+
+    expect(await within(dialog).findByText('Já existe um terminal com este código nesta loja.')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Código')).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('shows "Sem permissão" on a 403', async () => {
+    const state = terminalsServer();
+    createHandler(state, () => problem(403, 'HTTP_403', 'Forbidden'));
+
+    const { user } = renderApp(TERMINALS);
+    const dialog = await fillAndSubmit(user);
+
+    expect(await within(dialog).findByText('Sem permissão para esta ação.')).toBeInTheDocument();
+  });
+
+  it('says "Sem ligação" when no answer came, and retries the same request once, with one effect', async () => {
+    const state = terminalsServer();
+    const requests = createHandler(state, (n) => (n === 1 ? HttpResponse.error() : undefined));
+
+    const { user } = renderApp(TERMINALS);
+    const dialog = await fillAndSubmit(user);
+
+    expect(await within(dialog).findByText('Sem ligação — a operação não foi confirmada.')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Tentar novamente' }));
+
+    expect(await screen.findByRole('cell', { name: 'Caixa 2' })).toBeInTheDocument();
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toEqual(requests[0]);
+    expect(state.terminals).toHaveLength(1);
+  });
+
+  it('goes through step-up and, back on the resume page, finishes with the restored form, once', async () => {
+    const state = terminalsServer();
+    const requests = createHandler(state, (n) => (n === 1 ? stepUpRequired(300) : undefined));
+
+    const first = renderApp(TERMINALS);
+    await fillAndSubmit(first.user);
+
+    const stepUp = await screen.findByRole('alertdialog', { name: 'Confirme a sua identidade' });
+    await first.user.click(within(stepUp).getByRole('button', { name: 'Confirmar identidade' }));
+    expect(first.leave).toHaveBeenCalledWith('/bff/step-up?acr_values=2&max_age=300&return=%2Fstep-up%2Fresume');
+    expect(JSON.parse(sessionStorage.getItem('restaurantpro.backoffice.pendingCommand')!)).toMatchObject({
+      method: 'POST',
+      path: '/api/v1/backoffice/terminals',
+      body: { storeId: baixa.id, code: 'CX2', name: 'Caixa 2', kind: 'POS' },
+      idempotencyKey: null,
+      returnTo: TERMINALS,
+    });
+
+    newPageLoad();
+    const back = renderApp('/step-up/resume');
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Continuar a operação' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Código')).toHaveValue('CX2');
+    expect(screen.getByLabelText('Nome')).toHaveValue('Caixa 2');
+    await back.user.click(screen.getByRole('button', { name: 'Continuar' }));
+
+    expect(await screen.findByRole('cell', { name: 'Caixa 2' })).toBeInTheDocument();
+    expect(back.currentUrl()).toBe(TERMINALS);
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toEqual(requests[0]);
+    expect(state.terminals).toHaveLength(1);
+    expect(sessionStorage.getItem('restaurantpro.backoffice.pendingCommand')).toBeNull();
+  });
+});
+
+describe('the one-time enrolment code', () => {
+  function issueHandler(answer?: (n: number) => Response | undefined) {
+    const requests: Seen[] = [];
+    server.use(
+      http.post(api('/api/v1/backoffice/terminals/:id/enrollment-code'), async ({ request, params }) => {
+        requests.push(await seen(request));
+        return (
+          answer?.(requests.length) ??
+          HttpResponse.json(
+            { terminalId: String(params.id), code: CODE, expiresAt: EXPIRES },
+            { headers: { 'Cache-Control': 'no-store' } },
+          )
+        );
+      }),
+    );
+    return requests;
+  }
+
+  it('is shown once, large and copyable, with its 24 h single-use note, and is gone after closing', async () => {
+    terminalsServer([caixa1, bar]);
+    const requests = issueHandler();
+
+    const { user, queryClient, currentUrl } = renderApp(TERMINALS);
+    await user.click(await screen.findByRole('button', { name: 'Emitir código para Bar' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Código de registo de Bar' });
+    expect(within(dialog).getByText(GROUPED)).toBeInTheDocument();
+    expect(within(dialog).getByText(/Válido durante 24 h e só pode ser usado uma vez/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Copiar código' }));
+    expect(await navigator.clipboard.readText()).toBe(CODE);
+    expect(within(dialog).getByText('Código copiado.')).toBeInTheDocument();
+    expect(requests).toEqual([
+      {
+        url: `/api/v1/backoffice/terminals/${bar.id}/enrollment-code`,
+        body: undefined,
+        idempotencyKey: null,
+        csrf: CSRF_TOKEN,
+      },
+    ]);
+
+    await user.click(within(dialog).getByRole('button', { name: 'Fechar' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(document.body.textContent).not.toContain(CODE);
+    expect(document.body.textContent).not.toContain(GROUPED);
+    // Never in storage, the address, or the query and mutation caches.
+    expect(storedText()).not.toContain(CODE);
+    expect(currentUrl()).not.toContain(CODE);
+    await waitFor(() => {
+      const cached = JSON.stringify([
+        queryClient.getQueryCache().getAll().map((query) => [query.queryKey, query.state.data]),
+        queryClient.getMutationCache().getAll().map((mutation) => mutation.state),
+      ]);
+      expect(cached).not.toContain(CODE);
+    });
+  });
+
+  it('goes through step-up and resumes by repeating the request: one code, nothing secret stored', async () => {
+    terminalsServer([caixa1, bar]);
+    const requests = issueHandler((n) => (n === 1 ? stepUpRequired(300) : undefined));
+
+    const first = renderApp(TERMINALS);
+    await first.user.click(await screen.findByRole('button', { name: 'Emitir código para Bar' }));
+    const stepUp = await screen.findByRole('alertdialog', { name: 'Confirme a sua identidade' });
+    expect(within(stepUp).getByText(/segundo fator/)).toBeInTheDocument();
+    await first.user.click(within(stepUp).getByRole('button', { name: 'Confirmar identidade' }));
+
+    expect(first.leave).toHaveBeenCalledWith('/bff/step-up?acr_values=2&max_age=300&return=%2Fstep-up%2Fresume');
+    expect(JSON.parse(sessionStorage.getItem('restaurantpro.backoffice.pendingCommand')!)).toMatchObject({
+      method: 'POST',
+      path: `/api/v1/backoffice/terminals/${bar.id}/enrollment-code`,
+      idempotencyKey: null,
+      returnTo: TERMINALS,
+    });
+
+    newPageLoad();
+    const back = renderApp('/step-up/resume');
+
+    expect(await screen.findByText('Emitir o código de registo do terminal Bar.')).toBeInTheDocument();
+    await back.user.click(screen.getByRole('button', { name: 'Continuar' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Código de registo de Bar' });
+    expect(within(dialog).getByText(GROUPED)).toBeInTheDocument();
+    expect(sessionStorage.getItem('restaurantpro.backoffice.pendingCommand')).toBeNull();
+    expect(storedText()).not.toContain(CODE);
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toEqual(requests[0]);
+
+    await back.user.click(within(dialog).getByRole('button', { name: 'Fechar' }));
+    await waitFor(() => expect(back.currentUrl()).toBe(TERMINALS));
+    expect(document.body.textContent).not.toContain(GROUPED);
+  });
+
+  it('keeps the request to retry when no answer came, and repeats it once', async () => {
+    terminalsServer([bar]);
+    const requests = issueHandler((n) => (n === 1 ? HttpResponse.error() : undefined));
+
+    const { user } = renderApp(TERMINALS);
+    await user.click(await screen.findByRole('button', { name: 'Emitir código para Bar' }));
+
+    expect(await screen.findByText('Sem ligação — a operação não foi confirmada.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+
+    expect(await screen.findByText(GROUPED)).toBeInTheDocument();
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toEqual(requests[0]);
+  });
+});
+
+describe('revoking a terminal', () => {
+  it('asks for confirmation first, then revokes once and shows the new state', async () => {
+    const state = terminalsServer([caixa1]);
+    const requests: Seen[] = [];
+    server.use(
+      http.post(api('/api/v1/backoffice/terminals/:id/revoke'), async ({ request }) => {
+        requests.push(await seen(request));
+        state.terminals = state.terminals.map((t) => (t.id === caixa1.id ? { ...t, status: 'REVOKED' } : t));
+        return HttpResponse.json(state.terminals[0]);
+      }),
+    );
+
+    const { user } = renderApp(TERMINALS);
+    await user.click(await screen.findByRole('button', { name: 'Revogar Caixa 1' }));
+    let confirm = await screen.findByRole('alertdialog', { name: 'Revogar o terminal Caixa 1?' });
+    await user.click(within(confirm).getByRole('button', { name: 'Cancelar' }));
+    expect(requests).toEqual([]);
+
+    await user.click(screen.getByRole('button', { name: 'Revogar Caixa 1' }));
+    confirm = await screen.findByRole('alertdialog', { name: 'Revogar o terminal Caixa 1?' });
+    await user.click(within(confirm).getByRole('button', { name: 'Revogar' }));
+
+    expect(await screen.findByRole('cell', { name: 'Revogado' })).toBeInTheDocument();
+    expect(requests).toEqual([
+      { url: `/api/v1/backoffice/terminals/${caixa1.id}/revoke`, body: undefined, idempotencyKey: null, csrf: CSRF_TOKEN },
+    ]);
+  });
+});
+
+describe('the step-up resume page', () => {
+  const KEY = 'restaurantpro.backoffice.pendingCommand';
+  const valid = {
+    method: 'POST',
+    path: `/api/v1/backoffice/terminals/${bar.id}/revoke`,
+    body: null,
+    idempotencyKey: null,
+    returnTo: TERMINALS,
+    label: 'Bar',
+    tenantId: admin.tenantId,
+  };
+
+  it.each([
+    ['garbage', 'not json {'],
+    ['an expired command', JSON.stringify({ ...valid, savedAt: Date.now() - 16 * 60_000 })],
+    ['a command of another company', JSON.stringify({ ...valid, tenantId: 'cccccccc-0000-4000-8000-000000000003', savedAt: Date.now() })],
+    ['a path that is not a resumable command', JSON.stringify({ ...valid, path: '/api/v1/backoffice/users', savedAt: Date.now() })],
+    ['a return outside the app', JSON.stringify({ ...valid, returnTo: '//evil.example', savedAt: Date.now() })],
+  ])('discards %s safely', async (_name, stored) => {
+    terminalsServer([bar]);
+    let revokes = 0;
+    server.use(http.post(api('/api/v1/backoffice/terminals/:id/revoke'), () => {
+      revokes += 1;
+      return HttpResponse.json(bar);
+    }));
+    sessionStorage.setItem(KEY, stored);
+
+    renderApp('/step-up/resume');
+
+    expect(await screen.findByText('Não há nenhuma operação por continuar.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Continuar' })).not.toBeInTheDocument();
+    expect(sessionStorage.getItem(KEY)).toBeNull();
+    expect(revokes).toBe(0);
+  });
+
+  it('lets the user cancel the pending command', async () => {
+    terminalsServer([bar]);
+    sessionStorage.setItem(KEY, JSON.stringify({ ...valid, savedAt: Date.now() }));
+
+    const { user, currentUrl } = renderApp('/step-up/resume');
+
+    expect(await screen.findByText('Revogar o terminal Bar.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }));
+
+    await waitFor(() => expect(currentUrl()).toBe(TERMINALS));
+    expect(sessionStorage.getItem(KEY)).toBeNull();
+  });
+});
