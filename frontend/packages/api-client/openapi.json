@@ -866,6 +866,399 @@
         ],
         "type": "object"
       },
+      "com.xavier.backend.catalog.model.dto.CatalogSnapshot": {
+        "properties": {
+          "automaticItems": {
+            "items": {
+              "$ref": "#/components/schemas/com.xavier.backend.catalog.model.dto.CatalogSnapshot.AutomaticItem"
+            },
+            "type": "array"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "effectiveAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "families": {
+            "items": {
+              "$ref": "#/components/schemas/com.xavier.backend.catalog.model.dto.CatalogSnapshot.Family"
+            },
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/com.xavier.backend.catalog.model.dto.CatalogSnapshot.Item"
+            },
+            "type": "array"
+          },
+          "macros": {
+            "items": {
+              "$ref": "#/components/schemas/com.xavier.backend.catalog.model.dto.CatalogSnapshot.Macro"
+            },
+            "type": "array"
+          },
+          "quickPages": {
+            "items": {
+              "$ref": "#/components/schemas/com.xavier.backend.catalog.model.dto.CatalogSnapshot.QuickPage"
+            },
+            "type": "array"
+          },
+          "releaseId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "schemaVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "storeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "taxCategories": {
+            "items": {
+              "$ref": "#/components/schemas/com.xavier.backend.catalog.model.dto.CatalogSnapshot.TaxCategory"
+            },
+            "type": "array"
+          },
+          "units": {
+            "items": {
+              "$ref": "#/components/schemas/com.xavier.backend.catalog.model.dto.CatalogSnapshot.Unit"
+            },
+            "type": "array"
+          },
+          "version": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "com.xavier.backend.catalog.model.dto.CatalogSnapshot.AutomaticItem": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "itemId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "trigger": {
+            "type": "string"
+          },
+          "variantId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "com.xavier.backend.catalog.model.dto.CatalogSnapshot.Barcode": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "variantId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "com.xavier.backend.catalog.model.dto.CatalogSnapshot.Family": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "parentId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "com.xavier.backend.catalog.model.dto.CatalogSnapshot.Item": {
+        "properties": {
+          "barcodes": {
+            "items": {
+              "$ref": "#/components/schemas/com.xavier.backend.catalog.model.dto.CatalogSnapshot.Barcode"
+            },
+            "type": "array"
+          },
+          "code": {
+            "type": "string"
+          },
+          "familyId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "STANDARD",
+              "MENU",
+              "FEE"
+            ],
+            "type": "string"
+          },
+          "menuGroups": {
+            "items": {
+              "$ref": "#/components/schemas/com.xavier.backend.catalog.model.dto.CatalogSnapshot.MenuGroup"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "price": {
+            "$ref": "#/components/schemas/com.xavier.backend.catalog.model.dto.CatalogSnapshot.Price"
+          },
+          "productionDestination": {
+            "type": "string"
+          },
+          "soldByWeight": {
+            "type": "boolean"
+          },
+          "taxCategoryId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "unitId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "variants": {
+            "items": {
+              "$ref": "#/components/schemas/com.xavier.backend.catalog.model.dto.CatalogSnapshot.Variant"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "com.xavier.backend.catalog.model.dto.CatalogSnapshot.Macro": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/com.xavier.backend.catalog.model.dto.CatalogSnapshot.MacroEntry"
+            },
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "com.xavier.backend.catalog.model.dto.CatalogSnapshot.MacroEntry": {
+        "properties": {
+          "itemId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "variantId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "com.xavier.backend.catalog.model.dto.CatalogSnapshot.MenuGroup": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "maxChoices": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "minChoices": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/com.xavier.backend.catalog.model.dto.CatalogSnapshot.MenuOption"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "com.xavier.backend.catalog.model.dto.CatalogSnapshot.MenuOption": {
+        "properties": {
+          "itemId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "variantId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "com.xavier.backend.catalog.model.dto.CatalogSnapshot.Price": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "com.xavier.backend.catalog.model.dto.CatalogSnapshot.QuickPage": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/com.xavier.backend.catalog.model.dto.CatalogSnapshot.QuickPageEntry"
+            },
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "position": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "com.xavier.backend.catalog.model.dto.CatalogSnapshot.QuickPageEntry": {
+        "properties": {
+          "itemId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "macroId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "variantId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "com.xavier.backend.catalog.model.dto.CatalogSnapshot.Rate": {
+        "properties": {
+          "effectiveFrom": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "ratePercent": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "com.xavier.backend.catalog.model.dto.CatalogSnapshot.TaxCategory": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "rateEffectiveFrom": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "ratePercent": {
+            "type": "string"
+          },
+          "rates": {
+            "items": {
+              "$ref": "#/components/schemas/com.xavier.backend.catalog.model.dto.CatalogSnapshot.Rate"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "com.xavier.backend.catalog.model.dto.CatalogSnapshot.Unit": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "com.xavier.backend.catalog.model.dto.CatalogSnapshot.Variant": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "price": {
+            "$ref": "#/components/schemas/com.xavier.backend.catalog.model.dto.CatalogSnapshot.Price"
+          }
+        },
+        "type": "object"
+      },
       "com.xavier.backend.catalog.model.dto.DailyDishesRequest": {
         "properties": {
           "businessDate": {
@@ -1577,7 +1970,7 @@
       "com.xavier.backend.catalog.model.dto.PosCatalogResponse": {
         "properties": {
           "catalog": {
-            "$ref": "#/components/schemas/tools.jackson.databind.JsonNode"
+            "$ref": "#/components/schemas/com.xavier.backend.catalog.model.dto.CatalogSnapshot"
           },
           "effectiveAt": {
             "format": "date-time",
@@ -13386,95 +13779,6 @@
           "timeout": {
             "format": "int64",
             "type": "integer"
-          }
-        },
-        "type": "object"
-      },
-      "tools.jackson.databind.JsonNode": {
-        "properties": {
-          "array": {
-            "type": "boolean"
-          },
-          "bigDecimal": {
-            "type": "boolean"
-          },
-          "bigInteger": {
-            "type": "boolean"
-          },
-          "binary": {
-            "type": "boolean"
-          },
-          "boolean": {
-            "type": "boolean"
-          },
-          "container": {
-            "type": "boolean"
-          },
-          "double": {
-            "type": "boolean"
-          },
-          "embeddedValue": {
-            "type": "boolean"
-          },
-          "empty": {
-            "type": "boolean"
-          },
-          "float": {
-            "type": "boolean"
-          },
-          "floatingPointNumber": {
-            "type": "boolean"
-          },
-          "int": {
-            "type": "boolean"
-          },
-          "integralNumber": {
-            "type": "boolean"
-          },
-          "long": {
-            "type": "boolean"
-          },
-          "missingNode": {
-            "type": "boolean"
-          },
-          "nodeType": {
-            "enum": [
-              "ARRAY",
-              "BINARY",
-              "BOOLEAN",
-              "MISSING",
-              "NULL",
-              "NUMBER",
-              "OBJECT",
-              "POJO",
-              "STRING"
-            ],
-            "type": "string"
-          },
-          "null": {
-            "type": "boolean"
-          },
-          "number": {
-            "type": "boolean"
-          },
-          "object": {
-            "type": "boolean"
-          },
-          "pojo": {
-            "type": "boolean"
-          },
-          "short": {
-            "type": "boolean"
-          },
-          "string": {
-            "type": "boolean"
-          },
-          "textual": {
-            "deprecated": true,
-            "type": "boolean"
-          },
-          "valueNode": {
-            "type": "boolean"
           }
         },
         "type": "object"
