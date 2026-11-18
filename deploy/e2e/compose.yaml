@@ -132,6 +132,10 @@ services:
       RESTAURANTPRO_KEYCLOAK_DEVICES_ADMIN_BASE_URL: http://localhost:18180
       RESTAURANTPRO_KEYCLOAK_DEVICES_ADMIN_KEY_FILE: /run/secrets/device_provisioner_key
       RESTAURANTPRO_POS_ORIGIN: http://localhost:14173 # G13: web origin of the pos-* clients
+      # D184's step-up maximum age (restaurantpro.security.step-up-max-age, PT5M elsewhere), short here so that flow (a)
+      # meets a stale second factor without waiting five minutes (e2e/stack/terminals-step-up.spec.ts). Every
+      # sensitive call of the e2e (the seed's, the specs') runs within 30 s of its sign-in or goes through step-up.
+      RESTAURANTPRO_SECURITY_STEPUPMAXAGE: PT30S
       JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=60
     secrets:
       - db_owner_password

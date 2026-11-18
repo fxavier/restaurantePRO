@@ -7,6 +7,7 @@ const messages: Record<string, string> = {
   TENANT_SUSPENDED: 'Esta empresa está suspensa.',
   TENANT_CLOSED: 'Esta empresa está encerrada.',
   TENANT_SELECTION_INVALID: 'Empresa inválida.',
+  MFA_STEP_UP_REQUIRED: 'Esta ação pede que confirme a sua identidade.',
 };
 
 export function errorMessage(error: unknown): string {
