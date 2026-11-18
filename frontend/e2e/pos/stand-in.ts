@@ -12,6 +12,9 @@ export const SESSION = {
   name: 'Ana Silva',
   mustChangePin: false,
   permissions: [`PERM_DINING_VIEW@${STORE}`, `PERM_ORDER_EDIT@${STORE}`],
+  storeName: 'Loja Baixa',
+  storeTimezone: 'Africa/Maputo',
+  currency: 'MZN',
   posSession: 'pos-session-e2e',
 };
 

@@ -77,11 +77,11 @@ public class TableMapService {
         boolean reserved = nextReservationAt != null;
         if (open == null) {
             return new TableMap.Table(table.getId(), table.getCode(), table.getSeats(), TableStatus.FREE,
-                    table.isLocked(), false, null, null, null, reserved, nextReservationAt);
+                    table.isLocked(), false, null, null, null, null, reserved, nextReservationAt);
         }
         OccupationView occupation = open.toView(table.getCode());
         return new TableMap.Table(table.getId(), table.getCode(), table.getSeats(), TableStatus.OCCUPIED,
                 table.isLocked(), occupation.subtotalPrintedAt() != null, occupation.openedAt(), occupation.guests(),
-                occupation.openedByEmployeeId(), reserved, nextReservationAt);
+                occupation.openedByEmployeeId(), occupation.orderId(), reserved, nextReservationAt);
     }
 }

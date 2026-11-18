@@ -12,10 +12,7 @@ export function seatsLabel(seats: number): string {
   return `${seats} ${plural.select(seats) === 'one' ? 'lugar' : 'lugares'}`;
 }
 
-/**
- * "12:05": an instant as a clock time in `timeZone`. The POS contract does not give the store's zone yet (gap), so
- * the map passes none and the terminal's own zone applies: a terminal stands in its store.
- */
-export function clockTime(instant: string, timeZone?: string): string {
+/** "12:05": an instant as a clock time in `timeZone`, the store's (`useStoreTimeZone`), never the terminal's. */
+export function clockTime(instant: string, timeZone: string): string {
   return new Intl.DateTimeFormat(LOCALE, { hour: '2-digit', minute: '2-digit', timeZone }).format(new Date(instant));
 }
