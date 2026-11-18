@@ -184,6 +184,42 @@ describe('live updates', () => {
     });
   }
 
+  it('a 401 with a token challenge (the terminal token refused) is retried with backoff, not taken as final', async () => {
+    fakeTimers();
+    const challenged = () => problem(401, 'HTTP_401', { 'WWW-Authenticate': 'Bearer error="invalid_token"' });
+    const { calls } = await onTheMap(challenged, 'stream');
+
+    await waitFor(() => expect(connection()).toHaveTextContent('Sem ligação'));
+    await advance(1_100);
+
+    await waitFor(() => expect(connection()).toHaveTextContent('Ligado'));
+    expect(calls.count).toBe(2);
+  });
+
+  it('POS_SESSION_INVALID on the stream ends the session', async () => {
+    tokenEndpoint(token('jwt-1'));
+    tablesEndpoint(() => HttpResponse.json(MAP));
+    const { calls } = notificationsEndpoint(() => problem(401, 'POS_SESSION_INVALID'));
+    await renderPos({ device: 'enrolled', loggedIn: true, path: '/tables' });
+
+    await waitFor(() => expect(calls.count).toBe(1));
+    expect(await screen.findByLabelText('Código de empregado')).toBeInTheDocument();
+  });
+
+  it('a refusal lasts one session: after logout and a new login the stream is tried again', async () => {
+    fakeTimers();
+    posLogoutEndpoint();
+    const { services, user, calls } = await onTheMap(() => problem(403, 'HTTP_403'), 'stream');
+    await waitFor(() => expect(connection()).toHaveTextContent('Atualizações indisponíveis'));
+
+    await user.click(screen.getByRole('button', { name: 'Trocar empregado' }));
+    await screen.findByLabelText('Código de empregado');
+    act(() => services.session.start(SESSION));
+
+    await waitFor(() => expect(connection()).toHaveTextContent('Ligado'));
+    expect(calls.count).toBe(2);
+  });
+
   it('shows "Sem ligação" when the first subscription fails', async () => {
     await onTheMap(() => HttpResponse.error());
 

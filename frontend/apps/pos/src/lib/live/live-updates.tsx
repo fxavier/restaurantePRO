@@ -38,9 +38,27 @@ export function LiveUpdates({ children }: { children: ReactNode }) {
     () =>
       startChangeStream({
         async open(signal) {
-          const { data } = await api.GET('/api/v1/pos/notifications', { parseAs: 'stream', signal });
-          if (!data) throw new Error('No event stream');
-          return data;
+          let challenged = false;
+          // Runs before the client turns the answer into an ApiError, which keeps no headers.
+          const challenge = {
+            onResponse({ response }: { response: Response }) {
+              challenged = response.headers.has('WWW-Authenticate');
+              return undefined;
+            },
+          };
+          try {
+            const { data } = await api.GET('/api/v1/pos/notifications', {
+              parseAs: 'stream',
+              signal,
+              middleware: [challenge],
+            });
+            if (!data) throw new Error('No event stream');
+            return data;
+          } catch (error) {
+            // The terminal token refused (Keycloak down while it renewed): it passes, so retry like no answer.
+            if (challenged) throw new Error('Terminal token refused', { cause: error });
+            throw error;
+          }
         },
         onChange: (notice) => {
           for (const queryKey of keysOf(notice)) void queryClient.invalidateQueries({ queryKey });
@@ -48,8 +66,10 @@ export function LiveUpdates({ children }: { children: ReactNode }) {
         onOpen: () => void queryClient.invalidateQueries({ queryKey: ['pos'] }),
         onPoll: () => void queryClient.refetchQueries({ queryKey: ['pos'], type: 'active' }),
         onState: setState,
-        // 403: no DINING_VIEW or PRODUCTION_VIEW; 401: refused (POS_SESSION_INVALID already ends the session).
-        isRefusal: (error) => error instanceof ApiError && (error.status === 401 || error.status === 403),
+        // 403: no DINING_VIEW or PRODUCTION_VIEW; a 401 from a handler. POS_SESSION_INVALID ends the session instead.
+        isRefusal: (error) =>
+          error instanceof ApiError &&
+          (error.status === 403 || (error.status === 401 && error.code !== 'POS_SESSION_INVALID')),
       }),
     [api, queryClient],
   );
