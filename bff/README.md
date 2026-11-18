@@ -9,7 +9,7 @@ backend with the user's access token. The browser only ever holds the session co
 
 | route | behaviour |
 | --- | --- |
-| `GET /oauth2/authorization/keycloak` | Starts the login: authorization code with PKCE `S256` (Spring Security 7 requires a proof key by default). |
+| `GET /oauth2/authorization/keycloak` | Starts the login: authorization code with PKCE `S256` (Spring Security 7 requires a proof key by default). It sends no `acr_values`: Keycloak applies the client's default ACR `2`, so every login asks for the password and the OTP (D184, FE-F07). |
 | `GET /login/oauth2/code/keycloak` | The callback. It exchanges the code with `private_key_jwt` (RFC 7523) and then redirects to `/`, or to the pending step-up's `return` path. |
 | `/api/v1/backoffice/**`, `/api/v1/auth/**` | Token relay. The BFF adds `Authorization: Bearer <access token>`, and adds `X-Tenant-Id` when a tenant is selected. It drops the browser's `Cookie`, `Authorization`, `X-Tenant-Id`, CSRF and `X-Forwarded-*` headers. The backend's `Set-Cookie` never reaches the browser. Every other part of the backend's answer comes back unchanged, including a `401` with `WWW-Authenticate: Bearer error="insufficient_user_authentication"`. Each request is sent once and never replayed (D184 amendment). |
 | `PUT /bff/tenant {"tenantId": "<uuid>"}` | Remembers the selected tenant in the BFF session and answers `204`. A malformed id answers `400`. The BFF only relays the selection; the backend checks the membership (D177). |
