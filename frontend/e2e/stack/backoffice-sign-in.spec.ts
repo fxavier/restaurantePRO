@@ -4,8 +4,9 @@ import { csrfToken, seeded, signInToBackOffice, stack } from '../support/stack';
 // One sign-in only: Keycloak refuses a TOTP code twice, so every further sign-in of the run waits up to 30 s.
 test('a seeded administrator signs in with a password and a TOTP code; the BFF session and CSRF hold through the origin', async ({
   page,
-}) => {
-  await signInToBackOffice(page, seeded.adminEmail(), seeded.adminPassword(), seeded.adminTotpSecret());
+}, testInfo) => {
+  await signInToBackOffice(page, seeded.adminEmail(), seeded.adminPassword(), seeded.adminTotpSecret(),
+    testInfo.retry);
 
   await expect(page.getByRole('heading', { level: 1, name: 'restaurantPRO — BackOffice' })).toBeVisible();
   const cookies = await page.context().cookies(stack.backOffice());

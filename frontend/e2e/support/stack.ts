@@ -28,14 +28,16 @@ export function required(name: string): string {
 
 /**
  * Signs in to the BackOffice through the BFF with the password and a TOTP code. It starts at the BFF's step-up
- * entry, which asks Keycloak for LoA 2 (acr_values=2): the plain login asks for LoA 1, the password only.
+ * entry, which asks Keycloak for LoA 2 (acr_values=2): the plain login asks for LoA 1, the password only. Pass
+ * `testInfo.retry` from a test, so a retry never resubmits a code the failed attempt used.
  */
-export async function signInToBackOffice(page: Page, email: string, password: string, totpSecret: string) {
+export async function signInToBackOffice(page: Page, email: string, password: string, totpSecret: string,
+  retry = 0) {
   await page.goto(`${stack.backOffice()}/bff/step-up?acr_values=2&max_age=300&return=/`);
   await page.locator('#username').fill(email);
   await page.locator('#password').fill(password);
   await page.locator('#kc-login').click();
-  await page.locator('#otp').fill(await freshTotp(totpSecret));
+  await page.locator('#otp').fill(await freshTotp(totpSecret, retry));
   await page.locator('#kc-login').click();
   await page.waitForURL(`${stack.backOffice()}/`);
 }

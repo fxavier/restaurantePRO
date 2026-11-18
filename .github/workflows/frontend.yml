@@ -110,6 +110,8 @@ jobs:
       - name: Stack logs
         if: failure()
         run: ../deploy/e2e/stack.sh logs --no-color > e2e-stack.log 2>&1 || true
+      # The traces hold this run's throwaway admin password and cookies: fine only because the stack is ephemeral
+      # (destroyed below). Never point this job at a persistent environment (frontend/README.md).
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

@@ -36,16 +36,22 @@ export function randomBase32(length: number, random: (size: number) => Buffer): 
 }
 
 /**
- * A code from a period no earlier sign-in of this run used: Keycloak refuses a code twice (otpPolicyCodeReusable
- * false). The last period travels in E2E_ADMIN_TOTP_LAST_PERIOD, from the global setup to the workers.
+ * The first period whose code no earlier sign-in of this run can have used: Keycloak refuses a code twice
+ * (otpPolicyCodeReusable false). The global setup's last period travels in E2E_ADMIN_TOTP_LAST_PERIOD; a retried test
+ * runs in a new worker that cannot know what the failed attempt used, so on a retry the current period is spent too.
  */
-export async function freshTotp(secret: string): Promise<string> {
+export function firstUsablePeriod(unixSeconds: number, lastUsedPeriod: number, retry: number): number {
+  const current = Math.floor(unixSeconds / PERIOD_SECONDS);
+  return Math.max(current, lastUsedPeriod + 1, retry > 0 ? current + 1 : current);
+}
+
+/** A TOTP code from the first usable period, waiting for it if needed. `retry` is the test's `testInfo.retry`. */
+export async function freshTotp(secret: string, retry = 0): Promise<string> {
   const last = Number(process.env.E2E_ADMIN_TOTP_LAST_PERIOD ?? -1);
-  let now = Math.floor(Date.now() / 1000);
-  while (Math.floor(now / PERIOD_SECONDS) <= last) {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    now = Math.floor(Date.now() / 1000);
+  const period = firstUsablePeriod(Date.now() / 1000, last, retry);
+  while (Math.floor(Date.now() / 1000 / PERIOD_SECONDS) < period) {
+    await new Promise((resolve) => setTimeout(resolve, 500));
   }
-  process.env.E2E_ADMIN_TOTP_LAST_PERIOD = String(Math.floor(now / PERIOD_SECONDS));
-  return totp(secret, now);
+  process.env.E2E_ADMIN_TOTP_LAST_PERIOD = String(period);
+  return totp(secret, period * PERIOD_SECONDS);
 }
