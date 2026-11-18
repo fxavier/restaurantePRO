@@ -206,6 +206,27 @@ describe('registering a terminal', () => {
     expect(requests[0]?.body).toMatchObject({ code: 'CX2' });
   });
 
+  it("names the tab's company on the write, and on 409 TENANT_CHANGED reloads instead of explaining inline", async () => {
+    const state = terminalsServer();
+    const expected: (string | null)[] = [];
+    server.use(
+      http.post(api('/api/v1/backoffice/terminals'), ({ request }) => {
+        expected.push(request.headers.get('X-Expected-Tenant'));
+        return problem(409, 'TENANT_CHANGED');
+      }),
+    );
+
+    const { user, leave } = renderApp(TERMINALS);
+    const dialog = await fillAndSubmit(user);
+
+    await waitFor(() => expect(leave).toHaveBeenCalledWith('/'));
+    expect(expected).toEqual([admin.tenantId]);
+    expect(state.terminals).toEqual([]);
+    expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: 'Tentar novamente' })).not.toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Código')).toHaveAttribute('aria-invalid', 'false');
+  });
+
   it('checks the fields before sending', async () => {
     const state = terminalsServer();
     const requests = createHandler(state);

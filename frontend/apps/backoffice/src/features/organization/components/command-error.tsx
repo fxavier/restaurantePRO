@@ -1,15 +1,17 @@
 import { Alert, AlertDescription, Button } from '@restaurantpro/ui';
 import { TriangleAlert, WifiOff } from 'lucide-react';
 import { errorMessage } from '../../../lib/error-messages';
-import { isUnavailable } from '../../../lib/errors';
+import { isTenantChanged, isUnavailable } from '../../../lib/errors';
 
 type CommandErrorProps = { error: unknown; onRetry: () => void; pending: boolean };
 
 /**
  * A command's answer that is not a field error (FC §9). Without an answer the outcome is unknown, so "Tentar
- * novamente" sends the same request again (FC §8); any other answer is final and only explained.
+ * novamente" sends the same request again (FC §8); any other answer is final and only explained. A 409
+ * TENANT_CHANGED is not explained here: the page reloads for it (FE-F16, `lib/query-client`).
  */
 export function CommandError({ error, onRetry, pending }: CommandErrorProps) {
+  if (isTenantChanged(error)) return null;
   const unavailable = isUnavailable(error);
   const Icon = unavailable ? WifiOff : TriangleAlert;
   return (

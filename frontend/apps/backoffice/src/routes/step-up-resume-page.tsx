@@ -1,17 +1,18 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
-import { useSession } from '../features/identity';
 import { fromPendingCommand, ResumeTerminalCommand } from '../features/organization';
 import { clearPendingCommand, readPendingCommand } from '../lib/step-up';
+import { useTenantPin } from '../lib/tenant-pin';
 
 /**
  * `/step-up/resume` (FC §4, §6): where the BFF returns after a step-up. A stored command that is malformed, old, of
- * another company or not a resumable command is discarded; the user then starts again.
+ * another company than the one this tab is pinned to (FE-F16) or not a resumable command is discarded; the user then
+ * starts again. The shell renders this page only after the session read that sets the pin.
  */
 export function StepUpResumePage() {
-  const { data: session } = useSession();
+  const tenantPin = useTenantPin();
   const [resumable] = useState(() => {
-    const pending = readPendingCommand(session?.tenantId);
+    const pending = readPendingCommand(tenantPin.get()?.tenantId);
     const command = pending && fromPendingCommand(pending);
     if (!pending || !command) {
       clearPendingCommand();

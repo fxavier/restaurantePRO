@@ -1,18 +1,18 @@
 import type { ApiError } from '@restaurantpro/api-client';
-import { useSession } from '../../identity';
 import { useStepUpPrompt } from '../../../lib/step-up-dialog';
+import { useTenantPin } from '../../../lib/tenant-pin';
 import { toPendingCommand, type TerminalCommand } from '../terminal-commands';
 
 /**
- * The step-up prompt for terminal commands: `prompt(error, command)` keeps the command for the company the session
- * is in and returns to `returnTo` once it has run (FC §6).
+ * The step-up prompt for terminal commands: `prompt(error, command)` keeps the command for the company this tab is
+ * pinned to (FE-F16) and returns to `returnTo` once it has run (FC §6).
  */
 export function useTerminalStepUp(returnTo: string) {
-  const { data: session } = useSession();
+  const tenantPin = useTenantPin();
   const { prompt, dialog } = useStepUpPrompt();
   return {
     dialog,
     prompt: (error: ApiError, command: TerminalCommand) =>
-      prompt(error, toPendingCommand(command, returnTo, session?.tenantId ?? '')),
+      prompt(error, toPendingCommand(command, returnTo, tenantPin.get()?.tenantId ?? '')),
   };
 }
