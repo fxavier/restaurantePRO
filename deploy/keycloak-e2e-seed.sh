@@ -71,24 +71,27 @@ issuer="$(curl -fsS "$url/realms/$TENANT_REALM/.well-known/openid-configuration"
 require_loopback "issuer" "$issuer"
 
 # --- Keycloak admin API -------------------------------------------------------------------------------------------
-TOKEN="$(tr -d '\n' <"$password_file" | curl -fsS "$url/realms/master/protocol/openid-connect/token" \
-  -d grant_type=password -d client_id=admin-cli --data-urlencode "username=$admin" --data-urlencode password@- \
-  | jq -r .access_token)" || die "the master administrator could not log in"
+admin_token() {
+  tr -d '\n' <"$password_file" | curl -fsS "$url/realms/master/protocol/openid-connect/token" \
+    -d grant_type=password -d client_id=admin-cli --data-urlencode "username=$admin" --data-urlencode password@- \
+    | jq -r .access_token
+}
+TOKEN="$(admin_token)" || die "the master administrator could not log in"
 # $1 token: the header, for curl -H @<(bearer ...) (printf is a builtin: the token is in no process's arguments)
 bearer() { printf 'Authorization: Bearer %s\n' "$1"; }
 # $1 answer of curl -w '\n%{http_code}': its status
 status_of() { printf '%s' "${1##*$'\n'}"; }
 # $1 method, $2 path under /admin/realms; the JSON body, if any, on stdin (never a command-line argument). Prints the
-# answer's body (held in memory, never in a file); fails on a status >= 400.
+# answer's body (held in memory, never in a file); fails on any status but 2xx, including 000 (no answer at all).
 api() {
   local method=$1 path=$2 answer
   if [[ "$method" == GET || "$method" == DELETE ]]; then
-    answer="$(curl -sS -w '\n%{http_code}' -X "$method" "$url/admin/realms$path" -H @<(bearer "$TOKEN"))"
+    answer="$(curl -sS -w '\n%{http_code}' -X "$method" "$url/admin/realms$path" -H @<(bearer "$TOKEN"))" || true
   else
     answer="$(curl -sS -w '\n%{http_code}' -X "$method" "$url/admin/realms$path" -H @<(bearer "$TOKEN") \
-      -H 'Content-Type: application/json' --data-binary @-)"
+      -H 'Content-Type: application/json' --data-binary @-)" || true
   fi
-  (($(status_of "$answer") < 400)) || die "$method $path answered $(status_of "$answer")"
+  [[ "$(status_of "$answer")" =~ ^2[0-9][0-9]$ ]] || die "$method $path answered $(status_of "$answer")"
   printf '%s' "${answer%$'\n'*}"
 }
 encode() { jq -rn --arg v "$1" '$v | @uri'; }
@@ -125,24 +128,26 @@ fi
 # --- 2. the tenant, through the platform API ----------------------------------------------------------------------
 seed_client="$(api GET "/$OPS_REALM/clients?clientId=$SEED_CLIENT" | jq -r '.[0].id // empty')"
 if [[ -z "$seed_client" ]]; then
-  jq -cn --arg id "$SEED_CLIENT" '{clientId: $id, enabled: true, publicClient: false,
+  jq -cn --arg id "$SEED_CLIENT" '{clientId: $id, enabled: false, publicClient: false,
     clientAuthenticatorType: "client-secret", serviceAccountsEnabled: true, standardFlowEnabled: false,
     directAccessGrantsEnabled: false, implicitFlowEnabled: false,
     protocolMappers: [{name: "restaurantpro-api audience", protocol: "openid-connect",
       protocolMapper: "oidc-audience-mapper", config: {"included.client.audience": "restaurantpro-api",
       "access.token.claim": "true", "id.token.claim": "false"}}]}' | api POST "/$OPS_REALM/clients" >/dev/null
   seed_client="$(api GET "/$OPS_REALM/clients?clientId=$SEED_CLIENT" | jq -r '.[0].id')"
-  log "client $SEED_CLIENT created in $OPS_REALM"
+  log "client $SEED_CLIENT created in $OPS_REALM (disabled)"
 fi
-service_account="$(api GET "/$OPS_REALM/clients/$seed_client/service-account-user" | jq -r .id)"
-api GET "/$OPS_REALM/roles/platform-operator" | jq -c '[.]' \
-  | api POST "/$OPS_REALM/users/$service_account/role-mappings/realm" >/dev/null
-# enabled for this run only: when the script ends, whatever happened, its secret is replaced and it is disabled
+# Enabled for this run only. The trap is armed before the client gets its role or is enabled: when the script ends,
+# whatever happened, its secret is replaced and it is disabled, with a fresh admin token (the run's own lasts 60 s).
 retire_seed_client() {
+  TOKEN="$(admin_token)" || die "the master administrator could not log in"
   printf '' | api POST "/$OPS_REALM/clients/$seed_client/client-secret" >/dev/null
   jq -cn '{enabled: false}' | api PUT "/$OPS_REALM/clients/$seed_client" >/dev/null
 }
 trap '(retire_seed_client) || log "WARNING: could not disable $SEED_CLIENT in $OPS_REALM"' EXIT
+service_account="$(api GET "/$OPS_REALM/clients/$seed_client/service-account-user" | jq -r .id)"
+api GET "/$OPS_REALM/roles/platform-operator" | jq -c '[.]' \
+  | api POST "/$OPS_REALM/users/$service_account/role-mappings/realm" >/dev/null
 jq -cn '{enabled: true}' | api PUT "/$OPS_REALM/clients/$seed_client" >/dev/null
 operator="$(printf '' | api POST "/$OPS_REALM/clients/$seed_client/client-secret" | jq -j .value \
   | curl -fsS "$url/realms/$OPS_REALM/protocol/openid-connect/token" -d grant_type=client_credentials \
