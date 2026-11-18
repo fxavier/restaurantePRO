@@ -88,6 +88,8 @@ export type Seen<Body> = {
   posSession: string | null;
   idempotencyKey: string | null;
   body: Body;
+  /** The body as sent, before JSON parsing loses a decimal's trailing zeros. */
+  raw: string;
 };
 
 /** Every request any handler of these helpers saw, so a test can check what crossed the wire. */
@@ -109,6 +111,7 @@ export function recording<Body>(
         posSession: request.headers.get('X-Pos-Session'),
         idempotencyKey: request.headers.get('Idempotency-Key'),
         body: (text ? JSON.parse(text) : undefined) as Body,
+        raw: text,
       };
       seen.push(entry);
       wire.push(entry);

@@ -111,6 +111,22 @@ describe('"Pedir"', () => {
     expect(batches[0]!.body).toMatchObject({ promotionVersion: 3 });
   });
 
+  it('expectedGross is the exact decimal sum of the drafts sent: 0.10 + 0.20 is 0.30, never 0.30000000000000004', async () => {
+    // The server writes BigDecimal amounts; a string keeps their scale here as the wire does.
+    const cents = (amount: string) => ({ amount: amount as unknown as number, currency: 'MZN' });
+    const server = serverOrder(
+      withLines(ORDER, [{ ...LINE.water, gross: cents('0.10') }, { ...LINE.coffee, gross: cents('0.20') }, LINE.steak]),
+    );
+    const batches = batchEndpoint(ORDER_ID, server.sends());
+    const { user } = await atOrder([server.read]);
+    await ready();
+
+    await user.click(pedir());
+
+    await waitFor(() => expect(batches).toHaveLength(1));
+    expect(batches[0]!.raw).toContain('"expectedGross":0.30}');
+  });
+
   it('a double tap sends one request', async () => {
     const server = serverOrder();
     let release!: () => void;
@@ -232,8 +248,10 @@ describe('"Pedir"', () => {
     await user.click(pedir());
     await user.click(await within(panel()).findByRole('button', { name: 'Tentar novamente' }));
 
-    await within(panel()).findByRole('list', { name: 'Ronda 2, 12:20' });
-    expect(within(panel()).getByRole('status', { name: 'Envio' })).toHaveTextContent('Ronda 2 enviada.');
+    // The round shows as soon as the order is read again (the server has it); the outcome of the intent is the
+    // status, so wait for that, not for the list.
+    expect(await within(panel()).findByRole('status', { name: 'Envio' })).toHaveTextContent('Ronda 2 enviada.');
+    expect(within(panel()).getByRole('list', { name: 'Ronda 2, 12:20' })).toBeInTheDocument();
     expect(within(panel()).queryByText(/alterado noutro terminal/)).not.toBeInTheDocument();
     expect(batches).toHaveLength(3);
     expect(new Set(batches.map((batch) => batch.idempotencyKey)).size).toBe(1);
