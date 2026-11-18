@@ -12,7 +12,10 @@
     "test": "pnpm -r test",
     "build": "pnpm -r build",
     "generate": "pnpm --filter api-client generate",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "e2e:stack:up": "../deploy/e2e/stack.sh up",
+    "e2e:stack": "../deploy/e2e/stack.sh test",
+    "e2e:stack:down": "../deploy/e2e/stack.sh down"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",
