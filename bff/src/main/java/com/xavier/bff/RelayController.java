@@ -2,6 +2,7 @@ package com.xavier.bff;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.oauth2.client.ClientAuthorizationException;
@@ -14,11 +15,17 @@ import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 
 import java.io.IOException;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 
 /** Token relay of the routes the backoffice-bff token may call (D176: {@code /backoffice/**} and {@code /auth/**}). */
 @RestController
 class RelayController {
 
+    private static final String EXPECTED_TENANT = "X-Expected-Tenant";
+    /** Allow-list: every other method, a custom or lower-case one included, must name the expected tenant. */
+    private static final Set<String> SAFE_METHODS = Set.of("GET", "HEAD", "OPTIONS");
 
     private final BackendRelay relay;
 
@@ -30,7 +37,36 @@ class RelayController {
     @RequestMapping({"/api/v1/backoffice/**", "/api/v1/auth/**"})
     ResponseEntity<byte[]> relay(@RegisteredOAuth2AuthorizedClient(SecurityConfig.REGISTRATION_ID) OAuth2AuthorizedClient client,
                                  HttpServletRequest request, HttpSession session) throws IOException {
-        return relay.relay(request, client.getAccessToken().getTokenValue(), TenantController.selected(session));
+        // Read once: the tenant checked is the tenant relayed, even if another tab switches meanwhile.
+        Optional<UUID> selected = TenantController.selected(session);
+        String expected = request.getHeader(EXPECTED_TENANT);
+        if (selected.isPresent()) {
+            if (isUnsafe(request) && !selected.get().toString().equalsIgnoreCase(expected)) {
+                throw new TenantChangedException();
+            }
+            return relay.relay(request, client.getAccessToken().getTokenValue(), selected);
+        }
+        return relay.relay(request, client.getAccessToken().getTokenValue(), expectedTenant(expected));
+    }
+
+    /**
+     * FE-F16: the selection is one per session, shared by every tab, so a write must name the tenant its tab shows.
+     * Without a selection the tab's expected tenant becomes the relayed one: the backend checks it against the caller's
+     * memberships (D177), so a tab pinned to a company the session's user does not belong to (another user logged in
+     * from another tab) is refused instead of acting in that user's only company.
+     */
+    private static Optional<UUID> expectedTenant(String expected) {
+        if (expected == null) {
+            return Optional.empty();
+        }
+        if (!TenantController.isCanonicalUuid(expected)) {
+            throw new TenantController.InvalidTenantSelectionException();
+        }
+        return Optional.of(UUID.fromString(expected));
+    }
+
+    private static boolean isUnsafe(HttpServletRequest request) {
+        return !SAFE_METHODS.contains(request.getMethod());
     }
 
     /**
@@ -59,6 +95,19 @@ class RelayController {
     @ExceptionHandler(IOException.class)
     ResponseEntity<ProblemDetail> backendUnreachable() {
         return BffProblem.BACKEND_UNAVAILABLE.toResponse();
+    }
+
+    static final class TenantChangedException extends RuntimeException {
+    }
+
+    @ExceptionHandler(TenantController.InvalidTenantSelectionException.class)
+    ProblemDetail invalidExpectedTenant() {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "X-Expected-Tenant must be a UUID");
+    }
+
+    @ExceptionHandler(TenantChangedException.class)
+    ResponseEntity<ProblemDetail> tenantChanged() {
+        return BffProblem.TENANT_CHANGED.toResponse();
     }
 
     @ExceptionHandler(BackendRelay.RequestBodyTooLargeException.class)
