@@ -3,6 +3,7 @@ import { EnrolPage } from './enrol-page';
 import { LoginPage } from './login-page';
 import { RequireDevice } from './require-device';
 import { RequireSession } from './require-session';
+import { TablePage } from './table-page';
 import { TablesPage } from './tables-page';
 
 /** FC §4: `/enrol` without a device key; every other route needs one, and every route but `/login` a POS session. */
@@ -16,6 +17,7 @@ export const routes: RouteObject[] = [
         element: <RequireSession />,
         children: [
           { path: '/tables', element: <TablesPage /> },
+          { path: '/tables/:tableId', element: <TablePage /> },
           { path: '*', element: <Navigate to="/tables" replace /> },
         ],
       },
