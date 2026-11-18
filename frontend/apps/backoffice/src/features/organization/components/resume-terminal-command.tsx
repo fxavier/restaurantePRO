@@ -41,6 +41,7 @@ export function ResumeTerminalCommand({ command, returnTo }: ResumeProps) {
             submitLabel="Continuar"
             defaultValues={{ code: command.body.code, name: command.body.name }}
             onSend={clearPendingCommand}
+            idempotencyKey={command.idempotencyKey}
             onCreated={finish}
           >
             {cancel}
@@ -74,7 +75,7 @@ function ResumeTerminalAction({ command, returnTo, cancel, onDone }: ActionProps
       // The answer is the code; the page leaves when its dialog closes.
       issue.mutate(target, { onError });
     } else {
-      revoke.mutate(target, { onSuccess: onDone, onError });
+      revoke.mutate({ ...target, idempotencyKey: command.idempotencyKey }, { onSuccess: onDone, onError });
     }
   };
 
