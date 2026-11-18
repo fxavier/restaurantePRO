@@ -62,13 +62,18 @@ describe('order screen', () => {
   });
 
   it('an order that cannot be read offers "Tentar novamente"', async () => {
-    const { user, order } = await atOrder([() => problem(500, 'INTERNAL'), json(ORDER)]);
+    // Broken until "Tentar novamente": any read before it (the stream's opening reads every query again) fails too,
+    // so no read order can make the alert go before the test sees it.
+    let broken = true;
+    const { user, order } = await atOrder([() => (broken ? problem(500, 'INTERNAL') : HttpResponse.json(ORDER))]);
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível carregar o pedido. Erro inesperado (INTERNAL).');
+    const failedReads = order.length;
+    broken = false;
     await user.click(screen.getByRole('button', { name: 'Tentar novamente' }));
 
     expect(await screen.findByRole('heading', { name: 'Mesa M2' })).toBeInTheDocument();
-    expect(order).toHaveLength(2);
+    expect(order.length).toBeGreaterThan(failedReads);
   });
 
   it('a catalog that cannot be read says so in the product area, and the order still shows', async () => {
