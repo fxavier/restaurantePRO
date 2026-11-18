@@ -104,6 +104,20 @@ describe('startChangeStream timing', () => {
     stop();
   });
 
+  it("the backend's opening comment is a sign of life, never a change", async () => {
+    const opened = body();
+    const { states, onOpen, onChange, stop } = run(opened, 'fail');
+    opened.write(':ok\n\n');
+    await advance(0);
+    expect(states).toEqual(['open']);
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(onChange).not.toHaveBeenCalled();
+
+    await advance(60_000 - 1); // the comment started the silence clock
+    expect(states).toEqual(['open']);
+    stop();
+  });
+
   it('60 s without a byte counts as down; a heartbeat starts the 60 s again', async () => {
     const quiet = body();
     const { states, stop } = run(quiet, 'fail');
