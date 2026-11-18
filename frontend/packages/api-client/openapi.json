@@ -3992,6 +3992,9 @@
       },
       "com.xavier.backend.identity.model.dto.SessionView": {
         "properties": {
+          "currency": {
+            "type": "string"
+          },
           "employeeId": {
             "format": "uuid",
             "type": "string"
@@ -4021,6 +4024,12 @@
           },
           "storeId": {
             "format": "uuid",
+            "type": "string"
+          },
+          "storeName": {
+            "type": "string"
+          },
+          "storeTimezone": {
             "type": "string"
           },
           "tenantId": {

@@ -1,5 +1,6 @@
 package com.xavier.backend.identity.controller;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -75,6 +76,34 @@ class PosTerminalAuthTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.tenantId").value(TenantTestSupport.BOOTSTRAP.toString()))
                 .andExpect(jsonPath("$.tenantName").value(legalName));
+    }
+
+    @Test
+    void aPosSessionNamesItsStoreWithItsTimezoneAndCurrency() throws Exception {
+        UUID lisbon = fixtures.store("Loja Baixa", "Europe/Lisbon");
+        Device lisbonTerminal = devices.enrolledTerminal(lisbon);
+        mvc.perform(post("/api/v1/backoffice/employees/" + waiter.id() + "/assignments")
+                        .with(IdentityFixtures.admin()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content(IdentityFixtures.json("storeId", lisbon, "roleId", IdentityFixtures.WAITER)))
+                .andExpect(status().isCreated());
+        String currency = OwnerDatabase.shared().jdbc()
+                .sql("SELECT currency FROM organization.company_profile WHERE tenant_id = ?")
+                .param(TenantTestSupport.BOOTSTRAP).query(String.class).single();
+
+        String login = mvc.perform(loginRequest().with(lisbonTerminal.bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.storeName").value("Loja Baixa"))
+                .andExpect(jsonPath("$.storeTimezone").value("Europe/Lisbon"))
+                .andExpect(jsonPath("$.currency").value(currency))
+                .andReturn().getResponse().getContentAsString();
+        String session = IdentityFixtures.JSON.readTree(login).get("posSession").asString();
+
+        mvc.perform(get(POS_SESSION).with(lisbonTerminal.bearer()).with(posSession(session)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.storeId").value(lisbon.toString()))
+                .andExpect(jsonPath("$.storeName").value("Loja Baixa"))
+                .andExpect(jsonPath("$.storeTimezone").value("Europe/Lisbon"))
+                .andExpect(jsonPath("$.currency").value(currency));
     }
 
     @Test
