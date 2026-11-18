@@ -1,6 +1,7 @@
 package com.xavier.backend.organization.service;
 
 import com.xavier.backend.access.AccessPolicy;
+import com.xavier.backend.access.AccessScope;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.organization.exception.CompanyNotBootstrappedException;
@@ -24,13 +25,15 @@ import java.util.Currency;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Store use cases (spec §5). Creating, editing and listing stores needs installation-wide
- * {@code STORE_MANAGE}; reading one store also accepts {@code STORE_MANAGE} in that store.
+ * Store use cases (spec §5). Creating and editing stores needs installation-wide {@code STORE_MANAGE}; reading one
+ * store also accepts {@code STORE_MANAGE} in that store. Listing needs no permission: it shows where the caller holds
+ * any (FE-F09).
  */
 @Service
 public class StoreService {
@@ -93,11 +96,19 @@ public class StoreService {
         return store(id).toSummary(companyCurrency());
     }
 
+    /**
+     * The stores the caller may act in (FE-F09): no specific permission, every store for any installation-wide grant,
+     * else those of its store-scoped grants, possibly none. Feeds the BackOffice store selector.
+     */
     @Transactional(readOnly = true)
     public PageResponse<StoreSummary> list(Pageable pageable) {
-        accessPolicy.require(Permission.STORE_MANAGE);
+        AccessScope reach = accessPolicy.storesWithAnyGrant();
+        if (!reach.global() && reach.stores().isEmpty()) {
+            return PageResponse.from(Page.empty(pageable));
+        }
         Currency currency = companyCurrency();
-        return PageResponse.from(stores.findAll(pageable).map(store -> store.toSummary(currency)));
+        Page<Store> page = reach.global() ? stores.findAll(pageable) : stores.findByIdIn(reach.stores(), pageable);
+        return PageResponse.from(page.map(store -> store.toSummary(currency)));
     }
 
     private Store saveWithUniqueCode(Store store) {

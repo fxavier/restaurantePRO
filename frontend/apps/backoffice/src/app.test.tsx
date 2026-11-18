@@ -235,6 +235,16 @@ describe('BackOffice access shell', () => {
     await waitFor(() => expect(currentUrl()).toBe(`/?storeId=${baixa.id}`));
   });
 
+  it('tells a user with no store that they have no access to any, and drops a ?storeId (FE-F09)', async () => {
+    server.use(...signedIn({ session: { ...admin, permissions: [] }, stores: [] }));
+
+    const { currentUrl } = renderApp(`/?storeId=${baixa.id}`);
+
+    expect(await screen.findByText('Não tem acesso a nenhuma loja')).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Loja' })).not.toBeInTheDocument();
+    await waitFor(() => expect(currentUrl()).toBe('/'));
+  });
+
   it('shows an area to a user with its permission in one store only', async () => {
     server.use(...signedIn({ session: { ...admin, permissions: [`PERM_TERMINAL_MANAGE@${baixa.id}`] } }));
 

@@ -230,6 +230,34 @@ class AccessPolicyTest {
     }
 
     @Test
+    void storesWithAnyGrantAreTheStoresOfEveryStoreScopedPermission() {
+        Actor twoStores = Actor.account(UUID.randomUUID(), Set.of(Permission.TERMINAL_MANAGE.authority(uuid(STORE_A)),
+                Permission.CATALOG_VIEW.authority(uuid(STORE_B))));
+
+        runAs(twoStores, () -> assertThat(accessPolicy.storesWithAnyGrant())
+                .isEqualTo(new AccessScope(false, Set.of(uuid(STORE_A), uuid(STORE_B)))));
+    }
+
+    @Test
+    void anyInstallationWideGrantReachesEveryStore() {
+        Actor global = Actor.account(UUID.randomUUID(), Set.of(Permission.CATALOG_VIEW.authority()));
+
+        runAs(global, () -> assertThat(accessPolicy.storesWithAnyGrant().global()).isTrue());
+    }
+
+    @Test
+    void anAccountWithNoGrantReachesNoStore() {
+        runAs(Actor.account(UUID.randomUUID(), Set.of()), () -> assertThat(accessPolicy.storesWithAnyGrant())
+                .isEqualTo(new AccessScope(false, Set.of())));
+    }
+
+    @Test
+    @WithActor(permissions = Permission.STORE_MANAGE, employeeId = EMPLOYEE, terminalId = TERMINAL)
+    void aPosSessionHasNoBackOfficeStoreList() {
+        assertThatThrownBy(() -> accessPolicy.storesWithAnyGrant()).isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
     @WithActor(permissions = Permission.DINING_VIEW, storeId = STORE_A, employeeId = EMPLOYEE, terminalId = TERMINAL)
     void requirePosForAStoreAcceptsNoStoreOrTheSessionStore() {
         PosContext expected = new PosContext(uuid(EMPLOYEE), uuid(TERMINAL), uuid(STORE_A));

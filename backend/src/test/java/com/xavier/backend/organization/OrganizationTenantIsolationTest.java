@@ -6,6 +6,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.xavier.backend.AppRoleSession;
@@ -112,6 +113,18 @@ class OrganizationTenantIsolationTest {
                 .andExpect(status().isNotFound());
         mvc.perform(get("/api/v1/backoffice/stores/" + A_STORE).with(in(A, null, Permission.STORE_MANAGE)))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void theStoreListNeverShowsAnotherTenantsStore() throws Exception {
+        mvc.perform(get("/api/v1/backoffice/stores").param("size", "200").with(in(A, null, Permission.CATALOG_VIEW)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(A_STORE)).exists())
+                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(A_OTHER_STORE)).exists())
+                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(B_STORE)).doesNotExist());
+        mvc.perform(get("/api/v1/backoffice/stores").with(in(A, B_STORE, Permission.CATALOG_VIEW)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(0));
     }
 
     @Test

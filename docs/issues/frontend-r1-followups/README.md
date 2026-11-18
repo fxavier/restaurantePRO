@@ -11,7 +11,7 @@ Recorded during the frontend R1 build (tickets 01–12, 2026-11-18). Each row is
 | FE-F03 | backend | no startup warning when `restaurantpro.pos.origin` is unset (terminal provisioning then fails with 503) | Low | 02 review |
 | FE-F05 | CI | pin GitHub Actions by commit SHA instead of major tag | Low | 04 review |
 | FE-F06 | backend | `PosSessionSecurityDocumentation` sets an immutable security list; `CurrencyAsStringDocumentation` mutates global springdoc config in a bean constructor | Low | FE-F04 review |
-| FE-F09 | backend | listing stores needs `STORE_MANAGE`, so a user with only `TERMINAL_MANAGE` cannot pick a store | Medium | 06 |
+| FE-F09 | backend | ~~listing stores needs `STORE_MANAGE`, so a user with only `TERMINAL_MANAGE` cannot pick a store~~ resolved: `GET /backoffice/stores` needs no permission and lists the stores where the account holds any (all of them for any installation-wide grant, none → empty list, "Não tem acesso a nenhuma loja"); a POS session is 403; create/edit still need installation-wide `STORE_MANAGE` | Medium | 06 |
 | FE-F10 | BFF | logout by `fetch` skips Keycloak's front-channel redirect; the BFF should return the logout URL for the SPA to navigate to | Low | 06 |
 | FE-F11 | contract | `Pageable` is typed as one object; Spring reads flat `page`/`size` | Low | 06 |
 | FE-F12 | backend | 429 `ENROLMENT_THROTTLED` carries no `Retry-After` | Low | 08 |

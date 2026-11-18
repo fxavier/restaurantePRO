@@ -50,7 +50,7 @@ Migrations `db/migration/organization/V2xxx`. Public `OrganizationApi`: `Optiona
 
 - **Bootstrap (D30):** `ApplicationRunner` reads `restaurantpro.bootstrap.company.*` (name, taxId, country ISO-3166, currency ISO-4217); creates the singleton if absent; idempotent on restart; table enforces single row. Publishes `CompanyBootstrapped` event (identity creates the admin from `restaurantpro.bootstrap.admin.*` in S2).
 - `GET/PUT /api/v1/backoffice/company-profile` (`COMPANY_MANAGE`, `@Version` → 409). Currency immutable after first store exists (422).
-- Stores: `GET/POST /api/v1/backoffice/stores`, `GET/PUT /stores/{id}`; fields code (unique), name, timezone (valid ZoneId), businessDayCutoff (LocalTime, default 05:00), active. Currency = company currency (single currency). `STORE_MANAGE`, store-scoped read via `STORE_MANAGE@store`.
+- Stores: `GET/POST /api/v1/backoffice/stores`, `GET/PUT /stores/{id}`; fields code (unique), name, timezone (valid ZoneId), businessDayCutoff (LocalTime, default 05:00), active. Currency = company currency (single currency). `STORE_MANAGE`, store-scoped read via `STORE_MANAGE@store`. (Amended by FE-F09: the list needs no permission and returns the stores where the account holds any.)
 - Terminals: `GET/POST /api/v1/backoffice/terminals`, `POST /terminals/{id}/enrollment-code` (returns one-time code once, stored hashed, expires 24h), `POST /api/v1/auth/terminals/enroll` (code → device token returned once, stored hashed; code consumed), `POST /terminals/{id}/revoke`. `TERMINAL_MANAGE`.
 - Business-day rule: pure function `BusinessDays.of(Instant, ZoneId, LocalTime cutoff) → LocalDate`, unit-tested across midnight and DST.
 - Every write audited.
