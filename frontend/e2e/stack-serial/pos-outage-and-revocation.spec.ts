@@ -1,4 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { expectNoAxeViolations } from '../axe';
@@ -64,6 +65,7 @@ test('a terminal revoked in the BackOffice shows the revoked state, and goes bac
   // As the SPA writes: naming the selected company (X-Expected-Tenant, FE-F16).
   await backOfficeCall(admin, 'POST', `/api/v1/backoffice/terminals/${seeded.terminal('C').id}/revoke`, undefined, {
     'X-Expected-Tenant': seeded.tenantId(),
+    'Idempotency-Key': randomUUID(),
   });
   await admin.context().close();
 

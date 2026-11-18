@@ -25,6 +25,7 @@ const bridge = terminal('aaaa0000-0000-4000-8000-000000000003', 'PB1', 'Impresso
 const CODE = 'ABCD1234EFGH5678JKMN9PQR';
 const GROUPED = 'ABCD 1234 EFGH 5678 JKMN 9PQR';
 const EXPIRES = '2026-11-19T08:00:00Z';
+const A_KEY = expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
 
 type Seen = { url: string; body: unknown; idempotencyKey: string | null; csrf: string | null };
 
@@ -188,11 +189,33 @@ describe('registering a terminal', () => {
       {
         url: '/api/v1/backoffice/terminals',
         body: { storeId: baixa.id, code: 'CX2', name: 'Caixa 2', kind: 'POS' },
-        // The contract declares no Idempotency-Key here, so none is sent (FC §8).
-        idempotencyKey: null,
+        // The contract requires an Idempotency-Key here: one per intent (FC §8).
+        idempotencyKey: A_KEY,
         csrf: CSRF_TOKEN,
       },
     ]);
+  });
+
+  it('gives each registration its own key, and a corrected one after a refusal a new one', async () => {
+    const state = terminalsServer([caixa1]);
+    const requests = createHandler(state, (n) =>
+      n === 1 ? problem(409, undefined, 'Conflict', { detail: "Terminal code 'CX1' is already used." }) : undefined,
+    );
+
+    const { user } = renderApp(TERMINALS);
+    const dialog = await fillAndSubmit(user, 'CX1');
+    expect(await within(dialog).findByText('Já existe um terminal com este código nesta loja.')).toBeInTheDocument();
+    await user.clear(within(dialog).getByLabelText('Código'));
+    await user.type(within(dialog).getByLabelText('Código'), 'CX2');
+    await user.click(within(dialog).getByRole('button', { name: 'Registar' }));
+    expect(await screen.findByRole('cell', { name: 'Caixa 2' })).toBeInTheDocument();
+
+    await fillAndSubmit(user, 'CX3', 'Caixa 3');
+    expect(await screen.findByRole('cell', { name: 'Caixa 3' })).toBeInTheDocument();
+
+    const keys = requests.map((request) => request.idempotencyKey);
+    expect(keys).toEqual([A_KEY, A_KEY, A_KEY]);
+    expect(new Set(keys).size).toBe(3);
   });
 
   it('sends the code as it is shown, in capitals and trimmed', async () => {
@@ -279,7 +302,7 @@ describe('registering a terminal', () => {
     expect(within(dialog).getByLabelText('Código')).toHaveAttribute('aria-invalid', 'false');
   });
 
-  it('a request still in progress (IDEMPOTENCY_IN_PROGRESS) waits a second and is resent as it was', async () => {
+  it('a request still in progress (IDEMPOTENCY_IN_PROGRESS) waits a second and is resent with the same key', async () => {
     const state = terminalsServer();
     const requests = createHandler(state, (n) => (n === 1 ? problem(409, 'IDEMPOTENCY_IN_PROGRESS') : undefined));
 
@@ -288,6 +311,7 @@ describe('registering a terminal', () => {
 
     expect(await screen.findByRole('cell', { name: 'Caixa 2' }, { timeout: 3_000 })).toBeInTheDocument();
     expect(requests).toHaveLength(2);
+    expect(requests[0]?.idempotencyKey).toEqual(A_KEY);
     expect(requests[1]).toEqual(requests[0]);
   });
 
@@ -302,6 +326,8 @@ describe('registering a terminal', () => {
 
     expect(await screen.findByRole('cell', { name: 'Caixa 2' })).toBeInTheDocument();
     expect(requests).toHaveLength(5);
+    expect(requests[0]?.idempotencyKey).toEqual(A_KEY);
+    // the resends and "Tentar novamente" all reuse the intent's one key
     expect(new Set(requests.map((request) => JSON.stringify(request))).size).toBe(1);
   }, 10_000);
 
@@ -327,6 +353,7 @@ describe('registering a terminal', () => {
 
     expect(await screen.findByRole('cell', { name: 'Caixa 2' })).toBeInTheDocument();
     expect(requests).toHaveLength(2);
+    expect(requests[0]?.idempotencyKey).toEqual(A_KEY);
     expect(requests[1]).toEqual(requests[0]);
     expect(state.terminals).toHaveLength(1);
   });
@@ -345,9 +372,11 @@ describe('registering a terminal', () => {
       method: 'POST',
       path: '/api/v1/backoffice/terminals',
       body: { storeId: baixa.id, code: 'CX2', name: 'Caixa 2', kind: 'POS' },
-      idempotencyKey: null,
+      // Not a secret: the resume repeats the request under the same key (FC §6).
+      idempotencyKey: requests[0]!.idempotencyKey,
       returnTo: TERMINALS,
     });
+    expect(requests[0]!.idempotencyKey).toEqual(A_KEY);
 
     newPageLoad();
     const back = renderApp('/step-up/resume');
@@ -459,7 +488,7 @@ describe('the one-time enrolment code', () => {
     expect(document.body.textContent).not.toContain(GROUPED);
   });
 
-  it('keeps the request to retry when no answer came, and repeats it once', async () => {
+  it('keeps the request to retry when no answer came, and repeats it once, never with a key', async () => {
     terminalsServer([bar]);
     const requests = issueHandler((n) => (n === 1 ? HttpResponse.error() : undefined));
 
@@ -472,20 +501,74 @@ describe('the one-time enrolment code', () => {
     expect(await screen.findByText(GROUPED)).toBeInTheDocument();
     expect(requests).toHaveLength(2);
     expect(requests[1]).toEqual(requests[0]);
+    // The answer is the code: it must never be stored for a replay (ADR 0035), so no key goes with it.
+    expect(requests.map((request) => request.idempotencyKey)).toEqual([null, null]);
   });
 });
 
 describe('revoking a terminal', () => {
-  it('asks for confirmation first, then revokes once and shows the new state', async () => {
-    const state = terminalsServer([caixa1]);
+  function revokeHandler(state: ReturnType<typeof terminalsServer>, answer?: (n: number) => Response | undefined) {
     const requests: Seen[] = [];
     server.use(
       http.post(api('/api/v1/backoffice/terminals/:id/revoke'), async ({ request }) => {
         requests.push(await seen(request));
+        const custom = answer?.(requests.length);
+        if (custom) return custom;
         state.terminals = state.terminals.map((t) => (t.id === caixa1.id ? { ...t, status: 'REVOKED' } : t));
         return HttpResponse.json(state.terminals[0]);
       }),
     );
+    return requests;
+  }
+
+  async function confirmRevoke(user: ReturnType<typeof renderApp>['user']) {
+    await user.click(await screen.findByRole('button', { name: 'Revogar Caixa 1' }));
+    const confirm = await screen.findByRole('alertdialog', { name: 'Revogar o terminal Caixa 1?' });
+    await user.click(within(confirm).getByRole('button', { name: 'Revogar' }));
+  }
+
+  it('retries with the same key when no answer came', async () => {
+    const state = terminalsServer([caixa1]);
+    const requests = revokeHandler(state, (n) => (n === 1 ? HttpResponse.error() : undefined));
+
+    const { user } = renderApp(TERMINALS);
+    await confirmRevoke(user);
+    expect(await screen.findByText('Sem ligação — a operação não foi confirmada.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+
+    expect(await screen.findByRole('cell', { name: 'Revogado' })).toBeInTheDocument();
+    expect(requests).toHaveLength(2);
+    expect(requests[0]?.idempotencyKey).toEqual(A_KEY);
+    expect(requests[1]).toEqual(requests[0]);
+  });
+
+  it('goes through step-up and resumes under the same key', async () => {
+    const state = terminalsServer([caixa1]);
+    const requests = revokeHandler(state, (n) => (n === 1 ? stepUpRequired(300) : undefined));
+
+    const first = renderApp(TERMINALS);
+    await confirmRevoke(first.user);
+    const stepUp = await screen.findByRole('alertdialog', { name: 'Confirme a sua identidade' });
+    await first.user.click(within(stepUp).getByRole('button', { name: 'Confirmar identidade' }));
+    expect(JSON.parse(sessionStorage.getItem('restaurantpro.backoffice.pendingCommand')!)).toMatchObject({
+      path: `/api/v1/backoffice/terminals/${caixa1.id}/revoke`,
+      idempotencyKey: requests[0]!.idempotencyKey,
+    });
+
+    newPageLoad();
+    const back = renderApp('/step-up/resume');
+    expect(await screen.findByText('Revogar o terminal Caixa 1.')).toBeInTheDocument();
+    await back.user.click(screen.getByRole('button', { name: 'Continuar' }));
+
+    await waitFor(() => expect(back.currentUrl()).toBe(TERMINALS));
+    expect(requests).toHaveLength(2);
+    expect(requests[0]?.idempotencyKey).toEqual(A_KEY);
+    expect(requests[1]).toEqual(requests[0]);
+  });
+
+  it('asks for confirmation first, then revokes once and shows the new state', async () => {
+    const state = terminalsServer([caixa1]);
+    const requests = revokeHandler(state);
 
     const { user } = renderApp(TERMINALS);
     await user.click(await screen.findByRole('button', { name: 'Revogar Caixa 1' }));
@@ -499,7 +582,7 @@ describe('revoking a terminal', () => {
 
     expect(await screen.findByRole('cell', { name: 'Revogado' })).toBeInTheDocument();
     expect(requests).toEqual([
-      { url: `/api/v1/backoffice/terminals/${caixa1.id}/revoke`, body: undefined, idempotencyKey: null, csrf: CSRF_TOKEN },
+      { url: `/api/v1/backoffice/terminals/${caixa1.id}/revoke`, body: undefined, idempotencyKey: A_KEY, csrf: CSRF_TOKEN },
     ]);
   });
 });
@@ -510,7 +593,7 @@ describe('the step-up resume page', () => {
     method: 'POST',
     path: `/api/v1/backoffice/terminals/${bar.id}/revoke`,
     body: null,
-    idempotencyKey: null,
+    idempotencyKey: 'dddddddd-0000-4000-8000-000000000004',
     returnTo: TERMINALS,
     label: 'Bar',
     tenantId: admin.tenantId,
@@ -521,6 +604,8 @@ describe('the step-up resume page', () => {
     ['an expired command', JSON.stringify({ ...valid, savedAt: Date.now() - 16 * 60_000 })],
     ['a command of another company', JSON.stringify({ ...valid, tenantId: 'cccccccc-0000-4000-8000-000000000003', savedAt: Date.now() })],
     ['a path that is not a resumable command', JSON.stringify({ ...valid, path: '/api/v1/backoffice/users', savedAt: Date.now() })],
+    ['a revoke stored without its key', JSON.stringify({ ...valid, idempotencyKey: null, savedAt: Date.now() })],
+    ['a code issue stored with a key', JSON.stringify({ ...valid, path: `/api/v1/backoffice/terminals/${bar.id}/enrollment-code`, savedAt: Date.now() })],
     ['a return outside the app', JSON.stringify({ ...valid, returnTo: '//evil.example', savedAt: Date.now() })],
     ['a return with a backslash', JSON.stringify({ ...valid, returnTo: '/\\evil', savedAt: Date.now() })],
     ['a return with an escaped tab', JSON.stringify({ ...valid, returnTo: '/\\t/evil', savedAt: Date.now() })],
@@ -543,19 +628,21 @@ describe('the step-up resume page', () => {
   });
 
   it.each([
-    ['a code issue', `/api/v1/backoffice/terminals/${bar.id}/enrollment-code`, null, 'Emitir o código de registo do terminal Bar.'],
-    ['a revoke', `/api/v1/backoffice/terminals/${bar.id}/revoke`, null, 'Revogar o terminal Bar.'],
-    ['a registration', '/api/v1/backoffice/terminals', { storeId: baixa.id, code: 'CX2', name: 'Bar', kind: 'POS' }, 'Registar terminal'],
-  ])('forgets %s as soon as "Continuar" sends it, so a reload cannot replay it', async (_name, path, body, shown) => {
+    ['a code issue', `/api/v1/backoffice/terminals/${bar.id}/enrollment-code`, null, null, 'Emitir o código de registo do terminal Bar.'],
+    ['a revoke', `/api/v1/backoffice/terminals/${bar.id}/revoke`, null, valid.idempotencyKey, 'Revogar o terminal Bar.'],
+    ['a registration', '/api/v1/backoffice/terminals', { storeId: baixa.id, code: 'CX2', name: 'Bar', kind: 'POS' }, valid.idempotencyKey, 'Registar terminal'],
+  ])('forgets %s as soon as "Continuar" sends it, so a reload cannot replay it', async (_name, path, body, key, shown) => {
     terminalsServer([bar]);
     const storedWhenSent: (string | null)[] = [];
+    const keysSent: (string | null)[] = [];
     server.use(
-      http.post(api('/api/v1/backoffice/terminals*'), () => {
+      http.post(api('/api/v1/backoffice/terminals*'), ({ request }) => {
         storedWhenSent.push(sessionStorage.getItem(KEY));
+        keysSent.push(request.headers.get('Idempotency-Key'));
         return HttpResponse.error();
       }),
     );
-    sessionStorage.setItem(KEY, JSON.stringify({ ...valid, path, body, savedAt: Date.now() }));
+    sessionStorage.setItem(KEY, JSON.stringify({ ...valid, path, body, idempotencyKey: key, savedAt: Date.now() }));
 
     const { user } = renderApp('/step-up/resume');
     expect(await screen.findByText(shown)).toBeInTheDocument();
@@ -567,6 +654,8 @@ describe('the step-up resume page', () => {
     expect(sessionStorage.getItem(KEY)).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Tentar novamente' }));
     await waitFor(() => expect(storedWhenSent).toEqual([null, null]));
+    // The stored key (none for the code issue) goes with "Continuar" and with every retry.
+    expect(keysSent).toEqual([key, key]);
   });
 
   it('lets the user cancel the pending command', async () => {

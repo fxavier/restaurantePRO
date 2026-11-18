@@ -119,6 +119,7 @@ class StoreScopeHttpTest {
         mvc.perform(get("/api/v1/backoffice/employees").param("storeId", storeB.toString()).with(session))
                 .andExpect(status().is(refusal));
         mvc.perform(post("/api/v1/backoffice/terminals").with(session).with(csrf())
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json("storeId", storeB, "code", "X1", "name", "X")))
                 .andExpect(status().is(refusal));

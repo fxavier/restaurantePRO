@@ -66,7 +66,8 @@ class TerminalEnrollmentSecurityTest {
                         .content(StoreHttpTest.create(StoreHttpTest.newCode(), "Africa/Maputo")))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).get("id").asString();
         String terminal = JSON.readTree(mvc.perform(post(TerminalHttpTest.TERMINALS)
-                        .with(admin(Permission.TERMINAL_MANAGE)).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .with(admin(Permission.TERMINAL_MANAGE)).with(csrf())
+                        .header("Idempotency-Key", TerminalHttpTest.newKey()).contentType(MediaType.APPLICATION_JSON)
                         .content(TerminalHttpTest.register(UUID.fromString(store), "POS1")))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).get("id").asString();
         return JSON.readTree(mvc.perform(post(TerminalHttpTest.TERMINALS + "/" + terminal + "/enrollment-code")

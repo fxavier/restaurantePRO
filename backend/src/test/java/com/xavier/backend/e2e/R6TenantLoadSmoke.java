@@ -273,8 +273,8 @@ class R6TenantLoadSmoke {
             UUID register = id(office.command(BO + "/cash/registers", Map.of("storeId", store, "code", "CX" + i,
                     "name", "Caixa " + i), 201, "register"));
             String cashier = Installation.employee(office, store, "CX" + i, "Caixa " + i, PIN, cashierRole);
-            UUID terminal = id(office.post(BO + "/terminals", Map.of("storeId", store, "code", "POS" + i, "name",
-                    "POS" + i), 201));
+            UUID terminal = id(office.command(BO + "/terminals", Map.of("storeId", store, "code", "POS" + i, "name",
+                    "POS" + i), 201, "register the terminal"));
             Supplier<String> tokens = Installation.enrolled(office, terminal);
             Browser pos = new Browser("pos " + no + "." + i, port, journey).withFixtures(owner, Instant::now)
                     .enrolled(tokens);

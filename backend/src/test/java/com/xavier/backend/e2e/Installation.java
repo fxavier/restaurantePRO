@@ -186,8 +186,8 @@ final class Installation {
     }
 
     static UUID terminal(Browser office, UUID store, String code) throws Exception {
-        return id(office.post("/api/v1/backoffice/terminals", Map.of("storeId", store, "code", code, "name", code),
-                201));
+        return id(office.command("/api/v1/backoffice/terminals", Map.of("storeId", store, "code", code, "name", code),
+                201, "register terminal " + code));
     }
 
     /** An employee of {@code store} with {@code role}; returns the code they log in with. */

@@ -29,6 +29,7 @@ import { RevokeTerminalDialog } from './revoke-terminal-dialog';
 import { kindLabel, terminalStatuses } from './terminal-labels';
 
 type Target = { terminalId: string; terminalName: string };
+type Revocation = Target & { idempotencyKey: string };
 
 /** The selected store's terminals (stories 12–16): the list, and register, issue a code and revoke. */
 export function StoreTerminals({ storeId }: { storeId: string }) {
@@ -46,9 +47,10 @@ export function StoreTerminals({ storeId }: { storeId: string }) {
     issue.mutate(target, {
       onError: (error) => isStepUpRequired(error) && stepUp.prompt(error, { type: 'issueCode', ...target }),
     });
-  const revokeOne = (target: Target) =>
-    revoke.mutate(target, {
-      onError: (error) => isStepUpRequired(error) && stepUp.prompt(error, { type: 'revoke', ...target }),
+  /** One revocation intent, under one key for every retry and the step-up resume (FC §8); a code issue has none. */
+  const revokeOne = (revocation: Revocation) =>
+    revoke.mutate(revocation, {
+      onError: (error) => isStepUpRequired(error) && stepUp.prompt(error, { type: 'revoke', ...revocation }),
     });
   const target = (terminal: TerminalSummary): Target => ({ terminalId: terminal.id!, terminalName: terminal.name ?? '' });
 
@@ -144,7 +146,7 @@ export function StoreTerminals({ storeId }: { storeId: string }) {
         onCancel={() => setToRevoke(null)}
         onConfirm={(terminal) => {
           setToRevoke(null);
-          revokeOne(target(terminal));
+          revokeOne({ ...target(terminal), idempotencyKey: crypto.randomUUID() });
         }}
       />
       <EnrolmentCodeDialog

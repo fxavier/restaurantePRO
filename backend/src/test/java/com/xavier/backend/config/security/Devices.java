@@ -45,6 +45,7 @@ public final class Devices {
     /** A registered, not yet enrolled device of {@code kind} ({@code POS} or {@code PRINT_BRIDGE}) in {@code store}. */
     public UUID register(UUID store, String kind) throws Exception {
         return IdentityFixtures.id(mvc.perform(post("/api/v1/backoffice/terminals").with(admin())
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(IdentityFixtures.json("storeId", store, "code", IdentityFixtures.unique("D"),
                                 "name", "Device", "kind", kind)))
