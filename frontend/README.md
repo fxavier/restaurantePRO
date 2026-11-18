@@ -30,6 +30,47 @@ The first Playwright run on a machine needs the browser: `rtk proxy pnpm exec pl
 
 Each app is same-origin with its API (ADR 0041), so the backend needs no CORS. The dev ports are fixed: the dev realm and `backend/run-local.sh` name them. `E2E_POS_URL` and `E2E_BACKOFFICE_URL` point Playwright at already-running origins instead of starting the preview servers.
 
+## End-to-end against the real stack (ADR 0043)
+
+`deploy/e2e/` runs PostgreSQL, Keycloak with the dev realms, the backend, the BFF and both built SPAs behind their
+origins (ADR 0041; Caddy, `deploy/e2e/Caddyfile`), in a Compose project of its own (`restaurantpro-e2e`). Needs Docker,
+`curl`, `jq` and `openssl`.
+
+```bash
+rtk proxy pnpm e2e:stack:up      # builds the SPAs and the images, generates this stack's secrets and keys, waits until healthy
+rtk proxy pnpm e2e:stack         # Playwright against the stack: seeds this run's data, then every project
+rtk proxy pnpm e2e:stack -- --project stack   # Playwright arguments go after --
+rtk proxy pnpm e2e:stack:down    # removes the containers, the data and deploy/e2e/.run/
+```
+
+| origin | what |
+|---|---|
+| `http://localhost:14174` | BackOffice SPA + BFF |
+| `http://localhost:14173` | POS SPA + backend (`/api/v1/pos/**`, `/api/v1/auth/**` only; other `/api` paths 404) |
+| `http://localhost:18180` | Keycloak (admin password in `deploy/e2e/.run/keycloak_admin_password`) |
+| `http://localhost:18080` | backend, used by the seed only |
+| `http://localhost:18025` | Mailpit (the onboarding invitations) |
+
+All the services share one network namespace, so `localhost:18180` is Keycloak for the browser, the host and the
+services alike: one issuer, and the seed's loopback-only guard stays strict. `backoffice-bff`'s `private_key_jwt` key
+is generated per stack in `deploy/e2e/.run/keys/` and only its public JWK is registered (`deploy/keycloak-bff-dev-key.sh`).
+
+**Seed data, unique per run** (`e2e/global-setup.ts`, through the public API and the provisioners, never SQL): a new
+tenant and its first store (platform onboarding, `deploy/keycloak-e2e-seed.sh`), its administrator in Keycloak with a
+password and a TOTP secret, then, signed in through the BFF with password + TOTP: a waiter (`EMPREGADO`, random PIN)
+and a catalog of one priced item, validated and published for the store. The values reach the specs through
+`process.env` (`e2e/support/stack.ts`, `seeded`); nothing is written to a file. `E2E_ADMIN_TOTP_SECRET` may be set to
+choose the TOTP secret; `e2e/support/totp.ts` computes the codes (RFC 6238, `node:crypto`). Keycloak refuses a code
+twice, so a second sign-in in the same run waits for the next 30 s period.
+
+**Only ever against the throwaway stack.** On failure the traces (`trace: retain-on-failure`, uploaded by CI as
+the `playwright-report` artifact) hold that run's administrator password, TOTP codes and session cookies. They are
+harmless only because the stack, its users and its keys are destroyed with `e2e:stack:down`; never point
+`E2E_*_URL` at a persistent or shared environment.
+
+The `stack` project (`e2e/stack/`) holds the specs that need the backend; the `pos` and `backoffice` smoke tests run
+against both the preview servers and the stack.
+
 ## Layout
 
 ```text

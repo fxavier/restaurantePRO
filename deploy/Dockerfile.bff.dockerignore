@@ -1,0 +1,4 @@
+# Build context is ../bff; only sources are needed.
+target/
+.idea/
+*.iml
