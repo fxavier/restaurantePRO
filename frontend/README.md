@@ -67,7 +67,8 @@ choose the TOTP secret; `e2e/support/totp.ts` computes the codes (RFC 6238, `nod
 twice, so a second sign-in in the same run waits for the next 30 s period.
 
 **Only ever against the throwaway stack.** On failure the traces (`trace: retain-on-failure`, uploaded by CI as
-the `playwright-report` artifact) hold that run's administrator password, TOTP codes and session cookies. They are
+the `playwright-report` artifact) hold that run's administrator password, TOTP codes and session cookies, and the POS
+terminals' bearer tokens, POS session tokens and enrolment codes. Never upload or share them publicly. They are
 harmless only because the stack, its users and its keys are destroyed with `e2e:stack:down`; never point
 `E2E_*_URL` at a persistent or shared environment.
 

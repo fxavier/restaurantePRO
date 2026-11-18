@@ -3,19 +3,21 @@ import type { MoneyValue } from '@restaurantpro/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { useServices } from '../../../lib/services';
 import { isInProgress, isUnknownOutcome, useIntent } from '../../../lib/use-intent';
+import { batchJson, type ConfirmBatch } from '../expected-gross';
 import { orderKey } from './use-order';
 
 type Schemas = components['schemas'];
-type ConfirmBatchRequest = Schemas['com.xavier.backend.orders.model.dto.ConfirmBatchRequest'];
 type BatchView = Schemas['com.xavier.backend.orders.model.dto.BatchView'];
+type ConfirmBatchBody = Schemas['com.xavier.backend.orders.model.dto.ConfirmBatchRequest'];
 
 /** What the screen showed when "Pedir" was pressed: each draft's gross, to show what a price conflict changed. */
 export type Shown = { gross: ReadonlyMap<string, MoneyValue | undefined> };
 
 /**
  * The backend answers both a stale `orderVersion` and the same key still running with an uncoded 409
- * (gap-in-progress-code). The order read again tells them apart: at another version than the one sent, the round was
- * refused as stale (or another request changed it); at the same version, nothing changed, so the key is still running.
+ * (gap-in-progress-code). The order read again tells them apart: at the same version, nothing changed, so the key is
+ * still running; at another, the same key is sent once more (it may be this request that committed), and refused again
+ * the round is stale.
  */
 export class StaleOrderError extends Error {
   constructor(options?: ErrorOptions) {
@@ -56,21 +58,31 @@ export function useConfirmBatch(
     }
   }
 
-  return useIntent<ConfirmBatchRequest, BatchView | undefined, Shown>(
+  const post = async (body: ConfirmBatch, key: string) =>
+    (
+      await api.POST('/api/v1/pos/orders/{id}/batches', {
+        params: { path: { id: orderId }, header: { 'Idempotency-Key': key } },
+        // The contract's type; batchJson writes expectedGross as the exact decimal it is.
+        body: body as ConfirmBatchBody,
+        bodySerializer: () => batchJson(body),
+      })
+    ).data;
+
+  return useIntent<ConfirmBatch, BatchView | undefined, Shown>(
     async (body, key) => {
       try {
-        return (
-          await api.POST('/api/v1/pos/orders/{id}/batches', {
-            params: { path: { id: orderId }, header: { 'Idempotency-Key': key } },
-            body,
-          })
-        ).data;
+        return await post(body, key);
       } catch (error) {
-        if (isInProgress(error)) {
-          const version = await versionNow();
-          if (version !== undefined && version !== body.orderVersion) throw new StaleOrderError({ cause: error });
+        if (!isInProgress(error)) throw error;
+        const version = await versionNow();
+        if (version === undefined || version === body.orderVersion) throw error; // still running: waited and resent
+        // The order moved on: maybe by this very request, committed while its answer was lost. The same key once
+        // more: a completed key replays the round; a stale request is refused again, and only then is it a conflict.
+        try {
+          return await post(body, key);
+        } catch (again) {
+          throw isInProgress(again) ? new StaleOrderError({ cause: again }) : again;
         }
-        throw error;
       }
     },
     {

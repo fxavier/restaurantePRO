@@ -90,7 +90,13 @@ describe('"Pedir"', () => {
     expect(within(panel()).getByRole('status', { name: 'Envio' })).toHaveTextContent('Ronda 2 enviada.');
     expect(batches).toHaveLength(1);
     expect(batches[0]!.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
-    expect(batches[0]!.body).toEqual({ orderVersion: 4, catalogVersion: 7, lineIds: [LINE.water.id, LINE.coffee.id] });
+    // expectedGross: the exact sum of the drafts' gross as shown (120,00 + 50,00), a guard the server checks.
+    expect(batches[0]!.body).toEqual({
+      orderVersion: 4,
+      catalogVersion: 7,
+      lineIds: [LINE.water.id, LINE.coffee.id],
+      expectedGross: 170,
+    });
   });
 
   it('sends back the promotion release the previews came from', async () => {
@@ -209,6 +215,30 @@ describe('"Pedir"', () => {
     expect(within(panel()).getByRole('button', { name: 'Tentar novamente' })).toBeEnabled();
   });
 
+  it('a timeout, then "in progress" with the order moved on: the same key once more replays the round, no conflict', async () => {
+    const server = serverOrder();
+    const batches = batchEndpoint(
+      ORDER_ID,
+      () => {
+        server.state.current = SENT; // the first request committed; its answer was lost
+        return HttpResponse.error();
+      },
+      uncoded409, // the retry meets the first request still finishing
+      () => HttpResponse.json(ROUND, { status: 201 }), // the completed key replays the round
+    );
+    const { user } = await atOrder([server.read]);
+    await ready();
+
+    await user.click(pedir());
+    await user.click(await within(panel()).findByRole('button', { name: 'Tentar novamente' }));
+
+    await within(panel()).findByRole('list', { name: 'Ronda 2, 12:20' });
+    expect(within(panel()).getByRole('status', { name: 'Envio' })).toHaveTextContent('Ronda 2 enviada.');
+    expect(within(panel()).queryByText(/alterado noutro terminal/)).not.toBeInTheDocument();
+    expect(batches).toHaveLength(3);
+    expect(new Set(batches.map((batch) => batch.idempotencyKey)).size).toBe(1);
+  });
+
   it('a version conflict reads the order again, shows it, and the next "Pedir" sends the current version', async () => {
     const extra: LineView = { ...LINE.coffee, id: id(804), quantity: 2, version: 0 };
     const changed = withLines(ORDER, [LINE.water, LINE.coffee, extra, LINE.steak], { version: 5 });
@@ -219,6 +249,7 @@ describe('"Pedir"', () => {
         server.state.current = changed; // another terminal added a line first
         return uncoded409();
       },
+      uncoded409, // the same stale request, resent with its key
       server.sends(),
     );
     const { user } = await atOrder([server.read]);
@@ -230,13 +261,15 @@ describe('"Pedir"', () => {
       'O pedido foi alterado noutro terminal. Reveja-o e carregue em Pedir de novo.',
     );
     await waitFor(() => expect(within(drafts()).getAllByRole('listitem')).toHaveLength(3));
-    expect(batches).toHaveLength(1);
+    // The same key once more first (it may have committed); the stale request is refused again.
+    expect(batches).toHaveLength(2);
+    expect(batches[1]!.idempotencyKey).toBe(batches[0]!.idempotencyKey);
 
     await user.click(pedir());
 
-    await waitFor(() => expect(batches).toHaveLength(2));
-    expect(batches[1]!.idempotencyKey).not.toBe(batches[0]!.idempotencyKey);
-    expect(batches[1]!.body).toMatchObject({ orderVersion: 5, lineIds: [LINE.water.id, LINE.coffee.id, extra.id] });
+    await waitFor(() => expect(batches).toHaveLength(3));
+    expect(batches[2]!.idempotencyKey).not.toBe(batches[0]!.idempotencyKey);
+    expect(batches[2]!.body).toMatchObject({ orderVersion: 5, lineIds: [LINE.water.id, LINE.coffee.id, extra.id] });
   });
 
   it('PRICES_CHANGED reads the order again and shows each new price beside the one shown before', async () => {
@@ -269,6 +302,8 @@ describe('"Pedir"', () => {
 
     await waitFor(() => expect(batches).toHaveLength(2));
     expect(batches[1]!.idempotencyKey).not.toBe(batches[0]!.idempotencyKey);
+    expect(batches[0]!.body).toMatchObject({ expectedGross: 170 });
+    expect(batches[1]!.body).toMatchObject({ expectedGross: 200 });
   });
 
   it('CATALOG_CHANGED reads the catalog and the order again, then the waiter confirms again', async () => {

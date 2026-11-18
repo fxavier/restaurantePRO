@@ -8,6 +8,7 @@ import { byCode, type CatalogItem, itemLabel, needsChoices, search } from '../..
 import { FamilyRail } from '../../catalog/components/family-rail';
 import { ProductGrid } from '../../catalog/components/product-grid';
 import { useCatalog } from '../../catalog/hooks/use-catalog';
+import { sumDecimals } from '../expected-gross';
 import { isCatalogConflict, type Shown, useConfirmBatch } from '../hooks/use-confirm-batch';
 import { useAddLine, useDraftLineCommands } from '../hooks/use-order-commands';
 import type { Order, OrderLine } from '../order';
@@ -102,6 +103,7 @@ export function OrderScreen({ order, blocked, back }: Props) {
         catalogVersion: order.catalogVersion,
         promotionVersion: order.promotionVersion,
         lineIds: order.drafts.map((line) => line.id),
+        expectedGross: shownGross(order.drafts),
       },
       { gross: new Map(order.drafts.map((line) => [line.id, line.gross])) },
     );
@@ -292,6 +294,18 @@ function draftMessage(error: Error): string {
   if (!(error instanceof ApiError)) return 'Não foi possível alterar a linha.';
   if (isOffline(error)) return 'Sem ligação — a alteração da linha não foi confirmada.';
   return `Não foi possível alterar a linha. ${errorMessage(error)}`;
+}
+
+/**
+ * `expectedGross` (D104): the exact sum of the gross shown for exactly the drafts sent, so the server refuses the round
+ * with PRICES_CHANGED if it would now cost anything else (a draft changed on another terminal, a promotion window
+ * closed). None when a draft shows no price or the currencies differ: the server then checks nothing it was not shown.
+ */
+function shownGross(drafts: OrderLine[]): string | undefined {
+  const gross = drafts.map((line) => line.gross);
+  if (gross.some((value) => value === undefined)) return undefined;
+  if (new Set(gross.map((value) => value!.currency)).size !== 1) return undefined;
+  return sumDecimals(gross.map((value) => value!.amount));
 }
 
 function closedMessage(order: Order): string {
