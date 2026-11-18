@@ -33,9 +33,11 @@ public class PinChangeService {
     private final AccessPolicy accessPolicy;
     private final AuditLog auditLog;
     private final Clock clock;
+    private final SessionTenant sessionTenant;
 
     PinChangeService(EmployeeRepository employees, AuthorityResolver authorities, PasswordEncoder encoder,
-                     AccessPolicy accessPolicy, AuditLog auditLog, Clock clock) {
+                     AccessPolicy accessPolicy, AuditLog auditLog, Clock clock, SessionTenant sessionTenant) {
+        this.sessionTenant = sessionTenant;
         this.employees = employees;
         this.authorities = authorities;
         this.encoder = encoder;
@@ -75,6 +77,6 @@ public class PinChangeService {
                 actor.storeId(), null, null, Map.of());
         Actor withAuthorities = Actor.employee(employee.getId(), actor.terminalId(), actor.storeId(),
                 authorities.ofEmployeeInStore(employee.getId(), actor.storeId()));
-        return SessionView.employee(withAuthorities, employee.getName(), false);
+        return sessionTenant.stamp(SessionView.employee(withAuthorities, employee.getName(), false));
     }
 }

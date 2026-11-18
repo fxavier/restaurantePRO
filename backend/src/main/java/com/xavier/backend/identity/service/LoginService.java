@@ -19,16 +19,22 @@ public class LoginService {
     private final UserAccountRepository accounts;
     private final EmployeeRepository employees;
     private final AccessPolicy accessPolicy;
+    private final SessionTenant sessionTenant;
 
-    LoginService(UserAccountRepository accounts, EmployeeRepository employees, AccessPolicy accessPolicy) {
+    LoginService(UserAccountRepository accounts, EmployeeRepository employees, AccessPolicy accessPolicy,
+                 SessionTenant sessionTenant) {
         this.accounts = accounts;
         this.employees = employees;
         this.accessPolicy = accessPolicy;
+        this.sessionTenant = sessionTenant;
     }
 
     @Transactional(readOnly = true)
     public SessionView currentSession() {
-        Actor actor = accessPolicy.current();
+        return sessionTenant.stamp(describe(accessPolicy.current()));
+    }
+
+    private SessionView describe(Actor actor) {
         if (actor.kind() == ActorKind.EMPLOYEE) {
             return employees.findById(actor.employeeId())
                     .map(employee -> SessionView.employee(actor, employee.getName(), employee.isMustChangePin()))

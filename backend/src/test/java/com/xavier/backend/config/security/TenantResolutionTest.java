@@ -92,6 +92,22 @@ class TenantResolutionTest {
     }
 
     @Test
+    void theSessionNamesTheTenantTheRequestWasResolvedIn() throws Exception {
+        UUID first = Members.activeTenant();
+        UUID second = Members.activeTenant();
+        String subject = subject();
+        Members.member(first, subject);
+        Members.member(second, subject);
+
+        mvc.perform(session(subject).header("X-Tenant-Id", second.toString())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.tenantId").value(second.toString()))
+                .andExpect(jsonPath("$.tenantName").value("t-" + second));
+        mvc.perform(session(subject).header("X-Tenant-Id", first.toString())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.tenantId").value(first.toString()))
+                .andExpect(jsonPath("$.tenantName").value("t-" + first));
+    }
+
+    @Test
     void aSuspendedTenantIsRefused() throws Exception {
         UUID tenant = Members.activeTenant();
         String subject = subject();
