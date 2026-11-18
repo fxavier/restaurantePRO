@@ -42,7 +42,31 @@ export function loginSucceeded() {
   sessionStorage.removeItem(REDIRECT_AT);
 }
 
+/**
+ * FE-F16: another tab switched the BFF's company. The page is reloaded at `/`, so nothing loaded for the old company
+ * survives, and the reloaded page says so once: a flag in sessionStorage (no tenant data). At most once per page load.
+ */
+const TENANT_CHANGED = 'restaurantpro.backoffice.tenantChanged';
+let reloading = false;
+
+export function reloadForTenantChange() {
+  if (reloading) return;
+  reloading = true;
+  sessionStorage.setItem(TENANT_CHANGED, '1');
+  browser.assign('/');
+}
+
+/** Whether this page load follows a tenant change in another tab. */
+export function tenantChangedBeforeLoad(): boolean {
+  return sessionStorage.getItem(TENANT_CHANGED) === '1';
+}
+
+export function forgetTenantChange() {
+  sessionStorage.removeItem(TENANT_CHANGED);
+}
+
 /** For tests: a new page load. */
 export function resetLoginGuard() {
   redirecting = false;
+  reloading = false;
 }

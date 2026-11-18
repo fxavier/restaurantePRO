@@ -7,7 +7,6 @@ const messages: Record<string, string> = {
   TENANT_SUSPENDED: 'Esta empresa está suspensa.',
   TENANT_CLOSED: 'Esta empresa está encerrada.',
   TENANT_SELECTION_INVALID: 'Empresa inválida.',
-  TENANT_CHANGED: 'A empresa ativa mudou noutro separador. Verifique e repita.',
 };
 
 export function errorMessage(error: unknown): string {

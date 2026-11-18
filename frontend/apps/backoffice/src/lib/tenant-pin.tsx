@@ -1,18 +1,18 @@
 import { createContext, useContext, type ReactNode } from 'react';
 
 /**
- * The company this tab's loaded data belongs to (FE-F16), in memory and per tab. Every write names it as
- * `X-Expected-Tenant`. It changes only through this tab's own switch or once a detected change has reset the tab, so
- * a write from a page still showing the previous company is refused by the BFF (409 `TENANT_CHANGED`).
+ * The company this page was loaded in (FE-F16), in memory and per tab: set by the first successful session read and
+ * never moved; only a page load starts a new one. Writes name it as `X-Expected-Tenant`, and an answer the BFF relayed
+ * in another company reloads the page instead of being shown.
  */
-export type TenantPin = { get(): string | undefined; set(tenantId: string): void };
+export type TenantPin = { get(): string | undefined; setOnce(tenantId: string): void };
 
 export function createTenantPin(): TenantPin {
   let pinned: string | undefined;
   return {
     get: () => pinned,
-    set: (tenantId) => {
-      pinned = tenantId;
+    setOnce: (tenantId) => {
+      pinned ??= tenantId;
     },
   };
 }

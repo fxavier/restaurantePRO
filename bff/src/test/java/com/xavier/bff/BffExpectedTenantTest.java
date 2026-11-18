@@ -5,6 +5,8 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
 
+import java.util.Map;
+
 import static com.xavier.bff.BffTenantSelectionTest.TENANT_A;
 import static com.xavier.bff.BffTenantSelectionTest.TENANT_B;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -15,6 +17,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -22,6 +25,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class BffExpectedTenantTest extends BffTestSupport {
 
     static final String EXPECTED_TENANT = "X-Expected-Tenant";
+    static final String RELAYED_TENANT = "X-Relayed-Tenant";
 
     @Test
     void aWriteExpectingAnotherTenantIsRefusedWithoutReachingTheBackend() throws Exception {
@@ -123,6 +127,36 @@ class BffExpectedTenantTest extends BffTestSupport {
         mvc.perform(put("/bff/tenant").session(session).with(xsrf()).header(EXPECTED_TENANT, TENANT_B)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"tenantId\":\"" + TENANT_A + "\"}"))
                 .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void everyRelayedAnswerNamesTheSelectedTenant() throws Exception {
+        MockHttpSession session = loginWithSelection(TENANT_B);
+
+        mvc.perform(get("/api/v1/backoffice/stores").session(session))
+                .andExpect(status().isOk()).andExpect(header().string(RELAYED_TENANT, TENANT_B));
+        mvc.perform(post("/api/v1/auth/step-up").session(session).with(xsrf()).header(EXPECTED_TENANT, TENANT_B))
+                .andExpect(status().isOk()).andExpect(header().string(RELAYED_TENANT, TENANT_B));
+    }
+
+    @Test
+    void withoutASelectionNoRelayedTenantIsNamed() throws Exception {
+        MockHttpSession session = login();
+
+        mvc.perform(get("/api/v1/backoffice/stores").session(session))
+                .andExpect(status().isOk()).andExpect(header().doesNotExist(RELAYED_TENANT));
+    }
+
+    @Test
+    void theRelayedTenantNeverComesFromTheBackend() throws Exception {
+        BACKEND.willRespond(200, Map.of("Content-Type", "application/json", RELAYED_TENANT, TENANT_A), "{}");
+
+        MockHttpSession withoutSelection = login();
+        mvc.perform(get("/api/v1/backoffice/stores").session(withoutSelection))
+                .andExpect(header().doesNotExist(RELAYED_TENANT));
+        MockHttpSession withSelection = loginWithSelection(TENANT_B);
+        mvc.perform(get("/api/v1/backoffice/stores").session(withSelection))
+                .andExpect(header().stringValues(RELAYED_TENANT, TENANT_B));
     }
 
     private MockHttpSession loginWithSelection(String tenantId) throws Exception {

@@ -1,12 +1,12 @@
 import { Alert, AlertDescription } from '@restaurantpro/ui';
 import { Outlet } from 'react-router';
-import { SessionGate, TenantSwitcher, useTenantChangeGuard, UserMenu } from '../features/identity';
+import { SessionGate, TenantSwitcher, useTenantChangeNotice, UserMenu } from '../features/identity';
 import { StoreSelect } from '../features/organization';
 import { Sidebar } from './sidebar';
 
 /** The signed-in BackOffice (DS layouts): sidebar, top bar with company, store and user, content up to 1280 px. */
 export function AppShell() {
-  const tenantChanged = useTenantChangeGuard();
+  const tenantChanged = useTenantChangeNotice();
   return (
     <SessionGate>
       <a

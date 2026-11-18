@@ -149,6 +149,36 @@ describe('BackOffice middleware', () => {
     expect(requests.map((r) => r.headers.get('X-Expected-Tenant'))).toEqual([null, TENANT]);
   });
 
+  describe('an answer relayed in another tenant than the expected one (FE-F16)', () => {
+    const OTHER = '0193a1b2-0000-7000-8000-00000000000b';
+    const answering = (relayedTenant?: string, status = 200) => async () =>
+      Response.json({ stores: ['secret'] }, {
+        status,
+        headers: relayedTenant ? { 'X-Relayed-Tenant': relayedTenant } : {},
+      });
+
+    it.each([200, 404])('throws TENANT_CHANGED instead of the %s answer', async (status) => {
+      const client = createApiClient({ baseUrl: BASE, fetch: answering(OTHER, status), middleware: [backOffice] });
+
+      await expect(client.GET('/api/v1/auth/session')).rejects.toMatchObject({ status: 409, code: 'TENANT_CHANGED' });
+    });
+
+    it('passes an answer relayed in the expected tenant, or naming none', async () => {
+      for (const relayed of [TENANT, undefined]) {
+        const client = createApiClient({ baseUrl: BASE, fetch: answering(relayed), middleware: [backOffice] });
+
+        await expect(client.GET('/api/v1/auth/session')).resolves.toMatchObject({ data: { stores: ['secret'] } });
+      }
+    });
+
+    it('checks nothing before the tab has a tenant', async () => {
+      const unpinned = backOfficeMiddleware({ cookies: () => cookies, expectedTenant: () => undefined });
+      const client = createApiClient({ baseUrl: BASE, fetch: answering(OTHER), middleware: [unpinned] });
+
+      await expect(client.GET('/api/v1/auth/session')).resolves.toMatchObject({ data: { stores: ['secret'] } });
+    });
+  });
+
   it('sends no bearer token', async () => {
     const { fetch, requests } = capturingFetch();
     const client = createApiClient({ baseUrl: BASE, fetch, middleware: [backOffice] });

@@ -1,24 +1,26 @@
 import { useQuery } from '@tanstack/react-query';
 import { useApi } from '../../../lib/api';
 import { loginSucceeded } from '../../../lib/browser';
-import { SESSION_QUERY_KEY } from '../../../lib/query-client';
+import { useTenantPin } from '../../../lib/tenant-pin';
 import type { SessionView, TenantChoice } from '../types';
 
 /**
  * The signed-in user: name, permissions and the company the server resolved the request in (FC §6, FE-F08).
  * The BFF's company selection is shared by every tab, so another tab may switch it. The session is therefore never
  * fresh and is reread whenever this tab regains focus, so the label never shows a company the requests no longer act
- * in. Writes also carry X-Expected-Tenant, and a 409 TENANT_CHANGED rereads this query (FE-F16, `lib/query-client`).
+ * in. The first read pins the tab to its company; an answer from another one reloads the page (FE-F16, `lib/tenant-pin`).
  */
 export function useSession() {
   const api = useApi();
+  const pin = useTenantPin();
   return useQuery({
-    queryKey: SESSION_QUERY_KEY,
+    queryKey: ['auth', 'session'],
     staleTime: 0,
     refetchOnWindowFocus: 'always',
     queryFn: async (): Promise<SessionView> => {
       const { data } = await api.GET('/api/v1/auth/session');
       loginSucceeded();
+      if (data?.tenantId) pin.setOnce(data.tenantId);
       return data ?? {};
     },
   });
