@@ -25,8 +25,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * The last link of onboarding (D181 as amended): {@code CompanyProvisioned} → in the event's tenant, the tenant's
  * standard roles ({@link StandardRoles}) and the local administrator account (its e-mail as the username, the
  * administrator role, all stores),
- * then the Keycloak user invited (execute-actions e-mail), then the {@code ACCOUNT} membership of that user and the
- * tenant activated. The invitation is an external call (D48: persist, call, record), so it runs between two
+ * then the Keycloak user invited into the tenant's organization (execute-actions e-mail), then the {@code ACCOUNT}
+ * membership of that user and the tenant activated. The invitation is an external call (D48: persist, call, record), so it runs between two
  * transactions, never inside one. Idempotent: each step finds what an earlier delivery did (the account by username,
  * the user by e-mail at Keycloak, the membership by its unique key, an ACTIVE tenant), so a redelivery after a crash
  * halfway ends in the same state. The address is never logged.
@@ -60,7 +60,7 @@ class AdministratorProvisioning {
             throw new UnavailableException("IDP_UNAVAILABLE", "The tenant realm is not configured.", Map.of());
         }
         UUID administrator = transaction.execute(status -> administratorAccount(event.adminEmail()));
-        String subject = tenancy.idp().inviteUser(event.adminEmail(), null);
+        String subject = tenancy.idp().inviteUser(event.adminEmail(), event.organizationId());
         transaction.executeWithoutResult(status -> {
             tenancy.grant(new MembershipGrant(tenantIssuer, subject, MembershipKind.ACCOUNT, administrator, null));
             tenancy.activate(event.tenantId());

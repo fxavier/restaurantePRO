@@ -8,11 +8,12 @@ import org.springframework.modulith.NamedInterface;
  * company profile and first store from it and publishes {@code CompanyProvisioned}. Published by the platform command
  * (S75) in the tenant's own binding.
  *
+ * @param organizationId the tenant's Keycloak organization, which the first administrator joins
  * @param country    ISO-3166 alpha-2
  * @param currency   ISO-4217
  * @param adminEmail the first administrator's address: identity invites it (never logged)
  */
 @NamedInterface("event")
-public record TenantProvisioned(UUID tenantId, String companyName, String taxId, String country, String currency,
-                                String firstStoreName, String adminEmail) {
+public record TenantProvisioned(UUID tenantId, String organizationId, String companyName, String taxId,
+                                String country, String currency, String firstStoreName, String adminEmail) {
 }

@@ -71,10 +71,11 @@ public class PlatformTenantService {
         }
         if (tenant.status() == TenantStatus.PROVISIONING) {
             UUID id = tenant.id();
+            String organizationId = tenant.organizationId();
             inTransaction(() -> {
                 jdbc.sql("SELECT tenancy.record_platform_event(:tenant, :operator, 'ONBOARDING_PUBLISHED', NULL)")
                         .param("tenant", id).param("operator", operator).query().listOfRows();
-                events.publishEvent(new TenantProvisioned(id, request.legalName(), request.taxId(),
+                events.publishEvent(new TenantProvisioned(id, organizationId, request.legalName(), request.taxId(),
                         request.country(), request.currency(), request.firstStoreName(), request.adminEmail()));
                 return null;
             });

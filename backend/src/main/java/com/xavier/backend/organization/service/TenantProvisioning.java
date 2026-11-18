@@ -74,7 +74,8 @@ class TenantProvisioning {
                 null, now));
         auditLog.recordAsSystem(AUDIT_ACTION, "CompanyProfile", company.getId().toString(), store.getId(), null,
                 null, Map.of("country", company.getCountry(), "currency", company.getCurrency().getCurrencyCode()));
-        events.publishEvent(new CompanyProvisioned(tenantId, store.getId(), event.adminEmail()));
+        events.publishEvent(new CompanyProvisioned(tenantId, store.getId(), event.organizationId(),
+                event.adminEmail()));
         log.info("Tenant {} provisioned: company profile and first store {}", tenantId, store.getId());
     }
 }
