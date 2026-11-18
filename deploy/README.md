@@ -7,6 +7,7 @@ One stack per company (spec §2): Caddy (HTTPS on the LAN), the backend, and Pos
 | PostgreSQL | `restaurantpro-postgres:18.6-r1`, built from `postgres/Dockerfile`: `postgres:18.6-alpine` (D4, same as the tests) plus `age=1.3.2-r1` (D98) |
 | Caddy | `caddy:2.11.7-alpine` |
 | Backend | built from `../backend`: `eclipse-temurin:25.0.5_8-jdk-alpine` → `eclipse-temurin:25.0.5_8-jre-alpine`, user uid 10001 |
+| BFF (frontend R1, not in this stack yet; see "Frontend origins") | built from `../bff` by `Dockerfile.bff`: the same two Temurin pins, user uid 10001 |
 | Prometheus (optional, profile `monitoring`) | `prom/prometheus:v3.13.5` (the 3.13 long-term-support line), user `nobody` |
 
 ## First install
@@ -442,6 +443,79 @@ chown <backup user> status    # e.g. restaurantpro: verify-backups.sh writes sta
 An `.env` from before R5 keeps the R4 behaviour: no second factor (`RESTAURANTPRO_MFA_MODE` defaults to `OFF` in Compose), no single sign-on. To turn on the second factor, set `RESTAURANTPRO_MFA_MODE=SENSITIVE` and your `RESTAURANTPRO_LAN_CIDRS` in `.env` and run `docker compose up -d`, then have every administrator enrol from the LAN before working from outside (from outside, enrolment needs an enrolment code; see "Second factor (MFA)"). Keep `secrets/mfa_key` as carefully as the database password: it is in every `backup.sh` archive (`secrets/`), and without it no enrolled factor can be read, so every account must be reset. Never change it on a running installation. After the upgrade, run `./verify-backups.sh` once by hand so the status file exists.
 
 From R6 on, Keycloak signs users in (MFA and step-up included), so this release's `compose.yaml` no longer uses `secrets/mfa_key` or `secrets/oidc_client_secret`, nor the `RESTAURANTPRO_MFA_*`, `RESTAURANTPRO_LAN_CIDRS` and R5 `RESTAURANTPRO_OIDC_*` names in `.env`. Keep `secrets/mfa_key` while a rollback to R5 is still possible: the R5 package needs it.
+
+## Frontend origins (ADR 0041)
+
+The two React apps are served on **two origins**, each the same origin as the API it calls, so the backend needs no
+CORS and the BFF's `__Host-` cookies never reach POS requests. Both apps call `/api/v1/auth/**`, which is why they
+cannot share one origin: on the BackOffice origin that path is the BFF's relay, on the POS origin it is the backend.
+
+| origin | serves | routes to the BFF (`bff/`, port 8443) | routes to the backend (port 8080) | any other `/api/**` |
+| --- | --- | --- | --- | --- |
+| `https://backoffice.<domain>` | `frontend/apps/backoffice/dist` (static) | `/api/v1/backoffice/**`, `/api/v1/auth/**`, `/bff/**`, `/oauth2/**`, `/login/**` | none (the BFF relays with the user's token) | 404 |
+| `https://pos.<domain>` | `frontend/apps/pos/dist` (static) | none | `/api/v1/pos/**`, `/api/v1/auth/**` | 404 |
+
+Every other path serves the app's `index.html` (client-side routes). The reverse proxy must:
+
+- **keep the browser's `Host`** on the BFF routes (Caddy's default): the BFF builds its redirect URI
+  `https://backoffice.<domain>/login/oauth2/code/keycloak` from it, and that exact URI, the web origin
+  `https://backoffice.<domain>` and the post-logout URI `https://backoffice.<domain>/` must be registered on the
+  `backoffice-bff` client of the production realm (the realm exports in `keycloak/` hold only `localhost` entries);
+- terminate TLS for both names (the `Secure` cookies need HTTPS anywhere but `localhost`); run the BFF with
+  `SERVER_FORWARD_HEADERS_STRATEGY=native`, on a network only the proxy reaches, so it trusts the proxy's
+  `X-Forwarded-Proto` and builds `https://` URIs;
+- forward **only** the listed prefixes. The platform (`/api/v1/platform/**`), support and BackOffice APIs must not be
+  reachable from the POS origin, nor the POS API from the BackOffice origin.
+
+The backend needs `RESTAURANTPRO_POS_ORIGIN=https://pos.<domain>`: it becomes the web origin of every terminal's
+(`pos-*`) client, so the POS browser may call the devices realm's token endpoint on Keycloak's own origin. The POS is
+a plain SPA in the browser's kiosk mode, without a service worker; each app is built once per environment (its
+`VITE_*` values are build-time).
+
+A Caddyfile for the two origins, the reference for production (add `tls internal` or a real certificate per name):
+
+```caddyfile
+pos.example.lan {
+	@backend path /api/v1/pos /api/v1/pos/* /api/v1/auth /api/v1/auth/*
+	handle @backend {
+		reverse_proxy backend:8080
+	}
+	handle /api/* {
+		respond 404
+	}
+	handle {
+		root * /srv/pos
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+backoffice.example.lan {
+	@bff path /api/v1/backoffice /api/v1/backoffice/* /api/v1/auth /api/v1/auth/* /bff/* /oauth2/* /login/*
+	handle @bff {
+		reverse_proxy bff:8443
+	}
+	handle /api/* {
+		respond 404
+	}
+	handle {
+		root * /srv/backoffice
+		try_files {path} /index.html
+		file_server
+	}
+}
+```
+
+This stack (`compose.yaml`) does not run the BFF or serve the SPAs yet: the BFF image is `Dockerfile.bff`
+(`docker build -f deploy/Dockerfile.bff -t restaurantpro-bff bff`), its configuration is in `bff/README.md`, and its
+`private_key_jwt` key is a private JWK whose public half is registered on `backoffice-bff`. In production that key is
+an installation secret (like `secrets/`), generated once and registered by the Keycloak administrator; the
+`keycloak-bff-dev-key.sh` script is for loopback development and test stacks only. Where production Keycloak runs is
+open item O3.
+
+The end-to-end stack, `e2e/compose.yaml`, runs exactly these routes on `http://localhost:14173` (POS) and
+`http://localhost:14174` (BackOffice) with `e2e/Caddyfile`; see `../frontend/README.md`, "End-to-end against the real
+stack".
 
 ## Second factor (MFA)
 
