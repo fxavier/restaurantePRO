@@ -61,7 +61,10 @@ test('a terminal revoked in the BackOffice shows the revoked state, and goes bac
   // Retry 1 makes the sign-in wait for a TOTP period no earlier sign-in of this run can have used (support/totp.ts).
   await signInToBackOffice(admin, seeded.adminEmail(), seeded.adminPassword(), seeded.adminTotpSecret(), 1);
   await backOfficeCall(admin, 'PUT', '/bff/tenant', { tenantId: seeded.tenantId() });
-  await backOfficeCall(admin, 'POST', `/api/v1/backoffice/terminals/${seeded.terminal('C').id}/revoke`);
+  // As the SPA writes: naming the selected company (X-Expected-Tenant, FE-F16).
+  await backOfficeCall(admin, 'POST', `/api/v1/backoffice/terminals/${seeded.terminal('C').id}/revoke`, undefined, {
+    'X-Expected-Tenant': seeded.tenantId(),
+  });
   await admin.context().close();
 
   // Keycloak disables the device's client once the revocation commits; the terminal's next token is refused.
