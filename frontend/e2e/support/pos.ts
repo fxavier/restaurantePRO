@@ -34,8 +34,8 @@ export async function enrolAndLogIn(page: Page, name: 'A' | 'B' | 'C', { check =
   await expectLive(page);
 }
 
-/** The change stream open: the backend answers it only with its first heartbeat, 25 s in (gap-sse-first-write). */
-export async function expectLive(page: Page, timeout = 45_000) {
+/** The change stream open: the backend answers it at once with `:ok`; the client gives a start up after 15 s. */
+export async function expectLive(page: Page, timeout = 15_000) {
   await expect(page.getByRole('status', { name: 'Ligação' })).toHaveText(/Ligado/, { timeout });
 }
 
