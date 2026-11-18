@@ -1,16 +1,16 @@
-import { Card, CardContent } from '@restaurantpro/ui';
+import { Navigate } from 'react-router';
+import { LoginScreen } from '../features/identity/components/login-screen';
+import { useEmployee, useSessionEndedBy } from '../lib/auth/use-employee';
 import { PosScreen } from './pos-screen';
 
-/** Stands in until the PIN login (issue 09). */
+/** `/login` (FC §4): the PIN pad; with a POS session, on to the tables. */
 export function LoginPage() {
+  const employee = useEmployee();
+  const endedBy = useSessionEndedBy();
+  if (employee) return <Navigate to="/tables" replace />;
   return (
     <PosScreen>
-      <Card className="w-full max-w-md">
-        <CardContent className="flex flex-col gap-1">
-          <p className="text-lg font-semibold">Terminal registado.</p>
-          <p className="text-muted-foreground">O início de sessão com PIN chega no próximo passo.</p>
-        </CardContent>
-      </Card>
+      <LoginScreen endedBy={endedBy} />
     </PosScreen>
   );
 }

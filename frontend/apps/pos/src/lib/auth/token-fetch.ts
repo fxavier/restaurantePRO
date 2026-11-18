@@ -9,9 +9,11 @@ function isEnrolment(request: Request): boolean {
 
 /**
  * The `fetch` under the POS API client (FC §6): every call but `POST /api/v1/pos/enrolment` goes out with a fresh
- * terminal token, and a 401 that is not `POS_SESSION_INVALID` renews the token once and repeats the call. A refused
- * call was not processed, so repeating it is safe. Without a token nothing is sent. `posMiddleware` sets the header
- * first; this replaces it with the token as it is when the request actually leaves.
+ * terminal token, and a 401 the security chain answered (it carries a `WWW-Authenticate` challenge) renews the token
+ * once and repeats the call: that call was refused before any handler ran, so repeating it is safe. A 401 without a
+ * challenge came from a handler (a wrong PIN, D26) and is never repeated, or one wrong PIN would count twice towards
+ * the lock; nor is `POS_SESSION_INVALID`, which is the employee's session, not the terminal. Without a token nothing
+ * is sent. `posMiddleware` sets the header first; this replaces it with the token as it is when the request leaves.
  */
 export function withTerminalToken(
   tokens: TerminalTokens,
@@ -27,7 +29,7 @@ export function withTerminalToken(
     // No token means Keycloak is unreachable (or the terminal was just revoked): the client maps this to "Sem ligação".
     if (!sent) throw new TypeError('No terminal token');
     const response = await fetch(withBearer(request, sent));
-    if (response.status !== 401 || (await codeOf(response)) === 'POS_SESSION_INVALID') return response;
+    if (!isTokenRefusal(response) || (await codeOf(response)) === 'POS_SESSION_INVALID') return response;
     await tokens.renew();
     const renewed = tokens.accessToken();
     if (!renewed || renewed === sent) return response;
@@ -35,12 +37,16 @@ export function withTerminalToken(
   };
 }
 
+function isTokenRefusal(response: Response): boolean {
+  return response.status === 401 && response.headers.has('WWW-Authenticate');
+}
+
 function withBearer(request: Request, token: string | undefined): Request {
   if (token) request.headers.set('Authorization', `Bearer ${token}`);
   return request;
 }
 
-async function codeOf(response: Response): Promise<string | undefined> {
+export async function codeOf(response: Response): Promise<string | undefined> {
   try {
     const body: unknown = await response.clone().json();
     const code = typeof body === 'object' && body !== null ? (body as Record<string, unknown>).code : undefined;

@@ -1619,29 +1619,7 @@
       "com.xavier.backend.catalog.model.dto.PriceListSummary": {
         "properties": {
           "currency": {
-            "properties": {
-              "currencyCode": {
-                "type": "string"
-              },
-              "defaultFractionDigits": {
-                "format": "int32",
-                "type": "integer"
-              },
-              "displayName": {
-                "type": "string"
-              },
-              "numericCode": {
-                "format": "int32",
-                "type": "integer"
-              },
-              "numericCodeAsString": {
-                "type": "string"
-              },
-              "symbol": {
-                "type": "string"
-              }
-            },
-            "type": "object"
+            "type": "string"
           },
           "id": {
             "format": "uuid",
@@ -8429,29 +8407,7 @@
             "type": "string"
           },
           "currency": {
-            "properties": {
-              "currencyCode": {
-                "type": "string"
-              },
-              "defaultFractionDigits": {
-                "format": "int32",
-                "type": "integer"
-              },
-              "displayName": {
-                "type": "string"
-              },
-              "numericCode": {
-                "format": "int32",
-                "type": "integer"
-              },
-              "numericCodeAsString": {
-                "type": "string"
-              },
-              "symbol": {
-                "type": "string"
-              }
-            },
-            "type": "object"
+            "type": "string"
           },
           "name": {
             "type": "string"
@@ -8558,29 +8514,7 @@
             "type": "string"
           },
           "currency": {
-            "properties": {
-              "currencyCode": {
-                "type": "string"
-              },
-              "defaultFractionDigits": {
-                "format": "int32",
-                "type": "integer"
-              },
-              "displayName": {
-                "type": "string"
-              },
-              "numericCode": {
-                "format": "int32",
-                "type": "integer"
-              },
-              "numericCodeAsString": {
-                "type": "string"
-              },
-              "symbol": {
-                "type": "string"
-              }
-            },
-            "type": "object"
+            "type": "string"
           },
           "id": {
             "format": "uuid",
@@ -12307,29 +12241,7 @@
             "type": "number"
           },
           "currency": {
-            "properties": {
-              "currencyCode": {
-                "type": "string"
-              },
-              "defaultFractionDigits": {
-                "format": "int32",
-                "type": "integer"
-              },
-              "displayName": {
-                "type": "string"
-              },
-              "numericCode": {
-                "format": "int32",
-                "type": "integer"
-              },
-              "numericCodeAsString": {
-                "type": "string"
-              },
-              "symbol": {
-                "type": "string"
-              }
-            },
-            "type": "object"
+            "type": "string"
           }
         },
         "type": "object"
@@ -13547,6 +13459,14 @@
         },
         "type": "object"
       }
+    },
+    "securitySchemes": {
+      "posSession": {
+        "description": "The employee's POS session token, from the PIN login (D182).",
+        "in": "header",
+        "name": "X-Pos-Session",
+        "type": "apiKey"
+      }
     }
   },
   "info": {
@@ -13588,21 +13508,16 @@
     "/api/v1/auth/pos-logout": {
       "post": {
         "operationId": "posLogout",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "auth-controller"
         ]
@@ -13611,17 +13526,6 @@
     "/api/v1/auth/pos-pin": {
       "post": {
         "operationId": "choosePin",
-        "parameters": [
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -13644,6 +13548,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "auth-controller"
         ]
@@ -13652,17 +13561,6 @@
     "/api/v1/auth/pos-session": {
       "get": {
         "operationId": "posSession",
-        "parameters": [
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -13675,6 +13573,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "auth-controller"
         ]
@@ -25721,15 +25624,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "requestBody": {
@@ -25754,6 +25648,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "cash-closing-controller"
         ]
@@ -25775,15 +25674,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -25812,6 +25702,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "cash-closing-controller"
         ]
@@ -25837,15 +25732,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -25860,6 +25746,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "cash-closing-controller"
         ]
@@ -25868,17 +25759,6 @@
     "/api/v1/pos/cash/days/current": {
       "get": {
         "operationId": "current_3",
-        "parameters": [
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -25891,6 +25771,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "cash-day-controller"
         ]
@@ -25912,15 +25797,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -25949,6 +25825,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "cash-close-controller"
         ]
@@ -25981,15 +25862,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "requestBody": {
@@ -26014,6 +25886,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-cash-movement-controller"
         ]
@@ -26030,15 +25907,6 @@
             "schema": {
               "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -26053,6 +25921,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "cash-register-controller"
         ]
@@ -26065,15 +25938,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -26102,6 +25966,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-cash-session-controller"
         ]
@@ -26110,17 +25979,6 @@
     "/api/v1/pos/cash/sessions/current": {
       "get": {
         "operationId": "current_2",
-        "parameters": [
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -26133,6 +25991,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-cash-session-controller"
         ]
@@ -26150,15 +26013,6 @@
               "format": "uuid",
               "type": "string"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -26173,6 +26027,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-cash-session-controller"
         ]
@@ -26194,15 +26053,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -26231,6 +26081,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "cash-close-controller"
         ]
@@ -26252,15 +26107,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -26289,6 +26135,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "cash-close-controller"
         ]
@@ -26306,15 +26157,6 @@
               "format": "uuid",
               "type": "string"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -26329,6 +26171,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-catalog-controller"
         ]
@@ -26337,17 +26184,6 @@
     "/api/v1/pos/catalog/availability": {
       "get": {
         "operationId": "soldOut",
-        "parameters": [
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -26363,6 +26199,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-availability-controller"
         ]
@@ -26384,15 +26225,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -26421,6 +26253,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-availability-controller"
         ]
@@ -26438,15 +26275,6 @@
               "format": "date",
               "type": "string"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -26461,6 +26289,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-availability-controller"
         ]
@@ -26482,15 +26315,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -26519,6 +26343,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "credit-charge-controller"
         ]
@@ -26532,15 +26361,6 @@
             "in": "query",
             "name": "q",
             "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
             "schema": {
               "type": "string"
             }
@@ -26561,6 +26381,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "customer-controller"
         ]
@@ -26571,15 +26396,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -26608,6 +26424,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "customer-controller"
         ]
@@ -26625,15 +26446,6 @@
               "format": "uuid",
               "type": "string"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -26648,6 +26460,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "customer-controller"
         ]
@@ -26665,15 +26482,6 @@
               "format": "uuid",
               "type": "string"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -26688,6 +26496,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "credit-account-controller"
         ]
@@ -26709,15 +26522,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -26746,6 +26550,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "debt-payment-controller"
         ]
@@ -26763,15 +26572,6 @@
               "format": "uuid",
               "type": "string"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -26786,6 +26586,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "loyalty-account-controller"
         ]
@@ -26809,15 +26614,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -26832,6 +26628,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "loyalty-account-controller"
         ]
@@ -26855,15 +26656,6 @@
               ],
               "type": "string"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -26881,6 +26673,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-delivery-controller"
         ]
@@ -26896,15 +26693,6 @@
             "required": true,
             "schema": {
               "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
               "type": "string"
             }
           }
@@ -26931,6 +26719,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-delivery-controller"
         ]
@@ -26952,15 +26745,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -26989,6 +26773,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-delivery-controller"
         ]
@@ -27010,15 +26799,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -27047,6 +26827,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-delivery-controller"
         ]
@@ -27068,15 +26853,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -27105,6 +26881,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-delivery-controller"
         ]
@@ -27113,17 +26894,6 @@
     "/api/v1/pos/delivery-zones": {
       "get": {
         "operationId": "zones",
-        "parameters": [
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -27139,6 +26909,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-delivery-controller"
         ]
@@ -27156,15 +26931,6 @@
               "format": "uuid",
               "type": "string"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -27179,6 +26945,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-document-controller"
         ]
@@ -27204,15 +26975,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -27227,6 +26989,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-document-controller"
         ]
@@ -27239,15 +27006,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -27276,6 +27034,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "drawer-kick-controller"
         ]
@@ -27314,17 +27077,6 @@
     "/api/v1/pos/notifications": {
       "get": {
         "operationId": "subscribe",
-        "parameters": [
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -27337,6 +27089,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "notification-controller"
         ]
@@ -27367,15 +27124,6 @@
             "schema": {
               "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -27390,6 +27138,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-order-controller"
         ]
@@ -27400,15 +27153,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -27437,6 +27181,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-order-controller"
         ]
@@ -27454,15 +27203,6 @@
               "format": "uuid",
               "type": "string"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -27477,6 +27217,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-order-controller"
         ]
@@ -27498,15 +27243,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -27535,6 +27271,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-order-controller"
         ]
@@ -27556,15 +27297,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -27593,6 +27325,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-order-adjustment-controller"
         ]
@@ -27614,15 +27351,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -27651,6 +27379,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "order-settlement-controller"
         ]
@@ -27672,15 +27405,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -27709,6 +27433,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "credit-charge-controller"
         ]
@@ -27730,15 +27459,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -27767,6 +27487,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-order-controller"
         ]
@@ -27808,15 +27533,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "requestBody": {
@@ -27841,6 +27557,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-order-adjustment-controller"
         ]
@@ -27862,15 +27583,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -27899,6 +27611,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "order-settlement-controller"
         ]
@@ -27920,15 +27637,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -27957,6 +27665,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-order-controller"
         ]
@@ -27978,15 +27691,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -28015,6 +27719,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-order-controller"
         ]
@@ -28041,15 +27750,6 @@
               "format": "uuid",
               "type": "string"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "requestBody": {
@@ -28067,6 +27767,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-order-controller"
         ]
@@ -28089,15 +27794,6 @@
             "required": true,
             "schema": {
               "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
               "type": "string"
             }
           }
@@ -28124,6 +27820,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-order-controller"
         ]
@@ -28139,15 +27840,6 @@
             "required": true,
             "schema": {
               "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
               "type": "string"
             }
           }
@@ -28167,6 +27859,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "partition-controller"
         ]
@@ -28186,15 +27883,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -28223,6 +27911,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "partition-controller"
         ]
@@ -28244,15 +27937,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -28284,6 +27968,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "partition-controller"
         ]
@@ -28301,15 +27990,6 @@
               "format": "uuid",
               "type": "string"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -28324,6 +28004,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "order-settlement-controller"
         ]
@@ -28365,15 +28050,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "requestBody": {
@@ -28398,6 +28074,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "settled-discount-controller"
         ]
@@ -28439,15 +28120,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "requestBody": {
@@ -28472,6 +28144,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "settled-void-controller"
         ]
@@ -28497,15 +28174,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -28520,6 +28188,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-order-adjustment-controller"
         ]
@@ -28541,15 +28214,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -28578,6 +28242,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-order-adjustment-controller"
         ]
@@ -28599,15 +28268,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -28636,6 +28296,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-order-adjustment-controller"
         ]
@@ -28677,15 +28342,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "requestBody": {
@@ -28710,6 +28366,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-order-adjustment-controller"
         ]
@@ -28731,15 +28392,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -28768,6 +28420,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "partition-controller"
         ]
@@ -28789,15 +28446,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -28826,6 +28474,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "partition-controller"
         ]
@@ -28838,15 +28491,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -28875,6 +28519,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "payment-attempt-controller"
         ]
@@ -28892,15 +28541,6 @@
               "format": "uuid",
               "type": "string"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -28915,6 +28555,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "payment-attempt-controller"
         ]
@@ -28936,15 +28581,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -28973,6 +28609,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "payment-attempt-controller"
         ]
@@ -28994,15 +28635,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -29031,6 +28663,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "payment-attempt-controller"
         ]
@@ -29072,15 +28709,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "requestBody": {
@@ -29105,6 +28733,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "payment-attempt-controller"
         ]
@@ -29146,15 +28779,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "requestBody": {
@@ -29179,6 +28803,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "refund-controller"
         ]
@@ -29211,15 +28840,6 @@
             "schema": {
               "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -29234,6 +28854,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "print-job-controller"
         ]
@@ -29259,15 +28884,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -29282,6 +28898,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "print-job-controller"
         ]
@@ -29307,15 +28928,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -29330,6 +28942,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "print-job-controller"
         ]
@@ -29358,15 +28975,6 @@
             "schema": {
               "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -29381,6 +28989,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "production-ticket-controller"
         ]
@@ -29406,15 +29019,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -29429,6 +29033,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "print-job-controller"
         ]
@@ -29454,15 +29063,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -29477,6 +29077,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "production-ticket-controller"
         ]
@@ -29485,17 +29090,6 @@
     "/api/v1/pos/promotions/current": {
       "get": {
         "operationId": "current",
-        "parameters": [
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -29508,6 +29102,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-promotions-controller"
         ]
@@ -29523,15 +29122,6 @@
             "required": true,
             "schema": {
               "format": "date",
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
               "type": "string"
             }
           }
@@ -29551,6 +29141,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "reservation-controller"
         ]
@@ -29561,15 +29156,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -29598,6 +29184,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "reservation-controller"
         ]
@@ -29613,15 +29204,6 @@
             "required": true,
             "schema": {
               "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
               "type": "string"
             }
           }
@@ -29648,6 +29230,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "reservation-controller"
         ]
@@ -29669,15 +29256,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -29706,6 +29284,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "reservation-controller"
         ]
@@ -29727,15 +29310,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -29764,6 +29338,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "reservation-controller"
         ]
@@ -29772,17 +29351,6 @@
     "/api/v1/pos/settlement/open-orders": {
       "get": {
         "operationId": "openOrders",
-        "parameters": [
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -29798,6 +29366,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "settlement-read-controller"
         ]
@@ -29815,15 +29388,6 @@
               "format": "uuid",
               "type": "string"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -29838,6 +29402,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-table-controller"
         ]
@@ -29859,15 +29428,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -29896,6 +29456,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-table-controller"
         ]
@@ -29921,15 +29486,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -29944,6 +29500,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-table-controller"
         ]
@@ -29965,15 +29526,6 @@
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The employee's POS session token, from the PIN login (D182).",
-            "in": "header",
-            "name": "X-Pos-Session",
             "required": true,
             "schema": {
               "type": "string"
@@ -30002,6 +29554,11 @@
             "description": "OK"
           }
         },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
         "tags": [
           "pos-order-controller"
         ]

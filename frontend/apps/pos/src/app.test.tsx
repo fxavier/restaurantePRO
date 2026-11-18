@@ -35,7 +35,7 @@ describe('POS shell', () => {
     const bearers = sessionEndpoint(() => HttpResponse.json({}));
     const { services } = await renderPos({ path: '/', device: 'enrolled' });
 
-    expect(await screen.findByText('Terminal registado.')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Código de empregado')).toBeInTheDocument();
     await services.api.GET('/api/v1/auth/session');
 
     expect(bearers).toEqual(['Bearer jwt-1']);
@@ -47,7 +47,7 @@ describe('POS shell', () => {
     const forms = tokenEndpoint(token('jwt-1', 120), token('jwt-2', 120));
     const bearers = sessionEndpoint(() => HttpResponse.json({}));
     const { services } = await renderPos({ device: 'enrolled' });
-    await screen.findByText('Terminal registado.');
+    await screen.findByLabelText('Código de empregado');
     await waitFor(() => expect(forms).toHaveLength(1));
 
     await vi.advanceTimersByTimeAsync(60_000); // 60 s left of 120
@@ -62,7 +62,7 @@ describe('POS shell', () => {
     const { services } = await renderPos({ device: 'enrolled' });
 
     expect(await screen.findByRole('alert')).toHaveTextContent(OFFLINE);
-    expect(screen.getByText('Terminal registado.')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Código de empregado')).toBeInTheDocument();
     // Nothing is sent without a token; the call fails as "no connection" (no handler exists: MSW would fail the test).
     await expect(services.api.GET('/api/v1/auth/session')).rejects.toMatchObject({ status: 0, code: 'NETWORK' });
   });
@@ -73,7 +73,7 @@ describe('POS shell', () => {
 
     expect(await screen.findByRole('heading', { name: 'Terminal revogado ou inválido' })).toBeInTheDocument();
     expect(screen.getByText(/Um administrador tem de emitir um novo código de registo/)).toBeInTheDocument();
-    expect(screen.queryByText('Terminal registado.')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Código de empregado')).not.toBeInTheDocument();
     expect(router.state.location.pathname).toBe('/login');
     expect((await devices.load())?.enrolment).toBeDefined();
   });
@@ -81,10 +81,13 @@ describe('POS shell', () => {
   it('on a refused call renews once; a refused renewal shows the revoked state, key kept', async () => {
     tokenEndpoint(token('jwt-1'), refused(400, 'unauthorized_client'));
     const bearers = sessionEndpoint(() =>
-      HttpResponse.json({ title: 'Unauthorized', status: 401 }, { status: 401 }),
+      HttpResponse.json(
+        { title: 'Unauthorized', status: 401 },
+        { status: 401, headers: { 'WWW-Authenticate': 'Bearer error="invalid_token"' } },
+      ),
     );
     const { services, devices } = await renderPos({ device: 'enrolled' });
-    await screen.findByText('Terminal registado.');
+    await screen.findByLabelText('Código de empregado');
 
     await expect(services.api.GET('/api/v1/auth/session')).rejects.toMatchObject({ status: 401 });
 

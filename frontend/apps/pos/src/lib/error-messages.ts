@@ -5,6 +5,8 @@ const MESSAGES: Record<string, string> = {
   ENROLMENT_CODE_INVALID:
     'Código inválido, já utilizado ou expirado. Confirme o código ou peça um novo ao administrador.',
   DEVICE_KEY_INVALID: 'O servidor recusou a chave deste terminal. Contacte o suporte.',
+  PIN_UNCHANGED: 'O novo PIN tem de ser diferente do PIN definido pelo gerente.',
+  PIN_CHANGE_NOT_REQUIRED: 'O PIN já foi alterado. Inicie sessão de novo.',
 };
 
 export const OFFLINE = 'Sem ligação — nenhuma operação é confirmada';
@@ -12,8 +14,12 @@ export const OFFLINE = 'Sem ligação — nenhuma operação é confirmada';
 /**
  * @param offline the text for "no answer" (network, 502, 503), where the screen can say what did not happen
  */
+export function isOffline(error: ApiError): boolean {
+  return error.status === 0 || error.status === 502 || error.status === 503;
+}
+
 export function errorMessage(error: ApiError, { offline = `${OFFLINE}.` }: { offline?: string } = {}): string {
-  if (error.status === 0 || error.status === 502 || error.status === 503) return offline;
+  if (isOffline(error)) return offline;
   if (error.status === 429) return `Demasiadas tentativas. Tente novamente dentro de ${wait(error)}.`;
   const known = MESSAGES[error.code];
   if (known) return known;
