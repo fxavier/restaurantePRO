@@ -10,7 +10,7 @@ WORKDIR /src
 COPY .mvn .mvn
 COPY mvnw pom.xml ./
 COPY src src
-RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -q -DskipTests package \
+RUN --mount=type=cache,target=/root/.m2,sharing=locked ./mvnw -B -q -DskipTests package \
  && cp target/backend-*.jar /app.jar
 
 FROM eclipse-temurin:25.0.5_8-jre-alpine

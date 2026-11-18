@@ -63,6 +63,23 @@ docker compose rm -sf keycloak keycloak-db && docker volume rm backend_restauran
 
 The volume name has the Compose project as its prefix (`backend` by default; see `docker volume ls`).
 
+## The BFF's key in development and end-to-end stacks (frontend R1, ticket 05)
+
+Nothing in the realm exports or in `keycloak-provisioners.sh` registers a key on `backoffice-bff`, so a locally run
+BFF cannot exchange its authorization code. `deploy/keycloak-bff-dev-key.sh` fixes that for loopback stacks only:
+
+```bash
+deploy/keycloak-bff-dev-key.sh --url http://localhost:8180 --admin-password-file <file> \
+  --key-file <dir outside the repository>/backoffice-bff.jwk [--origin http://localhost:5174]
+```
+
+It generates a P-256 private JWK (ES256, with a `kid`) in `--key-file` (0600; the BFF's
+`RESTAURANTPRO_BFF_CLIENT_KEY_FILE`), keeps it on later runs unless `--rotate`, and registers only the public JWK on
+the client. `--origin` also adds that BackOffice origin's redirect URI, web origin and post-logout URI to the client.
+It has the same loopback guard as the e2e seed (Keycloak URL, announced issuer, origin). `deploy/e2e/stack.sh up` runs
+it with the e2e origin `http://localhost:14174`. Production keys are installation secrets (deploy/README.md,
+"Frontend origins").
+
 ## End-to-end tenant administrator with a known OTP secret (frontend R1, G16)
 
 `deploy/keycloak-e2e-seed.sh` gives a development or end-to-end environment a tenant, its first store and a tenant
