@@ -25,7 +25,7 @@ class BackendRelay {
 
     /** Browser credentials, values only the BFF may set, and hop-by-hop or length headers. */
     private static final Set<String> NOT_TO_BACKEND = Set.of(
-            "cookie", "authorization", "x-tenant-id", "x-xsrf-token", "x-csrf-token",
+            "cookie", "authorization", "x-tenant-id", "x-expected-tenant", "x-xsrf-token", "x-csrf-token",
             "forwarded", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "x-forwarded-port", "x-real-ip",
             "host", "connection", "keep-alive", "proxy-authorization", "proxy-connection", "te", "trailer",
             "transfer-encoding", "upgrade", "expect", "content-length");

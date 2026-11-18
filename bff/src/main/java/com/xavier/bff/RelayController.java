@@ -14,11 +14,16 @@ import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 
 import java.io.IOException;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 
 /** Token relay of the routes the backoffice-bff token may call (D176: {@code /backoffice/**} and {@code /auth/**}). */
 @RestController
 class RelayController {
 
+    private static final String EXPECTED_TENANT = "X-Expected-Tenant";
+    private static final Set<String> UNSAFE_METHODS = Set.of("POST", "PUT", "PATCH", "DELETE");
 
     private final BackendRelay relay;
 
@@ -30,7 +35,25 @@ class RelayController {
     @RequestMapping({"/api/v1/backoffice/**", "/api/v1/auth/**"})
     ResponseEntity<byte[]> relay(@RegisteredOAuth2AuthorizedClient(SecurityConfig.REGISTRATION_ID) OAuth2AuthorizedClient client,
                                  HttpServletRequest request, HttpSession session) throws IOException {
-        return relay.relay(request, client.getAccessToken().getTokenValue(), TenantController.selected(session));
+        // Read once: the tenant checked is the tenant relayed, even if another tab switches meanwhile.
+        Optional<UUID> tenant = TenantController.selected(session);
+        if (isUnsafe(request) && tenant.isPresent() && !expects(request, tenant.get())) {
+            throw new TenantChangedException();
+        }
+        return relay.relay(request, client.getAccessToken().getTokenValue(), tenant);
+    }
+
+    /**
+     * FE-F16: the session holds one selection shared by every tab, so a write must name the tenant its tab shows.
+     * Without a selection the backend resolves the caller's only membership, and there is nothing to compare.
+     */
+    private static boolean expects(HttpServletRequest request, UUID selected) {
+        String expected = request.getHeader(EXPECTED_TENANT);
+        return expected != null && expected.equalsIgnoreCase(selected.toString());
+    }
+
+    private static boolean isUnsafe(HttpServletRequest request) {
+        return UNSAFE_METHODS.contains(request.getMethod());
     }
 
     /**
@@ -59,6 +82,14 @@ class RelayController {
     @ExceptionHandler(IOException.class)
     ResponseEntity<ProblemDetail> backendUnreachable() {
         return BffProblem.BACKEND_UNAVAILABLE.toResponse();
+    }
+
+    static final class TenantChangedException extends RuntimeException {
+    }
+
+    @ExceptionHandler(TenantChangedException.class)
+    ResponseEntity<ProblemDetail> tenantChanged() {
+        return BffProblem.TENANT_CHANGED.toResponse();
     }
 
     @ExceptionHandler(BackendRelay.RequestBodyTooLargeException.class)

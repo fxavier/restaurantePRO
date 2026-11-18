@@ -11,8 +11,8 @@ backend with the user's access token. The browser only ever holds the session co
 | --- | --- |
 | `GET /oauth2/authorization/keycloak` | Starts the login: authorization code with PKCE `S256` (Spring Security 7 requires a proof key by default). It sends no `acr_values`: Keycloak applies the client's default ACR `2`, so every login asks for the password and the OTP (D184, FE-F07). |
 | `GET /login/oauth2/code/keycloak` | The callback. It exchanges the code with `private_key_jwt` (RFC 7523) and then redirects to `/`, or to the pending step-up's `return` path. |
-| `/api/v1/backoffice/**`, `/api/v1/auth/**` | Token relay. The BFF adds `Authorization: Bearer <access token>`, and adds `X-Tenant-Id` when a tenant is selected. It drops the browser's `Cookie`, `Authorization`, `X-Tenant-Id`, CSRF and `X-Forwarded-*` headers. The backend's `Set-Cookie` never reaches the browser. Every other part of the backend's answer comes back unchanged, including a `401` with `WWW-Authenticate: Bearer error="insufficient_user_authentication"`. Each request is sent once and never replayed (D184 amendment). |
-| `PUT /bff/tenant {"tenantId": "<uuid>"}` | Remembers the selected tenant in the BFF session and answers `204`. A malformed id answers `400`. The BFF only relays the selection; the backend checks the membership (D177). |
+| `/api/v1/backoffice/**`, `/api/v1/auth/**` | Token relay. The BFF adds `Authorization: Bearer <access token>`, and adds `X-Tenant-Id` when a tenant is selected. It drops the browser's `Cookie`, `Authorization`, `X-Tenant-Id`, `X-Expected-Tenant`, CSRF and `X-Forwarded-*` headers. When a tenant is selected, a `POST`, `PUT`, `PATCH` or `DELETE` must carry `X-Expected-Tenant: <the tenant the tab shows>`; a missing or different value answers `409 TENANT_CHANGED` and nothing is relayed (FE-F16, see below). The backend's `Set-Cookie` never reaches the browser. Every other part of the backend's answer comes back unchanged, including a `401` with `WWW-Authenticate: Bearer error="insufficient_user_authentication"`. Each request is sent once and never replayed (D184 amendment). |
+| `PUT /bff/tenant {"tenantId": "<uuid>"}` | Remembers the selected tenant in the BFF session and answers `204`. It is not checked against `X-Expected-Tenant` (it is the switch itself), and neither is `POST /bff/logout`. A malformed id answers `400`. The BFF only relays the selection; the backend checks the membership (D177). |
 | `GET /bff/step-up?acr_values=2&max_age=300&return=/path` | Starts a new authorization request with those values. `return` must be a same-origin path: the BFF answers `400` to `//host`, `///host`, a scheme, a backslash or a control character. `acr_values` must be `1` or `2`, and `max_age` must be a whole number of seconds. |
 | `POST /bff/logout` | Ends Keycloak's session over the back channel with a `POST` to the `end_session_endpoint` (refresh token plus `private_key_jwt`). Then ends the BFF session and redirects the browser to the `end_session_endpoint` with only `client_id` and `post_logout_redirect_uri={baseUrl}/`, so no token appears in any URL. The BFF session ends even when Keycloak does not answer. |
 
@@ -25,6 +25,13 @@ Any other path answers `403`. The BFF's own errors are ProblemDetails:
   kept, so the SPA retries later. The backend is not called.
 - `502 BACKEND_UNAVAILABLE` when the backend cannot be reached.
 - `413 BFF_PAYLOAD_TOO_LARGE` for a request body over `max-request-body`.
+- `409 TENANT_CHANGED` for a relayed `POST`, `PUT`, `PATCH` or `DELETE` whose `X-Expected-Tenant` is missing or differs
+  from the session's selected tenant. The selection is one per session and shared by every tab, so this is a tab that
+  still shows the company another tab switched away from. The backend is not called; the SPA reloads the session and
+  the user repeats the action. Rules (FE-F16): reads are not checked (they cannot change data in the wrong company);
+  without a selection the write is relayed whatever the header says, because the backend then resolves the caller's
+  only membership and there is nothing in the session to compare with; with a selection a missing header is refused
+  like a different one, since a client that does not say which company it shows cannot be told apart from a stale tab.
 
 A backend status Spring has no constant for (for example `499`) passes through unchanged.
 

@@ -93,7 +93,7 @@ Inside an app, code goes by feature (`src/features/<module>/`), with `src/routes
 
 ```ts
 const client = createApiClient({ middleware: [posMiddleware({ accessToken, posSession })] }); // POS
-const client = createApiClient({ middleware: [backOfficeMiddleware()] });                     // BackOffice
+const client = createApiClient({ middleware: [backOfficeMiddleware({ expectedTenant })] });     // BackOffice: expectedTenant = () => session?.tenantId
 ```
 
 Every non-2xx answer throws an `ApiError` (`status`, `code`, `title`, `detail`, `errors`, `acrValues`, `maxAge`); a network failure throws `ApiError {status: 0, code: 'NETWORK'}`. `readEventStream` reads the POS notification stream from a `fetch` body (call with `parseAs: 'stream'`).

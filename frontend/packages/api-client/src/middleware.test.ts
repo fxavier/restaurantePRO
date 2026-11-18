@@ -3,6 +3,7 @@ import { type ApiClient, backOfficeMiddleware, createApiClient, posMiddleware, r
 
 const BASE = 'http://api.test';
 const AREA = '00000000-0000-0000-0000-000000000001';
+const TENANT = '0193a1b2-0000-7000-8000-00000000000a';
 
 function capturingFetch() {
   const requests: Request[] = [];
@@ -70,6 +71,7 @@ describe('POS middleware', () => {
 
 describe('BackOffice middleware', () => {
   const cookies = '__Host-bff-session=ignored; __Host-XSRF-TOKEN=abc%3D123';
+  const backOffice = backOfficeMiddleware({ cookies: () => cookies, expectedTenant: () => TENANT });
 
   const unsafeCalls = {
     POST: (client: ApiClient) =>
@@ -88,7 +90,7 @@ describe('BackOffice middleware', () => {
   // The contract has no PATCH operation; the middleware treats PATCH as unsafe all the same.
   it.each(Object.entries(unsafeCalls))('sends X-XSRF-TOKEN from the cookie on %s', async (_method, call) => {
     const { fetch, requests } = capturingFetch();
-    const client = createApiClient({ baseUrl: BASE, fetch, middleware: [backOfficeMiddleware(() => cookies)] });
+    const client = createApiClient({ baseUrl: BASE, fetch, middleware: [backOffice] });
 
     await call(client);
 
@@ -97,7 +99,7 @@ describe('BackOffice middleware', () => {
 
   it('sends no CSRF header on a GET', async () => {
     const { fetch, requests } = capturingFetch();
-    const client = createApiClient({ baseUrl: BASE, fetch, middleware: [backOfficeMiddleware(() => cookies)] });
+    const client = createApiClient({ baseUrl: BASE, fetch, middleware: [backOffice] });
 
     await client.GET('/api/v1/auth/session');
 
@@ -106,7 +108,7 @@ describe('BackOffice middleware', () => {
 
   it('sends credentials on every request', async () => {
     const { fetch, requests } = capturingFetch();
-    const client = createApiClient({ baseUrl: BASE, fetch, middleware: [backOfficeMiddleware(() => cookies)] });
+    const client = createApiClient({ baseUrl: BASE, fetch, middleware: [backOffice] });
 
     await client.GET('/api/v1/auth/session');
     await client.POST('/api/v1/auth/pos-login', { body: { employeeCode: '7', pin: 'x' } });
@@ -114,9 +116,42 @@ describe('BackOffice middleware', () => {
     expect(requests.map((r) => r.credentials)).toEqual(['include', 'include']);
   });
 
+  it.each(Object.entries(unsafeCalls))('sends X-Expected-Tenant from the provider on %s', async (_method, call) => {
+    const { fetch, requests } = capturingFetch();
+    const client = createApiClient({ baseUrl: BASE, fetch, middleware: [backOffice] });
+
+    await call(client);
+
+    expect(requests[0]?.headers.get('X-Expected-Tenant')).toBe(TENANT);
+  });
+
+  it('sends no X-Expected-Tenant on a GET', async () => {
+    const { fetch, requests } = capturingFetch();
+    const client = createApiClient({ baseUrl: BASE, fetch, middleware: [backOffice] });
+
+    await client.GET('/api/v1/auth/session');
+
+    expect(requests[0]?.headers.has('X-Expected-Tenant')).toBe(false);
+  });
+
+  it('reads the tenant on every request, so a write after a switch names the new tenant', async () => {
+    const { fetch, requests } = capturingFetch();
+    let tenant: string | undefined = undefined;
+    const client = createApiClient({ baseUrl: BASE,
+      fetch,
+      middleware: [backOfficeMiddleware({ cookies: () => cookies, expectedTenant: () => tenant })],
+    });
+
+    await unsafeCalls.POST(client);
+    tenant = TENANT;
+    await unsafeCalls.POST(client);
+
+    expect(requests.map((r) => r.headers.get('X-Expected-Tenant'))).toEqual([null, TENANT]);
+  });
+
   it('sends no bearer token', async () => {
     const { fetch, requests } = capturingFetch();
-    const client = createApiClient({ baseUrl: BASE, fetch, middleware: [backOfficeMiddleware(() => cookies)] });
+    const client = createApiClient({ baseUrl: BASE, fetch, middleware: [backOffice] });
 
     await client.POST('/api/v1/auth/pos-login', { body: { employeeCode: '7', pin: 'x' } });
 

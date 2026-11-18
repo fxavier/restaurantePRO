@@ -24,14 +24,26 @@ export function posMiddleware(credentials: PosCredentials): Middleware {
 const CSRF_COOKIE = '__Host-XSRF-TOKEN';
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
-/** BackOffice (D184, FC §6): the BFF session cookie on every call, and the CSRF header on every unsafe one. */
-export function backOfficeMiddleware(cookies: () => string = () => document.cookie): Middleware {
+export type BackOfficeOptions = {
+  /** The tenant this tab displays (`SessionView.tenantId`), read fresh on every write; absent before the session loads. */
+  expectedTenant: () => string | undefined;
+  /** The document's cookies; injectable for tests. */
+  cookies?: () => string;
+};
+
+/**
+ * BackOffice (D184, FC §6): the BFF session cookie on every call, and on every unsafe one the CSRF header and
+ * `X-Expected-Tenant`, so the BFF refuses (409 `TENANT_CHANGED`) a write after another tab switched company (FE-F16).
+ */
+export function backOfficeMiddleware({ expectedTenant, cookies = () => document.cookie }: BackOfficeOptions): Middleware {
   return {
     onRequest({ request }) {
       const headers = new Headers(request.headers);
       if (UNSAFE_METHODS.has(request.method)) {
         const token = readCookie(cookies(), CSRF_COOKIE);
         if (token) headers.set('X-XSRF-TOKEN', token);
+        const tenant = expectedTenant();
+        if (tenant) headers.set('X-Expected-Tenant', tenant);
       }
       return new Request(request, { headers, credentials: 'include' });
     },
