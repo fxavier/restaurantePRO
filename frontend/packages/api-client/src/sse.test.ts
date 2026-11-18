@@ -94,6 +94,26 @@ describe('readEventStream', () => {
     await expect(readEventStream(failing, { onMessage: () => {} })).rejects.toThrow('network error');
   });
 
+  it('keeps a CR pending across an empty read, so the LF that follows does not end another line', async () => {
+    const { messages } = await read('event: change\r', '', '\ndata: y\n\n');
+
+    expect(messages).toEqual([{ event: 'change', data: 'y' }]);
+  });
+
+  it('cancels the body when the signal is already aborted', async () => {
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      pull: () => new Promise(() => {}),
+      cancel: () => {
+        cancelled = true;
+      },
+    });
+
+    await readEventStream(body, { onMessage: () => {} }, AbortSignal.abort());
+
+    expect(cancelled).toBe(true);
+  });
+
   it('stops reading when the caller aborts', async () => {
     const controller = new AbortController();
     const neverEnding = new ReadableStream<Uint8Array>({ pull: () => new Promise(() => {}) });

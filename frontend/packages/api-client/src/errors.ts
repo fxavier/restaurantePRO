@@ -12,8 +12,10 @@ type ApiErrorFields = {
 };
 
 /**
- * The one error every API call throws (FC §7, §9). `status` 0 with `code` NETWORK means the server was not reached;
- * otherwise the fields come from the problem+json body, and `code` falls back to `HTTP_<status>` when the body has none.
+ * The one error every API call throws (FC §7, §9). `status` 0 with `code` NETWORK means no answer arrived: the outcome
+ * is unknown, because the connection may have dropped after the request was sent, so a command may have happened.
+ * Retry it with the same Idempotency-Key, never a new one (FC §8, spec §7). Otherwise the fields come from the
+ * problem+json body, and `code` falls back to `HTTP_<status>` when the body has none.
  * Language-neutral on purpose: each app maps `code` to its Portuguese text.
  */
 export class ApiError extends Error {

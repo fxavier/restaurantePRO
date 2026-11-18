@@ -25,7 +25,10 @@ export async function readEventStream(
   signal?.addEventListener('abort', onAbort, { once: true });
   const parser = new SseParser(handlers);
   try {
-    if (signal?.aborted) return;
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
     for (;;) {
       const { done, value } = await reader.read();
       if (done || signal?.aborted) return;
@@ -47,6 +50,8 @@ class SseParser {
   constructor(private readonly handlers: SseHandlers) {}
 
   push(text: string) {
+    // An empty read carries no characters; it must not forget a CR still waiting for its LF.
+    if (text === '') return;
     if (!this.started) {
       this.started = true;
       if (text.startsWith('﻿')) text = text.slice(1);
