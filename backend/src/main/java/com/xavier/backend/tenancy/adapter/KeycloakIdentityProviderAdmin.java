@@ -1,6 +1,7 @@
 package com.xavier.backend.tenancy.adapter;
 
 import com.xavier.backend.tenancy.IdentityProviderAdmin;
+import com.xavier.backend.tenancy.exception.IdentityProviderUnavailableException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -8,6 +9,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpMethod;
 
 /**
@@ -17,19 +21,31 @@ import org.springframework.http.HttpMethod;
  * dedicated {@code restaurantpro-devices} realm as {@code device-provisioner} ({@code manage-clients} there only).
  * Every operation is idempotent (a 409 finds what an earlier attempt created), so a D48 retry converges. Only
  * {@code pos-*} and {@code bridge-*} client ids are accepted, and only a public EC P-256 key is ever registered.
+ * A {@code pos-*} client's one web origin is the POS origin (G13, ADR 0041: the browser calls the token endpoint);
+ * a {@code bridge-*} client has none. Without a POS origin, terminal clients are refused (503 {@code IDP_UNAVAILABLE}).
  */
 class KeycloakIdentityProviderAdmin implements IdentityProviderAdmin {
 
     static final List<String> INVITE_ACTIONS = List.of("VERIFY_EMAIL", "UPDATE_PASSWORD", "CONFIGURE_TOTP");
     static final String API_AUDIENCE = "restaurantpro-api";
     private static final Set<String> PUBLIC_JWK_MEMBERS = Set.of("kty", "crv", "x", "y", "kid", "use", "alg");
+    /** Scheme, host and optional port: no path, no wildcard (a Keycloak "*" or "+" would widen the approval). */
+    private static final Pattern ORIGIN = Pattern.compile("https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?");
+    private static final Logger log = LoggerFactory.getLogger(KeycloakIdentityProviderAdmin.class);
 
     private final RealmAdmin tenantRealm;
     private final RealmAdmin deviceRealm;
+    private final String posOrigin;
 
-    KeycloakIdentityProviderAdmin(RealmAdmin tenantRealm, RealmAdmin deviceRealm) {
+    /** @param posOrigin the POS app's origin ({@code restaurantpro.pos.origin}); blank = terminals cannot be created */
+    KeycloakIdentityProviderAdmin(RealmAdmin tenantRealm, RealmAdmin deviceRealm, String posOrigin) {
+        if (posOrigin != null && !posOrigin.isBlank() && !ORIGIN.matcher(posOrigin).matches()) {
+            throw new IllegalArgumentException("restaurantpro.pos.origin is not an origin (scheme://host[:port]): "
+                    + posOrigin);
+        }
         this.tenantRealm = tenantRealm;
         this.deviceRealm = deviceRealm;
+        this.posOrigin = posOrigin == null || posOrigin.isBlank() ? null : posOrigin;
     }
 
     /** The organization's name and alias are the tenant code (unique); its description is the legal name. */
@@ -82,7 +98,8 @@ class KeycloakIdentityProviderAdmin implements IdentityProviderAdmin {
     @Override
     public String createClient(String clientId) {
         requireDeviceClient(clientId);
-        RealmAdmin.Reply reply = deviceRealm.send(HttpMethod.POST, "/clients", deviceClient(clientId));
+        RealmAdmin.Reply reply = deviceRealm.send(HttpMethod.POST, "/clients", deviceClient(clientId,
+                webOrigins(clientId)));
         if (reply.status() != 201) {
             expect(reply, 409, "create client");
         }
@@ -95,10 +112,12 @@ class KeycloakIdentityProviderAdmin implements IdentityProviderAdmin {
     public void registerClientKey(String clientId, String publicJwk) {
         requireDeviceClient(clientId);
         String jwk = RealmAdmin.JSON.writeValueAsString(publicKeyOnly(publicJwk));
+        List<String> webOrigins = webOrigins(clientId);
         String uuid = clientUuid(clientId).orElseThrow(() -> new IllegalStateException(clientId + " not found"));
-        expect(deviceRealm.send(HttpMethod.PUT, "/clients/" + uuid, Map.of("attributes", Map.of(
-                "use.jwks.string", "true", "use.jwks.url", "false", "jwks.string", "{\"keys\":[" + jwk + "]}"))),
-                204, "register the client key");
+        // the origin is set again at enrolment: a client created before it (or before it changed) converges
+        expect(deviceRealm.send(HttpMethod.PUT, "/clients/" + uuid, Map.of("webOrigins", webOrigins,
+                "attributes", Map.of("use.jwks.string", "true", "use.jwks.url", "false",
+                        "jwks.string", "{\"keys\":[" + jwk + "]}"))), 204, "register the client key");
     }
 
     @Override
@@ -110,6 +129,18 @@ class KeycloakIdentityProviderAdmin implements IdentityProviderAdmin {
         }
         expect(deviceRealm.send(HttpMethod.PUT, "/clients/" + uuid.get(), Map.of("enabled", false)), 204,
                 "disable the client");
+    }
+
+    /** A terminal's client approves the POS origin only; a bridge is no browser and approves none. */
+    private List<String> webOrigins(String clientId) {
+        if (!clientId.startsWith("pos-")) {
+            return List.of();
+        }
+        if (posOrigin == null) {
+            log.error("restaurantpro.pos.origin is not set: terminal clients cannot be provisioned");
+            throw new IdentityProviderUnavailableException();
+        }
+        return List.of(posOrigin);
     }
 
     private Optional<String> findUser(String email) {
@@ -137,8 +168,9 @@ class KeycloakIdentityProviderAdmin implements IdentityProviderAdmin {
     }
 
     /** A confidential client with no secret: {@code private_key_jwt} (ES256), client credentials only, the API audience. */
-    private static Map<String, Object> deviceClient(String clientId) {
+    private static Map<String, Object> deviceClient(String clientId, List<String> webOrigins) {
         return Map.ofEntries(Map.entry("clientId", clientId), Map.entry("enabled", true),
+                Map.entry("webOrigins", webOrigins),
                 Map.entry("publicClient", false), Map.entry("clientAuthenticatorType", "client-jwt"),
                 Map.entry("serviceAccountsEnabled", true), Map.entry("standardFlowEnabled", false),
                 Map.entry("implicitFlowEnabled", false), Map.entry("directAccessGrantsEnabled", false),

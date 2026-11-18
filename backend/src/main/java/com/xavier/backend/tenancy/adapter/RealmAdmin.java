@@ -159,7 +159,7 @@ class RealmAdmin {
     }
 
     /** RFC 7523 client assertion: iss = sub = the client, aud = the realm's issuer, one minute, unique jti. */
-    private String assertion() {
+    String assertion() {
         Instant now = clock.instant();
         Map<String, Object> claims = new LinkedHashMap<>();
         claims.put("iss", client.clientId());
