@@ -48,7 +48,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  *
  * <p>A lost notice is harmless: clients refresh after reconnecting and poll while the stream is down (the listener
  * reconnects by itself). Notices are written to the streams by one sender thread with a bounded queue (a full queue
- * drops notices), so a slow client never delays anything. A comment heartbeat every 25 s, written by the same sender
+ * drops notices), so a slow client never delays anything. A new stream opens with the comment {@code :ok} (its
+ * headers are sent with it); a comment heartbeat every 25 s, written by the same sender
  * thread, keeps proxies from closing idle streams; an emitter times out after 30 minutes and is then completed (the
  * client reconnects).
  *
@@ -133,7 +134,8 @@ public class ChangeNotifier implements SmartLifecycle, DisposableBean {
     /**
      * A new stream of the notices of the bound tenant's store; the caller has authorized it (the store comes from the
      * session). Once {@link #stop()} ran (shutdown), the stream is already completed, so a reconnecting client cannot
-     * hold the graceful shutdown again.
+     * hold the graceful shutdown again. A new stream starts with the comment {@code :ok}, which sends the headers at
+     * once (FE-F24).
      */
     public SseEmitter subscribe(UUID storeId) {
         Objects.requireNonNull(storeId, "storeId");
@@ -154,7 +156,11 @@ public class ChangeNotifier implements SmartLifecycle, DisposableBean {
         emitter.onError(error -> remove.run());
         if (!running) {
             emitter.complete(); // stop() ran between the check above and the registration
+            return emitter;
         }
+        // Spring sends the headers with the first write: without this one the client would wait for the heartbeat.
+        // Written once registered, so no notice is lost in between; held by the emitter until the request returns.
+        write(key, store, emitter, SseEmitter.event().comment("ok"));
         return emitter;
     }
 

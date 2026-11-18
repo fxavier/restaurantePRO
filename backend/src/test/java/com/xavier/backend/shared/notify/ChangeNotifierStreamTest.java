@@ -31,6 +31,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockAsyncContext;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -38,6 +39,7 @@ import org.springframework.test.web.servlet.MvcResult;
  * S7 review follow-ups on the change stream (D60): a timed-out stream is completed, so the servlet container does
  * not turn the timeout into an error dispatch; and the heartbeat is written by the notifier's sender thread, like
  * the notices, never by the scheduler thread (one writer per stream, and a slow client cannot stall the scheduler).
+ * FE-F24: a new stream answers at once with a comment, so a client sees it open without waiting for the heartbeat.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -76,8 +78,19 @@ class ChangeNotifierStreamTest {
     }
 
     @Test
+    void theStreamStartsWithACommentAsSoonAsItIsSubscribed() throws Exception {
+        MvcResult stream = subscribe();
+
+        // no wait: the headers and a first comment are on the wire before the subscription returns (FE-F24)
+        MockHttpServletResponse response = stream.getResponse();
+        assertThat(response.isCommitted()).as("headers sent").isTrue();
+        assertThat(response.getContentAsString(StandardCharsets.UTF_8)).isEqualTo(":ok\n\n");
+    }
+
+    @Test
     void theHeartbeatIsWrittenByTheSenderThreadNotTheCaller() throws Exception {
         MvcResult stream = subscribe();
+        WRITER_THREADS.clear(); // the opening comment is the request's own write
 
         notifier.heartbeat();
 
