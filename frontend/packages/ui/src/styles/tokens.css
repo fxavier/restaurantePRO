@@ -1,0 +1,36 @@
+/*
+ * Design tokens (docs/design/frontend-design-system.md), in the variable names shadcn/ui expects.
+ * Light theme only in R1; dark mode will be a `.dark` block over the same names.
+ * tokens.test.ts asserts these values against the DS table and checks the contrast pairs.
+ */
+:root {
+  --background: #FFFFFF;
+  --foreground: #0F172A;
+  --muted: #F1F5F9;
+  --muted-foreground: #475569;
+  --border: #E2E8F0;
+  --input: #64748B;
+  --primary: #166FE5;
+  --primary-hover: #1259C3;
+  --primary-foreground: #FFFFFF;
+  --brand: #1877F2;
+  --ring: #1877F2;
+  --success: #15803D;
+  --success-foreground: #FFFFFF;
+  --warning: #FEF3C7;
+  --warning-foreground: #92400E;
+  --destructive: #B91C1C;
+  --destructive-foreground: #FFFFFF;
+  --info: var(--primary);
+  --radius: 0.5rem;
+
+  /* shadcn names the DS does not list, mapped onto the DS surfaces */
+  --card: var(--background);
+  --card-foreground: var(--foreground);
+  --popover: var(--background);
+  --popover-foreground: var(--foreground);
+  --secondary: var(--muted);
+  --secondary-foreground: var(--foreground);
+  --accent: var(--muted);
+  --accent-foreground: var(--foreground);
+}
