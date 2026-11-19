@@ -191,6 +191,40 @@ class PromotionsTenantIsolationTest {
         }
     }
 
+    /** FE-F35: the promotion and loyalty reward codes are unique ignoring case. */
+    @Test
+    void everyUniqueKeyOnACodeComparesTheCodeIgnoringCase() {
+        List<String> definitions = OwnerDatabase.shared().jdbc().sql("SELECT indexname || ' ' || indexdef "
+                        + "FROM pg_indexes WHERE schemaname = 'promotions' "
+                        + "AND indexdef LIKE 'CREATE UNIQUE INDEX%' AND indexdef ~ '[(, ]code[),]'")
+                .query(String.class).list();
+
+        assertThat(definitions).extracting(definition -> definition.substring(0, definition.indexOf(' ')))
+                .containsExactlyInAnyOrder("promotion_code_uk", "loyalty_reward_code_uk");
+        assertThat(definitions).allSatisfy(definition -> assertThat(definition)
+                .contains("(tenant_id, ").contains("upper((code)::text)"));
+    }
+
+    @Test
+    void aCaseVariantOfACodeInTheSameScopeIsRefusedByTheDatabase() {
+        try (AppRoleSession app = AppRoleSession.open().tenant(A).allStores()) {
+            assertCaseVariantRefused(() -> app.jdbc().sql("INSERT INTO promotions.promotion (id, code, name, kind, "
+                    + "percent, priority, members_only, active, created_at, updated_at, version) VALUES (?, "
+                    + "'iso-promo', 'Happy', 'PERCENT_OFF', 10, 1, false, true, now(), now(), 0)")
+                    .param(UUID.randomUUID()).update(), "promotion_code_uk");
+            assertCaseVariantRefused(() -> app.jdbc().sql("INSERT INTO promotions.loyalty_reward (id, version_id, "
+                    + "code, name, points_cost, effect) VALUES (?, ?, 'iso-reward', 'Free drink', 100, 'FREE_UNIT')")
+                    .param(UUID.randomUUID()).param(A_VERSION).update(), "loyalty_reward_code_uk");
+        }
+    }
+
+    private static void assertCaseVariantRefused(Runnable insert, String key) {
+        assertThatThrownBy(insert::run)
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .satisfies(error -> assertThat(AppRoleSession.sqlState(error)).isEqualTo("23505"))
+                .hasMessageContaining(key);
+    }
+
     @Test
     void theModuleIsTenantProtected() {
         RowLevelSecurityCoverageTest.assertModuleTenantProtected("promotions");
