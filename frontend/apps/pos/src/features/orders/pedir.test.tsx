@@ -32,6 +32,7 @@ const ROUND: BatchView = {
 const SENT: OrderView = withLines(ORDER, [...ROUND.lines!, LINE.steak], {
   version: 5,
   catalogVersion: undefined,
+  draftGross: undefined,
   batches: [...ORDER.batches!, ROUND],
 });
 
@@ -94,7 +95,7 @@ describe('"Pedir"', () => {
     expect(within(panel()).getByRole('status', { name: 'Envio' })).toHaveTextContent('Ronda 2 enviada.');
     expect(batches).toHaveLength(1);
     expect(batches[0]!.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
-    // expectedGross: the exact sum of the drafts' gross as shown (120,00 + 50,00), a guard the server checks.
+    // expectedGross: the order's draftGross as the server sent it (FE-F27), a guard the server checks.
     expect(batches[0]!.body).toEqual({
       orderVersion: 4,
       catalogVersion: 7,
@@ -115,12 +116,9 @@ describe('"Pedir"', () => {
     expect(batches[0]!.body).toMatchObject({ promotionVersion: 3 });
   });
 
-  it('expectedGross is the exact decimal sum of the drafts sent: 0.10 + 0.20 is 0.30, never 0.30000000000000004', async () => {
-    // The server writes BigDecimal amounts; a string keeps their scale here as the wire does.
-    const cents = (amount: string) => ({ amount: amount as unknown as number, currency: 'MZN' });
-    const server = serverOrder(
-      withLines(ORDER, [{ ...LINE.water, gross: cents('0.10') }, { ...LINE.coffee, gross: cents('0.20') }, LINE.steak]),
-    );
+  it('expectedGross is the order\'s draftGross exactly as the server wrote it, never a sum made here', async () => {
+    // A draftGross no sum of the lines (120,00 + 50,00) gives, written with its scale as the wire does.
+    const server = serverOrder({ ...ORDER, draftGross: { amount: '0.30' as unknown as number, currency: 'MZN' } });
     const batches = batchEndpoint(ORDER_ID, server.sends());
     const { user } = await atOrder([server.read]);
     await ready();
@@ -129,6 +127,18 @@ describe('"Pedir"', () => {
 
     await waitFor(() => expect(batches).toHaveLength(1));
     expect(batches[0]!.raw).toContain('"expectedGross":0.30}');
+  });
+
+  it('sends no expectedGross when the order carries no draftGross (a draft without a price)', async () => {
+    const server = serverOrder({ ...ORDER, draftGross: undefined });
+    const batches = batchEndpoint(ORDER_ID, server.sends());
+    const { user } = await atOrder([server.read]);
+    await ready();
+
+    await user.click(pedir());
+
+    await waitFor(() => expect(batches).toHaveLength(1));
+    expect(batches[0]!.body).not.toHaveProperty('expectedGross');
   });
 
   it('a double tap sends one request', async () => {
@@ -265,7 +275,10 @@ describe('"Pedir"', () => {
 
   it('a version conflict is definitive: it reads the order again, shows it, and the next "Pedir" sends the current version', async () => {
     const extra: LineView = { ...LINE.coffee, id: id(804), quantity: 2, version: 0 };
-    const changed = withLines(ORDER, [LINE.water, LINE.coffee, extra, LINE.steak], { version: 5 });
+    const changed = withLines(ORDER, [LINE.water, LINE.coffee, extra, LINE.steak], {
+      version: 5,
+      draftGross: { amount: 270, currency: 'MZN' },
+    });
     const server = serverOrder();
     const batches = batchEndpoint(
       ORDER_ID,
@@ -327,7 +340,9 @@ describe('"Pedir"', () => {
   });
 
   it('PRICES_CHANGED reads the order again and shows each new price beside the one shown before', async () => {
-    const repriced = withLines(ORDER, [{ ...LINE.water, gross: { amount: 150, currency: 'MZN' } }, LINE.coffee, LINE.steak]);
+    const repriced = withLines(ORDER, [{ ...LINE.water, gross: { amount: 150, currency: 'MZN' } }, LINE.coffee, LINE.steak], {
+      draftGross: { amount: 200, currency: 'MZN' },
+    });
     const server = serverOrder();
     const batches = batchEndpoint(
       ORDER_ID,
@@ -363,6 +378,7 @@ describe('"Pedir"', () => {
   it('CATALOG_CHANGED reads the catalog and the order again, then the waiter confirms again', async () => {
     const republished = withLines(ORDER, [LINE.water, { ...LINE.coffee, gross: { amount: 55, currency: 'MZN' } }, LINE.steak], {
       catalogVersion: 8,
+      draftGross: { amount: 175, currency: 'MZN' },
     });
     const server = serverOrder();
     const batches = batchEndpoint(
