@@ -77,6 +77,12 @@ jobs:
           distribution: temurin
           java-version: 25
           cache: maven
+      # The Maven distribution the wrapper downloads is not in setup-java's cache; a Maven Central hiccup on that one
+      # download failed this job twice (FE-F31). Cache it by the wrapper's pinned version.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.m2/wrapper
+          key: maven-wrapper-${{ hashFiles('backend/.mvn/wrapper/maven-wrapper.properties') }}
       # Fails when frontend/packages/api-client/openapi.json differs from what the backend code produces, naming the
       # first differing line. Needs Docker for the Testcontainers database, which the hosted runner provides.
       - run: ./mvnw -B -ntp test -Dtest=OpenApiSnapshotTest

@@ -17,17 +17,22 @@ Recorded during the frontend R1 build (tickets 01–12, 2026-11-18). Each row is
 | FE-F12 | backend | 429 `ENROLMENT_THROTTLED` carries no `Retry-After` | Low | 08 |
 | FE-F13 | test | first login of a user without OTP shows Keycloak's "Configure OTP" (both realms); ops-realm default ACR 2 untested | Low | FE-F07 review |
 | FE-F14 | test | backend test that a wrong-PIN 401 carries no `WWW-Authenticate` (the POS relies on it to never repeat a PIN) | Low | 09 review |
-| FE-F15 | backend | no POS endpoint gives the store's name or timezone; times use the terminal's zone, the status bar shows no store | Medium | 10, 11 |
-| FE-F17 | backend | `TableMap` has no open-order id; the POS searches `GET /pos/orders?lifecycle=OPEN&size=200` | Medium | 11 |
+| FE-F15 | backend | ~~no POS endpoint gives the store's name or timezone; times use the terminal's zone, the status bar shows no store~~ resolved: the session carries storeName, storeTimezone and currency; the POS shows the store and uses its zone (#138) | Medium | 10, 11 |
+| FE-F17 | backend | ~~`TableMap` has no open-order id; the POS searches `GET /pos/orders?lifecycle=OPEN&size=200`~~ resolved: TableMap.Table.openOrderId; the POS opens the order directly (#138) | Medium | 11 |
 | FE-F18 | contract | ~~`PosCatalogResponse.catalog` typed as a JsonNode~~ resolved: documented as `CatalogSnapshot`, POS uses generated types | Medium | 11 |
 | FE-F19 | backend | ~~terminal create / enrolment code / revoke take no `Idempotency-Key`~~ resolved: create and revoke require one (`execute`), the BackOffice keeps it per intent, on retry and in the step-up command; the code issue keeps none (ADR 0035), a repeat replaces the code. in-progress and taken-code 409s now coded (FE-F25, FE-F26) | Medium | 07 |
 | FE-F20 | e2e | all e2e stacks share one compose project name and fixed ports: only one can run at a time per machine | Low | 07, 12 |
 | FE-F21 | backend | terminal code unique constraint is case-sensitive (the form now upper-cases) | Low | 07 review |
 | FE-F22 | BFF | writes are bound to the pinned tenant but not to the pinned user: a second user of the same tenant logging in from another tab can have tab 1's write accepted as theirs | Low | FE-F16 review |
 | FE-F23 | BFF | `/api/v1/auth/tenants` answers are stamped `X-Relayed-Tenant` though no tenant was resolved for them | Low | FE-F16 review |
-| FE-F24 | backend | the POS change stream should write an event on subscribe (headers otherwise wait for the 25 s heartbeat; the client allows 40 s meanwhile) | Medium | 12 |
+| FE-F24 | backend | ~~the POS change stream should write an event on subscribe (headers otherwise wait for the 25 s heartbeat; the client allows 40 s meanwhile)~~ resolved: the stream writes `:ok` on subscribe; the POS start budget is back to 15 s (#136) | Medium | 12 |
 | FE-F25 | backend | ~~the idempotency "in progress" 409 has no `code`; batch documented 200 (answers 201); pos-logout documented 200 (answers 204)~~ resolved: 409s carry `IDEMPOTENCY_IN_PROGRESS` (execute and executeSteps) and `VERSION_CONFLICT` (stale `@Version`); the POS waits and resends the same key on the first and treats the second as final (the order re-read is gone; an older server's uncoded 409 is resent once, then a conflict); the 201/204 endpoints of `PosOrderController`, terminal create and pos-logout are documented as sent | Low | 09, 11, 12 |
 | FE-F26 | contract | `DeviceEnrolmentResponse` fields all optional; ~~taken-code 409 has no `code`~~ resolved: `TERMINAL_CODE_TAKEN`, shown on the Código field. Open: the `DeviceEnrolmentResponse` part | Low | 07, 08 |
 | FE-F27 | backend | `OrderView` should carry a server-computed draft total so the POS echoes it as `expectedGross` instead of summing (FC §12 exception) | Low | 12 review |
+
+| FE-F28 | contract | the OpenAPI contract marks no field nullable or required (springdoc defaults); clients widen nulls by hand | Low | FE-F18 |
+| FE-F29 | backend | uncoded 409s remain in other modules (receipt recorded, cash session open, reprint, sale draft, identity/catalog "taken") — code them before POS payment screens | Medium | FE-F25 review |
+| FE-F30 | test | two app tests (POS pin-login, BackOffice app) failed once each under a fully loaded machine and passed alone — watch for flakiness | Low | FE-F25 review |
+| FE-F31 | CI | Maven Central failed the wrapper's Maven download twice; the drift job now caches `~/.m2/wrapper`, but the e2e Docker image builds still download it (consider buildx GHA cache) | Low | FE-F08, FE-F09 CI |
 
 Fixed during the run (not open): FE-F04 (#124), FE-F07 (#126), FE-F08 (#128), FE-F16 (#132).
