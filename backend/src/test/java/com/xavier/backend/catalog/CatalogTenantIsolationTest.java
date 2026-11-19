@@ -183,6 +183,45 @@ class CatalogTenantIsolationTest {
         }
     }
 
+    /** FE-F35: the code columns of the working copy (barcodes excepted: exact match) are unique ignoring case. */
+    static final List<String> CODE_KEYS = List.of("family_code_uk", "unit_code_uk", "tax_category_code_uk",
+            "item_code_uk", "item_variant_item_code_uk", "menu_group_item_code_uk", "macro_code_uk",
+            "quick_page_store_code_uk");
+
+    @Test
+    void everyUniqueKeyOnACodeComparesTheCodeIgnoringCaseExceptBarcodes() {
+        List<String> definitions = OwnerDatabase.shared().jdbc().sql("SELECT indexname || ' ' || indexdef "
+                        + "FROM pg_indexes WHERE schemaname = 'catalog' AND indexdef LIKE 'CREATE UNIQUE INDEX%' "
+                        + "AND indexdef ~ '[(, ]code[),]' AND indexname <> 'barcode_code_uk'")
+                .query(String.class).list();
+
+        assertThat(definitions).hasSize(CODE_KEYS.size()).allSatisfy(definition -> assertThat(definition)
+                .contains("(tenant_id, ").contains("upper((code)::text)"));
+        assertThat(definitions).extracting(definition -> definition.substring(0, definition.indexOf(' ')))
+                .containsExactlyInAnyOrderElementsOf(CODE_KEYS);
+        assertThat(definitions).filteredOn(definition -> definition.startsWith("quick_page_store_code_uk"))
+                .singleElement().asString().contains("NULLS NOT DISTINCT");
+    }
+
+    @Test
+    void aCaseVariantOfACodeInTheSameScopeIsRefusedByTheDatabase() {
+        try (AppRoleSession app = AppRoleSession.open().tenant(A).allStores()) {
+            assertCaseVariantRefused(() -> app.jdbc().sql("INSERT INTO catalog.unit (id, code, name, version, "
+                    + "created_at, updated_at) VALUES (?, 'iso-u', 'Piece', 0, now(), now())")
+                    .param(UUID.randomUUID()).update(), "unit_code_uk");
+            assertCaseVariantRefused(() -> app.jdbc().sql("INSERT INTO catalog.item_variant (id, item_id, code, "
+                    + "name, version, created_at, updated_at) VALUES (?, ?, 'Large', 'Large', 0, now(), now())")
+                    .param(UUID.randomUUID()).param(A_ITEM).update(), "item_variant_item_code_uk");
+        }
+    }
+
+    private static void assertCaseVariantRefused(Runnable insert, String key) {
+        assertThatThrownBy(insert::run)
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .satisfies(error -> assertThat(AppRoleSession.sqlState(error)).isEqualTo("23505"))
+                .hasMessageContaining(key);
+    }
+
     @Test
     void theModuleIsTenantProtected() {
         RowLevelSecurityCoverageTest.assertModuleTenantProtected("catalog");

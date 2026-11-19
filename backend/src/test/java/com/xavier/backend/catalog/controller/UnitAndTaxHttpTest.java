@@ -58,6 +58,22 @@ class UnitAndTaxHttpTest {
         assertThat(auditCount("Unit", unit)).isEqualTo(2);
     }
 
+    /** FE-F35: a code is unique whatever its case, and keeps the case it was entered with. */
+    @Test
+    void aCaseVariantOfAUnitCodeIsTakenAndTheEnteredCaseIsKept() throws Exception {
+        String code = code("u").toLowerCase();
+        UUID unit = CatalogFixtures.id(fixtures().created(post(UNITS).with(admin(Permission.CATALOG_MANAGE)),
+                "{\"code\": \"%s\", \"name\": \"Kilogram\"}".formatted(code)));
+
+        mvc.perform(post(UNITS).with(admin(Permission.CATALOG_MANAGE)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"code\": \"%s\", \"name\": \"x\"}".formatted(code.toUpperCase())))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CATALOG_CODE_TAKEN"));
+        assertThat(jdbc.sql("SELECT code FROM catalog.unit WHERE id = :id").param("id", unit).query(String.class)
+                .single()).isEqualTo(code);
+    }
+
     @Test
     void aTaxCategoryKeepsItsRatesWithTheirEffectiveInstants() throws Exception {
         UUID category = CatalogFixtures.id(fixtures().created(post(TAX).with(admin(Permission.CATALOG_MANAGE)),
