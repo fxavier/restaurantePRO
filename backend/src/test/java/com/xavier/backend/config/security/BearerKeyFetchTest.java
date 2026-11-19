@@ -23,7 +23,6 @@ import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
 import com.nimbusds.jose.jwk.source.JWKSetSource;
 import com.nimbusds.jose.jwk.source.JWKSetUnavailableException;
 import com.nimbusds.jose.jwk.source.JWKSource;
-import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
@@ -107,32 +106,58 @@ class BearerKeyFetchTest {
     @Test
     void randomKidsDoNotLockOutValidTokensWhenTheCacheExpiresAndAnOutageIsStill503() throws Exception {
         java.util.concurrent.atomic.AtomicBoolean down = new java.util.concurrent.atomic.AtomicBoolean();
-        BearerAuthentication bearer = bearer(TrustedRealms.keySet(JWKSourceBuilder.create(keySetSource(() -> {
-            if (down.get()) {
-                throw new JWKSetUnavailableException("Read timed out");
-            }
-            return new JWKSet(KEY.toPublicJWK());
-        })).cache(1000, 100).refreshAheadCache(100, false).rateLimited(900)));
-        authenticate(bearer, signed(KEY, claims("Bearer")));
+        BearerAuthentication bearer = shortCacheAndWindow(down);
         List<String> randomKids = List.of(signed(rsa("r1"), claims("Bearer")), signed(rsa("r2"), claims("Bearer")),
                 signed(rsa("r3"), claims("Bearer")));
+        authenticate(bearer, signed(KEY, claims("Bearer")));
 
-        Thread.sleep(950); // the attack just before the cache expires (1000 ms), the first window (900 ms) over
+        Thread.sleep(1900); // the attack just before the cache expires (2000 ms), the first window (1800 ms) over
         randomKids.forEach(token -> assertThatThrownBy(() -> authenticate(bearer, token))
                 .isInstanceOf(InvalidBearerTokenException.class));
-        Thread.sleep(100);
+        Thread.sleep(200);
         assertThat(authenticate(bearer, signed(KEY, claims("Bearer"))).isAuthenticated()).isTrue();
-        Thread.sleep(1000);
+        Thread.sleep(2000);
         assertThat(authenticate(bearer, signed(KEY, claims("Bearer"))).isAuthenticated()).isTrue();
         String randomKid = signed(rsa(UUID.randomUUID().toString()), claims("Bearer"));
         assertThatThrownBy(() -> authenticate(bearer, randomKid)).isInstanceOf(InvalidBearerTokenException.class);
 
         down.set(true);
-        Thread.sleep(1100);
+        Thread.sleep(2100);
         for (int i = 0; i < 3; i++) {
             assertThatThrownBy(() -> authenticate(bearer, signed(KEY, claims("Bearer"))))
                     .isInstanceOf(AuthenticationServiceException.class);
         }
+    }
+
+    /** Review of FE-F34: a cache hit during an outage is not a healthy key set. */
+    @Test
+    void anOutageStays503WhenACacheHitPrecedesTheRateLimitedReloadAtExpiry() throws Exception {
+        java.util.concurrent.atomic.AtomicBoolean down = new java.util.concurrent.atomic.AtomicBoolean();
+        BearerAuthentication bearer = shortCacheAndWindow(down);
+        String randomKid = signed(rsa("r1"), claims("Bearer"));
+        String valid = signed(KEY, claims("Bearer"));
+        authenticate(bearer, valid);
+
+        Thread.sleep(1850); // a fresh rate-limit window (1800 ms), the cache (2000 ms) still valid
+        down.set(true);
+        for (int i = 0; i < 2; i++) {
+            assertThatThrownBy(() -> authenticate(bearer, randomKid))
+                    .isInstanceOf(AuthenticationServiceException.class);
+        }
+        assertThat(authenticate(bearer, valid).isAuthenticated()).as("a cache hit").isTrue();
+        Thread.sleep(300); // the cache expired; its reload is rate-limited during the outage
+
+        assertThatThrownBy(() -> authenticate(bearer, valid)).isInstanceOf(AuthenticationServiceException.class);
+    }
+
+    /** A key set cached 2000 ms, refetched at most twice per 1800 ms; fetches fail while {@code down}. */
+    private BearerAuthentication shortCacheAndWindow(java.util.concurrent.atomic.AtomicBoolean down) {
+        return bearer(TrustedRealms.keySet(keySetSource(() -> {
+            if (down.get()) {
+                throw new JWKSetUnavailableException("Read timed out");
+            }
+            return new JWKSet(KEY.toPublicJWK());
+        }), keys -> keys.cache(2000, 100).refreshAheadCache(100, false).rateLimited(1800)));
     }
 
     @Test

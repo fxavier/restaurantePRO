@@ -2,13 +2,16 @@ package com.xavier.backend.config.security;
 
 import com.nimbusds.jose.KeySourceException;
 import com.nimbusds.jose.jwk.JWK;
+import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.JWKSelector;
+import com.nimbusds.jose.jwk.source.JWKSetCacheRefreshEvaluator;
 import com.nimbusds.jose.jwk.source.JWKSetSource;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
 import com.nimbusds.jose.jwk.source.RateLimitReachedException;
 import com.nimbusds.jose.jwk.source.URLBasedJWKSetSource;
 import com.nimbusds.jose.util.DefaultResourceRetriever;
+import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.time.Duration;
@@ -18,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
+import java.util.function.UnaryOperator;
 
 /**
  * The issuers the backend trusts and where their signing keys come from (D176): exactly one issuer per realm, compared
@@ -76,40 +80,68 @@ public final class TrustedRealms {
     /**
      * An issuer's key set from {@code source} (Keycloak's {@code certs} endpoint in production): fetched lazily,
      * cached 5 min, refetched on an unknown {@code kid} at most twice per 30 s (Nimbus defaults), no retry. A refetch
-     * refused by that rate limit while the key set is healthy finds no key (the token is 401), never 503: random
+     * refused by that rate limit while the last fetch succeeded finds no key (the token is 401), never 503: random
      * {@code kid}s neither storm Keycloak nor fake an outage (FE-F34). While fetches fail, it stays 503.
      */
     static JWKSource<SecurityContext> keySet(JWKSetSource<SecurityContext> source) {
-        return keySet(JWKSourceBuilder.create(source));
+        return keySet(source, UnaryOperator.identity());
     }
 
-    /** {@link #keySet(JWKSetSource)} with the cache and rate limit of {@code keys} (a test shortens them). */
-    static JWKSource<SecurityContext> keySet(JWKSourceBuilder<SecurityContext> keys) {
-        return new RateLimitedRefetchFindsNoKey(keys.retrying(false).build());
+    /** {@link #keySet(JWKSetSource)} with the cache and rate limit set by {@code tuning} (a test shortens them). */
+    static JWKSource<SecurityContext> keySet(JWKSetSource<SecurityContext> source,
+                                             UnaryOperator<JWKSourceBuilder<SecurityContext>> tuning) {
+        LastFetch fetches = new LastFetch(source);
+        return new RateLimitedRefetchFindsNoKey(tuning.apply(JWKSourceBuilder.create(fetches)).retrying(false).build(),
+                fetches);
+    }
+
+    /** Whether the last fetch of the key set succeeded; a cache hit is not a fetch (an outage is not hidden). */
+    private static final class LastFetch implements JWKSetSource<SecurityContext> {
+
+        private final JWKSetSource<SecurityContext> source;
+        private volatile boolean succeeded;
+
+        LastFetch(JWKSetSource<SecurityContext> source) {
+            this.source = source;
+        }
+
+        @Override
+        public JWKSet getJWKSet(JWKSetCacheRefreshEvaluator evaluator, long currentTime, SecurityContext context)
+                throws KeySourceException {
+            try {
+                JWKSet keys = source.getJWKSet(evaluator, currentTime, context);
+                succeeded = true;
+                return keys;
+            } catch (KeySourceException | RuntimeException e) {
+                succeeded = false;
+                throw e;
+            }
+        }
+
+        @Override
+        public void close() throws IOException {
+            source.close();
+        }
     }
 
     private static final class RateLimitedRefetchFindsNoKey implements JWKSource<SecurityContext> {
 
         private final JWKSource<SecurityContext> keys;
-        private volatile boolean healthy;
+        private final LastFetch fetches;
 
-        RateLimitedRefetchFindsNoKey(JWKSource<SecurityContext> keys) {
+        RateLimitedRefetchFindsNoKey(JWKSource<SecurityContext> keys, LastFetch fetches) {
             this.keys = keys;
+            this.fetches = fetches;
         }
 
         @Override
         public List<JWK> get(JWKSelector selector, SecurityContext context) throws KeySourceException {
             try {
-                List<JWK> found = keys.get(selector, context);
-                healthy = true;
-                return found;
+                return keys.get(selector, context);
             } catch (RateLimitReachedException e) {
-                if (healthy) {
+                if (fetches.succeeded) {
                     return List.of();
                 }
-                throw e;
-            } catch (KeySourceException e) {
-                healthy = false;
                 throw e;
             }
         }
