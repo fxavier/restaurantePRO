@@ -196,6 +196,75 @@ describe('BackOffice middleware', () => {
     });
   });
 
+  describe('the user the tab was loaded for (FE-F22)', () => {
+    const USER = 'kc-subject-1';
+    const pinned = backOfficeMiddleware({ cookies: () => cookies, expectedTenant: () => TENANT, expectedUser: () => USER });
+    const answering = (relayedUser?: string) => async () =>
+      Response.json({ stores: ['secret'] }, {
+        headers: { 'X-Relayed-Tenant': TENANT, ...(relayedUser ? { 'X-Relayed-User': relayedUser } : {}) },
+      });
+
+    it('names the pinned user in X-Expected-User on every call', async () => {
+      const { fetch, requests } = capturingFetch();
+      const client = createApiClient({ baseUrl: BASE, fetch, middleware: [pinned] });
+
+      await client.GET('/api/v1/auth/session');
+      await unsafeCalls.POST(client);
+
+      expect(requests.map((r) => r.headers.get('X-Expected-User'))).toEqual([USER, USER]);
+    });
+
+    it('names no user before the tab is pinned', async () => {
+      const { fetch, requests } = capturingFetch();
+      const client = createApiClient({ baseUrl: BASE, fetch, middleware: [backOffice] });
+
+      await unsafeCalls.POST(client);
+
+      expect(requests[0]?.headers.has('X-Expected-User')).toBe(false);
+    });
+
+    it('throws TENANT_CHANGED instead of an answer relayed for another user', async () => {
+      const client = createApiClient({ baseUrl: BASE, fetch: answering('kc-subject-2'), middleware: [pinned] });
+
+      await expect(client.GET('/api/v1/auth/session')).rejects.toMatchObject({ status: 409, code: 'TENANT_CHANGED' });
+    });
+
+    it('hands the user every answer was relayed for to onRelayedUser, an error answer included', async () => {
+      const seen: string[] = [];
+      const reporting = backOfficeMiddleware({ cookies: () => cookies, expectedTenant: () => undefined,
+        onRelayedUser: (subject) => seen.push(subject) });
+      const selectionRequired = async () =>
+        Response.json({ status: 400, code: 'TENANT_SELECTION_REQUIRED', title: 'Bad Request' },
+          { status: 400, headers: { 'X-Relayed-User': USER } });
+      const client = createApiClient({ baseUrl: BASE, fetch: selectionRequired, middleware: [reporting] });
+
+      await expect(client.GET('/api/v1/auth/session')).rejects.toMatchObject({ code: 'TENANT_SELECTION_REQUIRED' });
+
+      expect(seen).toEqual([USER]);
+    });
+
+    it('throws TENANT_CHANGED on an unpinned call whose answer names another user than one pinned meanwhile', async () => {
+      let pinnedUser: string | undefined;
+      const racing = backOfficeMiddleware({ cookies: () => cookies, expectedTenant: () => undefined,
+        expectedUser: () => pinnedUser, onRelayedUser: (subject) => { pinnedUser ??= subject; } });
+      const raced = async () => {
+        pinnedUser = USER; // sent unpinned; meanwhile another call of this page load answered first, for user 1
+        return answering('kc-subject-2')();
+      };
+      const client = createApiClient({ baseUrl: BASE, fetch: raced, middleware: [racing] });
+
+      await expect(client.GET('/api/v1/auth/tenants')).rejects.toMatchObject({ status: 409, code: 'TENANT_CHANGED' });
+    });
+
+    it('passes an answer relayed for the pinned user, or naming none', async () => {
+      for (const relayed of [USER, undefined]) {
+        const client = createApiClient({ baseUrl: BASE, fetch: answering(relayed), middleware: [pinned] });
+
+        await expect(client.GET('/api/v1/auth/session')).resolves.toMatchObject({ data: { stores: ['secret'] } });
+      }
+    });
+  });
+
   it('sends no bearer token', async () => {
     const { fetch, requests } = capturingFetch();
     const client = createApiClient({ baseUrl: BASE, fetch, middleware: [backOffice] });

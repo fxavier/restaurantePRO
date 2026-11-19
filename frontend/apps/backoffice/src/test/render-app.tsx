@@ -26,5 +26,5 @@ export function renderApp(url = '/') {
   const user = userEvent.setup();
   const view = render(<App router={router} api={api} queryClient={queryClient} tenantPin={tenantPin} />);
   const currentUrl = () => `${router.state.location.pathname}${router.state.location.search}`;
-  return { ...view, user, router, leave, currentUrl, api, queryClient };
+  return { ...view, user, router, leave, currentUrl, api, queryClient, tenantPin };
 }

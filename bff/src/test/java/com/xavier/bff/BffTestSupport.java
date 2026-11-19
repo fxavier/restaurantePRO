@@ -67,7 +67,11 @@ abstract class BffTestSupport {
 
     /** Logs a user in through the authorization-code flow and returns the BFF session. */
     protected MockHttpSession login() throws Exception {
-        MockHttpSession session = new MockHttpSession();
+        return login(new MockHttpSession());
+    }
+
+    /** Logs in on an existing browser session, as a login from another tab of the same browser does. */
+    protected MockHttpSession login(MockHttpSession session) throws Exception {
         MvcResult toKeycloak = mvc.perform(get("/oauth2/authorization/keycloak").session(session))
                 .andExpect(status().is3xxRedirection()).andReturn();
         completeLogin(session, toKeycloak);
