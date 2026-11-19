@@ -75,7 +75,7 @@ class RefundTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.paymentId").value(payment.toString()))
                 .andExpect(jsonPath("$.methodCode").value("CASH"))
-                .andExpect(jsonPath("$.amount.amount").value(10.00))
+                .andExpect(jsonPath("$.amount.amount").value("10.00"))
                 .andExpect(jsonPath("$.approverEmployeeId").value(MANAGER.toString()))
                 .andExpect(jsonPath("$.operatorEmployeeId").value(refunder.employeeId().toString())));
         UUID id = UUID.fromString(refund.get("id").asString());
@@ -87,8 +87,8 @@ class RefundTest {
                 + "AND entity_id = ? AND actor_id = ? AND approver_id = ? AND reason = 'returned'", id.toString(),
                 refunder.employeeId(), MANAGER)).isEqualTo(1);
         fixtures.settlement(sale.cashier(), sale.order())
-                .andExpect(jsonPath("$.paid.amount").value(15.00))
-                .andExpect(jsonPath("$.balance.amount").value(10.00))
+                .andExpect(jsonPath("$.paid.amount").value("15.00"))
+                .andExpect(jsonPath("$.balance.amount").value("10.00"))
                 .andExpect(jsonPath("$.financialState").value("PARTIALLY_SETTLED"))
                 .andExpect(jsonPath("$.refunds[0].id").value(id.toString()));
         assertThat(events.stream(RefundRecorded.class).filter(e -> e.refundId().equals(id))).singleElement()
@@ -127,7 +127,7 @@ class RefundTest {
 
         fixtures.refund(sale.cashier(), payment, "5.01").andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("REFUND_EXCEEDS_REFUNDABLE"))
-                .andExpect(jsonPath("$.refundable").value(5.00));
+                .andExpect(jsonPath("$.refundable").value("5.00"));
         fixtures.refund(sale.cashier(), payment, "5.00").andExpect(status().isCreated());
     }
 
@@ -200,7 +200,7 @@ class RefundTest {
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("CORRECTION_REQUIRES_FISCAL_ADAPTER"));
         fixtures.refund(sale.cashier(), extra, "5.00").andExpect(status().isCreated());
-        fixtures.settlement(sale.cashier(), sale.order()).andExpect(jsonPath("$.paid.amount").value(25.00));
+        fixtures.settlement(sale.cashier(), sale.order()).andExpect(jsonPath("$.paid.amount").value("25.00"));
     }
 
     @Test
@@ -219,7 +219,7 @@ class RefundTest {
         fixtures.close(sale.cashier(), sale.order(), fixtures.orderVersion(sale.cashier(), sale.order()),
                 UUID.randomUUID().toString()).andExpect(status().isOk())
                 .andExpect(jsonPath("$.financialState").value("SETTLED"))
-                .andExpect(jsonPath("$.paid.amount").value(12.50));
+                .andExpect(jsonPath("$.paid.amount").value("12.50"));
     }
 
     @Test
@@ -244,7 +244,7 @@ class RefundTest {
                 .andExpect(jsonPath("$.targetType").value("PARTITION"))
                 .andExpect(jsonPath("$.partitionId").value(amount.toString()));
         fixtures.partitions(sale.cashier(), sale.order())
-                .andExpect(jsonPath("$[?(@.id == '%s')].paid.amount".formatted(amount)).value(0.0));
+                .andExpect(jsonPath("$[?(@.id == '%s')].paid.amount".formatted(amount)).value("0.00"));
     }
 
     @Test

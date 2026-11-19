@@ -60,16 +60,16 @@ class CreditIsNotCashTest {
         assertThat(fixtures.session(sale.cashier(), sale.session()).get("expected")).isEmpty();
         assertThat(facts.paymentIds(sale.store(), day, day, PageRequest.of(0, 10))).isEmpty();
         mvc.perform(get("/api/v1/pos/settlement/open-orders").with(sale.cashier().with(Permission.ORDER_VIEW)))
-                .andExpect(jsonPath("$[0].paid.amount").value(0))
-                .andExpect(jsonPath("$[0].credit.amount").value(25.00))
-                .andExpect(jsonPath("$[0].balance.amount").value(0))
+                .andExpect(jsonPath("$[0].paid.amount").value("0.00"))
+                .andExpect(jsonPath("$[0].credit.amount").value("25.00"))
+                .andExpect(jsonPath("$[0].balance.amount").value("0.00"))
                 .andExpect(jsonPath("$[0].financialState").value("SETTLED"));
 
         fixtures.close(sale.cashier(), sale.order(), fixtures.orderVersion(sale.cashier(), sale.order()),
                         UUID.randomUUID().toString())
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.paid.amount").value(0))
-                .andExpect(jsonPath("$.credit.amount").value(25.00))
+                .andExpect(jsonPath("$.paid.amount").value("0.00"))
+                .andExpect(jsonPath("$.credit.amount").value("25.00"))
                 .andExpect(jsonPath("$.financialState").value("SETTLED"));
         fixtures.closeSession(sale, "0");
         assertThat(fixtures.session(sale.cashier(), sale.session()).get("expected")).isEmpty();
@@ -83,11 +83,11 @@ class CreditIsNotCashTest {
         assertThat(fixtures.decimal("SELECT coalesce(sum(amount), 0) FROM cash.cash_movement WHERE store_id = ?",
                 sale.store())).isEqualByComparingTo("15.00");
         assertThat(fixtures.session(sale.cashier(), sale.session()).get("expected").get(0).get("amount")
-                .get("amount").decimalValue()).isEqualByComparingTo("15.00");
+                .get("amount").asDecimal()).isEqualByComparingTo("15.00");
         fixtures.close(sale.cashier(), sale.order(), fixtures.orderVersion(sale.cashier(), sale.order()),
                         UUID.randomUUID().toString())
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.paid.amount").value(15.00));
+                .andExpect(jsonPath("$.paid.amount").value("15.00"));
         fixtures.closeSession(sale, "15.00");
     }
 

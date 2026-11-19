@@ -48,8 +48,8 @@ class DiscountLimitsDefaultTest {
         Shop shop = fixtures.shop();
         mvc.perform(get(limitsOf(shop.store())).with(inStore(shop.store(), Permission.PROMOTION_VIEW)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.freeLimitPercent").value(10))
-                .andExpect(jsonPath("$.maxPercent").value(50))
+                .andExpect(jsonPath("$.freeLimitPercent").value(10.0))
+                .andExpect(jsonPath("$.maxPercent").value(50.0))
                 .andExpect(jsonPath("$.version").isEmpty());
 
         fixtures.published(shop.store());

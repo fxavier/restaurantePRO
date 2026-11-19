@@ -53,8 +53,8 @@ class DraftLineHttpTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("DRAFT"))
                 .andExpect(jsonPath("$.preview").value(true))
-                .andExpect(jsonPath("$.unitPrice.amount").value(12.50))
-                .andExpect(jsonPath("$.gross.amount").value(25.00))
+                .andExpect(jsonPath("$.unitPrice.amount").value("12.50"))
+                .andExpect(jsonPath("$.gross.amount").value("25.00"))
                 .andExpect(jsonPath("$.notes").value("no ice"))
                 .andExpect(jsonPath("$.batchId").isEmpty());
 
@@ -62,7 +62,7 @@ class DraftLineHttpTest {
                 .andExpect(jsonPath("$.version").value(0))
                 .andExpect(jsonPath("$.catalogVersion").value(shop.catalogVersion()))
                 .andExpect(jsonPath("$.lines.length()").value(1))
-                .andExpect(jsonPath("$.due.amount").value(0.00));
+                .andExpect(jsonPath("$.due.amount").value("0.00"));
     }
 
     @Test

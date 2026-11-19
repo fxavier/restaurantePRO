@@ -53,7 +53,7 @@ class MovementHttpTest {
                 .andExpect(status().isCreated());
 
         mvc.perform(get(SESSIONS + "/current").with(operator.with(Permission.CASH_OPERATE)))
-                .andExpect(jsonPath("$.expected[0].amount.amount").value(90.00));
+                .andExpect(jsonPath("$.expected[0].amount.amount").value("90.00"));
         assertThat(fixtures.count("SELECT count(*) FROM audit.audit_event WHERE action = ? AND store_id = ?",
                 "CASH_MOVEMENT_RECORDED", store)).isEqualTo(2);
     }

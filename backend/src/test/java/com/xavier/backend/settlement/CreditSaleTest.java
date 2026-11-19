@@ -52,7 +52,7 @@ class CreditSaleTest {
                 .andExpect(jsonPath("$.status").value("POSTED"))
                 .andExpect(jsonPath("$.targetType").value("ORDER"))
                 .andExpect(jsonPath("$.customerId").value(customer.toString()))
-                .andExpect(jsonPath("$.amount.amount").value(25.00)));
+                .andExpect(jsonPath("$.amount.amount").value("25.00")));
         String document = charge.get("documentId").asString();
 
         assertThat(fixtures.count("SELECT count(*) FROM fiscal.fiscal_document WHERE id = ?::uuid AND status = "
@@ -62,9 +62,9 @@ class CreditSaleTest {
         assertThat(fixtures.movementsOfStore(sale.store())).as("credit is never money received").isZero();
         fixtures.settlement(sale.cashier(), sale.order())
                 .andExpect(jsonPath("$.financialState").value("SETTLED"))
-                .andExpect(jsonPath("$.paid.amount").value(0))
-                .andExpect(jsonPath("$.credit.amount").value(25.00))
-                .andExpect(jsonPath("$.balance.amount").value(0))
+                .andExpect(jsonPath("$.paid.amount").value("0.00"))
+                .andExpect(jsonPath("$.credit.amount").value("25.00"))
+                .andExpect(jsonPath("$.balance.amount").value("0.00"))
                 .andExpect(jsonPath("$.fiscalState").value("ISSUED"))
                 .andExpect(jsonPath("$.creditCharges[0].status").value("POSTED"));
 
@@ -80,7 +80,7 @@ class CreditSaleTest {
         fixtures.creditCharge(sale, customer, "10.00").andExpect(status().isCreated());
         fixtures.settlement(sale.cashier(), sale.order())
                 .andExpect(jsonPath("$.financialState").value("PARTIALLY_SETTLED"))
-                .andExpect(jsonPath("$.residualBalance.amount").value(15.00));
+                .andExpect(jsonPath("$.residualBalance.amount").value("15.00"));
 
         fixtures.payCash(sale, "15.01", "20.00").andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("AMOUNT_EXCEEDS_BALANCE"));
@@ -220,8 +220,8 @@ class CreditSaleTest {
                 + "'PARTITION' AND source_id = ? AND on_account", charge.get("documentId").asString(), partition))
                 .isEqualTo(1);
         fixtures.partitions(sale.cashier(), sale.order())
-                .andExpect(jsonPath("$[0].credit.amount").value(12.50))
-                .andExpect(jsonPath("$[0].balance.amount").value(0))
+                .andExpect(jsonPath("$[0].credit.amount").value("12.50"))
+                .andExpect(jsonPath("$[0].balance.amount").value("0.00"))
                 .andExpect(jsonPath("$[0].financialState").value("SETTLED"));
         fixtures.payCash(sale, "12.50", "12.50").andExpect(status().isCreated());
         fixtures.close(sale.cashier(), sale.order(), fixtures.orderVersion(sale.cashier(), sale.order()),

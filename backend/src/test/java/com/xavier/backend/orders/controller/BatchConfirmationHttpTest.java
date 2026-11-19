@@ -65,12 +65,12 @@ class BatchConfirmationHttpTest {
                 .andExpect(jsonPath("$.lines[0].id").value(line.toString()))
                 .andExpect(jsonPath("$.lines[0].status").value("CONFIRMED"))
                 .andExpect(jsonPath("$.lines[0].description").value("Coca-Cola 33cl"))
-                .andExpect(jsonPath("$.lines[0].unitPrice.amount").value(12.50))
-                .andExpect(jsonPath("$.lines[0].taxRatePercent").value(16))
-                .andExpect(jsonPath("$.lines[0].gross.amount").value(25.00))
+                .andExpect(jsonPath("$.lines[0].unitPrice.amount").value("12.50"))
+                .andExpect(jsonPath("$.lines[0].taxRatePercent").value(16.0))
+                .andExpect(jsonPath("$.lines[0].gross.amount").value("25.00"))
                 .andExpect(jsonPath("$.lines[0].preview").value(false));
 
-        getOrder().andExpect(jsonPath("$.version").value(1)).andExpect(jsonPath("$.due.amount").value(25.00));
+        getOrder().andExpect(jsonPath("$.version").value(1)).andExpect(jsonPath("$.due.amount").value("25.00"));
         assertThat(fixtures.audits("ORDER_BATCH_CONFIRMED", order)).isOne();
     }
 
@@ -118,12 +118,12 @@ class BatchConfirmationHttpTest {
         fixtures.reprice(shop, "20.00");
         fixtures.republish(shop.store());
 
-        getOrder().andExpect(jsonPath("$.lines[0].unitPrice.amount").value(12.50))
-                .andExpect(jsonPath("$.lines[0].taxRatePercent").value(16))
+        getOrder().andExpect(jsonPath("$.lines[0].unitPrice.amount").value("12.50"))
+                .andExpect(jsonPath("$.lines[0].taxRatePercent").value(16.0))
                 .andExpect(jsonPath("$.lines[0].description").value("Coca-Cola 33cl"))
-                .andExpect(jsonPath("$.due.amount").value(25.00));
+                .andExpect(jsonPath("$.due.amount").value("25.00"));
         UUID fresh = id(fixtures.draft(shop, order, "1", employee, terminal));
-        getOrder().andExpect(jsonPath("$.lines[?(@.id == '%s')].unitPrice.amount".formatted(fresh)).value(20.00));
+        getOrder().andExpect(jsonPath("$.lines[?(@.id == '%s')].unitPrice.amount".formatted(fresh)).value("20.00"));
     }
 
     @Test

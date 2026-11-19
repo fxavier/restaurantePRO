@@ -91,7 +91,7 @@ class SettledRewardVoidTest {
                         "lines": [{"lineId": "%s", "quantity": 1}], "kind": "REWARD", "rewardCode": "%s",
                         "reason": "points\"""".formatted(line, reward), false)
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.due.amount").value(12.50));
+                .andExpect(jsonPath("$.due.amount").value("12.50"));
         assertThat(loyalty.balance(member).points()).isEqualTo(40);
         UUID rewarded = jdbc.sql("SELECT target_line_id FROM orders.order_line_split WHERE source_line_id = ?")
                 .param(line).query(UUID.class).single();

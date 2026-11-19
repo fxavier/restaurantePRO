@@ -79,7 +79,7 @@ class MenuConfirmationTest {
 
         JsonNode round = OrdersFixtures.json(confirm(line).andExpect(status().isCreated())
                 .andExpect(jsonPath("$.lines[0].kind").value("MENU"))
-                .andExpect(jsonPath("$.lines[0].gross.amount").value(19.00))
+                .andExpect(jsonPath("$.lines[0].gross.amount").value("19.00"))
                 .andExpect(jsonPath("$.lines[0].components[0].destination").value("KITCHEN"))
                 .andExpect(jsonPath("$.lines[0].components[1].destination").value("BAR"))
                 .andReturn().getResponse().getContentAsString());

@@ -51,8 +51,8 @@ class ReportTotalsTest {
         JsonNode report = reporting.report("discounts", store, DAY, DAY, "groupBy", "employee");
 
         assertThat(report.get("rows")).hasSize(3).allSatisfy(row ->
-                assertThat(row.get("offerCost").get("amount").decimalValue()).isEqualByComparingTo("0.33"));
-        assertThat(report.get("totals").get("offerCost").get("amount").decimalValue()).isEqualByComparingTo("0.99");
+                assertThat(row.get("offerCost").get("amount").asDecimal()).isEqualByComparingTo("0.33"));
+        assertThat(report.get("totals").get("offerCost").get("amount").asDecimal()).isEqualByComparingTo("0.99");
     }
 
     @Test
@@ -64,8 +64,8 @@ class ReportTotalsTest {
         JsonNode report = reporting.report("margins", store, DAY, DAY, "groupBy", "item");
 
         assertThat(report.get("rows")).hasSize(3);
-        assertThat(report.get("totals").get("costOfSales").get("amount").decimalValue()).isEqualByComparingTo("0.99");
-        assertThat(report.get("totals").get("margin").get("amount").decimalValue()).isEqualByComparingTo("-0.99");
+        assertThat(report.get("totals").get("costOfSales").get("amount").asDecimal()).isEqualByComparingTo("0.99");
+        assertThat(report.get("totals").get("margin").get("amount").asDecimal()).isEqualByComparingTo("-0.99");
     }
 
     private void consumption(UUID line, UUID item, String value) {

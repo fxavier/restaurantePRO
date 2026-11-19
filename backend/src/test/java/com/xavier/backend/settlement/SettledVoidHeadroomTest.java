@@ -47,13 +47,13 @@ class SettledVoidHeadroomTest {
         fixtures.settledVoid(sale.cashier(), sale.order(), fixtures.orderVersion(sale.cashier(), sale.order()), line,
                         "1", UUID.randomUUID().toString())
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.quantity").value(1))
+                .andExpect(jsonPath("$.quantity").value(1.0))
                 .andExpect(jsonPath("$.approverEmployeeId").value(MANAGER.toString()))
-                .andExpect(jsonPath("$.order.due.amount").value(12.50));
+                .andExpect(jsonPath("$.order.due.amount").value("12.50"));
 
         assertThat(fixtures.count("SELECT count(*) FROM orders.order_line_void WHERE line_id = ?", line))
                 .isEqualTo(1);
-        fixtures.settlement(sale.cashier(), sale.order()).andExpect(jsonPath("$.balance.amount").value(2.50));
+        fixtures.settlement(sale.cashier(), sale.order()).andExpect(jsonPath("$.balance.amount").value("2.50"));
     }
 
     @Test
@@ -152,8 +152,8 @@ class SettledVoidHeadroomTest {
 
         // the order now recomputes 1 x 12.50 with tax 1.72; the documents will carry the partition's 1.73
         fixtures.settlement(sale.cashier(), sale.order())
-                .andExpect(jsonPath("$.taxRoundingDifference[0].ratePercent").value(16))
-                .andExpect(jsonPath("$.taxRoundingDifference[0].difference.amount").value(-0.01));
+                .andExpect(jsonPath("$.taxRoundingDifference[0].ratePercent").value("16"))
+                .andExpect(jsonPath("$.taxRoundingDifference[0].difference.amount").value("-0.01"));
     }
 
     @Test
@@ -161,7 +161,7 @@ class SettledVoidHeadroomTest {
         Sale sale = fixtures.sale("2");
 
         fixtures.settlement(sale.cashier(), sale.order())
-                .andExpect(jsonPath("$.taxRoundingDifference[0].difference.amount").value(0));
+                .andExpect(jsonPath("$.taxRoundingDifference[0].difference.amount").value("0.00"));
     }
 
     @Test

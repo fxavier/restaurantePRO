@@ -71,7 +71,7 @@ class MenuReleaseValidationTest {
         createGroup(menu, "DRINK", 1, 1, 1, option(drink, large, "1")).andExpect(status().isCreated());
         createGroup(menu, "STARTER", 0, 2, 0, option(starter, null, "1"), option(drink, null, "2"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.options[1].quantity").value(2));
+                .andExpect(jsonPath("$.options[1].quantity").value(2.0));
 
         publications().publishNew(sellable.store());
 

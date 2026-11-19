@@ -95,7 +95,7 @@ class MarginReportTest {
         assertThat(amount(item, "waste")).isEqualTo("0.50");
         assertThat(amount(item, "costVariance")).isEqualTo("0.00");
         assertThat(amount(item, "margin")).isEqualTo("20.55");
-        assertThat(item.get("marginPercent").decimalValue()).isEqualByComparingTo("95.36");
+        assertThat(item.get("marginPercent").asDecimal()).isEqualByComparingTo("95.36");
 
         JsonNode unsold = report.get("rows").get(1);
         assertThat(unsold.get("key").isNull()).as("waste and variances of no item sold").isTrue();
@@ -133,9 +133,9 @@ class MarginReportTest {
         }
 
         assertThat(flour).isNotNull();
-        assertThat(flour.get("consumptionCost").decimalValue()).isEqualByComparingTo(
+        assertThat(flour.get("consumptionCost").asDecimal()).isEqualByComparingTo(
                 reporting.report("margins", live.store(), day, day, "groupBy", "item").get("totals")
-                        .get("costOfSales").get("amount").decimalValue());
+                        .get("costOfSales").get("amount").asDecimal());
     }
 
     @Test
@@ -264,6 +264,6 @@ class MarginReportTest {
     }
 
     private static String amount(JsonNode row, String field) {
-        return row.get(field).get("amount").decimalValue().setScale(2).toPlainString();
+        return row.get(field).get("amount").asDecimal().setScale(2).toPlainString();
     }
 }

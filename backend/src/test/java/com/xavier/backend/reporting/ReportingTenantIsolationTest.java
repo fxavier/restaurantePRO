@@ -121,7 +121,7 @@ class ReportingTenantIsolationTest {
                         .param("from", DAY).param("to", DAY).param("groupBy", "day")
                         .with(in(A, A_STORE, Permission.REPORT_VIEW)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.totals.documents").value(1))
-                .andExpect(jsonPath("$.totals.gross.amount").value(10.0));
+                .andExpect(jsonPath("$.totals.gross.amount").value("10.00"));
         mvc.perform(get("/api/v1/backoffice/reports/sales").param("storeId", B_STORE.toString())
                         .param("from", DAY).param("to", DAY).param("groupBy", "day")
                         .with(in(A, null, Permission.REPORT_VIEW)))

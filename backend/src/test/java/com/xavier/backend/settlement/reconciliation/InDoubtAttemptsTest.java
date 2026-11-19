@@ -77,7 +77,7 @@ class InDoubtAttemptsTest {
         assertThat(inOther.get("status").asString()).isEqualTo("UNKNOWN");
         assertThat(inOther.get("pollCount").asInt()).isZero();
         assertThat(inOther.get("nextPollAt").isNull()).isFalse();
-        assertThat(inOther.get("amount").get("amount").decimalValue()).isEqualByComparingTo("25.00");
+        assertThat(inOther.get("amount").get("amount").asDecimal()).isEqualByComparingTo("25.00");
     }
 
     @Test

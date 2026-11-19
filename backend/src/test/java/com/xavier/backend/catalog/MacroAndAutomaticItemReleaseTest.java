@@ -137,7 +137,7 @@ class MacroAndAutomaticItemReleaseTest {
                                 {"trigger": "TABLE_OPEN_PER_GUEST", "itemId": "%s", "quantity": 2, "active": true,
                                  "version": 0}""".formatted(id(cover))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.quantity").value(2));
+                .andExpect(jsonPath("$.quantity").value(2.0));
         UUID next = publications().publishNew(sellable.store());
 
         assertThat(snapshotText(release)).isEqualTo(frozen);

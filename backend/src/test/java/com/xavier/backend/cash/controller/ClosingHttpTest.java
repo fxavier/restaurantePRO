@@ -101,11 +101,11 @@ class ClosingHttpTest {
                 .andExpect(jsonPath("$.status").value("DRAFT"))
                 .andExpect(jsonPath("$.attemptNo").value(1))
                 .andExpect(jsonPath("$.lines[0].methodCode").value("CARD"))
-                .andExpect(jsonPath("$.lines[0].difference.amount").value(0.00))
+                .andExpect(jsonPath("$.lines[0].difference.amount").value("0.00"))
                 .andExpect(jsonPath("$.lines[1].methodCode").value("CASH"))
-                .andExpect(jsonPath("$.lines[1].expected.amount").value(150.00))
-                .andExpect(jsonPath("$.lines[1].counted.amount").value(145.00))
-                .andExpect(jsonPath("$.lines[1].difference.amount").value(-5.00));
+                .andExpect(jsonPath("$.lines[1].expected.amount").value("150.00"))
+                .andExpect(jsonPath("$.lines[1].counted.amount").value("145.00"))
+                .andExpect(jsonPath("$.lines[1].difference.amount").value("-5.00"));
     }
 
     @Test

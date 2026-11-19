@@ -64,7 +64,7 @@ class DebtPaymentTest {
                 .andExpect(jsonPath("$.targetType").value("CREDIT_ACCOUNT"))
                 .andExpect(jsonPath("$.customerId").value(customer.toString()))
                 .andExpect(jsonPath("$.orderId").isEmpty())
-                .andExpect(jsonPath("$.change.amount").value(20.00)));
+                .andExpect(jsonPath("$.change.amount").value("20.00")));
 
         UUID payment = paymentOf(attempt);
         assertThat(fixtures.count("SELECT count(*) FROM cash.cash_movement WHERE source_id = ? AND session_id = ?",
@@ -128,7 +128,7 @@ class DebtPaymentTest {
         fixtures.payDebt(sale.cashier(), customer, "CASH", "37.51", "40.00", UUID.randomUUID().toString())
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("AMOUNT_EXCEEDS_DEBT"))
-                .andExpect(jsonPath("$.debt").value(37.50));
+                .andExpect(jsonPath("$.debt").value("37.50"));
         assertThat(credit.debtOf(customer).amount()).isEqualByComparingTo("37.50");
     }
 
@@ -170,7 +170,7 @@ class DebtPaymentTest {
         fixtures.payDebt(sale.cashier(), customer, method, "25.01", null, UUID.randomUUID().toString(), olderDebit)
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("AMOUNT_EXCEEDS_DEBT"))
-                .andExpect(jsonPath("$.debt").value(25.00));
+                .andExpect(jsonPath("$.debt").value("25.00"));
         assertThat(fixtures.count("SELECT count(*) FROM settlement.payment_attempt WHERE credit_account_id = ? "
                 + "AND method_code = ?", customer, method)).as("no attempt, no money taken").isZero();
     }

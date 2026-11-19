@@ -54,13 +54,13 @@ class CreditAccountHttpTest {
     @Test
     void theFirstLimitChangeOpensTheAccountAndEachChangeIsAFactWithItsReasonAndActor() throws Exception {
         changeLimit("100.00", "regular customer").andExpect(status().isOk())
-                .andExpect(jsonPath("$.limit.amount").value(100.00))
+                .andExpect(jsonPath("$.limit.amount").value("100.00"))
                 .andExpect(jsonPath("$.limit.currency").value("MZN"))
-                .andExpect(jsonPath("$.balance.amount").value(0))
-                .andExpect(jsonPath("$.available.amount").value(100.00))
+                .andExpect(jsonPath("$.balance.amount").value("0.00"))
+                .andExpect(jsonPath("$.available.amount").value("100.00"))
                 .andExpect(jsonPath("$.blocked").value(false));
         changeLimit("250.00", "pays on time").andExpect(status().isOk())
-                .andExpect(jsonPath("$.limit.amount").value(250.00));
+                .andExpect(jsonPath("$.limit.amount").value("250.00"));
 
         assertThat(jdbc.sql("""
                         SELECT coalesce(old_limit::text, '-') || '>' || new_limit || ':' || reason || ':' || actor_kind
@@ -156,8 +156,8 @@ class CreditAccountHttpTest {
 
         mvc.perform(get(POS + "/" + customer + "/credit").with(cashier.with(Permission.CUSTOMER_VIEW)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.available.amount").value(75.50))
-                .andExpect(jsonPath("$.reserved.amount").value(0));
+                .andExpect(jsonPath("$.available.amount").value("75.50"))
+                .andExpect(jsonPath("$.reserved.amount").value("0.00"));
         mvc.perform(get(POS + "/" + customer + "/credit").with(cashier.with(Permission.CUSTOMER_MANAGE)))
                 .andExpect(status().isForbidden());
     }

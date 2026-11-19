@@ -71,7 +71,7 @@ class CashAdjustmentTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.type").value("ADJUSTMENT"))
                 .andExpect(jsonPath("$.sessionId").value(session.toString()))
-                .andExpect(jsonPath("$.amount.amount").value(5.00));
+                .andExpect(jsonPath("$.amount.amount").value("5.00"));
 
         assertThat(jdbc.sql("""
                         SELECT sum(CASE WHEN direction = 'IN' THEN amount ELSE -amount END) FROM cash.cash_movement

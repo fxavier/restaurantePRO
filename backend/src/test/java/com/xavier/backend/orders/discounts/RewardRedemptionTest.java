@@ -102,8 +102,8 @@ class RewardRedemptionTest {
         customer(1, member).andExpect(status().isOk());
 
         redeem(2, "1").andExpect(status().isOk())
-                .andExpect(jsonPath("$.due.amount").value(25.00))
-                .andExpect(jsonPath("$.lines[1].unitPrice.amount").value(0.00))
+                .andExpect(jsonPath("$.due.amount").value("25.00"))
+                .andExpect(jsonPath("$.lines[1].unitPrice.amount").value("0.00"))
                 .andExpect(jsonPath("$.lines[1].origin").value("LOYALTY"))
                 .andExpect(jsonPath("$.lines[1].adjustments[0].rewardCode").value(reward));
         assertThat(loyalty.balance(member)).isEqualTo(40);

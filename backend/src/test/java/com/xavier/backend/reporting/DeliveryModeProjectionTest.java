@@ -47,6 +47,6 @@ class DeliveryModeProjectionTest {
         JsonNode byMode = reporting.report("sales", storeId, DAY, DAY, "groupBy", "mode");
         assertThat(byMode.get("rows")).hasSize(1);
         assertThat(byMode.get("rows").get(0).get("key").asString()).isEqualTo("DELIVERY");
-        assertThat(byMode.get("rows").get(0).get("net").get("amount").decimalValue()).isEqualByComparingTo("10.00");
+        assertThat(byMode.get("rows").get(0).get("net").get("amount").asDecimal()).isEqualByComparingTo("10.00");
     }
 }

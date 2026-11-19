@@ -46,7 +46,7 @@ class LoyaltyProgramPublishTest {
         UUID item = UUID.randomUUID();
         String first = loyalty.createDraft("10.00", 2, "\"" + item + "\"", "").andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("DRAFT"))
-                .andExpect(jsonPath("$.spendUnit.amount").value(10.00))
+                .andExpect(jsonPath("$.spendUnit.amount").value("10.00"))
                 .andExpect(jsonPath("$.spendUnit.currency").value("MZN"))
                 .andExpect(jsonPath("$.pointsPerUnit").value(2))
                 .andExpect(jsonPath("$.itemIds[0]").value(item.toString()))
@@ -104,7 +104,7 @@ class LoyaltyProgramPublishTest {
         mvc.perform(idem(put(PROGRAMS + "/" + draft)).with(manager()).contentType(MediaType.APPLICATION_JSON)
                         .content(edit))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.spendUnit.amount").value(25.00))
+                .andExpect(jsonPath("$.spendUnit.amount").value("25.00"))
                 .andExpect(jsonPath("$.pointsPerUnit").value(4))
                 .andExpect(jsonPath("$.familyIds[0]").value(family.toString()))
                 .andExpect(jsonPath("$.version").value(1));

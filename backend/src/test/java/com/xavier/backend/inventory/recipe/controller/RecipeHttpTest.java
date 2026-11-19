@@ -81,7 +81,7 @@ class RecipeHttpTest {
                 .andExpect(jsonPath("$.versionNo").value(1)).andExpect(jsonPath("$.status").value("DRAFT"));
         mvc.perform(idem(put(RECIPES + "/" + recipe + "/versions/1")).with(manager())
                         .contentType(MediaType.APPLICATION_JSON).content(versionBody("250", "g", 0)))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.ingredients[0].quantity").value(250));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.ingredients[0].quantity").value(250.0));
 
         Instant now = clock.instant();
         activate(recipe, 1, null).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("ACTIVE"))

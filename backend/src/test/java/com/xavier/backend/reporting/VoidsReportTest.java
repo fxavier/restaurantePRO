@@ -58,8 +58,8 @@ class VoidsReportTest {
         JsonNode row = byReason.get("rows").get(0);
         assertThat(row.get("key").asString()).isEqualTo("dropped");
         assertThat(row.get("voids").asLong()).isOne();
-        assertThat(row.get("quantity").decimalValue()).isEqualByComparingTo("1");
-        assertThat(row.get("gross").get("amount").decimalValue()).isEqualByComparingTo("12.50");
+        assertThat(row.get("quantity").asDecimal()).isEqualByComparingTo("1");
+        assertThat(row.get("gross").get("amount").asDecimal()).isEqualByComparingTo("12.50");
         assertThat(row.get("wasted").asLong()).isOne();
         assertThat(row.get("afterDispatch").asLong()).isZero(); // production is not in this context
 

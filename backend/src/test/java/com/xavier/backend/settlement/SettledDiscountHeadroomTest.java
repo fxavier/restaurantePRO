@@ -47,9 +47,9 @@ class SettledDiscountHeadroomTest {
         UUID line = line(sale);
 
         fixtures.percentOff(sale, line, null, "50").andExpect(status().isOk())
-                .andExpect(jsonPath("$.due.amount").value(12.50))
-                .andExpect(jsonPath("$.paid.amount").value(10.00))
-                .andExpect(jsonPath("$.balance.amount").value(2.50));
+                .andExpect(jsonPath("$.due.amount").value("12.50"))
+                .andExpect(jsonPath("$.paid.amount").value("10.00"))
+                .andExpect(jsonPath("$.balance.amount").value("2.50"));
 
         assertThat(adjustments(sale.order())).isOne();
     }
@@ -60,7 +60,7 @@ class SettledDiscountHeadroomTest {
         fixtures.payCash(sale, "12.50", "12.50").andExpect(status().isCreated());
 
         fixtures.percentOff(sale, line(sale), null, "50").andExpect(status().isOk())
-                .andExpect(jsonPath("$.balance.amount").value(0));
+                .andExpect(jsonPath("$.balance.amount").value("0.00"));
     }
 
     @Test
@@ -71,10 +71,10 @@ class SettledDiscountHeadroomTest {
 
         fixtures.percentOff(sale, line, null, "50").andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("DISCOUNT_EXCEEDS_UNPAID"))
-                .andExpect(jsonPath("$.unpaid").value(12.49));
+                .andExpect(jsonPath("$.unpaid").value("12.49"));
 
         assertThat(adjustments(sale.order())).isZero();
-        fixtures.settlement(sale.cashier(), sale.order()).andExpect(jsonPath("$.due.amount").value(25.00));
+        fixtures.settlement(sale.cashier(), sale.order()).andExpect(jsonPath("$.due.amount").value("25.00"));
     }
 
     @Test
@@ -111,7 +111,7 @@ class SettledDiscountHeadroomTest {
         fixtures.percentOff(sale, line(sale), null, "50").andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("CORRECTION_REQUIRES_FISCAL_ADAPTER"));
         assertThat(adjustments(sale.order())).isZero();
-        fixtures.settlement(sale.cashier(), sale.order()).andExpect(jsonPath("$.due.amount").value(25.00));
+        fixtures.settlement(sale.cashier(), sale.order()).andExpect(jsonPath("$.due.amount").value("25.00"));
     }
 
     @Test
@@ -121,9 +121,9 @@ class SettledDiscountHeadroomTest {
         UUID line = line(sale);
 
         fixtures.offer(sale, line, "1").andExpect(status().isOk())
-                .andExpect(jsonPath("$.due.amount").value(12.50))
+                .andExpect(jsonPath("$.due.amount").value("12.50"))
                 .andExpect(jsonPath("$.coverage.length()").value(2))
-                .andExpect(jsonPath("$.coverage[1].gross.amount").value(0));
+                .andExpect(jsonPath("$.coverage[1].gross.amount").value("0.00"));
 
         assertThat(fixtures.count("SELECT count(*) FROM orders.order_line_split WHERE source_line_id = ?", line))
                 .isOne();

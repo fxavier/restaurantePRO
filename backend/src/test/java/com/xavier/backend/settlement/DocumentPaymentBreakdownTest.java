@@ -116,7 +116,7 @@ class DocumentPaymentBreakdownTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.payments.status").value("UNPAID"))
                 .andExpect(jsonPath("$.payments.methods.length()").value(0))
-                .andExpect(jsonPath("$.payments.outstanding.amount").value(12.50));
+                .andExpect(jsonPath("$.payments.outstanding.amount").value("12.50"));
         fixtures.partitions(sale.cashier(), sale.order())
                 .andExpect(jsonPath("$[0].paymentStatus").value("UNPAID"));
     }

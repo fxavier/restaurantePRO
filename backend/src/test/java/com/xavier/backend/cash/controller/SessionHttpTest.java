@@ -70,7 +70,7 @@ class SessionHttpTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(session.toString()))
                 .andExpect(jsonPath("$.expected[0].methodCode").value("CASH"))
-                .andExpect(jsonPath("$.expected[0].amount.amount").value(100.00));
+                .andExpect(jsonPath("$.expected[0].amount.amount").value("100.00"));
         assertThat(fixtures.count("SELECT count(*) FROM cash.cash_day WHERE store_id = ?", store)).isEqualTo(1);
         assertThat(fixtures.count("SELECT count(*) FROM cash.cash_movement WHERE session_id = ? AND type = ?",
                 session, "OPENING_FLOAT")).isEqualTo(1);
@@ -198,7 +198,7 @@ class SessionHttpTest {
 
         mvc.perform(get(SESSIONS + "/" + session).with(pos(store).with(Permission.CASH_VIEW)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.openingFloat.amount").value(20.00));
+                .andExpect(jsonPath("$.openingFloat.amount").value("20.00"));
         mvc.perform(get(SESSIONS + "/" + session).with(pos(fixtures.newStore()).with(Permission.CASH_VIEW)))
                 .andExpect(status().isForbidden());
         mvc.perform(get(SESSIONS + "/" + UUID.randomUUID()).with(pos(store).with(Permission.CASH_VIEW)))

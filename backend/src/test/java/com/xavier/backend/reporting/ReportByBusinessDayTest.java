@@ -73,7 +73,7 @@ class ReportByBusinessDayTest {
         JsonNode byHour = reporting.report("sales", sale.store(), OPENED_ON, OPENED_ON, "groupBy", "hour");
         assertThat(byHour.get("rows")).hasSize(1);
         assertThat(byHour.get("rows").get(0).get("key").asString()).isEqualTo("02");
-        assertThat(byHour.get("rows").get(0).get("gross").get("amount").decimalValue()).isEqualByComparingTo("25.00");
+        assertThat(byHour.get("rows").get(0).get("gross").get("amount").asDecimal()).isEqualByComparingTo("25.00");
         assertThat(reporting.report("sales", sale.store(), AFTER_MIDNIGHT, AFTER_MIDNIGHT, "groupBy", "day")
                 .get("rows")).isEmpty();
     }
@@ -89,7 +89,7 @@ class ReportByBusinessDayTest {
         JsonNode byDay = reporting.report("receipts", sale.store(), OPENED_ON, OPENED_ON, "groupBy", "day");
         assertThat(byDay.get("rows")).hasSize(1);
         assertThat(byDay.get("rows").get(0).get("key").asString()).isEqualTo(OPENED_ON.toString());
-        assertThat(byDay.get("rows").get(0).get("received").get("amount").decimalValue())
+        assertThat(byDay.get("rows").get(0).get("received").get("amount").asDecimal())
                 .isEqualByComparingTo("25.00");
         assertThat(reporting.report("receipts", sale.store(), AFTER_MIDNIGHT, AFTER_MIDNIGHT, "groupBy", "day")
                 .get("rows")).isEmpty();

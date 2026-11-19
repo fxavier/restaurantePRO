@@ -71,7 +71,7 @@ class UnitAndTaxHttpTest {
         mvc.perform(get(TAX + "/" + category).with(admin(Permission.CATALOG_MANAGE)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.rates.length()").value(2))
-                .andExpect(jsonPath("$.rates[0].ratePercent").value(16))
+                .andExpect(jsonPath("$.rates[0].ratePercent").value(16.0))
                 .andExpect(jsonPath("$.rates[0].effectiveFrom").value("2024-01-01T00:00:00Z"))
                 .andExpect(jsonPath("$.rates[1].ratePercent").value(17.5));
         assertThat(auditCount("TaxCategory", category)).isEqualTo(1);

@@ -396,9 +396,9 @@ class DiscountReportTest {
 
     private static String line(JsonNode row) {
         return text(row.get("key")) + "|" + text(row.get("label")) + "|" + row.get("lines").asLong() + "|"
-                + row.get("quantity").decimalValue().stripTrailingZeros().toPlainString() + "|"
-                + row.get("discount").get("amount").decimalValue().setScale(2).toPlainString() + "|"
-                + row.get("offerCost").get("amount").decimalValue().setScale(2).toPlainString();
+                + row.get("quantity").asDecimal().stripTrailingZeros().toPlainString() + "|"
+                + row.get("discount").get("amount").asDecimal().setScale(2).toPlainString() + "|"
+                + row.get("offerCost").get("amount").asDecimal().setScale(2).toPlainString();
     }
 
     private static String text(JsonNode node) {

@@ -69,7 +69,7 @@ class SalesReportTest {
         assertThat(rows(report, "key")).isEqualTo(documentLinesByItemCode()).hasSize(2);
         JsonNode totals = report.get("totals");
         assertThat(totals.get("documents").asLong()).isEqualTo(2);
-        assertThat(totals.get("gross").get("amount").decimalValue()).isEqualByComparingTo("45.50");
+        assertThat(totals.get("gross").get("amount").asDecimal()).isEqualByComparingTo("45.50");
     }
 
     @Test
@@ -84,7 +84,7 @@ class SalesReportTest {
                 .forEach(row -> expected.put((String) row.get("hour"), ((BigDecimal) row.get("gross")).setScale(2)));
         Map<String, BigDecimal> actual = new TreeMap<>();
         report.get("rows").forEach(row -> actual.put(row.get("key").asString(),
-                row.get("gross").get("amount").decimalValue().setScale(2)));
+                row.get("gross").get("amount").asDecimal().setScale(2)));
         assertThat(actual).isEqualTo(expected);
     }
 
@@ -93,7 +93,7 @@ class SalesReportTest {
         JsonNode report = reporting.report("sales", sale.store(), day, day, "groupBy", "employee");
 
         assertThat(report.get("rows").valueStream().map(row -> tuple(row.get("key").asString(),
-                        row.get("documents").asLong(), row.get("gross").get("amount").decimalValue().setScale(2))))
+                        row.get("documents").asLong(), row.get("gross").get("amount").asDecimal().setScale(2))))
                 .containsExactlyInAnyOrder(
                         tuple(sale.cashier().employeeId().toString(), 1L, new BigDecimal("33.00")),
                         tuple(second.employeeId().toString(), 1L, new BigDecimal("12.50")));
@@ -104,7 +104,7 @@ class SalesReportTest {
         for (String groupBy : List.of("area", "day", "mode", "terminal")) {
             JsonNode report = reporting.report("sales", sale.store(), day, day, "groupBy", groupBy);
             BigDecimal gross = report.get("rows").valueStream()
-                    .map(row -> row.get("gross").get("amount").decimalValue()).reduce(BigDecimal.ZERO,
+                    .map(row -> row.get("gross").get("amount").asDecimal()).reduce(BigDecimal.ZERO,
                             BigDecimal::add);
             assertThat(gross).as(groupBy).isEqualByComparingTo("45.50");
         }
@@ -130,8 +130,8 @@ class SalesReportTest {
                 .forEach(row -> expected.put(((BigDecimal) row.get("tax_rate")).stripTrailingZeros(),
                         ((BigDecimal) row.get("tax")).setScale(2)));
         Map<BigDecimal, BigDecimal> actual = new TreeMap<>();
-        report.get("rows").forEach(row -> actual.put(row.get("rate").decimalValue().stripTrailingZeros(),
-                row.get("tax").get("amount").decimalValue().setScale(2)));
+        report.get("rows").forEach(row -> actual.put(row.get("rate").asDecimal().stripTrailingZeros(),
+                row.get("tax").get("amount").asDecimal().setScale(2)));
         assertThat(actual).isEqualTo(expected).hasSize(2);
         assertThat(report.get("rows").valueStream().map(row -> row.get("taxCode").asString()))
                 .allMatch(code -> !code.isBlank());
@@ -141,17 +141,17 @@ class SalesReportTest {
     void topItemsAreRankedByQuantityOrGross() throws Exception {
         JsonNode byQuantity = reporting.report("top-items", sale.store(), day, day, "by", "quantity", "limit", "1");
         assertThat(byQuantity.get("rows")).hasSize(1);
-        assertThat(byQuantity.get("rows").get(0).get("quantity").decimalValue()).isEqualByComparingTo("3");
+        assertThat(byQuantity.get("rows").get(0).get("quantity").asDecimal()).isEqualByComparingTo("3");
 
         JsonNode byGross = reporting.report("top-items", sale.store(), day, day, "by", "gross", "limit", "100");
-        assertThat(byGross.get("rows").valueStream().map(row -> row.get("gross").get("amount").decimalValue()
+        assertThat(byGross.get("rows").valueStream().map(row -> row.get("gross").get("amount").asDecimal()
                 .setScale(2))).containsExactly(new BigDecimal("37.50"), new BigDecimal("8.00"));
     }
 
     private static Map<String, List<BigDecimal>> rows(JsonNode report, String field) {
         Map<String, List<BigDecimal>> rows = new TreeMap<>();
         report.get("rows").forEach(row -> rows.put(row.get(field).asString(), List.of(
-                row.get("quantity").decimalValue().setScale(3), row.get("gross").get("amount").decimalValue()
+                row.get("quantity").asDecimal().setScale(3), row.get("gross").get("amount").asDecimal()
                         .setScale(2))));
         return rows;
     }

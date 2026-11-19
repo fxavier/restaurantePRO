@@ -21,13 +21,13 @@ class EqualPartsTest {
         fixtures.equalParts(sale.cashier(), sale.order(), fixtures.orderVersion(sale.cashier(), sale.order()), 3)
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.length()").value(3))
-                .andExpect(jsonPath("$[0].due.amount").value(33.34))
-                .andExpect(jsonPath("$[1].due.amount").value(33.33))
-                .andExpect(jsonPath("$[2].due.amount").value(33.33))
+                .andExpect(jsonPath("$[0].due.amount").value("33.34"))
+                .andExpect(jsonPath("$[1].due.amount").value("33.33"))
+                .andExpect(jsonPath("$[2].due.amount").value("33.33"))
                 .andExpect(jsonPath("$[2].partNo").value(3))
                 .andExpect(jsonPath("$[2].parts").value(3))
                 .andExpect(jsonPath("$[0].groupId").isNotEmpty());
-        fixtures.settlement(sale.cashier(), sale.order()).andExpect(jsonPath("$.residualBalance.amount").value(0));
+        fixtures.settlement(sale.cashier(), sale.order()).andExpect(jsonPath("$.residualBalance.amount").value("0.00"));
     }
 
     @Test
