@@ -185,6 +185,19 @@ class OrganizationTenantIsolationTest {
         }
     }
 
+    /** FE-F21: the database refuses a case variant of a code in the same store, whatever wrote it. */
+    @Test
+    void aCaseVariantOfATerminalCodeInTheSameStoreIsRefusedByTheDatabase() {
+        try (AppRoleSession app = AppRoleSession.open().tenant(A).allStores()) {
+            assertThatThrownBy(() -> app.jdbc().sql("INSERT INTO organization.terminal (id, store_id, code, name, "
+                    + "status, version, created_at, updated_at) VALUES (?, ?, 't1', 'Till', 'REGISTERED', 0, now(), "
+                    + "now())").param(UUID.randomUUID()).param(A_STORE).update())
+                    .isInstanceOf(DataIntegrityViolationException.class)
+                    .satisfies(error -> assertThat(AppRoleSession.sqlState(error)).isEqualTo("23505"))
+                    .hasMessageContaining("terminal_store_code_uk");
+        }
+    }
+
     @Test
     void theModuleIsTenantProtected() {
         RowLevelSecurityCoverageTest.assertModuleTenantProtected("organization");

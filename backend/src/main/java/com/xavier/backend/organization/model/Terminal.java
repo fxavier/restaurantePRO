@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -89,12 +90,20 @@ public class Terminal {
         Terminal terminal = new Terminal();
         terminal.storeId = storeId;
         terminal.kind = kind;
-        terminal.code = code.strip();
+        terminal.code = normalizedCode(code);
         terminal.name = name.strip();
         terminal.status = TerminalStatus.REGISTERED;
         terminal.createdAt = now;
         terminal.updatedAt = now;
         return terminal;
+    }
+
+    /**
+     * A device code as stored: trimmed and in uppercase, so codes differing only in case are the same code (FE-F21;
+     * the database's {@code terminal_store_code_uk} compares {@code upper(code)}).
+     */
+    public static String normalizedCode(String code) {
+        return code.strip().toUpperCase(Locale.ROOT);
     }
 
     /** What a code presentation found (the caller commits the count before it answers). */
