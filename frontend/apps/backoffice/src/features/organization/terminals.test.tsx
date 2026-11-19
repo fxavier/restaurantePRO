@@ -527,6 +527,16 @@ describe('revoking a terminal', () => {
     await user.click(within(confirm).getByRole('button', { name: 'Revogar' }));
   }
 
+  it('explains a terminal already revoked elsewhere (409 ILLEGAL_TERMINAL_STATE)', async () => {
+    const state = terminalsServer([caixa1]);
+    revokeHandler(state, () => problem(409, 'ILLEGAL_TERMINAL_STATE', 'Conflict'));
+
+    const { user } = renderApp(TERMINALS);
+    await confirmRevoke(user);
+
+    expect(await screen.findByText('O terminal está revogado e não aceita esta ação.')).toBeInTheDocument();
+  });
+
   it('retries with the same key when no answer came', async () => {
     const state = terminalsServer([caixa1]);
     const requests = revokeHandler(state, (n) => (n === 1 ? HttpResponse.error() : undefined));
