@@ -35,6 +35,23 @@ class CodedExceptionTest {
         }
     }
 
+    /** FE-F29: a 409 without a code cannot be told apart from VERSION_CONFLICT or IDEMPOTENCY_IN_PROGRESS. */
+    @Test
+    void aConflictAlwaysHasACode() {
+        assertThatThrownBy(() -> new ConflictException(null, "m")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new ConflictException(null, "m", Map.of()))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new ConflictException(null, "m", Map.of(), null))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    /** FE-F29: no constructor can make an uncoded conflict, so a new 409 cannot forget its code. */
+    @Test
+    void everyConflictConstructorTakesACode() {
+        assertThat(ConflictException.class.getDeclaredConstructors())
+                .allSatisfy(constructor -> assertThat(constructor.getParameters()[0].getName()).isEqualTo("code"));
+    }
+
     @Test
     void aCodeIsNotBlank() {
         assertThatThrownBy(() -> new NotFoundException(" ", "m")).isInstanceOf(IllegalArgumentException.class);

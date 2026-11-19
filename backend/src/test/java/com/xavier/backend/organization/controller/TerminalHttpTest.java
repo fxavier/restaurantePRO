@@ -157,9 +157,11 @@ class TerminalHttpTest {
                 .andExpect(jsonPath("$.status").value("REVOKED"));
 
         assertThat(audits("TERMINAL_REVOKED", terminal.toString())).isEqualTo(1);
-        mvc.perform(revocation(terminal, newKey())).andExpect(status().isConflict());
+        mvc.perform(revocation(terminal, newKey())).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ILLEGAL_TERMINAL_STATE"));
         mvc.perform(post(TERMINALS + "/" + terminal + "/enrollment-code")
-                .with(inStore(store, Permission.TERMINAL_MANAGE)).with(csrf())).andExpect(status().isConflict());
+                .with(inStore(store, Permission.TERMINAL_MANAGE)).with(csrf())).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ILLEGAL_TERMINAL_STATE"));
     }
 
     @Test

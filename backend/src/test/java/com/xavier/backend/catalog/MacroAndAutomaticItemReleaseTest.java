@@ -242,12 +242,14 @@ class MacroAndAutomaticItemReleaseTest {
 
         created(post(AUTOMATIC), inStore(store, Permission.CATALOG_MANAGE), takeaway.formatted(store, id(item), ""));
         perform(post(AUTOMATIC), inStore(store, Permission.CATALOG_MANAGE), takeaway.formatted(store, id(item), ""))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CATALOG_CODE_TAKEN"));
         created(post(AUTOMATIC), inStore(store, Permission.CATALOG_MANAGE),
                 takeaway.formatted(store, id(item), ", \"active\": false")); // inactive duplicates are allowed
         created(post(AUTOMATIC), inStore(store, Permission.CATALOG_MANAGE), perGuest);
         perform(post(AUTOMATIC), inStore(store, Permission.CATALOG_MANAGE), perGuest)
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CATALOG_CODE_TAKEN"));
         created(post(AUTOMATIC), inStore(store, Permission.CATALOG_MANAGE),
                 takeaway.replace("TAKEAWAY", "DELIVERY").formatted(store, id(item), ""));
         perform(post(AUTOMATIC), inStore(store, Permission.CATALOG_MANAGE),
@@ -287,7 +289,8 @@ class MacroAndAutomaticItemReleaseTest {
                 .andExpect(jsonPath("$[?(@.id == '%s')].code".formatted(id(page))).value("P"));
         perform(post(QUICK_PAGES), inStore(store, Permission.CATALOG_MANAGE), """
                 {"storeId": "%s", "code": "P", "name": "Again", "position": 0, "entries": []}""".formatted(store))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CATALOG_CODE_TAKEN"));
     }
 
     private JsonNode macro(String body) throws Exception {

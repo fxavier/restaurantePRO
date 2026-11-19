@@ -110,7 +110,8 @@ class PriceListHttpTest {
         mvc.perform(post(PRICE_LISTS + "/" + list + "/prices").with(inStore(store, Permission.CATALOG_MANAGE))
                         .with(csrf()).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"itemId\": \"%s\", \"amount\": 13}".formatted(item)))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CATALOG_CODE_TAKEN"));
         mvc.perform(get(PRICE_LISTS + "/" + list + "/prices").with(inStore(store, Permission.CATALOG_MANAGE)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2));

@@ -234,11 +234,13 @@ class StoreHttpTest {
 
         mvc.perform(post(STORES).with(admin(Permission.STORE_MANAGE)).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content(create(code, "Africa/Maputo")))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("STORE_CODE_TAKEN"));
         UUID other = createStore();
         mvc.perform(put(STORES + "/" + other).with(admin(Permission.STORE_MANAGE)).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content(update(code, "Africa/Maputo", 0)))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("STORE_CODE_TAKEN"));
     }
 
     @Test

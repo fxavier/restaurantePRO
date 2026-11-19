@@ -147,7 +147,7 @@ class ExportMonitorTest {
 
     static Stream<RuntimeException> refusals() {
         return Stream.of(new AccessDeniedException("no"), new BusinessRuleException("RANGE_TOO_LARGE", "too large"),
-                new NotFoundException("missing"), new ConflictException("changed"));
+                new NotFoundException("missing"), new ConflictException("CHANGED", "changed"));
     }
 
     /** Two exports racing: the failure that happened later is the one remembered, whatever finishes last. */

@@ -77,7 +77,8 @@ class UserHttpTest {
         }
 
         assertThat(statuses).containsExactlyInAnyOrder(201, 409);
-        mvc.perform(create(username.toUpperCase(), PASSWORD)).andExpect(status().isConflict());
+        mvc.perform(create(username.toUpperCase(), PASSWORD)).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("USERNAME_TAKEN"));
     }
 
     @Test
@@ -107,7 +108,8 @@ class UserHttpTest {
 
         mvc.perform(post(USERS).with(admin()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
                         .content(json("username", unique("u"), "employeeId", employee)))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("EMPLOYEE_ACCOUNT_TAKEN"));
     }
 
     private static MockHttpServletRequestBuilder create(String username, String password) {

@@ -69,7 +69,8 @@ class RoleHttpTest {
 
         mvc.perform(post(ROLES).with(admin()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
                         .content(json("name", name, "permissions", List.of())))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ROLE_NAME_TAKEN"));
     }
 
     @Test

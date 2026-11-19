@@ -63,7 +63,8 @@ class FamilyHttpTest {
                 .andExpect(status().isCreated());
         mvc.perform(post(FAMILIES).with(admin(Permission.CATALOG_MANAGE)).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content(family(code, null)))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CATALOG_CODE_TAKEN"));
 
         for (int round = 0; round < 5; round++) {
             String raced = code("F");

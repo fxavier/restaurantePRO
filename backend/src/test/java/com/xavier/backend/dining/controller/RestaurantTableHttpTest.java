@@ -170,7 +170,8 @@ class RestaurantTableHttpTest {
 
         mvc.perform(post(TABLES).with(inStore(store, Permission.DINING_MANAGE)).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content(DiningFixtures.newTable(store, terrace, "M1", 2)))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DINING_CODE_TAKEN"));
     }
 
     @Test
@@ -180,7 +181,8 @@ class RestaurantTableHttpTest {
 
         mvc.perform(put(TABLES + "/" + second).with(inStore(store, Permission.DINING_MANAGE)).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content(update(area, "M1", 4, true, 0)))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DINING_CODE_TAKEN"));
     }
 
     @Test

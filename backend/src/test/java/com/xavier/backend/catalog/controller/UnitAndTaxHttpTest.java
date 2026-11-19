@@ -43,7 +43,8 @@ class UnitAndTaxHttpTest {
 
         mvc.perform(post(UNITS).with(admin(Permission.CATALOG_MANAGE)).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content("{\"code\": \"%s\", \"name\": \"x\"}".formatted(code)))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CATALOG_CODE_TAKEN"));
         mvc.perform(put(UNITS + "/" + unit).with(admin(Permission.CATALOG_MANAGE)).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"code\": \"%s\", \"name\": \"Kg\", \"version\": 0}".formatted(code)))

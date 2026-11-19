@@ -110,7 +110,8 @@ class ReprintHttpTest {
     void aDraftCannotBeReprinted() throws Exception {
         UUID store = fixtures.newStore();
 
-        reprint(store, fixtures.newDraft(store), "k-" + UUID.randomUUID()).andExpect(status().isConflict());
+        reprint(store, fixtures.newDraft(store), "k-" + UUID.randomUUID()).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ILLEGAL_DOCUMENT_STATE"));
     }
 
     @Test

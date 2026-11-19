@@ -140,7 +140,8 @@ class EmployeeHttpTest {
         }
 
         assertThat(statuses).containsExactlyInAnyOrder(201, 409);
-        mvc.perform(hire(admin(), code, "4821", storeA, IdentityFixtures.WAITER)).andExpect(status().isConflict());
+        mvc.perform(hire(admin(), code, "4821", storeA, IdentityFixtures.WAITER)).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("EMPLOYEE_CODE_TAKEN"));
     }
 
     @Test
@@ -215,7 +216,8 @@ class EmployeeHttpTest {
                 .andExpect(status().isCreated()).andReturn().getResponse());
         mvc.perform(post(EMPLOYEES + "/" + employee.id() + "/assignments").with(admin()).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content(assignment))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ROLE_ALREADY_ASSIGNED"));
         mvc.perform(get(EMPLOYEES + "/" + employee.id() + "/assignments").with(admin()))
                 .andExpect(jsonPath("$.length()").value(2));
 

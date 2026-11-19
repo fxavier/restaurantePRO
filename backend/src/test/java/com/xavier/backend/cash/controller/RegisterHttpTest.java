@@ -111,7 +111,8 @@ class RegisterHttpTest {
                 .contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isCreated());
 
         mvc.perform(idem(post(REGISTERS)).with(account(store, Permission.CASH_REGISTER_MANAGE))
-                .contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isConflict());
+                .contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("REGISTER_CODE_TAKEN"));
     }
 
     @Test

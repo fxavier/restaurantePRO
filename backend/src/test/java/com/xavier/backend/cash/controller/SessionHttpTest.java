@@ -103,14 +103,16 @@ class SessionHttpTest {
     void aSecondOpenSessionOnTheSameRegisterIsAConflict() throws Exception {
         fixtures.openSession(operator, register, "10.00");
 
-        mvc.perform(open(pos(store), register, "10.00")).andExpect(status().isConflict());
+        mvc.perform(open(pos(store), register, "10.00")).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CASH_SESSION_ALREADY_OPEN"));
     }
 
     @Test
     void anOperatorWithAnOpenSessionCannotOpenASecondOne() throws Exception {
         fixtures.openSession(operator, register, "10.00");
 
-        mvc.perform(open(operator, fixtures.newRegister(store), "10.00")).andExpect(status().isConflict());
+        mvc.perform(open(operator, fixtures.newRegister(store), "10.00")).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CASH_SESSION_ALREADY_OPEN"));
     }
 
     @Test

@@ -100,14 +100,16 @@ class SeriesHttpTest {
         String first = FiscalFixtures.id(create(store, "A", 1).andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString()).toString();
 
-        create(store, "B", 1).andExpect(status().isConflict());
+        create(store, "B", 1).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ACTIVE_SERIES_EXISTS"));
         mvc.perform(post(SERIES + "/" + first + "/deactivate").with(admin(Permission.FISCAL_MANAGE)).with(csrf()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.active").value(false));
         create(store, "B", 1).andExpect(status().isCreated());
 
         mvc.perform(post(SERIES + "/" + first + "/deactivate").with(admin(Permission.FISCAL_MANAGE)).with(csrf()))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ILLEGAL_SERIES_STATE"));
         assertThat(fixtures.audits("FISCAL_SERIES_DEACTIVATED", first)).isEqualTo(1);
     }
 
@@ -119,7 +121,8 @@ class SeriesHttpTest {
         mvc.perform(post(SERIES + "/" + first + "/deactivate").with(admin(Permission.FISCAL_MANAGE)).with(csrf()))
                 .andExpect(status().isOk());
 
-        create(store, "A", 50).andExpect(status().isConflict());
+        create(store, "A", 50).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SERIES_CODE_TAKEN"));
         create(fixtures.newStore(), "A", 1).andExpect(status().isCreated());
     }
 
