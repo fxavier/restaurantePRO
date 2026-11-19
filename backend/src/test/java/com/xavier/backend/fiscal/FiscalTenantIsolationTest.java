@@ -235,6 +235,31 @@ class FiscalTenantIsolationTest {
         }
     }
 
+    /** FE-F35: the series code is the module's only code key, and it compares the code ignoring case. */
+    @Test
+    void theSeriesCodeKeyComparesTheCodeIgnoringCase() {
+        List<String> definitions = OwnerDatabase.shared().jdbc().sql("SELECT indexname || ' ' || indexdef "
+                        + "FROM pg_indexes WHERE schemaname = 'fiscal' "
+                        + "AND indexdef LIKE 'CREATE UNIQUE INDEX%' AND indexdef ~ '[(, ]code[),]'")
+                .query(String.class).list();
+
+        assertThat(definitions).singleElement().asString().startsWith("fiscal_series_code_uk ")
+                .contains("(tenant_id, store_id, document_type, upper((code)::text))");
+    }
+
+    @Test
+    void aCaseVariantOfASeriesCodeInTheSameStoreIsRefusedByTheDatabase() {
+        try (AppRoleSession app = AppRoleSession.open().tenant(A).allStores()) {
+            assertThatThrownBy(() -> app.jdbc().sql("INSERT INTO fiscal.fiscal_series (id, store_id, document_type, "
+                    + "code, first_number, next_number, active, version, created_at, updated_at) VALUES (?, ?, "
+                    + "'SALE', 'iso', 1, 1, false, 0, now(), now())").param(UUID.randomUUID()).param(A_STORE)
+                    .update())
+                    .isInstanceOf(DataIntegrityViolationException.class)
+                    .satisfies(error -> assertThat(AppRoleSession.sqlState(error)).isEqualTo("23505"))
+                    .hasMessageContaining("fiscal_series_code_uk");
+        }
+    }
+
     @Test
     void theModuleIsTenantProtected() {
         RowLevelSecurityCoverageTest.assertModuleTenantProtected("fiscal");

@@ -186,6 +186,23 @@ class PromotionHttpTest {
         mvc.perform(get(path).with(inStore(store, Permission.PROMOTION_VIEW))).andExpect(status().isNotFound());
     }
 
+    /** FE-F35: a promotion code is unique whatever its case, and keeps the case it was entered with. */
+    @Test
+    void aCaseVariantOfAPromotionCodeIsTakenAndTheEnteredCaseIsKept() throws Exception {
+        UUID store = fixtures.storeWithoutCatalog();
+        String code = code("p").toLowerCase();
+        JsonNode promotion = json(expect(fixtures.create(store, """
+                {"code": "%s", "name": "Ten", "kind": "PERCENT_OFF", "percent": 10, "priority": 0}"""
+                .formatted(code)), 201));
+
+        fixtures.create(store, """
+                {"code": "%s", "name": "Again", "kind": "PERCENT_OFF", "percent": 5, "priority": 0}"""
+                .formatted(code.toUpperCase())).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PROMOTION_CODE_TAKEN"));
+        assertThat(jdbc.sql("SELECT code FROM promotions.promotion WHERE id = ?").param(id(promotion))
+                .query(String.class).single()).isEqualTo(code);
+    }
+
     private JsonNode percentOff(UUID store) throws Exception {
         return json(expect(fixtures.create(store, """
                 {"code": "%s", "name": "Ten", "kind": "PERCENT_OFF", "percent": 10, "priority": 0}"""

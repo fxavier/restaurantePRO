@@ -16,7 +16,7 @@ public interface FiscalSeriesRepository extends JpaRepository<FiscalSeries, UUID
 
     Page<FiscalSeries> findByStoreId(UUID storeId, Pageable pageable);
 
-    boolean existsByStoreIdAndDocumentTypeAndCode(UUID storeId, DocumentType documentType, String code);
+    boolean existsByStoreIdAndDocumentTypeAndCodeIgnoreCase(UUID storeId, DocumentType documentType, String code);
 
     boolean existsByStoreIdAndDocumentTypeAndActiveTrue(UUID storeId, DocumentType documentType);
 

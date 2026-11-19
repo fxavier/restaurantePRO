@@ -149,6 +149,9 @@ class LoyaltyProgramPublishTest {
         loyalty.addReward(draft, reward("COFFEE", 60, "FREE_UNIT", "null", null, null))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("LOYALTY_REWARD_CODE_TAKEN"));
+        loyalty.addReward(draft, reward("coffee", 60, "FREE_UNIT", "null", null, null)) // FE-F35: case ignored
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("LOYALTY_REWARD_CODE_TAKEN"));
         loyalty.addReward(draft, reward("OFF", 60, "AMOUNT_OFF_UNIT", "null", null, null))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("LOYALTY_PROGRAM_INVALID"));

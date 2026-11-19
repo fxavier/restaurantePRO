@@ -126,6 +126,18 @@ class SeriesHttpTest {
         create(fixtures.newStore(), "A", 1).andExpect(status().isCreated());
     }
 
+    /** FE-F35: a series code is unique in its store whatever its case, and keeps the case it was entered with. */
+    @Test
+    void aCaseVariantOfASeriesCodeIsTakenAndTheEnteredCaseIsKept() throws Exception {
+        UUID store = fixtures.newStore();
+        UUID first = FiscalFixtures.id(create(store, "ft1", 1).andReturn().getResponse().getContentAsString());
+
+        create(store, "FT1", 1).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SERIES_CODE_TAKEN"));
+        assertThat(jdbc.sql("SELECT code FROM fiscal.fiscal_series WHERE id = ?").param(first).query(String.class)
+                .single()).isEqualTo("ft1");
+    }
+
     @Test
     void twoConcurrentCreatesForOneStoreGiveOneSeries() throws Exception {
         UUID store = fixtures.newStore();
