@@ -304,6 +304,39 @@ class IdempotencyServiceTest {
                 .containsExactlyInAnyOrder("recent-completed", "recent-in-progress");
     }
 
+    /**
+     * FE-F33: a record stored before BigDecimal became a JSON string hashed its request with the amount as a number
+     * and stored its response with numbers. A retry with that key (retention is 90 days) still matches and replays.
+     */
+    @Test
+    void aRecordStoredWhenDecimalsWereNumbersStillMatchesItsRetryAndReplays() throws Exception {
+        String oldIdentity = target + "\n{\"amount\":12.50}";
+        String oldHash = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                .digest(oldIdentity.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        jdbc.sql("""
+                        INSERT INTO shared.idempotency_record
+                            (scope, key, request_hash, status, response_status, response_body, created_at, completed_at)
+                        VALUES (:s, :k, :h, 'COMPLETED', 200, CAST(:body AS jsonb), now(), now())
+                        """)
+                .param("s", scope).param("k", key).param("h", oldHash)
+                .param("body", "{\"amount\": 12.50, \"currency\": \"MZN\"}").update();
+        AtomicInteger runs = new AtomicInteger();
+
+        ResponseEntity<com.xavier.backend.shared.Money> replay = idempotency.execute(scope, key, target,
+                new Charge(new java.math.BigDecimal("12.50")), com.xavier.backend.shared.Money.class, () -> {
+                    runs.incrementAndGet();
+                    return ResponseEntity.ok(com.xavier.backend.shared.Money.of("99.00",
+                            java.util.Currency.getInstance("MZN")));
+                });
+
+        assertThat(runs).hasValue(0);
+        assertThat(replay.getBody()).isEqualTo(com.xavier.backend.shared.Money.of("12.50",
+                java.util.Currency.getInstance("MZN")));
+    }
+
+    record Charge(java.math.BigDecimal amount) {
+    }
+
     private void insert(String recordKey, String status, Instant createdAt, Instant completedAt) {
         boolean completed = completedAt != null;
         jdbc.sql("""

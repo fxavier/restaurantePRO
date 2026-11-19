@@ -114,6 +114,22 @@ class OpenApiSnapshotTest {
     }
 
     /**
+     * FE-F33: Jackson writes every BigDecimal as a string holding the plain decimal, so the contract types it as a
+     * string (format decimal) and no property is left as a JSON number the client would parse with lost precision.
+     */
+    @Test
+    void decimalsAreDocumentedAsTheStringsJacksonWrites() throws Exception {
+        JsonNode money = json.readTree(json.writeValueAsString(Money.of("12.50", Currency.getInstance("MZN"))));
+        assertThat(money.get("amount").isString()).as(money.toString()).isTrue();
+        assertThat(money.get("amount").asString()).isEqualTo("12.50");
+
+        JsonNode docs = apiDocs();
+        JsonNode amount = docs.at("/components/schemas/com.xavier.backend.shared.Money/properties/amount");
+        assertThat(amount.toString()).isEqualTo("{\"type\":\"string\",\"format\":\"decimal\"}");
+        assertThat(docs.toString()).doesNotContain("\"type\":\"number\"");
+    }
+
+    /**
      * FE-F18: the POS catalog's {@code catalog} is sent as the stored snapshot tree (its bytes are pinned by
      * PosCatalogHttpTest), but the contract describes it as the {@code CatalogSnapshot} record that wrote it, so the
      * client gets typed items, prices and menus instead of an untyped object.
