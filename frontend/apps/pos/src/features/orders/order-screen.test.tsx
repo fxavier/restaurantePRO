@@ -28,10 +28,10 @@ const added: LineView = {
   id: '6f1c2a9e-0000-4000-8000-000000000899',
   status: 'DRAFT',
   itemId: ITEM.steak.id,
-  quantity: 1,
+  quantity: '1.000',
   version: 0,
   preview: true,
-  gross: { amount: 450, currency: 'MZN' },
+  gross: { amount: '450.00', currency: 'MZN' },
 };
 
 const products = () => screen.getByRole('list', { name: 'Artigos' });
@@ -125,7 +125,7 @@ describe('order screen', () => {
 
   it('the total is the server\'s due, never a sum made here', async () => {
     // A due no sum of the lines gives: the screen shows it as it came.
-    await atOrder([json({ ...ORDER, due: { amount: 999.99, currency: 'MZN' } })]);
+    await atOrder([json({ ...ORDER, due: { amount: '999.99', currency: 'MZN' } })]);
     await ready();
 
     const total = within(panel()).getByRole('group', { name: 'Total' });
@@ -134,7 +134,7 @@ describe('order screen', () => {
   });
 
   it('an empty order says so', async () => {
-    await atOrder([json(withLines(ORDER, [], { batches: [], due: { amount: 0, currency: 'MZN' } }))]);
+    await atOrder([json(withLines(ORDER, [], { batches: [], due: { amount: '0.00', currency: 'MZN' } }))]);
     await ready();
 
     expect(within(panel()).getByText('Sem linhas por enviar.')).toBeInTheDocument();
@@ -192,7 +192,7 @@ describe('order screen', () => {
 
     await waitFor(() => expect(within(drafts()).getAllByRole('listitem')).toHaveLength(3));
     expect(lines).toHaveLength(1);
-    expect(lines[0]!.body).toEqual({ itemId: ITEM.steak.id, quantity: 1, components: [] });
+    expect(lines[0]!.body).toEqual({ itemId: ITEM.steak.id, quantity: '1', components: [] });
     expect(lines[0]!.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
     expect(order.length).toBeGreaterThanOrEqual(2);
   });
@@ -330,7 +330,7 @@ describe('order screen', () => {
     await user.click(add);
 
     await waitFor(() => expect(lines).toHaveLength(1));
-    expect(lines[0]!.body).toEqual({ itemId: ITEM.water.id, variantId: VARIANT.large, quantity: 1, components: [] });
+    expect(lines[0]!.body).toEqual({ itemId: ITEM.water.id, variantId: VARIANT.large, quantity: '1', components: [] });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
@@ -360,7 +360,7 @@ describe('order screen', () => {
     await waitFor(() => expect(lines).toHaveLength(1));
     expect(lines[0]!.body).toEqual({
       itemId: ITEM.menu.id,
-      quantity: 1,
+      quantity: '1',
       components: [
         { groupCode: 'PRATO', itemId: ITEM.chicken.id },
         { groupCode: 'BEBIDA', itemId: ITEM.water.id, variantId: VARIANT.small },
@@ -409,7 +409,7 @@ describe('order screen', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Guardar' }));
 
     await waitFor(() => expect(updates).toHaveLength(1));
-    expect(updates[0]!.body).toEqual({ version: 3, quantity: 1, notes: 'Cheio' });
+    expect(updates[0]!.body).toEqual({ version: 3, quantity: '1.000', notes: 'Cheio' });
     expect(updates[0]!.idempotencyKey).toBeNull();
   });
 
@@ -446,10 +446,10 @@ describe('order screen', () => {
   });
 
   it('changes the quantity of a draft with its version, and shows the server\'s answer', async () => {
-    const updates = updateLineEndpoint(ORDER_ID, LINE.water.id!, json({ ...LINE.water, quantity: 3, version: 2 }));
+    const updates = updateLineEndpoint(ORDER_ID, LINE.water.id!, json({ ...LINE.water, quantity: '3.000', version: 2 }));
     const { user } = await atOrder([
       json(ORDER),
-      json(withLines(ORDER, [{ ...LINE.water, quantity: 3, version: 2, gross: { amount: 180, currency: 'MZN' } }, LINE.coffee, LINE.steak])),
+      json(withLines(ORDER, [{ ...LINE.water, quantity: '3.000', version: 2, gross: { amount: '180.00', currency: 'MZN' } }, LINE.coffee, LINE.steak])),
     ]);
     await ready();
 
@@ -457,17 +457,17 @@ describe('order screen', () => {
 
     await waitFor(() => expect(within(drafts()).getAllByRole('listitem')[0]).toHaveTextContent('3 × Água Pequena'));
     expect(within(drafts()).getAllByRole('listitem')[0]).toHaveTextContent('180,00 MTn');
-    expect(updates[0]!.body).toEqual({ version: 1, quantity: 3, variantId: VARIANT.small, notes: 'Sem gelo' });
+    expect(updates[0]!.body).toEqual({ version: 1, quantity: '3', variantId: VARIANT.small, notes: 'Sem gelo' });
 
     await user.click(within(drafts()).getByRole('button', { name: 'Diminuir Água Pequena' }));
     await waitFor(() => expect(updates).toHaveLength(2));
-    expect(updates[1]!.body).toMatchObject({ version: 2, quantity: 2 });
+    expect(updates[1]!.body).toMatchObject({ version: 2, quantity: '2' });
   });
 
   it('decimal drafts step by exactly one: 1.3 − 1 = 0.3, 2.3 − 1 = 1.3, 0.65 + 1 = 1.65', async () => {
-    const water = { ...LINE.water, quantity: 1.3 };
-    const coffee = { ...LINE.coffee, quantity: 2.3 };
-    const juice = { ...LINE.coffee, id: '6f1c2a9e-0000-4000-8000-000000000809', itemId: ITEM.juice.id, quantity: 0.65 };
+    const water = { ...LINE.water, quantity: '1.300' };
+    const coffee = { ...LINE.coffee, quantity: '2.300' };
+    const juice = { ...LINE.coffee, id: '6f1c2a9e-0000-4000-8000-000000000809', itemId: ITEM.juice.id, quantity: '0.650' };
     const sent: UpdateLineRequest[] = [];
     for (const line of [water, coffee, juice]) {
       updateLineEndpoint(ORDER_ID, line.id!, (body) => {
@@ -487,7 +487,7 @@ describe('order screen', () => {
     await user.click(within(drafts()).getByRole('button', { name: 'Aumentar Sumo de laranja' }));
     await waitFor(() => expect(sent).toHaveLength(3));
 
-    expect(sent.map((body) => body.quantity)).toEqual([0.3, 1.3, 1.65]);
+    expect(sent.map((body) => body.quantity)).toEqual(['0.3', '1.3', '1.65']);
   });
 
   it('a draft of one cannot go below one: it is removed instead', async () => {
@@ -510,7 +510,7 @@ describe('order screen', () => {
 
   it.each(['VERSION_CONFLICT', 'HTTP_409'])('a version conflict (%s) reads the order again and says the line changed', async (code) => {
     deleteLineEndpoint(ORDER_ID, LINE.coffee.id!, () => problem(409, code));
-    const changed = withLines(ORDER, [LINE.water, { ...LINE.coffee, quantity: 2, version: 4 }, LINE.steak]);
+    const changed = withLines(ORDER, [LINE.water, { ...LINE.coffee, quantity: '2.000', version: 4 }, LINE.steak]);
     const { user } = await atOrder([json(ORDER), json(changed)]);
     await ready();
 

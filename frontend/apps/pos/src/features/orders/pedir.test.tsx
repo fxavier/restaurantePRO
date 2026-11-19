@@ -100,7 +100,7 @@ describe('"Pedir"', () => {
       orderVersion: 4,
       catalogVersion: 7,
       lineIds: [LINE.water.id, LINE.coffee.id],
-      expectedGross: 170,
+      expectedGross: '170.00',
     });
   });
 
@@ -118,7 +118,7 @@ describe('"Pedir"', () => {
 
   it('expectedGross is the order\'s draftGross exactly as the server wrote it, never a sum made here', async () => {
     // A draftGross no sum of the lines (120,00 + 50,00) gives, written with its scale as the wire does.
-    const server = serverOrder({ ...ORDER, draftGross: { amount: '0.30' as unknown as number, currency: 'MZN' } });
+    const server = serverOrder({ ...ORDER, draftGross: { amount: '1234567890123456.70', currency: 'MZN' } });
     const batches = batchEndpoint(ORDER_ID, server.sends());
     const { user } = await atOrder([server.read]);
     await ready();
@@ -126,7 +126,20 @@ describe('"Pedir"', () => {
     await user.click(pedir());
 
     await waitFor(() => expect(batches).toHaveLength(1));
-    expect(batches[0]!.raw).toContain('"expectedGross":0.30}');
+    expect(batches[0]!.raw).toContain('"expectedGross":"1234567890123456.70"');
+  });
+
+  it('a draftGross replayed as a JSON number (stored before decimals became strings) is still echoed', async () => {
+    const replayed = { amount: 0.3, currency: 'MZN' } as unknown as OrderView['draftGross'];
+    const server = serverOrder({ ...ORDER, draftGross: replayed });
+    const batches = batchEndpoint(ORDER_ID, server.sends());
+    const { user } = await atOrder([server.read]);
+    await ready();
+
+    await user.click(pedir());
+
+    await waitFor(() => expect(batches).toHaveLength(1));
+    expect(batches[0]!.body).toMatchObject({ expectedGross: '0.3' });
   });
 
   it('sends no expectedGross when the order carries no draftGross (a draft without a price)', async () => {
@@ -274,10 +287,10 @@ describe('"Pedir"', () => {
   });
 
   it('a version conflict is definitive: it reads the order again, shows it, and the next "Pedir" sends the current version', async () => {
-    const extra: LineView = { ...LINE.coffee, id: id(804), quantity: 2, version: 0 };
+    const extra: LineView = { ...LINE.coffee, id: id(804), quantity: '2.000', version: 0 };
     const changed = withLines(ORDER, [LINE.water, LINE.coffee, extra, LINE.steak], {
       version: 5,
-      draftGross: { amount: 270, currency: 'MZN' },
+      draftGross: { amount: '270.00', currency: 'MZN' },
     });
     const server = serverOrder();
     const batches = batchEndpoint(
@@ -340,8 +353,8 @@ describe('"Pedir"', () => {
   });
 
   it('PRICES_CHANGED reads the order again and shows each new price beside the one shown before', async () => {
-    const repriced = withLines(ORDER, [{ ...LINE.water, gross: { amount: 150, currency: 'MZN' } }, LINE.coffee, LINE.steak], {
-      draftGross: { amount: 200, currency: 'MZN' },
+    const repriced = withLines(ORDER, [{ ...LINE.water, gross: { amount: '150.00', currency: 'MZN' } }, LINE.coffee, LINE.steak], {
+      draftGross: { amount: '200.00', currency: 'MZN' },
     });
     const server = serverOrder();
     const batches = batchEndpoint(
@@ -371,14 +384,14 @@ describe('"Pedir"', () => {
 
     await waitFor(() => expect(batches).toHaveLength(2));
     expect(batches[1]!.idempotencyKey).not.toBe(batches[0]!.idempotencyKey);
-    expect(batches[0]!.body).toMatchObject({ expectedGross: 170 });
-    expect(batches[1]!.body).toMatchObject({ expectedGross: 200 });
+    expect(batches[0]!.body).toMatchObject({ expectedGross: '170.00' });
+    expect(batches[1]!.body).toMatchObject({ expectedGross: '200.00' });
   });
 
   it('CATALOG_CHANGED reads the catalog and the order again, then the waiter confirms again', async () => {
-    const republished = withLines(ORDER, [LINE.water, { ...LINE.coffee, gross: { amount: 55, currency: 'MZN' } }, LINE.steak], {
+    const republished = withLines(ORDER, [LINE.water, { ...LINE.coffee, gross: { amount: '55.00', currency: 'MZN' } }, LINE.steak], {
       catalogVersion: 8,
-      draftGross: { amount: 175, currency: 'MZN' },
+      draftGross: { amount: '175.00', currency: 'MZN' },
     });
     const server = serverOrder();
     const batches = batchEndpoint(

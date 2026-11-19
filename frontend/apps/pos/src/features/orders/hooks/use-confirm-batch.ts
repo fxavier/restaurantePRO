@@ -3,12 +3,11 @@ import type { MoneyValue } from '@restaurantpro/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { useServices } from '../../../lib/services';
 import { isUnknownOutcome, useIntent } from '../../../lib/use-intent';
-import { batchJson, type ConfirmBatch } from '../expected-gross';
 import { orderKey } from './use-order';
 
 type Schemas = components['schemas'];
 type BatchView = Schemas['com.xavier.backend.orders.model.dto.BatchView'];
-type ConfirmBatchBody = Schemas['com.xavier.backend.orders.model.dto.ConfirmBatchRequest'];
+type ConfirmBatch = Schemas['com.xavier.backend.orders.model.dto.ConfirmBatchRequest'];
 
 /** What the screen showed when "Pedir" was pressed: each draft's gross, to show what a price conflict changed. */
 export type Shown = { gross: ReadonlyMap<string, MoneyValue | undefined> };
@@ -43,9 +42,7 @@ export function useConfirmBatch(
       (
         await api.POST('/api/v1/pos/orders/{id}/batches', {
           params: { path: { id: orderId }, header: { 'Idempotency-Key': key } },
-          // The contract's type; batchJson writes expectedGross as the exact decimal it is.
-          body: body as ConfirmBatchBody,
-          bodySerializer: () => batchJson(body),
+          body,
         })
       ).data,
     {

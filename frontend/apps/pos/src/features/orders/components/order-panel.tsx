@@ -8,7 +8,7 @@ import { type Order, type OrderLine, quantityLabel, stepQuantity } from '../orde
 
 export type DraftCommands = {
   disabled: boolean;
-  onQuantity: (line: OrderLine, quantity: number) => void;
+  onQuantity: (line: OrderLine, quantity: string) => void;
   onRemove: (line: OrderLine) => void;
   onNote: (line: OrderLine) => void;
 };

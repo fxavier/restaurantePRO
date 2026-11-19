@@ -11,6 +11,7 @@ import {
 import { type FormEvent, useState } from 'react';
 import { type CatalogItem, itemLabel, type MenuGroup, type MenuOption, type PosCatalog } from '../../catalog/catalog';
 import type { AddLineRequest } from '../hooks/use-order-commands';
+import { quantityLabel } from '../order';
 import { NoteField } from './note-field';
 
 export type Choices = Pick<AddLineRequest, 'variantId' | 'notes' | 'components'>;
@@ -27,7 +28,7 @@ type Props = {
 /** What a choice sheet shows of an option: "Bica", "Água Pequena", "2 × Bica". */
 function optionLabel(catalog: PosCatalog, option: MenuOption): string {
   const name = itemLabel(catalog, option.itemId, option.variantId) ?? 'Artigo';
-  return Number(option.quantity) === 1 ? name : `${option.quantity} × ${name}`;
+  return Number(option.quantity) === 1 ? name : `${quantityLabel(option.quantity)} × ${name}`;
 }
 
 const groupTitle = ({ name, minChoices, maxChoices }: MenuGroup) =>

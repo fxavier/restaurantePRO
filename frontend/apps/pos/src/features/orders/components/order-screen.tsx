@@ -71,7 +71,7 @@ export function OrderScreen({ order, blocked, back }: Props) {
   function addLine(item: CatalogItem, choices: Choices = {}) {
     forgetLastSend();
     const label = itemLabel(catalog.data!, item.id, choices.variantId) ?? item.name;
-    add.start({ itemId: item.id, quantity: 1, components: [], ...choices }, { label });
+    add.start({ itemId: item.id, quantity: '1', components: [], ...choices }, { label });
   }
 
   function pick(item: CatalogItem, variantId?: string) {
@@ -102,8 +102,9 @@ export function OrderScreen({ order, blocked, back }: Props) {
         catalogVersion: order.catalogVersion,
         promotionVersion: order.promotionVersion,
         lineIds: order.drafts.map((line) => line.id),
-        // D104: the server's draftGross echoed as given, so a round that would now cost anything else is refused
-        // with PRICES_CHANGED (a draft changed on another terminal, a promotion window closed).
+        // D104: the server's draftGross echoed as given (its decimal string, verbatim), so a round that would now cost
+        // anything else is refused with PRICES_CHANGED (a draft changed on another terminal, a promotion window
+        // closed). String() only matters for a number replayed from before decimals became strings (FE-F33).
         expectedGross: order.draftGross && String(order.draftGross.amount),
       },
       { gross: new Map(order.drafts.map((line) => [line.id, line.gross])) },
@@ -112,7 +113,7 @@ export function OrderScreen({ order, blocked, back }: Props) {
 
   const draftCommands = {
     disabled: !canCommand || update.isPending || remove.isPending || send.pending,
-    onQuantity: (line: OrderLine, quantity: number) => {
+    onQuantity: (line: OrderLine, quantity: string) => {
       forgetLastSend();
       update.mutate({
         lineId: line.id,
