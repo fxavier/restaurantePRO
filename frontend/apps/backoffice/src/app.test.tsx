@@ -324,12 +324,15 @@ describe('BackOffice access shell', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Sem ligação' })).toBeInTheDocument();
   });
 
-  it('signs out from the user menu with the CSRF header, then goes to the login', async () => {
+  it("signs out from the user menu with the CSRF header, then goes to Keycloak's end-session page (FE-F10)", async () => {
+    const logoutUrl = 'https://idp.example/realms/restaurantpro/protocol/openid-connect/logout?client_id=backoffice-bff';
     let csrf: string | null = null;
+    let accept: string | null = null;
     server.use(...signedIn());
     server.use(http.post(api('/bff/logout'), ({ request }) => {
         csrf = request.headers.get('X-XSRF-TOKEN');
-        return new HttpResponse(null, { status: 302, headers: { Location: 'https://idp.example/logout' } });
+        accept = request.headers.get('Accept');
+        return HttpResponse.json({ logoutUrl });
       }),
     );
     const { user, leave } = renderApp();
@@ -337,8 +340,10 @@ describe('BackOffice access shell', () => {
     await user.click(await screen.findByRole('button', { name: 'Menu do utilizador: Ana Admin' }));
     await user.click(await screen.findByRole('menuitem', { name: 'Terminar sessão' }));
 
-    await waitFor(() => expect(leave).toHaveBeenCalledWith(LOGIN));
+    await waitFor(() => expect(leave).toHaveBeenCalledWith(logoutUrl));
+    expect(leave).toHaveBeenCalledTimes(1);
     expect(csrf).toBe(CSRF_TOKEN);
+    expect(accept).toBe('application/json');
   });
 
   it('opens the terminals area for the selected store', async () => {
@@ -444,8 +449,9 @@ describe('Company guard (FE-F16): a tab only ever shows and acts in the session 
   const newArea = { code: 'S1', name: 'Sala', storeId: '11111111-0000-4000-8000-000000000001' };
   const matola = store('33333333-0000-4000-8000-000000000003', 'Loja Matola');
   const xai = store('55555555-0000-4000-8000-000000000005', 'Loja Xai-Xai');
-  const ana = { userId: admin.userId, name: 'Ana Admin', memberOf: [companyA, companyB] };
-  const bruno = { userId: '0b6c1b0e-0000-4000-8000-000000000002', name: 'Bruno', memberOf: [companyC] };
+  const ana = { subject: 'kc-ana', userId: admin.userId, name: 'Ana Admin', memberOf: [companyA, companyB] };
+  const bruno = { subject: 'kc-bruno', userId: '0b6c1b0e-0000-4000-8000-000000000002', name: 'Bruno', memberOf: [companyC] };
+  const carla = { subject: 'kc-carla', userId: '0b6c1b0e-0000-4000-8000-000000000003', name: 'Carla', memberOf: [companyA] };
   const storesOf = (company: TenantChoice) =>
     company === companyA ? [baixa, sommerschield] : company === companyB ? [matola] : [xai];
 
@@ -465,17 +471,27 @@ describe('Company guard (FE-F16): a tab only ever shows and acts in the session 
    * The BFF as bff/README describes it: one session (the user who last logged in) shared by every tab, with or without a
    * selected company. With a selection, a write must expect it and every answer names it. Without one, the expected
    * tenant is relayed as the tenant and the backend refuses it to a non-member (D177); without either, the backend
-   * resolves the user's only membership and the answer names nothing. `acted` records what the backend did, and where.
+   * resolves the user's only membership and the answer names nothing. A write naming another user than the session's
+   * is refused (FE-F22), and every answer names the session's user. `acted` records what the backend did, and where.
    */
   function fakeBff({ refuseWrites = false } = {}) {
     const bff = {
       user: ana,
       selected: companyA as TenantChoice | undefined,
       acted: [] as { method: string; path: string; in: string | undefined }[],
+      choices: [] as (string | null)[],
     };
-    const relay = (request: Request, answer: (company: TenantChoice) => unknown, status = 200) => {
+    const relay = (request: Request, answer: (company: TenantChoice) => unknown, status = 200, namesTenant = true) => {
       const expected = request.headers.get('X-Expected-Tenant');
       const unsafe = request.method !== 'GET';
+      const expectedUser = request.headers.get('X-Expected-User');
+      if (unsafe && expectedUser !== null && expectedUser !== bff.user.subject) return problem(409, 'SESSION_CHANGED');
+      const stampUser = (answer: Response) => {
+        answer.headers.set('X-Relayed-User', bff.user.subject);
+        return answer;
+      };
+      // The backend resolves no tenant for the caller's own list of memberships (FE-F23).
+      if (!namesTenant) return stampUser(HttpResponse.json(answer(undefined as never) as object, { status }));
       let company: TenantChoice | undefined;
       let stamp = true;
       if (bff.selected) {
@@ -486,24 +502,35 @@ describe('Company guard (FE-F16): a tab only ever shows and acts in the session 
         if (!company) {
           const refusal = problem(403, 'TENANT_FORBIDDEN');
           refusal.headers.set('X-Relayed-Tenant', expected);
-          return refusal;
+          return stampUser(refusal);
         }
       } else {
-        if (bff.user.memberOf.length !== 1) return problem(400, 'TENANT_SELECTION_REQUIRED');
+        if (bff.user.memberOf.length !== 1) return stampUser(problem(400, 'TENANT_SELECTION_REQUIRED'));
         company = bff.user.memberOf[0];
         stamp = false;
       }
       bff.acted.push({ method: request.method, path: new URL(request.url).pathname, in: company?.legalName });
-      const headers: Record<string, string> = stamp && company?.tenantId ? { 'X-Relayed-Tenant': company.tenantId } : {};
+      const headers: Record<string, string> = { 'X-Relayed-User': bff.user.subject };
+      if (stamp && company?.tenantId) headers['X-Relayed-Tenant'] = company.tenantId;
       return HttpResponse.json(answer(company!) as object, { status, headers });
     };
     server.use(
       http.get(api('/api/v1/auth/session'), ({ request }) =>
         relay(request, (company) => sessionIn(company, { userId: bff.user.userId, name: bff.user.name })),
       ),
-      http.get(api('/api/v1/auth/tenants'), ({ request }) => relay(request, () => bff.user.memberOf)),
+      // FE-F23: the list of memberships is resolved in no tenant, so its answer names none.
+      http.get(api('/api/v1/auth/tenants'), ({ request }) => relay(request, () => bff.user.memberOf, 200, false)),
       http.get(api('/api/v1/backoffice/stores'), ({ request }) => relay(request, (company) => storePage(storesOf(company)))),
       http.post(api(AREAS), ({ request }) => relay(request, () => ({}), 201)),
+      // The BFF's own route: the switch itself, not relayed; a tab loaded for another user cannot make it (FE-F22).
+      http.put(api('/bff/tenant'), async ({ request }) => {
+        bff.choices.push(request.headers.get('X-Expected-User'));
+        const expectedUser = request.headers.get('X-Expected-User');
+        if (expectedUser !== null && expectedUser !== bff.user.subject) return problem(409, 'SESSION_CHANGED');
+        const { tenantId } = (await request.json()) as { tenantId: string };
+        bff.selected = bff.user.memberOf.find((c) => c.tenantId === tenantId);
+        return new HttpResponse(null, { status: 204 });
+      }),
     );
     return bff;
   }
@@ -565,10 +592,95 @@ describe('Company guard (FE-F16): a tab only ever shows and acts in the session 
     await act(() => app.queryClient.invalidateQueries());
     const refused = await act(() => write(app));
 
-    expect(refused).toMatchObject({ code: 'TENANT_CHANGED' });
+    expect(refused).toMatchObject({ code: 'SESSION_CHANGED' }); // the BFF refuses the write for the user first (FE-F22)
     expect(bff.acted.filter((a) => a.in === 'Restaurante C, Lda')).toEqual([]);
     await waitFor(() => expect(app.leave).toHaveBeenCalledWith('/'));
     expect(screen.queryByRole('option', { name: 'Loja Xai-Xai' })).not.toBeInTheDocument();
+  });
+
+  it('after another user of the same company logs in from another tab, this tab writes nothing as them (FE-F22)', async () => {
+    const bff = fakeBff();
+    const app = renderApp(`/?storeId=${baixa.id}`);
+    await screen.findByRole('option', { name: 'Loja Baixa', selected: true });
+
+    bff.user = carla; // a new BFF session: Carla, a member of the same company A only, no selection
+    bff.selected = undefined;
+    const refused = await act(() => write(app));
+
+    expect(refused).toMatchObject({ status: 409, code: 'SESSION_CHANGED' });
+    expect(writesIn(bff)).toEqual([]);
+    await waitFor(() => expect(app.leave).toHaveBeenCalledWith('/'));
+    expect(sessionStorage.getItem('restaurantpro.backoffice.tenantChanged')).toBe('true');
+  });
+
+  it("names this tab's user on a company switch, and refuses it once another user logged in (FE-F22)", async () => {
+    const bff = fakeBff();
+    const { user, leave } = renderApp(`/?storeId=${baixa.id}`);
+    await screen.findByRole('option', { name: 'Loja Baixa', selected: true });
+
+    bff.user = { ...carla, memberOf: [companyA, companyB] };
+    await user.click(await screen.findByRole('button', { name: /^Empresa: Restaurante A, Lda/ }));
+    await user.click(await screen.findByRole('menuitemradio', { name: 'Restaurante B, Lda' }));
+
+    await waitFor(() => expect(leave).toHaveBeenCalledWith('/'));
+    expect(bff.choices).toEqual(['kc-ana']);
+    expect(bff.selected).toBe(companyA);
+    expect(sessionStorage.getItem('restaurantpro.backoffice.tenantChanged')).toBe('true');
+  });
+
+  it('pins the user before a company is chosen, so the choice is refused once another user logged in (FE-F22)', async () => {
+    const bff = fakeBff();
+    bff.selected = undefined; // Ana, two memberships, no selection yet
+    const { user, leave } = renderApp();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Escolha a empresa' })).toBeInTheDocument();
+
+    bff.user = { ...carla, memberOf: [companyA, companyB] };
+    await user.click(screen.getByRole('button', { name: /Restaurante B, Lda/ }));
+
+    await waitFor(() => expect(leave).toHaveBeenCalledWith('/'));
+    expect(bff.choices).toEqual(['kc-ana']);
+    expect(bff.selected).toBeUndefined();
+    expect(sessionStorage.getItem('restaurantpro.backoffice.tenantChanged')).toBe('true');
+  });
+
+  it('reloads when the first answers of a page load name two users (another login between them, FE-F22)', async () => {
+    fakeBff();
+    server.use(http.get(api('/api/v1/auth/tenants'), () =>
+      HttpResponse.json([companyC], { headers: { 'X-Relayed-User': 'kc-bruno' } }),
+    ));
+    const app = renderApp();
+
+    await waitFor(() => expect(app.leave).toHaveBeenCalledWith('/'));
+    expect(screen.queryByText('Restaurante C, Lda')).not.toBeInTheDocument();
+    expect(app.tenantPin.user()).toBeDefined();
+  });
+
+  it("reloads instead of showing a read relayed for another user of the same company (FE-F22)", async () => {
+    const bff = fakeBff();
+    const app = renderApp(`/?storeId=${baixa.id}`);
+    await screen.findByRole('option', { name: 'Loja Baixa', selected: true });
+
+    bff.user = carla;
+    bff.selected = undefined;
+    await act(() => app.queryClient.invalidateQueries({ queryKey: ['auth', 'tenants'] }));
+
+    await waitFor(() => expect(app.leave).toHaveBeenCalledWith('/'));
+  });
+
+  it('shows the company switcher from a list of companies that names no relayed company (FE-F23)', async () => {
+    let tenantsNamed: string | null = 'unread';
+    fakeBff();
+    server.events.on('response:mocked', ({ request, response }) => {
+      if (new URL(request.url).pathname === '/api/v1/auth/tenants') tenantsNamed = response.headers.get('X-Relayed-Tenant');
+    });
+    const app = renderApp(`/?storeId=${baixa.id}`);
+
+    expect(await screen.findByRole('button', { name: /^Empresa: Restaurante A, Lda/ })).toBeInTheDocument();
+    await act(() => app.queryClient.invalidateQueries({ queryKey: ['auth', 'tenants'] }));
+    server.events.removeAllListeners();
+
+    expect(tenantsNamed).toBeNull();
+    expect(app.leave).not.toHaveBeenCalled();
   });
 
   it('reloads the page on 409 TENANT_CHANGED, and the reloaded page says which company is now active', async () => {

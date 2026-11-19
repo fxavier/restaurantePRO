@@ -25,6 +25,35 @@ class BffTenantSelectionTest extends BffTestSupport {
         assertThat(BACKEND.received()).hasSize(2).allSatisfy(r -> assertThat(r.header("X-Tenant-Id")).isEqualTo(TENANT_A));
     }
 
+    /** Another user logging in from another tab starts with no selection: they never inherit U1's company choice. */
+    @Test
+    void anotherUsersLoginOnTheSameSessionClearsTheSelection() throws Exception {
+        MockHttpSession browser = login();
+        select(browser, TENANT_A);
+        AUTHORIZATION_SERVER.logInAs("user-2");
+        login(browser);
+
+        mvc.perform(get("/api/v1/backoffice/stores").session(browser)).andExpect(status().isOk());
+        select(browser, TENANT_B);
+        mvc.perform(get("/api/v1/backoffice/stores").session(browser)).andExpect(status().isOk());
+
+        assertThat(BACKEND.received()).hasSize(2);
+        assertThat(BACKEND.received().get(0).headers()).doesNotContainKey("x-tenant-id");
+        assertThat(BACKEND.received().get(1).header("X-Tenant-Id")).isEqualTo(TENANT_B);
+    }
+
+    /** A step-up is a new login of the same user: the selection stays, so the resumed command acts in it. */
+    @Test
+    void theSameUsersNewLoginKeepsTheSelection() throws Exception {
+        MockHttpSession browser = login();
+        select(browser, TENANT_A);
+        login(browser);
+
+        mvc.perform(get("/api/v1/backoffice/stores").session(browser)).andExpect(status().isOk());
+
+        assertThat(BACKEND.onlyRequest().header("X-Tenant-Id")).isEqualTo(TENANT_A);
+    }
+
     @Test
     void withoutASelectionNoTenantHeaderIsSent() throws Exception {
         MockHttpSession session = login();

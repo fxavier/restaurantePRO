@@ -177,6 +177,18 @@ class BffExpectedTenantTest extends BffTestSupport {
                 .andExpect(status().isOk()).andExpect(header().string(RELAYED_TENANT, TENANT_B));
     }
 
+    /** FE-F23: the backend resolves no tenant for the caller's own list of memberships, so its answer names none. */
+    @Test
+    void theListOfTenantsNamesNoRelayedTenant() throws Exception {
+        MockHttpSession withSelection = loginWithSelection(TENANT_B);
+        mvc.perform(get("/api/v1/auth/tenants").session(withSelection).header(EXPECTED_TENANT, TENANT_B))
+                .andExpect(status().isOk()).andExpect(header().doesNotExist(RELAYED_TENANT));
+
+        MockHttpSession withoutSelection = login();
+        mvc.perform(get("/api/v1/auth/tenants").session(withoutSelection).header(EXPECTED_TENANT, TENANT_A))
+                .andExpect(status().isOk()).andExpect(header().doesNotExist(RELAYED_TENANT));
+    }
+
     @Test
     void withoutASelectionNoRelayedTenantIsNamed() throws Exception {
         MockHttpSession session = login();
