@@ -309,7 +309,7 @@ describe('registering a terminal', () => {
     const { user } = renderApp(TERMINALS);
     await fillAndSubmit(user);
 
-    expect(await screen.findByRole('cell', { name: 'Caixa 2' }, { timeout: 3_000 })).toBeInTheDocument();
+    expect(await screen.findByRole('cell', { name: 'Caixa 2' })).toBeInTheDocument();
     expect(requests).toHaveLength(2);
     expect(requests[0]?.idempotencyKey).toEqual(A_KEY);
     expect(requests[1]).toEqual(requests[0]);
@@ -322,7 +322,7 @@ describe('registering a terminal', () => {
     const { user } = renderApp(TERMINALS);
     const dialog = await fillAndSubmit(user);
 
-    await user.click(await within(dialog).findByRole('button', { name: 'Tentar novamente' }, { timeout: 5_000 }));
+    await user.click(await within(dialog).findByRole('button', { name: 'Tentar novamente' }));
 
     expect(await screen.findByRole('cell', { name: 'Caixa 2' })).toBeInTheDocument();
     expect(requests).toHaveLength(5);
