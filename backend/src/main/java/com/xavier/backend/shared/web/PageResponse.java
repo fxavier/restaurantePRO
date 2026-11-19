@@ -1,6 +1,7 @@
 package com.xavier.backend.shared.web;
 
 import java.util.List;
+import org.jspecify.annotations.NullMarked;
 import org.springframework.data.domain.Page;
 
 /**
@@ -8,6 +9,7 @@ import org.springframework.data.domain.Page;
  * Spring Data {@code Pageable} ({@code ?page=&size=&sort=}); size is capped at {@link #MAX_PAGE_SIZE}
  * by {@code spring.data.web.pageable.max-page-size}.
  */
+@NullMarked
 public record PageResponse<T>(List<T> content, int page, int size, long totalElements) {
 
     public static final int MAX_PAGE_SIZE = 200;

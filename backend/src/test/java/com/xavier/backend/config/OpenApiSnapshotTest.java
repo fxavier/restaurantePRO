@@ -130,6 +130,82 @@ class OpenApiSnapshotTest {
     }
 
     /**
+     * FE-F28: a {@code @NullMarked} response record lists every component as required (Jackson always writes it) and
+     * lets only its {@code @Nullable} components be null: {@code type} gains {@code "null"}, a reference or an enum
+     * becomes {@code oneOf} it and {@code null}. A component an old stored document may lack is not required. Request
+     * records keep their Bean Validation {@code required}.
+     */
+    @Test
+    void nullMarkedRecordsDocumentRequiredAndNullableComponents() throws Exception {
+        JsonNode schemas = apiDocs().get("components").get("schemas");
+        String organization = "com.xavier.backend.organization.model.dto.";
+
+        JsonNode enrolment = schemas.get(organization + "DeviceEnrolmentResponse");
+        assertThat(texts(enrolment.get("required"))).containsExactlyInAnyOrder("id", "storeId", "clientId");
+        assertThat(enrolment.get("properties").toString()).doesNotContain("null");
+
+        JsonNode table = schemas.get("com.xavier.backend.dining.model.dto.TableMap.Table");
+        assertThat(texts(table.get("required"))).hasSize(12);
+        assertThat(table.at("/properties/openedAt"))
+                .isEqualTo(tree("{\"format\":\"date-time\",\"type\":[\"string\",\"null\"]}"));
+        assertThat(table.at("/properties/seats/type").asString()).isEqualTo("integer");
+
+        JsonNode order = schemas.get("com.xavier.backend.orders.model.dto.OrderView");
+        String money = "{\"$ref\":\"#/components/schemas/com.xavier.backend.shared.Money\"}";
+        assertThat(order.at("/properties/draftGross"))
+                .isEqualTo(tree("{\"oneOf\":[" + money + ",{\"type\":\"null\"}]}"));
+        assertThat(order.at("/properties/due")).isEqualTo(tree(money));
+        assertThat(order.at("/properties/mode/type").asString()).isEqualTo("string");
+
+        JsonNode line = schemas.get("com.xavier.backend.orders.model.dto.LineView");
+        assertThat(line.at("/properties/kind/oneOf/1")).isEqualTo(tree("{\"type\":\"null\"}"));
+
+        JsonNode catalog = schemas.get("com.xavier.backend.catalog.model.dto.CatalogSnapshot");
+        assertThat(texts(catalog.get("required"))).contains("schemaVersion", "items")
+                .as("a version-1 document lacks them").doesNotContain("quickPages", "macros", "automaticItems");
+
+        assertThat(texts(schemas.get(organization + "TerminalCreateRequest").get("required")))
+                .as("a request keeps its Bean Validation required").containsExactlyInAnyOrder("code", "name", "storeId");
+    }
+
+    /**
+     * FE-F28: JSON Schema's {@code minimum} does not apply to a string, so the Bean Validation bounds of a decimal
+     * string are documented as {@code x-minimum}, {@code x-exclusiveMinimum}, {@code x-maximum} and
+     * {@code x-exclusiveMaximum}, each the exact decimal bound as a string.
+     */
+    @Test
+    void decimalBoundsAreDocumentedOnTheDecimalStrings() throws Exception {
+        JsonNode schemas = apiDocs().get("components").get("schemas");
+
+        assertThat(schemas.at("/com.xavier.backend.cash.model.dto.AdjustmentRequest/properties/amount"))
+                .isEqualTo(tree("{\"format\":\"decimal\",\"type\":\"string\",\"x-exclusiveMinimum\":\"0\"}"));
+        assertThat(schemas.at("/com.xavier.backend.orders.model.dto.ConfirmBatchRequest/properties/expectedGross"))
+                .isEqualTo(tree("{\"format\":\"decimal\",\"type\":\"string\",\"x-minimum\":\"0\"}"));
+        assertThat(schemas.at("/com.xavier.backend.orders.model.dto.DiscountRequest/properties/percent"))
+                .isEqualTo(tree("{\"format\":\"decimal\",\"type\":\"string\",\"x-exclusiveMinimum\":\"0\","
+                        + "\"x-maximum\":\"100\"}"));
+        List<String> numericBoundsOnStrings = new ArrayList<>();
+        schemas.forEach(schema -> schema.path("properties").forEach(property -> {
+            if (property.path("type").toString().contains("\"string\"")
+                    && (property.has("minimum") || property.has("exclusiveMinimum") || property.has("maximum"))) {
+                numericBoundsOnStrings.add(property.toString());
+            }
+        }));
+        assertThat(numericBoundsOnStrings).isEmpty();
+    }
+
+    private JsonNode tree(String json) {
+        return this.json.readTree(json);
+    }
+
+    private static List<String> texts(JsonNode array) {
+        assertThat(array).as("required").isNotNull();
+        List<String> texts = new ArrayList<>();
+        array.forEach(node -> texts.add(node.asString()));
+        return texts;
+    }
+
+    /**
      * FE-F18: the POS catalog's {@code catalog} is sent as the stored snapshot tree (its bytes are pinned by
      * PosCatalogHttpTest), but the contract describes it as the {@code CatalogSnapshot} record that wrote it, so the
      * client gets typed items, prices and menus instead of an untyped object.

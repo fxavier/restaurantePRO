@@ -3,6 +3,7 @@ package com.xavier.backend.catalog.model.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.UUID;
+import org.jspecify.annotations.NullMarked;
 import tools.jackson.databind.JsonNode;
 
 /**
@@ -10,6 +11,7 @@ import tools.jackson.databind.JsonNode;
  * so its bytes are what was published (a version-1 document stays version 1); the contract documents it as the
  * {@link CatalogSnapshot} record that wrote it (FE-F18).
  */
+@NullMarked
 public record PosCatalogResponse(UUID releaseId, UUID storeId, long version, Instant effectiveAt,
                                  @Schema(implementation = CatalogSnapshot.class) JsonNode catalog) {
 }

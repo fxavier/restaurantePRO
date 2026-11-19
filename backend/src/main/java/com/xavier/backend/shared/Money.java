@@ -9,6 +9,7 @@ import java.util.Currency;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.IntStream;
+import org.jspecify.annotations.NullMarked;
 
 /**
  * An amount of money in one currency (D15, spec §8.4).
@@ -18,6 +19,7 @@ import java.util.stream.IntStream;
  * {@link #divide} (HALF_UP, line level, D59). Splitting uses {@code allocate}, whose parts always sum to the total.
  * Combining two currencies is rejected (single currency per installation, P2).
  */
+@NullMarked
 public record Money(BigDecimal amount, Currency currency) {
 
     public static final RoundingMode ROUNDING = RoundingMode.HALF_UP;

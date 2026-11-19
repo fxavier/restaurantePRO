@@ -2,11 +2,13 @@ package com.xavier.backend.organization.model.dto;
 
 import com.xavier.backend.organization.model.TerminalStatus;
 import java.util.UUID;
+import org.jspecify.annotations.NullMarked;
 
 /**
  * A store device without any secret. {@code status} is {@code REGISTERED} (not enrolled yet), {@code ACTIVE}
  * (enrolled) or {@code REVOKED}; {@code kind} is {@code POS} (a terminal) or {@code PRINT_BRIDGE} (D187).
  */
+@NullMarked
 public record TerminalSummary(UUID id, UUID storeId, String code, String name, String status, String kind) {
 
     /**

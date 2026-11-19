@@ -2,6 +2,7 @@ package com.xavier.backend.catalog.model.dto;
 
 import com.xavier.backend.catalog.exception.InvalidCatalogEntryException;
 import com.xavier.backend.shared.Money;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Comparator;
@@ -10,6 +11,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The frozen catalog of one store, stored as jsonb when a release is published (D31). It never changes after
@@ -31,12 +34,17 @@ import java.util.UUID;
  * @param automaticItems  the ACTIVE automatic items of this store and of every store (v2, D109)
  *
  * <p>Schema version 2 (R4) added item kinds and menu groups (D108) and the three lists above. A version-1 document
- * reads with every item {@code STANDARD}, no menu groups and empty lists.
+ * reads with every item {@code STANDARD}, no menu groups and empty lists. The POS receives the stored document as it
+ * is, so the contract does not require what a version-1 document lacks ({@code requiredMode = NOT_REQUIRED}, FE-F28).
  */
+@NullMarked
 public record CatalogSnapshot(int schemaVersion, UUID storeId, UUID releaseId, long version, Instant effectiveAt,
                               String currency, List<Family> families, List<Unit> units,
-                              List<TaxCategory> taxCategories, List<Item> items, List<QuickPage> quickPages,
-                              List<Macro> macros, List<AutomaticItem> automaticItems) {
+                              List<TaxCategory> taxCategories, List<Item> items,
+                              @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED) List<QuickPage> quickPages,
+                              @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED) List<Macro> macros,
+                              @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+                              List<AutomaticItem> automaticItems) {
 
     public static final int SCHEMA_VERSION = 2;
 
@@ -55,7 +63,7 @@ public record CatalogSnapshot(int schemaVersion, UUID storeId, UUID releaseId, l
     }
 
     /** {@code parentId} is set for a subfamily. */
-    public record Family(UUID id, String code, String name, UUID parentId) {
+    public record Family(UUID id, String code, String name, @Nullable UUID parentId) {
     }
 
     public record Unit(UUID id, String code, String name) {
@@ -98,8 +106,10 @@ public record CatalogSnapshot(int schemaVersion, UUID storeId, UUID releaseId, l
      * @param menuGroups            the component groups of a MENU, ordered by position; empty otherwise (v2)
      */
     public record Item(UUID id, String code, String name, UUID familyId, UUID unitId, UUID taxCategoryId,
-                       String productionDestination, boolean soldByWeight, Price price,
-                       List<Variant> variants, List<Barcode> barcodes, ItemKind kind, List<MenuGroup> menuGroups) {
+                       @Nullable String productionDestination, boolean soldByWeight, Price price,
+                       List<Variant> variants, List<Barcode> barcodes,
+                       @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED) ItemKind kind,
+                       @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED) List<MenuGroup> menuGroups) {
 
         public Item {
             kind = kind == null ? ItemKind.STANDARD : kind;
@@ -108,7 +118,7 @@ public record CatalogSnapshot(int schemaVersion, UUID storeId, UUID releaseId, l
 
         /** A STANDARD item without menu groups (the shape of schema version 1). */
         public Item(UUID id, String code, String name, UUID familyId, UUID unitId, UUID taxCategoryId,
-                    String productionDestination, boolean soldByWeight, Price price, List<Variant> variants,
+                    @Nullable String productionDestination, boolean soldByWeight, Price price, List<Variant> variants,
                     List<Barcode> barcodes) {
             this(id, code, name, familyId, unitId, taxCategoryId, productionDestination, soldByWeight, price, variants,
                     barcodes, ItemKind.STANDARD, List.of());
@@ -121,7 +131,7 @@ public record CatalogSnapshot(int schemaVersion, UUID storeId, UUID releaseId, l
          * @param variantId {@code null} for the item itself
          * @throws InvalidCatalogEntryException (422) when {@code variantId} is not a variant of this item
          */
-        public Money priceOf(UUID variantId) {
+        public Money priceOf(@Nullable UUID variantId) {
             if (variantId == null) {
                 return price.toMoney();
             }
@@ -140,7 +150,7 @@ public record CatalogSnapshot(int schemaVersion, UUID storeId, UUID releaseId, l
     }
 
     /** {@code variantId} is {@code null} for the item itself; {@code quantity} of it per menu sold. */
-    public record MenuOption(UUID itemId, UUID variantId, BigDecimal quantity) {
+    public record MenuOption(UUID itemId, @Nullable UUID variantId, BigDecimal quantity) {
     }
 
     /**
@@ -152,14 +162,14 @@ public record CatalogSnapshot(int schemaVersion, UUID storeId, UUID releaseId, l
     }
 
     /** Exactly one of the three ids is set. */
-    public record QuickPageEntry(UUID itemId, UUID variantId, UUID macroId) {
+    public record QuickPageEntry(@Nullable UUID itemId, @Nullable UUID variantId, @Nullable UUID macroId) {
     }
 
     /** A named list of lines added together as drafts (D109); entries in order. */
     public record Macro(UUID id, String code, String name, List<MacroEntry> entries) {
     }
 
-    public record MacroEntry(UUID itemId, UUID variantId, BigDecimal quantity) {
+    public record MacroEntry(UUID itemId, @Nullable UUID variantId, BigDecimal quantity) {
     }
 
     /**
@@ -168,16 +178,16 @@ public record CatalogSnapshot(int schemaVersion, UUID storeId, UUID releaseId, l
      * @param trigger  {@code TABLE_OPEN_PER_GUEST} (quantity × guests when a table opens) or {@code ORDER_OPEN}
      * @param mode     for {@code ORDER_OPEN}: the order mode it applies to, {@code null} = every mode
      */
-    public record AutomaticItem(UUID id, String trigger, String mode, UUID itemId, UUID variantId,
-                                BigDecimal quantity) {
+    public record AutomaticItem(UUID id, String trigger, @Nullable String mode, UUID itemId,
+                                @Nullable UUID variantId, BigDecimal quantity) {
     }
 
     /** {@code price} is {@code null} when the variant has no own price: it sells at the item price. */
-    public record Variant(UUID id, String code, String name, Price price) {
+    public record Variant(UUID id, String code, String name, @Nullable Price price) {
     }
 
     /** {@code variantId} is {@code null} when the barcode identifies the item itself. */
-    public record Barcode(String code, UUID variantId) {
+    public record Barcode(String code, @Nullable UUID variantId) {
     }
 
     public record Price(String amount, String currency) {
