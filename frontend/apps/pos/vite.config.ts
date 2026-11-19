@@ -25,6 +25,7 @@ export default defineConfig({
   preview: { port: 4173, strictPort: true },
   test: {
     environment: 'jsdom',
+    testTimeout: 60_000, // FE-F30: see src/test-setup.ts
     setupFiles: ['./src/test-setup.ts'],
     env: { TZ: TEST_TIME_ZONE },
   },

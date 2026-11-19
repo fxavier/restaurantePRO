@@ -36,6 +36,15 @@ function relayedIn(company: TenantChoice, body: unknown, status = 200) {
 
 const LOGIN = '/oauth2/authorization/keycloak';
 
+/**
+ * A store of the store picker, searched inside the picker only (FE-F30): a role query over the whole shell recomputes
+ * the accessibility tree on every poll, which a loaded machine made slower than the wait.
+ */
+async function storeOption(name: string, options: { selected?: boolean } = {}) {
+  const picker = await screen.findByRole('combobox', { name: 'Loja' });
+  return within(picker).findByRole('option', { name, ...options });
+}
+
 function setVisibility(state: DocumentVisibilityState) {
   Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
 }
@@ -210,7 +219,7 @@ describe('BackOffice access shell', () => {
     server.use(...signedIn());
 
     const first = renderApp('/');
-    await screen.findByRole('option', { name: 'Loja Sommerschield' });
+    await storeOption('Loja Sommerschield');
     await first.user.selectOptions(screen.getByRole('combobox', { name: 'Loja' }), 'Loja Sommerschield');
 
     expect(first.currentUrl()).toBe(`/?storeId=${sommerschield.id}`);
@@ -224,7 +233,7 @@ describe('BackOffice access shell', () => {
     first.unmount();
     renderApp(reloadUrl);
 
-    expect(await screen.findByRole('option', { name: 'Loja Sommerschield', selected: true })).toBeInTheDocument();
+    expect(await storeOption('Loja Sommerschield', { selected: true })).toBeInTheDocument();
   });
 
   it('selects the only store on its own', async () => {
@@ -424,7 +433,7 @@ describe('BackOffice access shell', () => {
 
     const { currentUrl } = renderApp('/organization/terminals?storeId=not-a-store-of-this-company');
 
-    await screen.findByRole('option', { name: 'Loja Baixa' });
+    await storeOption('Loja Baixa');
     await waitFor(() => expect(currentUrl()).toBe('/organization/terminals'));
     expect(screen.getByRole('option', { name: 'Escolher loja', selected: true })).toBeInTheDocument();
   });
@@ -508,7 +517,7 @@ describe('Company guard (FE-F16): a tab only ever shows and acts in the session 
       seen.push(request.headers.get('X-Expected-Tenant'));
     });
     const app = renderApp();
-    await screen.findByRole('option', { name: 'Loja Baixa' });
+    await storeOption('Loja Baixa');
 
     await act(() => write(app));
     server.events.removeAllListeners();
@@ -521,7 +530,7 @@ describe('Company guard (FE-F16): a tab only ever shows and acts in the session 
   it('never shows an answer from another company: it reloads the page instead', async () => {
     const bff = fakeBff();
     const app = renderApp(`/?storeId=${baixa.id}`);
-    await screen.findByRole('option', { name: 'Loja Baixa', selected: true });
+    await storeOption('Loja Baixa', { selected: true });
 
     bff.selected = companyB;
     await act(() => app.queryClient.invalidateQueries());
@@ -549,7 +558,7 @@ describe('Company guard (FE-F16): a tab only ever shows and acts in the session 
   it('after another user logs in from another tab, neither a read nor a write of this tab acts in their company', async () => {
     const bff = fakeBff();
     const app = renderApp(`/?storeId=${baixa.id}`);
-    await screen.findByRole('option', { name: 'Loja Baixa', selected: true });
+    await storeOption('Loja Baixa', { selected: true });
 
     bff.user = bruno; // a new BFF session: Bruno, one membership, no selection
     bff.selected = undefined;
@@ -565,7 +574,7 @@ describe('Company guard (FE-F16): a tab only ever shows and acts in the session 
   it('reloads the page on 409 TENANT_CHANGED, and the reloaded page says which company is now active', async () => {
     const bff = fakeBff({ refuseWrites: true });
     const app = renderApp();
-    await screen.findByRole('option', { name: 'Loja Baixa' });
+    await storeOption('Loja Baixa');
 
     const failure = await act(() => write(app));
 
@@ -588,14 +597,14 @@ describe('Company guard (FE-F16): a tab only ever shows and acts in the session 
 
     reloadPage();
 
-    await screen.findByRole('option', { name: 'Loja Baixa' });
+    await storeOption('Loja Baixa');
     expect(screen.queryByText(/mudou noutro separador/)).not.toBeInTheDocument();
   });
 
   it('A→B→A in other tabs: the page reloads, and no write lands in B while A is shown', async () => {
     const bff = fakeBff();
     const app = renderApp(`/?storeId=${baixa.id}`);
-    await screen.findByRole('option', { name: 'Loja Baixa', selected: true });
+    await storeOption('Loja Baixa', { selected: true });
 
     bff.selected = companyB; // another tab switches to B ...
     await act(() => app.queryClient.invalidateQueries());
