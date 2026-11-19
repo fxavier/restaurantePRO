@@ -31,7 +31,7 @@ Recorded during the frontend R1 build (tickets 01–12, 2026-11-18). Each row is
 | FE-F27 | backend | `OrderView` should carry a server-computed draft total so the POS echoes it as `expectedGross` instead of summing (FC §12 exception) | Low | 12 review |
 
 | FE-F28 | contract | the OpenAPI contract marks no field nullable or required (springdoc defaults); clients widen nulls by hand | Low | FE-F18 |
-| FE-F29 | backend | uncoded 409s remain in other modules (receipt recorded, cash session open, reprint, sale draft, identity/catalog "taken") — code them before POS payment screens | Medium | FE-F25 review |
+| FE-F29 | backend | ~~uncoded 409s remain in other modules (receipt recorded, cash session open, reprint, sale draft, identity/catalog "taken") — code them before POS payment screens~~ resolved: every 409 is coded; `ConflictException` has no uncoded constructor and refuses a null code (`CodedExceptionTest`); 19 classes got a code (e.g. `CASH_SESSION_ALREADY_OPEN`, `RECEIPT_ALREADY_RECORDED`, `SALE_DRAFT_IN_PROGRESS`, `REPRINT_IN_PROGRESS`, `*_CODE_TAKEN`, `ILLEGAL_*_STATE`), pinned in `CodedErrorContractTest`; POS and BackOffice show them in Portuguese | Medium | FE-F25 review |
 | FE-F30 | test | two app tests (POS pin-login, BackOffice app) failed once each under a fully loaded machine and passed alone — watch for flakiness | Low | FE-F25 review |
 | FE-F31 | CI | Maven Central failed the wrapper's Maven download twice; the drift job now caches `~/.m2/wrapper`, but the e2e Docker image builds still download it (consider buildx GHA cache) | Low | FE-F08, FE-F09 CI |
 
