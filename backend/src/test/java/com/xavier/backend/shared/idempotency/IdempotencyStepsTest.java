@@ -106,7 +106,9 @@ class IdempotencyStepsTest {
             assertThatThrownBy(() -> idempotency.executeSteps(scope, key, target, body, Closed.class, () -> {
                 runs.incrementAndGet();
                 return ResponseEntity.ok(new Closed("must not run", 0));
-            })).isInstanceOf(IdempotentRequestInProgressException.class);
+            })).isInstanceOf(IdempotentRequestInProgressException.class)
+                    .extracting(e -> ((IdempotentRequestInProgressException) e).code())
+                    .isEqualTo("IDEMPOTENCY_IN_PROGRESS");
 
             releaseFirst.countDown();
             assertThat(first.get(10, TimeUnit.SECONDS).getBody()).isEqualTo(new Closed("CLOSED", 4));

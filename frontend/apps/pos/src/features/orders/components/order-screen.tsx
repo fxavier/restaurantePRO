@@ -2,7 +2,7 @@ import { ApiError } from '@restaurantpro/api-client';
 import { Button, Input, Skeleton } from '@restaurantpro/ui';
 import { RotateCcw, Search, X } from 'lucide-react';
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from 'react';
-import { errorMessage, isOffline } from '../../../lib/error-messages';
+import { errorMessage, isOffline, isVersionConflict } from '../../../lib/error-messages';
 import { isInProgress } from '../../../lib/use-intent';
 import { byCode, type CatalogItem, itemLabel, needsChoices, search } from '../../catalog/catalog';
 import { FamilyRail } from '../../catalog/components/family-rail';
@@ -286,9 +286,9 @@ function catalogError(error: Error): string {
   return `Não foi possível carregar os artigos. ${errorMessage(error)}`;
 }
 
-/** A draft's change refused: a stale version (an uncoded 409) means another terminal changed it first. */
+/** A draft's change refused: a stale version means another terminal changed it first. */
 function draftMessage(error: Error): string {
-  if (error instanceof ApiError && error.status === 409 && error.code === 'HTTP_409') {
+  if (isVersionConflict(error)) {
     return 'A linha foi alterada noutro terminal. O pedido foi atualizado; reveja-o e tente de novo.';
   }
   if (!(error instanceof ApiError)) return 'Não foi possível alterar a linha.';

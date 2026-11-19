@@ -53,7 +53,11 @@ function serverOrder(initial: OrderView = ORDER) {
 
 const pedir = () => within(panel()).getByRole('button', { name: 'Pedir' });
 
-/** The backend's uncoded 409: a stale version, or the same key still running. */
+/** The same key still running (FE-F25): wait and resend it. */
+const inProgress = () => problem(409, 'IDEMPOTENCY_IN_PROGRESS');
+/** A stale `orderVersion`: definitive. */
+const versionConflict = () => problem(409, 'VERSION_CONFLICT');
+/** An older server's uncoded 409: either of the two. */
 const uncoded409 = () => problem(409, 'HTTP_409');
 
 describe('"Pedir"', () => {
@@ -197,9 +201,8 @@ describe('"Pedir"', () => {
 
   it('a 409 "in progress" waits and resends the same key, up to three times', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true });
-    // The order stays at the version sent: the 409 is the same key still running, not a stale version.
     const server = serverOrder();
-    const batches = batchEndpoint(ORDER_ID, uncoded409, uncoded409, uncoded409, server.sends());
+    const batches = batchEndpoint(ORDER_ID, inProgress, inProgress, inProgress, server.sends());
     const { user } = await atOrder([server.read], { user: { advanceTimers: vi.advanceTimersByTime } });
     await ready();
 
@@ -216,7 +219,7 @@ describe('"Pedir"', () => {
 
   it('still "in progress" after three resends: the same key waits for "Tentar novamente"', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true });
-    const batches = batchEndpoint(ORDER_ID, uncoded409);
+    const batches = batchEndpoint(ORDER_ID, inProgress);
     const { user } = await atOrder([json(ORDER)], { user: { advanceTimers: vi.advanceTimersByTime } });
     await ready();
 
@@ -231,7 +234,8 @@ describe('"Pedir"', () => {
     expect(within(panel()).getByRole('button', { name: 'Tentar novamente' })).toBeEnabled();
   });
 
-  it('a timeout, then "in progress" with the order moved on: the same key once more replays the round, no conflict', async () => {
+  it('a timeout, then "in progress": the same key waits and is resent, and the completed key replays the round', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true });
     const server = serverOrder();
     const batches = batchEndpoint(
       ORDER_ID,
@@ -239,14 +243,16 @@ describe('"Pedir"', () => {
         server.state.current = SENT; // the first request committed; its answer was lost
         return HttpResponse.error();
       },
-      uncoded409, // the retry meets the first request still finishing
+      inProgress, // the retry meets the first request still finishing
       () => HttpResponse.json(ROUND, { status: 201 }), // the completed key replays the round
     );
-    const { user } = await atOrder([server.read]);
+    const { user } = await atOrder([server.read], { user: { advanceTimers: vi.advanceTimersByTime } });
     await ready();
 
     await user.click(pedir());
     await user.click(await within(panel()).findByRole('button', { name: 'Tentar novamente' }));
+    await waitFor(() => expect(batches).toHaveLength(2));
+    await act(() => vi.advanceTimersByTimeAsync(1_000));
 
     // The round shows as soon as the order is read again (the server has it); the outcome of the intent is the
     // status, so wait for that, not for the list.
@@ -257,7 +263,7 @@ describe('"Pedir"', () => {
     expect(new Set(batches.map((batch) => batch.idempotencyKey)).size).toBe(1);
   });
 
-  it('a version conflict reads the order again, shows it, and the next "Pedir" sends the current version', async () => {
+  it('a version conflict is definitive: it reads the order again, shows it, and the next "Pedir" sends the current version', async () => {
     const extra: LineView = { ...LINE.coffee, id: id(804), quantity: 2, version: 0 };
     const changed = withLines(ORDER, [LINE.water, LINE.coffee, extra, LINE.steak], { version: 5 });
     const server = serverOrder();
@@ -265,9 +271,8 @@ describe('"Pedir"', () => {
       ORDER_ID,
       () => {
         server.state.current = changed; // another terminal added a line first
-        return uncoded409();
+        return versionConflict();
       },
-      uncoded409, // the same stale request, resent with its key
       server.sends(),
     );
     const { user } = await atOrder([server.read]);
@@ -279,15 +284,46 @@ describe('"Pedir"', () => {
       'O pedido foi alterado noutro terminal. Reveja-o e carregue em Pedir de novo.',
     );
     await waitFor(() => expect(within(drafts()).getAllByRole('listitem')).toHaveLength(3));
-    // The same key once more first (it may have committed); the stale request is refused again.
-    expect(batches).toHaveLength(2);
-    expect(batches[1]!.idempotencyKey).toBe(batches[0]!.idempotencyKey);
+    expect(batches).toHaveLength(1); // never resent: the code says the version is stale
 
     await user.click(pedir());
 
-    await waitFor(() => expect(batches).toHaveLength(3));
-    expect(batches[2]!.idempotencyKey).not.toBe(batches[0]!.idempotencyKey);
-    expect(batches[2]!.body).toMatchObject({ orderVersion: 5, lineIds: [LINE.water.id, LINE.coffee.id, extra.id] });
+    await waitFor(() => expect(batches).toHaveLength(2));
+    expect(batches[1]!.idempotencyKey).not.toBe(batches[0]!.idempotencyKey);
+    expect(batches[1]!.body).toMatchObject({ orderVersion: 5, lineIds: [LINE.water.id, LINE.coffee.id, extra.id] });
+  });
+
+  it('an uncoded 409 (an older server) resends the same key once after a second, then is a conflict', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true });
+    const batches = batchEndpoint(ORDER_ID, uncoded409, uncoded409);
+    const { user } = await atOrder([json(ORDER)], { user: { advanceTimers: vi.advanceTimersByTime } });
+    await ready();
+
+    await user.click(pedir());
+    await waitFor(() => expect(batches).toHaveLength(1));
+    await act(() => vi.advanceTimersByTimeAsync(1_000));
+
+    expect(await within(panel()).findByRole('alert')).toHaveTextContent(
+      'O pedido foi alterado noutro terminal. Reveja-o e carregue em Pedir de novo.',
+    );
+    expect(batches).toHaveLength(2);
+    expect(batches[1]!.idempotencyKey).toBe(batches[0]!.idempotencyKey);
+    expect(within(panel()).queryByRole('button', { name: 'Tentar novamente' })).not.toBeInTheDocument();
+  });
+
+  it('an uncoded 409 (an older server) whose resend succeeds shows the round', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true });
+    const server = serverOrder();
+    const batches = batchEndpoint(ORDER_ID, uncoded409, server.sends());
+    const { user } = await atOrder([server.read], { user: { advanceTimers: vi.advanceTimersByTime } });
+    await ready();
+
+    await user.click(pedir());
+    await waitFor(() => expect(batches).toHaveLength(1));
+    await act(() => vi.advanceTimersByTimeAsync(1_000));
+
+    expect(await within(panel()).findByRole('status', { name: 'Envio' })).toHaveTextContent('Ronda 2 enviada.');
+    expect(batches[1]!.idempotencyKey).toBe(batches[0]!.idempotencyKey);
   });
 
   it('PRICES_CHANGED reads the order again and shows each new price beside the one shown before', async () => {

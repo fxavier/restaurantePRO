@@ -129,7 +129,9 @@ class IdempotencyServiceTest {
                 return ResponseEntity.ok("must not run");
             }))
                     .isInstanceOf(IdempotentRequestInProgressException.class)
-                    .isInstanceOf(ConflictException.class);
+                    .isInstanceOf(ConflictException.class)
+                    .extracting(e -> ((ConflictException) e).code())
+                    .isEqualTo("IDEMPOTENCY_IN_PROGRESS");
 
             releaseFirst.countDown();
             assertThat(first.get(10, TimeUnit.SECONDS).getStatusCode()).isEqualTo(HttpStatus.OK);

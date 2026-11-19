@@ -274,7 +274,7 @@ describe('order screen', () => {
 
   it('a 409 "in progress" waits a second and resends the same key', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true });
-    const lines = addLineEndpoint(ORDER_ID, () => problem(409, 'HTTP_409'), created(added));
+    const lines = addLineEndpoint(ORDER_ID, () => problem(409, 'IDEMPOTENCY_IN_PROGRESS'), created(added));
     const { user } = await atOrder([json(ORDER)], { user: { advanceTimers: vi.advanceTimersByTime } });
     await ready();
     await user.click(within(familyRail()).getByRole('button', { name: 'Pratos' }));
@@ -492,8 +492,8 @@ describe('order screen', () => {
     expect(deletes[0]!.body).toEqual({ version: 3 });
   });
 
-  it('a version conflict reads the order again and says the line changed', async () => {
-    deleteLineEndpoint(ORDER_ID, LINE.coffee.id!, () => problem(409, 'HTTP_409'));
+  it.each(['VERSION_CONFLICT', 'HTTP_409'])('a version conflict (%s) reads the order again and says the line changed', async (code) => {
+    deleteLineEndpoint(ORDER_ID, LINE.coffee.id!, () => problem(409, code));
     const changed = withLines(ORDER, [LINE.water, { ...LINE.coffee, quantity: 2, version: 4 }, LINE.steak]);
     const { user } = await atOrder([json(ORDER), json(changed)]);
     await ready();

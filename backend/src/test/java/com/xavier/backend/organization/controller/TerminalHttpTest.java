@@ -185,7 +185,9 @@ class TerminalHttpTest {
     void terminalCodesAreUniqueWithinAStore() throws Exception {
         registerTerminal();
 
-        mvc.perform(registration(store, "POS1", newKey())).andExpect(status().isConflict());
+        mvc.perform(registration(store, "POS1", newKey()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("TERMINAL_CODE_TAKEN"));
     }
 
     @Test

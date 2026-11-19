@@ -129,6 +129,26 @@ class OpenApiSnapshotTest {
                 .isEqualTo("#/components/schemas/" + dto + "CatalogSnapshot.Item");
     }
 
+    /** FE-F25: the generated client types the success branch by its status, so it must be the one sent. */
+    @Test
+    void operationsDocumentTheSuccessStatusTheySend() throws Exception {
+        JsonNode docs = apiDocs();
+
+        for (String created : List.of("/api/v1/pos/orders", "/api/v1/pos/orders/{id}/batches",
+                "/api/v1/pos/orders/{id}/lines", "/api/v1/pos/orders/{id}/lines/macro",
+                "/api/v1/pos/tables/{tableId}/open", "/api/v1/backoffice/terminals")) {
+            assertThat(responses(docs, created, "post")).as("POST " + created).containsExactly("201");
+        }
+        assertThat(responses(docs, "/api/v1/pos/orders/{id}/lines/{lineId}", "delete")).containsExactly("204");
+        assertThat(responses(docs, "/api/v1/auth/pos-logout", "post")).containsExactly("204");
+    }
+
+    private static List<String> responses(JsonNode docs, String path, String method) {
+        JsonNode operation = docs.get("paths").get(path).get(method);
+        assertThat(operation).as(method + " " + path).isNotNull();
+        return new ArrayList<>(operation.get("responses").propertyNames());
+    }
+
     private JsonNode apiDocs() throws Exception {
         return CANONICAL.readTree(mvc.perform(get("/v3/api-docs")).andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString());

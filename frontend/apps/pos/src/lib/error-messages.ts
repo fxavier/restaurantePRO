@@ -1,4 +1,4 @@
-import { type ApiError, isUnavailable } from '@restaurantpro/api-client';
+import { ApiError, isUnavailable } from '@restaurantpro/api-client';
 
 /** Portuguese text for the backend's known codes (FC §9); unknown codes show the answer's title. */
 const MESSAGES: Record<string, string> = {
@@ -19,6 +19,8 @@ const MESSAGES: Record<string, string> = {
   MENU_SELECTION_INVALID: 'As escolhas do menu não são válidas; reveja-as.',
   LINE_NOT_DRAFT: 'A linha já foi enviada e não pode ser alterada aqui.',
   FEE_LINE_LOCKED: 'A taxa de entrega não pode ser alterada.',
+  VERSION_CONFLICT: 'Foi alterado noutro terminal. Reveja e tente de novo.',
+  IDEMPOTENCY_IN_PROGRESS: 'O servidor ainda está a processar este pedido. Tente novamente dentro de instantes.',
 };
 
 export const OFFLINE = 'Sem ligação — nenhuma operação é confirmada';
@@ -28,6 +30,16 @@ export const OFFLINE = 'Sem ligação — nenhuma operação é confirmada';
  */
 export function isOffline(error: ApiError): boolean {
   return isUnavailable(error);
+}
+
+/** An older server's 409 without a code: a stale version or the same key still running, it cannot say which. */
+export function isUncodedConflict(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 409 && error.code === 'HTTP_409';
+}
+
+/** What the client sent is stale: `VERSION_CONFLICT`, or an uncoded 409 that was already resent once. */
+export function isVersionConflict(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 409 && (error.code === 'VERSION_CONFLICT' || isUncodedConflict(error));
 }
 
 export function errorMessage(error: ApiError, { offline = `${OFFLINE}.` }: { offline?: string } = {}): string {

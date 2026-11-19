@@ -76,10 +76,13 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return problem(HttpStatus.CONFLICT, e);
     }
 
+    /** Code {@code VERSION_CONFLICT}: reload and decide again, unlike {@code IDEMPOTENCY_IN_PROGRESS} (FE-F25). */
     @ExceptionHandler(OptimisticLockingFailureException.class)
     ProblemDetail staleVersion(OptimisticLockingFailureException e) {
-        return ProblemDetail.forStatusAndDetail(
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
                 HttpStatus.CONFLICT, "The resource was changed by someone else. Reload it and try again.");
+        problem.setProperty("code", "VERSION_CONFLICT");
+        return problem;
     }
 
     @ExceptionHandler(BusinessRuleException.class)
