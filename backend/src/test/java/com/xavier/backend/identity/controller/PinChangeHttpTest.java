@@ -123,6 +123,23 @@ class PinChangeHttpTest {
                 .andExpect(jsonPath("$.code").value("PIN_UNCHANGED"));
     }
 
+    /**
+     * FE-F14: the POS repeats a challenged 401 with a renewed terminal token, except {@code POS_SESSION_INVALID}. An
+     * employee deactivated (or locked) after the login is refused by the session check before the handler, so the
+     * PIN change's own credentials 401 is unreachable here: its 401 is {@code POS_SESSION_INVALID}, never repeated.
+     */
+    @Test
+    void aPinChangeOfAnEmployeeDeactivatedMeanwhileIsRefusedAsAnInvalidSession() throws Exception {
+        Employee employee = resetEmployee(IdentityFixtures.WAITER);
+        RequestPostProcessor session = fixtures.posLogin(terminal, employee, RESET_PIN);
+        com.xavier.backend.OwnerDatabase.shared().jdbc().sql("UPDATE identity.employee SET active = false WHERE id = ?")
+                .param(employee.id()).update();
+
+        mvc.perform(changePin(session, OWN_PIN))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("POS_SESSION_INVALID"));
+    }
+
     @Test
     void onlyASessionThatMustChangeItsPinUsesTheRoute() throws Exception {
         Employee employee = fixtures.employee(PIN, store, IdentityFixtures.WAITER);

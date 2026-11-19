@@ -11,6 +11,7 @@ import com.xavier.backend.shared.exception.BusinessRuleException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -59,7 +60,9 @@ class DeviceEnrolmentController {
 
     @ExceptionHandler(EnrolmentThrottledException.class)
     ResponseEntity<ProblemDetail> throttled(EnrolmentThrottledException e) {
-        return coded(HttpStatus.TOO_MANY_REQUESTS, e);
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(e.retryAfter().toSeconds()))
+                .body(coded(HttpStatus.TOO_MANY_REQUESTS, e).getBody());
     }
 
     private static ResponseEntity<ProblemDetail> coded(HttpStatus status, BusinessRuleException e) {

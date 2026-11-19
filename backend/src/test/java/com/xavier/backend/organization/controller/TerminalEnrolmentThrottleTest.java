@@ -1,6 +1,7 @@
 package com.xavier.backend.organization.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -165,7 +166,8 @@ class TerminalEnrolmentThrottleTest {
 
         devices.enrol(Devices.POS_ENROLMENT, code, Devices.publicJwk(), address)
                 .andExpect(status().isTooManyRequests())
-                .andExpect(jsonPath("$.code").value("ENROLMENT_THROTTLED"));
+                .andExpect(jsonPath("$.code").value("ENROLMENT_THROTTLED"))
+                .andExpect(header().string("Retry-After", "60")); // FE-F12: the throttle's window, in seconds
         devices.enrol(Devices.POS_ENROLMENT, code, Devices.publicJwk(), Devices.randomAddress())
                 .andExpect(status().isOk());
     }

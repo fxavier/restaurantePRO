@@ -6,9 +6,11 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,7 +32,9 @@ class KeycloakIdentityProviderAdmin implements IdentityProviderAdmin {
     static final String API_AUDIENCE = "restaurantpro-api";
     private static final Set<String> PUBLIC_JWK_MEMBERS = Set.of("kty", "crv", "x", "y", "kid", "use", "alg");
     /** Scheme, host and optional port: no path, no wildcard (a Keycloak "*" or "+" would widen the approval). */
-    private static final Pattern ORIGIN = Pattern.compile("https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?");
+    private static final Pattern ORIGIN = Pattern.compile("(https?)://([a-z0-9.-]+|\\[::1\\])(:[0-9]{1,5})?");
+    /** Plain HTTP only where no network sits between the browser and the POS (local development). */
+    private static final Set<String> LOOPBACK = Set.of("localhost", "127.0.0.1", "[::1]");
     private static final Logger log = LoggerFactory.getLogger(KeycloakIdentityProviderAdmin.class);
 
     private final RealmAdmin tenantRealm;
@@ -39,13 +43,35 @@ class KeycloakIdentityProviderAdmin implements IdentityProviderAdmin {
 
     /** @param posOrigin the POS app's origin ({@code restaurantpro.pos.origin}); blank = terminals cannot be created */
     KeycloakIdentityProviderAdmin(RealmAdmin tenantRealm, RealmAdmin deviceRealm, String posOrigin) {
-        if (posOrigin != null && !posOrigin.isBlank() && !ORIGIN.matcher(posOrigin).matches()) {
-            throw new IllegalArgumentException("restaurantpro.pos.origin is not an origin (scheme://host[:port]): "
-                    + posOrigin);
-        }
         this.tenantRealm = tenantRealm;
         this.deviceRealm = deviceRealm;
-        this.posOrigin = posOrigin == null || posOrigin.isBlank() ? null : posOrigin;
+        this.posOrigin = posOrigin(posOrigin);
+        if (this.posOrigin == null) {
+            log.warn("restaurantpro.pos.origin is not set: terminal enrolment will answer 503 until it is");
+        }
+    }
+
+    /**
+     * Lowercased, because browsers send the origin lowercased and Keycloak compares web origins exactly.
+     *
+     * @return the origin to approve, or null when unset
+     * @throws IllegalArgumentException not an origin, or plain HTTP off the loopback: the startup fails
+     */
+    static String posOrigin(String configured) {
+        if (configured == null || configured.isBlank()) {
+            return null;
+        }
+        String origin = configured.toLowerCase(Locale.ROOT);
+        Matcher parts = ORIGIN.matcher(origin);
+        if (!parts.matches()) {
+            throw new IllegalArgumentException("restaurantpro.pos.origin is not an origin (scheme://host[:port]): "
+                    + configured);
+        }
+        if (parts.group(1).equals("http") && !LOOPBACK.contains(parts.group(2))) {
+            throw new IllegalArgumentException("restaurantpro.pos.origin must use https off the loopback: "
+                    + configured);
+        }
+        return origin;
     }
 
     /** The organization's name and alias are the tenant code (unique); its description is the legal name. */

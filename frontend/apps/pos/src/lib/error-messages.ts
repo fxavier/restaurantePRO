@@ -61,6 +61,6 @@ export function errorMessage(error: ApiError, { offline = `${OFFLINE}.` }: { off
 
 function wait(error: ApiError): string {
   if (error.retryAfter !== undefined) return `${error.retryAfter} s`;
-  // The enrolment throttle's window is one minute (backend EnrolmentThrottle), and it sends no Retry-After.
+  // The enrolment throttle sends Retry-After: 60, its one-minute window (FE-F12); this is only the fallback.
   return error.code === 'ENROLMENT_THROTTLED' ? 'um minuto' : 'alguns instantes';
 }

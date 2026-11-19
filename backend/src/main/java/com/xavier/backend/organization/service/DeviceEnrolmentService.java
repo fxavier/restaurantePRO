@@ -89,7 +89,7 @@ public class DeviceEnrolmentService {
         ExternalCalls.requireNoTransaction();
         if (!throttle.tryAttempt(remoteAddress)) {
             log.warn("Device enrolment throttled for {}", remoteAddress);
-            throw new EnrolmentThrottledException();
+            throw new EnrolmentThrottledException(EnrolmentThrottle.WINDOW);
         }
         DevicePublicKey key = DevicePublicKey.parse(publicJwk);
         EnrolmentCode code = EnrolmentCode.parse(typedCode).orElseThrow(() -> refused(remoteAddress));

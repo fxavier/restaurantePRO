@@ -56,6 +56,10 @@ class KeycloakLoginIT {
     static final JsonMapper JSON = JsonMapper.builder().build();
     static final HttpClient HTTP = HttpClient.newHttpClient();
     static final String REALM = "restaurantpro";
+    static final String OPS_REALM = "restaurantpro-ops";
+    /** The redirect URI each realm's {@code backoffice-bff} registers (deploy/keycloak). */
+    static final Map<String, String> REDIRECT_URIS = Map.of(REALM, "http://localhost:5174/login/oauth2/code/keycloak",
+            OPS_REALM, "https://localhost:8443/login/oauth2/code/keycloak");
     static final String CLIENT_SECRET = "it-only-" + UUID.randomUUID();
     static final String USERNAME = "it-" + UUID.randomUUID().toString().substring(0, 8);
     static final String PASSWORD = "Pw-" + UUID.randomUUID();
@@ -82,14 +86,16 @@ class KeycloakLoginIT {
     @BeforeAll
     static void aUserLogsInAtKeycloak() throws Exception {
         String admin = adminToken();
-        JsonNode client = JSON.readTree(adminCall(admin, "GET", "/clients?clientId=backoffice-bff", null).body())
-                .get(0);
-        Map<String, Object> passwordGrant = JSON.convertValue(client, Map.class);
-        passwordGrant.put("directAccessGrantsEnabled", true);
-        passwordGrant.put("clientAuthenticatorType", "client-secret");
-        passwordGrant.put("secret", CLIENT_SECRET);
-        assertThat(adminCall(admin, "PUT", "/clients/" + client.get("id").asString(), passwordGrant).statusCode())
-                .isEqualTo(204);
+        for (String realm : REDIRECT_URIS.keySet()) {
+            JsonNode client = JSON.readTree(adminCall(admin, realm, "GET", "/clients?clientId=backoffice-bff", null)
+                    .body()).get(0);
+            Map<String, Object> passwordGrant = JSON.convertValue(client, Map.class);
+            passwordGrant.put("directAccessGrantsEnabled", true);
+            passwordGrant.put("clientAuthenticatorType", "client-secret");
+            passwordGrant.put("secret", CLIENT_SECRET);
+            assertThat(adminCall(admin, realm, "PUT", "/clients/" + client.get("id").asString(), passwordGrant)
+                    .statusCode()).isEqualTo(204);
+        }
         assertThat(adminCall(admin, "POST", "/users", Map.of("username", USERNAME, "enabled", true,
                 "email", USERNAME + "@it.example", "emailVerified", true, "firstName", "It", "lastName", "User",
                 "credentials", java.util.List.of(Map.of("type", "password", "value", PASSWORD,
@@ -168,29 +174,55 @@ class KeycloakLoginIT {
      */
     @Test
     void aBrowserLoginWithoutAcrValuesAsksForTheOtpAndGetsAcr2() throws Exception {
+        assertThat(otpBrowserLoginAcr(REALM)).isEqualTo("2");
+    }
+
+    /**
+     * FE-F13: the ops realm's {@code backoffice-bff} has the same default ACR, so a plain sign-in of the platform
+     * operator (no {@code acr_values}) asks for the OTP too and is {@code acr 2}. The ops realm ships no user: the
+     * test creates one through the admin API, as for the tenant realm.
+     */
+    @Test
+    void anOpsBrowserLoginWithoutAcrValuesAsksForTheOtpAndGetsAcr2() throws Exception {
+        assertThat(otpBrowserLoginAcr(OPS_REALM)).isEqualTo("2");
+    }
+
+    /**
+     * FE-F13: an invited user signs in before having an OTP. The OTP step of the flow then sets the user up
+     * (Keycloak's {@code CONFIGURE_TOTP} required action, its QR code and secret), instead of refusing the login.
+     */
+    @Test
+    void aFirstBrowserLoginWithoutAnOtpShowsKeycloaksOtpSetupInBothRealms() throws Exception {
+        for (String realm : REDIRECT_URIS.keySet()) {
+            String username = "it-new-" + UUID.randomUUID().toString().substring(0, 8);
+            String password = "Pw-" + UUID.randomUUID();
+            createUser(realm, username, password, null);
+            Browser browser = new Browser();
+
+            HttpResponse<String> afterPassword = browser.post(formAction(browser.get(authorizationUri(realm,
+                    "unused-" + UUID.randomUUID())).body(), "kc-form-login"),
+                    Map.of("username", username, "password", password));
+            // Keycloak redirects to its required-action page; a refusal would answer the login page with an error
+            HttpResponse<String> setup = browser.get(afterPassword.headers().firstValue("Location")
+                    .orElseThrow(() -> new AssertionError(realm + ": no redirect after the password")));
+
+            assertThat(setup.statusCode()).as(realm).isEqualTo(200);
+            assertThat(setup.body()).as("%s: the OTP setup page", realm)
+                    .contains("execution=CONFIGURE_TOTP").contains("name=\"totpSecret\"")
+                    .doesNotContain("id=\"kc-otp-login-form\"");
+        }
+    }
+
+    /** A password + OTP user signs in through {@code realm}'s browser flow without acr_values: @return its acr. */
+    private static String otpBrowserLoginAcr(String realm) throws Exception {
         String username = "it-mfa-" + UUID.randomUUID().toString().substring(0, 8);
         String password = "Pw-" + UUID.randomUUID();
         String totpSecret = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP";
-        String admin = adminToken();
-        String otp = JSON.writeValueAsString(Map.of("type", "otp", "userLabel", "it",
-                "secretData", JSON.writeValueAsString(Map.of("value", totpSecret)),
-                "credentialData", JSON.writeValueAsString(Map.of("subType", "totp", "digits", 6, "counter", 0,
-                        "period", 30, "algorithm", "HmacSHA1", "secretEncoding", "BASE32"))));
-        assertThat(adminCall(admin, "POST", "/users", Map.of("username", username, "enabled", true,
-                "email", username + "@it.example", "emailVerified", true, "firstName", "It", "lastName", "Mfa",
-                "credentials", java.util.List.of(Map.of("type", "password", "value", password, "temporary", false),
-                        JSON.readValue(otp, Map.class)))).statusCode()).isEqualTo(201);
+        createUser(realm, username, password, totpSecret);
 
         Browser browser = new Browser();
-        String redirectUri = "http://localhost:5174/login/oauth2/code/keycloak";
         String verifier = UUID.randomUUID() + "-" + UUID.randomUUID();
-        String challenge = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(java.security.MessageDigest
-                .getInstance("SHA-256").digest(verifier.getBytes(StandardCharsets.US_ASCII)));
-        String issuer = SharedKeycloak.instance().issuer(REALM);
-        HttpResponse<String> loginPage = browser.get(issuer
-                + "/protocol/openid-connect/auth?client_id=backoffice-bff&response_type=code&scope=openid"
-                + "&state=it&code_challenge_method=S256&code_challenge=" + challenge
-                + "&redirect_uri=" + URLEncoder.encode(redirectUri, StandardCharsets.UTF_8));
+        HttpResponse<String> loginPage = browser.get(authorizationUri(realm, verifier));
         HttpResponse<String> afterPassword = browser.post(formAction(loginPage.body(), "kc-form-login"),
                 Map.of("username", username, "password", password));
 
@@ -202,15 +234,40 @@ class KeycloakLoginIT {
         String code = java.util.regex.Pattern.compile("[?&]code=([^&]+)").matcher(location).results()
                 .findFirst().orElseThrow().group(1);
         HttpResponse<String> exchanged = HTTP.send(HttpRequest.newBuilder(URI.create(
-                        issuer + "/protocol/openid-connect/token"))
+                        SharedKeycloak.instance().issuer(realm) + "/protocol/openid-connect/token"))
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(form(Map.of("grant_type", "authorization_code", "client_id", "backoffice-bff",
-                        "client_secret", CLIENT_SECRET, "code", code, "redirect_uri", redirectUri,
+                        "client_secret", CLIENT_SECRET, "code", code, "redirect_uri", REDIRECT_URIS.get(realm),
                         "code_verifier", verifier))).build(), HttpResponse.BodyHandlers.ofString());
         assertThat(exchanged.statusCode()).as(exchanged.body()).isEqualTo(200);
+        return JWTParser.parse(JSON.readTree(exchanged.body()).get("access_token").asString())
+                .getJWTClaimsSet().getStringClaim("acr");
+    }
 
-        assertThat(JWTParser.parse(JSON.readTree(exchanged.body()).get("access_token").asString())
-                .getJWTClaimsSet().getStringClaim("acr")).isEqualTo("2");
+    /** {@code backoffice-bff}'s authorization request, as the BFF sends it: PKCE S256 and no {@code acr_values}. */
+    private static String authorizationUri(String realm, String verifier) throws Exception {
+        String challenge = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(java.security.MessageDigest
+                .getInstance("SHA-256").digest(verifier.getBytes(StandardCharsets.US_ASCII)));
+        return SharedKeycloak.instance().issuer(realm)
+                + "/protocol/openid-connect/auth?client_id=backoffice-bff&response_type=code&scope=openid"
+                + "&state=it&code_challenge_method=S256&code_challenge=" + challenge
+                + "&redirect_uri=" + URLEncoder.encode(REDIRECT_URIS.get(realm), StandardCharsets.UTF_8);
+    }
+
+    /** A user of {@code realm} with a password and, unless {@code totpSecret} is null, an OTP credential. */
+    private static void createUser(String realm, String username, String password, String totpSecret)
+            throws Exception {
+        java.util.List<Map<String, Object>> credentials = new java.util.ArrayList<>();
+        credentials.add(Map.of("type", "password", "value", password, "temporary", false));
+        if (totpSecret != null) {
+            credentials.add(Map.of("type", "otp", "userLabel", "it",
+                    "secretData", JSON.writeValueAsString(Map.of("value", totpSecret)),
+                    "credentialData", JSON.writeValueAsString(Map.of("subType", "totp", "digits", 6, "counter", 0,
+                            "period", 30, "algorithm", "HmacSHA1", "secretEncoding", "BASE32"))));
+        }
+        assertThat(adminCall(adminToken(), realm, "POST", "/users", Map.of("username", username, "enabled", true,
+                "email", username + "@it.example", "emailVerified", true, "firstName", "It", "lastName", "User",
+                "credentials", credentials)).statusCode()).isEqualTo(201);
     }
 
     /**
@@ -296,8 +353,13 @@ class KeycloakLoginIT {
 
     private static HttpResponse<String> adminCall(String token, String method, String path, Object body)
             throws Exception {
+        return adminCall(token, REALM, method, path, body);
+    }
+
+    private static HttpResponse<String> adminCall(String token, String realm, String method, String path, Object body)
+            throws Exception {
         String base = SharedKeycloak.instance().container().getAuthServerUrl().replaceAll("/$", "");
-        return HTTP.send(HttpRequest.newBuilder(URI.create(base + "/admin/realms/" + REALM + path))
+        return HTTP.send(HttpRequest.newBuilder(URI.create(base + "/admin/realms/" + realm + path))
                 .header("Authorization", "Bearer " + token).header("Content-Type", "application/json")
                 .method(method, body == null ? HttpRequest.BodyPublishers.noBody()
                         : HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(body)))
