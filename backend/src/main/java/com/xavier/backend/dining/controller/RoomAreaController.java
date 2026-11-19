@@ -8,6 +8,7 @@ import com.xavier.backend.shared.web.PageResponse;
 import jakarta.validation.Valid;
 import java.net.URI;
 import java.util.UUID;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
@@ -34,7 +35,7 @@ class RoomAreaController {
     }
 
     @GetMapping
-    PageResponse<RoomAreaSummary> list(@RequestParam UUID storeId, @PageableDefault(sort = "code") Pageable pageable) {
+    PageResponse<RoomAreaSummary> list(@RequestParam UUID storeId, @PageableDefault(sort = "code") @ParameterObject Pageable pageable) {
         return areas.list(storeId, pageable);
     }
 

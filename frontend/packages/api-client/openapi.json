@@ -8448,6 +8448,9 @@
             "format": "uuid",
             "type": "string"
           },
+          "draftGross": {
+            "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
+          },
           "due": {
             "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
           },
@@ -13753,27 +13756,6 @@
         ],
         "type": "object"
       },
-      "org.springdoc.core.converters.models.Pageable": {
-        "properties": {
-          "page": {
-            "format": "int32",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "size": {
-            "format": "int32",
-            "minimum": 1,
-            "type": "integer"
-          },
-          "sort": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
       "org.springframework.web.servlet.mvc.method.annotation.SseEmitter": {
         "properties": {
           "timeout": {
@@ -13984,11 +13966,40 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": [
+                "code,ASC"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -14128,11 +14139,37 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -14159,18 +14196,111 @@
         "parameters": [
           {
             "in": "query",
-            "name": "filter",
-            "required": true,
+            "name": "storeId",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/com.xavier.backend.audit.model.dto.AuditFilter"
+              "format": "uuid",
+              "type": "string"
             }
           },
           {
             "in": "query",
-            "name": "pageable",
+            "name": "from",
             "required": true,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actorId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actorKind",
+            "required": false,
+            "schema": {
+              "pattern": "ACCOUNT|EMPLOYEE|SYSTEM|SUPPORT",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "action",
+            "required": false,
+            "schema": {
+              "maxLength": 100,
+              "minLength": 0,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entityType",
+            "required": false,
+            "schema": {
+              "maxLength": 100,
+              "minLength": 0,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entityId",
+            "required": false,
+            "schema": {
+              "maxLength": 100,
+              "minLength": 0,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Zero-based page index (0..N)",
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -14282,11 +14412,40 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": [
+                "createdAt,ASC"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -14565,11 +14724,40 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": [
+                "code,ASC"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -15076,11 +15264,40 @@
         "operationId": "list_30",
         "parameters": [
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": [
+                "code,ASC"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -15204,11 +15421,40 @@
         "operationId": "list_28",
         "parameters": [
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": [
+                "code,ASC"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -16263,11 +16509,40 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": [
+                "createdAt,DESC"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -16440,11 +16715,40 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": [
+                "excludedAt,DESC"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -16550,11 +16854,40 @@
         "operationId": "list_25",
         "parameters": [
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": [
+                "code,ASC"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -16719,11 +17052,40 @@
         "operationId": "list_24",
         "parameters": [
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": [
+                "code,ASC"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -16983,11 +17345,37 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -17591,11 +17979,37 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -17842,11 +18256,37 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -18193,11 +18633,40 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": [
+                "issuedAt,DESC"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -18263,11 +18732,40 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": [
+                "code,ASC"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -18450,11 +18948,37 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -19199,11 +19723,37 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -19507,11 +20057,37 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -19771,11 +20347,37 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -20079,11 +20681,37 @@
         "operationId": "list_17",
         "parameters": [
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -20784,11 +21412,37 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -20814,11 +21468,37 @@
         "operationId": "list_16",
         "parameters": [
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -21195,11 +21875,37 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -21411,11 +22117,37 @@
         "operationId": "list_14",
         "parameters": [
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -21639,11 +22371,37 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -22725,11 +23483,40 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": [
+                "createdAt,DESC"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -22865,11 +23652,40 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": [
+                "code,ASC"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -23124,11 +23940,40 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": [
+                "createdAt,DESC"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -23193,11 +24038,40 @@
         "operationId": "list_8",
         "parameters": [
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": [
+                "code,ASC"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -23348,11 +24222,40 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": [
+                "createdAt,DESC"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -23758,11 +24661,37 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -23941,11 +24870,37 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -24111,11 +25066,37 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -24753,11 +25734,37 @@
         "operationId": "list_7",
         "parameters": [
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -24912,11 +25919,40 @@
         "operationId": "list_6",
         "parameters": [
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": [
+                "code,ASC"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -25049,11 +26085,37 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -25169,11 +26231,37 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -25238,11 +26326,40 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": [
+                "code,ASC"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -25434,11 +26551,40 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": [
+                "code,ASC"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -25572,11 +26718,37 @@
         "operationId": "list_2",
         "parameters": [
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -26243,11 +27415,40 @@
         "operationId": "listForPos_2",
         "parameters": [
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": [
+                "code,ASC"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -27460,11 +28661,40 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": [
+                "openedAt,ASC"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -29176,11 +30406,40 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": [
+                "createdAt,DESC"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],
@@ -29311,11 +30570,40 @@
             }
           },
           {
+            "description": "Zero-based page index (0..N)",
             "in": "query",
-            "name": "pageable",
-            "required": true,
+            "name": "page",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/org.springdoc.core.converters.models.Pageable"
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": [
+                "createdAt,DESC"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],

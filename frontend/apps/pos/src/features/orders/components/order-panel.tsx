@@ -38,7 +38,7 @@ export function lineName(line: OrderLine, catalog: PosCatalog | undefined): stri
 /**
  * The order panel (DS: right, 360 px; §4, §8.3, PRD 42–44): "Por enviar" (the drafts, which change or go) and
  * "Enviado" (the confirmed lines, per round), then the server's total. Every amount is the server's; a draft's is its
- * provisional price.
+ * provisional price and the drafts' subtotal the server's provisional `draftGross`.
  */
 export function OrderPanel({ order, catalog, commands, message, action, back, shownBefore }: Props) {
   const timeZone = useStoreTimeZone();
@@ -79,6 +79,17 @@ export function OrderPanel({ order, catalog, commands, message, action, back, sh
                 />
               ))}
             </ul>
+          )}
+          {order.draftGross && (
+            <div role="group" aria-label="Subtotal por enviar" className="flex items-baseline justify-between gap-2">
+              <span className="font-semibold">Subtotal por enviar</span>
+              <span className="flex shrink-0 flex-col items-end">
+                <Money value={order.draftGross} className="font-semibold" />
+                <Badge variant="secondary" className="text-xs">
+                  Provisório
+                </Badge>
+              </span>
+            </div>
           )}
         </section>
         <section aria-labelledby="sent-title" className="flex flex-col gap-2">

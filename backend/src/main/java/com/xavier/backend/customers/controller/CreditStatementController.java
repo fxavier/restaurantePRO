@@ -7,6 +7,7 @@ import com.xavier.backend.shared.web.PageResponse;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -31,7 +32,7 @@ class CreditStatementController {
 
     @GetMapping(CustomerController.BACKOFFICE + "/debts")
     PageResponse<DebtRow> debts(@RequestParam(required = false) Instant asOf,
-                                @RequestParam(required = false) BigDecimal minBalance, Pageable pageable) {
+                                @RequestParam(required = false) BigDecimal minBalance, @ParameterObject Pageable pageable) {
         return statements.debts(asOf, minBalance, pageable);
     }
 }

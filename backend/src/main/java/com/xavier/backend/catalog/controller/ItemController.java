@@ -12,6 +12,7 @@ import jakarta.validation.Valid;
 import java.net.URI;
 import java.util.List;
 import java.util.UUID;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
@@ -36,7 +37,7 @@ class ItemController {
     }
 
     @GetMapping
-    PageResponse<ItemSummary> list(@PageableDefault(sort = "code") Pageable pageable) {
+    PageResponse<ItemSummary> list(@PageableDefault(sort = "code") @ParameterObject Pageable pageable) {
         return items.list(pageable);
     }
 

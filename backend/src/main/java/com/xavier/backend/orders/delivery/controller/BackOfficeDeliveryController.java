@@ -14,6 +14,7 @@ import java.net.URI;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -49,7 +50,7 @@ class BackOfficeDeliveryController {
                                        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
                                        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
                                        @RequestParam(required = false) UUID courierId,
-                                       @PageableDefault(size = 50) Pageable pageable) {
+                                       @PageableDefault(size = 50) @ParameterObject Pageable pageable) {
         return queries.history(storeId, from, to, courierId, pageable);
     }
 

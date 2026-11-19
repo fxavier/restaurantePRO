@@ -4,6 +4,7 @@ import com.xavier.backend.shared.events.EventPublicationState;
 import com.xavier.backend.shared.events.EventPublicationView;
 import com.xavier.backend.shared.web.PageResponse;
 import jakarta.validation.Valid;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
@@ -32,7 +33,7 @@ class SystemEventPublicationController {
 
     @GetMapping
     PageResponse<EventPublicationView> list(@RequestParam(defaultValue = "INCOMPLETE") EventPublicationState state,
-                                            @PageableDefault(size = 50) Pageable pageable) {
+                                            @PageableDefault(size = 50) @ParameterObject Pageable pageable) {
         return publications.list(state, pageable);
     }
 

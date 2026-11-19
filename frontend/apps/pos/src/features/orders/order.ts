@@ -42,6 +42,11 @@ export type Order = {
   promotionVersion?: number;
   /** The sum of the confirmed lines (D59), as the server computed it. */
   due?: MoneyValue;
+  /**
+   * The drafts' provisional total as the server computed it (FE-F27), sent back unchanged as `expectedGross`; absent
+   * without drafts or when a draft has no price.
+   */
+  draftGross?: MoneyValue;
   drafts: OrderLine[];
   rounds: Round[];
   /** Confirmed lines outside any round (a transfer's or a split's). */
@@ -73,6 +78,7 @@ export function toOrder(view: OrderView | undefined): Order {
     catalogVersion: view.catalogVersion ?? undefined,
     promotionVersion: view.promotionVersion ?? undefined,
     due: money(view.due),
+    draftGross: money(view.draftGross),
     drafts: lines.filter(({ line }) => line.status === 'DRAFT').map(({ line }) => line),
     rounds,
     unbatched: lines

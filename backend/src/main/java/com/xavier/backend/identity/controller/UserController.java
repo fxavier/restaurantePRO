@@ -7,6 +7,7 @@ import com.xavier.backend.identity.service.UserAccountService;
 import com.xavier.backend.shared.web.PageResponse;
 import jakarta.validation.Valid;
 import java.util.UUID;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,7 +35,7 @@ class UserController {
     }
 
     @GetMapping
-    PageResponse<UserSummary> list(Pageable pageable) {
+    PageResponse<UserSummary> list(@ParameterObject Pageable pageable) {
         return users.list(pageable);
     }
 

@@ -10,6 +10,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.net.URI;
 import java.util.UUID;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
@@ -39,7 +40,7 @@ class ReleaseController {
 
     @GetMapping
     PageResponse<ReleaseSummary> listForStore(@RequestParam UUID storeId,
-            @PageableDefault(sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+            @PageableDefault(sort = "createdAt", direction = Sort.Direction.DESC) @ParameterObject Pageable pageable) {
         return releases.listForStore(storeId, pageable);
     }
 

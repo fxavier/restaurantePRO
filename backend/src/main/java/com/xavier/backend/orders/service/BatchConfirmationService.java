@@ -5,7 +5,6 @@ import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.PosContext;
 import com.xavier.backend.catalog.CatalogApi;
 import com.xavier.backend.catalog.ItemKey;
-import com.xavier.backend.orders.LineAmounts;
 import com.xavier.backend.orders.exception.OrderRuleException;
 import com.xavier.backend.orders.model.LineKind;
 import com.xavier.backend.orders.model.LinePricing;
@@ -14,7 +13,6 @@ import com.xavier.backend.orders.model.OrderLineComponent;
 import com.xavier.backend.orders.model.event.ComponentLine;
 import com.xavier.backend.orders.model.event.LineDiscountsRecorded;
 import com.xavier.backend.orders.repository.OrderLineComponentRepository;
-import com.xavier.backend.shared.Money;
 import com.xavier.backend.shared.tenancy.TenantScopes;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -60,7 +58,7 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>R4 (D101–D104, D108, D109): the promotion release the POS previewed ({@code PROMOTIONS_CHANGED}), no sold-out
  * item ({@code ITEM_SOLD_OUT}), each draft's list price turned into its effective price by promotions at this instant
- * (and the gross the POS showed, {@code PRICES_CHANGED}), a menu's choices checked ({@code MENU_SELECTION_INVALID})
+ * (and the gross the POS showed, the order view's {@code draftGross}, {@code PRICES_CHANGED}), a menu's choices checked ({@code MENU_SELECTION_INVALID})
  * and frozen. A round with a promoted line also publishes {@link LineDiscountsRecorded}.
  */
 @Service
@@ -133,7 +131,7 @@ public class BatchConfirmationService {
                     .map(component -> new MenuSelection.Choice(component.getGroupCode(), component.getItemId(),
                             component.getVariantId())).toList())));
         }
-        requireExpectedGross(request.expectedGross(), priced);
+        requireExpectedGross(request.expectedGross(), drafts, pricing);
 
         int batchNo = order.confirmBatch();
         orders.saveAndFlush(order); // the version check: a concurrent round on this order loses here (409)
@@ -200,24 +198,22 @@ public class BatchConfirmationService {
     }
 
     /** D104: the gross the POS showed must still be the gross now (a time window may have passed). */
-    private static void requireExpectedGross(BigDecimal expected, Map<OrderLine, Confirmed> priced) {
+    private static void requireExpectedGross(BigDecimal expected, List<OrderLine> drafts, LinePricer.Priced priced) {
         if (expected == null) {
             return;
         }
-        BigDecimal gross = BigDecimal.ZERO;
+        BigDecimal gross = priced.gross(drafts).orElseThrow().amount();
+        if (gross.compareTo(expected) == 0) {
+            return;
+        }
         List<Map<String, Object>> preview = new ArrayList<>();
-        for (Map.Entry<OrderLine, Confirmed> entry : priced.entrySet()) {
-            LinePricing pricing = entry.getValue().pricing();
-            Money lineGross = LineAmounts.of(pricing.unitPrice(), entry.getKey().getQuantity(),
-                    entry.getValue().snapshot().taxRatePercent()).gross();
-            gross = gross.add(lineGross.amount());
-            preview.add(Map.of("lineId", entry.getKey().getId().toString(),
+        for (OrderLine line : drafts) {
+            LinePricing pricing = priced.of(line.getId()).orElseThrow();
+            preview.add(Map.of("lineId", line.getId().toString(),
                     "listUnitPrice", pricing.listUnitPrice().amount(), "unitPrice", pricing.unitPrice().amount(),
-                    "gross", lineGross.amount()));
+                    "gross", priced.grossOf(line).orElseThrow().amount()));
         }
-        if (gross.compareTo(expected) != 0) {
-            throw OrderConflictException.pricesChanged(expected, gross, preview);
-        }
+        throw OrderConflictException.pricesChanged(expected, gross, preview);
     }
 
     /** Every requested id is a DRAFT of this order, else 409 {@code LINE_NOT_DRAFT}; in creation order. */

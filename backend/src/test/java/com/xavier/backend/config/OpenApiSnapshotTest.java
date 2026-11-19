@@ -143,6 +143,38 @@ class OpenApiSnapshotTest {
         assertThat(responses(docs, "/api/v1/auth/pos-logout", "post")).containsExactly("204");
     }
 
+    /**
+     * FE-F11: Spring binds a Pageable (and the audit filter) from flat query parameters, so the contract must list
+     * {@code page}, {@code size} and {@code sort}, not one {@code pageable} object the client would have to serialise
+     * flat by hand. They carry {@code @ParameterObject}; the global {@code default-flat-param-object} would also
+     * flatten the {@code @AuthenticationPrincipal Jwt} of GET /auth/tenants into query parameters.
+     */
+    @Test
+    void pagedListsDocumentFlatPageAndSizeParameters() throws Exception {
+        JsonNode docs = apiDocs();
+
+        for (String paged : List.of("/api/v1/backoffice/stores", "/api/v1/backoffice/terminals")) {
+            assertThat(queryParameters(docs, paged, "get")).as("GET " + paged)
+                    .contains("page", "size", "sort").doesNotContain("pageable");
+        }
+        assertThat(queryParameters(docs, "/api/v1/backoffice/audit/events", "get"))
+                .contains("page", "size").doesNotContain("pageable", "filter");
+        assertThat(queryParameters(docs, "/api/v1/auth/tenants", "get"))
+                .as("the @AuthenticationPrincipal token is not a parameter").isEmpty();
+    }
+
+    private static List<String> queryParameters(JsonNode docs, String path, String method) {
+        JsonNode operation = docs.get("paths").get(path).get(method);
+        assertThat(operation).as(method + " " + path).isNotNull();
+        List<String> names = new ArrayList<>();
+        operation.path("parameters").forEach(p -> {
+            if ("query".equals(p.get("in").asString())) {
+                names.add(p.get("name").asString());
+            }
+        });
+        return names;
+    }
+
     private static List<String> responses(JsonNode docs, String path, String method) {
         JsonNode operation = docs.get("paths").get(path).get(method);
         assertThat(operation).as(method + " " + path).isNotNull();

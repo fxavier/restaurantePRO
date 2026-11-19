@@ -7,6 +7,7 @@ import com.xavier.backend.identity.service.RoleService;
 import com.xavier.backend.shared.web.PageResponse;
 import jakarta.validation.Valid;
 import java.util.UUID;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -35,7 +36,7 @@ class RoleController {
     }
 
     @GetMapping
-    PageResponse<RoleSummary> list(Pageable pageable) {
+    PageResponse<RoleSummary> list(@ParameterObject Pageable pageable) {
         return roles.list(pageable);
     }
 

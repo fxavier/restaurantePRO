@@ -107,6 +107,22 @@ describe('order screen', () => {
     expect(steak).not.toHaveTextContent('Preço provisório');
   });
 
+  it('"Por enviar" ends with the server\'s draft total, marked provisional and never a sum made here', async () => {
+    await atOrder([json({ ...ORDER, draftGross: { amount: 777.77, currency: 'MZN' } })]);
+    await ready();
+
+    const subtotal = within(panel()).getByRole('group', { name: 'Subtotal por enviar' });
+    expect(subtotal).toHaveTextContent('777,77 MTn');
+    expect(subtotal).toHaveTextContent('Provisório');
+  });
+
+  it('shows no draft total without drafts', async () => {
+    await atOrder([json(withLines(ORDER, [LINE.steak], { catalogVersion: undefined, draftGross: undefined }))]);
+    await ready();
+
+    expect(within(panel()).queryByRole('group', { name: 'Subtotal por enviar' })).not.toBeInTheDocument();
+  });
+
   it('the total is the server\'s due, never a sum made here', async () => {
     // A due no sum of the lines gives: the screen shows it as it came.
     await atOrder([json({ ...ORDER, due: { amount: 999.99, currency: 'MZN' } })]);

@@ -15,6 +15,7 @@ import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -48,7 +49,7 @@ class GoodsReceiptController {
     }
 
     @GetMapping(PATH)
-    PageResponse<ReceiptView> list(@RequestParam UUID storeId, Pageable pageable) {
+    PageResponse<ReceiptView> list(@RequestParam UUID storeId, @ParameterObject Pageable pageable) {
         return receipts.list(storeId, pageable);
     }
 

@@ -33,8 +33,13 @@ public record LineAmounts(Money gross, Money net, Money tax) {
         if (ratePercent.signum() < 0) {
             throw new IllegalArgumentException("A tax rate cannot be negative: " + ratePercent);
         }
-        Money gross = unitPrice.times(netQty);
+        Money gross = grossOf(unitPrice, netQty);
         Money net = gross.divide(BigDecimal.ONE.add(ratePercent.movePointLeft(2)));
         return new LineAmounts(gross, net, gross.minus(net));
+    }
+
+    /** The line's gross alone, the same {@code unitPrice.times(netQty)} (a draft's, before any tax rate is fixed). */
+    public static Money grossOf(Money unitPrice, BigDecimal netQty) {
+        return unitPrice.times(netQty);
     }
 }
