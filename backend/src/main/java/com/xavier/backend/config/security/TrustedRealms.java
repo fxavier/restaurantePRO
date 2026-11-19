@@ -1,8 +1,15 @@
 package com.xavier.backend.config.security;
 
+import com.nimbusds.jose.KeySourceException;
+import com.nimbusds.jose.jwk.JWK;
+import com.nimbusds.jose.jwk.JWKSelector;
+import com.nimbusds.jose.jwk.source.JWKSetSource;
 import com.nimbusds.jose.jwk.source.JWKSource;
+import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
+import com.nimbusds.jose.jwk.source.RateLimitReachedException;
 import com.nimbusds.jose.proc.SecurityContext;
 import java.util.EnumMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
@@ -43,6 +50,43 @@ public final class TrustedRealms {
                             Function<String, JWKSource<SecurityContext>> keys) {
         if (uri != null && !uri.isBlank()) {
             issuers.put(realm, new Issuer(uri, keys.apply(uri)));
+        }
+    }
+
+    /**
+     * An issuer's key set from {@code source} (Keycloak's {@code certs} endpoint in production): fetched lazily,
+     * cached 5 min, refetched on an unknown {@code kid} at most twice per 30 s (Nimbus defaults), no retry. A refetch
+     * refused by that rate limit while the key set is healthy finds no key (the token is 401), never 503: random
+     * {@code kid}s neither storm Keycloak nor fake an outage (FE-F34). While fetches fail, it stays 503.
+     */
+    static JWKSource<SecurityContext> keySet(JWKSetSource<SecurityContext> source) {
+        return new RateLimitedRefetchFindsNoKey(JWKSourceBuilder.create(source).retrying(false).build());
+    }
+
+    private static final class RateLimitedRefetchFindsNoKey implements JWKSource<SecurityContext> {
+
+        private final JWKSource<SecurityContext> keys;
+        private volatile boolean healthy;
+
+        RateLimitedRefetchFindsNoKey(JWKSource<SecurityContext> keys) {
+            this.keys = keys;
+        }
+
+        @Override
+        public List<JWK> get(JWKSelector selector, SecurityContext context) throws KeySourceException {
+            try {
+                List<JWK> found = keys.get(selector, context);
+                healthy = true;
+                return found;
+            } catch (RateLimitReachedException e) {
+                if (healthy) {
+                    return List.of();
+                }
+                throw e;
+            } catch (KeySourceException e) {
+                healthy = false;
+                throw e;
+            }
         }
     }
 

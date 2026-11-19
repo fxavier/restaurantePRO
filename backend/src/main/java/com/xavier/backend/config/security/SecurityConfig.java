@@ -1,6 +1,8 @@
 package com.xavier.backend.config.security;
 
 import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
+import com.nimbusds.jose.jwk.source.URLBasedJWKSetSource;
+import com.nimbusds.jose.util.DefaultResourceRetriever;
 import com.xavier.backend.access.Permission;
 import jakarta.servlet.DispatcherType;
 import java.net.MalformedURLException;
@@ -51,8 +53,10 @@ class SecurityConfig {
         return TrustedRealms.of(properties.issuers().tenant(), properties.issuers().ops(),
                 properties.issuers().devices(), issuer -> {
             try {
-                return JWKSourceBuilder.create(URI.create(issuer + "/protocol/openid-connect/certs").toURL())
-                        .retrying(false).build();
+                return TrustedRealms.keySet(new URLBasedJWKSetSource<>(
+                        URI.create(issuer + "/protocol/openid-connect/certs").toURL(), new DefaultResourceRetriever(
+                        JWKSourceBuilder.DEFAULT_HTTP_CONNECT_TIMEOUT, JWKSourceBuilder.DEFAULT_HTTP_READ_TIMEOUT,
+                        JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT)));
             } catch (MalformedURLException e) {
                 throw new IllegalStateException("Not an issuer URL: " + issuer, e);
             }

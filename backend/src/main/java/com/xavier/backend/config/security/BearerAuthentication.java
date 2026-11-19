@@ -1,5 +1,6 @@
 package com.xavier.backend.config.security;
 
+import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.JWTParser;
 import jakarta.servlet.http.HttpServletRequest;
 import java.text.ParseException;
@@ -37,6 +38,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
  * {@code nbf} and {@code iat} (required) not in the future, all with the configured clock skew; the claim {@code typ = Bearer}
  * (Keycloak: an ID or a refresh token is never an access token); {@code azp} allowed for the route family. The token
  * picks its decoder by its unverified {@code iss}, among the family's trusted realms only; then everything is verified.
+ * A token whose unverified {@code typ} is not {@code Bearer} is refused before that, without fetching any key.
  *
  * <p>Claims grant nothing: the authentication carries no authority. A key set that cannot be fetched (and no key
  * cached) surfaces as {@link AuthenticationServiceException}, which the chain answers 503 {@code IDP_UNAVAILABLE}.
@@ -72,7 +74,12 @@ final class BearerAuthentication {
                 throw new AuthenticationServiceException("No trusted issuer for the " + family + " routes");
             }
             String token = ((BearerTokenAuthenticationToken) authentication).getToken();
-            Optional<AuthenticationManager> manager = unverifiedIssuer(token).flatMap(realms::realmOf)
+            Optional<JWTClaimsSet> claims = unverifiedClaims(token);
+            // refused before any key fetch: an ID or refresh token never needs the IdP to be refused (FE-F34)
+            if (claims.isPresent() && !ACCESS_TOKEN_TYPE.equals(claims.get().getClaim("typ"))) {
+                throw new InvalidBearerTokenException("Not an access token");
+            }
+            Optional<AuthenticationManager> manager = claims.map(JWTClaimsSet::getIssuer).flatMap(realms::realmOf)
                     .map(realm -> managers.get(family).get(realm));
             return manager.orElseThrow(() -> new InvalidBearerTokenException("Untrusted issuer"))
                     .authenticate(authentication);
@@ -84,9 +91,9 @@ final class BearerAuthentication {
         return request -> forFamily(RouteFamily.of(request).orElse(RouteFamily.BACKOFFICE));
     }
 
-    private static Optional<String> unverifiedIssuer(String token) {
+    private static Optional<JWTClaimsSet> unverifiedClaims(String token) {
         try {
-            return Optional.ofNullable(JWTParser.parse(token).getJWTClaimsSet().getIssuer());
+            return Optional.ofNullable(JWTParser.parse(token).getJWTClaimsSet());
         } catch (ParseException e) {
             return Optional.empty();
         }
