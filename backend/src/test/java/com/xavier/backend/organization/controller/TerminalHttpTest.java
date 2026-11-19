@@ -193,6 +193,26 @@ class TerminalHttpTest {
     }
 
     @Test
+    void terminalCodesAreUniqueWithinAStoreWhateverTheirCase() throws Exception {
+        mvc.perform(registration(store, "cx2", newKey())).andExpect(status().isCreated());
+
+        mvc.perform(registration(store, "CX2", newKey()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("TERMINAL_CODE_TAKEN"));
+    }
+
+    @Test
+    void aTerminalCodeIsStoredAndReturnedTrimmedInUppercase() throws Exception {
+        String id = JSON.readTree(mvc.perform(registration(store, " cx2 ", newKey()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.code").value("CX2"))
+                .andReturn().getResponse().getContentAsString()).get("id").asString();
+
+        assertThat(jdbc.sql("SELECT code FROM organization.terminal WHERE id = :id").param("id", UUID.fromString(id))
+                .query(String.class).single()).isEqualTo("CX2");
+    }
+
+    @Test
     void aRegistrationRetriedWithItsKeyReplaysTheSameTerminalAndRegistersNoSecondOne() throws Exception {
         String key = newKey();
         var firstResponse = mvc.perform(registration(store, "POS1", key)).andExpect(status().isCreated())
