@@ -139,6 +139,16 @@ final class ArchitectureRules {
             .because("extend shared BusinessRuleException/ConflictException/NotFoundException with a code (S7b)");
 
     /**
+     * Every 409 carries a stable {@code code} (FE-F29): it is thrown as a {@code ConflictException} subclass, which
+     * cannot be built without one, and only {@code GlobalExceptionHandler} answers 409. A {@code ResponseStatusException}
+     * or {@code ResponseEntity.status(CONFLICT)} anywhere else would bypass that.
+     */
+    static final ArchRule CONFLICT_IS_ANSWERED_ONLY_BY_THE_SHARED_HANDLER = noClasses()
+            .that().resideOutsideOfPackage("..shared.web..")
+            .should().accessField(org.springframework.http.HttpStatus.class, "CONFLICT")
+            .because("every 409 carries a code: throw a ConflictException subclass (FE-F29)");
+
+    /**
      * The D35 "NOT" edges, which {@code ApplicationModules.verify()} cannot pin: it only checks a module against its
      * own {@code allowedDependencies}, so adding {@code "settlement"} to orders' list would still pass. These rules
      * name the forbidden edges directly. {@code root} is the base package ({@code com.xavier.backend} in production,
@@ -704,5 +714,6 @@ final class ArchitectureRules {
             NO_FIELD_INJECTION,
             EVENTS_ARE_RECORDS,
             CODED_ERRORS_USE_THE_SHARED_EXCEPTIONS,
+            CONFLICT_IS_ANSWERED_ONLY_BY_THE_SHARED_HANDLER,
     };
 }

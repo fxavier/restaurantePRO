@@ -60,6 +60,11 @@ class ArchitectureTests {
         ArchitectureRules.CODED_ERRORS_USE_THE_SHARED_EXCEPTIONS.check(PRODUCTION);
     }
 
+    @Test
+    void conflictIsAnsweredOnlyByTheSharedHandler() {
+        ArchitectureRules.CONFLICT_IS_ANSWERED_ONLY_BY_THE_SHARED_HANDLER.check(PRODUCTION);
+    }
+
     /** D166: every job, runner and readiness hook names its system scope. */
     @Test
     void scheduledEntryPointsAreSystemScoped() {
