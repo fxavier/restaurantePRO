@@ -315,12 +315,15 @@ describe('BackOffice access shell', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Sem ligação' })).toBeInTheDocument();
   });
 
-  it('signs out from the user menu with the CSRF header, then goes to the login', async () => {
+  it("signs out from the user menu with the CSRF header, then goes to Keycloak's end-session page (FE-F10)", async () => {
+    const logoutUrl = 'https://idp.example/realms/restaurantpro/protocol/openid-connect/logout?client_id=backoffice-bff';
     let csrf: string | null = null;
+    let accept: string | null = null;
     server.use(...signedIn());
     server.use(http.post(api('/bff/logout'), ({ request }) => {
         csrf = request.headers.get('X-XSRF-TOKEN');
-        return new HttpResponse(null, { status: 302, headers: { Location: 'https://idp.example/logout' } });
+        accept = request.headers.get('Accept');
+        return HttpResponse.json({ logoutUrl });
       }),
     );
     const { user, leave } = renderApp();
@@ -328,8 +331,10 @@ describe('BackOffice access shell', () => {
     await user.click(await screen.findByRole('button', { name: 'Menu do utilizador: Ana Admin' }));
     await user.click(await screen.findByRole('menuitem', { name: 'Terminar sessão' }));
 
-    await waitFor(() => expect(leave).toHaveBeenCalledWith(LOGIN));
+    await waitFor(() => expect(leave).toHaveBeenCalledWith(logoutUrl));
+    expect(leave).toHaveBeenCalledTimes(1);
     expect(csrf).toBe(CSRF_TOKEN);
+    expect(accept).toBe('application/json');
   });
 
   it('opens the terminals area for the selected store', async () => {
