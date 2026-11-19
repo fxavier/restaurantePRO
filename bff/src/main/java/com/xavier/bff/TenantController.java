@@ -21,6 +21,7 @@ import java.util.regex.Pattern;
 class TenantController {
 
     private static final String SELECTED = TenantController.class.getName() + ".SELECTED";
+    private static final String LOGGED_IN = TenantController.class.getName() + ".LOGGED_IN";
     private static final Pattern CANONICAL_UUID =
             Pattern.compile("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
 
@@ -41,6 +42,17 @@ class TenantController {
 
     static boolean isCanonicalUuid(String value) {
         return value != null && CANONICAL_UUID.matcher(value).matches();
+    }
+
+    /**
+     * After a login: another user logging in on this browser session (from another tab) starts with no selection, so
+     * they never act in the previous user's choice; the same user's new login (a step-up) keeps it.
+     */
+    static void keepSelectionOnlyFor(HttpSession session, String principal) {
+        if (!principal.equals(session.getAttribute(LOGGED_IN))) {
+            session.removeAttribute(SELECTED);
+        }
+        session.setAttribute(LOGGED_IN, principal);
     }
 
     static Optional<UUID> selected(HttpSession session) {
