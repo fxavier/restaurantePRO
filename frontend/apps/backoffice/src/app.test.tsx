@@ -634,6 +634,18 @@ describe('Company guard (FE-F16): a tab only ever shows and acts in the session 
     expect(sessionStorage.getItem('restaurantpro.backoffice.tenantChanged')).toBe('true');
   });
 
+  it('reloads when the first answers of a page load name two users (another login between them, FE-F22)', async () => {
+    fakeBff();
+    server.use(http.get(api('/api/v1/auth/tenants'), () =>
+      HttpResponse.json([companyC], { headers: { 'X-Relayed-User': 'kc-bruno' } }),
+    ));
+    const app = renderApp();
+
+    await waitFor(() => expect(app.leave).toHaveBeenCalledWith('/'));
+    expect(screen.queryByText('Restaurante C, Lda')).not.toBeInTheDocument();
+    expect(app.tenantPin.user()).toBeDefined();
+  });
+
   it("reloads instead of showing a read relayed for another user of the same company (FE-F22)", async () => {
     const bff = fakeBff();
     const app = renderApp(`/?storeId=${baixa.id}`);

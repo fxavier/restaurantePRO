@@ -67,10 +67,14 @@ export function backOfficeMiddleware({
       return new Request(request, { headers, credentials: 'include' });
     },
     async onResponse({ request, response }) {
-      const user = request.headers.get('X-Expected-User');
       const relayedUser = response.headers.get('X-Relayed-User');
-      if (user && relayedUser !== null && relayedUser !== user) throw tenantChanged();
-      if (relayedUser !== null) onRelayedUser(relayedUser);
+      if (relayedUser !== null) {
+        onRelayedUser(relayedUser);
+        // The pin now, not only the one the call was sent with: the first answers of a page load race, and another
+        // login between them must not leave a tab showing one user's data while its writes name another.
+        const pinnedUser = expectedUser();
+        if (pinnedUser && relayedUser !== pinnedUser) throw tenantChanged();
+      }
       const expected = request.headers.get('X-Expected-Tenant');
       if (!expected) return undefined;
       const relayed = response.headers.get('X-Relayed-Tenant');

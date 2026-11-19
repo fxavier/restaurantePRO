@@ -243,6 +243,19 @@ describe('BackOffice middleware', () => {
       expect(seen).toEqual([USER]);
     });
 
+    it('throws TENANT_CHANGED on an unpinned call whose answer names another user than one pinned meanwhile', async () => {
+      let pinnedUser: string | undefined;
+      const racing = backOfficeMiddleware({ cookies: () => cookies, expectedTenant: () => undefined,
+        expectedUser: () => pinnedUser, onRelayedUser: (subject) => { pinnedUser ??= subject; } });
+      const raced = async () => {
+        pinnedUser = USER; // sent unpinned; meanwhile another call of this page load answered first, for user 1
+        return answering('kc-subject-2')();
+      };
+      const client = createApiClient({ baseUrl: BASE, fetch: raced, middleware: [racing] });
+
+      await expect(client.GET('/api/v1/auth/tenants')).rejects.toMatchObject({ status: 409, code: 'TENANT_CHANGED' });
+    });
+
     it('passes an answer relayed for the pinned user, or naming none', async () => {
       for (const relayed of [USER, undefined]) {
         const client = createApiClient({ baseUrl: BASE, fetch: answering(relayed), middleware: [pinned] });
