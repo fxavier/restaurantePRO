@@ -25,17 +25,17 @@ class BackendRelay {
 
     /** Browser credentials, values only the BFF may set, and hop-by-hop or length headers. */
     private static final Set<String> NOT_TO_BACKEND = Set.of(
-            "cookie", "authorization", "x-tenant-id", "x-expected-tenant", "x-xsrf-token", "x-csrf-token",
+            "cookie", "authorization", "x-tenant-id", "x-expected-tenant", "x-expected-user", "x-xsrf-token", "x-csrf-token",
             "forwarded", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "x-forwarded-port", "x-real-ip",
             "host", "connection", "keep-alive", "proxy-authorization", "proxy-connection", "te", "trailer",
             "transfer-encoding", "upgrade", "expect", "content-length");
 
     /**
-     * The backend must not set cookies on the BFF origin, nor name the relayed tenant (only the BFF knows it);
+     * The backend must not set cookies on the BFF origin, nor name the relayed tenant or user (only the BFF knows them);
      * the rest is hop-by-hop or recomputed.
      */
     private static final Set<String> NOT_TO_BROWSER = Set.of(
-            "set-cookie", "set-cookie2", "x-relayed-tenant", "connection", "keep-alive", "proxy-authenticate", "te", "trailer",
+            "set-cookie", "set-cookie2", "x-relayed-tenant", "x-relayed-user", "connection", "keep-alive", "proxy-authenticate", "te", "trailer",
             "transfer-encoding", "upgrade", "content-length");
 
     private final BffProperties properties;
@@ -50,7 +50,9 @@ class BackendRelay {
                 .build();
     }
 
-    ResponseEntity<byte[]> relay(HttpServletRequest request, String accessToken, Optional<UUID> tenant) throws IOException {
+    /** {@code namedTenant}: what the answer's X-Relayed-Tenant says, empty where the backend resolves no tenant. */
+    ResponseEntity<byte[]> relay(HttpServletRequest request, String accessToken, Optional<UUID> tenant,
+                                 Optional<UUID> namedTenant, String subject) throws IOException {
         HttpRequest.Builder outgoing = HttpRequest.newBuilder(target(request))
                 .timeout(properties.backendTimeout())
                 .method(request.getMethod(), body(request));
@@ -62,7 +64,7 @@ class BackendRelay {
         outgoing.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken);
         tenant.ifPresent(id -> outgoing.header("X-Tenant-Id", id.toString()));
         try {
-            return toBrowser(http.send(outgoing.build(), HttpResponse.BodyHandlers.ofByteArray()), tenant);
+            return toBrowser(http.send(outgoing.build(), HttpResponse.BodyHandlers.ofByteArray()), namedTenant, subject);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("interrupted while waiting for the backend", e);
@@ -87,8 +89,11 @@ class BackendRelay {
         return bytes.length == 0 ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofByteArray(bytes);
     }
 
-    /** FE-F16: the answer names the tenant it was relayed in, so a tab pinned to another one never shows it. */
-    private static ResponseEntity<byte[]> toBrowser(HttpResponse<byte[]> response, Optional<UUID> tenant) {
+    /**
+     * FE-F16, FE-F22: the answer names the tenant it was relayed in and the user it was relayed for, so a tab pinned to
+     * another one never shows it.
+     */
+    private static ResponseEntity<byte[]> toBrowser(HttpResponse<byte[]> response, Optional<UUID> tenant, String subject) {
         HttpHeaders headers = new HttpHeaders();
         response.headers().map().forEach((name, values) -> {
             if (!name.startsWith(":") && !NOT_TO_BROWSER.contains(name.toLowerCase())) {
@@ -96,6 +101,7 @@ class BackendRelay {
             }
         });
         tenant.ifPresent(id -> headers.set("X-Relayed-Tenant", id.toString()));
+        headers.set("X-Relayed-User", subject);
         byte[] body = response.body();
         // status(int): a code Spring has no constant for (499, 599) passes through instead of failing.
         return ResponseEntity.status(response.statusCode()).headers(headers).body(body.length == 0 ? null : body);

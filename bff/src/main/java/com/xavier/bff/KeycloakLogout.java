@@ -5,6 +5,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.InvalidMediaTypeException;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
@@ -20,13 +21,17 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import org.springframework.web.util.UriComponentsBuilder;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
+import java.util.Map;
 
 /**
  * Logout without a token in any URL: the BFF ends Keycloak's session over the back channel (refresh token plus
  * private_key_jwt), then sends the browser to the end-session endpoint with only client_id and
  * post_logout_redirect_uri, which clears Keycloak's own cookies. The BFF session ends even if Keycloak fails.
+ * A caller asking for JSON (the SPA's fetch, which cannot follow a cross-origin redirect) gets that URL as
+ * {@code {"logoutUrl": ...}} and navigates there itself (FE-F10).
  */
 final class KeycloakLogout implements LogoutHandler, LogoutSuccessHandler {
 
@@ -36,9 +41,11 @@ final class KeycloakLogout implements LogoutHandler, LogoutSuccessHandler {
     private final OAuth2AuthorizedClientRepository authorizedClients;
     private final RestClient identityProvider;
     private final NimbusJwtClientAuthenticationParametersConverter<OAuth2RefreshTokenGrantRequest> clientAssertion;
+    private final JsonMapper json;
 
     KeycloakLogout(ClientRegistrationRepository registrations, OAuth2AuthorizedClientRepository authorizedClients,
-                   RestClient identityProvider, JWK clientKey) {
+                   RestClient identityProvider, JWK clientKey, JsonMapper json) {
+        this.json = json;
         this.registrations = registrations;
         this.authorizedClients = authorizedClients;
         this.identityProvider = identityProvider;
@@ -72,17 +79,41 @@ final class KeycloakLogout implements LogoutHandler, LogoutSuccessHandler {
     @Override
     public void onLogoutSuccess(HttpServletRequest request, HttpServletResponse response, Authentication authentication)
             throws IOException {
+        String logoutUrl = logoutUrl(request);
+        if (!asksForJson(request)) {
+            response.sendRedirect(logoutUrl);
+            return;
+        }
+        response.setStatus(HttpServletResponse.SC_OK);
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.getWriter().write(json.writeValueAsString(Map.of("logoutUrl", logoutUrl)));
+    }
+
+    /** Keycloak's end-session page with only client_id and post_logout_redirect_uri; the home page without one. */
+    private String logoutUrl(HttpServletRequest request) {
         ClientRegistration registration = registration();
         String home = ServletUriComponentsBuilder.fromContextPath(request).path("/").toUriString();
         String endSession = endSessionEndpoint(registration);
         if (endSession == null) {
-            response.sendRedirect(home);
-            return;
+            return home;
         }
-        response.sendRedirect(UriComponentsBuilder.fromUriString(endSession)
+        return UriComponentsBuilder.fromUriString(endSession)
                 .queryParam("client_id", registration.getClientId())
                 .queryParam("post_logout_redirect_uri", home)
-                .encode().toUriString());
+                .encode().toUriString();
+    }
+
+    /** Named explicitly: a browser form's Accept matches JSON only through a wildcard, and keeps the redirect. */
+    private static boolean asksForJson(HttpServletRequest request) {
+        String accept = request.getHeader("Accept");
+        if (accept == null) {
+            return false;
+        }
+        try {
+            return MediaType.parseMediaTypes(accept).stream().anyMatch(MediaType.APPLICATION_JSON::equalsTypeAndSubtype);
+        } catch (InvalidMediaTypeException e) {
+            return false;
+        }
     }
 
     private ClientRegistration registration() {

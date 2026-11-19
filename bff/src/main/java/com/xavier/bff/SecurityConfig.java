@@ -33,6 +33,7 @@ import org.springframework.security.web.firewall.RequestRejectedHandler;
 import org.springframework.security.web.savedrequest.NullRequestCache;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.HttpSessionMutexListener;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.util.List;
 
@@ -111,6 +112,7 @@ class SecurityConfig {
     private static AuthenticationSuccessHandler afterLogin() {
         SimpleUrlAuthenticationSuccessHandler home = new SimpleUrlAuthenticationSuccessHandler("/");
         return (request, response, authentication) -> {
+            TenantController.keepSelectionOnlyFor(request.getSession(), ExpectedUser.subject(authentication));
             String returnPath = StepUp.takeReturnPath(request.getSession());
             if (returnPath == null) {
                 home.onAuthenticationSuccess(request, response, authentication);
@@ -122,8 +124,8 @@ class SecurityConfig {
 
     @Bean
     KeycloakLogout keycloakLogout(ClientRegistrationRepository registrations, OAuth2AuthorizedClientRepository authorizedClients,
-                                  RestClient identityProviderRestClient, JWK clientKey) {
-        return new KeycloakLogout(registrations, authorizedClients, identityProviderRestClient, clientKey);
+                                  RestClient identityProviderRestClient, JWK clientKey, JsonMapper json) {
+        return new KeycloakLogout(registrations, authorizedClients, identityProviderRestClient, clientKey, json);
     }
 
     /** The tokens live in the BFF's HTTP session: one set per login, gone with the session (not one per user name). */
