@@ -122,6 +122,25 @@ class PosTerminalAuthTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    /**
+     * FE-F14: the POS repeats a 401 carrying {@code WWW-Authenticate} with a new terminal token, so a wrong PIN must
+     * not carry one (the PIN is never sent twice), while a missing or refused terminal token does.
+     */
+    @Test
+    void aWrongPinIsAPlain401AndOnlyATerminalTokenRefusalIsChallenged() throws Exception {
+        mvc.perform(post("/api/v1/auth/pos-login").with(terminal.bearer()).contentType(MediaType.APPLICATION_JSON)
+                        .content(IdentityFixtures.json("employeeCode", waiter.code(), "pin", "0000")))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().doesNotExist("WWW-Authenticate"));
+
+        mvc.perform(loginRequest())
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().exists("WWW-Authenticate"));
+        mvc.perform(loginRequest().with(TestJwtFactory.account("kc-" + UUID.randomUUID()).bearer()))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string("WWW-Authenticate", org.hamcrest.Matchers.containsString("invalid_token")));
+    }
+
     @Test
     void aSessionWithoutTheTerminalsTokenIsRefused() throws Exception {
         String session = login(terminal);
