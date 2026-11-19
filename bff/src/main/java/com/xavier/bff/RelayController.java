@@ -7,7 +7,9 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.oauth2.client.ClientAuthorizationException;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.client.annotation.RegisteredOAuth2AuthorizedClient;
+import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -26,6 +28,8 @@ class RelayController {
     private static final String EXPECTED_TENANT = "X-Expected-Tenant";
     /** Allow-list: every other method, a custom or lower-case one included, must name the expected tenant. */
     private static final Set<String> SAFE_METHODS = Set.of("GET", "HEAD", "OPTIONS");
+    /** FE-F23: the caller's own memberships; the backend resolves no tenant for it, so its answer names none. */
+    private static final String TENANT_LIST = "/api/v1/auth/tenants";
 
     private final BackendRelay relay;
 
@@ -36,7 +40,12 @@ class RelayController {
     /** The authorized-client manager hands over a current access token, refreshing (and rotating) it when it expires. */
     @RequestMapping({"/api/v1/backoffice/**", "/api/v1/auth/**"})
     ResponseEntity<byte[]> relay(@RegisteredOAuth2AuthorizedClient(SecurityConfig.REGISTRATION_ID) OAuth2AuthorizedClient client,
-                                 HttpServletRequest request, HttpSession session) throws IOException {
+                                 @AuthenticationPrincipal OidcUser user, HttpServletRequest request,
+                                 HttpSession session) throws IOException {
+        String subject = ExpectedUser.subject(user);
+        if (isUnsafe(request)) {
+            ExpectedUser.check(request, subject);
+        }
         // Read once: the tenant checked is the tenant relayed, even if another tab switches meanwhile.
         Optional<UUID> selected = TenantController.selected(session);
         String expected = request.getHeader(EXPECTED_TENANT);
@@ -44,9 +53,15 @@ class RelayController {
             if (isUnsafe(request) && !selected.get().toString().equalsIgnoreCase(expected)) {
                 throw new TenantChangedException();
             }
-            return relay.relay(request, client.getAccessToken().getTokenValue(), selected);
+            return relay(client, request, selected, subject);
         }
-        return relay.relay(request, client.getAccessToken().getTokenValue(), expectedTenant(expected));
+        return relay(client, request, expectedTenant(expected), subject);
+    }
+
+    private ResponseEntity<byte[]> relay(OAuth2AuthorizedClient client, HttpServletRequest request, Optional<UUID> tenant,
+                                         String subject) throws IOException {
+        Optional<UUID> named = TENANT_LIST.equals(request.getRequestURI()) ? Optional.empty() : tenant;
+        return relay.relay(request, client.getAccessToken().getTokenValue(), tenant, named, subject);
     }
 
     /**
@@ -99,6 +114,7 @@ class RelayController {
 
     static final class TenantChangedException extends RuntimeException {
     }
+
 
     @ExceptionHandler(TenantController.InvalidTenantSelectionException.class)
     ProblemDetail invalidExpectedTenant() {

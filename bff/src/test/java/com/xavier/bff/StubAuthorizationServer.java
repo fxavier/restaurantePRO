@@ -31,6 +31,7 @@ final class StubAuthorizationServer extends StubHttpServer {
     private final RSAKey signingKey = generate("stub-as");
     private final AtomicInteger issued = new AtomicInteger();
     private volatile String nonce;
+    private volatile String subject = "user-1";
     private volatile long accessTokenLifetimeSeconds = 300;
     private volatile Response refreshAnswer;
     private volatile Long nextAccessTokenLifetimeSeconds;
@@ -54,6 +55,11 @@ final class StubAuthorizationServer extends StubHttpServer {
 
     void expectNonce(String nonce) {
         this.nonce = nonce;
+    }
+
+    /** The next logins are this Keycloak user (another person logging in on the same browser); reset to user-1. */
+    void logInAs(String subject) {
+        this.subject = subject;
     }
 
     void issueAccessTokensValidFor(long seconds) {
@@ -124,6 +130,7 @@ final class StubAuthorizationServer extends StubHttpServer {
         accessTokenLifetimeSeconds = 300;
         refreshAnswer = null;
         nonce = null;
+        subject = "user-1";
         clearReceived();
     }
 
@@ -203,7 +210,7 @@ final class StubAuthorizationServer extends StubHttpServer {
         Instant now = Instant.now();
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
                 .issuer(issuer())
-                .subject("user-1")
+                .subject(subject)
                 .audience("backoffice-bff")
                 .claim("azp", "backoffice-bff")
                 .claim("nonce", nonce)
