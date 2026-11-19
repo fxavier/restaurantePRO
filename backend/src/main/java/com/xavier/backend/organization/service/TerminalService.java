@@ -66,8 +66,9 @@ public class TerminalService {
         if (!stores.existsById(request.storeId())) {
             throw new StoreNotFoundException(request.storeId());
         }
-        if (terminals.existsByStoreIdAndCode(request.storeId(), request.code().strip())) {
-            throw new TerminalCodeTakenException(request.code());
+        String code = Terminal.normalizedCode(request.code());
+        if (terminals.existsByStoreIdAndCodeIgnoreCase(request.storeId(), code)) {
+            throw new TerminalCodeTakenException(code);
         }
         Terminal terminal = saveNewTerminal(Terminal.register(request.storeId(), request.kind(), request.code(),
                 request.name(), clock.instant()));

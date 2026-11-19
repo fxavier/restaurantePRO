@@ -13,7 +13,8 @@ import org.springframework.data.repository.query.Param;
 
 public interface TerminalRepository extends JpaRepository<Terminal, UUID> {
 
-    boolean existsByStoreIdAndCode(UUID storeId, String code);
+    /** Matches {@code upper(code)}, as the unique index does: a row written before FE-F21 may be lowercase. */
+    boolean existsByStoreIdAndCodeIgnoreCase(UUID storeId, String code);
 
     Page<Terminal> findByStoreId(UUID storeId, Pageable pageable);
 
