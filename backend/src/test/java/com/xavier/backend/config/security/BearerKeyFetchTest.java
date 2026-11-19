@@ -4,6 +4,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.nimbusds.jose.JOSEException;
+import com.nimbusds.jose.KeySourceException;
+import com.nimbusds.jose.jwk.JWKMatcher;
+import com.nimbusds.jose.jwk.JWKSelector;
+import com.sun.net.httpserver.HttpServer;
+import java.io.IOException;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.JWSSigner;
@@ -89,10 +97,59 @@ class BearerKeyFetchTest {
         assertThat(fetches).hasValue(2);
     }
 
+    @Test
+    void aKeySetFetchSlowerThanNimbusDefaultButWithinTheConfiguredTimeoutSucceeds() throws Exception {
+        HttpServer idp = slowIdp(Duration.ofMillis(1000));
+        try {
+            JWKSource<SecurityContext> keys = TrustedRealms.remoteKeySet(issuerOf(idp), Duration.ofSeconds(3));
+
+            assertThat(keys.get(new JWKSelector(new JWKMatcher.Builder().keyID("k1").build()), null)).hasSize(1);
+        } finally {
+            idp.stop(0);
+        }
+    }
+
+    @Test
+    void aKeySetFetchSlowerThanTheConfiguredTimeoutIsAnUnavailableIdp() throws Exception {
+        HttpServer idp = slowIdp(Duration.ofMillis(1000));
+        try {
+            JWKSource<SecurityContext> keys = TrustedRealms.remoteKeySet(issuerOf(idp), Duration.ofMillis(200));
+
+            assertThatThrownBy(() -> keys.get(new JWKSelector(new JWKMatcher.Builder().keyID("k1").build()), null))
+                    .isInstanceOf(KeySourceException.class);
+        } finally {
+            idp.stop(0);
+        }
+    }
+
+    /** A Keycloak whose {@code certs} endpoint answers {@link #KEY} after {@code delay}. */
+    private static HttpServer slowIdp(Duration delay) throws IOException {
+        HttpServer idp = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        idp.createContext("/realms/r/protocol/openid-connect/certs", exchange -> {
+            try {
+                Thread.sleep(delay);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            byte[] body = new JWKSet(KEY.toPublicJWK()).toString().getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        idp.start();
+        return idp;
+    }
+
+    private static String issuerOf(HttpServer idp) {
+        return "http://127.0.0.1:" + idp.getAddress().getPort() + "/realms/r";
+    }
+
     private BearerAuthentication bearer(JWKSource<SecurityContext> keys) {
         TrustedRealms realms = TrustedRealms.of(ISSUER, "", "", issuer -> keys);
         return new BearerAuthentication(realms, new SecurityProperties(null, "restaurantpro-api",
-                Duration.ofSeconds(30), Duration.ofMinutes(5)), Clock.systemUTC());
+                Duration.ofSeconds(30), Duration.ofMinutes(5),
+                Duration.ofSeconds(2)), Clock.systemUTC());
     }
 
     private static Authentication authenticate(BearerAuthentication bearer, String token) {

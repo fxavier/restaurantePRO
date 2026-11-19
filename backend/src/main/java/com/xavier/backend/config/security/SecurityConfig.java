@@ -1,12 +1,7 @@
 package com.xavier.backend.config.security;
 
-import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
-import com.nimbusds.jose.jwk.source.URLBasedJWKSetSource;
-import com.nimbusds.jose.util.DefaultResourceRetriever;
 import com.xavier.backend.access.Permission;
 import jakarta.servlet.DispatcherType;
-import java.net.MalformedURLException;
-import java.net.URI;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.health.actuate.endpoint.HealthEndpoint;
@@ -45,22 +40,12 @@ class SecurityConfig {
 
     /**
      * The production realms: each issuer's key set at {@code <issuer>/protocol/openid-connect/certs} (Keycloak),
-     * fetched lazily, cached, refreshed on an unknown {@code kid} at most once per 30 s (Nimbus defaults, D176), so
-     * the backend starts while Keycloak is down.
+     * fetched lazily ({@link TrustedRealms#remoteKeySet}), so the backend starts while Keycloak is down.
      */
     @Bean
     TrustedRealms trustedRealms(SecurityProperties properties) {
         return TrustedRealms.of(properties.issuers().tenant(), properties.issuers().ops(),
-                properties.issuers().devices(), issuer -> {
-            try {
-                return TrustedRealms.keySet(new URLBasedJWKSetSource<>(
-                        URI.create(issuer + "/protocol/openid-connect/certs").toURL(), new DefaultResourceRetriever(
-                        JWKSourceBuilder.DEFAULT_HTTP_CONNECT_TIMEOUT, JWKSourceBuilder.DEFAULT_HTTP_READ_TIMEOUT,
-                        JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT)));
-            } catch (MalformedURLException e) {
-                throw new IllegalStateException("Not an issuer URL: " + issuer, e);
-            }
-        });
+                properties.issuers().devices(), issuer -> TrustedRealms.remoteKeySet(issuer, properties.jwksTimeout()));
     }
 
     @Bean

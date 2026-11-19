@@ -123,6 +123,9 @@ restaurantpro:
     audience: restaurantpro-api
     clock-skew: PT30S
     step-up-max-age: PT5M
+    # FE-F34: connect and read timeout of a fetch of a realm's key set (JWKS); slower = 503 IDP_UNAVAILABLE.
+    # Nimbus' 500 ms default lost fetches from a loaded Keycloak.
+    jwks-timeout: ${RESTAURANTPRO_JWKS_TIMEOUT:PT2S}
   keycloak:
     # R6 (D181): the tenancy-provisioner service account of the IdentityProviderAdmin adapter (S75); its private key
     # comes from a secret file, never from the environment.

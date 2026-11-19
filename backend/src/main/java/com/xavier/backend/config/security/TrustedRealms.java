@@ -7,6 +7,11 @@ import com.nimbusds.jose.jwk.source.JWKSetSource;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
 import com.nimbusds.jose.jwk.source.RateLimitReachedException;
+import com.nimbusds.jose.jwk.source.URLBasedJWKSetSource;
+import com.nimbusds.jose.util.DefaultResourceRetriever;
+import java.net.MalformedURLException;
+import java.net.URI;
+import java.time.Duration;
 import com.nimbusds.jose.proc.SecurityContext;
 import java.util.EnumMap;
 import java.util.List;
@@ -50,6 +55,21 @@ public final class TrustedRealms {
                             Function<String, JWKSource<SecurityContext>> keys) {
         if (uri != null && !uri.isBlank()) {
             issuers.put(realm, new Issuer(uri, keys.apply(uri)));
+        }
+    }
+
+    /**
+     * The key set of a Keycloak issuer, at {@code <issuer>/protocol/openid-connect/certs}, each fetch bounded by
+     * {@code timeout} (connect and read; {@code restaurantpro.security.jwks-timeout}): a fetch that takes longer is
+     * an unavailable IdP (503).
+     */
+    static JWKSource<SecurityContext> remoteKeySet(String issuer, Duration timeout) {
+        int millis = Math.toIntExact(timeout.toMillis());
+        try {
+            return keySet(new URLBasedJWKSetSource<>(URI.create(issuer + "/protocol/openid-connect/certs").toURL(),
+                    new DefaultResourceRetriever(millis, millis, JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT)));
+        } catch (MalformedURLException e) {
+            throw new IllegalStateException("Not an issuer URL: " + issuer, e);
         }
     }
 
