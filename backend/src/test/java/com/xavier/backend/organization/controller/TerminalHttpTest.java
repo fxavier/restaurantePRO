@@ -202,6 +202,14 @@ class TerminalHttpTest {
     }
 
     @Test
+    void aCodeThatGrowsPastTwentyCharactersWhenUppercasedIsRefusedOnItsField() throws Exception {
+        // "ß" upper-cases to "SS": 11 of them pass @Size(max = 20) as typed but become 22 characters (FE-F21 review).
+        mvc.perform(registration(store, "ß".repeat(11), newKey()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].field").value("code"));
+    }
+
+    @Test
     void aTerminalCodeIsStoredAndReturnedTrimmedInUppercase() throws Exception {
         String id = JSON.readTree(mvc.perform(registration(store, " cx2 ", newKey()))
                 .andExpect(status().isCreated())
