@@ -125,7 +125,8 @@ class ReleaseHttpTest {
         UUID release = id(createDraft(sellable.store()));
 
         publish(sellable.store(), release, UUID.randomUUID().toString(), "{}")
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ILLEGAL_RELEASE_STATE"));
     }
 
     @Test

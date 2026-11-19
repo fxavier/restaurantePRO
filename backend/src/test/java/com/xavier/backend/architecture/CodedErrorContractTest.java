@@ -6,6 +6,26 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.xavier.backend.TestcontainersConfiguration;
+import com.xavier.backend.cash.exception.CashSessionAlreadyOpenException;
+import com.xavier.backend.cash.exception.IllegalCashStateException;
+import com.xavier.backend.cash.exception.ReceiptAlreadyRecordedException;
+import com.xavier.backend.cash.exception.RegisterCodeTakenException;
+import com.xavier.backend.cash.model.CashSessionStatus;
+import com.xavier.backend.catalog.exception.CatalogCodeTakenException;
+import com.xavier.backend.catalog.exception.IllegalReleaseStateException;
+import com.xavier.backend.dining.exception.DiningCodeTakenException;
+import com.xavier.backend.fiscal.exception.IllegalDocumentStateException;
+import com.xavier.backend.fiscal.exception.IllegalSeriesStateException;
+import com.xavier.backend.fiscal.exception.ReprintConflictException;
+import com.xavier.backend.fiscal.exception.SaleDraftConflictException;
+import com.xavier.backend.fiscal.exception.SeriesTakenException;
+import com.xavier.backend.identity.exception.DuplicateAssignmentException;
+import com.xavier.backend.identity.exception.EmployeeAccountTakenException;
+import com.xavier.backend.identity.exception.EmployeeCodeTakenException;
+import com.xavier.backend.identity.exception.RoleNameTakenException;
+import com.xavier.backend.identity.exception.UsernameTakenException;
+import com.xavier.backend.organization.exception.IllegalTerminalStateException;
+import com.xavier.backend.organization.exception.StoreCodeTakenException;
 import com.xavier.backend.access.StepUpRequiredException;
 import com.xavier.backend.audit.exception.AuditQueryException;
 import com.xavier.backend.customers.exception.CustomerRuleException;
@@ -198,6 +218,31 @@ class CodedErrorContractTest {
             Map.entry("cash-closing-stale", () -> new ClosingStaleException(ID, "CASH")),
             Map.entry("cash-closing-earlier-round", () -> ClosingStaleException.earlierRound(ID, 0, 1)),
             Map.entry("cash-refund-mismatch", () -> new RefundMismatchException(ID)),
+            // FE-F29: the 409s that were uncoded
+            Map.entry("cash-session-already-open", CashSessionAlreadyOpenException::new),
+            Map.entry("illegal-cash-state", () -> new IllegalCashStateException(
+                    "Cash session", ID, CashSessionStatus.CLOSED, "close")),
+            Map.entry("receipt-already-recorded", () -> new ReceiptAlreadyRecordedException(ID)),
+            Map.entry("register-code-taken", () -> new RegisterCodeTakenException("C1")),
+            Map.entry("catalog-code-taken", () -> new CatalogCodeTakenException("Item code BURGER")),
+            Map.entry("illegal-release-state", () -> new IllegalReleaseStateException(
+                    "Cannot publish release " + ID + ": it is DRAFT, needs VALIDATED")),
+            Map.entry("dining-code-taken", () -> new DiningCodeTakenException("Table", "T1")),
+            Map.entry("illegal-document-state", () -> new IllegalDocumentStateException(
+                    "Document " + ID + " is not issued")),
+            Map.entry("illegal-series-state", () -> new IllegalSeriesStateException("Series FT is already inactive")),
+            Map.entry("document-reprint-in-progress", () -> new ReprintConflictException(ID)),
+            Map.entry("sale-draft-in-progress", () -> new SaleDraftConflictException(ID)),
+            Map.entry("series-code-taken", () -> SeriesTakenException.codeTaken("FT")),
+            Map.entry("active-series-exists", SeriesTakenException::activeExists),
+            Map.entry("role-already-assigned", DuplicateAssignmentException::new),
+            Map.entry("employee-account-taken", () -> new EmployeeAccountTakenException(ID)),
+            Map.entry("employee-code-taken", () -> new EmployeeCodeTakenException("E1")),
+            Map.entry("role-name-taken", () -> new RoleNameTakenException("Caixa")),
+            Map.entry("username-taken", () -> new UsernameTakenException("ana")),
+            Map.entry("illegal-terminal-state", () -> new IllegalTerminalStateException(
+                    "A revoked device cannot be revoked again")),
+            Map.entry("store-code-taken", () -> new StoreCodeTakenException("S1")),
             Map.entry("cash-day-closing-only", () -> new CashRuleViolationException(CashRule.DAY_CLOSING_ONLY,
                     "The cash day 2026-11-04 was reopened: it takes corrections only, not new sessions.")),
             Map.entry("cash-self-approval", () -> new CashRuleViolationException(CashRule.SELF_APPROVAL,
@@ -568,6 +613,42 @@ class CodedErrorContractTest {
         expect("cash-closing-already-approved", 422, "CLOSING_ALREADY_APPROVED",
                 "The closing of this register for 2026-11-04 is approved: close the day financially, reopen it, "
                         + "and adjust in the next round.", "");
+    }
+
+    /** FE-F29: every 409 carries a code, so a client tells these apart from VERSION_CONFLICT. */
+    @Test
+    void formerlyUncodedConflictsCarryACode() throws Exception {
+        expect("cash-session-already-open", 409, "CASH_SESSION_ALREADY_OPEN",
+                "The register or the operator already has an open cash session.", "");
+        expect("illegal-cash-state", 409, "ILLEGAL_CASH_STATE", "Cash session " + ID + " is CLOSED: cannot close.",
+                "");
+        expect("receipt-already-recorded", 409, "RECEIPT_ALREADY_RECORDED",
+                "The receipt of payment " + ID + " is being recorded by another request.", "");
+        expect("register-code-taken", 409, "REGISTER_CODE_TAKEN",
+                "A cash register with code 'C1' already exists in this store.", "");
+        expect("catalog-code-taken", 409, "CATALOG_CODE_TAKEN", "Item code BURGER is already used.", "");
+        expect("illegal-release-state", 409, "ILLEGAL_RELEASE_STATE",
+                "Cannot publish release " + ID + ": it is DRAFT, needs VALIDATED", "");
+        expect("dining-code-taken", 409, "DINING_CODE_TAKEN", "Table code 'T1' is already used in this store.", "");
+        expect("illegal-document-state", 409, "ILLEGAL_DOCUMENT_STATE", "Document " + ID + " is not issued", "");
+        expect("illegal-series-state", 409, "ILLEGAL_SERIES_STATE", "Series FT is already inactive", "");
+        expect("document-reprint-in-progress", 409, "REPRINT_IN_PROGRESS",
+                "Another reprint of document " + ID + " is in progress", "");
+        expect("sale-draft-in-progress", 409, "SALE_DRAFT_IN_PROGRESS",
+                "The sale document of " + ID + " is being created by another request", "");
+        expect("series-code-taken", 409, "SERIES_CODE_TAKEN", "The store already has a series FT", "");
+        expect("active-series-exists", 409, "ACTIVE_SERIES_EXISTS",
+                "The store already has an active SALE series; deactivate it first", "");
+        expect("role-already-assigned", 409, "ROLE_ALREADY_ASSIGNED",
+                "The employee already has this role in this store.", "");
+        expect("employee-account-taken", 409, "EMPLOYEE_ACCOUNT_TAKEN", "Employee " + ID + " already has an account.",
+                "");
+        expect("employee-code-taken", 409, "EMPLOYEE_CODE_TAKEN", "Employee code E1 is already taken.", "");
+        expect("role-name-taken", 409, "ROLE_NAME_TAKEN", "Role name Caixa is already taken.", "");
+        expect("username-taken", 409, "USERNAME_TAKEN", "Username ana is already taken.", "");
+        expect("illegal-terminal-state", 409, "ILLEGAL_TERMINAL_STATE", "A revoked device cannot be revoked again",
+                "");
+        expect("store-code-taken", 409, "STORE_CODE_TAKEN", "Store code 'S1' is already used.", "");
     }
 
     @Test

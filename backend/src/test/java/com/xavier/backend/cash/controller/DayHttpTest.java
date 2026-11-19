@@ -111,7 +111,8 @@ class DayHttpTest {
 
     @Test
     void anOpenDayIsNotClosedFinanciallyAndOnlyAnApproverOfTheStoreMayTry() throws Exception {
-        mvc.perform(financialClose()).andExpect(status().isConflict());
+        mvc.perform(financialClose()).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ILLEGAL_CASH_STATE"));
         mvc.perform(idem(post(BO_DAYS + "/" + day + "/financial-close"))
                 .with(account(store, Permission.CASH_DAY_CLOSE))).andExpect(status().isForbidden());
         mvc.perform(idem(post(BO_DAYS + "/" + UUID.randomUUID() + "/financial-close"))
@@ -162,7 +163,8 @@ class DayHttpTest {
     void anOpenDayDoesNotReopenAndAFinanciallyClosedOneNeedsMoreThanCashDayClose() throws Exception {
         Employee manager = approver(IdentityFixtures.MANAGER);
 
-        mvc.perform(reopen(manager.code(), PIN)).andExpect(status().isConflict());
+        mvc.perform(reopen(manager.code(), PIN)).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ILLEGAL_CASH_STATE"));
 
         closeOperationally();
         UUID closing = submittedClosing();

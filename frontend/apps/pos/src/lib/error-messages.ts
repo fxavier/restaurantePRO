@@ -21,6 +21,13 @@ const MESSAGES: Record<string, string> = {
   FEE_LINE_LOCKED: 'A taxa de entrega não pode ser alterada.',
   VERSION_CONFLICT: 'Foi alterado noutro terminal. Reveja e tente de novo.',
   IDEMPOTENCY_IN_PROGRESS: 'O servidor ainda está a processar este pedido. Tente novamente dentro de instantes.',
+  // FE-F29: the state conflicts of the cash, payment and document endpoints under /pos
+  CASH_SESSION_ALREADY_OPEN: 'Esta caixa, ou este operador, já tem uma sessão de caixa aberta.',
+  ILLEGAL_CASH_STATE: 'A caixa não permite esta operação no estado atual. Atualize e tente de novo.',
+  RECEIPT_ALREADY_RECORDED: 'Este recebimento já está a ser registado. Tente novamente dentro de instantes.',
+  SALE_DRAFT_IN_PROGRESS: 'O documento de venda já está a ser criado. Tente novamente dentro de instantes.',
+  REPRINT_IN_PROGRESS: 'Outra reimpressão está em curso. Tente novamente.',
+  ILLEGAL_DOCUMENT_STATE: 'O documento não permite esta operação no estado atual.',
 };
 
 export const OFFLINE = 'Sem ligação — nenhuma operação é confirmada';

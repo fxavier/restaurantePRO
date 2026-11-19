@@ -4,6 +4,7 @@ import static com.xavier.backend.catalog.Actors.pos;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.xavier.backend.access.Permission;
@@ -48,7 +49,8 @@ public class CatalogNoticeHttpTest {
         MockHttpServletResponse stream = subscribe(store);
         MockHttpServletResponse otherStream = subscribe(other);
         UUID draft = CatalogFixtures.id(publications.createDraft(store));
-        publications.publish(store, draft, UUID.randomUUID().toString(), "{}").andExpect(status().isConflict());
+        publications.publish(store, draft, UUID.randomUUID().toString(), "{}").andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ILLEGAL_RELEASE_STATE"));
 
         publications.publishNew(store);
 

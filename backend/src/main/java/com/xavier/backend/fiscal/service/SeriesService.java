@@ -105,10 +105,10 @@ public class SeriesService {
     }
 
     private static SeriesTakenException codeTaken(String code) {
-        return new SeriesTakenException("The store already has a series " + code);
+        return SeriesTakenException.codeTaken(code);
     }
 
     private static SeriesTakenException activeExists() {
-        return new SeriesTakenException("The store already has an active SALE series; deactivate it first");
+        return SeriesTakenException.activeExists();
     }
 }

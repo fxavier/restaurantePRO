@@ -130,7 +130,8 @@ class ItemHttpTest {
                 variant));
         mvc.perform(post(ITEMS + "/" + first + "/variants").with(admin(Permission.CATALOG_MANAGE)).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content(variant))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CATALOG_CODE_TAKEN"));
         fixtures().created(post(ITEMS + "/" + second + "/variants").with(admin(Permission.CATALOG_MANAGE)), variant);
 
         mvc.perform(put(ITEMS + "/" + first + "/variants/" + large).with(admin(Permission.CATALOG_MANAGE)).with(csrf())

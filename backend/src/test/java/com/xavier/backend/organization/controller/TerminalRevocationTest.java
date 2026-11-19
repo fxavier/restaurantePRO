@@ -72,7 +72,8 @@ class TerminalRevocationTest {
                 .andExpect(status().isOk());
 
         mvc.perform(post("/api/v1/backoffice/terminals/" + terminal.id() + "/enrollment-code").with(admin()))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ILLEGAL_TERMINAL_STATE"));
     }
 
     @Test

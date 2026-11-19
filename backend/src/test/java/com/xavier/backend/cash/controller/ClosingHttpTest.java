@@ -178,7 +178,8 @@ class ClosingHttpTest {
         mvc.perform(justify(closing, 0, "CASH", "again")).andExpect(status().isConflict());
 
         mvc.perform(submit(closing)).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("SUBMITTED"));
-        mvc.perform(justify(closing, 2, "CASH", "too late")).andExpect(status().isConflict());
+        mvc.perform(justify(closing, 2, "CASH", "too late")).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ILLEGAL_CASH_STATE"));
     }
 
     @Test
@@ -194,7 +195,8 @@ class ClosingHttpTest {
         Counter counter = meters.get("cash.closing.difference").tag("store", store.toString()).counter();
         assertThat(counter.getId().getTags()).extracting(tag -> tag.getKey()).containsExactly("store");
         mvc.perform(approve(closing).with(account(store, Permission.CASH_CLOSING_APPROVE)))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ILLEGAL_CASH_STATE"));
     }
 
     @Test
@@ -219,7 +221,8 @@ class ClosingHttpTest {
         assertThat(second.get("id").asString()).isNotEqualTo(first.toString());
         assertThat(fixtures.count("SELECT count(*) FROM cash.cash_closing WHERE id = ? AND status = 'REJECTED'",
                 first)).isEqualTo(1);
-        mvc.perform(create(register)).andExpect(status().isConflict());
+        mvc.perform(create(register)).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ILLEGAL_CASH_STATE"));
     }
 
     @Test

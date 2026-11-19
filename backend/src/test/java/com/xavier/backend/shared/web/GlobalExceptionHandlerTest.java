@@ -79,14 +79,6 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void stateConflictBecomes409() throws Exception {
-        mvc.perform(get("/api/v1/backoffice/test-probe/conflict"))
-                .andExpect(status().isConflict())
-                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("Release is not VALIDATED"));
-    }
-
-    @Test
     void staleVersionBecomes409() throws Exception {
         mvc.perform(get("/api/v1/backoffice/test-probe/stale-version"))
                 .andExpect(status().isConflict())
@@ -114,9 +106,10 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void aCodedConflictCarriesItsCode() throws Exception {
+    void aStateConflictBecomes409WithItsCode() throws Exception {
         mvc.perform(get("/api/v1/backoffice/test-probe/coded-conflict"))
                 .andExpect(status().isConflict())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.detail").value("Table 7 is occupied."))
                 .andExpect(jsonPath("$.code").value("TABLE_OCCUPIED"));
     }
@@ -130,10 +123,8 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void anUncodedErrorHasNoCodeProperty() throws Exception {
+    void anUncodedBusinessRuleHasNoCodeProperty() throws Exception {
         mvc.perform(get("/api/v1/backoffice/test-probe/business-rule"))
-                .andExpect(jsonPath("$.code").doesNotExist());
-        mvc.perform(get("/api/v1/backoffice/test-probe/conflict"))
                 .andExpect(jsonPath("$.code").doesNotExist());
     }
 
@@ -189,11 +180,6 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/not-found")
         void notFound() {
             throw new NotFoundException("Store 42 not found");
-        }
-
-        @GetMapping("/conflict")
-        void conflict() {
-            throw new ConflictException("Release is not VALIDATED");
         }
 
         @GetMapping("/stale-version")

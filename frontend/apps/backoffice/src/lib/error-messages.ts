@@ -10,6 +10,7 @@ const messages: Record<string, string> = {
   MFA_STEP_UP_REQUIRED: 'Esta ação pede que confirme a sua identidade.',
   VERSION_CONFLICT: 'Foi alterado por outra pessoa. Recarregue e tente de novo.',
   IDEMPOTENCY_IN_PROGRESS: 'O pedido anterior ainda está a ser processado. Tente novamente dentro de instantes.',
+  ILLEGAL_TERMINAL_STATE: 'O terminal está revogado e não aceita esta ação.',
 };
 
 export function errorMessage(error: unknown): string {

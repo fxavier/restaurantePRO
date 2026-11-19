@@ -132,7 +132,8 @@ class RoomAreaHttpTest {
 
         mvc.perform(post(DiningFixtures.AREAS).with(inStore(store, Permission.DINING_MANAGE)).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content(DiningFixtures.newArea(store, "SALA")))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DINING_CODE_TAKEN"));
         fixtures.createArea(fixtures.newStore(), "SALA");
     }
 
@@ -143,7 +144,8 @@ class RoomAreaHttpTest {
 
         mvc.perform(put(DiningFixtures.AREAS + "/" + bar).with(inStore(store, Permission.DINING_MANAGE)).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content(update("SALA", true, 0)))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DINING_CODE_TAKEN"));
     }
 
     @Test
