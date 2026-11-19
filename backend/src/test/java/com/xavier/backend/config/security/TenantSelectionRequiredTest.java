@@ -35,7 +35,8 @@ class TenantSelectionRequiredTest {
     final TenantResolutionFilter filter = new TenantResolutionFilter(
             TrustedRealms.of(TestJwtFactory.TENANT_ISSUER, TestJwtFactory.OPS_ISSUER, "", issuer -> TestJwtFactory.keys()),
             tenancy, null, null, new ProblemDetailResponder(jsonMapper(), new SecurityProperties(null,
-                    "restaurantpro-api", Duration.ofSeconds(30), Duration.ofMinutes(5))), new SimpleMeterRegistry());
+                    "restaurantpro-api", Duration.ofSeconds(30), Duration.ofMinutes(5),
+                Duration.ofSeconds(2))), new SimpleMeterRegistry());
 
     @AfterEach
     void clear() {
