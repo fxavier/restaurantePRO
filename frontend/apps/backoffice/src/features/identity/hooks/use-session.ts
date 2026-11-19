@@ -22,12 +22,13 @@ export function useSession() {
     queryFn: async (): Promise<SessionView> => {
       const { data } = await api.GET('/api/v1/auth/session');
       loginSucceeded();
+      if (!data) throw new Error('Incomplete session answer');
       const pinned = pin.get();
-      if (pinned && (data?.tenantId !== pinned.tenantId || data?.userId !== pinned.userId)) {
+      if (pinned && (data.tenantId !== pinned.tenantId || data.userId !== pinned.userId)) {
         throw new ApiError({ status: 409, code: 'TENANT_CHANGED', title: 'The session or tenant changed in another tab' });
       }
-      if (data?.tenantId) pin.setOnce({ tenantId: data.tenantId, userId: data.userId });
-      return data ?? {};
+      if (data.tenantId) pin.setOnce({ tenantId: data.tenantId, userId: data.userId });
+      return data;
     },
   });
 }

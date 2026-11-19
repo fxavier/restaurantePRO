@@ -28,6 +28,10 @@ const item = (n: number, code: string, name: string, familyId: string, price: st
     code,
     name,
     familyId,
+    unitId: id(650),
+    taxCategoryId: id(660),
+    productionDestination: null,
+    soldByWeight: false,
     price: mzn(price),
     variants: [],
     barcodes: [],
@@ -39,10 +43,10 @@ const item = (n: number, code: string, name: string, familyId: string, price: st
 export const VARIANT = { small: id(721), large: id(722) };
 
 export const ITEM = {
-  coffee: item(701, 'BICA', 'Bica', FAMILY.coffees, '50.00', { barcodes: [{ code: '5601234000011' }] }),
+  coffee: item(701, 'BICA', 'Bica', FAMILY.coffees, '50.00', { barcodes: [{ code: '5601234000011', variantId: null }] }),
   water: item(702, 'AGUA', 'Água', FAMILY.drinks, '60.00', {
     variants: [
-      { id: VARIANT.small, code: 'AGUA-P', name: 'Pequena' },
+      { id: VARIANT.small, code: 'AGUA-P', name: 'Pequena', price: null },
       { id: VARIANT.large, code: 'AGUA-G', name: 'Grande', price: mzn('90.00') },
     ],
     barcodes: [{ code: '5601234000028', variantId: VARIANT.large }],
@@ -59,8 +63,8 @@ export const ITEM = {
         minChoices: 1,
         maxChoices: 1,
         options: [
-          { itemId: id(704), quantity: '1.000' },
-          { itemId: id(705), quantity: '1.000' },
+          { itemId: id(704), variantId: null, quantity: '1.000' },
+          { itemId: id(705), variantId: null, quantity: '1.000' },
         ],
       },
       {
@@ -70,8 +74,8 @@ export const ITEM = {
         maxChoices: 2,
         options: [
           { itemId: id(702), variantId: VARIANT.small, quantity: '1.000' },
-          { itemId: id(701), quantity: '1.000' },
-          { itemId: id(703), quantity: '1.000' },
+          { itemId: id(701), variantId: null, quantity: '1.000' },
+          { itemId: id(703), variantId: null, quantity: '1.000' },
         ],
       },
     ],
@@ -81,14 +85,19 @@ export const ITEM = {
 
 export const SNAPSHOT: CatalogSnapshot = {
   schemaVersion: 2,
+  storeId: SESSION.storeId,
+  releaseId: id(600),
   version: 7,
+  effectiveAt: '2026-11-18T06:00:00Z',
   currency: 'MZN',
   families: [
-    { id: FAMILY.drinks, code: 'BEBIDAS', name: 'Bebidas' },
+    { id: FAMILY.drinks, code: 'BEBIDAS', name: 'Bebidas', parentId: null },
     { id: FAMILY.coffees, code: 'CAFES', name: 'Cafés', parentId: FAMILY.drinks },
-    { id: FAMILY.dishes, code: 'PRATOS', name: 'Pratos' },
-    { id: FAMILY.menus, code: 'MENUS', name: 'Menus' },
+    { id: FAMILY.dishes, code: 'PRATOS', name: 'Pratos', parentId: null },
+    { id: FAMILY.menus, code: 'MENUS', name: 'Menus', parentId: null },
   ],
+  units: [],
+  taxCategories: [],
   items: Object.values(ITEM),
 };
 
@@ -103,14 +112,31 @@ export const CATALOG: PosCatalogResponse = {
 export const ORDER_ID = id(500);
 export const BATCH_ID = id(550);
 
-const draft = (n: number, fields: Partial<LineView>): LineView => ({
+/** A line with every field the contract requires; what a draft has not got yet is null. */
+export const draft = (n: number, fields: Partial<LineView> & Pick<LineView, 'itemId'>): LineView => ({
   id: id(n),
   status: 'DRAFT',
+  variantId: null,
   quantity: '1.000',
+  netQuantity: null,
+  notes: null,
   version: 0,
+  batchId: null,
+  itemCode: null,
+  description: null,
+  variantName: null,
+  unitPrice: null,
+  taxRatePercent: null,
+  gross: null,
   preview: true,
   kind: 'STANDARD',
   automatic: false,
+  listUnitPrice: null,
+  discount: null,
+  origin: null,
+  discountLabel: null,
+  promotionCode: null,
+  promotionName: null,
   components: [],
   adjustments: [],
   ...fields,
@@ -133,8 +159,7 @@ export const LINE = {
     unitPrice: { amount: '50.00', currency: 'MZN' },
     gross: { amount: '50.00', currency: 'MZN' },
   }),
-  steak: {
-    id: id(803),
+  steak: draft(803, {
     status: 'CONFIRMED',
     itemId: ITEM.steak.id,
     itemCode: 'BITOQUE',
@@ -144,13 +169,12 @@ export const LINE = {
     version: 1,
     batchId: BATCH_ID,
     unitPrice: { amount: '450.00', currency: 'MZN' },
+    taxRatePercent: '16',
     gross: { amount: '1350.00', currency: 'MZN' },
     preview: false,
-    kind: 'STANDARD',
-    automatic: false,
-    components: [],
-    adjustments: [],
-  } satisfies LineView,
+    listUnitPrice: { amount: '450.00', currency: 'MZN' },
+    discount: { amount: '0.00', currency: 'MZN' },
+  }),
 };
 
 /** M2's open order: two drafts (one with a note) and a first round of three Bitoques, already sent. */
@@ -170,6 +194,8 @@ export const ORDER: OrderView = {
   openedByEmployeeId: id(77),
   version: 4,
   catalogVersion: 7,
+  promotionVersion: null,
+  customerId: null,
   lines: [LINE.water, LINE.coffee, LINE.steak],
   batches: [
     {
@@ -178,6 +204,7 @@ export const ORDER: OrderView = {
       batchNo: 1,
       status: 'DISPATCHED',
       confirmedAt: '2026-11-18T10:10:00Z',
+      confirmedByEmployeeId: id(77),
       orderVersion: 3,
       lines: [LINE.steak],
     },
@@ -198,11 +225,11 @@ export const NEW_ORDER: OrderView = {
   guests: 2,
   orderNumber: 13,
   version: 0,
-  catalogVersion: undefined,
+  catalogVersion: null,
   lines: [],
   batches: [],
   due: { amount: '0.00', currency: 'MZN' },
-  draftGross: undefined,
+  draftGross: null,
 };
 
 export const withLines = (order: OrderView, lines: LineView[], fields: Partial<OrderView> = {}): OrderView => ({
@@ -217,9 +244,12 @@ export const summaryOf = (order: OrderView): OrderSummary => ({
   tableCode: order.tableCode,
   guests: order.guests,
   lifecycle: order.lifecycle,
+  billingLock: order.billingLock,
+  businessDay: order.businessDay,
   mode: order.mode,
   orderNumber: order.orderNumber,
   openedAt: order.openedAt,
+  openedByEmployeeId: order.openedByEmployeeId,
   version: order.version,
 });
 

@@ -1,5 +1,7 @@
-/** What the backend answered to the enrolment (`DeviceEnrolmentResponse`): the terminal, its store, its client. */
-export type Enrolment = { id: string; storeId: string; clientId: string };
+import type { components } from '@restaurantpro/api-client';
+
+/** What the backend answered to the enrolment: the terminal, its store, its client. */
+export type Enrolment = components['schemas']['com.xavier.backend.organization.model.dto.DeviceEnrolmentResponse'];
 
 /**
  * The terminal's identity on this browser (D182, FC §5): its key pair (private half non-extractable) and, once the

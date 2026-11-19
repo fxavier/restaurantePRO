@@ -10,7 +10,7 @@ type BatchView = Schemas['com.xavier.backend.orders.model.dto.BatchView'];
 type ConfirmBatch = Schemas['com.xavier.backend.orders.model.dto.ConfirmBatchRequest'];
 
 /** What the screen showed when "Pedir" was pressed: each draft's gross, to show what a price conflict changed. */
-export type Shown = { gross: ReadonlyMap<string, MoneyValue | undefined> };
+export type Shown = { gross: ReadonlyMap<string, MoneyValue | null> };
 
 /**
  * `POST /api/v1/pos/orders/{id}/batches` ("Pedir"): one intent per press (FC §8), with the versions the screen shows.

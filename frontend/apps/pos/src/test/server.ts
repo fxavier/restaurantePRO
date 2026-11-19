@@ -80,6 +80,8 @@ export const SESSION = {
   name: 'Ana Silva',
   mustChangePin: false,
   permissions: [`PERM_ORDER_CREATE@${ENROLMENT.storeId}`],
+  tenantId: '6f1c2a9e-0000-4000-8000-0000000000f1',
+  tenantName: 'Restaurante Teste',
   storeName: 'Loja Baixa',
   storeTimezone: 'Africa/Maputo',
   currency: 'MZN',

@@ -80,7 +80,7 @@ export function createPosSession(): PosSession {
   };
 }
 
-/** The contract marks every field optional (springdoc); a login answer without these cannot be used. */
+/** SessionView also describes a BackOffice account, so these are nullable; a login answer without them cannot be used. */
 function toEmployee(view: SessionView): Employee {
   if (!view.employeeId || !view.storeId || view.name == null || view.storeName == null || !view.storeTimezone) {
     throw new Error('Incomplete login answer');
@@ -89,8 +89,8 @@ function toEmployee(view: SessionView): Employee {
     employeeId: view.employeeId,
     storeId: view.storeId,
     name: view.name,
-    mustChangePin: view.mustChangePin ?? false,
-    permissions: view.permissions ?? [],
+    mustChangePin: view.mustChangePin,
+    permissions: view.permissions,
     storeName: view.storeName,
     storeTimeZone: view.storeTimezone,
   };

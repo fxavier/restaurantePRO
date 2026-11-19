@@ -12,36 +12,22 @@ describe('catalog', () => {
     expect(catalog.familyOf(catalog.item(ITEM.coffee.id)!)).toBe(FAMILY.drinks);
   });
 
-  it('an answer without its snapshot lists is an error, not a guess', () => {
-    expect(() => toCatalog({ ...CATALOG, catalog: undefined })).toThrow('Incomplete catalog');
+  it('a missing answer is an error, not a guess', () => {
     expect(() => toCatalog(undefined)).toThrow('Incomplete catalog');
   });
 
-  it('an item without its family, or a menu option without its item, is an error, not a guess', () => {
-    type Item = NonNullable<CatalogSnapshot['items']>[number];
-    const without = (item: Item) => ({ ...CATALOG, catalog: { ...CATALOG.catalog, items: [item] } });
-    expect(() => toCatalog(without({ ...ITEM.steak, familyId: undefined }))).toThrow('Incomplete catalog');
-    const menu = ITEM.menu;
-    const optionWithoutItem = { ...menu.menuGroups[0], options: [{ quantity: '1.000' }] };
-    expect(() => toCatalog(without({ ...menu, menuGroups: [optionWithoutItem] }))).toThrow('Incomplete catalog');
+  it('reads the nulls of a top-level family, an unpriced variant and an item barcode', () => {
+    expect(catalog.families.map((family) => family.code)).toEqual(['BEBIDAS', 'PRATOS', 'MENUS']);
+    expect(catalog.item(ITEM.water.id)?.variants[0]?.price).toBeNull();
+    expect(byCode(catalog.items, '5601234000011')).toEqual({ item: catalog.item(ITEM.coffee.id) });
   });
 
-  it('reads the nulls the backend writes for a top-level family, an unpriced variant and an item barcode', () => {
-    // Jackson writes an absent parent, price or variant as null; the contract marks no field nullable.
-    const wire = JSON.parse(
-      JSON.stringify({
-        ...CATALOG.catalog,
-        families: CATALOG.catalog?.families?.map((family) => ({ parentId: null, ...family })),
-        items: [
-          { ...ITEM.water, variants: ITEM.water.variants.map((variant) => ({ price: null, ...variant })) },
-          { ...ITEM.coffee, barcodes: [{ code: '5601234000011', variantId: null }] },
-        ],
-      }),
-    );
-    const read = toCatalog({ ...CATALOG, catalog: wire });
-    expect(read.families.map((family) => family.code)).toEqual(['BEBIDAS', 'PRATOS', 'MENUS']);
-    expect(read.item(ITEM.water.id)?.variants[0]?.price).toBeNull();
-    expect(byCode(read.items, '5601234000011')).toEqual({ item: read.item(ITEM.coffee.id) });
+  it('reads a version-1 snapshot, stored before item kinds and menus: every item STANDARD, without menu groups', () => {
+    const v1Item = Object.fromEntries(
+      Object.entries(ITEM.steak).filter(([key]) => key !== 'kind' && key !== 'menuGroups'),
+    ) as CatalogSnapshot['items'][number];
+    const read = toCatalog({ ...CATALOG, catalog: { ...CATALOG.catalog, schemaVersion: 1, items: [v1Item] } });
+    expect(read.item(ITEM.steak.id)).toMatchObject({ kind: 'STANDARD', menuGroups: [] });
   });
 
   it('names an item with its variant', () => {

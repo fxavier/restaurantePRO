@@ -14,6 +14,7 @@ export function terminalStatuses(status: string): StatusMap<string> {
 
 const kinds: Record<string, string> = { POS: 'Terminal POS', PRINT_BRIDGE: 'Ponte de impressão' };
 
-export function kindLabel(kind: string | undefined): string {
-  return (kind && kinds[kind]) ?? kind ?? '—';
+/** `TerminalSummary.kind` (POS, PRINT_BRIDGE); an unknown one shows as itself. */
+export function kindLabel(kind: string): string {
+  return kinds[kind] ?? kind;
 }

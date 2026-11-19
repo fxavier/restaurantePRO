@@ -24,7 +24,7 @@ type Props = {
   /** The way back to the tables, beside the order's title. */
   back: ReactNode;
   /** After a price or catalog conflict: each draft's gross as shown before, so a changed one says so. */
-  shownBefore?: ReadonlyMap<string, MoneyValue | undefined>;
+  shownBefore?: ReadonlyMap<string, MoneyValue | null>;
 };
 
 /** A draft's name comes from the catalog (a draft has no snapshot); a confirmed line's from its snapshot. */
@@ -42,7 +42,7 @@ export function lineName(line: OrderLine, catalog: PosCatalog | undefined): stri
  */
 export function OrderPanel({ order, catalog, commands, message, action, back, shownBefore }: Props) {
   const timeZone = useStoreTimeZone();
-  const details = [order.guests !== undefined ? guestsLabel(order.guests) : undefined, order.orderNumber !== undefined ? `Pedido n.º ${order.orderNumber}` : undefined]
+  const details = [order.guests !== null ? guestsLabel(order.guests) : undefined, `Pedido n.º ${order.orderNumber}`]
     .filter(Boolean)
     .join(' · ');
   return (
@@ -75,7 +75,7 @@ export function OrderPanel({ order, catalog, commands, message, action, back, sh
                   name={lineName(line, catalog)}
                   catalog={catalog}
                   commands={commands}
-                  before={shownBefore?.has(line.id) ? { gross: shownBefore.get(line.id) } : undefined}
+                  before={shownBefore?.has(line.id) ? { gross: shownBefore.get(line.id) ?? null } : undefined}
                 />
               ))}
             </ul>
@@ -101,7 +101,7 @@ export function OrderPanel({ order, catalog, commands, message, action, back, sh
           ) : (
             <>
               {order.rounds.map((round) => {
-                const title = round.confirmedAt ? `Ronda ${round.batchNo}, ${clockTime(round.confirmedAt, timeZone)}` : `Ronda ${round.batchNo}`;
+                const title = `Ronda ${round.batchNo}, ${clockTime(round.confirmedAt, timeZone)}`;
                 return (
                   <div key={round.id} className="flex flex-col">
                     <h4 className="text-sm font-semibold text-muted-foreground">{title}</h4>
@@ -131,7 +131,7 @@ export function OrderPanel({ order, catalog, commands, message, action, back, sh
         <div role="group" aria-label="Total" className="flex flex-col">
           <div className="flex items-baseline justify-between">
             <span className="text-lg font-semibold">Total</span>
-            {order.due ? <Money value={order.due} className="text-[28px] leading-9 font-bold" /> : <span>—</span>}
+            <Money value={order.due} className="text-[28px] leading-9 font-bold" />
           </div>
           {/* Always one line high, so the button below never moves. */}
           <p className="min-h-5 text-sm text-muted-foreground">
@@ -170,12 +170,12 @@ function Details({ line, catalog }: { line: OrderLine; catalog: PosCatalog | und
 }
 
 /** The same amount in the same currency (an equality, not arithmetic: "120.00" and 120 are one price). */
-function sameMoney(a: MoneyValue | undefined, b: MoneyValue | undefined): boolean {
-  if (!a || !b) return a === b;
+function sameMoney(a: MoneyValue | null, b: MoneyValue | null): boolean {
+  if (!a || !b) return !a && !b;
   return a.currency === b.currency && sameAmount(a.amount, b.amount);
 }
 
-function PriceChange({ before, now }: { before: MoneyValue | undefined; now: MoneyValue | undefined }) {
+function PriceChange({ before, now }: { before: MoneyValue | null; now: MoneyValue | null }) {
   if (sameMoney(before, now)) return null;
   return (
     <p className="text-sm font-medium">
@@ -201,7 +201,7 @@ function DraftRow({
   catalog: PosCatalog | undefined;
   commands: DraftCommands;
   /** The gross shown before a price conflict, when there was one. */
-  before?: { gross: MoneyValue | undefined };
+  before?: { gross: MoneyValue | null };
 }) {
   const { disabled, onQuantity, onRemove, onNote } = commands;
   const less = stepQuantity(line.quantity, -1);

@@ -1,3 +1,4 @@
 com.xavier.backend.PausableSchedulingTestAutoConfiguration
 com.xavier.backend.StoreScopeTestAutoConfiguration
 com.xavier.backend.config.security.TestJwtAutoConfiguration
+com.xavier.backend.NullMarkedResponsesTestAutoConfiguration

@@ -3,8 +3,11 @@ package com.xavier.backend.dining.model.dto;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
 
 /** The POS table map of a store: its active areas, each with its active tables, ordered by code. */
+@NullMarked
 public record TableMap(UUID storeId, List<Area> areas) {
 
     public record Area(UUID id, String code, String name, List<Table> tables) {
@@ -20,7 +23,7 @@ public record TableMap(UUID storeId, List<Area> areas) {
      * other indicators.
      */
     public record Table(UUID id, String code, int seats, TableStatus status, boolean locked, boolean subtotalPrinted,
-                        Instant openedAt, Integer guests, UUID openedByEmployeeId, UUID openOrderId, boolean reserved,
-                        Instant nextReservationAt) {
+                        @Nullable Instant openedAt, @Nullable Integer guests, @Nullable UUID openedByEmployeeId,
+                        @Nullable UUID openOrderId, boolean reserved, @Nullable Instant nextReservationAt) {
     }
 }

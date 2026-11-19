@@ -193,7 +193,8 @@
         "properties": {
           "amount": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-exclusiveMinimum": "0"
           },
           "direction": {
             "enum": [
@@ -392,7 +393,8 @@
         "properties": {
           "amount": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-exclusiveMinimum": "0"
           },
           "reason": {
             "maxLength": 500,
@@ -435,7 +437,8 @@
         "properties": {
           "openingFloat": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-minimum": "0"
           },
           "registerId": {
             "format": "uuid",
@@ -937,6 +940,18 @@
             "type": "integer"
           }
         },
+        "required": [
+          "currency",
+          "effectiveAt",
+          "families",
+          "items",
+          "releaseId",
+          "schemaVersion",
+          "storeId",
+          "taxCategories",
+          "units",
+          "version"
+        ],
         "type": "object"
       },
       "com.xavier.backend.catalog.model.dto.CatalogSnapshot.AutomaticItem": {
@@ -950,7 +965,10 @@
             "type": "string"
           },
           "mode": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "quantity": {
             "format": "decimal",
@@ -961,9 +979,20 @@
           },
           "variantId": {
             "format": "uuid",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
+        "required": [
+          "id",
+          "itemId",
+          "mode",
+          "quantity",
+          "trigger",
+          "variantId"
+        ],
         "type": "object"
       },
       "com.xavier.backend.catalog.model.dto.CatalogSnapshot.Barcode": {
@@ -973,9 +1002,16 @@
           },
           "variantId": {
             "format": "uuid",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
+        "required": [
+          "code",
+          "variantId"
+        ],
         "type": "object"
       },
       "com.xavier.backend.catalog.model.dto.CatalogSnapshot.Family": {
@@ -992,9 +1028,18 @@
           },
           "parentId": {
             "format": "uuid",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
+        "required": [
+          "code",
+          "id",
+          "name",
+          "parentId"
+        ],
         "type": "object"
       },
       "com.xavier.backend.catalog.model.dto.CatalogSnapshot.Item": {
@@ -1037,7 +1082,10 @@
             "$ref": "#/components/schemas/com.xavier.backend.catalog.model.dto.CatalogSnapshot.Price"
           },
           "productionDestination": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "soldByWeight": {
             "type": "boolean"
@@ -1057,6 +1105,19 @@
             "type": "array"
           }
         },
+        "required": [
+          "barcodes",
+          "code",
+          "familyId",
+          "id",
+          "name",
+          "price",
+          "productionDestination",
+          "soldByWeight",
+          "taxCategoryId",
+          "unitId",
+          "variants"
+        ],
         "type": "object"
       },
       "com.xavier.backend.catalog.model.dto.CatalogSnapshot.Macro": {
@@ -1078,6 +1139,12 @@
             "type": "string"
           }
         },
+        "required": [
+          "code",
+          "entries",
+          "id",
+          "name"
+        ],
         "type": "object"
       },
       "com.xavier.backend.catalog.model.dto.CatalogSnapshot.MacroEntry": {
@@ -1092,9 +1159,17 @@
           },
           "variantId": {
             "format": "uuid",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
+        "required": [
+          "itemId",
+          "quantity",
+          "variantId"
+        ],
         "type": "object"
       },
       "com.xavier.backend.catalog.model.dto.CatalogSnapshot.MenuGroup": {
@@ -1120,6 +1195,13 @@
             "type": "array"
           }
         },
+        "required": [
+          "code",
+          "maxChoices",
+          "minChoices",
+          "name",
+          "options"
+        ],
         "type": "object"
       },
       "com.xavier.backend.catalog.model.dto.CatalogSnapshot.MenuOption": {
@@ -1134,9 +1216,17 @@
           },
           "variantId": {
             "format": "uuid",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
+        "required": [
+          "itemId",
+          "quantity",
+          "variantId"
+        ],
         "type": "object"
       },
       "com.xavier.backend.catalog.model.dto.CatalogSnapshot.Price": {
@@ -1148,6 +1238,10 @@
             "type": "string"
           }
         },
+        "required": [
+          "amount",
+          "currency"
+        ],
         "type": "object"
       },
       "com.xavier.backend.catalog.model.dto.CatalogSnapshot.QuickPage": {
@@ -1173,23 +1267,44 @@
             "type": "integer"
           }
         },
+        "required": [
+          "code",
+          "entries",
+          "id",
+          "name",
+          "position"
+        ],
         "type": "object"
       },
       "com.xavier.backend.catalog.model.dto.CatalogSnapshot.QuickPageEntry": {
         "properties": {
           "itemId": {
             "format": "uuid",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "macroId": {
             "format": "uuid",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "variantId": {
             "format": "uuid",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
+        "required": [
+          "itemId",
+          "macroId",
+          "variantId"
+        ],
         "type": "object"
       },
       "com.xavier.backend.catalog.model.dto.CatalogSnapshot.Rate": {
@@ -1202,6 +1317,10 @@
             "type": "string"
           }
         },
+        "required": [
+          "effectiveFrom",
+          "ratePercent"
+        ],
         "type": "object"
       },
       "com.xavier.backend.catalog.model.dto.CatalogSnapshot.TaxCategory": {
@@ -1230,6 +1349,14 @@
             "type": "array"
           }
         },
+        "required": [
+          "code",
+          "id",
+          "name",
+          "rateEffectiveFrom",
+          "ratePercent",
+          "rates"
+        ],
         "type": "object"
       },
       "com.xavier.backend.catalog.model.dto.CatalogSnapshot.Unit": {
@@ -1245,6 +1372,11 @@
             "type": "string"
           }
         },
+        "required": [
+          "code",
+          "id",
+          "name"
+        ],
         "type": "object"
       },
       "com.xavier.backend.catalog.model.dto.CatalogSnapshot.Variant": {
@@ -1260,9 +1392,22 @@
             "type": "string"
           },
           "price": {
-            "$ref": "#/components/schemas/com.xavier.backend.catalog.model.dto.CatalogSnapshot.Price"
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/com.xavier.backend.catalog.model.dto.CatalogSnapshot.Price"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
+        "required": [
+          "code",
+          "id",
+          "name",
+          "price"
+        ],
         "type": "object"
       },
       "com.xavier.backend.catalog.model.dto.DailyDishesRequest": {
@@ -1496,7 +1641,8 @@
         "properties": {
           "amount": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-minimum": "0"
           },
           "itemId": {
             "format": "uuid",
@@ -1545,7 +1691,8 @@
         "properties": {
           "amount": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-minimum": "0"
           },
           "version": {
             "format": "int64",
@@ -1998,6 +2145,13 @@
             "type": "integer"
           }
         },
+        "required": [
+          "catalog",
+          "effectiveAt",
+          "releaseId",
+          "storeId",
+          "version"
+        ],
         "type": "object"
       },
       "com.xavier.backend.catalog.model.dto.PriceListCreateRequest": {
@@ -2415,7 +2569,9 @@
           },
           "ratePercent": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-maximum": "100",
+            "x-minimum": "0"
           }
         },
         "required": [
@@ -2705,7 +2861,8 @@
         "properties": {
           "newLimit": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-minimum": "0"
           },
           "reason": {
             "maxLength": 500,
@@ -3443,6 +3600,14 @@
             "type": "integer"
           }
         },
+        "required": [
+          "active",
+          "code",
+          "id",
+          "name",
+          "storeId",
+          "version"
+        ],
         "type": "object"
       },
       "com.xavier.backend.dining.model.dto.RoomAreaUpdateRequest": {
@@ -3499,6 +3664,10 @@
             "type": "string"
           }
         },
+        "required": [
+          "areas",
+          "storeId"
+        ],
         "type": "object"
       },
       "com.xavier.backend.dining.model.dto.TableMap.Area": {
@@ -3520,6 +3689,12 @@
             "type": "array"
           }
         },
+        "required": [
+          "code",
+          "id",
+          "name",
+          "tables"
+        ],
         "type": "object"
       },
       "com.xavier.backend.dining.model.dto.TableMap.Table": {
@@ -3529,7 +3704,10 @@
           },
           "guests": {
             "format": "int32",
-            "type": "integer"
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "id": {
             "format": "uuid",
@@ -3540,19 +3718,31 @@
           },
           "nextReservationAt": {
             "format": "date-time",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "openOrderId": {
             "format": "uuid",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "openedAt": {
             "format": "date-time",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "openedByEmployeeId": {
             "format": "uuid",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "reserved": {
             "type": "boolean"
@@ -3572,6 +3762,20 @@
             "type": "boolean"
           }
         },
+        "required": [
+          "code",
+          "guests",
+          "id",
+          "locked",
+          "nextReservationAt",
+          "openOrderId",
+          "openedAt",
+          "openedByEmployeeId",
+          "reserved",
+          "seats",
+          "status",
+          "subtotalPrinted"
+        ],
         "type": "object"
       },
       "com.xavier.backend.fiscal.model.dto.Buyer": {
@@ -4398,11 +4602,17 @@
       "com.xavier.backend.identity.model.dto.SessionView": {
         "properties": {
           "currency": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "employeeId": {
             "format": "uuid",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "kind": {
             "enum": [
@@ -4415,7 +4625,10 @@
             "type": "boolean"
           },
           "name": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "permissions": {
             "items": {
@@ -4425,34 +4638,71 @@
             "uniqueItems": true
           },
           "posSession": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "storeId": {
             "format": "uuid",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "storeName": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "storeTimezone": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "tenantId": {
             "format": "uuid",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "tenantName": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "terminalId": {
             "format": "uuid",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "userId": {
             "format": "uuid",
             "type": "string"
           }
         },
+        "required": [
+          "currency",
+          "employeeId",
+          "kind",
+          "mustChangePin",
+          "name",
+          "permissions",
+          "posSession",
+          "storeId",
+          "storeName",
+          "storeTimezone",
+          "tenantId",
+          "tenantName",
+          "terminalId",
+          "userId"
+        ],
         "type": "object"
       },
       "com.xavier.backend.identity.model.dto.SupportGrantRequest": {
@@ -4570,6 +4820,13 @@
             "type": "string"
           }
         },
+        "required": [
+          "code",
+          "kind",
+          "legalName",
+          "status",
+          "tenantId"
+        ],
         "type": "object"
       },
       "com.xavier.backend.identity.model.dto.UserCreateRequest": {
@@ -4830,14 +5087,16 @@
           },
           "countedQuantity": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-minimum": "0"
           },
           "unit": {
             "type": "string"
           },
           "unitCost": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-minimum": "0"
           }
         },
         "required": [
@@ -5288,7 +5547,8 @@
         "properties": {
           "minQuantity": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-minimum": "0"
           },
           "stockItemId": {
             "format": "uuid",
@@ -5310,7 +5570,8 @@
         "properties": {
           "minQuantity": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-minimum": "0"
           },
           "version": {
             "format": "int64",
@@ -5361,7 +5622,8 @@
           },
           "unitCost": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-minimum": "0"
           }
         },
         "required": [
@@ -5524,7 +5786,8 @@
           },
           "quantity": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-exclusiveMinimum": "0"
           },
           "unit": {
             "maxLength": 10,
@@ -5896,7 +6159,8 @@
         "properties": {
           "quantity": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-exclusiveMinimum": "0"
           },
           "stockItemId": {
             "format": "uuid",
@@ -6216,7 +6480,8 @@
           },
           "outputQuantity": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-exclusiveMinimum": "0"
           },
           "outputStockItemId": {
             "format": "uuid",
@@ -6308,7 +6573,8 @@
         "properties": {
           "newUnitCost": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-minimum": "0"
           },
           "reason": {
             "maxLength": 500,
@@ -6381,7 +6647,8 @@
           },
           "quantity": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-exclusiveMinimum": "0"
           },
           "stockItemId": {
             "format": "uuid",
@@ -6389,7 +6656,8 @@
           },
           "unitCost": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-minimum": "0"
           }
         },
         "required": [
@@ -6623,7 +6891,8 @@
           },
           "packQuantity": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-exclusiveMinimum": "0"
           },
           "purchaseOrderLineId": {
             "format": "uuid",
@@ -6635,7 +6904,8 @@
           },
           "unitCost": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-minimum": "0"
           }
         },
         "required": [
@@ -6820,7 +7090,8 @@
         "properties": {
           "quantity": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-exclusiveMinimum": "0"
           },
           "receiptLineId": {
             "format": "uuid",
@@ -6859,7 +7130,8 @@
           },
           "unitCost": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-minimum": "0"
           }
         },
         "required": [
@@ -7189,7 +7461,8 @@
           },
           "quantity": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-exclusiveMinimum": "0"
           },
           "stockItemId": {
             "format": "uuid",
@@ -7298,7 +7571,8 @@
           },
           "yieldQuantity": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-exclusiveMinimum": "0"
           },
           "yieldUnit": {
             "maxLength": 10,
@@ -7969,7 +8243,8 @@
           },
           "quantity": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-exclusiveMinimum": "0"
           },
           "variantId": {
             "format": "uuid",
@@ -8044,6 +8319,16 @@
             "type": "string"
           }
         },
+        "required": [
+          "batchNo",
+          "confirmedAt",
+          "confirmedByEmployeeId",
+          "id",
+          "lines",
+          "orderId",
+          "orderVersion",
+          "status"
+        ],
         "type": "object"
       },
       "com.xavier.backend.orders.model.dto.CancelOrderRequest": {
@@ -8072,7 +8357,8 @@
           },
           "expectedGross": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-minimum": "0"
           },
           "lineIds": {
             "items": {
@@ -8153,7 +8439,9 @@
           },
           "percent": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-exclusiveMinimum": "0",
+            "x-maximum": "100"
           },
           "reason": {
             "maxLength": 200,
@@ -8167,7 +8455,8 @@
           },
           "unitPrice": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-minimum": "0"
           }
         },
         "required": [
@@ -8186,7 +8475,8 @@
           },
           "quantity": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-exclusiveMinimum": "0"
           }
         },
         "required": [
@@ -8207,7 +8497,10 @@
           },
           "batchId": {
             "format": "uuid",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "components": {
             "items": {
@@ -8216,57 +8509,109 @@
             "type": "array"
           },
           "description": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "discount": {
-            "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "discountLabel": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "gross": {
-            "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "id": {
             "format": "uuid",
             "type": "string"
           },
           "itemCode": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "itemId": {
             "format": "uuid",
             "type": "string"
           },
           "kind": {
-            "enum": [
-              "STANDARD",
-              "MENU",
-              "FEE"
-            ],
-            "type": "string"
+            "oneOf": [
+              {
+                "enum": [
+                  "STANDARD",
+                  "MENU",
+                  "FEE"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "listUnitPrice": {
-            "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "netQuantity": {
             "format": "decimal",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "notes": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "origin": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "preview": {
             "type": "boolean"
           },
           "promotionCode": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "promotionName": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "quantity": {
             "format": "decimal",
@@ -8281,30 +8626,77 @@
           },
           "taxRatePercent": {
             "format": "decimal",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "unitPrice": {
-            "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "variantId": {
             "format": "uuid",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "variantName": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "version": {
             "format": "int64",
             "type": "integer"
           }
         },
+        "required": [
+          "adjustments",
+          "automatic",
+          "batchId",
+          "components",
+          "description",
+          "discount",
+          "discountLabel",
+          "gross",
+          "id",
+          "itemCode",
+          "itemId",
+          "kind",
+          "listUnitPrice",
+          "netQuantity",
+          "notes",
+          "origin",
+          "preview",
+          "promotionCode",
+          "promotionName",
+          "quantity",
+          "status",
+          "taxRatePercent",
+          "unitPrice",
+          "variantId",
+          "variantName",
+          "version"
+        ],
         "type": "object"
       },
       "com.xavier.backend.orders.model.dto.LineView.AdjustmentView": {
         "properties": {
           "approverEmployeeId": {
             "format": "uuid",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "at": {
             "format": "date-time",
@@ -8323,7 +8715,10 @@
           },
           "percent": {
             "format": "decimal",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "previousUnitPrice": {
             "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
@@ -8336,7 +8731,10 @@
             "type": "string"
           },
           "rewardCode": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "seq": {
             "format": "int32",
@@ -8346,15 +8744,35 @@
             "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
           }
         },
+        "required": [
+          "approverEmployeeId",
+          "at",
+          "id",
+          "kind",
+          "operatorEmployeeId",
+          "percent",
+          "previousUnitPrice",
+          "quantity",
+          "reason",
+          "rewardCode",
+          "seq",
+          "unitPrice"
+        ],
         "type": "object"
       },
       "com.xavier.backend.orders.model.dto.LineView.ComponentView": {
         "properties": {
           "description": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "destination": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "groupCode": {
             "type": "string"
@@ -8364,7 +8782,10 @@
             "type": "string"
           },
           "itemCode": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "itemId": {
             "format": "uuid",
@@ -8376,9 +8797,22 @@
           },
           "variantId": {
             "format": "uuid",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
+        "required": [
+          "description",
+          "destination",
+          "groupCode",
+          "id",
+          "itemCode",
+          "itemId",
+          "quantity",
+          "variantId"
+        ],
         "type": "object"
       },
       "com.xavier.backend.orders.model.dto.MacroRequest": {
@@ -8462,7 +8896,10 @@
           },
           "guests": {
             "format": "int32",
-            "type": "integer"
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "id": {
             "format": "uuid",
@@ -8498,17 +8935,37 @@
             "type": "integer"
           },
           "tableCode": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "tableId": {
             "format": "uuid",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "version": {
             "format": "int64",
             "type": "integer"
           }
         },
+        "required": [
+          "billingLock",
+          "businessDay",
+          "guests",
+          "id",
+          "lifecycle",
+          "mode",
+          "openedAt",
+          "openedByEmployeeId",
+          "orderNumber",
+          "tableCode",
+          "tableId",
+          "version"
+        ],
         "type": "object"
       },
       "com.xavier.backend.orders.model.dto.OrderView": {
@@ -8533,21 +8990,37 @@
           },
           "catalogVersion": {
             "format": "int64",
-            "type": "integer"
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "customerId": {
             "format": "uuid",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "draftGross": {
-            "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "due": {
             "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
           },
           "guests": {
             "format": "int32",
-            "type": "integer"
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "id": {
             "format": "uuid",
@@ -8590,18 +9063,27 @@
           },
           "promotionVersion": {
             "format": "int64",
-            "type": "integer"
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "storeId": {
             "format": "uuid",
             "type": "string"
           },
           "tableCode": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "tableId": {
             "format": "uuid",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "terminalId": {
             "format": "uuid",
@@ -8612,6 +9094,29 @@
             "type": "integer"
           }
         },
+        "required": [
+          "batches",
+          "billingLock",
+          "businessDay",
+          "catalogVersion",
+          "customerId",
+          "draftGross",
+          "due",
+          "guests",
+          "id",
+          "lifecycle",
+          "lines",
+          "mode",
+          "openedAt",
+          "openedByEmployeeId",
+          "orderNumber",
+          "promotionVersion",
+          "storeId",
+          "tableCode",
+          "tableId",
+          "terminalId",
+          "version"
+        ],
         "type": "object"
       },
       "com.xavier.backend.orders.model.dto.SubtotalView": {
@@ -8664,7 +9169,8 @@
           },
           "quantity": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-exclusiveMinimum": "0"
           }
         },
         "required": [
@@ -8766,7 +9272,8 @@
           },
           "quantity": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-exclusiveMinimum": "0"
           },
           "variantId": {
             "format": "uuid",
@@ -8795,7 +9302,8 @@
           },
           "quantity": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-exclusiveMinimum": "0"
           },
           "reason": {
             "maxLength": 200,
@@ -8964,6 +9472,11 @@
             "type": "string"
           }
         },
+        "required": [
+          "clientId",
+          "id",
+          "storeId"
+        ],
         "type": "object"
       },
       "com.xavier.backend.organization.model.dto.EnrollmentCodeResponse": {
@@ -8980,6 +9493,11 @@
             "type": "string"
           }
         },
+        "required": [
+          "code",
+          "expiresAt",
+          "terminalId"
+        ],
         "type": "object"
       },
       "com.xavier.backend.organization.model.dto.StoreCreateRequest": {
@@ -9041,6 +9559,16 @@
             "type": "integer"
           }
         },
+        "required": [
+          "active",
+          "businessDayCutoff",
+          "code",
+          "currency",
+          "id",
+          "name",
+          "timezone",
+          "version"
+        ],
         "type": "object"
       },
       "com.xavier.backend.organization.model.dto.StoreUpdateRequest": {
@@ -9136,6 +9664,14 @@
             "type": "string"
           }
         },
+        "required": [
+          "code",
+          "id",
+          "kind",
+          "name",
+          "status",
+          "storeId"
+        ],
         "type": "object"
       },
       "com.xavier.backend.production.model.dto.BridgeJobView": {
@@ -9926,7 +10462,8 @@
           },
           "spendUnit": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-exclusiveMinimum": "0"
           },
           "version": {
             "format": "int64",
@@ -9967,7 +10504,8 @@
           },
           "spendUnit": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-exclusiveMinimum": "0"
           }
         },
         "required": [
@@ -11455,7 +11993,8 @@
         "properties": {
           "amount": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-exclusiveMinimum": "0"
           },
           "methodCode": {
             "maxLength": 30,
@@ -11472,7 +12011,8 @@
           },
           "tendered": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-exclusiveMinimum": "0"
           }
         },
         "required": [
@@ -11486,7 +12026,8 @@
         "properties": {
           "amount": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-exclusiveMinimum": "0"
           },
           "kind": {
             "pattern": "ITEMS|AMOUNT",
@@ -11520,7 +12061,8 @@
         "properties": {
           "amount": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-exclusiveMinimum": "0"
           },
           "customerId": {
             "format": "uuid",
@@ -11598,7 +12140,8 @@
         "properties": {
           "amount": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-exclusiveMinimum": "0"
           },
           "debitEntryIds": {
             "items": {
@@ -11616,7 +12159,8 @@
           },
           "tendered": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-exclusiveMinimum": "0"
           }
         },
         "required": [
@@ -11884,7 +12428,8 @@
           },
           "quantity": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-exclusiveMinimum": "0"
           }
         },
         "required": [
@@ -12241,7 +12786,9 @@
           },
           "percent": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-exclusiveMinimum": "0",
+            "x-maximum": "100"
           },
           "reason": {
             "maxLength": 200,
@@ -12255,7 +12802,8 @@
           },
           "unitPrice": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-minimum": "0"
           }
         },
         "required": [
@@ -12274,7 +12822,8 @@
           },
           "quantity": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-exclusiveMinimum": "0"
           }
         },
         "required": [
@@ -12294,7 +12843,8 @@
           },
           "quantity": {
             "format": "decimal",
-            "type": "string"
+            "type": "string",
+            "x-exclusiveMinimum": "0"
           },
           "reason": {
             "maxLength": 500,
@@ -12782,6 +13332,10 @@
             "type": "string"
           }
         },
+        "required": [
+          "amount",
+          "currency"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.events.EventPublicationView": {
@@ -12872,6 +13426,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.cash.model.dto.ClosingView": {
@@ -12895,6 +13455,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.cash.model.dto.RegisterSummary": {
@@ -12918,6 +13484,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.catalog.model.dto.FamilySummary": {
@@ -12941,6 +13513,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.catalog.model.dto.ItemSummary": {
@@ -12964,6 +13542,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.catalog.model.dto.ReleaseSummary": {
@@ -12987,6 +13571,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.catalog.model.dto.StoreItemExclusionView": {
@@ -13010,6 +13600,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.catalog.model.dto.TaxCategorySummary": {
@@ -13033,6 +13629,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.catalog.model.dto.UnitSummary": {
@@ -13056,6 +13658,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.customers.model.dto.DebtRow": {
@@ -13079,6 +13687,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.dining.model.dto.RestaurantTableSummary": {
@@ -13102,6 +13716,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.dining.model.dto.RoomAreaSummary": {
@@ -13125,6 +13745,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.fiscal.model.dto.DocumentSummary": {
@@ -13148,6 +13774,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.fiscal.model.dto.SeriesView": {
@@ -13171,6 +13803,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.identity.model.dto.EmployeeSummary": {
@@ -13194,6 +13832,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.identity.model.dto.RoleSummary": {
@@ -13217,6 +13861,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.identity.model.dto.SupportGrantSummary": {
@@ -13240,6 +13890,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.identity.model.dto.UserSummary": {
@@ -13263,6 +13919,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.inventory.consumption.model.dto.ExceptionView": {
@@ -13286,6 +13948,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.inventory.model.dto.MovementView": {
@@ -13309,6 +13977,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.inventory.model.dto.StockItemView": {
@@ -13332,6 +14006,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.inventory.model.dto.StockRow": {
@@ -13355,6 +14035,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.inventory.model.dto.TransferView": {
@@ -13378,6 +14064,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.inventory.purchasing.model.dto.PurchaseOrderView": {
@@ -13401,6 +14093,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.inventory.purchasing.model.dto.ReceiptView": {
@@ -13424,6 +14122,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.inventory.purchasing.model.dto.SupplierReturnView": {
@@ -13447,6 +14151,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.inventory.purchasing.model.dto.SupplierView": {
@@ -13470,6 +14180,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.inventory.recipe.model.dto.RecipeView": {
@@ -13493,6 +14209,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.orders.delivery.model.dto.DeliveryView": {
@@ -13516,6 +14238,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.orders.model.dto.OrderSummary": {
@@ -13539,6 +14267,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.organization.model.dto.StoreSummary": {
@@ -13562,6 +14296,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.organization.model.dto.TerminalSummary": {
@@ -13585,6 +14325,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.production.model.dto.PrintJobView": {
@@ -13608,6 +14354,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.production.model.dto.PrinterView": {
@@ -13631,6 +14383,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.production.model.dto.TicketView": {
@@ -13654,6 +14412,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.promotions.model.dto.PromotionReleaseView": {
@@ -13677,6 +14441,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.promotions.model.dto.PromotionView": {
@@ -13700,6 +14470,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.settlement.model.dto.TaxRoundingAdjustmentView": {
@@ -13723,6 +14499,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.settlement.reconciliation.model.dto.BatchView": {
@@ -13746,6 +14528,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.settlement.reconciliation.model.dto.EntryView": {
@@ -13769,6 +14557,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.shared.events.EventPublicationView": {
@@ -13792,6 +14586,12 @@
             "type": "integer"
           }
         },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
         "type": "object"
       },
       "com.xavier.backend.tenancy.model.dto.OnboardTenantRequest": {

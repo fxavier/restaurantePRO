@@ -6,6 +6,8 @@ import com.xavier.backend.shared.Money;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
+import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A line as the POS shows it. A DRAFT carries a preview ({@code preview = true}): the price the current catalog and
@@ -17,21 +19,25 @@ import java.util.UUID;
  * {@code LOYALTY}) and {@code discountLabel} are {@code null} at list price. {@code components} are a menu's choices
  * (D108); {@code adjustments} the line's price adjustments in order (D105).
  */
-public record LineView(UUID id, LineStatus status, UUID itemId, UUID variantId, BigDecimal quantity,
-                       BigDecimal netQuantity, String notes, long version, UUID batchId, String itemCode,
-                       String description, String variantName, Money unitPrice, BigDecimal taxRatePercent,
-                       Money gross, boolean preview, LineKind kind, boolean automatic, Money listUnitPrice,
-                       Money discount, String origin, String discountLabel, String promotionCode,
-                       String promotionName, List<ComponentView> components, List<AdjustmentView> adjustments) {
+@NullMarked
+public record LineView(UUID id, LineStatus status, UUID itemId, @Nullable UUID variantId, BigDecimal quantity,
+                       @Nullable BigDecimal netQuantity, @Nullable String notes, long version,
+                       @Nullable UUID batchId, @Nullable String itemCode, @Nullable String description,
+                       @Nullable String variantName, @Nullable Money unitPrice, @Nullable BigDecimal taxRatePercent,
+                       @Nullable Money gross, boolean preview, @Nullable LineKind kind, boolean automatic,
+                       @Nullable Money listUnitPrice, @Nullable Money discount, @Nullable String origin,
+                       @Nullable String discountLabel, @Nullable String promotionCode, @Nullable String promotionName,
+                       List<ComponentView> components, List<AdjustmentView> adjustments) {
 
     /** A menu's choice; code, description and destination are set once the line is confirmed. */
-    public record ComponentView(UUID id, String groupCode, UUID itemId, UUID variantId, String itemCode,
-                                String description, BigDecimal quantity, String destination) {
+    public record ComponentView(UUID id, String groupCode, UUID itemId, @Nullable UUID variantId,
+                                @Nullable String itemCode, @Nullable String description, BigDecimal quantity,
+                                @Nullable String destination) {
     }
 
     /** One price adjustment of a confirmed line (D105). */
-    public record AdjustmentView(UUID id, int seq, String kind, BigDecimal quantity, BigDecimal percent,
-                                 Money previousUnitPrice, Money unitPrice, String rewardCode, String reason,
-                                 UUID operatorEmployeeId, UUID approverEmployeeId, java.time.Instant at) {
+    public record AdjustmentView(UUID id, int seq, String kind, BigDecimal quantity, @Nullable BigDecimal percent,
+                                 Money previousUnitPrice, Money unitPrice, @Nullable String rewardCode, String reason,
+                                 UUID operatorEmployeeId, @Nullable UUID approverEmployeeId, java.time.Instant at) {
     }
 }
