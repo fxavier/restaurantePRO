@@ -25,7 +25,8 @@ class ProblemDetailResponderTest {
 
     final JsonMapper json = bootJsonMapper();
     final ProblemDetailResponder responder = new ProblemDetailResponder(json, new SecurityProperties(null,
-            "restaurantpro-api", Duration.ofSeconds(30), Duration.ofMinutes(5)));
+            "restaurantpro-api", Duration.ofSeconds(30), Duration.ofMinutes(5),
+                Duration.ofSeconds(2)));
 
     private static JsonMapper bootJsonMapper() {
         JsonMapper[] mapper = new JsonMapper[1];

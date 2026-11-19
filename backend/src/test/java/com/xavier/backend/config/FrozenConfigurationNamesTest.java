@@ -38,6 +38,8 @@ class FrozenConfigurationNamesTest {
                 new String[] {"restaurantpro.store-scope.enforcement", "PERMISSIVE"});
         // G13 (ADR 0041): the web origin of the pos-* clients
         FROZEN.put("RESTAURANTPRO_POS_ORIGIN", new String[] {"restaurantpro.pos.origin", "https://pos.example.com"});
+        // FE-F34: the key-set fetch timeout
+        FROZEN.put("RESTAURANTPRO_JWKS_TIMEOUT", new String[] {"restaurantpro.security.jwks-timeout", "PT5S"});
     }
 
     @Test
@@ -64,6 +66,7 @@ class FrozenConfigurationNamesTest {
         assertThat(environment.getProperty("spring.flyway.password")).isEmpty();
         assertThat(environment.getProperty("restaurantpro.store-scope.enforcement")).isEqualTo("ENFORCE");
         assertThat(environment.getProperty("restaurantpro.pos.origin")).as("unset: terminals are refused").isEmpty();
+        assertThat(environment.getProperty("restaurantpro.security.jwks-timeout")).isEqualTo("PT2S");
     }
 
     /**
