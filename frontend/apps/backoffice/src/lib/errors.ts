@@ -10,9 +10,16 @@ export function isUnavailable(error: unknown): boolean {
   return error instanceof ApiError && (error.status === 0 || error.status === 502 || error.status === 503);
 }
 
-/** 409 from the BFF: another tab switched the company this tab still shows; the write was not sent (FE-F16). */
+/**
+ * 409 from the BFF: another tab switched the company this tab still shows (FE-F16), or logged another user in
+ * (`SESSION_CHANGED`, FE-F22); the write was not sent. Both reload the page.
+ */
 export function isTenantChanged(error: unknown): boolean {
-  return error instanceof ApiError && error.status === 409 && error.code === 'TENANT_CHANGED';
+  return (
+    error instanceof ApiError &&
+    error.status === 409 &&
+    (error.code === 'TENANT_CHANGED' || error.code === 'SESSION_CHANGED')
+  );
 }
 
 export function errorCode(error: unknown): string | undefined {

@@ -18,7 +18,9 @@ enum BffProblem {
     BACKEND_UNAVAILABLE(HttpStatus.BAD_GATEWAY, "BACKEND_UNAVAILABLE", "The backend could not be reached"),
     PAYLOAD_TOO_LARGE(HttpStatus.CONTENT_TOO_LARGE, "BFF_PAYLOAD_TOO_LARGE", "The request body is larger than the BFF relays"),
     /** A write expected another tenant than the session's selection (another tab switched): nothing was relayed. */
-    TENANT_CHANGED(HttpStatus.CONFLICT, "TENANT_CHANGED", "The selected tenant changed in another tab; nothing was sent");
+    TENANT_CHANGED(HttpStatus.CONFLICT, "TENANT_CHANGED", "The selected tenant changed in another tab; nothing was sent"),
+    /** A write expected another user than the session's (another user logged in from another tab): nothing was relayed. */
+    SESSION_CHANGED(HttpStatus.CONFLICT, "SESSION_CHANGED", "Another user logged in from another tab; nothing was sent");
 
     private final HttpStatus status;
     private final String code;

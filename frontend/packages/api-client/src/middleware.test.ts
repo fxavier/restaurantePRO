@@ -196,6 +196,48 @@ describe('BackOffice middleware', () => {
     });
   });
 
+  describe('the user the tab was loaded for (FE-F22)', () => {
+    const USER = 'kc-subject-1';
+    const pinned = backOfficeMiddleware({ cookies: () => cookies, expectedTenant: () => TENANT, expectedUser: () => USER });
+    const answering = (relayedUser?: string) => async () =>
+      Response.json({ stores: ['secret'] }, {
+        headers: { 'X-Relayed-Tenant': TENANT, ...(relayedUser ? { 'X-Relayed-User': relayedUser } : {}) },
+      });
+
+    it('names the pinned user in X-Expected-User on every call', async () => {
+      const { fetch, requests } = capturingFetch();
+      const client = createApiClient({ baseUrl: BASE, fetch, middleware: [pinned] });
+
+      await client.GET('/api/v1/auth/session');
+      await unsafeCalls.POST(client);
+
+      expect(requests.map((r) => r.headers.get('X-Expected-User'))).toEqual([USER, USER]);
+    });
+
+    it('names no user before the tab is pinned', async () => {
+      const { fetch, requests } = capturingFetch();
+      const client = createApiClient({ baseUrl: BASE, fetch, middleware: [backOffice] });
+
+      await unsafeCalls.POST(client);
+
+      expect(requests[0]?.headers.has('X-Expected-User')).toBe(false);
+    });
+
+    it('throws TENANT_CHANGED instead of an answer relayed for another user', async () => {
+      const client = createApiClient({ baseUrl: BASE, fetch: answering('kc-subject-2'), middleware: [pinned] });
+
+      await expect(client.GET('/api/v1/auth/session')).rejects.toMatchObject({ status: 409, code: 'TENANT_CHANGED' });
+    });
+
+    it('passes an answer relayed for the pinned user, or naming none', async () => {
+      for (const relayed of [USER, undefined]) {
+        const client = createApiClient({ baseUrl: BASE, fetch: answering(relayed), middleware: [pinned] });
+
+        await expect(client.GET('/api/v1/auth/session')).resolves.toMatchObject({ data: { stores: ['secret'] } });
+      }
+    });
+  });
+
   it('sends no bearer token', async () => {
     const { fetch, requests } = capturingFetch();
     const client = createApiClient({ baseUrl: BASE, fetch, middleware: [backOffice] });

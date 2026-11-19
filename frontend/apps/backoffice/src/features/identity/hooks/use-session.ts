@@ -20,13 +20,14 @@ export function useSession() {
     staleTime: 0,
     refetchOnWindowFocus: 'always',
     queryFn: async (): Promise<SessionView> => {
-      const { data } = await api.GET('/api/v1/auth/session');
+      const { data, response } = await api.GET('/api/v1/auth/session');
       loginSucceeded();
       const pinned = pin.get();
       if (pinned && (data?.tenantId !== pinned.tenantId || data?.userId !== pinned.userId)) {
         throw new ApiError({ status: 409, code: 'TENANT_CHANGED', title: 'The session or tenant changed in another tab' });
       }
-      if (data?.tenantId) pin.setOnce({ tenantId: data.tenantId, userId: data.userId });
+      const subject = response.headers.get('X-Relayed-User') ?? undefined;
+      if (data?.tenantId) pin.setOnce({ tenantId: data.tenantId, userId: data.userId, subject });
       return data ?? {};
     },
   });

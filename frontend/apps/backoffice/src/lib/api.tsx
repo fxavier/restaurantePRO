@@ -3,18 +3,19 @@ import { createContext, useContext, type ReactNode } from 'react';
 import type { TenantPin } from './tenant-pin';
 
 /**
- * The BackOffice client: the BFF session cookie on every call; on unsafe ones the CSRF header and `X-Expected-Tenant`,
- * the company this tab's data belongs to (the pin), so a write after another tab switched is refused (FC §6, §7,
- * FE-F16). `baseUrl` and `cookies` are for tests.
+ * The BackOffice client: the BFF session cookie on every call; on unsafe ones the CSRF header; once pinned, on every
+ * one `X-Expected-Tenant` and `X-Expected-User`, the company and user this tab's data belongs to (the pin), so a write
+ * after another tab switched company or logged another user in is refused (FC §6, §7, FE-F16, FE-F22). `baseUrl` and `cookies` are for tests.
  */
 export function createBackOfficeClient(
   tenantPin: TenantPin,
   { baseUrl, cookies }: { baseUrl?: string; cookies?: () => string } = {},
 ): ApiClient {
   const expectedTenant = () => tenantPin.get()?.tenantId;
+  const expectedUser = () => tenantPin.get()?.subject;
   return createApiClient({
     ...(baseUrl === undefined ? {} : { baseUrl }),
-    middleware: [backOfficeMiddleware({ expectedTenant, ...(cookies === undefined ? {} : { cookies }) })],
+    middleware: [backOfficeMiddleware({ expectedTenant, expectedUser, ...(cookies === undefined ? {} : { cookies }) })],
   });
 }
 
