@@ -92,9 +92,13 @@ up() {
   [[ -f "$FRONTEND/apps/pos/dist/index.html" && -f "$FRONTEND/apps/backoffice/dist/index.html" ]] \
     || die "no built SPA in frontend/apps/*/dist (run without E2E_SKIP_BUILD=1)"
   # Caddy serves this stack's copy, so another stack's build (another Keycloak port in the POS) cannot change it.
-  rm -rf "$RUN/srv" && mkdir -p "$RUN/srv"
-  cp -R "$FRONTEND/apps/pos/dist" "$RUN/srv/pos"
-  cp -R "$FRONTEND/apps/backoffice/dist" "$RUN/srv/backoffice"
+  # Emptied in place, never removed: a running Caddy bind-mounts these two directories, and a new directory would
+  # leave it serving the deleted one on a re-`up`.
+  for app in pos backoffice; do
+    mkdir -p "$RUN/srv/$app"
+    find "$RUN/srv/$app" -mindepth 1 -delete
+    cp -R "$FRONTEND/apps/$app/dist/." "$RUN/srv/$app/"
+  done
 
   log "starting PostgreSQL, Keycloak and Mailpit"
   compose up -d --wait postgres keycloak mailpit

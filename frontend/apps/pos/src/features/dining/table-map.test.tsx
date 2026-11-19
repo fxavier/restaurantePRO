@@ -153,7 +153,7 @@ describe('table map', () => {
     await atTables(() => HttpResponse.error());
 
     // Two retries on a network error (FC §5) come first.
-    expect(await screen.findByRole('alert', {}, { timeout: 6_000 })).toHaveTextContent(
+    expect(await screen.findByRole('alert')).toHaveTextContent(
       'Sem ligação — não foi possível carregar as mesas.',
     );
     expect(screen.getByRole('button', { name: 'Tentar novamente' })).toBeInTheDocument();
