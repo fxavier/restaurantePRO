@@ -11,7 +11,12 @@ import org.springframework.stereotype.Component;
 @Component
 class CurrencyAsStringDocumentation {
 
-    CurrencyAsStringDocumentation() {
+    /*
+     * SpringDocUtils' configuration is JVM-global, not per context: set it once when the class loads, not again in
+     * the constructor of every context that creates this bean (tests start many). The bean only makes the component
+     * scan load the class before springdoc builds the document.
+     */
+    static {
         SpringDocUtils.getConfig().replaceWithClass(Currency.class, String.class);
     }
 }

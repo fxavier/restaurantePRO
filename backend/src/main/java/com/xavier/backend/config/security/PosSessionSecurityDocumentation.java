@@ -5,6 +5,7 @@ import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Operation;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
+import java.util.ArrayList;
 import java.util.List;
 import org.springdoc.core.customizers.OpenApiCustomizer;
 import org.springframework.stereotype.Component;
@@ -39,9 +40,12 @@ class PosSessionSecurityDocumentation implements OpenApiCustomizer {
         });
     }
 
-    /** A controller that also reads the header (the logout) would otherwise document it twice, once as a parameter. */
+    /**
+     * A controller that also reads the header (the logout) would otherwise document it twice, once as a parameter.
+     * The list stays mutable: swagger's own {@code addSecurityItem} (another customiser, springdoc) appends to it.
+     */
     private static void require(Operation operation) {
-        operation.setSecurity(List.of(new SecurityRequirement().addList(SCHEME)));
+        operation.setSecurity(new ArrayList<>(List.of(new SecurityRequirement().addList(SCHEME))));
         if (operation.getParameters() != null) {
             operation.getParameters().removeIf(p -> "header".equals(p.getIn())
                     && TenantResolutionFilter.POS_SESSION.equals(p.getName()));
