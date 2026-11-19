@@ -112,7 +112,7 @@ class SecurityConfig {
     private static AuthenticationSuccessHandler afterLogin() {
         SimpleUrlAuthenticationSuccessHandler home = new SimpleUrlAuthenticationSuccessHandler("/");
         return (request, response, authentication) -> {
-            TenantController.keepSelectionOnlyFor(request.getSession(), authentication.getName());
+            TenantController.keepSelectionOnlyFor(request.getSession(), ExpectedUser.subject(authentication));
             String returnPath = StepUp.takeReturnPath(request.getSession());
             if (returnPath == null) {
                 home.onAuthenticationSuccess(request, response, authentication);

@@ -30,6 +30,8 @@ export type BackOfficeOptions = {
   expectedTenant: () => string | undefined;
   /** The user (Keycloak subject, `X-Relayed-User`) this tab's page was loaded for; absent before the first session read. */
   expectedUser?: () => string | undefined;
+  /** Told the user (`X-Relayed-User`) of every answer that names one, error answers included, so the tab can pin it. */
+  onRelayedUser?: (subject: string) => void;
   /** The document's cookies; injectable for tests. */
   cookies?: () => string;
 };
@@ -48,6 +50,7 @@ const tenantChanged = () =>
 export function backOfficeMiddleware({
   expectedTenant,
   expectedUser = () => undefined,
+  onRelayedUser = () => undefined,
   cookies = () => document.cookie,
 }: BackOfficeOptions): Middleware {
   return {
@@ -67,6 +70,7 @@ export function backOfficeMiddleware({
       const user = request.headers.get('X-Expected-User');
       const relayedUser = response.headers.get('X-Relayed-User');
       if (user && relayedUser !== null && relayedUser !== user) throw tenantChanged();
+      if (relayedUser !== null) onRelayedUser(relayedUser);
       const expected = request.headers.get('X-Expected-Tenant');
       if (!expected) return undefined;
       const relayed = response.headers.get('X-Relayed-Tenant');

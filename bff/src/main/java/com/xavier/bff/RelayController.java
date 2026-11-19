@@ -26,7 +26,6 @@ import java.util.UUID;
 class RelayController {
 
     private static final String EXPECTED_TENANT = "X-Expected-Tenant";
-    private static final String EXPECTED_USER = "X-Expected-User";
     /** Allow-list: every other method, a custom or lower-case one included, must name the expected tenant. */
     private static final Set<String> SAFE_METHODS = Set.of("GET", "HEAD", "OPTIONS");
     /** FE-F23: the caller's own memberships; the backend resolves no tenant for it, so its answer names none. */
@@ -43,8 +42,10 @@ class RelayController {
     ResponseEntity<byte[]> relay(@RegisteredOAuth2AuthorizedClient(SecurityConfig.REGISTRATION_ID) OAuth2AuthorizedClient client,
                                  @AuthenticationPrincipal OidcUser user, HttpServletRequest request,
                                  HttpSession session) throws IOException {
-        String subject = user.getSubject();
-        checkExpectedUser(request, subject);
+        String subject = ExpectedUser.subject(user);
+        if (isUnsafe(request)) {
+            ExpectedUser.check(request, subject);
+        }
         // Read once: the tenant checked is the tenant relayed, even if another tab switches meanwhile.
         Optional<UUID> selected = TenantController.selected(session);
         String expected = request.getHeader(EXPECTED_TENANT);
@@ -61,19 +62,6 @@ class RelayController {
                                          String subject) throws IOException {
         Optional<UUID> named = TENANT_LIST.equals(request.getRequestURI()) ? Optional.empty() : tenant;
         return relay.relay(request, client.getAccessToken().getTokenValue(), tenant, named, subject);
-    }
-
-    /**
-     * FE-F22: the BFF session is one per browser, so another user logging in from another tab takes it over, possibly
-     * in the same company. A write naming the user its tab was loaded for (the Keycloak subject, which the tab read from
-     * X-Relayed-User) must be that session's user. A tab names nobody only before its first session read, when it holds
-     * nothing of anyone, so a missing header is relayed.
-     */
-    private static void checkExpectedUser(HttpServletRequest request, String subject) {
-        String expected = request.getHeader(EXPECTED_USER);
-        if (isUnsafe(request) && expected != null && !expected.equals(subject)) {
-            throw new SessionChangedException();
-        }
     }
 
     /**
@@ -127,13 +115,6 @@ class RelayController {
     static final class TenantChangedException extends RuntimeException {
     }
 
-    static final class SessionChangedException extends RuntimeException {
-    }
-
-    @ExceptionHandler(SessionChangedException.class)
-    ResponseEntity<ProblemDetail> sessionChanged() {
-        return BffProblem.SESSION_CHANGED.toResponse();
-    }
 
     @ExceptionHandler(TenantController.InvalidTenantSelectionException.class)
     ProblemDetail invalidExpectedTenant() {

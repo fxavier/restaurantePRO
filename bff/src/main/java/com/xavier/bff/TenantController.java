@@ -1,8 +1,11 @@
 package com.xavier.bff;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -33,7 +36,9 @@ class TenantController {
 
     @PutMapping("/bff/tenant")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    void select(@RequestBody TenantSelection selection, HttpSession session) {
+    void select(@RequestBody TenantSelection selection, @AuthenticationPrincipal OidcUser user,
+                HttpServletRequest request, HttpSession session) {
+        ExpectedUser.check(request, ExpectedUser.subject(user));
         if (!isCanonicalUuid(selection.tenantId())) {
             throw new InvalidTenantSelectionException();
         }
@@ -46,13 +51,14 @@ class TenantController {
 
     /**
      * After a login: another user logging in on this browser session (from another tab) starts with no selection, so
-     * they never act in the previous user's choice; the same user's new login (a step-up) keeps it.
+     * they never act in the previous user's choice; the same user's new login (a step-up) keeps it. {@code subject}
+     * is the OIDC subject, the same id {@link ExpectedUser} checks.
      */
-    static void keepSelectionOnlyFor(HttpSession session, String principal) {
-        if (!principal.equals(session.getAttribute(LOGGED_IN))) {
+    static void keepSelectionOnlyFor(HttpSession session, String subject) {
+        if (!subject.equals(session.getAttribute(LOGGED_IN))) {
             session.removeAttribute(SELECTED);
         }
-        session.setAttribute(LOGGED_IN, principal);
+        session.setAttribute(LOGGED_IN, subject);
     }
 
     static Optional<UUID> selected(HttpSession session) {

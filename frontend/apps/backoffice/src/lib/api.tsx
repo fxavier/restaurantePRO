@@ -12,10 +12,11 @@ export function createBackOfficeClient(
   { baseUrl, cookies }: { baseUrl?: string; cookies?: () => string } = {},
 ): ApiClient {
   const expectedTenant = () => tenantPin.get()?.tenantId;
-  const expectedUser = () => tenantPin.get()?.subject;
+  const expectedUser = () => tenantPin.user();
+  const onRelayedUser = (subject: string) => tenantPin.setUserOnce(subject);
   return createApiClient({
     ...(baseUrl === undefined ? {} : { baseUrl }),
-    middleware: [backOfficeMiddleware({ expectedTenant, expectedUser, ...(cookies === undefined ? {} : { cookies }) })],
+    middleware: [backOfficeMiddleware({ expectedTenant, expectedUser, onRelayedUser, ...(cookies === undefined ? {} : { cookies }) })],
   });
 }
 

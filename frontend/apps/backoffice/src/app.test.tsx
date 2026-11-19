@@ -470,12 +470,19 @@ describe('Company guard (FE-F16): a tab only ever shows and acts in the session 
       user: ana,
       selected: companyA as TenantChoice | undefined,
       acted: [] as { method: string; path: string; in: string | undefined }[],
+      choices: [] as (string | null)[],
     };
     const relay = (request: Request, answer: (company: TenantChoice) => unknown, status = 200, namesTenant = true) => {
       const expected = request.headers.get('X-Expected-Tenant');
       const unsafe = request.method !== 'GET';
       const expectedUser = request.headers.get('X-Expected-User');
       if (unsafe && expectedUser !== null && expectedUser !== bff.user.subject) return problem(409, 'SESSION_CHANGED');
+      const stampUser = (answer: Response) => {
+        answer.headers.set('X-Relayed-User', bff.user.subject);
+        return answer;
+      };
+      // The backend resolves no tenant for the caller's own list of memberships (FE-F23).
+      if (!namesTenant) return stampUser(HttpResponse.json(answer(undefined as never) as object, { status }));
       let company: TenantChoice | undefined;
       let stamp = true;
       if (bff.selected) {
@@ -486,16 +493,16 @@ describe('Company guard (FE-F16): a tab only ever shows and acts in the session 
         if (!company) {
           const refusal = problem(403, 'TENANT_FORBIDDEN');
           refusal.headers.set('X-Relayed-Tenant', expected);
-          return refusal;
+          return stampUser(refusal);
         }
       } else {
-        if (bff.user.memberOf.length !== 1) return problem(400, 'TENANT_SELECTION_REQUIRED');
+        if (bff.user.memberOf.length !== 1) return stampUser(problem(400, 'TENANT_SELECTION_REQUIRED'));
         company = bff.user.memberOf[0];
         stamp = false;
       }
       bff.acted.push({ method: request.method, path: new URL(request.url).pathname, in: company?.legalName });
       const headers: Record<string, string> = { 'X-Relayed-User': bff.user.subject };
-      if (namesTenant && stamp && company?.tenantId) headers['X-Relayed-Tenant'] = company.tenantId;
+      if (stamp && company?.tenantId) headers['X-Relayed-Tenant'] = company.tenantId;
       return HttpResponse.json(answer(company!) as object, { status, headers });
     };
     server.use(
@@ -506,6 +513,15 @@ describe('Company guard (FE-F16): a tab only ever shows and acts in the session 
       http.get(api('/api/v1/auth/tenants'), ({ request }) => relay(request, () => bff.user.memberOf, 200, false)),
       http.get(api('/api/v1/backoffice/stores'), ({ request }) => relay(request, (company) => storePage(storesOf(company)))),
       http.post(api(AREAS), ({ request }) => relay(request, () => ({}), 201)),
+      // The BFF's own route: the switch itself, not relayed; a tab loaded for another user cannot make it (FE-F22).
+      http.put(api('/bff/tenant'), async ({ request }) => {
+        bff.choices.push(request.headers.get('X-Expected-User'));
+        const expectedUser = request.headers.get('X-Expected-User');
+        if (expectedUser !== null && expectedUser !== bff.user.subject) return problem(409, 'SESSION_CHANGED');
+        const { tenantId } = (await request.json()) as { tenantId: string };
+        bff.selected = bff.user.memberOf.find((c) => c.tenantId === tenantId);
+        return new HttpResponse(null, { status: 204 });
+      }),
     );
     return bff;
   }
@@ -585,6 +601,36 @@ describe('Company guard (FE-F16): a tab only ever shows and acts in the session 
     expect(refused).toMatchObject({ status: 409, code: 'SESSION_CHANGED' });
     expect(writesIn(bff)).toEqual([]);
     await waitFor(() => expect(app.leave).toHaveBeenCalledWith('/'));
+    expect(sessionStorage.getItem('restaurantpro.backoffice.tenantChanged')).toBe('true');
+  });
+
+  it("names this tab's user on a company switch, and refuses it once another user logged in (FE-F22)", async () => {
+    const bff = fakeBff();
+    const { user, leave } = renderApp(`/?storeId=${baixa.id}`);
+    await screen.findByRole('option', { name: 'Loja Baixa', selected: true });
+
+    bff.user = { ...carla, memberOf: [companyA, companyB] };
+    await user.click(await screen.findByRole('button', { name: /^Empresa: Restaurante A, Lda/ }));
+    await user.click(await screen.findByRole('menuitemradio', { name: 'Restaurante B, Lda' }));
+
+    await waitFor(() => expect(leave).toHaveBeenCalledWith('/'));
+    expect(bff.choices).toEqual(['kc-ana']);
+    expect(bff.selected).toBe(companyA);
+    expect(sessionStorage.getItem('restaurantpro.backoffice.tenantChanged')).toBe('true');
+  });
+
+  it('pins the user before a company is chosen, so the choice is refused once another user logged in (FE-F22)', async () => {
+    const bff = fakeBff();
+    bff.selected = undefined; // Ana, two memberships, no selection yet
+    const { user, leave } = renderApp();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Escolha a empresa' })).toBeInTheDocument();
+
+    bff.user = { ...carla, memberOf: [companyA, companyB] };
+    await user.click(screen.getByRole('button', { name: /Restaurante B, Lda/ }));
+
+    await waitFor(() => expect(leave).toHaveBeenCalledWith('/'));
+    expect(bff.choices).toEqual(['kc-ana']);
+    expect(bff.selected).toBeUndefined();
     expect(sessionStorage.getItem('restaurantpro.backoffice.tenantChanged')).toBe('true');
   });
 

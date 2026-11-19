@@ -229,6 +229,20 @@ describe('BackOffice middleware', () => {
       await expect(client.GET('/api/v1/auth/session')).rejects.toMatchObject({ status: 409, code: 'TENANT_CHANGED' });
     });
 
+    it('hands the user every answer was relayed for to onRelayedUser, an error answer included', async () => {
+      const seen: string[] = [];
+      const reporting = backOfficeMiddleware({ cookies: () => cookies, expectedTenant: () => undefined,
+        onRelayedUser: (subject) => seen.push(subject) });
+      const selectionRequired = async () =>
+        Response.json({ status: 400, code: 'TENANT_SELECTION_REQUIRED', title: 'Bad Request' },
+          { status: 400, headers: { 'X-Relayed-User': USER } });
+      const client = createApiClient({ baseUrl: BASE, fetch: selectionRequired, middleware: [reporting] });
+
+      await expect(client.GET('/api/v1/auth/session')).rejects.toMatchObject({ code: 'TENANT_SELECTION_REQUIRED' });
+
+      expect(seen).toEqual([USER]);
+    });
+
     it('passes an answer relayed for the pinned user, or naming none', async () => {
       for (const relayed of [USER, undefined]) {
         const client = createApiClient({ baseUrl: BASE, fetch: answering(relayed), middleware: [pinned] });
