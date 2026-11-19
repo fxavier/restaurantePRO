@@ -140,7 +140,8 @@ restaurantpro:
   pos:
     # G13 (ADR 0041): the POS app's origin (scheme://host[:port], no path), set as the one web origin of every pos-*
     # client so the browser may call the devices realm's token endpoint; bridge-* clients get none. Unset = creating
-    # or enrolling a terminal is 503 IDP_UNAVAILABLE (fail closed, as the admin accounts); not an origin = no start.
+    # or enrolling a terminal is 503 IDP_UNAVAILABLE (fail closed, as the admin accounts) and a WARN at startup; not an
+    # origin, or http:// off localhost/127.0.0.1/[::1] = no start. Lowercased (browsers send it so; FE-F01..F03).
     origin: ${RESTAURANTPRO_POS_ORIGIN:}
   jobs:
     # R6 (D185): a reach-ALL job takes a lease per (job, tenant) for this long (released when its run ends), and handles
