@@ -6,17 +6,17 @@ Recorded during the frontend R1 build (tickets 01–12, 2026-11-18). Each row is
 
 | id | area | follow-up | severity | found in |
 |---|---|---|---|---|
-| FE-F01 | backend | `restaurantpro.pos.origin`: an uppercase host passes validation but fails at runtime (Keycloak "Invalid origin"); lowercase or reject it | Low | 02 review |
-| FE-F02 | backend | `restaurantpro.pos.origin` accepts `http://` for non-localhost hosts | Low | 02 review |
-| FE-F03 | backend | no startup warning when `restaurantpro.pos.origin` is unset (terminal provisioning then fails with 503) | Low | 02 review |
+| FE-F01 | backend | ~~`restaurantpro.pos.origin`: an uppercase host passes validation but fails at runtime (Keycloak "Invalid origin"); lowercase or reject it~~ resolved: the origin is lowercased at startup, as browsers send it (`PosOriginTest`) | Low | 02 review |
+| FE-F02 | backend | ~~`restaurantpro.pos.origin` accepts `http://` for non-localhost hosts~~ resolved: `http://` only for localhost, 127.0.0.1 and [::1]; otherwise the startup fails, as for a malformed value | Low | 02 review |
+| FE-F03 | backend | ~~no startup warning when `restaurantpro.pos.origin` is unset (terminal provisioning then fails with 503)~~ resolved: one WARN at startup; provisioning still answers 503 | Low | 02 review |
 | FE-F05 | CI | pin GitHub Actions by commit SHA instead of major tag | Low | 04 review |
-| FE-F06 | backend | `PosSessionSecurityDocumentation` sets an immutable security list; `CurrencyAsStringDocumentation` mutates global springdoc config in a bean constructor | Low | FE-F04 review |
+| FE-F06 | backend | ~~`PosSessionSecurityDocumentation` sets an immutable security list; `CurrencyAsStringDocumentation` mutates global springdoc config in a bean constructor~~ resolved: a mutable list (`PosSessionSecurityDocumentationTest`); the global replacement is a static initializer; OpenAPI snapshot unchanged | Low | FE-F04 review |
 | FE-F09 | backend | ~~listing stores needs `STORE_MANAGE`, so a user with only `TERMINAL_MANAGE` cannot pick a store~~ resolved: `GET /backoffice/stores` needs no permission and lists the stores where the account holds any (all of them for any installation-wide grant, none → empty list, "Não tem acesso a nenhuma loja"); a POS session is 403; create/edit still need installation-wide `STORE_MANAGE` | Medium | 06 |
 | FE-F10 | BFF | logout by `fetch` skips Keycloak's front-channel redirect; the BFF should return the logout URL for the SPA to navigate to | Low | 06 |
 | FE-F11 | contract | `Pageable` is typed as one object; Spring reads flat `page`/`size` | Low | 06 |
-| FE-F12 | backend | 429 `ENROLMENT_THROTTLED` carries no `Retry-After` | Low | 08 |
-| FE-F13 | test | first login of a user without OTP shows Keycloak's "Configure OTP" (both realms); ops-realm default ACR 2 untested | Low | FE-F07 review |
-| FE-F14 | test | backend test that a wrong-PIN 401 carries no `WWW-Authenticate` (the POS relies on it to never repeat a PIN) | Low | 09 review |
+| FE-F12 | backend | ~~429 `ENROLMENT_THROTTLED` carries no `Retry-After`~~ resolved: `Retry-After: 60`, the throttle window (waiting it always lets the next attempt through) | Low | 08 |
+| FE-F13 | test | ~~first login of a user without OTP shows Keycloak's "Configure OTP" (both realms); ops-realm default ACR 2 untested~~ resolved: `KeycloakLoginIT` covers the CONFIGURE_TOTP page in both realms and a plain ops-realm sign-in at acr 2 (a user created through the admin API). Open: `anIdTokenAndARefreshTokenAreNeverAccessTokens` answers 503, not 401, for the refresh token (fails before this change too) | Low | FE-F07 review |
+| FE-F14 | test | ~~backend test that a wrong-PIN 401 carries no `WWW-Authenticate` (the POS relies on it to never repeat a PIN)~~ resolved: pos-login's wrong PIN is a plain 401, a missing or refused terminal token is challenged; pos-pin's reachable 401 is `POS_SESSION_INVALID` (the session check refuses a deactivated or locked employee first), which the POS never repeats | Low | 09 review |
 | FE-F15 | backend | ~~no POS endpoint gives the store's name or timezone; times use the terminal's zone, the status bar shows no store~~ resolved: the session carries storeName, storeTimezone and currency; the POS shows the store and uses its zone (#138) | Medium | 10, 11 |
 | FE-F17 | backend | ~~`TableMap` has no open-order id; the POS searches `GET /pos/orders?lifecycle=OPEN&size=200`~~ resolved: TableMap.Table.openOrderId; the POS opens the order directly (#138) | Medium | 11 |
 | FE-F18 | contract | ~~`PosCatalogResponse.catalog` typed as a JsonNode~~ resolved: documented as `CatalogSnapshot`, POS uses generated types | Medium | 11 |
