@@ -23,6 +23,7 @@ import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
 import com.nimbusds.jose.jwk.source.JWKSetSource;
 import com.nimbusds.jose.jwk.source.JWKSetUnavailableException;
 import com.nimbusds.jose.jwk.source.JWKSource;
+import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
@@ -95,6 +96,43 @@ class BearerKeyFetchTest {
                     .isInstanceOf(AuthenticationServiceException.class);
         }
         assertThat(fetches).hasValue(2);
+    }
+
+    /**
+     * Review of FE-F34: random kids spend the refetch slots; the reload when the cache expires must not then be
+     * rate-limited into "no key" for every token. Each refetch reloads the cache (its expiry restarts), and Nimbus
+     * requires the cache to live longer than the rate-limit window, so the expiry reload always falls in a fresh
+     * window; this pins that invariant with a short cache and window.
+     */
+    @Test
+    void randomKidsDoNotLockOutValidTokensWhenTheCacheExpiresAndAnOutageIsStill503() throws Exception {
+        java.util.concurrent.atomic.AtomicBoolean down = new java.util.concurrent.atomic.AtomicBoolean();
+        BearerAuthentication bearer = bearer(TrustedRealms.keySet(JWKSourceBuilder.create(keySetSource(() -> {
+            if (down.get()) {
+                throw new JWKSetUnavailableException("Read timed out");
+            }
+            return new JWKSet(KEY.toPublicJWK());
+        })).cache(1000, 100).refreshAheadCache(100, false).rateLimited(900)));
+        authenticate(bearer, signed(KEY, claims("Bearer")));
+        List<String> randomKids = List.of(signed(rsa("r1"), claims("Bearer")), signed(rsa("r2"), claims("Bearer")),
+                signed(rsa("r3"), claims("Bearer")));
+
+        Thread.sleep(950); // the attack just before the cache expires (1000 ms), the first window (900 ms) over
+        randomKids.forEach(token -> assertThatThrownBy(() -> authenticate(bearer, token))
+                .isInstanceOf(InvalidBearerTokenException.class));
+        Thread.sleep(100);
+        assertThat(authenticate(bearer, signed(KEY, claims("Bearer"))).isAuthenticated()).isTrue();
+        Thread.sleep(1000);
+        assertThat(authenticate(bearer, signed(KEY, claims("Bearer"))).isAuthenticated()).isTrue();
+        String randomKid = signed(rsa(UUID.randomUUID().toString()), claims("Bearer"));
+        assertThatThrownBy(() -> authenticate(bearer, randomKid)).isInstanceOf(InvalidBearerTokenException.class);
+
+        down.set(true);
+        Thread.sleep(1100);
+        for (int i = 0; i < 3; i++) {
+            assertThatThrownBy(() -> authenticate(bearer, signed(KEY, claims("Bearer"))))
+                    .isInstanceOf(AuthenticationServiceException.class);
+        }
     }
 
     @Test

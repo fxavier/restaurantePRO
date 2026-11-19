@@ -80,7 +80,12 @@ public final class TrustedRealms {
      * {@code kid}s neither storm Keycloak nor fake an outage (FE-F34). While fetches fail, it stays 503.
      */
     static JWKSource<SecurityContext> keySet(JWKSetSource<SecurityContext> source) {
-        return new RateLimitedRefetchFindsNoKey(JWKSourceBuilder.create(source).retrying(false).build());
+        return keySet(JWKSourceBuilder.create(source));
+    }
+
+    /** {@link #keySet(JWKSetSource)} with the cache and rate limit of {@code keys} (a test shortens them). */
+    static JWKSource<SecurityContext> keySet(JWKSourceBuilder<SecurityContext> keys) {
+        return new RateLimitedRefetchFindsNoKey(keys.retrying(false).build());
     }
 
     private static final class RateLimitedRefetchFindsNoKey implements JWKSource<SecurityContext> {
