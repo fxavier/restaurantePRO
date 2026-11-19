@@ -18,7 +18,8 @@
 #   E2E_BACKEND_PORT=18080          E2E_MAILPIT_PORT=18025
 # The POS, BackOffice and Keycloak ports are also the ports the services listen on inside the stack's one network
 # namespace (the browser and the services must mean the same localhost:<port>), so they must not be one of the
-# namespace's internal ports (5432, 8080, 8081, 8443, 9000, 1025, 8025).
+# namespace's internal ports (5432, 8080, 8081, 8443, 9000, 1025, 8025). E2E_SKIP_IMAGE_BUILD=1 starts the backend
+# and BFF images already built (CI builds them with the GitHub Actions layer cache, FE-F31).
 #
 # Every secret is generated per stack (openssl rand), lives in .run/ only, and is never printed. Needs docker (with
 # Compose v2), curl, jq, openssl, and pnpm for the build.
@@ -106,7 +107,13 @@ up() {
     --key-file "$RUN/keys/backoffice-bff.jwk" --key-mode 644 --origin "$BACKOFFICE_URL"
 
   log "building and starting the backend, the BFF and Caddy"
-  compose up -d --build --wait backend bff caddy
+  if [[ "${E2E_SKIP_IMAGE_BUILD:-}" == 1 ]]; then
+    docker image inspect restaurantpro-backend:e2e restaurantpro-bff:e2e >/dev/null \
+      || die "E2E_SKIP_IMAGE_BUILD=1 but restaurantpro-backend:e2e or restaurantpro-bff:e2e is not built"
+    compose up -d --wait backend bff caddy
+  else
+    compose up -d --build --wait backend bff caddy
+  fi
   log "up: POS $POS_URL, BackOffice $BACKOFFICE_URL, Keycloak $KEYCLOAK_URL, backend $BACKEND_URL"
 }
 

@@ -81,7 +81,8 @@ The POS, BackOffice and Keycloak ports are also listened on inside the stack's n
 5432, 8080, 8081, 8443, 9000, 1025 or 8025 (`stack.sh` refuses them). Each stack serves its own copy of the two builds
 (`.run/<project>/srv/`), so a second stack's `up` (which rebuilds `apps/*/dist` with its own Keycloak port) does not
 change the first one's; start the stacks one after the other, not two `up`s at the same instant, since they share
-`apps/*/dist` while building. The backend and BFF images (`restaurantpro-*:e2e`) are shared.
+`apps/*/dist` while building. The backend and BFF images (`restaurantpro-*:e2e`) are shared; `E2E_SKIP_IMAGE_BUILD=1`
+starts the images already built (CI builds them first with the GitHub Actions layer cache, FE-F31).
 
 **Seed data, unique per run** (`e2e/global-setup.ts`, through the public API and the provisioners, never SQL): a new
 tenant and its first store (platform onboarding, `deploy/keycloak-e2e-seed.sh`), its administrator in Keycloak with a

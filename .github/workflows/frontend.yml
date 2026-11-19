@@ -111,9 +111,33 @@ jobs:
           cache-dependency-path: frontend/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
-      # Builds both SPAs and the backend and BFF images, generates this run's secrets and keys (deploy/e2e/.run/),
-      # registers them in Keycloak and waits until every service is healthy.
+      # The backend and BFF images, built here rather than by Compose so that their layers come from the GitHub Actions
+      # cache (FE-F31): an unchanged backend or BFF is not rebuilt, and its Maven wrapper and dependencies are not
+      # downloaded again. Same Dockerfiles, contexts and tags as deploy/e2e/compose.yaml; loaded into the runner's
+      # Docker, which `stack.sh up` then starts as they are (E2E_SKIP_IMAGE_BUILD=1).
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: backend
+          file: deploy/Dockerfile
+          build-contexts: deploy=deploy
+          tags: restaurantpro-backend:e2e
+          load: true
+          cache-from: type=gha,scope=e2e-backend
+          cache-to: type=gha,scope=e2e-backend,mode=max
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: bff
+          file: deploy/Dockerfile.bff
+          tags: restaurantpro-bff:e2e
+          load: true
+          cache-from: type=gha,scope=e2e-bff
+          cache-to: type=gha,scope=e2e-bff,mode=max
+      # Builds both SPAs, generates this run's secrets and keys (deploy/e2e/.run/restaurantpro-e2e/), registers them in
+      # Keycloak, starts the images built above and waits until every service is healthy.
       - run: pnpm e2e:stack:up
+        env:
+          E2E_SKIP_IMAGE_BUILD: "1"
       # The smoke tests through the real origins, the BackOffice sign-in with OTP and the origin routing; the global
       # setup seeds a new tenant, administrator, waiter and catalog for this run.
       - run: pnpm e2e:stack
