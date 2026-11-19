@@ -23,7 +23,7 @@ export function TenantSwitcher() {
   const select = useSelectTenant();
   // The company is the one the server resolved this request in (SessionView.tenantId, FE-F08), never a client memory:
   // another tab of the same BFF session may have switched it.
-  const currentId = session?.tenantId;
+  const currentId = session?.tenantId ?? undefined;
   const label = session?.tenantName ?? 'Escolher empresa';
 
   if (tenants.length < 2) {
@@ -59,7 +59,7 @@ export function TenantSwitcher() {
             {tenants.map((tenant) => {
               const status = tenantStatusLabel(tenant.status);
               return (
-                <DropdownMenuRadioItem key={tenant.tenantId} value={tenant.tenantId ?? ''}>
+                <DropdownMenuRadioItem key={tenant.tenantId} value={tenant.tenantId}>
                   {tenant.legalName}
                   {status && <span className="ml-auto text-xs text-muted-foreground"> — {status}</span>}
                 </DropdownMenuRadioItem>

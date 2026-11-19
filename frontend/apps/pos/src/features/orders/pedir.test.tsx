@@ -19,13 +19,14 @@ import { id } from '../../test/table-map';
 const ROUND_ID = id(551);
 
 /** The two drafts, as the server confirms them into round 2. */
-const confirmed = (line: LineView): LineView => ({ ...line, status: 'CONFIRMED', batchId: ROUND_ID, preview: false, version: line.version! + 1 });
+const confirmed = (line: LineView): LineView => ({ ...line, status: 'CONFIRMED', batchId: ROUND_ID, preview: false, version: line.version + 1 });
 const ROUND: BatchView = {
   id: ROUND_ID,
   orderId: ORDER_ID,
   batchNo: 2,
   status: 'CONFIRMED',
   confirmedAt: '2026-11-18T10:20:00Z',
+  confirmedByEmployeeId: id(77),
   orderVersion: 5,
   lines: [confirmed(LINE.water), confirmed(LINE.coffee)],
 };
@@ -143,7 +144,7 @@ describe('"Pedir"', () => {
   });
 
   it('sends no expectedGross when the order carries no draftGross (a draft without a price)', async () => {
-    const server = serverOrder({ ...ORDER, draftGross: undefined });
+    const server = serverOrder({ ...ORDER, draftGross: null });
     const batches = batchEndpoint(ORDER_ID, server.sends());
     const { user } = await atOrder([server.read]);
     await ready();

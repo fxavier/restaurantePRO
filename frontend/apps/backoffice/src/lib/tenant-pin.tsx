@@ -8,7 +8,7 @@ import { createContext, useContext, type ReactNode } from 'react';
  * It is pinned from any answer, an error one included, so a user who must still choose a company is pinned before the
  * choice. An answer from another company or session reloads the page instead of being shown.
  */
-export type Pinned = { tenantId: string; userId: string | undefined };
+export type Pinned = { tenantId: string; userId: string };
 export type TenantPin = {
   get(): Pinned | undefined;
   setOnce(pinned: Pinned): void;

@@ -6,6 +6,7 @@ import {
   catalogEndpoint,
   created,
   deleteLineEndpoint,
+  draft,
   ITEM,
   json,
   LINE,
@@ -24,15 +25,7 @@ import { renderPos } from '../../test/render-pos';
 import { notificationsEndpoint, problem, tableMap, tablesEndpoint, token, tokenEndpoint } from '../../test/server';
 import { MAP } from '../../test/table-map';
 
-const added: LineView = {
-  id: '6f1c2a9e-0000-4000-8000-000000000899',
-  status: 'DRAFT',
-  itemId: ITEM.steak.id,
-  quantity: '1.000',
-  version: 0,
-  preview: true,
-  gross: { amount: '450.00', currency: 'MZN' },
-};
+const added: LineView = draft(899, { itemId: ITEM.steak.id, gross: { amount: '450.00', currency: 'MZN' } });
 
 const products = () => screen.getByRole('list', { name: 'Artigos' });
 const tile = (name: RegExp) => within(products()).getByRole('button', { name });

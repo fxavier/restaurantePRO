@@ -18,11 +18,7 @@ type Indicator = { label: string; icon: ReactNode; variant: 'destructive' | 'sec
 export function TableTile({ table, onOpen }: { table: DiningTable; onOpen: () => void }) {
   const timeZone = useStoreTimeZone();
   const occupied = table.status === 'OCCUPIED';
-  const details = occupied
-    ? occupiedDetails(table, timeZone)
-    : table.seats !== undefined
-      ? [seatsLabel(table.seats)]
-      : [];
+  const details = occupied ? occupiedDetails(table, timeZone) : [seatsLabel(table.seats)];
   const badges = indicators(table, timeZone);
 
   return (
@@ -68,7 +64,7 @@ export function TableTile({ table, onOpen }: { table: DiningTable; onOpen: () =>
 
 function occupiedDetails(table: DiningTable, timeZone: string): string[] {
   const details: string[] = [];
-  if (table.guests !== undefined) details.push(guestsLabel(table.guests));
+  if (table.guests !== null) details.push(guestsLabel(table.guests));
   if (table.openedAt) details.push(`desde ${clockTime(table.openedAt, timeZone)}`);
   return details;
 }

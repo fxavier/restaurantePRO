@@ -6,36 +6,29 @@ type TableMapView = components['schemas']['com.xavier.backend.dining.model.dto.T
 export type DiningTable = {
   id: string;
   code: string;
-  seats?: number;
+  seats: number;
   status: 'FREE' | 'OCCUPIED';
-  guests?: number;
-  /** ISO-8601 UTC. */
-  openedAt?: string;
-  /** The order the table is open for; absent when FREE. */
-  openOrderId?: string;
+  guests: number | null;
+  /** ISO-8601 UTC; null when FREE. */
+  openedAt: string | null;
+  /** The order the table is open for; null when FREE. */
+  openOrderId: string | null;
   locked: boolean;
   subtotalPrinted: boolean;
   reserved: boolean;
   /** ISO-8601 UTC. */
-  nextReservationAt?: string;
+  nextReservationAt: string | null;
 };
 
 export type DiningArea = { id: string; name: string; tables: DiningTable[] };
 
-/**
- * The contract marks every field optional (springdoc). An area or a table without its id, its name or code, or a
- * table without its status cannot be shown or opened, so such an answer is an error rather than a guess.
- */
+/** The contract marks what an area and a table always carry (FE-F28); only a missing answer is an error here. */
 export function toAreas(view: TableMapView | undefined): DiningArea[] {
-  if (!view || !Array.isArray(view.areas)) throw new Error('Incomplete table map');
-  return view.areas.map((area) => {
-    if (!area.id || area.name === undefined) throw new Error('Incomplete table map');
-    return { id: area.id, name: area.name, tables: (area.tables ?? []).map(toTable) };
-  });
+  if (!view) throw new Error('Incomplete table map');
+  return view.areas.map((area) => ({ id: area.id, name: area.name, tables: area.tables.map(toTable) }));
 }
 
-function toTable(table: NonNullable<NonNullable<TableMapView['areas']>[number]['tables']>[number]): DiningTable {
-  if (!table.id || table.code === undefined || !table.status) throw new Error('Incomplete table map');
+function toTable(table: TableMapView['areas'][number]['tables'][number]): DiningTable {
   return {
     id: table.id,
     code: table.code,
@@ -44,9 +37,9 @@ function toTable(table: NonNullable<NonNullable<TableMapView['areas']>[number]['
     guests: table.guests,
     openedAt: table.openedAt,
     openOrderId: table.openOrderId,
-    locked: table.locked ?? false,
-    subtotalPrinted: table.subtotalPrinted ?? false,
-    reserved: table.reserved ?? false,
+    locked: table.locked,
+    subtotalPrinted: table.subtotalPrinted,
+    reserved: table.reserved,
     nextReservationAt: table.nextReservationAt,
   };
 }

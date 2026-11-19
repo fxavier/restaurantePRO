@@ -52,7 +52,7 @@ export function StoreTerminals({ storeId }: { storeId: string }) {
     revoke.mutate(revocation, {
       onError: (error) => isStepUpRequired(error) && stepUp.prompt(error, { type: 'revoke', ...revocation }),
     });
-  const target = (terminal: TerminalSummary): Target => ({ terminalId: terminal.id!, terminalName: terminal.name ?? '' });
+  const target = (terminal: TerminalSummary): Target => ({ terminalId: terminal.id, terminalName: terminal.name });
 
   if (terminals.isError) return <ListError error={terminals.error} returnTo={returnTo} onRetry={() => void terminals.refetch()} />;
 
@@ -95,7 +95,7 @@ export function StoreTerminals({ storeId }: { storeId: string }) {
                 <TableCell className="font-mono">{terminal.code}</TableCell>
                 <TableCell>{kindLabel(terminal.kind)}</TableCell>
                 <TableCell>
-                  <StatusBadge status={terminal.status ?? ''} statuses={terminalStatuses(terminal.status ?? '')} />
+                  <StatusBadge status={terminal.status} statuses={terminalStatuses(terminal.status)} />
                 </TableCell>
                 <TableCell>
                   {terminal.status !== 'REVOKED' && (

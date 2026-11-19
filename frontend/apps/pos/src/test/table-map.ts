@@ -16,7 +16,12 @@ const table = (n: number, code: string, fields: Partial<Table> = {}): Table => (
   status: 'FREE',
   locked: false,
   subtotalPrinted: false,
+  openedAt: null,
+  guests: null,
+  openedByEmployeeId: null,
+  openOrderId: null,
   reserved: false,
+  nextReservationAt: null,
   ...fields,
 });
 

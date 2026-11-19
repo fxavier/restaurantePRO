@@ -29,8 +29,8 @@ export function useEnrol() {
   }
 }
 
-/** The contract marks every field optional (springdoc); an answer without all three cannot be used. */
-function toEnrolment(data: { id?: string; storeId?: string; clientId?: string } | undefined): Enrolment {
-  if (!data?.id || !data.storeId || !data.clientId) throw new Error('Incomplete enrolment answer');
+/** The contract marks the three fields required (FE-F26); only a missing answer is an error here. */
+function toEnrolment(data: Enrolment | undefined): Enrolment {
+  if (!data) throw new Error('Incomplete enrolment answer');
   return { id: data.id, storeId: data.storeId, clientId: data.clientId };
 }

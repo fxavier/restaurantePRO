@@ -14,11 +14,11 @@ describe('toOrder', () => {
 
   it('keeps the versions a round is confirmed with: the order\'s, the catalog\'s and the promotions\'', () => {
     expect(toOrder({ ...ORDER, promotionVersion: 3 })).toMatchObject({ version: 4, catalogVersion: 7, promotionVersion: 3 });
-    expect(toOrder(ORDER).promotionVersion).toBeUndefined();
+    expect(toOrder(ORDER).promotionVersion).toBeNull();
   });
 
   it('a confirmed line shows its net quantity, and one outside any round is kept apart', () => {
-    const moved = { ...LINE.steak, id: 'moved', batchId: undefined, quantity: '2.000', netQuantity: '1.000' };
+    const moved = { ...LINE.steak, id: 'moved', batchId: null, quantity: '2.000', netQuantity: '1.000' };
     const order = toOrder(withLines(ORDER, [moved]));
 
     expect(order.unbatched).toEqual([expect.objectContaining({ id: 'moved', quantity: '1.000' })]);
@@ -31,10 +31,8 @@ describe('toOrder', () => {
     expect(order.rounds[0]!.lines[0]).toMatchObject({ quantity: '3', gross: { amount: 1350, currency: 'MZN' } });
   });
 
-  it('an answer without its lines or version, or a line without its version, is an error', () => {
-    expect(() => toOrder({ ...ORDER, lines: undefined })).toThrow('Incomplete order');
-    expect(() => toOrder({ ...ORDER, version: undefined })).toThrow('Incomplete order');
-    expect(() => toOrder(withLines(ORDER, [{ ...LINE.coffee, version: undefined }]))).toThrow('Incomplete order');
+  it('a missing answer is an error', () => {
+    expect(() => toOrder(undefined)).toThrow('Incomplete order');
   });
 
   it('formats a quantity in the store locale', () => {

@@ -95,17 +95,17 @@ export function OrderScreen({ order, blocked, back }: Props) {
 
   function pedir() {
     forgetLastSend();
-    if (order.catalogVersion === undefined) return;
+    if (order.catalogVersion === null) return;
     send.start(
       {
         orderVersion: order.version,
         catalogVersion: order.catalogVersion,
-        promotionVersion: order.promotionVersion,
+        promotionVersion: order.promotionVersion ?? undefined,
         lineIds: order.drafts.map((line) => line.id),
         // D104: the server's draftGross echoed as given (its decimal string, verbatim), so a round that would now cost
         // anything else is refused with PRICES_CHANGED (a draft changed on another terminal, a promotion window
         // closed). String() only matters for a number replayed from before decimals became strings (FE-F33).
-        expectedGross: order.draftGross && String(order.draftGross.amount),
+        expectedGross: order.draftGross ? String(order.draftGross.amount) : undefined,
       },
       { gross: new Map(order.drafts.map((line) => [line.id, line.gross])) },
     );
@@ -117,7 +117,7 @@ export function OrderScreen({ order, blocked, back }: Props) {
       forgetLastSend();
       update.mutate({
         lineId: line.id,
-        body: { version: line.version, quantity, variantId: line.variantId, notes: line.notes },
+        body: { version: line.version, quantity, variantId: line.variantId ?? undefined, notes: line.notes ?? undefined },
       });
     },
     onRemove: (line: OrderLine) => {
@@ -130,7 +130,7 @@ export function OrderScreen({ order, blocked, back }: Props) {
   const canSend =
     canCommand &&
     order.drafts.length > 0 &&
-    order.catalogVersion !== undefined &&
+    order.catalogVersion !== null &&
     add.intent === undefined &&
     !update.isPending &&
     !remove.isPending;
@@ -217,13 +217,13 @@ export function OrderScreen({ order, blocked, back }: Props) {
       {noteFor && (
         <NoteDialog
           name={lineName(noteFor, catalog.data)}
-          notes={noteFor.notes}
+          notes={noteFor.notes ?? undefined}
           onCancel={() => setNoteFor(undefined)}
           onSave={(notes) => {
             forgetLastSend();
             update.mutate({
               lineId: noteFor.id,
-              body: { version: noteFor.version, quantity: noteFor.quantity, variantId: noteFor.variantId, notes },
+              body: { version: noteFor.version, quantity: noteFor.quantity, variantId: noteFor.variantId ?? undefined, notes },
             });
             setNoteFor(undefined);
           }}

@@ -46,14 +46,22 @@ export const admin: SessionView = {
   kind: 'ACCOUNT',
   name: 'Ana Admin',
   userId: '0b6c1b0e-0000-4000-8000-000000000001',
+  employeeId: null,
+  terminalId: null,
+  storeId: null,
+  mustChangePin: false,
   // As the backend sends them (SessionView): PERM_<NAME> company-wide, PERM_<NAME>@<storeId> in one store.
   permissions: ['PERM_TERMINAL_MANAGE', 'PERM_STORE_MANAGE'],
   tenantId: companyA.tenantId,
   tenantName: companyA.legalName,
+  storeName: null,
+  storeTimezone: null,
+  currency: null,
+  posSession: null,
 };
 
 export function store(id: string, name: string, code = id): StoreSummary {
-  return { id, code, name, active: true, timezone: 'Africa/Maputo', version: 0 };
+  return { id, code, name, active: true, timezone: 'Africa/Maputo', businessDayCutoff: '05:00:00', currency: 'MZN', version: 0 };
 }
 
 export const baixa = store('11111111-0000-4000-8000-000000000001', 'Loja Baixa', 'BAIXA');

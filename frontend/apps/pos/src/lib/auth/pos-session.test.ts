@@ -1,14 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { createPosSession } from './pos-session';
 
-const view = (name: string, posSession?: string, mustChangePin = false) => ({
+const view = (name: string, posSession: string | null = null, mustChangePin = false) => ({
+  kind: 'EMPLOYEE' as const,
+  userId: `id-${name}`,
   employeeId: `id-${name}`,
+  terminalId: 'terminal-1',
   storeId: 'store-1',
   name,
   mustChangePin,
   permissions: [],
+  tenantId: 'tenant-1',
+  tenantName: 'Restaurante Teste',
   storeName: 'Loja Baixa',
   storeTimezone: 'Africa/Maputo',
+  currency: 'MZN',
   posSession,
 });
 

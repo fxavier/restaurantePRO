@@ -4,64 +4,62 @@ import { LOCALE, type MoneyValue } from '@restaurantpro/ui';
 type Schemas = components['schemas'];
 type OrderView = Schemas['com.xavier.backend.orders.model.dto.OrderView'];
 type LineView = Schemas['com.xavier.backend.orders.model.dto.LineView'];
-type ContractMoney = Schemas['com.xavier.backend.shared.Money'];
 
 export type OrderLine = {
   id: string;
   status: 'DRAFT' | 'CONFIRMED';
-  itemId?: string;
-  variantId?: string;
+  itemId: string;
+  variantId: string | null;
   /** A confirmed line's net quantity (what is still billed); a draft's quantity. A decimal string, as the server sent it. */
   quantity: string;
-  notes?: string;
+  notes: string | null;
   version: number;
   /** A confirmed line's snapshot; a draft has none (its name comes from the catalog). */
-  description?: string;
-  variantName?: string;
-  /** The server's gross: a draft's preview (`preview`), absent when its item left the catalog. */
-  gross?: MoneyValue;
+  description: string | null;
+  variantName: string | null;
+  /** The server's gross: a draft's preview (`preview`), null when its item left the catalog. */
+  gross: MoneyValue | null;
   preview: boolean;
-  components: { groupCode?: string; itemId?: string; variantId?: string; description?: string }[];
+  components: { groupCode: string; itemId: string; variantId: string | null; description: string | null }[];
 };
 
 /** A round (OrderBatch): the drafts confirmed together. */
-export type Round = { id: string; batchNo: number; confirmedAt?: string; lines: OrderLine[] };
+export type Round = { id: string; batchNo: number; confirmedAt: string; lines: OrderLine[] };
 
 export type Order = {
   id: string;
-  tableId?: string;
-  tableCode?: string;
-  guests?: number;
-  orderNumber?: number;
+  tableId: string | null;
+  tableCode: string | null;
+  guests: number | null;
+  orderNumber: number;
   lifecycle: 'OPEN' | 'CLOSED' | 'CANCELLED';
   /** The version a command on the order sends back (D17): a stale one is refused with 409. */
   version: number;
-  /** The published catalog the drafts' previews come from; absent when there is no draft. */
-  catalogVersion?: number;
-  /** The promotion release the previews come from; absent when none is published (D104). */
-  promotionVersion?: number;
+  /** The published catalog the drafts' previews come from; null when there is no draft. */
+  catalogVersion: number | null;
+  /** The promotion release the previews come from; null when none is published (D104). */
+  promotionVersion: number | null;
   /** The sum of the confirmed lines (D59), as the server computed it. */
-  due?: MoneyValue;
+  due: MoneyValue;
   /**
-   * The drafts' provisional total as the server computed it (FE-F27), sent back unchanged as `expectedGross`; absent
+   * The drafts' provisional total as the server computed it (FE-F27), sent back unchanged as `expectedGross`; null
    * without drafts or when a draft has no price.
    */
-  draftGross?: MoneyValue;
+  draftGross: MoneyValue | null;
   drafts: OrderLine[];
   rounds: Round[];
   /** Confirmed lines outside any round (a transfer's or a split's). */
   unbatched: OrderLine[];
 };
 
-/** An answer without its id, lifecycle, version or lines, or a line without its id, status or version, is an error. */
+/** The contract marks what an order always carries (FE-F28); only a missing answer is an error here. */
 export function toOrder(view: OrderView | undefined): Order {
-  if (!view?.id || !view.lifecycle || view.version === undefined || !Array.isArray(view.lines)) throw new Error('Incomplete order');
+  if (!view) throw new Error('Incomplete order');
   const lines = view.lines.map((line) => ({ line: toLine(line), batchId: line.batchId }));
-  const rounds = (view.batches ?? [])
-    .filter((batch) => batch.id && batch.batchNo !== undefined)
+  const rounds = view.batches
     .map((batch) => ({
-      id: batch.id!,
-      batchNo: batch.batchNo!,
+      id: batch.id,
+      batchNo: batch.batchNo,
       confirmedAt: batch.confirmedAt,
       lines: lines.filter(({ line, batchId }) => line.status === 'CONFIRMED' && batchId === batch.id).map(({ line }) => line),
     }))
@@ -75,10 +73,10 @@ export function toOrder(view: OrderView | undefined): Order {
     orderNumber: view.orderNumber,
     lifecycle: view.lifecycle,
     version: view.version,
-    catalogVersion: view.catalogVersion ?? undefined,
-    promotionVersion: view.promotionVersion ?? undefined,
-    due: money(view.due),
-    draftGross: money(view.draftGross),
+    catalogVersion: view.catalogVersion,
+    promotionVersion: view.promotionVersion,
+    due: view.due,
+    draftGross: view.draftGross,
     drafts: lines.filter(({ line }) => line.status === 'DRAFT').map(({ line }) => line),
     rounds,
     unbatched: lines
@@ -88,9 +86,6 @@ export function toOrder(view: OrderView | undefined): Order {
 }
 
 function toLine(line: LineView): OrderLine {
-  if (!line.id || !line.status || line.version === undefined || line.quantity === undefined) {
-    throw new Error('Incomplete order');
-  }
   return {
     id: line.id,
     status: line.status,
@@ -102,19 +97,15 @@ function toLine(line: LineView): OrderLine {
     version: line.version,
     description: line.description,
     variantName: line.variantName,
-    gross: money(line.gross),
-    preview: line.preview ?? line.status === 'DRAFT',
-    components: (line.components ?? []).map(({ groupCode, itemId, variantId, description }) => ({
+    gross: line.gross,
+    preview: line.preview,
+    components: line.components.map(({ groupCode, itemId, variantId, description }) => ({
       groupCode,
       itemId,
       variantId,
       description,
     })),
   };
-}
-
-function money(value: ContractMoney | undefined): MoneyValue | undefined {
-  return value?.amount !== undefined && value.currency ? { amount: value.amount, currency: value.currency } : undefined;
 }
 
 /** "2", "0,5": a quantity as the server sent it (a decimal string, formatted as one), in the store's locale. */
