@@ -55,7 +55,7 @@ public class SeriesService {
             throw new UnknownStoreException(storeId);
         }
         String code = request.code().strip();
-        if (series.existsByStoreIdAndDocumentTypeAndCode(storeId, DocumentType.SALE, code)) {
+        if (series.existsByStoreIdAndDocumentTypeAndCodeIgnoreCase(storeId, DocumentType.SALE, code)) {
             throw codeTaken(code);
         }
         if (series.existsByStoreIdAndDocumentTypeAndActiveTrue(storeId, DocumentType.SALE)) {
