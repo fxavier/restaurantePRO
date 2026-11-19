@@ -16,6 +16,6 @@ public final class NullMarkedResponsesTestAutoConfiguration {
 
     @Bean
     NullMarkedResponseCheck nullMarkedResponseCheck(ObjectProvider<JsonMapper> json) {
-        return new NullMarkedResponseCheck(json::getObject);
+        return new NullMarkedResponseCheck(json);
     }
 }

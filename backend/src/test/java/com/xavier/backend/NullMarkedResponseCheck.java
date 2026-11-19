@@ -5,8 +5,9 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.RecordComponent;
 import java.util.Map;
-import java.util.function.Supplier;
+import java.util.Optional;
 import org.jspecify.annotations.Nullable;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.MethodParameter;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.HttpMessageConverter;
@@ -28,9 +29,13 @@ import tools.jackson.databind.json.JsonMapper;
 @ControllerAdvice
 class NullMarkedResponseCheck implements ResponseBodyAdvice<Object> {
 
-    private final Supplier<JsonMapper> json;
+    /**
+     * An {@link ObjectProvider}, so Spring can build this advice however it is registered: by component scan of the
+     * root package in full contexts, and by {@link NullMarkedResponsesTestAutoConfiguration} in module tests.
+     */
+    private final ObjectProvider<JsonMapper> json;
 
-    NullMarkedResponseCheck(Supplier<JsonMapper> json) {
+    NullMarkedResponseCheck(ObjectProvider<JsonMapper> json) {
         this.json = json;
     }
 
@@ -60,6 +65,12 @@ class NullMarkedResponseCheck implements ResponseBodyAdvice<Object> {
             for (Object element : elements) {
                 check(element, path + "[" + index++ + "]");
             }
+        } else if (value instanceof Object[] elements) {
+            for (int index = 0; index < elements.length; index++) {
+                check(elements[index], path + "[" + index + "]");
+            }
+        } else if (value instanceof Optional<?> optional) {
+            optional.ifPresent(element -> check(element, path));
         } else if (value instanceof Map<?, ?> map) {
             map.forEach((key, element) -> check(element, path + "[" + key + "]"));
         } else if (value != null && value.getClass().isRecord()) {
@@ -79,7 +90,7 @@ class NullMarkedResponseCheck implements ResponseBodyAdvice<Object> {
             }
             Schema documented = component.getAccessor().getAnnotation(Schema.class);
             if (value instanceof JsonNode tree && documented != null && documented.implementation().isRecord()) {
-                value = json.get().treeToValue(tree, documented.implementation());
+                value = json.getObject().treeToValue(tree, documented.implementation());
             }
             check(value, at);
         }
