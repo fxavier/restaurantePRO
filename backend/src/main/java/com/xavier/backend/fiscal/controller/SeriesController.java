@@ -6,6 +6,7 @@ import com.xavier.backend.fiscal.service.SeriesService;
 import com.xavier.backend.shared.web.PageResponse;
 import jakarta.validation.Valid;
 import java.util.UUID;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
@@ -33,7 +34,7 @@ class SeriesController {
 
     @GetMapping
     PageResponse<SeriesView> list(@RequestParam(required = false) UUID storeId,
-                                  @PageableDefault(sort = "code") Pageable pageable) {
+                                  @PageableDefault(sort = "code") @ParameterObject Pageable pageable) {
         return series.list(storeId, pageable);
     }
 

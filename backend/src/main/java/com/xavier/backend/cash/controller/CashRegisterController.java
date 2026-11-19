@@ -10,6 +10,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.net.URI;
 import java.util.UUID;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
@@ -36,13 +37,13 @@ class CashRegisterController {
     }
 
     @GetMapping(PATH)
-    PageResponse<RegisterSummary> list(@RequestParam UUID storeId, @PageableDefault(sort = "code") Pageable pageable) {
+    PageResponse<RegisterSummary> list(@RequestParam UUID storeId, @PageableDefault(sort = "code") @ParameterObject Pageable pageable) {
         return registers.list(storeId, pageable);
     }
 
     /** POS: the session store's active registers (CASH_OPERATE). */
     @GetMapping("/api/v1/pos/cash/registers")
-    PageResponse<RegisterSummary> listForPos(@PageableDefault(sort = "code") Pageable pageable) {
+    PageResponse<RegisterSummary> listForPos(@PageableDefault(sort = "code") @ParameterObject Pageable pageable) {
         return registers.listForPos(pageable);
     }
 

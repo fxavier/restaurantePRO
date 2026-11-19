@@ -11,6 +11,7 @@ import jakarta.validation.Valid;
 import java.net.URI;
 import java.util.Map;
 import java.util.UUID;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -37,7 +38,7 @@ class SupplierReturnController {
     }
 
     @GetMapping(PATH)
-    PageResponse<SupplierReturnView> list(@RequestParam UUID storeId, Pageable pageable) {
+    PageResponse<SupplierReturnView> list(@RequestParam UUID storeId, @ParameterObject Pageable pageable) {
         return returns.list(storeId, pageable);
     }
 

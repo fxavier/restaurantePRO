@@ -6,6 +6,7 @@ import com.xavier.backend.audit.service.AuditQueryService;
 import com.xavier.backend.shared.web.PageResponse;
 import jakarta.validation.Valid;
 import java.util.UUID;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,7 +26,7 @@ class AuditController {
     }
 
     @GetMapping("/events")
-    PageResponse<AuditEventView> list(@Valid AuditFilter filter, @PageableDefault(size = 50) Pageable pageable) {
+    PageResponse<AuditEventView> list(@Valid @ParameterObject AuditFilter filter, @PageableDefault(size = 50) @ParameterObject Pageable pageable) {
         return audit.list(filter, pageable);
     }
 
@@ -36,7 +37,7 @@ class AuditController {
 
     @GetMapping("/entities/{type}/{id}")
     PageResponse<AuditEventView> history(@PathVariable String type, @PathVariable String id,
-                                         @PageableDefault(size = 50) Pageable pageable) {
+                                         @PageableDefault(size = 50) @ParameterObject Pageable pageable) {
         return audit.history(type, id, pageable);
     }
 }

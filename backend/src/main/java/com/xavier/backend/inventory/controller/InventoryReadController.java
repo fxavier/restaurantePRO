@@ -14,6 +14,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
 import java.util.UUID;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -41,7 +42,7 @@ class InventoryReadController {
     @GetMapping(InventoryPaths.BACKOFFICE + "/stock")
     PageResponse<StockRow> stock(@RequestParam UUID warehouseId,
                                  @RequestParam(defaultValue = "false") boolean belowMinimum,
-                                 @RequestParam(defaultValue = "false") boolean negative, Pageable pageable) {
+                                 @RequestParam(defaultValue = "false") boolean negative, @ParameterObject Pageable pageable) {
         return queries.stock(warehouseId, belowMinimum, negative, pageable);
     }
 
@@ -50,7 +51,7 @@ class InventoryReadController {
                                          @RequestParam(required = false) UUID stockItemId,
                                          @RequestParam(required = false) LocalDate from,
                                          @RequestParam(required = false) LocalDate to,
-                                         @RequestParam(required = false) MovementType type, Pageable pageable) {
+                                         @RequestParam(required = false) MovementType type, @ParameterObject Pageable pageable) {
         return queries.movements(warehouseId, stockItemId, from, to, type, pageable);
     }
 

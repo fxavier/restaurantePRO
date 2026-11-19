@@ -9,6 +9,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.net.URI;
 import java.util.UUID;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,7 +35,7 @@ class SupportGrantController {
     }
 
     @GetMapping(PATH)
-    PageResponse<SupportGrantSummary> list(@RequestParam(required = false) UUID accountId, Pageable pageable) {
+    PageResponse<SupportGrantSummary> list(@RequestParam(required = false) UUID accountId, @ParameterObject Pageable pageable) {
         return grants.list(accountId, pageable);
     }
 

@@ -13,6 +13,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.net.URI;
 import java.util.UUID;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -39,7 +40,7 @@ class RecipeController {
     }
 
     @GetMapping(PATH)
-    PageResponse<RecipeView> list(Pageable pageable) {
+    PageResponse<RecipeView> list(@ParameterObject Pageable pageable) {
         return recipes.list(pageable);
     }
 
