@@ -5,6 +5,7 @@ import static com.xavier.backend.organization.Actors.inStore;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -13,9 +14,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.xavier.backend.access.Actor;
 import com.xavier.backend.access.Permission;
+import com.xavier.backend.access.TestAuthentications;
 import com.xavier.backend.organization.OrganizationModuleTest;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
@@ -96,14 +100,45 @@ class StoreHttpTest {
     }
 
     @Test
-    void listingStoresNeedsInstallationWideStoreManage() throws Exception {
-        UUID store = createStore();
+    void aTenantWideGrantListsEveryStore() throws Exception {
+        UUID first = createStore();
+        UUID second = createStore();
 
-        mvc.perform(get(STORES).param("size", "200").with(admin(Permission.STORE_MANAGE)))
+        mvc.perform(get(STORES).param("size", "200").with(admin(Permission.CATALOG_VIEW)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(store)).exists())
+                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(first)).exists())
+                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(second)).exists())
                 .andExpect(jsonPath("$.totalElements").isNumber());
-        mvc.perform(get(STORES).with(inStore(store, Permission.STORE_MANAGE)))
+    }
+
+    @Test
+    void aStoreScopedGrantListsOnlyThatStore() throws Exception {
+        UUID mine = createStore();
+        createStore();
+
+        mvc.perform(get(STORES).param("size", "200").with(inStore(mine, Permission.TERMINAL_MANAGE)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].id").value(mine.toString()));
+    }
+
+    @Test
+    void anAccountWithNoGrantListsNoStore() throws Exception {
+        createStore();
+
+        mvc.perform(get(STORES).with(admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(0))
+                .andExpect(jsonPath("$.content").isEmpty());
+    }
+
+    @Test
+    void aPosSessionCannotListStores() throws Exception {
+        UUID store = createStore();
+        Actor employee = Actor.employee(UUID.randomUUID(), UUID.randomUUID(), store,
+                Set.of(Permission.STORE_MANAGE.authority()));
+
+        mvc.perform(get(STORES).with(authentication(TestAuthentications.of(employee))))
                 .andExpect(status().isForbidden());
     }
 
@@ -231,6 +266,12 @@ class StoreHttpTest {
                 .andExpect(status().isForbidden());
         mvc.perform(post(STORES).with(inStore(store, Permission.STORE_MANAGE)).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content(create(newCode(), "Africa/Maputo")))
+                .andExpect(status().isForbidden());
+        mvc.perform(post(STORES).with(admin(Permission.CATALOG_VIEW)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(create(newCode(), "Africa/Maputo")))
+                .andExpect(status().isForbidden());
+        mvc.perform(put(STORES + "/" + store).with(admin(Permission.CATALOG_VIEW)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(update(newCode(), "Africa/Maputo", 0)))
                 .andExpect(status().isForbidden());
     }
 

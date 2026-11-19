@@ -40,6 +40,16 @@ export function StoreSelect() {
       </p>
     );
   }
+  // The list holds only the stores where the user holds a permission (FE-F09), so it can be empty.
+  if (stores.data?.length === 0) {
+    return (
+      <p role="status" className="flex items-center gap-1 text-sm">
+        {icon}
+        <span className="font-medium">Loja:</span>
+        <span className="text-muted-foreground">Não tem acesso a nenhuma loja</span>
+      </p>
+    );
+  }
   return (
     <div className="flex items-center gap-2">
       <label htmlFor={id} className="flex items-center gap-1 text-sm font-medium">
