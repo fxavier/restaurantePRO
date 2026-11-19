@@ -8,6 +8,7 @@ import com.xavier.backend.shared.web.PageResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
 import java.util.UUID;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
@@ -43,14 +44,14 @@ class PrintJobController {
     PageResponse<PrintJobView> list(@RequestParam UUID storeId, @RequestParam(required = false) PrintJobStatus status,
                                     @RequestParam(required = false) Instant from,
                                     @PageableDefault(sort = "createdAt", direction = Sort.Direction.DESC)
-                                    Pageable pageable) {
+                                    @ParameterObject Pageable pageable) {
         return jobs.listForBackOffice(storeId, status, from, pageable);
     }
 
     @GetMapping(POS)
     PageResponse<PrintJobView> listForPos(@RequestParam(required = false) PrintJobStatus status,
                                           @PageableDefault(sort = "createdAt", direction = Sort.Direction.DESC)
-                                          Pageable pageable) {
+                                          @ParameterObject Pageable pageable) {
         return jobs.listForPos(status, pageable);
     }
 

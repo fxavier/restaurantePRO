@@ -13,6 +13,7 @@ import jakarta.validation.Valid;
 import java.net.URI;
 import java.util.Map;
 import java.util.UUID;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
@@ -44,7 +45,7 @@ class CashClosingController {
     @GetMapping(BACKOFFICE)
     PageResponse<ClosingView> list(@RequestParam UUID storeId, @RequestParam(required = false) UUID cashDayId,
                                    @RequestParam(required = false) CashClosingStatus status,
-                                   @PageableDefault(sort = "createdAt") Pageable pageable) {
+                                   @PageableDefault(sort = "createdAt") @ParameterObject Pageable pageable) {
         return closings.list(storeId, cashDayId, status, pageable);
     }
 

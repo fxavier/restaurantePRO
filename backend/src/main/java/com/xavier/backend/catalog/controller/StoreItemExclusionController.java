@@ -6,6 +6,7 @@ import com.xavier.backend.catalog.service.StoreItemExclusionService;
 import com.xavier.backend.shared.web.PageResponse;
 import jakarta.validation.Valid;
 import java.util.UUID;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
@@ -30,7 +31,7 @@ class StoreItemExclusionController {
 
     @GetMapping
     PageResponse<StoreItemExclusionView> list(@PathVariable UUID storeId,
-            @PageableDefault(sort = "excludedAt", direction = Sort.Direction.DESC) Pageable pageable) {
+            @PageableDefault(sort = "excludedAt", direction = Sort.Direction.DESC) @ParameterObject Pageable pageable) {
         return exclusions.list(storeId, pageable);
     }
 

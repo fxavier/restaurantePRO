@@ -25,6 +25,7 @@ import java.net.URI;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
@@ -102,13 +103,13 @@ class ReconciliationController {
     }
 
     @GetMapping("/batches")
-    PageResponse<BatchView> batches(@RequestParam UUID storeId, Pageable pageable) {
+    PageResponse<BatchView> batches(@RequestParam UUID storeId, @ParameterObject Pageable pageable) {
         return queries.batches(storeId, pageable);
     }
 
     @GetMapping("/batches/{id}/entries")
     PageResponse<EntryView> entries(@PathVariable UUID id, @RequestParam(required = false) EntryKind kind,
-                                    @RequestParam(required = false) Boolean open, Pageable pageable) {
+                                    @RequestParam(required = false) Boolean open, @ParameterObject Pageable pageable) {
         return queries.entries(id, kind, open, pageable);
     }
 
@@ -135,7 +136,7 @@ class ReconciliationController {
     @GetMapping("/tax-corrections")
     PageResponse<TaxRoundingAdjustmentView> taxCorrections(@RequestParam UUID storeId,
                                                            @RequestParam(required = false) Boolean open,
-                                                           Pageable pageable) {
+                                                           @ParameterObject Pageable pageable) {
         return taxCorrections.pending(storeId, open, pageable);
     }
 

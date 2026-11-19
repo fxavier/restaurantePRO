@@ -7,6 +7,7 @@ import com.xavier.backend.inventory.consumption.service.ConsumptionExceptionServ
 import com.xavier.backend.shared.web.PageResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.UUID;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -32,7 +33,7 @@ class ConsumptionExceptionController {
 
     @GetMapping(PATH)
     PageResponse<ExceptionView> list(@RequestParam UUID storeId,
-                                     @RequestParam(defaultValue = "false") boolean open, Pageable pageable) {
+                                     @RequestParam(defaultValue = "false") boolean open, @ParameterObject Pageable pageable) {
         return exceptions.list(storeId, open, pageable);
     }
 

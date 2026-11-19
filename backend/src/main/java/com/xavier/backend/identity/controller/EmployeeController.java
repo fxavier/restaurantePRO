@@ -11,6 +11,7 @@ import com.xavier.backend.shared.web.PageResponse;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -41,7 +42,7 @@ class EmployeeController {
     }
 
     @GetMapping
-    PageResponse<EmployeeSummary> list(@RequestParam(required = false) UUID storeId, Pageable pageable) {
+    PageResponse<EmployeeSummary> list(@RequestParam(required = false) UUID storeId, @ParameterObject Pageable pageable) {
         return employees.list(storeId, pageable);
     }
 

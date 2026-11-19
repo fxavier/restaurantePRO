@@ -16,6 +16,7 @@ import com.xavier.backend.orders.model.dto.MacroRequest;
 import com.xavier.backend.orders.service.OrderCustomerService;
 import com.xavier.backend.orders.service.OrderQueryService;
 import com.xavier.backend.shared.web.PageResponse;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
@@ -70,7 +71,7 @@ class PosOrderController {
     @GetMapping(ORDERS)
     PageResponse<OrderSummary> list(@RequestParam(defaultValue = "OPEN") OrderLifecycle lifecycle,
                                     @PageableDefault(size = 50, sort = "openedAt", direction = Sort.Direction.ASC)
-                                    Pageable pageable) {
+                                    @ParameterObject Pageable pageable) {
         return queries.list(lifecycle, pageable);
     }
 

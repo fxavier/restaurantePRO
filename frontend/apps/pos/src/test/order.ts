@@ -183,6 +183,8 @@ export const ORDER: OrderView = {
     },
   ],
   due: { amount: 1350, currency: 'MZN' },
+  // The server's Σ gross of the drafts (120,00 + 50,00), echoed as expectedGross (FE-F27).
+  draftGross: { amount: 170, currency: 'MZN' },
 };
 
 export const NEW_ORDER_ID = id(501);
@@ -200,6 +202,7 @@ export const NEW_ORDER: OrderView = {
   lines: [],
   batches: [],
   due: { amount: 0, currency: 'MZN' },
+  draftGross: undefined,
 };
 
 export const withLines = (order: OrderView, lines: LineView[], fields: Partial<OrderView> = {}): OrderView => ({

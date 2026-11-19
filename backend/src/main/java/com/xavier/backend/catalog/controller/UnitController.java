@@ -8,6 +8,7 @@ import com.xavier.backend.shared.web.PageResponse;
 import jakarta.validation.Valid;
 import java.net.URI;
 import java.util.UUID;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
@@ -32,7 +33,7 @@ class UnitController {
     }
 
     @GetMapping
-    PageResponse<UnitSummary> list(@PageableDefault(sort = "code") Pageable pageable) {
+    PageResponse<UnitSummary> list(@PageableDefault(sort = "code") @ParameterObject Pageable pageable) {
         return units.list(pageable);
     }
 

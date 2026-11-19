@@ -8,6 +8,7 @@ import com.xavier.backend.production.service.ProductionTicketService;
 import com.xavier.backend.shared.web.PageResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.UUID;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
@@ -41,14 +42,14 @@ class ProductionTicketController {
     @GetMapping(BACKOFFICE)
     PageResponse<TicketView> list(@RequestParam UUID storeId, @RequestParam(required = false) TicketRouting routing,
                                   @PageableDefault(sort = "createdAt", direction = Sort.Direction.DESC)
-                                  Pageable pageable) {
+                                  @ParameterObject Pageable pageable) {
         return tickets.listForBackOffice(storeId, routing, pageable);
     }
 
     @GetMapping(POS)
     PageResponse<TicketView> listForPos(@RequestParam(required = false) TicketRouting routing,
                                         @PageableDefault(sort = "createdAt", direction = Sort.Direction.DESC)
-                                        Pageable pageable) {
+                                        @ParameterObject Pageable pageable) {
         return tickets.listForPos(routing, pageable);
     }
 

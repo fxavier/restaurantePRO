@@ -13,6 +13,7 @@ import jakarta.validation.Valid;
 import java.net.URI;
 import java.util.List;
 import java.util.UUID;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -38,7 +39,7 @@ class StockItemController {
     }
 
     @GetMapping(PATH)
-    PageResponse<StockItemView> list(Pageable pageable) {
+    PageResponse<StockItemView> list(@ParameterObject Pageable pageable) {
         return items.list(pageable);
     }
 

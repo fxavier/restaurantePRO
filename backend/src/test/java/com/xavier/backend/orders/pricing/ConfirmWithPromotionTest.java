@@ -2,21 +2,28 @@ package com.xavier.backend.orders.pricing;
 
 import static com.xavier.backend.orders.OrdersFixtures.id;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.xavier.backend.access.Permission;
 import com.xavier.backend.orders.OrderBillingView;
 import com.xavier.backend.orders.OrderEventProbe;
+import com.xavier.backend.orders.OrdersActors;
 import com.xavier.backend.orders.OrdersApi;
 import com.xavier.backend.orders.OrdersFixtures;
 import com.xavier.backend.orders.OrdersFixtures.Shop;
 import com.xavier.backend.orders.OrdersModuleTest;
 import com.xavier.backend.orders.OrdersPromotions;
 import com.xavier.backend.orders.model.event.LineDiscountsRecorded;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.JsonNode;
 
 /**
@@ -39,6 +46,9 @@ class ConfirmWithPromotionTest {
 
     @Autowired
     OrderEventProbe events;
+
+    @Autowired
+    MockMvc mvc;
 
     final UUID employee = UUID.randomUUID();
     final UUID terminal = UUID.randomUUID();
@@ -109,9 +119,49 @@ class ConfirmWithPromotionTest {
                 .andExpect(jsonPath("$.lines[0].unitPrice").value(10.00));
     }
 
+    /** FE-F27: the order carries the drafts' gross as confirmation computes it, so the POS echoes it unchanged. */
+    @Test
+    void theDraftGrossTheOrderCarriesIsTheGrossConfirmationAccepts() throws Exception {
+        UUID first = id(fixtures.draft(shop, order, "2", employee, terminal));
+        UUID second = id(fixtures.draft(shop, order, "0.5", employee, terminal));
+
+        JsonNode draftGross = fixtures.order(shop, order).get("draftGross");
+
+        assertThat(draftGross.get("amount").decimalValue()).isEqualByComparingTo("25.00");
+        assertThat(draftGross.get("currency").asString()).isEqualTo("MZN");
+        fixtures.confirm(shop, order, body(List.of(first, second), promotionVersion, draftGross.get("amount").toString()),
+                        employee, terminal)
+                .andExpect(status().isCreated());
+        assertThat(fixtures.order(shop, order).get("draftGross").isNull()).as("no draft left").isTrue();
+    }
+
+    @Test
+    void aDraftGrossReadBeforeAnotherTerminalEditedADraftIsPricesChanged() throws Exception {
+        JsonNode draft = fixtures.draft(shop, order, "1", employee, terminal);
+        String shown = fixtures.order(shop, order).get("draftGross").get("amount").toString();
+
+        mvc.perform(put("/api/v1/pos/orders/" + order + "/lines/" + id(draft))
+                        .with(OrdersActors.pos(shop.store(), UUID.randomUUID(), UUID.randomUUID(),
+                                Permission.ORDER_EDIT)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"version\": %d, \"quantity\": 3}".formatted(draft.get("version").asLong())))
+                .andExpect(status().isOk());
+
+        fixtures.confirm(shop, order, body(List.of(id(draft)), promotionVersion, shown), employee, terminal)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PRICES_CHANGED"));
+        assertThat(fixtures.order(shop, order).get("draftGross").get("amount").decimalValue())
+                .isEqualByComparingTo("30.00");
+    }
+
     String body(UUID line, Long promotionVersion, String expectedGross) {
+        return body(List.of(line), promotionVersion, expectedGross);
+    }
+
+    String body(List<UUID> lines, Long promotionVersion, String expectedGross) {
+        String ids = String.join(",", lines.stream().map(line -> "\"" + line + "\"").toList());
         return """
-                {"orderVersion": 0, "catalogVersion": %d, "lineIds": ["%s"], "promotionVersion": %s,
-                 "expectedGross": %s}""".formatted(shop.catalogVersion(), line, promotionVersion, expectedGross);
+                {"orderVersion": 0, "catalogVersion": %d, "lineIds": [%s], "promotionVersion": %s,
+                 "expectedGross": %s}""".formatted(shop.catalogVersion(), ids, promotionVersion, expectedGross);
     }
 }

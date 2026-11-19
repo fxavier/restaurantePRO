@@ -6,6 +6,7 @@ import com.xavier.backend.fiscal.service.DocumentQueryService;
 import com.xavier.backend.shared.web.PageResponse;
 import java.time.Instant;
 import java.util.UUID;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
@@ -35,7 +36,7 @@ class DocumentController {
                                        @RequestParam(required = false) UUID orderId,
                                        @RequestParam(required = false) UUID customerId,
                                        @PageableDefault(sort = "issuedAt", direction = Sort.Direction.DESC)
-                                       Pageable pageable) {
+                                       @ParameterObject Pageable pageable) {
         return documents.list(storeId, from, to, orderId, customerId, pageable);
     }
 
