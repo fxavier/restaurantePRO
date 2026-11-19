@@ -466,7 +466,7 @@ describe('Company guard (FE-F16): a tab only ever shows and acts in the session 
       selected: companyA as TenantChoice | undefined,
       acted: [] as { method: string; path: string; in: string | undefined }[],
     };
-    const relay = (request: Request, answer: (company: TenantChoice) => unknown, status = 200) => {
+    const relay = (request: Request, answer: (company: TenantChoice) => unknown, status = 200, namesTenant = true) => {
       const expected = request.headers.get('X-Expected-Tenant');
       const unsafe = request.method !== 'GET';
       const expectedUser = request.headers.get('X-Expected-User');
@@ -490,14 +490,15 @@ describe('Company guard (FE-F16): a tab only ever shows and acts in the session 
       }
       bff.acted.push({ method: request.method, path: new URL(request.url).pathname, in: company?.legalName });
       const headers: Record<string, string> = { 'X-Relayed-User': bff.user.subject };
-      if (stamp && company?.tenantId) headers['X-Relayed-Tenant'] = company.tenantId;
+      if (namesTenant && stamp && company?.tenantId) headers['X-Relayed-Tenant'] = company.tenantId;
       return HttpResponse.json(answer(company!) as object, { status, headers });
     };
     server.use(
       http.get(api('/api/v1/auth/session'), ({ request }) =>
         relay(request, (company) => sessionIn(company, { userId: bff.user.userId, name: bff.user.name })),
       ),
-      http.get(api('/api/v1/auth/tenants'), ({ request }) => relay(request, () => bff.user.memberOf)),
+      // FE-F23: the list of memberships is resolved in no tenant, so its answer names none.
+      http.get(api('/api/v1/auth/tenants'), ({ request }) => relay(request, () => bff.user.memberOf, 200, false)),
       http.get(api('/api/v1/backoffice/stores'), ({ request }) => relay(request, (company) => storePage(storesOf(company)))),
       http.post(api(AREAS), ({ request }) => relay(request, () => ({}), 201)),
     );
@@ -592,6 +593,22 @@ describe('Company guard (FE-F16): a tab only ever shows and acts in the session 
     await act(() => app.queryClient.invalidateQueries({ queryKey: ['auth', 'tenants'] }));
 
     await waitFor(() => expect(app.leave).toHaveBeenCalledWith('/'));
+  });
+
+  it('shows the company switcher from a list of companies that names no relayed company (FE-F23)', async () => {
+    let tenantsNamed: string | null = 'unread';
+    fakeBff();
+    server.events.on('response:mocked', ({ request, response }) => {
+      if (new URL(request.url).pathname === '/api/v1/auth/tenants') tenantsNamed = response.headers.get('X-Relayed-Tenant');
+    });
+    const app = renderApp(`/?storeId=${baixa.id}`);
+
+    expect(await screen.findByRole('button', { name: /^Empresa: Restaurante A, Lda/ })).toBeInTheDocument();
+    await act(() => app.queryClient.invalidateQueries({ queryKey: ['auth', 'tenants'] }));
+    server.events.removeAllListeners();
+
+    expect(tenantsNamed).toBeNull();
+    expect(app.leave).not.toHaveBeenCalled();
   });
 
   it('reloads the page on 409 TENANT_CHANGED, and the reloaded page says which company is now active', async () => {

@@ -50,8 +50,9 @@ class BackendRelay {
                 .build();
     }
 
-    ResponseEntity<byte[]> relay(HttpServletRequest request, String accessToken, Optional<UUID> tenant, String subject)
-            throws IOException {
+    /** {@code namedTenant}: what the answer's X-Relayed-Tenant says, empty where the backend resolves no tenant. */
+    ResponseEntity<byte[]> relay(HttpServletRequest request, String accessToken, Optional<UUID> tenant,
+                                 Optional<UUID> namedTenant, String subject) throws IOException {
         HttpRequest.Builder outgoing = HttpRequest.newBuilder(target(request))
                 .timeout(properties.backendTimeout())
                 .method(request.getMethod(), body(request));
@@ -63,7 +64,7 @@ class BackendRelay {
         outgoing.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken);
         tenant.ifPresent(id -> outgoing.header("X-Tenant-Id", id.toString()));
         try {
-            return toBrowser(http.send(outgoing.build(), HttpResponse.BodyHandlers.ofByteArray()), tenant, subject);
+            return toBrowser(http.send(outgoing.build(), HttpResponse.BodyHandlers.ofByteArray()), namedTenant, subject);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("interrupted while waiting for the backend", e);

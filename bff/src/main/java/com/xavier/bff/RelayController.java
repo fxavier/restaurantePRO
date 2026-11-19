@@ -29,6 +29,8 @@ class RelayController {
     private static final String EXPECTED_USER = "X-Expected-User";
     /** Allow-list: every other method, a custom or lower-case one included, must name the expected tenant. */
     private static final Set<String> SAFE_METHODS = Set.of("GET", "HEAD", "OPTIONS");
+    /** FE-F23: the caller's own memberships; the backend resolves no tenant for it, so its answer names none. */
+    private static final String TENANT_LIST = "/api/v1/auth/tenants";
 
     private final BackendRelay relay;
 
@@ -50,9 +52,15 @@ class RelayController {
             if (isUnsafe(request) && !selected.get().toString().equalsIgnoreCase(expected)) {
                 throw new TenantChangedException();
             }
-            return relay.relay(request, client.getAccessToken().getTokenValue(), selected, subject);
+            return relay(client, request, selected, subject);
         }
-        return relay.relay(request, client.getAccessToken().getTokenValue(), expectedTenant(expected), subject);
+        return relay(client, request, expectedTenant(expected), subject);
+    }
+
+    private ResponseEntity<byte[]> relay(OAuth2AuthorizedClient client, HttpServletRequest request, Optional<UUID> tenant,
+                                         String subject) throws IOException {
+        Optional<UUID> named = TENANT_LIST.equals(request.getRequestURI()) ? Optional.empty() : tenant;
+        return relay.relay(request, client.getAccessToken().getTokenValue(), tenant, named, subject);
     }
 
     /**
