@@ -134,3 +134,22 @@ export function stepQuantity(quantity: string, units: number): string | undefine
   const next = Math.round(Number(quantity) * THOUSANDTHS) + units * THOUSANDTHS;
   return next > 0 ? String(next / THOUSANDTHS) : undefined;
 }
+
+/** A decimal as canonical text: no sign on zero, no leading zeros in the integer part, no trailing fraction zeros. */
+function canonicalDecimal(value: string | number): string {
+  const text = String(value).trim();
+  const negative = text.startsWith('-');
+  const [integer = '', fraction = ''] = text.replace(/^[+-]/, '').split('.');
+  const whole = integer.replace(/^0+(?=\d)/, '') || '0';
+  const decimals = fraction.replace(/0+$/, '');
+  const digits = decimals ? `${whole}.${decimals}` : whole;
+  return negative && digits !== '0' ? `-${digits}` : digits;
+}
+
+/**
+ * The same decimal amount, compared exactly as text: "120.00" and 120 are one price, and two amounts that differ
+ * beyond float precision stay different (amounts arrive as decimal strings, FE-F33; never Number()).
+ */
+export function sameAmount(a: string | number, b: string | number): boolean {
+  return canonicalDecimal(a) === canonicalDecimal(b);
+}

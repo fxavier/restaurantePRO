@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { useStoreTimeZone } from '../../../lib/auth/use-employee';
 import { clockTime, guestsLabel } from '../../dining/format';
 import { itemLabel, type PosCatalog } from '../../catalog/catalog';
-import { type Order, type OrderLine, quantityLabel, stepQuantity } from '../order';
+import { type Order, type OrderLine, quantityLabel, sameAmount, stepQuantity } from '../order';
 
 export type DraftCommands = {
   disabled: boolean;
@@ -172,7 +172,7 @@ function Details({ line, catalog }: { line: OrderLine; catalog: PosCatalog | und
 /** The same amount in the same currency (an equality, not arithmetic: "120.00" and 120 are one price). */
 function sameMoney(a: MoneyValue | undefined, b: MoneyValue | undefined): boolean {
   if (!a || !b) return a === b;
-  return a.currency === b.currency && Number(a.amount) === Number(b.amount);
+  return a.currency === b.currency && sameAmount(a.amount, b.amount);
 }
 
 function PriceChange({ before, now }: { before: MoneyValue | undefined; now: MoneyValue | undefined }) {

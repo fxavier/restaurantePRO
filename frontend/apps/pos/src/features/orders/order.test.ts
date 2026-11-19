@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BATCH_ID, LINE, ORDER, withLines } from '../../test/order';
-import { quantityLabel, stepQuantity, toOrder } from './order';
+import { quantityLabel, sameAmount, stepQuantity, toOrder } from './order';
 
 describe('toOrder', () => {
   it('splits drafts from the rounds, each round with its confirmed lines, by round number', () => {
@@ -54,5 +54,17 @@ describe('stepQuantity', () => {
   it('a quantity must stay positive (UpdateLineRequest @Positive)', () => {
     expect(stepQuantity('1.000', -1)).toBeUndefined();
     expect(stepQuantity('0.500', -1)).toBeUndefined();
+  });
+});
+
+describe('sameAmount', () => {
+  it('compares decimal amounts exactly, as text, whatever their scale or JSON type', () => {
+    expect(sameAmount('120.00', 120)).toBe(true);
+    expect(sameAmount('0.30', '0.3')).toBe(true);
+    expect(sameAmount('-1.50', '-1.5')).toBe(true);
+    expect(sameAmount('0.00', '-0')).toBe(true);
+    // Beyond float precision: different amounts must not compare equal (FE-F33 review).
+    expect(sameAmount('1234567890123456.78', '1234567890123456.79')).toBe(false);
+    expect(sameAmount('120.00', '120.01')).toBe(false);
   });
 });
