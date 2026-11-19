@@ -7,10 +7,19 @@
 
 FROM eclipse-temurin:25.0.5_8-jdk-alpine AS build
 WORKDIR /src
+# The Maven wrapper's distribution and every dependency and plugin are resolved in their own layer, which depends
+# only on the wrapper and pom.xml (FE-F31): a source change reuses it from the layer cache (local or the CI's GHA
+# cache) instead of downloading Maven and the dependencies again. The package step then runs offline (-o), so a
+# plugin that go-offline did not fetch fails the build here instead of silently downloading. The resolve step also
+# keeps a cache mount (local builds: a clean or interrupted build resumes from it) and copies it into the layer,
+# since a cache mount is neither part of the image nor exported to the CI layer cache.
 COPY .mvn .mvn
 COPY mvnw pom.xml ./
+RUN --mount=type=cache,target=/cache/m2,sharing=locked \
+    MAVEN_USER_HOME=/cache/m2 ./mvnw -B -q -Dmaven.repo.local=/cache/m2/repository dependency:go-offline \
+ && cp -a /cache/m2 /root/.m2
 COPY src src
-RUN --mount=type=cache,target=/root/.m2,sharing=locked ./mvnw -B -q -DskipTests package \
+RUN ./mvnw -B -q -o -DskipTests package \
  && cp target/backend-*.jar /app.jar
 
 FROM eclipse-temurin:25.0.5_8-jre-alpine
