@@ -105,9 +105,9 @@ class InventoryReportHttpTest {
         // flour: consumed 8.00 on day 2; opening 20.00, closing 10.00 → average 15.00 → rotation 0.5333
         mvc.perform(get(BO + "/reports/rotation").param("storeId", store.toString()).param("from", DAY_2.toString())
                         .param("to", DAY_2.toString()).with(viewer()))
-                .andExpect(jsonPath("$.rows[?(@.stockItemId == '%s')].consumptionCost".formatted(flour)).value(8.0))
-                .andExpect(jsonPath("$.rows[?(@.stockItemId == '%s')].averageValue".formatted(flour)).value(15.0))
-                .andExpect(jsonPath("$.rows[?(@.stockItemId == '%s')].rotation".formatted(flour)).value(0.5333));
+                .andExpect(jsonPath("$.rows[?(@.stockItemId == '%s')].consumptionCost".formatted(flour)).value("8.0000"))
+                .andExpect(jsonPath("$.rows[?(@.stockItemId == '%s')].averageValue".formatted(flour)).value("15.0000"))
+                .andExpect(jsonPath("$.rows[?(@.stockItemId == '%s')].rotation".formatted(flour)).value("0.5333"));
         mvc.perform(get(BO + "/reports/waste").param("storeId", store.toString()).param("from", DAY_2.toString())
                         .param("to", DAY_1.toString()).with(viewer()))
                 .andExpect(status().isUnprocessableContent()).andExpect(jsonPath("$.code").value("INVALID_PERIOD"));
@@ -140,9 +140,9 @@ class InventoryReportHttpTest {
         // day 2: consumed 2.00; opening 7.00, closing 5.00 → average 6.00 → rotation 0.3333
         mvc.perform(get(BO + "/reports/rotation").param("storeId", store.toString()).param("from", DAY_2.toString())
                         .param("to", DAY_2.toString()).with(viewer()))
-                .andExpect(jsonPath("$.rows[?(@.stockItemId == '%s')].consumptionCost".formatted(salt)).value(2.0))
-                .andExpect(jsonPath("$.rows[?(@.stockItemId == '%s')].openingValue".formatted(salt)).value(7.0))
-                .andExpect(jsonPath("$.rows[?(@.stockItemId == '%s')].rotation".formatted(salt)).value(0.3333));
+                .andExpect(jsonPath("$.rows[?(@.stockItemId == '%s')].consumptionCost".formatted(salt)).value("2.0000"))
+                .andExpect(jsonPath("$.rows[?(@.stockItemId == '%s')].openingValue".formatted(salt)).value("7.0000"))
+                .andExpect(jsonPath("$.rows[?(@.stockItemId == '%s')].rotation".formatted(salt)).value("0.3333"));
     }
 
     @Test

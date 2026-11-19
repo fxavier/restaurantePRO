@@ -68,8 +68,8 @@ class StockQueryHttpTest {
         mvc.perform(get(BO + "/stock").param("warehouseId", warehouse.toString()).with(viewer()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(3))
-                .andExpect(jsonPath("$.content[?(@.stockItemId == '%s')].quantity".formatted(plenty)).value(10.0))
-                .andExpect(jsonPath("$.content[?(@.stockItemId == '%s')].averageCost".formatted(plenty)).value(2.0))
+                .andExpect(jsonPath("$.content[?(@.stockItemId == '%s')].quantity".formatted(plenty)).value("10.000000"))
+                .andExpect(jsonPath("$.content[?(@.stockItemId == '%s')].averageCost".formatted(plenty)).value("2.000000"))
                 .andExpect(jsonPath("$.content[?(@.stockItemId == '%s')].belowMinimum".formatted(scarce))
                         .value(true));
         mvc.perform(get(BO + "/stock").param("warehouseId", warehouse.toString()).param("belowMinimum", "true")
@@ -80,7 +80,7 @@ class StockQueryHttpTest {
                         .with(viewer()))
                 .andExpect(jsonPath("$.totalElements").value(1))
                 .andExpect(jsonPath("$.content[0].stockItemId").value(negative.toString()))
-                .andExpect(jsonPath("$.content[0].quantity").value(-2.0));
+                .andExpect(jsonPath("$.content[0].quantity").value("-2.000000"));
     }
 
     @Test
