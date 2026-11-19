@@ -1,6 +1,6 @@
 dist/
-test-results/
-playwright-report/
+test-results*/
+playwright-report*/
 *.tsbuildinfo
 # Generated from openapi.json by `pnpm --filter api-client generate` (runs on install and before typecheck).
 packages/api-client/src/schema.d.ts

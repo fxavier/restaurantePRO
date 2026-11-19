@@ -42,20 +42,46 @@ origins (ADR 0041; Caddy, `deploy/e2e/Caddyfile`), in a Compose project of its o
 rtk proxy pnpm e2e:stack:up      # builds the SPAs and the images, generates this stack's secrets and keys, waits until healthy
 rtk proxy pnpm e2e:stack         # Playwright against the stack: seeds this run's data, then every project
 rtk proxy pnpm e2e:stack -- --project stack   # Playwright arguments go after --
-rtk proxy pnpm e2e:stack:down    # removes the containers, the data and deploy/e2e/.run/
+rtk proxy pnpm e2e:stack:down    # removes the containers, the data and deploy/e2e/.run/<project>/
 ```
 
 | origin | what |
 |---|---|
 | `http://localhost:14174` | BackOffice SPA + BFF |
 | `http://localhost:14173` | POS SPA + backend (`/api/v1/pos/**`, `/api/v1/auth/**` only; other `/api` paths 404) |
-| `http://localhost:18180` | Keycloak (admin password in `deploy/e2e/.run/keycloak_admin_password`) |
+| `http://localhost:18180` | Keycloak (admin password in `deploy/e2e/.run/restaurantpro-e2e/keycloak_admin_password`) |
 | `http://localhost:18080` | backend, used by the seed only |
 | `http://localhost:18025` | Mailpit (the onboarding invitations) |
 
 All the services share one network namespace, so `localhost:18180` is Keycloak for the browser, the host and the
 services alike: one issuer, and the seed's loopback-only guard stays strict. `backoffice-bff`'s `private_key_jwt` key
-is generated per stack in `deploy/e2e/.run/keys/` and only its public JWK is registered (`deploy/keycloak-bff-dev-key.sh`).
+is generated per stack in `deploy/e2e/.run/<project>/keys/` and only its public JWK is registered (`deploy/keycloak-bff-dev-key.sh`).
+
+**Several stacks side by side (FE-F20).** The Compose project and the five published ports come from environment
+variables whose defaults are the values above; `deploy/e2e/stack.sh` is their one source (compose.yaml and the
+Caddyfile require them, the POS build gets its `VITE_DEVICES_ISSUER`, Playwright its `E2E_*_URL` and the BFF's
+Keycloak client its redirect URI from them). Set the same values on every command of that stack:
+
+```bash
+export E2E_PROJECT=restaurantpro-e2e-b E2E_POS_PORT=24173 E2E_BACKOFFICE_PORT=24174 \
+  E2E_KEYCLOAK_PORT=28180 E2E_BACKEND_PORT=28080 E2E_MAILPIT_PORT=28025
+rtk proxy pnpm e2e:stack:up && rtk proxy pnpm e2e:stack; rtk proxy pnpm e2e:stack:down
+```
+
+| variable | default |
+|---|---|
+| `E2E_PROJECT` | `restaurantpro-e2e` (also the `deploy/e2e/.run/<project>/` directory) |
+| `E2E_POS_PORT` | `14173` |
+| `E2E_BACKOFFICE_PORT` | `14174` |
+| `E2E_KEYCLOAK_PORT` | `18180` |
+| `E2E_BACKEND_PORT` | `18080` |
+| `E2E_MAILPIT_PORT` | `18025` |
+
+The POS, BackOffice and Keycloak ports are also listened on inside the stack's network namespace, so they cannot be
+5432, 8080, 8081, 8443, 9000, 1025 or 8025 (`stack.sh` refuses them). Each stack serves its own copy of the two builds
+(`.run/<project>/srv/`), so a second stack's `up` (which rebuilds `apps/*/dist` with its own Keycloak port) does not
+change the first one's; start the stacks one after the other, not two `up`s at the same instant, since they share
+`apps/*/dist` while building. The backend and BFF images (`restaurantpro-*:e2e`) are shared.
 
 **Seed data, unique per run** (`e2e/global-setup.ts`, through the public API and the provisioners, never SQL): a new
 tenant and its first store (platform onboarding, `deploy/keycloak-e2e-seed.sh`), its administrator in Keycloak with a

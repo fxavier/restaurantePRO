@@ -9,12 +9,17 @@ const posUrl = process.env.E2E_POS_URL ?? 'http://localhost:4173';
 const backOfficeUrl = process.env.E2E_BACKOFFICE_URL ?? 'http://localhost:4174';
 const realStack = !!process.env.E2E_POS_URL && !!process.env.E2E_BACKOFFICE_URL;
 const preview = !process.env.E2E_POS_URL && !process.env.E2E_BACKOFFICE_URL;
+// The URLs come from `stack.sh env` (its ports, FE-F20). A stack other than the default one (E2E_PROJECT, set by
+// stack.sh) writes its traces and report beside the default ones, so two stacks' runs do not clear each other's.
+const stackName = process.env.E2E_PROJECT;
+const outputSuffix = stackName && stackName !== 'restaurantpro-e2e' ? `-${stackName}` : '';
 
 export default defineConfig({
   testDir: './e2e',
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
+  reporter: process.env.CI ? [['list'], ['html', { open: 'never', outputFolder: `playwright-report${outputSuffix}` }]] : 'list',
+  outputDir: `test-results${outputSuffix}`,
   use: { trace: 'retain-on-failure' },
   globalSetup: realStack ? './e2e/global-setup.ts' : undefined,
   projects: [

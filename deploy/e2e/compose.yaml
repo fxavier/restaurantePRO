@@ -1,8 +1,9 @@
 # restaurantPRO end-to-end stack (frontend R1 ticket 05, ADR 0041, ADR 0043). Throwaway, test data only, loopback only.
-# Do not run it by hand: deploy/e2e/stack.sh up generates the secrets and keys in deploy/e2e/.run/ (git-ignored),
+# Do not run it by hand: deploy/e2e/stack.sh up generates the secrets and keys in deploy/e2e/.run/<project>/ (git-ignored),
 # starts the services in order, registers the keys in Keycloak and builds the two SPAs; stack.sh down removes it all.
 #
-# Origins (each app same-origin with its API, ADR 0041):
+# Origins (each app same-origin with its API, ADR 0041); the ports are stack.sh's defaults, which every stack may
+# change (E2E_*_PORT, FE-F20: stack.sh is their one source, so this file requires them and has no default):
 #   http://localhost:14174  BackOffice SPA + BFF (/api/v1/backoffice/**, /api/v1/auth/**, /bff/**, /oauth2/**, /login/**)
 #   http://localhost:14173  POS SPA + backend (/api/v1/pos/**, /api/v1/auth/** only; any other /api path is 404)
 #   http://localhost:18180  Keycloak (dev realms of deploy/keycloak), the issuer the browser and the services share
@@ -14,12 +15,13 @@
 # discovery; with a service name (http://keycloak:8080) the browser could not reach it, and with two hostnames the
 # issuer check fails. It also keeps the seed's loopback-only guard strict (it runs on the host). The cost: the ports
 # inside the namespace must not clash, so the Keycloak database is Keycloak's own dev-file store, not a second
-# PostgreSQL on 5432.
+# PostgreSQL on 5432. For the same reason the POS, BackOffice and Keycloak ports are both published and listened on
+# inside the namespace (stack.sh refuses one of the namespace's internal ports).
 #
 # Reuses the dev and deploy pieces: the postgres:18.6-alpine pin and deploy/postgres/provision.sh (the backend runs as
 # restaurantpro_app, never the superuser, ADR 0039), the Keycloak 26.8.0 pin with the realms imported at start, the
 # backend image of deploy/Dockerfile, Mailpit for the onboarding invitation, and Caddy (the deploy stack's proxy).
-name: restaurantpro-e2e
+name: ${E2E_PROJECT:?run deploy/e2e/stack.sh, which sets the project and ports}
 
 services:
   # Holds the network namespace and the published ports; does nothing else.
@@ -28,11 +30,11 @@ services:
     entrypoint: ["sleep", "infinity"]
     init: true
     ports:
-      - "127.0.0.1:14173:14173" # POS origin
-      - "127.0.0.1:14174:14174" # BackOffice origin
-      - "127.0.0.1:18180:18180" # Keycloak
-      - "127.0.0.1:18080:8080" # backend, for the seed scripts
-      - "127.0.0.1:18025:8025" # Mailpit UI (the onboarding invitations), for debugging
+      - "127.0.0.1:${E2E_POS_PORT:?}:${E2E_POS_PORT:?}" # POS origin
+      - "127.0.0.1:${E2E_BACKOFFICE_PORT:?}:${E2E_BACKOFFICE_PORT:?}" # BackOffice origin
+      - "127.0.0.1:${E2E_KEYCLOAK_PORT:?}:${E2E_KEYCLOAK_PORT:?}" # Keycloak
+      - "127.0.0.1:${E2E_BACKEND_PORT:?}:8080" # backend, for the seed scripts
+      - "127.0.0.1:${E2E_MAILPIT_PORT:?}:8025" # Mailpit UI (the onboarding invitations), for debugging
 
   postgres:
     image: postgres:18.6-alpine # D4, as backend/compose.yaml and the Testcontainers tests
@@ -84,8 +86,8 @@ services:
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_HEALTH_ENABLED: "true"
-      KC_HTTP_PORT: "18180"
-      KC_HOSTNAME: http://localhost:18180
+      KC_HTTP_PORT: "${E2E_KEYCLOAK_PORT:?}"
+      KC_HOSTNAME: http://localhost:${E2E_KEYCLOAK_PORT:?}
     secrets:
       - keycloak_admin_password
     volumes:
@@ -124,14 +126,14 @@ services:
       RESTAURANTPRO_FLYWAY_PASSWORD_FILE: /run/secrets/db_owner_password
       RESTAURANTPRO_MANAGEMENT_PORT: "8081"
       RESTAURANTPRO_FISCAL_ALLOW_NON_CERTIFIED: "true" # test data only, as backend/run-local.sh
-      RESTAURANTPRO_OIDC_TENANT_ISSUER: http://localhost:18180/realms/restaurantpro
-      RESTAURANTPRO_OIDC_OPS_ISSUER: http://localhost:18180/realms/restaurantpro-ops
-      RESTAURANTPRO_OIDC_DEVICES_ISSUER: http://localhost:18180/realms/restaurantpro-devices
-      RESTAURANTPRO_KEYCLOAK_ADMIN_BASE_URL: http://localhost:18180
+      RESTAURANTPRO_OIDC_TENANT_ISSUER: http://localhost:${E2E_KEYCLOAK_PORT:?}/realms/restaurantpro
+      RESTAURANTPRO_OIDC_OPS_ISSUER: http://localhost:${E2E_KEYCLOAK_PORT:?}/realms/restaurantpro-ops
+      RESTAURANTPRO_OIDC_DEVICES_ISSUER: http://localhost:${E2E_KEYCLOAK_PORT:?}/realms/restaurantpro-devices
+      RESTAURANTPRO_KEYCLOAK_ADMIN_BASE_URL: http://localhost:${E2E_KEYCLOAK_PORT:?}
       RESTAURANTPRO_KEYCLOAK_ADMIN_KEY_FILE: /run/secrets/tenancy_provisioner_key
-      RESTAURANTPRO_KEYCLOAK_DEVICES_ADMIN_BASE_URL: http://localhost:18180
+      RESTAURANTPRO_KEYCLOAK_DEVICES_ADMIN_BASE_URL: http://localhost:${E2E_KEYCLOAK_PORT:?}
       RESTAURANTPRO_KEYCLOAK_DEVICES_ADMIN_KEY_FILE: /run/secrets/device_provisioner_key
-      RESTAURANTPRO_POS_ORIGIN: http://localhost:14173 # G13: web origin of the pos-* clients
+      RESTAURANTPRO_POS_ORIGIN: http://localhost:${E2E_POS_PORT:?} # G13: web origin of the pos-* clients
       # D184's step-up maximum age (restaurantpro.security.step-up-max-age, PT5M elsewhere), short here so that flow (a)
       # meets a stale second factor without waiting five minutes (e2e/stack/terminals-step-up.spec.ts). Every
       # sensitive call of the e2e (the seed's, the specs') runs within 30 s of its sign-in or goes through step-up.
@@ -159,10 +161,10 @@ services:
       keycloak:
         condition: service_healthy
     environment:
-      RESTAURANTPRO_OIDC_TENANT_ISSUER: http://localhost:18180/realms/restaurantpro
+      RESTAURANTPRO_OIDC_TENANT_ISSUER: http://localhost:${E2E_KEYCLOAK_PORT:?}/realms/restaurantpro
       RESTAURANTPRO_BACKEND_URL: http://localhost:8080
       RESTAURANTPRO_BFF_CLIENT_KEY_FILE: /run/secrets/bff_client_key
-      # No SERVER_SSL_*: plain HTTP behind Caddy on http://localhost:14174, whose Host the BFF builds its redirect URI
+      # No SERVER_SSL_*: plain HTTP behind Caddy on the BackOffice origin, whose Host the BFF builds its redirect URI
       # from; Chromium accepts the Secure __Host- cookies on http://localhost (deploy/keycloak/README.md, G15).
       JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=30
     secrets:
@@ -179,30 +181,34 @@ services:
     image: caddy:2.11.7-alpine # the deploy stack's pin
     network_mode: service:net
     depends_on: [net]
+    environment: # read by the Caddyfile ({$E2E_POS_PORT}, {$E2E_BACKOFFICE_PORT})
+      E2E_POS_PORT: ${E2E_POS_PORT:?}
+      E2E_BACKOFFICE_PORT: ${E2E_BACKOFFICE_PORT:?}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ../../frontend/apps/pos/dist:/srv/pos:ro
-      - ../../frontend/apps/backoffice/dist:/srv/backoffice:ro
+      # this stack's copy of the two builds (stack.sh up), not frontend/apps/*/dist that another stack may rebuild
+      - ${E2E_RUN_DIR:?}/srv/pos:/srv/pos:ro
+      - ${E2E_RUN_DIR:?}/srv/backoffice:/srv/backoffice:ro
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:14173/ && wget -q -O /dev/null http://127.0.0.1:14174/"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:${E2E_POS_PORT:?}/ && wget -q -O /dev/null http://127.0.0.1:${E2E_BACKOFFICE_PORT:?}/"]
       interval: 3s
       timeout: 3s
       retries: 20
 
-# Written by stack.sh into .run/ (a 0700 directory; the files are 0644 because the containers read them as their own
+# Written by stack.sh into .run/<project>/ (a 0700 directory; the files are 0644 because the containers read them as their own
 # non-root users). Fresh on every `stack.sh up` after a `down`.
 secrets:
   db_password:
-    file: ./.run/db_password
+    file: ${E2E_RUN_DIR:?}/db_password
   db_owner_password:
-    file: ./.run/db_owner_password
+    file: ${E2E_RUN_DIR:?}/db_owner_password
   db_app_password:
-    file: ./.run/db_app_password
+    file: ${E2E_RUN_DIR:?}/db_app_password
   keycloak_admin_password:
-    file: ./.run/keycloak_admin_password
+    file: ${E2E_RUN_DIR:?}/keycloak_admin_password
   tenancy_provisioner_key:
-    file: ./.run/keys/tenancy-provisioner.pem
+    file: ${E2E_RUN_DIR:?}/keys/tenancy-provisioner.pem
   device_provisioner_key:
-    file: ./.run/keys/device-provisioner.pem
+    file: ${E2E_RUN_DIR:?}/keys/device-provisioner.pem
   bff_client_key:
-    file: ./.run/keys/backoffice-bff.jwk
+    file: ${E2E_RUN_DIR:?}/keys/backoffice-bff.jwk
