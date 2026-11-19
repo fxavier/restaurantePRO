@@ -8448,6 +8448,9 @@
             "format": "uuid",
             "type": "string"
           },
+          "draftGross": {
+            "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
+          },
           "due": {
             "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
           },

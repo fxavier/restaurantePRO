@@ -15,10 +15,14 @@ import java.util.UUID;
  * from (send it back to confirm), {@code null} when the order has no draft. R4: {@code promotionVersion} is the
  * published promotion release the previews come from (send it back to confirm, {@code null} = none, D104),
  * {@code customerId} the order's customer (D130).
+ *
+ * <p>FE-F27: {@code draftGross} is Σ gross of the drafts as confirming them all now would price them, the exact value
+ * confirmation compares with {@code expectedGross} (send it back unchanged); provisional, never billed. {@code null}
+ * when there is no draft or a draft has no price (its item left the catalog).
  */
 public record OrderView(UUID id, UUID storeId, UUID terminalId, long orderNumber, OrderMode mode, UUID tableId,
                         String tableCode, Integer guests, OrderLifecycle lifecycle, BillingLock billingLock,
                         LocalDate businessDay, Instant openedAt, UUID openedByEmployeeId, long version,
                         Long catalogVersion, List<LineView> lines, List<BatchView> batches, Money due,
-                        Long promotionVersion, UUID customerId) {
+                        Long promotionVersion, UUID customerId, Money draftGross) {
 }

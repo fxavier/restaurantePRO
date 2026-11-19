@@ -1,6 +1,7 @@
 package com.xavier.backend.orders.service;
 
 import com.xavier.backend.catalog.model.dto.CatalogSnapshot;
+import com.xavier.backend.orders.LineAmounts;
 import com.xavier.backend.orders.model.CatalogPricing;
 import com.xavier.backend.orders.model.LinePricing;
 import com.xavier.backend.orders.model.Order;
@@ -45,6 +46,28 @@ public class LinePricer {
 
         public Optional<LinePricing> of(UUID lineId) {
             return Optional.ofNullable(lines.get(lineId));
+        }
+
+        /** A draft's gross at its effective price; empty when it has no price. */
+        public Optional<Money> grossOf(OrderLine draft) {
+            return of(draft.getId()).map(pricing -> LineAmounts.grossOf(pricing.unitPrice(), draft.getQuantity()));
+        }
+
+        /**
+         * Σ gross of {@code drafts} (D104): what confirmation compares with {@code expectedGross} and the order view
+         * carries as {@code draftGross}. Empty when there is no draft or one has no price (such a round cannot be
+         * confirmed).
+         */
+        public Optional<Money> gross(Collection<OrderLine> drafts) {
+            Money total = null;
+            for (OrderLine draft : drafts) {
+                Optional<Money> gross = grossOf(draft);
+                if (gross.isEmpty()) {
+                    return Optional.empty();
+                }
+                total = total == null ? gross.get() : total.plus(gross.get());
+            }
+            return Optional.ofNullable(total);
         }
     }
 

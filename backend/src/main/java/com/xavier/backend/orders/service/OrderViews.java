@@ -101,7 +101,7 @@ public class OrderViews {
                 order.getBillingLock(), order.getBusinessDay(), order.getOpenedAt(), order.getOpenedByEmployeeId(),
                 order.getVersion(), current.map(CatalogSnapshot::version).orElse(null), lineViews, batchViews,
                 due(order, billingLines(all, deducted, adjusted, inherited, lineage)), promotionVersion,
-                order.getCustomerId());
+                order.getCustomerId(), priced == null ? null : priced.gross(drafts).orElse(null));
     }
 
     /** One draft as the POS shows it right after a change: priced alone, as confirmation would price it now. */
@@ -119,7 +119,7 @@ public class OrderViews {
                 .minus(p.unitPrice().times(line.getQuantity()))).orElse(null);
         return new LineView(line.getId(), LineStatus.DRAFT, line.getItemId(), line.getVariantId(), line.getQuantity(),
                 null, line.getNotes(), line.getVersion(), null, null, null, null, unit, null,
-                pricing.map(p -> p.unitPrice().times(line.getQuantity())).orElse(null), true, null,
+                pricing.map(p -> LineAmounts.grossOf(p.unitPrice(), line.getQuantity())).orElse(null), true, null,
                 line.isAutomatic(), list, discount, promotion.map(p -> "PROMOTION").orElse(null),
                 promotion.map(PromotionRef::name).orElse(null), promotion.map(PromotionRef::code).orElse(null),
                 promotion.map(PromotionRef::name).orElse(null), componentViews(chosen), List.of());
