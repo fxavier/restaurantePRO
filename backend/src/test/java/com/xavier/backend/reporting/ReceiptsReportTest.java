@@ -72,7 +72,7 @@ class ReceiptsReportTest {
 
         Map<String, BigDecimal> received = new TreeMap<>();
         report.get("rows").forEach(row -> received.put(row.get("key").asString(),
-                row.get("received").get("amount").decimalValue().setScale(2)));
+                row.get("received").get("amount").asDecimal().setScale(2)));
         assertThat(received).isEqualTo(reporting.movementsByMethod(sale.store()))
                 .containsEntry("CASH", new BigDecimal("10.00")).containsEntry(card, new BigDecimal("15.00"));
         assertThat(amount(report.get("totals"), "received")).isEqualByComparingTo("25.00");
@@ -121,6 +121,6 @@ class ReceiptsReportTest {
     }
 
     private static BigDecimal amount(JsonNode row, String column) {
-        return row.get(column).get("amount").decimalValue();
+        return row.get(column).get("amount").asDecimal();
     }
 }

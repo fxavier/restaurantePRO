@@ -44,7 +44,7 @@ class PromotionRepublishTest {
 
         fixtures.confirm(shop, order, body(shop, line, published, "9.00"), employee, terminal)
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.lines[0].unitPrice.amount").value(9.00));
+                .andExpect(jsonPath("$.lines[0].unitPrice.amount").value("9.00"));
     }
 
     static String body(Shop shop, UUID line, Long promotionVersion, String expectedGross) {

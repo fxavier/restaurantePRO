@@ -26,7 +26,7 @@ class CashPaymentTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("SUCCEEDED"))
                 .andExpect(jsonPath("$.methodKind").value("CASH"))
-                .andExpect(jsonPath("$.change.amount").value(5.00))
+                .andExpect(jsonPath("$.change.amount").value("5.00"))
                 .andExpect(jsonPath("$.sessionId").value(sale.session().toString()));
         UUID attempt = SettlementFixtures.id(paid);
         paid.andExpect(header().string("Location", SettlementFixtures.ATTEMPTS + "/" + attempt));
@@ -45,9 +45,9 @@ class CashPaymentTest {
         fixtures.payCash(sale, "10.00", "10.00").andExpect(status().isCreated());
 
         fixtures.settlement(sale.cashier(), sale.order()).andExpect(status().isOk())
-                .andExpect(jsonPath("$.due.amount").value(25.00))
-                .andExpect(jsonPath("$.paid.amount").value(10.00))
-                .andExpect(jsonPath("$.balance.amount").value(15.00))
+                .andExpect(jsonPath("$.due.amount").value("25.00"))
+                .andExpect(jsonPath("$.paid.amount").value("10.00"))
+                .andExpect(jsonPath("$.balance.amount").value("15.00"))
                 .andExpect(jsonPath("$.financialState").value("PARTIALLY_SETTLED"))
                 .andExpect(jsonPath("$.fiscalState").value("NONE"))
                 .andExpect(jsonPath("$.lifecycle").value("OPEN"))

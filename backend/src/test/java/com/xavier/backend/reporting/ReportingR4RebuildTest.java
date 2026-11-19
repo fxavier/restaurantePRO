@@ -127,7 +127,7 @@ class ReportingR4RebuildTest {
         List<List<Map<String, Object>>> live = projections();
         List<JsonNode> liveReports = reports();
         assertThat(live).allSatisfy(rows -> assertThat(rows).isNotEmpty());
-        assertThat(liveReports.getFirst().get("totals").get("costVariance").get("amount").decimalValue())
+        assertThat(liveReports.getFirst().get("totals").get("costVariance").get("amount").asDecimal())
                 .as("the return's −5.00 and the correction's 10.00").isEqualByComparingTo("5.00");
         reporting.wipeProjections(this.live.store());
         assertThat(projections()).allSatisfy(rows -> assertThat(rows).isEmpty());

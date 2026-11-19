@@ -69,9 +69,9 @@ class ConfirmWithPromotionTest {
     void aDraftPreviewsTheEffectivePriceNextToTheListPrice() throws Exception {
         JsonNode draft = fixtures.draft(shop, order, "2", employee, terminal);
 
-        assertThat(draft.get("listUnitPrice").get("amount").decimalValue()).isEqualByComparingTo("12.50");
-        assertThat(draft.get("unitPrice").get("amount").decimalValue()).isEqualByComparingTo("10.00");
-        assertThat(draft.get("gross").get("amount").decimalValue()).isEqualByComparingTo("20.00");
+        assertThat(draft.get("listUnitPrice").get("amount").asDecimal()).isEqualByComparingTo("12.50");
+        assertThat(draft.get("unitPrice").get("amount").asDecimal()).isEqualByComparingTo("10.00");
+        assertThat(draft.get("gross").get("amount").asDecimal()).isEqualByComparingTo("20.00");
         assertThat(draft.get("origin").asString()).isEqualTo("PROMOTION");
         assertThat(fixtures.order(shop, order).get("promotionVersion").asLong()).isEqualTo(promotionVersion);
     }
@@ -82,9 +82,9 @@ class ConfirmWithPromotionTest {
 
         fixtures.confirm(shop, order, body(line, promotionVersion, "20.00"), employee, terminal)
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.lines[0].unitPrice.amount").value(10.00))
-                .andExpect(jsonPath("$.lines[0].listUnitPrice.amount").value(12.50))
-                .andExpect(jsonPath("$.lines[0].discount.amount").value(5.00))
+                .andExpect(jsonPath("$.lines[0].unitPrice.amount").value("10.00"))
+                .andExpect(jsonPath("$.lines[0].listUnitPrice.amount").value("12.50"))
+                .andExpect(jsonPath("$.lines[0].discount.amount").value("5.00"))
                 .andExpect(jsonPath("$.lines[0].origin").value("PROMOTION"))
                 .andExpect(jsonPath("$.lines[0].promotionCode").isNotEmpty());
 
@@ -127,7 +127,7 @@ class ConfirmWithPromotionTest {
 
         JsonNode draftGross = fixtures.order(shop, order).get("draftGross");
 
-        assertThat(draftGross.get("amount").decimalValue()).isEqualByComparingTo("25.00");
+        assertThat(draftGross.get("amount").asDecimal()).isEqualByComparingTo("25.00");
         assertThat(draftGross.get("currency").asString()).isEqualTo("MZN");
         fixtures.confirm(shop, order, body(List.of(first, second), promotionVersion, draftGross.get("amount").toString()),
                         employee, terminal)
@@ -150,7 +150,7 @@ class ConfirmWithPromotionTest {
         fixtures.confirm(shop, order, body(List.of(id(draft)), promotionVersion, shown), employee, terminal)
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("PRICES_CHANGED"));
-        assertThat(fixtures.order(shop, order).get("draftGross").get("amount").decimalValue())
+        assertThat(fixtures.order(shop, order).get("draftGross").get("amount").asDecimal())
                 .isEqualByComparingTo("30.00");
     }
 

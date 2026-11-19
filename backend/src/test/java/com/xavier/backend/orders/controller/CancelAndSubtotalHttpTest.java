@@ -114,7 +114,7 @@ class CancelAndSubtotalHttpTest {
         fixtures.draft(shop, order, "5", employee, terminal);
 
         subtotal(UUID.randomUUID().toString()).andExpect(status().isAccepted())
-                .andExpect(jsonPath("$.due.amount").value(25.00));
+                .andExpect(jsonPath("$.due.amount").value("25.00"));
 
         List<SubtotalRequested> printed = events.subtotalsOf(order, 1);
         assertThat(printed).singleElement().satisfies(event -> {
@@ -155,7 +155,7 @@ class CancelAndSubtotalHttpTest {
         mvc.perform(post(POS + "/orders/" + takeaway + "/subtotal/print")
                         .with(OrdersActors.pos(shop.store(), employee, terminal, Permission.ORDER_EDIT)).with(csrf())
                         .header("Idempotency-Key", UUID.randomUUID().toString()))
-                .andExpect(status().isAccepted()).andExpect(jsonPath("$.due.amount").value(0));
+                .andExpect(status().isAccepted()).andExpect(jsonPath("$.due.amount").value("0.00"));
 
         assertThat(events.subtotalsOf(takeaway, 1)).singleElement()
                 .satisfies(event -> assertThat(event.tableCode()).isNull());

@@ -45,7 +45,7 @@ class PartitionDocumentTest {
                 .andExpect(jsonPath("$.sourceType").value("PARTITION"))
                 .andExpect(jsonPath("$.sourceId").value(partition.toString()))
                 .andExpect(jsonPath("$.orderId").value(sale.order().toString()))
-                .andExpect(jsonPath("$.totalGross.amount").value(12.50)));
+                .andExpect(jsonPath("$.totalGross.amount").value("12.50")));
 
         fixtures.confirmRound(sale.shop(), sale.cashier(), sale.order(), "1",
                 fixtures.orderVersion(sale.cashier(), sale.order()));
@@ -54,8 +54,8 @@ class PartitionDocumentTest {
         assertThat(fixtures.count("SELECT count(*) FROM fiscal.fiscal_document_line WHERE document_id = ?::uuid", id))
                 .as("the issued document is unchanged").isEqualTo(1);
         fixtures.settlement(sale.cashier(), sale.order())
-                .andExpect(jsonPath("$.due.amount").value(37.50))
-                .andExpect(jsonPath("$.residualBalance.amount").value(25.00))
+                .andExpect(jsonPath("$.due.amount").value("37.50"))
+                .andExpect(jsonPath("$.residualBalance.amount").value("25.00"))
                 .andExpect(jsonPath("$.fiscalState").value("NONE"))
                 .andExpect(jsonPath("$.partitions[0].invoiced").value(true))
                 .andExpect(jsonPath("$.coverage.length()").value(2));

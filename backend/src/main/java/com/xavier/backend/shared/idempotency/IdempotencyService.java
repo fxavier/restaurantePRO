@@ -1,5 +1,6 @@
 package com.xavier.backend.shared.idempotency;
 
+import java.math.BigDecimal;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -24,9 +25,13 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
+import tools.jackson.core.JsonGenerator;
 import tools.jackson.databind.MapperFeature;
+import tools.jackson.databind.SerializationContext;
 import tools.jackson.databind.SerializationFeature;
 import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.module.SimpleModule;
+import tools.jackson.databind.ser.std.StdSerializer;
 
 /**
  * The one Idempotency-Key mechanism (D24, D47, spec §9). Controllers of repeatable commands call
@@ -81,10 +86,23 @@ public class IdempotencyService {
 
     static final int MAX_KEY_LENGTH = 255;
 
+    /**
+     * FE-F33: the API writes a BigDecimal as a string, but the request identity keeps hashing it as the number it was
+     * hashed as before, so a retry of a request claimed before that change (kept 90 days) still matches its record.
+     */
+    private static final SimpleModule DECIMALS_AS_NUMBERS = new SimpleModule("idempotency-request-identity")
+            .addSerializer(BigDecimal.class, new StdSerializer<>(BigDecimal.class) {
+                @Override
+                public void serialize(BigDecimal value, JsonGenerator generator, SerializationContext context) {
+                    generator.writeNumber(value);
+                }
+            });
+
     private static final Logger log = LoggerFactory.getLogger(IdempotencyService.class);
 
     private final IdempotencyRecordStore store;
     private final JsonMapper canonicalJson;
+    private final JsonMapper requestIdentityJson;
     private final Clock clock;
     private final TransactionTemplate inOwnTransaction;
     private final TransactionTemplate inActionTransaction;
@@ -103,6 +121,7 @@ public class IdempotencyService {
                 .enable(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY)
                 .enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS)
                 .build();
+        this.requestIdentityJson = canonicalJson.rebuild().addModule(DECIMALS_AS_NUMBERS).build();
         this.clock = clock;
         this.inOwnTransaction = new TransactionTemplate(transactionManager);
         this.inOwnTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -305,7 +324,7 @@ public class IdempotencyService {
     }
 
     private String hash(String target, Object requestBody) {
-        String identity = target + "\n" + canonicalJson.writeValueAsString(requestBody);
+        String identity = target + "\n" + requestIdentityJson.writeValueAsString(requestBody);
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256").digest(identity.getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(digest);

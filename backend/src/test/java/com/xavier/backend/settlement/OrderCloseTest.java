@@ -45,7 +45,7 @@ class OrderCloseTest {
                 .andExpect(jsonPath("$.lifecycle").value("CLOSED"))
                 .andExpect(jsonPath("$.financialState").value("SETTLED"))
                 .andExpect(jsonPath("$.fiscalState").value("ISSUED"))
-                .andExpect(jsonPath("$.balance.amount").value(0.00));
+                .andExpect(jsonPath("$.balance.amount").value("0.00"));
 
         assertThat(fixtures.issuedNumber(sale.order())).isEqualTo(1);
         assertThat(fixtures.nextNumber(sale.series())).isEqualTo(2);
@@ -121,7 +121,7 @@ class OrderCloseTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("ISSUED"))
                 .andExpect(jsonPath("$.number").value(1))
-                .andExpect(jsonPath("$.totalGross.amount").value(25.00)));
+                .andExpect(jsonPath("$.totalGross.amount").value("25.00")));
 
         assertThat(fixtures.movementsOfStore(sale.store())).isEqualTo(movements);
         fixtures.settlement(sale.cashier(), sale.order())

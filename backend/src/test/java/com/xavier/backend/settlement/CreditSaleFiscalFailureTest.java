@@ -117,7 +117,7 @@ class CreditSaleFiscalFailureTest {
         assertThat(credit.credit(customer).reserved().amount()).isEqualByComparingTo(BigDecimal.ZERO);
         fixtures.settlement(sale.cashier(), sale.order())
                 .andExpect(jsonPath("$.financialState").value("UNSETTLED"))
-                .andExpect(jsonPath("$.credit.amount").value(0));
+                .andExpect(jsonPath("$.credit.amount").value("0.00"));
         Mockito.reset(fiscalAdapter);
         fixtures.payCash(sale, "25.00", "25.00").andExpect(status().isCreated());
         fixtures.close(sale.cashier(), sale.order(), fixtures.orderVersion(sale.cashier(), sale.order()),

@@ -81,15 +81,15 @@ class TaxCorrectionResolutionTest {
             assertThat(row.get("id").asString()).isEqualTo(pending.toString());
             assertThat(row.get("orderId").asString()).isEqualTo(sale.order().toString());
             assertThat(row.get("documentId").asString()).isEqualTo(documentA.toString());
-            assertThat(row.get("ratePercent").decimalValue()).isEqualByComparingTo("16");
-            assertThat(row.get("amount").get("amount").decimalValue()).isEqualByComparingTo("-0.01");
+            assertThat(row.get("ratePercent").asDecimal()).isEqualByComparingTo("16");
+            assertThat(row.get("amount").get("amount").asDecimal()).isEqualByComparingTo("-0.01");
             assertThat(row.get("resolution").isNull()).isTrue();
         });
         assertThat(control().get("exceptions")).singleElement().satisfies(e -> {
             assertThat(e.get("kind").asString()).isEqualTo("TAX_CORRECTION_PENDING");
             assertThat(e.get("documentId").asString()).isEqualTo(documentA.toString());
             assertThat(e.path("adjustmentId").asString()).isEqualTo(pending.toString());
-            assertThat(e.path("amount").path("amount").decimalValue()).isEqualByComparingTo("-0.01");
+            assertThat(e.path("amount").path("amount").asDecimal()).isEqualByComparingTo("-0.01");
         });
     }
 
@@ -106,13 +106,13 @@ class TaxCorrectionResolutionTest {
         assertThat(control.get("roundingDifferences")).singleElement().satisfies(r -> {
             assertThat(r.get("adjustmentId").asString()).isEqualTo(pending.toString());
             assertThat(r.get("correctionReference").asString()).isEqualTo("NC A/12");
-            assertThat(r.get("difference").get("amount").decimalValue()).isEqualByComparingTo("-0.01");
+            assertThat(r.get("difference").get("amount").asDecimal()).isEqualByComparingTo("-0.01");
         });
         assertThat(list("true").get("content")).isEmpty();
         assertThat(list("false").get("content")).hasSize(1);
         fixtures.settlement(sale.cashier(), sale.order())
-                .andExpect(jsonPath("$.taxRoundingDifference[0].corrected.amount").value(-0.01))
-                .andExpect(jsonPath("$.taxRoundingDifference[0].pendingCorrection.amount").value(0));
+                .andExpect(jsonPath("$.taxRoundingDifference[0].corrected.amount").value("-0.01"))
+                .andExpect(jsonPath("$.taxRoundingDifference[0].pendingCorrection.amount").value("0.00"));
         assertThat(fixtures.count("SELECT count(*) FROM audit.audit_event WHERE action = 'TAX_CORRECTION_RESOLVED' "
                 + "AND entity_id = ?", pending.toString())).isEqualTo(1);
     }

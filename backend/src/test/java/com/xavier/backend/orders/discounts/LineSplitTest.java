@@ -74,7 +74,7 @@ class LineSplitTest {
                          "unitPrice": 12.00, "reason": "regular"}""".formatted(line), operator, terminal,
                         Permission.ORDER_DISCOUNT, null)
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.due.amount").value(37.00));
+                .andExpect(jsonPath("$.due.amount").value("37.00"));
 
         OrderBillingView bill = ordersApi.billingView(order);
         assertThat(bill.lines()).extracting(billed -> billed.netQty().stripTrailingZeros().toPlainString() + "@"

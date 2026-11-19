@@ -69,8 +69,8 @@ class TransferHttpTest {
         JsonNode transfer = json(transfer(2, 0, Map.of(three, "2"), false).andExpect(status().isCreated())
                 .andExpect(jsonPath("$.source.version").value(3))
                 .andExpect(jsonPath("$.target.version").value(1))
-                .andExpect(jsonPath("$.source.due.amount").value(25.00))
-                .andExpect(jsonPath("$.target.due.amount").value(25.00))
+                .andExpect(jsonPath("$.source.due.amount").value("25.00"))
+                .andExpect(jsonPath("$.target.due.amount").value("25.00"))
                 .andReturn().getResponse().getContentAsString());
 
         assertThat(fixtures.netQuantity(source, target)).isEqualByComparingTo(before);
@@ -95,7 +95,7 @@ class TransferHttpTest {
 
         transfer(2, 0, all, true).andExpect(status().isCreated())
                 .andExpect(jsonPath("$.source.lifecycle").value("CANCELLED"))
-                .andExpect(jsonPath("$.target.due.amount").value(50.00));
+                .andExpect(jsonPath("$.target.due.amount").value("50.00"));
 
         assertThat(fixtures.count("""
                 SELECT count(*) FROM dining.table_occupation WHERE order_id = ? AND closed_at IS NULL""", source))
@@ -122,7 +122,7 @@ class TransferHttpTest {
                 [{"lineId": "%s", "quantity": 1}, {"lineId": "%s", "quantity": 1}]""".formatted(three, three))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.lines.length()").value(1))
-                .andExpect(jsonPath("$.lines[0].quantity").value(2));
+                .andExpect(jsonPath("$.lines[0].quantity").value(2.0));
         assertThat(fixtures.count("SELECT count(*) FROM orders.order_line WHERE order_id = ? AND quantity = 2",
                 target)).isOne();
         assertThat(fixtures.count("SELECT count(*) FROM orders.order_line WHERE order_id = ?", target)).isOne();

@@ -730,21 +730,21 @@ class CodedErrorContractTest {
     @Test
     void settlementRules() throws Exception {
         expect("amount-exceeds-balance", 422, "AMOUNT_EXCEEDS_BALANCE",
-                "The amount 60.0000 is more than the balance 40.0000 of the order.", ",\"balance\":40.0000");
+                "The amount 60.0000 is more than the balance 40.0000 of the order.", ",\"balance\":\"40.0000\"");
         expect("not-settled", 422, "NOT_SETTLED", "Order " + ID + " is not settled: 60.0000 paid of 100.0000 due.",
-                ",\"balance\":40.0000");
+                ",\"balance\":\"40.0000\"");
     }
 
     @Test
     void settlementPartitionAndVoidRules() throws Exception {
         expect("quantity-already-partitioned", 422, "QUANTITY_ALREADY_PARTITIONED",
                 "Only 1.5 of line " + ID + " is not in a partition yet.",
-                ",\"lineId\":\"" + ID + "\",\"available\":1.500");
+                ",\"lineId\":\"" + ID + "\",\"available\":\"1.500\"");
         expect("settlement-quantity-exceeds-net", 422, "QUANTITY_EXCEEDS_NET",
                 "Line " + ID + " has 2 billable, less than 3.", ",\"lineId\":\"" + ID + "\"");
         expect("quantity-partitioned", 422, "QUANTITY_PARTITIONED", "Only 1 of line " + ID
                 + " is in no partition: cancel the partition before voiding more.",
-                ",\"lineId\":\"" + ID + "\",\"available\":1");
+                ",\"lineId\":\"" + ID + "\",\"available\":\"1\"");
         expect("split-rounding-limit", 422, "SPLIT_ROUNDING_LIMIT", "Line " + ID + " cannot be split this way: a "
                 + "share of 0.843 would carry 3.55 (tax 0.49), beyond the rounding a document allows. Cancel or "
                 + "split it differently.", ",\"lineId\":\"" + ID + "\"");
@@ -752,7 +752,7 @@ class CodedErrorContractTest {
                 "Order " + ID + " has its document draft: its split can no longer change.", "");
         expect("amount-exceeds-residual", 422, "AMOUNT_EXCEEDS_RESIDUAL",
                 "The partition of 20.01 is more than the residual 20.00 of order " + ID + ".",
-                ",\"residual\":20.00");
+                ",\"residual\":\"20.00\"");
         expect("nothing-to-split", 422, "NOTHING_TO_SPLIT",
                 "The residual 0.01 of order " + ID + " cannot be split in 2 positive parts.", "");
         expect("partition-in-use", 422, "PARTITION_IN_USE", "Bill partition " + ID
@@ -760,12 +760,12 @@ class CodedErrorContractTest {
         expect("partition-not-invoiceable", 422, "PARTITION_NOT_INVOICEABLE",
                 "Only a LIVE ITEMS partition is invoiced on its own; " + ID + " is LIVE AMOUNT.", "");
         expect("void-exceeds-unpaid", 422, "VOID_EXCEEDS_UNPAID", "The void would leave 12.50 due on order " + ID
-                + ", less than the 20.00 paid or being paid: refund first.", ",\"unpaid\":5.00");
+                + ", less than the 20.00 paid or being paid: refund first.", ",\"unpaid\":\"5.00\"");
         expect("discount-exceeds-unpaid", 422, "DISCOUNT_EXCEEDS_UNPAID", "The discount would leave 12.50 due on "
-                + "order " + ID + ", less than the 20.00 paid or being paid: refund first.", ",\"unpaid\":5.00");
+                + "order " + ID + ", less than the 20.00 paid or being paid: refund first.", ",\"unpaid\":\"5.00\"");
         expect("discounted-line-partitioned", 422, "QUANTITY_PARTITIONED", "Only 1 of line " + ID
                 + " is in no partition: cancel the partition before discounting it.",
-                ",\"lineId\":\"" + ID + "\",\"available\":1.000");
+                ",\"lineId\":\"" + ID + "\",\"available\":\"1.000\"");
         expect("settlement-delivery-not-delivered", 422, "DELIVERY_NOT_DELIVERED",
                 "Order " + ID + " is closed only once its delivery is DELIVERED.", "");
         expect("correction-requires-fiscal-adapter", 422, "CORRECTION_REQUIRES_FISCAL_ADAPTER", "Order " + ID
@@ -785,7 +785,7 @@ class CodedErrorContractTest {
         expect("charge-posted", 422, "CHARGE_POSTED", "Credit charge " + ID
                 + " is posted or its document is issued: it is on the customer's account.", "");
         expect("settlement-amount-exceeds-debt", 422, "AMOUNT_EXCEEDS_DEBT",
-                "The amount 40.00 is more than the open debt 37.50.", ",\"debt\":37.50");
+                "The amount 40.00 is more than the open debt 37.50.", ",\"debt\":\"37.50\"");
         expect("debit-not-open", 422, "DEBIT_NOT_OPEN", "The debit " + ID
                 + " is not an open debit of this customer.", ",\"debitEntryId\":\"" + ID + "\"");
         expect("credit-charge-exists", 409, "CREDIT_CHARGE_EXISTS", "The order " + ID
@@ -802,7 +802,7 @@ class CodedErrorContractTest {
         expect("reclassify-too-early-no-provider", 422, "RECLASSIFY_TOO_EARLY", "Payment attempt " + ID
                 + " may be reclassified as FAILED only once it is older than PT24H.", ",\"answeredCount\":0");
         expect("refund-exceeds-refundable", 422, "REFUND_EXCEEDS_REFUNDABLE", "The refund 5.01 is more than the "
-                + "5.00 still refundable of payment " + ID + ".", ",\"refundable\":5.00");
+                + "5.00 still refundable of payment " + ID + ".", ",\"refundable\":\"5.00\"");
         expect("external-reference-required", 422, "EXTERNAL_REFERENCE_REQUIRED", "A refund to CARD is made on the "
                 + "terminal or the provider's portal first: give its reference.", "");
         expect("refund-self-approval", 422, "SELF_APPROVAL", "The approver of a refund cannot be the refunder.", "");
@@ -928,12 +928,12 @@ class CodedErrorContractTest {
     @Test
     void customerAmountRulesCarryTheAmountThatWasAvailable() throws Exception {
         expect("credit-limit-exceeded", 422, "CREDIT_LIMIT_EXCEEDED",
-                "The amount 60.00 is more than the available credit 40.00.", ",\"available\":40.00");
+                "The amount 60.00 is more than the available credit 40.00.", ",\"available\":\"40.00\"");
         expect("customer-exceeds-debt", 422, "AMOUNT_EXCEEDS_DEBT",
-                "The amount 50.01 is more than the open debt 50.00.", ",\"debt\":50.00");
+                "The amount 50.01 is more than the open debt 50.00.", ",\"debt\":\"50.00\"");
         expect("customer-exceeds-credit", 422, "AMOUNT_EXCEEDS_CREDIT",
                 "The amount 20.01 is more than the 20.00 of the debt payment still to reverse.",
-                ",\"refundable\":20.00");
+                ",\"refundable\":\"20.00\"");
     }
 
     @Test
@@ -998,10 +998,10 @@ class CodedErrorContractTest {
     void inventoryQuantityRulesCarryTheItemAndTheQuantity() throws Exception {
         expect("negative-stock-refused", 422, "NEGATIVE_STOCK_REFUSED", "Warehouse " + ID
                         + " refuses manual movements below zero: it holds 2.000000 of stock item " + OTHER + ".",
-                ",\"stockItemId\":\"" + OTHER + "\",\"available\":2.000000");
+                ",\"stockItemId\":\"" + OTHER + "\",\"available\":\"2.000000\"");
         expect("received-exceeds-shipped", 422, "RECEIVED_EXCEEDS_SHIPPED", "More of stock item " + ID
                         + " was received than the 4.000000 shipped.",
-                ",\"stockItemId\":\"" + ID + "\",\"shipped\":4.000000");
+                ",\"stockItemId\":\"" + ID + "\",\"shipped\":\"4.000000\"");
     }
 
     @Test
@@ -1146,7 +1146,7 @@ class CodedErrorContractTest {
         expect("po-not-submitted", 422, "PO_NOT_SUBMITTED", "Purchase order " + ID
                 + " is CLOSED: goods are received only against a submitted order.", "");
         expect("return-exceeds-received", 422, "RETURN_EXCEEDS_RECEIVED", "Only 4.000000 of receipt line " + ID
-                + " can still be returned.", ",\"receiptLineId\":\"" + ID + "\",\"available\":4.000000");
+                + " can still be returned.", ",\"receiptLineId\":\"" + ID + "\",\"available\":\"4.000000\"");
         expect("receipt-not-confirmed", 422, "RECEIPT_NOT_CONFIRMED", "Goods receipt " + ID
                 + " is DRAFT: only a confirmed receipt has costs to correct or goods to return.", "");
         expect("purchase-reference-mismatch", 422, "PURCHASE_REFERENCE_MISMATCH",
@@ -1180,7 +1180,7 @@ class CodedErrorContractTest {
                 ",\"promotionVersion\":4");
         expect("prices-changed", 409, "PRICES_CHANGED",
                 "The prices changed (20.00 → 25.00): review them and confirm again.",
-                ",\"expectedGross\":20.00,\"gross\":25.00,\"lines\":[]");
+                ",\"expectedGross\":\"20.00\",\"gross\":\"25.00\",\"lines\":[]");
         expect("item-sold-out", 422, "ITEM_SOLD_OUT", "Item " + ID + " is sold out.", "");
         expect("menu-selection-invalid", 422, "MENU_SELECTION_INVALID",
                 "Menu LUNCH: group STARTER takes 1 to 1 choices, not 0.", "");

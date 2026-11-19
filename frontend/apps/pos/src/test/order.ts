@@ -59,8 +59,8 @@ export const ITEM = {
         minChoices: 1,
         maxChoices: 1,
         options: [
-          { itemId: id(704), quantity: 1 },
-          { itemId: id(705), quantity: 1 },
+          { itemId: id(704), quantity: '1.000' },
+          { itemId: id(705), quantity: '1.000' },
         ],
       },
       {
@@ -69,9 +69,9 @@ export const ITEM = {
         minChoices: 1,
         maxChoices: 2,
         options: [
-          { itemId: id(702), variantId: VARIANT.small, quantity: 1 },
-          { itemId: id(701), quantity: 1 },
-          { itemId: id(703), quantity: 1 },
+          { itemId: id(702), variantId: VARIANT.small, quantity: '1.000' },
+          { itemId: id(701), quantity: '1.000' },
+          { itemId: id(703), quantity: '1.000' },
         ],
       },
     ],
@@ -106,7 +106,7 @@ export const BATCH_ID = id(550);
 const draft = (n: number, fields: Partial<LineView>): LineView => ({
   id: id(n),
   status: 'DRAFT',
-  quantity: 1,
+  quantity: '1.000',
   version: 0,
   preview: true,
   kind: 'STANDARD',
@@ -120,18 +120,18 @@ export const LINE = {
   water: draft(801, {
     itemId: ITEM.water.id,
     variantId: VARIANT.small,
-    quantity: 2,
+    quantity: '2.000',
     notes: 'Sem gelo',
     version: 1,
-    unitPrice: { amount: 60, currency: 'MZN' },
-    gross: { amount: 120, currency: 'MZN' },
+    unitPrice: { amount: '60.00', currency: 'MZN' },
+    gross: { amount: '120.00', currency: 'MZN' },
   }),
   coffee: draft(802, {
     itemId: ITEM.coffee.id,
-    quantity: 1,
+    quantity: '1.000',
     version: 3,
-    unitPrice: { amount: 50, currency: 'MZN' },
-    gross: { amount: 50, currency: 'MZN' },
+    unitPrice: { amount: '50.00', currency: 'MZN' },
+    gross: { amount: '50.00', currency: 'MZN' },
   }),
   steak: {
     id: id(803),
@@ -139,12 +139,12 @@ export const LINE = {
     itemId: ITEM.steak.id,
     itemCode: 'BITOQUE',
     description: 'Bitoque',
-    quantity: 3,
-    netQuantity: 3,
+    quantity: '3.000',
+    netQuantity: '3.000',
     version: 1,
     batchId: BATCH_ID,
-    unitPrice: { amount: 450, currency: 'MZN' },
-    gross: { amount: 1350, currency: 'MZN' },
+    unitPrice: { amount: '450.00', currency: 'MZN' },
+    gross: { amount: '1350.00', currency: 'MZN' },
     preview: false,
     kind: 'STANDARD',
     automatic: false,
@@ -182,9 +182,9 @@ export const ORDER: OrderView = {
       lines: [LINE.steak],
     },
   ],
-  due: { amount: 1350, currency: 'MZN' },
+  due: { amount: '1350.00', currency: 'MZN' },
   // The server's Σ gross of the drafts (120,00 + 50,00), echoed as expectedGross (FE-F27).
-  draftGross: { amount: 170, currency: 'MZN' },
+  draftGross: { amount: '170.00', currency: 'MZN' },
 };
 
 export const NEW_ORDER_ID = id(501);
@@ -201,7 +201,7 @@ export const NEW_ORDER: OrderView = {
   catalogVersion: undefined,
   lines: [],
   batches: [],
-  due: { amount: 0, currency: 'MZN' },
+  due: { amount: '0.00', currency: 'MZN' },
   draftGross: undefined,
 };
 

@@ -30,15 +30,15 @@ class PartitionTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.kind").value("ITEMS"))
                 .andExpect(jsonPath("$.status").value("LIVE"))
-                .andExpect(jsonPath("$.due.amount").value(12.50))
-                .andExpect(jsonPath("$.lines[0].tax.amount").value(1.72))
+                .andExpect(jsonPath("$.due.amount").value("12.50"))
+                .andExpect(jsonPath("$.lines[0].tax.amount").value("1.72"))
                 .andExpect(jsonPath("$.financialState").value("UNSETTLED"))
                 .andExpect(jsonPath("$.invoiced").value(false));
 
         fixtures.settlement(sale.cashier(), sale.order())
-                .andExpect(jsonPath("$.residualBalance.amount").value(25.00))
+                .andExpect(jsonPath("$.residualBalance.amount").value("25.00"))
                 .andExpect(jsonPath("$.partitions.length()").value(1))
-                .andExpect(jsonPath("$.coverage[0].partitioned").value(1));
+                .andExpect(jsonPath("$.coverage[0].partitioned").value(1.0));
         assertThat(fixtures.count("SELECT count(*) FROM orders.order_header WHERE id = ? AND billing_lock = 'PAYMENT'",
                 sale.order())).as("the first partition locks the order for payment").isEqualTo(1);
     }
@@ -88,8 +88,8 @@ class PartitionTest {
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("AMOUNT_EXCEEDS_RESIDUAL"));
         fixtures.partitionAmount(sale.cashier(), sale.order(), version, "20.00")
-                .andExpect(status().isCreated()).andExpect(jsonPath("$.due.amount").value(20.00));
-        fixtures.settlement(sale.cashier(), sale.order()).andExpect(jsonPath("$.residualBalance.amount").value(0));
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.due.amount").value("20.00"));
+        fixtures.settlement(sale.cashier(), sale.order()).andExpect(jsonPath("$.residualBalance.amount").value("0.00"));
     }
 
     @Test
@@ -114,10 +114,10 @@ class PartitionTest {
 
         fixtures.partitions(sale.cashier(), sale.order()).andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].financialState").value("SETTLED"))
-                .andExpect(jsonPath("$[0].paid.amount").value(12.50))
+                .andExpect(jsonPath("$[0].paid.amount").value("12.50"))
                 .andExpect(jsonPath("$[1].status").value("CANCELLED"));
         fixtures.settlement(sale.cashier(), sale.order())
-                .andExpect(jsonPath("$.residualBalance.amount").value(12.50))
-                .andExpect(jsonPath("$.paid.amount").value(12.50));
+                .andExpect(jsonPath("$.residualBalance.amount").value("12.50"))
+                .andExpect(jsonPath("$.paid.amount").value("12.50"));
     }
 }

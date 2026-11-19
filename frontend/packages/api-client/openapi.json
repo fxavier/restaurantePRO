@@ -192,8 +192,8 @@
       "com.xavier.backend.cash.model.dto.AdjustmentRequest": {
         "properties": {
           "amount": {
-            "exclusiveMinimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "direction": {
             "enum": [
@@ -391,8 +391,8 @@
       "com.xavier.backend.cash.model.dto.ManualMovementRequest": {
         "properties": {
           "amount": {
-            "exclusiveMinimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "reason": {
             "maxLength": 500,
@@ -434,8 +434,8 @@
       "com.xavier.backend.cash.model.dto.OpenSessionRequest": {
         "properties": {
           "openingFloat": {
-            "minimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "registerId": {
             "format": "uuid",
@@ -675,7 +675,8 @@
             "type": "string"
           },
           "quantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "storeId": {
             "format": "uuid",
@@ -714,7 +715,8 @@
             "type": "string"
           },
           "quantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "storeId": {
             "format": "uuid",
@@ -750,7 +752,8 @@
             "type": "string"
           },
           "quantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "trigger": {
             "pattern": "TABLE_OPEN_PER_GUEST|ORDER_OPEN",
@@ -950,7 +953,8 @@
             "type": "string"
           },
           "quantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "trigger": {
             "type": "string"
@@ -1083,7 +1087,8 @@
             "type": "string"
           },
           "quantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "variantId": {
             "format": "uuid",
@@ -1124,7 +1129,8 @@
             "type": "string"
           },
           "quantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "variantId": {
             "format": "uuid",
@@ -1472,7 +1478,8 @@
             "type": "string"
           },
           "quantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "variantId": {
             "format": "uuid",
@@ -1488,8 +1495,8 @@
       "com.xavier.backend.catalog.model.dto.ItemPriceCreateRequest": {
         "properties": {
           "amount": {
-            "minimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "itemId": {
             "format": "uuid",
@@ -1537,8 +1544,8 @@
       "com.xavier.backend.catalog.model.dto.ItemPriceUpdateRequest": {
         "properties": {
           "amount": {
-            "minimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "version": {
             "format": "int64",
@@ -1777,7 +1784,8 @@
             "type": "string"
           },
           "quantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "variantId": {
             "format": "uuid",
@@ -1910,7 +1918,8 @@
             "type": "string"
           },
           "quantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "variantId": {
             "format": "uuid",
@@ -2405,9 +2414,8 @@
             "type": "string"
           },
           "ratePercent": {
-            "maximum": 100,
-            "minimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "required": [
@@ -2427,7 +2435,8 @@
             "type": "string"
           },
           "ratePercent": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "type": "object"
@@ -2695,8 +2704,8 @@
       "com.xavier.backend.customers.model.dto.CreditLimitChangeRequest": {
         "properties": {
           "newLimit": {
-            "minimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "reason": {
             "maxLength": 500,
@@ -3760,7 +3769,8 @@
             "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
           },
           "quantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "sourceLineId": {
             "format": "uuid",
@@ -3770,7 +3780,8 @@
             "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
           },
           "taxRatePercent": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "unitPrice": {
             "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
@@ -3784,7 +3795,8 @@
             "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
           },
           "rate": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "tax": {
             "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
@@ -4817,15 +4829,15 @@
             "type": "string"
           },
           "countedQuantity": {
-            "minimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "unit": {
             "type": "string"
           },
           "unitCost": {
-            "minimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "required": [
@@ -4940,13 +4952,16 @@
             "type": "string"
           },
           "countedQuantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "difference": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "expectedQuantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "id": {
             "format": "uuid",
@@ -4960,7 +4975,8 @@
             "type": "string"
           },
           "unitCost": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "type": "object"
@@ -4986,13 +5002,16 @@
             "type": "string"
           },
           "countedQuantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "difference": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "expectedQuantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "name": {
             "type": "string"
@@ -5002,7 +5021,8 @@
             "type": "string"
           },
           "value": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "warehouseId": {
             "format": "uuid",
@@ -5070,23 +5090,27 @@
             "type": "string"
           },
           "minQuantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "missing": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "name": {
             "type": "string"
           },
           "quantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "stockItemId": {
             "format": "uuid",
             "type": "string"
           },
           "value": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "warehouseCode": {
             "type": "string"
@@ -5119,7 +5143,8 @@
             "type": "string"
           },
           "totalValue": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "type": "object"
@@ -5145,7 +5170,8 @@
             "type": "string"
           },
           "totalValue": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "type": "object"
@@ -5171,7 +5197,8 @@
             "type": "string"
           },
           "totalValue": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "type": "object"
@@ -5197,7 +5224,8 @@
             "type": "string"
           },
           "totalValue": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "type": "object"
@@ -5223,7 +5251,8 @@
             "type": "string"
           },
           "totalValue": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "type": "object"
@@ -5249,7 +5278,8 @@
             "type": "string"
           },
           "totalValue": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "type": "object"
@@ -5257,8 +5287,8 @@
       "com.xavier.backend.inventory.model.dto.LevelRequest": {
         "properties": {
           "minQuantity": {
-            "minimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "stockItemId": {
             "format": "uuid",
@@ -5279,8 +5309,8 @@
       "com.xavier.backend.inventory.model.dto.LevelUpdateRequest": {
         "properties": {
           "minQuantity": {
-            "minimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "version": {
             "format": "int64",
@@ -5296,7 +5326,8 @@
       "com.xavier.backend.inventory.model.dto.LevelView": {
         "properties": {
           "minQuantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "stockItemId": {
             "format": "uuid",
@@ -5316,7 +5347,8 @@
       "com.xavier.backend.inventory.model.dto.ManualMovementLine": {
         "properties": {
           "quantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "stockItemId": {
             "format": "uuid",
@@ -5328,8 +5360,8 @@
             "type": "string"
           },
           "unitCost": {
-            "minimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "required": [
@@ -5419,7 +5451,8 @@
             "type": "integer"
           },
           "quantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "reason": {
             "type": "string"
@@ -5429,7 +5462,8 @@
             "type": "string"
           },
           "referenceUnitCost": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "reversesMovementId": {
             "format": "uuid",
@@ -5462,10 +5496,12 @@
             "type": "string"
           },
           "unitCost": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "value": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "warehouseId": {
             "format": "uuid",
@@ -5487,8 +5523,8 @@
             "type": "string"
           },
           "quantity": {
-            "exclusiveMinimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "unit": {
             "maxLength": 10,
@@ -5516,7 +5552,8 @@
             "type": "string"
           },
           "quantityBase": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "stockItemId": {
             "format": "uuid",
@@ -5570,7 +5607,8 @@
       "com.xavier.backend.inventory.model.dto.ReceiveRequest.Line": {
         "properties": {
           "quantityReceived": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "stockItemId": {
             "format": "uuid",
@@ -5586,32 +5624,38 @@
       "com.xavier.backend.inventory.model.dto.RotationRow": {
         "properties": {
           "averageValue": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "closingValue": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "code": {
             "type": "string"
           },
           "consumptionCost": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "name": {
             "type": "string"
           },
           "openingValue": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "rotation": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "stockItemId": {
             "format": "uuid",
             "type": "string"
           },
           "value": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "type": "object"
@@ -5810,7 +5854,8 @@
       "com.xavier.backend.inventory.model.dto.StockRow": {
         "properties": {
           "averageCost": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "baseUnit": {
             "type": "string"
@@ -5822,20 +5867,23 @@
             "type": "string"
           },
           "minQuantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "name": {
             "type": "string"
           },
           "quantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "stockItemId": {
             "format": "uuid",
             "type": "string"
           },
           "value": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "warehouseId": {
             "format": "uuid",
@@ -5847,8 +5895,8 @@
       "com.xavier.backend.inventory.model.dto.TransferLineRequest": {
         "properties": {
           "quantity": {
-            "exclusiveMinimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "stockItemId": {
             "format": "uuid",
@@ -5979,20 +6027,24 @@
       "com.xavier.backend.inventory.model.dto.TransferView.Line": {
         "properties": {
           "quantityReceived": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "quantityShipped": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "shortfall": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "stockItemId": {
             "format": "uuid",
             "type": "string"
           },
           "unitCost": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "type": "object"
@@ -6000,7 +6052,8 @@
       "com.xavier.backend.inventory.model.dto.ValuationRow": {
         "properties": {
           "averageCost": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "baseUnit": {
             "type": "string"
@@ -6012,14 +6065,16 @@
             "type": "string"
           },
           "quantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "stockItemId": {
             "format": "uuid",
             "type": "string"
           },
           "value": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "warehouseCode": {
             "type": "string"
@@ -6138,14 +6193,16 @@
             "type": "string"
           },
           "quantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "stockItemId": {
             "format": "uuid",
             "type": "string"
           },
           "value": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "type": "object"
@@ -6158,8 +6215,8 @@
             "type": "string"
           },
           "outputQuantity": {
-            "exclusiveMinimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "outputStockItemId": {
             "format": "uuid",
@@ -6218,7 +6275,8 @@
             "type": "string"
           },
           "outputQuantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "outputStockItemId": {
             "format": "uuid",
@@ -6249,8 +6307,8 @@
       "com.xavier.backend.inventory.purchasing.model.dto.CostCorrectionRequest": {
         "properties": {
           "newUnitCost": {
-            "minimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "reason": {
             "maxLength": 500,
@@ -6278,10 +6336,12 @@
             "type": "string"
           },
           "newUnitCost": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "previousUnitCost": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "reason": {
             "type": "string"
@@ -6295,17 +6355,20 @@
             "type": "string"
           },
           "revaluationValue": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "revaluedQuantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "seq": {
             "format": "int32",
             "type": "integer"
           },
           "varianceValue": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "type": "object"
@@ -6317,16 +6380,16 @@
             "type": "string"
           },
           "quantity": {
-            "exclusiveMinimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "stockItemId": {
             "format": "uuid",
             "type": "string"
           },
           "unitCost": {
-            "minimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "required": [
@@ -6476,10 +6539,12 @@
             "type": "string"
           },
           "ordered": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "outstanding": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "packId": {
             "format": "uuid",
@@ -6489,17 +6554,20 @@
             "type": "string"
           },
           "quantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "received": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "stockItemId": {
             "format": "uuid",
             "type": "string"
           },
           "unitCost": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "type": "object"
@@ -6510,7 +6578,8 @@
             "type": "string"
           },
           "correctionValue": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "id": {
             "format": "uuid",
@@ -6520,22 +6589,28 @@
             "type": "string"
           },
           "netQuantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "netValue": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "receivedQuantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "receivedValue": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "returnedQuantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "returnedValue": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "type": "object"
@@ -6547,8 +6622,8 @@
             "type": "string"
           },
           "packQuantity": {
-            "exclusiveMinimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "purchaseOrderLineId": {
             "format": "uuid",
@@ -6559,8 +6634,8 @@
             "type": "string"
           },
           "unitCost": {
-            "minimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "required": [
@@ -6707,7 +6782,8 @@
       "com.xavier.backend.inventory.purchasing.model.dto.ReceiptView.Line": {
         "properties": {
           "currentUnitCost": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "id": {
             "format": "uuid",
@@ -6718,21 +6794,24 @@
             "type": "string"
           },
           "packQuantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "purchaseOrderLineId": {
             "format": "uuid",
             "type": "string"
           },
           "quantityBase": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "stockItemId": {
             "format": "uuid",
             "type": "string"
           },
           "unitCostBase": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "type": "object"
@@ -6740,8 +6819,8 @@
       "com.xavier.backend.inventory.purchasing.model.dto.ReturnLineRequest": {
         "properties": {
           "quantity": {
-            "exclusiveMinimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "receiptLineId": {
             "format": "uuid",
@@ -6779,8 +6858,8 @@
             "type": "string"
           },
           "unitCost": {
-            "minimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "required": [
@@ -6799,7 +6878,8 @@
             "type": "string"
           },
           "lastUnitCost": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "packId": {
             "format": "uuid",
@@ -6983,7 +7063,8 @@
             "type": "string"
           },
           "quantityBase": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "receiptLineId": {
             "format": "uuid",
@@ -7107,8 +7188,8 @@
             "type": "array"
           },
           "quantity": {
-            "exclusiveMinimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "stockItemId": {
             "format": "uuid",
@@ -7140,7 +7221,8 @@
             "type": "array"
           },
           "quantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "stockItemId": {
             "format": "uuid",
@@ -7215,8 +7297,8 @@
             "type": "integer"
           },
           "yieldQuantity": {
-            "exclusiveMinimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "yieldUnit": {
             "maxLength": 10,
@@ -7274,7 +7356,8 @@
             "type": "integer"
           },
           "yieldQuantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "yieldUnit": {
             "type": "string"
@@ -7349,10 +7432,12 @@
             "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
           },
           "netQty": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "ratePercent": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "releaseId": {
             "format": "uuid",
@@ -7494,7 +7579,8 @@
             "type": "string"
           },
           "quantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "reason": {
             "type": "string"
@@ -7882,8 +7968,8 @@
             "type": "string"
           },
           "quantity": {
-            "exclusiveMinimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "variantId": {
             "format": "uuid",
@@ -7985,8 +8071,8 @@
             "type": "integer"
           },
           "expectedGross": {
-            "minimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "lineIds": {
             "items": {
@@ -8066,9 +8152,8 @@
             "type": "integer"
           },
           "percent": {
-            "exclusiveMinimum": 0,
-            "maximum": 100,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "reason": {
             "maxLength": 200,
@@ -8081,8 +8166,8 @@
             "type": "string"
           },
           "unitPrice": {
-            "minimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "required": [
@@ -8100,8 +8185,8 @@
             "type": "string"
           },
           "quantity": {
-            "exclusiveMinimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "required": [
@@ -8165,7 +8250,8 @@
             "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
           },
           "netQuantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "notes": {
             "type": "string"
@@ -8183,7 +8269,8 @@
             "type": "string"
           },
           "quantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "status": {
             "enum": [
@@ -8193,7 +8280,8 @@
             "type": "string"
           },
           "taxRatePercent": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "unitPrice": {
             "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
@@ -8234,13 +8322,15 @@
             "type": "string"
           },
           "percent": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "previousUnitPrice": {
             "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
           },
           "quantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "reason": {
             "type": "string"
@@ -8281,7 +8371,8 @@
             "type": "string"
           },
           "quantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "variantId": {
             "format": "uuid",
@@ -8572,8 +8663,8 @@
             "type": "string"
           },
           "quantity": {
-            "exclusiveMinimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "required": [
@@ -8652,7 +8743,8 @@
       "com.xavier.backend.orders.model.dto.TransferView.Line": {
         "properties": {
           "quantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "sourceLineId": {
             "format": "uuid",
@@ -8673,8 +8765,8 @@
             "type": "string"
           },
           "quantity": {
-            "exclusiveMinimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "variantId": {
             "format": "uuid",
@@ -8702,8 +8794,8 @@
             "type": "integer"
           },
           "quantity": {
-            "exclusiveMinimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "reason": {
             "maxLength": 200,
@@ -8749,7 +8841,8 @@
             "type": "string"
           },
           "quantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "reason": {
             "type": "string"
@@ -8773,7 +8866,8 @@
             "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
           },
           "netQty": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "unitPrice": {
             "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
@@ -9831,8 +9925,8 @@
             "type": "integer"
           },
           "spendUnit": {
-            "exclusiveMinimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "version": {
             "format": "int64",
@@ -9872,8 +9966,8 @@
             "type": "integer"
           },
           "spendUnit": {
-            "exclusiveMinimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "required": [
@@ -9970,7 +10064,8 @@
       "com.xavier.backend.promotions.loyalty.model.dto.RewardRequest": {
         "properties": {
           "amount": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "code": {
             "maxLength": 30,
@@ -10128,10 +10223,12 @@
       "com.xavier.backend.promotions.model.dto.DiscountLimits": {
         "properties": {
           "freeLimitPercent": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "maxPercent": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "type": "object"
@@ -10139,10 +10236,12 @@
       "com.xavier.backend.promotions.model.dto.DiscountLimitsRequest": {
         "properties": {
           "freeLimitPercent": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "maxPercent": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "version": {
             "format": "int64",
@@ -10158,10 +10257,12 @@
       "com.xavier.backend.promotions.model.dto.DiscountLimitsView": {
         "properties": {
           "freeLimitPercent": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "maxPercent": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "storeId": {
             "format": "uuid",
@@ -10180,7 +10281,8 @@
             "type": "boolean"
           },
           "amount": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "code": {
             "maxLength": 40,
@@ -10208,7 +10310,8 @@
             "type": "string"
           },
           "percent": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "priority": {
             "format": "int32",
@@ -10450,7 +10553,8 @@
             "type": "boolean"
           },
           "amount": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "kind": {
             "pattern": "PERCENT_OFF|AMOUNT_OFF_UNIT|FIXED_UNIT_PRICE",
@@ -10473,7 +10577,8 @@
             "type": "string"
           },
           "percent": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "priority": {
             "format": "int32",
@@ -10508,7 +10613,8 @@
             "type": "boolean"
           },
           "amount": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "code": {
             "type": "string"
@@ -10536,7 +10642,8 @@
             "type": "string"
           },
           "percent": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "priority": {
             "format": "int32",
@@ -10690,7 +10797,8 @@
             "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
           },
           "quantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "type": "object"
@@ -10732,7 +10840,8 @@
             "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
           },
           "marginPercent": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "netSales": {
             "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
@@ -11103,7 +11212,8 @@
             "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
           },
           "quantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "tax": {
             "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
@@ -11117,7 +11227,8 @@
             "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
           },
           "rate": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "tax": {
             "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
@@ -11144,7 +11255,8 @@
             "type": "string"
           },
           "quantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "voids": {
             "format": "int64",
@@ -11324,7 +11436,8 @@
       "com.xavier.backend.settlement.model.dto.CountLine": {
         "properties": {
           "amount": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "methodCode": {
             "maxLength": 30,
@@ -11341,8 +11454,8 @@
       "com.xavier.backend.settlement.model.dto.CreateAttemptRequest": {
         "properties": {
           "amount": {
-            "exclusiveMinimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "methodCode": {
             "maxLength": 30,
@@ -11358,8 +11471,8 @@
             "type": "string"
           },
           "tendered": {
-            "exclusiveMinimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "required": [
@@ -11372,8 +11485,8 @@
       "com.xavier.backend.settlement.model.dto.CreatePartitionRequest": {
         "properties": {
           "amount": {
-            "exclusiveMinimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "kind": {
             "pattern": "ITEMS|AMOUNT",
@@ -11406,8 +11519,8 @@
       "com.xavier.backend.settlement.model.dto.CreditChargeRequest": {
         "properties": {
           "amount": {
-            "exclusiveMinimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "customerId": {
             "format": "uuid",
@@ -11484,8 +11597,8 @@
       "com.xavier.backend.settlement.model.dto.CreditPaymentRequest": {
         "properties": {
           "amount": {
-            "exclusiveMinimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "debitEntryIds": {
             "items": {
@@ -11502,8 +11615,8 @@
             "type": "string"
           },
           "tendered": {
-            "exclusiveMinimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "required": [
@@ -11597,23 +11710,27 @@
             "type": "string"
           },
           "drafted": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "gross": {
             "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
           },
           "issued": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "lineId": {
             "format": "uuid",
             "type": "string"
           },
           "netQty": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "partitioned": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "type": "object"
@@ -11766,8 +11883,8 @@
             "type": "string"
           },
           "quantity": {
-            "exclusiveMinimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "required": [
@@ -11865,7 +11982,8 @@
             "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
           },
           "quantity": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "tax": {
             "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
@@ -11997,7 +12115,8 @@
       "com.xavier.backend.settlement.model.dto.RefundRequest": {
         "properties": {
           "amount": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "externalReference": {
             "maxLength": 100,
@@ -12121,9 +12240,8 @@
             "type": "integer"
           },
           "percent": {
-            "exclusiveMinimum": 0,
-            "maximum": 100,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "reason": {
             "maxLength": 200,
@@ -12136,8 +12254,8 @@
             "type": "string"
           },
           "unitPrice": {
-            "minimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "required": [
@@ -12155,8 +12273,8 @@
             "type": "string"
           },
           "quantity": {
-            "exclusiveMinimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "required": [
@@ -12175,8 +12293,8 @@
             "type": "integer"
           },
           "quantity": {
-            "exclusiveMinimum": 0,
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "reason": {
             "maxLength": 500,
@@ -12264,7 +12382,8 @@
             "type": "string"
           },
           "ratePercent": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "resolution": {
             "$ref": "#/components/schemas/com.xavier.backend.settlement.model.dto.TaxCorrectionResolutionView"
@@ -12303,7 +12422,8 @@
             "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
           },
           "ratePercent": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "unassigned": {
             "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
@@ -12492,7 +12612,8 @@
             "type": "string"
           },
           "ratePercent": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           }
         },
         "type": "object"
@@ -12654,7 +12775,8 @@
       "com.xavier.backend.shared.Money": {
         "properties": {
           "amount": {
-            "type": "number"
+            "format": "decimal",
+            "type": "string"
           },
           "currency": {
             "type": "string"
@@ -17341,7 +17463,8 @@
             "name": "minBalance",
             "required": false,
             "schema": {
-              "type": "number"
+              "format": "decimal",
+              "type": "string"
             }
           },
           {

@@ -401,8 +401,8 @@ class R4AcceptanceTest {
         JsonNode correction = office.command(INV + "/receipts/" + second + "/lines/" + secondLine
                 + "/cost-corrections", Map.of("newUnitCost", new BigDecimal("13.00"), "reason", "Fatura FT-102"),
                 201, "cost correction 12.00 -> 13.00");
-        assertThat(correction.get("revaluationValue").decimalValue()).isEqualByComparingTo("10.00");
-        assertThat(correction.get("varianceValue").decimalValue()).isEqualByComparingTo("0");
+        assertThat(correction.get("revaluationValue").asDecimal()).isEqualByComparingTo("10.00");
+        assertThat(correction.get("varianceValue").asDecimal()).isEqualByComparingTo("0");
         assertBalance(kitchen, "BIFE", "20", "230.0000");
         assertThat(averageCost(kitchen, "BIFE")).isEqualByComparingTo("11.50");
         assertThat(count("SELECT count(*) FROM inventory.stock_movement WHERE source_id IN (?, ?) "
@@ -490,7 +490,7 @@ class R4AcceptanceTest {
         cashier.post(POS + "/orders/" + orderM1 + "/discounts", offer, 200, Csrf.SEND, approver(),
                 "offer 1 of 3 coffees (approver)");
         JsonNode afterOffer = cashier.get(POS + "/orders/" + orderM1, 200);
-        assertThat(lineOf(afterOffer, cafe).get("netQuantity").decimalValue()).isEqualByComparingTo("2");
+        assertThat(lineOf(afterOffer, cafe).get("netQuantity").asDecimal()).isEqualByComparingTo("2");
         List<JsonNode> offered = linesWhere(afterOffer, l -> l.get("itemId").asString().equals(items.get("CAFE")
                 .toString()) && !l.get("id").asString().equals(cafe.toString()));
         assertThat(offered).hasSize(1);
@@ -691,8 +691,8 @@ class R4AcceptanceTest {
         assertThat(approved.get("status").asString()).isEqualTo("APPROVED");
         // A47: expected = Σ movements up to the cut-off = 97 (the later coffee is not counted), counted 96 → −1
         JsonNode countLine = approved.get("lines").get(0);
-        assertThat(countLine.get("expectedQuantity").decimalValue()).isEqualByComparingTo("97");
-        assertThat(countLine.get("difference").decimalValue()).isEqualByComparingTo("-1");
+        assertThat(countLine.get("expectedQuantity").asDecimal()).isEqualByComparingTo("97");
+        assertThat(countLine.get("difference").asDecimal()).isEqualByComparingTo("-1");
         // one COUNT_ADJUSTMENT of −1 at the average 2.00 = −2.00 → 95, 190.00
         assertThat(decimal("SELECT sum(value) FROM inventory.stock_movement WHERE type = 'COUNT_ADJUSTMENT' "
                 + "AND warehouse_id = ?", bar)).isEqualByComparingTo("-2.00");
@@ -710,7 +710,7 @@ class R4AcceptanceTest {
         JsonNode received = office.command(INV + "/transfers/" + transfer + "/receive", Map.of("lines", List.of(Map.of(
                 "stockItemId", stock.get("BIFE"), "quantityReceived", new BigDecimal("4")))), 200, "receive 4 in B");
         assertThat(received.get("status").asString()).isEqualTo("RECEIVED");
-        assertThat(received.get("lines").get(0).get("shortfall").decimalValue()).isEqualByComparingTo("1");
+        assertThat(received.get("lines").get(0).get("shortfall").asDecimal()).isEqualByComparingTo("1");
         // TRANSFER_IN carries the OUT's 57.50 for 5, the shortage takes 1 × 11.50 back out → 4, 46.00
         assertThat(movementLines(warehouseB, "BIFE")).containsExactly("TRANSFER_IN|5.000000|57.5000",
                 "TRANSFER_SHORTAGE|-1.000000|-11.5000");
@@ -750,7 +750,7 @@ class R4AcceptanceTest {
         assertThat(money(totals.get("costOfSales"))).isEqualByComparingTo("60.00");
         assertThat(money(totals.get("waste"))).isEqualByComparingTo("5.00");
         assertThat(money(totals.get("margin"))).isEqualByComparingTo("524.47");
-        assertThat(totals.get("marginPercent").decimalValue()).isEqualByComparingTo("89.73");
+        assertThat(totals.get("marginPercent").asDecimal()).isEqualByComparingTo("89.73");
 
         // the documents agree: Σ document line net per item = the margins' net sales; Σ gross = 678.00
         Map<String, BigDecimal> documentNet = perKey("""
@@ -784,12 +784,12 @@ class R4AcceptanceTest {
         //   = 565.50; in = openings 460.00 + receipts 220.00 + revaluation 10.00 = 690.00; out = sale 78.50 −
         //   reversals 13.50 + count 2.00 + transfer 57.50 = 124.50; 690.00 − 124.50 = 565.50
         JsonNode valuation = office.get(INV + "/reports/valuation?storeId=" + storeA, 200);
-        assertThat(valuation.get("totalValue").decimalValue()).isEqualByComparingTo("565.50");
+        assertThat(valuation.get("totalValue").asDecimal()).isEqualByComparingTo("565.50");
         assertThat(decimal("SELECT sum(value) FROM inventory.stock_movement WHERE store_id = ?", storeA))
                 .isEqualByComparingTo("565.50");
         assertThat(decimal("SELECT sum(b.value) FROM inventory.stock_balance b JOIN inventory.warehouse w "
                 + "ON w.id = b.warehouse_id WHERE w.store_id = ?", storeA)).isEqualByComparingTo("565.50");
-        assertThat(office.get(INV + "/reports/valuation?storeId=" + storeB, 200).get("totalValue").decimalValue())
+        assertThat(office.get(INV + "/reports/valuation?storeId=" + storeB, 200).get("totalValue").asDecimal())
                 .isEqualByComparingTo("46.00");
 
         // the inventory balance rebuild replays the ledger and corrects nothing
@@ -1064,7 +1064,7 @@ class R4AcceptanceTest {
                 JsonNode value = row.get(fields[i]);
                 values[i] = value == null || value.isNull() ? null
                         : value.isObject() ? value.get("amount").asString()
-                        : value.decimalValue().stripTrailingZeros().toPlainString();
+                        : value.asDecimal().stripTrailingZeros().toPlainString();
             }
             rows.put(row.get("key").isNull() ? "null" : row.get("key").asString(), values);
         }

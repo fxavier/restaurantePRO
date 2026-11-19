@@ -47,7 +47,7 @@ class PromotionHttpTest {
                  "validFrom": "2026-11-01T00:00:00Z", "validTo": "2026-12-01T00:00:00Z",
                  "membersOnly": true, "modes": ["TAKEAWAY"]}""".formatted(code)), 201));
 
-        assertThat(created.get("amount").decimalValue()).isEqualByComparingTo("1.50");
+        assertThat(created.get("amount").asDecimal()).isEqualByComparingTo("1.50");
         assertThat(created.get("currency").asString()).isEqualTo("MZN");
         assertThat(created.get("active").asBoolean()).isTrue();
         assertThat(created.get("modes").get(0).asString()).isEqualTo("TAKEAWAY");

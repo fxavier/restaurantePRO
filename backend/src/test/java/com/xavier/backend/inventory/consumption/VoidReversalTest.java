@@ -86,8 +86,8 @@ class VoidReversalTest extends ConsumptionTestBase {
             assertThat((BigDecimal) w.get("value")).isEqualByComparingTo("1.0000");
         });
         assertThat(kitchen.rows(kitchen.report("waste"), flour)).singleElement().satisfies(row -> {
-            assertThat(row.get("quantity").decimalValue()).isEqualByComparingTo("0.5");
-            assertThat(row.get("value").decimalValue()).isEqualByComparingTo("1.0000");
+            assertThat(row.get("quantity").asDecimal()).isEqualByComparingTo("0.5");
+            assertThat(row.get("value").asDecimal()).isEqualByComparingTo("1.0000");
         });
         voids.reverse(dropped.voidId());
         assertThat(kitchen.wasteRecords(dropped.voidId())).hasSize(1);
@@ -110,10 +110,10 @@ class VoidReversalTest extends ConsumptionTestBase {
         voids.reverse(dropped.voidId());
 
         assertThat(kitchen.rows(kitchen.report("rotation"), sugar)).singleElement()
-                .satisfies(row -> assertThat(row.get("consumptionCost").decimalValue()).isEqualByComparingTo("0"));
+                .satisfies(row -> assertThat(row.get("consumptionCost").asDecimal()).isEqualByComparingTo("0"));
         assertThat(kitchen.rows(kitchen.report("waste"), sugar)).singleElement().satisfies(row -> {
-            assertThat(row.get("quantity").decimalValue()).isEqualByComparingTo("1");
-            assertThat(row.get("value").decimalValue()).isEqualByComparingTo("2.0000");
+            assertThat(row.get("quantity").asDecimal()).isEqualByComparingTo("1");
+            assertThat(row.get("value").asDecimal()).isEqualByComparingTo("2.0000");
         });
         assertThat(facts.wasteOf(dropped.voidId())).singleElement().satisfies(waste -> {
             assertThat(waste.stockItemId()).isEqualTo(sugar);

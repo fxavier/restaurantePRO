@@ -47,7 +47,7 @@ class OpenOrdersDeliveryTest {
                 .isEqualTo(delivery.shop().courier().toString());
         assertThat(open.get("delivery").has("promisedAt")).isTrue();
         assertThat(open.get("delivery").get("zoneCode").isNull()).isFalse();
-        assertThat(open.get("due").get("amount").decimalValue()).isEqualByComparingTo("15.50"); // fee 3.00 + 12.50
+        assertThat(open.get("due").get("amount").asDecimal()).isEqualByComparingTo("15.50"); // fee 3.00 + 12.50
     }
 
     @Test

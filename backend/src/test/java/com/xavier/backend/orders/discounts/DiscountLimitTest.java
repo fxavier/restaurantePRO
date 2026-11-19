@@ -63,12 +63,12 @@ class DiscountLimitTest {
     void withinTheFreeLimitTheOperatorDiscountsAloneAndTheBillFollows() throws Exception {
         String adjusted = discount(1, "\"kind\": \"DISCOUNT\", \"percent\": 10", Permission.ORDER_DISCOUNT, null)
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.lines[0].unitPrice.amount").value(11.25))
-                .andExpect(jsonPath("$.lines[0].listUnitPrice.amount").value(12.50))
+                .andExpect(jsonPath("$.lines[0].unitPrice.amount").value("11.25"))
+                .andExpect(jsonPath("$.lines[0].listUnitPrice.amount").value("12.50"))
                 .andExpect(jsonPath("$.lines[0].origin").value("MANUAL"))
                 .andExpect(jsonPath("$.lines[0].adjustments[0].kind").value("DISCOUNT"))
                 .andExpect(jsonPath("$.lines[0].adjustments[0].approverEmployeeId").doesNotExist())
-                .andExpect(jsonPath("$.due.amount").value(22.50))
+                .andExpect(jsonPath("$.due.amount").value("22.50"))
                 .andReturn().getResponse().getContentAsString();
 
         assertThat(ordersApi.billingView(order).lines().getFirst().discountLabel()).isEqualTo("Desconto 10%");
@@ -86,7 +86,7 @@ class DiscountLimitTest {
 
         discount(1, "\"kind\": \"DISCOUNT\", \"percent\": 20", Permission.ORDER_DISCOUNT, manager)
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.lines[0].unitPrice.amount").value(10.00))
+                .andExpect(jsonPath("$.lines[0].unitPrice.amount").value("10.00"))
                 .andExpect(jsonPath("$.lines[0].adjustments[0].approverEmployeeId").value(manager.id().toString()));
     }
 
@@ -109,7 +109,7 @@ class DiscountLimitTest {
         // 10 % of 10.09 is 9.081, 9.08 HALF_UP: 10.01 % realized, but 10 % asked
         discount(1, "\"kind\": \"DISCOUNT\", \"percent\": 10", Permission.ORDER_DISCOUNT, null)
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.lines[0].unitPrice.amount").value(9.08));
+                .andExpect(jsonPath("$.lines[0].unitPrice.amount").value("9.08"));
     }
 
     @Test
@@ -120,7 +120,7 @@ class DiscountLimitTest {
                 .andExpect(status().isForbidden());
         discount(1, "\"kind\": \"DISCOUNT\", \"percent\": 10.5", Permission.ORDER_DISCOUNT, manager)
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.lines[0].unitPrice.amount").value(9.03));
+                .andExpect(jsonPath("$.lines[0].unitPrice.amount").value("9.03"));
     }
 
     @Test
@@ -148,9 +148,9 @@ class DiscountLimitTest {
 
         discount(1, "\"kind\": \"OFFER\"", Permission.ORDER_OFFER, manager)
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.lines[0].unitPrice.amount").value(0.00))
+                .andExpect(jsonPath("$.lines[0].unitPrice.amount").value("0.00"))
                 .andExpect(jsonPath("$.lines[0].origin").value("OFFER"))
-                .andExpect(jsonPath("$.due.amount").value(0.00));
+                .andExpect(jsonPath("$.due.amount").value("0.00"));
     }
 
     @Test
@@ -194,7 +194,7 @@ class DiscountLimitTest {
                 .andExpect(jsonPath("$.code").value("PRICE_INCREASE_NOT_ALLOWED"));
         discount(2, "\"kind\": \"REVERSAL\"", Permission.ORDER_DISCOUNT, null)
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.lines[0].unitPrice.amount").value(12.50))
+                .andExpect(jsonPath("$.lines[0].unitPrice.amount").value("12.50"))
                 .andExpect(jsonPath("$.lines[0].origin").doesNotExist())
                 .andExpect(jsonPath("$.lines[0].adjustments.length()").value(2));
     }

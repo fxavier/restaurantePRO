@@ -78,7 +78,7 @@ class PromotionReleaseLifecycleTest {
                 .andExpect(jsonPath("$.currency").value("MZN"))
                 .andExpect(jsonPath("$.promotions[0].id").value(id(promotion).toString()))
                 .andExpect(jsonPath("$.promotions[0].percent").value("20"))
-                .andExpect(jsonPath("$.discountLimits.freeLimitPercent").value(10));
+                .andExpect(jsonPath("$.discountLimits.freeLimitPercent").value(10.0));
         PricingResult priced = promotionsApi.price(new PricingRequest(shop.store(), Instant.parse("2026-11-06T12:00:00Z"),
                 "DINE_IN", false, List.of(new PricingLine(UUID.randomUUID(), shop.item(), null, shop.family(), LIST,
                 BigDecimal.ONE))));

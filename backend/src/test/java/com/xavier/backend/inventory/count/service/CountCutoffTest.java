@@ -78,10 +78,10 @@ class CountCutoffTest {
 
         counts.approve(store, count).andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("APPROVED"))
-                .andExpect(jsonPath("$.lines[?(@.stockItemId == '%s')].expectedQuantity".formatted(flour)).value(9.0))
-                .andExpect(jsonPath("$.lines[?(@.stockItemId == '%s')].difference".formatted(flour)).value(-2.0))
-                .andExpect(jsonPath("$.lines[?(@.stockItemId == '%s')].expectedQuantity".formatted(oil)).value(4.0))
-                .andExpect(jsonPath("$.lines[?(@.stockItemId == '%s')].difference".formatted(oil)).value(0.0));
+                .andExpect(jsonPath("$.lines[?(@.stockItemId == '%s')].expectedQuantity".formatted(flour)).value("9.000000"))
+                .andExpect(jsonPath("$.lines[?(@.stockItemId == '%s')].difference".formatted(flour)).value("-2.000000"))
+                .andExpect(jsonPath("$.lines[?(@.stockItemId == '%s')].expectedQuantity".formatted(oil)).value("4.000000"))
+                .andExpect(jsonPath("$.lines[?(@.stockItemId == '%s')].difference".formatted(oil)).value("0.000000"));
 
         assertThat(counts.movementsOf(count)).containsExactly(
                 flour + " COUNT_ADJUSTMENT -2.000000 2.000000 " + counts.at(30).toString().replace("Z", ""));

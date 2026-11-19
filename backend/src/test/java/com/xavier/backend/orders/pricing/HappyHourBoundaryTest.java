@@ -70,7 +70,7 @@ class HappyHourBoundaryTest {
     void theWindowEndingBetweenPreviewAndConfirmationMakesThePosReRead() throws Exception {
         clock.pin(lastSecond);
         UUID line = id(fixtures.draft(shop, order, "1", employee, terminal));
-        assertThat(fixtures.order(shop, order).get("lines").get(0).get("unitPrice").get("amount").decimalValue())
+        assertThat(fixtures.order(shop, order).get("lines").get(0).get("unitPrice").get("amount").asDecimal())
                 .isEqualByComparingTo("10.00");
 
         clock.pin(lastSecond.plusSeconds(1));

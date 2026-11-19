@@ -89,8 +89,8 @@ class MenuMarginTest {
         assertThat(report.get("rows")).hasSize(1);
         JsonNode row = report.get("rows").get(0);
         assertThat(row.get("key").asString()).isEqualTo(menu.toString());
-        assertThat(row.get("netSales").get("amount").decimalValue()).isEqualByComparingTo(netSales());
-        assertThat(row.get("costOfSales").get("amount").decimalValue()).isEqualByComparingTo("0.70");
+        assertThat(row.get("netSales").get("amount").asDecimal()).isEqualByComparingTo(netSales());
+        assertThat(row.get("costOfSales").get("amount").asDecimal()).isEqualByComparingTo("0.70");
     }
 
     @Test
@@ -104,7 +104,7 @@ class MenuMarginTest {
         assertThat(menuFamily).isNotNull();
         assertThat(report.get("rows")).hasSize(1);
         assertThat(report.get("rows").get(0).get("key").asString()).isEqualTo(menuFamily);
-        assertThat(report.get("rows").get(0).get("costOfSales").get("amount").decimalValue())
+        assertThat(report.get("rows").get(0).get("costOfSales").get("amount").asDecimal())
                 .isEqualByComparingTo("0.70");
     }
 

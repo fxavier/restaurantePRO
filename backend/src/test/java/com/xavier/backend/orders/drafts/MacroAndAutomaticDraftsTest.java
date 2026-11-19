@@ -67,7 +67,7 @@ class MacroAndAutomaticDraftsTest {
                 .andReturn().getResponse().getContentAsString());
 
         assertThat(StreamSupport.stream(view.get("lines").spliterator(), false)
-                .map(line -> line.get("itemId").asString() + "x" + line.get("quantity").decimalValue().stripTrailingZeros().toPlainString()).toList())
+                .map(line -> line.get("itemId").asString() + "x" + line.get("quantity").asDecimal().stripTrailingZeros().toPlainString()).toList())
                 .containsExactly(water + "x2", shop.item() + "x1");
     }
 
@@ -97,7 +97,7 @@ class MacroAndAutomaticDraftsTest {
 
         assertThat(table.get("lines")).singleElement().satisfies(line -> {
             assertThat(line.get("itemId").asString()).isEqualTo(cover.toString());
-            assertThat(line.get("quantity").decimalValue()).isEqualByComparingTo("2");
+            assertThat(line.get("quantity").asDecimal()).isEqualByComparingTo("2");
             assertThat(line.get("automatic").asBoolean()).isTrue();
             assertThat(line.get("status").asString()).isEqualTo("DRAFT");
         });

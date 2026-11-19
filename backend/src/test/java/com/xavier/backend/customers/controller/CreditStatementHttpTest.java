@@ -74,16 +74,16 @@ class CreditStatementHttpTest {
 
         JsonNode statement = statement(null, null);
 
-        assertThat(statement.get("openingBalance").get("amount").decimalValue()).isEqualByComparingTo("0");
-        assertThat(statement.get("closingBalance").get("amount").decimalValue()).isEqualByComparingTo("60.00");
+        assertThat(statement.get("openingBalance").get("amount").asDecimal()).isEqualByComparingTo("0");
+        assertThat(statement.get("closingBalance").get("amount").asDecimal()).isEqualByComparingTo("60.00");
         JsonNode lines = statement.get("lines");
         assertThat(lines.valueStream().map(l -> l.get("sourceType").asString()))
                 .containsExactly("CREDIT_CHARGE", "CREDIT_CHARGE", "PAYMENT", "REFUND");
-        assertThat(lines.valueStream().map(l -> l.get("balance").get("amount").decimalValue().setScale(2).toPlainString()))
+        assertThat(lines.valueStream().map(l -> l.get("balance").get("amount").asDecimal().setScale(2).toPlainString()))
                 .containsExactly("30.00", "80.00", "20.00", "60.00");
         assertThat(lines.get(0).get("documentId").asString()).isEqualTo(document.toString());
-        assertThat(lines.get(0).get("open").get("amount").decimalValue()).isEqualByComparingTo("10.00");
-        assertThat(lines.get(1).get("open").get("amount").decimalValue()).isEqualByComparingTo("50.00");
+        assertThat(lines.get(0).get("open").get("amount").asDecimal()).isEqualByComparingTo("10.00");
+        assertThat(lines.get(1).get("open").get("amount").asDecimal()).isEqualByComparingTo("50.00");
         assertThat(links(lines.get(2), true)).containsExactlyInAnyOrder(oldest + "=30.00", newest + "=30.00");
         assertThat(links(lines.get(2), false)).containsExactly(newest + "=30.00", oldest + "=10.00");
         assertThat(lines.get(3).get("settlements").valueStream()
@@ -91,7 +91,7 @@ class CreditStatementHttpTest {
                 .containsExactly(credit + ">" + newest, credit + ">" + oldest);
 
         JsonNode later = statement(afterFirst.plusNanos(1000), null);
-        assertThat(later.get("openingBalance").get("amount").decimalValue()).isEqualByComparingTo("30.00");
+        assertThat(later.get("openingBalance").get("amount").asDecimal()).isEqualByComparingTo("30.00");
         assertThat(later.get("lines").size()).isEqualTo(3);
     }
 
@@ -134,7 +134,7 @@ class CreditStatementHttpTest {
         return line.get("settlements").valueStream()
                 .filter(link -> link.get("reversalEntryId").isNull() == settling)
                 .map(link -> link.get("debitEntryId").asString() + "="
-                        + link.get("amount").get("amount").decimalValue().setScale(2).toPlainString())
+                        + link.get("amount").get("amount").asDecimal().setScale(2).toPlainString())
                 .toList();
     }
 
@@ -149,7 +149,7 @@ class CreditStatementHttpTest {
 
     private static List<String> amounts(JsonNode row) {
         return List.of("balance", "days0To30", "days31To60", "days61To90", "over90").stream()
-                .map(field -> row.get(field).get("amount").decimalValue().setScale(2).toPlainString()).toList();
+                .map(field -> row.get(field).get("amount").asDecimal().setScale(2).toPlainString()).toList();
     }
 
     private JsonNode statement(Instant from, Instant to) throws Exception {

@@ -104,7 +104,7 @@ class PriceListHttpTest {
         JsonNode price = fixtures().price(store, list, item, null, "12.5");
         fixtures().price(store, list, item, variant, "15.00");
 
-        assertThat(price.get("price").get("amount").decimalValue()).isEqualByComparingTo("12.50");
+        assertThat(price.get("price").get("amount").asDecimal()).isEqualByComparingTo("12.50");
         assertThat(price.get("price").get("amount").asString()).isEqualTo("12.50");
         assertThat(price.get("price").get("currency").asString()).isEqualTo("MZN");
         mvc.perform(post(PRICE_LISTS + "/" + list + "/prices").with(inStore(store, Permission.CATALOG_MANAGE))
@@ -150,7 +150,7 @@ class PriceListHttpTest {
         mvc.perform(put(change).with(inStore(store, Permission.CATALOG_MANAGE)).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content("{\"amount\": 11, \"version\": 0}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.price.amount").value(11.00))
+                .andExpect(jsonPath("$.price.amount").value("11.00"))
                 .andExpect(jsonPath("$.version").value(1));
         mvc.perform(put(change).with(inStore(store, Permission.CATALOG_MANAGE)).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content("{\"amount\": 12, \"version\": 0}"))

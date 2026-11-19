@@ -66,7 +66,7 @@ class DeliveryFeeLineTest {
             assertThat(line.get("itemId").asString()).isEqualTo(d.feeItem().toString());
             assertThat(line.get("automatic").asBoolean()).isTrue();
             assertThat(line.get("status").asString()).isEqualTo("DRAFT");
-            assertThat(line.get("quantity").decimalValue()).isEqualByComparingTo("1");
+            assertThat(line.get("quantity").asDecimal()).isEqualByComparingTo("1");
         });
         Map<String, Object> row = jdbc.sql("SELECT * FROM orders.delivery WHERE order_id = ?").param(id).query()
                 .singleRow();
@@ -87,9 +87,9 @@ class DeliveryFeeLineTest {
                 .orElseThrow();
         assertThat(fee.get("status").asString()).isEqualTo("CONFIRMED");
         assertThat(fee.get("kind").asString()).isEqualTo("FEE");
-        assertThat(fee.get("taxRatePercent").decimalValue()).isEqualByComparingTo("5");
-        assertThat(fee.get("unitPrice").get("amount").decimalValue()).isEqualByComparingTo("3.00");
-        assertThat(fee.get("gross").get("amount").decimalValue()).isEqualByComparingTo("3.00");
+        assertThat(fee.get("taxRatePercent").asDecimal()).isEqualByComparingTo("5");
+        assertThat(fee.get("unitPrice").get("amount").asDecimal()).isEqualByComparingTo("3.00");
+        assertThat(fee.get("gross").get("amount").asDecimal()).isEqualByComparingTo("3.00");
     }
 
     @Test

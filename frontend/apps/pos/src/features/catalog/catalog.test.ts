@@ -22,7 +22,7 @@ describe('catalog', () => {
     const without = (item: Item) => ({ ...CATALOG, catalog: { ...CATALOG.catalog, items: [item] } });
     expect(() => toCatalog(without({ ...ITEM.steak, familyId: undefined }))).toThrow('Incomplete catalog');
     const menu = ITEM.menu;
-    const optionWithoutItem = { ...menu.menuGroups[0], options: [{ quantity: 1 }] };
+    const optionWithoutItem = { ...menu.menuGroups[0], options: [{ quantity: '1.000' }] };
     expect(() => toCatalog(without({ ...menu, menuGroups: [optionWithoutItem] }))).toThrow('Incomplete catalog');
   });
 

@@ -84,12 +84,12 @@ class VoidHttpTest {
         voidRequest(1, "2", manager.code(), PIN, UUID.randomUUID().toString())
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.lineId").value(line.toString()))
-                .andExpect(jsonPath("$.quantity").value(2))
+                .andExpect(jsonPath("$.quantity").value(2.0))
                 .andExpect(jsonPath("$.approverEmployeeId").value(manager.id().toString()))
                 .andExpect(jsonPath("$.wasted").value(true))
                 .andExpect(jsonPath("$.order.version").value(2))
-                .andExpect(jsonPath("$.order.lines[0].netQuantity").value(1))
-                .andExpect(jsonPath("$.order.due.amount").value(12.50));
+                .andExpect(jsonPath("$.order.lines[0].netQuantity").value(1.0))
+                .andExpect(jsonPath("$.order.due.amount").value("12.50"));
 
         assertThat(fixtures.count("""
                 SELECT count(*) FROM audit.audit_event WHERE action = 'ORDER_LINE_VOIDED' AND actor_id = ?

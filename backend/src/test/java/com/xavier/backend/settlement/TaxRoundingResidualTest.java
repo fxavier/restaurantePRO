@@ -64,9 +64,9 @@ class TaxRoundingResidualTest {
         UUID a = partitionAndVoid();
         payAll(a);
 
-        close().andExpect(jsonPath("$.taxRoundingDifference[?(@.ratePercent == 23)].difference.amount").value(0.01))
-                .andExpect(jsonPath("$.taxRoundingDifference[?(@.ratePercent == 23)].absorbed.amount").value(0.01))
-                .andExpect(jsonPath("$.taxRoundingDifference[?(@.ratePercent == 23)].unassigned.amount").value(0.0))
+        close().andExpect(jsonPath("$.taxRoundingDifference[?(@.ratePercent == '23')].difference.amount").value("0.01"))
+                .andExpect(jsonPath("$.taxRoundingDifference[?(@.ratePercent == '23')].absorbed.amount").value("0.01"))
+                .andExpect(jsonPath("$.taxRoundingDifference[?(@.ratePercent == '23')].unassigned.amount").value("0.00"))
                 .andExpect(jsonPath("$.taxRoundingAdjustments[0].kind").value("ABSORBED"))
                 .andExpect(jsonPath("$.taxRoundingAdjustments[0].targetPartitionId").value(a.toString()));
 
@@ -109,8 +109,8 @@ class TaxRoundingResidualTest {
         payAll(a);
 
         close().andExpect(status().isOk()).andExpect(jsonPath("$.lifecycle").value("CLOSED"))
-                .andExpect(jsonPath("$.taxRoundingDifference[?(@.ratePercent == 23)].pendingCorrection.amount")
-                        .value(0.01))
+                .andExpect(jsonPath("$.taxRoundingDifference[?(@.ratePercent == '23')].pendingCorrection.amount")
+                        .value("0.01"))
                 .andExpect(jsonPath("$.taxRoundingAdjustments[0].kind").value("PENDING_CORRECTION"))
                 .andExpect(jsonPath("$.taxRoundingAdjustments[0].documentId").value(documentA.toString()));
 
@@ -136,12 +136,12 @@ class TaxRoundingResidualTest {
         fixtures.payPartition(only.cashier(), only.order(), a, "CASH", "12.50", "12.50",
                 UUID.randomUUID().toString()).andExpect(status().isCreated());
         fixtures.settlement(only.cashier(), only.order())
-                .andExpect(jsonPath("$.taxRoundingDifference[0].unassigned.amount").value(-0.01));
+                .andExpect(jsonPath("$.taxRoundingDifference[0].unassigned.amount").value("-0.01"));
 
         fixtures.close(only.cashier(), only.order(), fixtures.orderVersion(only.cashier(), only.order()),
                         UUID.randomUUID().toString()).andExpect(status().isOk())
-                .andExpect(jsonPath("$.taxRoundingDifference[0].pendingCorrection.amount").value(-0.01))
-                .andExpect(jsonPath("$.taxRoundingDifference[0].unassigned.amount").value(0));
+                .andExpect(jsonPath("$.taxRoundingDifference[0].pendingCorrection.amount").value("-0.01"))
+                .andExpect(jsonPath("$.taxRoundingDifference[0].unassigned.amount").value("0.00"));
 
         assertThat(fixtures.documents(only.order())).as("no residual document").isZero();
         assertThat(fixtures.count("""
@@ -220,7 +220,7 @@ class TaxRoundingResidualTest {
         fixtures.settledVoid(sale.cashier(), sale.order(), fixtures.orderVersion(sale.cashier(), sale.order()), lineL,
                 "1", UUID.randomUUID().toString()).andExpect(status().isCreated());
         fixtures.settlement(sale.cashier(), sale.order())
-                .andExpect(jsonPath("$.taxRoundingDifference[?(@.ratePercent == 23)].unassigned.amount").value(0.01));
+                .andExpect(jsonPath("$.taxRoundingDifference[?(@.ratePercent == '23')].unassigned.amount").value("0.01"));
         return a;
     }
 

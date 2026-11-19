@@ -69,8 +69,8 @@ class ClosingStaleTest {
                         .with(account(store, Permission.CASH_CLOSING_APPROVE)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.attemptNo").value(2))
-                .andExpect(jsonPath("$.lines[0].expected.amount").value(95.00))
-                .andExpect(jsonPath("$.lines[0].difference.amount").value(0.00));
+                .andExpect(jsonPath("$.lines[0].expected.amount").value("95.00"))
+                .andExpect(jsonPath("$.lines[0].difference.amount").value("0.00"));
     }
 
     @Test
