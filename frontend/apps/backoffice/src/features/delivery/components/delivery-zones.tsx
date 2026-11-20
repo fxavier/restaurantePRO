@@ -1,14 +1,18 @@
-import { Badge, Card, CardContent, CardHeader, CardTitle, DataState } from '@restaurantpro/ui';
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, DataState } from '@restaurantpro/ui';
+import { Pencil } from 'lucide-react';
+import { useState } from 'react';
 import { useFeeItems } from '../hooks/use-fee-items';
 import { useZones } from '../hooks/use-zones';
 import type { ZoneView } from '../types';
+import { EditZoneDialog } from './edit-zone-dialog';
 import { ListError } from './list-error';
 import { NewZoneDialog } from './new-zone-dialog';
 
-/** The selected store's delivery zones (§4 delivery, D128): each with its fee item. */
+/** The selected store's delivery zones (§4 delivery, D128): each with its fee item; create and edit. */
 export function DeliveryZones({ storeId }: { storeId: string }) {
   const zones = useZones(storeId);
   const feeItems = useFeeItems();
+  const [editingId, setEditingId] = useState<string>();
   const feeName = (zone: ZoneView) => feeItems.data?.find((item) => item.id === zone.feeItemId)?.name;
 
   if (zones.isError) {
@@ -35,16 +39,23 @@ export function DeliveryZones({ storeId }: { storeId: string }) {
         <ul aria-label="Zonas da loja" className="grid gap-4 lg:grid-cols-2">
           {zones.data?.map((zone) => (
             <li key={zone.id}>
-              <ZoneCard zone={zone} feeName={feeName(zone)} />
+              <ZoneCard zone={zone} feeName={feeName(zone)} onEdit={() => setEditingId(zone.id)} />
             </li>
           ))}
         </ul>
       </DataState>
+      <EditZoneDialog
+        storeId={storeId}
+        zone={zones.data?.find((zone) => zone.id === editingId)}
+        onClose={() => setEditingId(undefined)}
+      />
     </div>
   );
 }
 
-function ZoneCard({ zone, feeName }: { zone: ZoneView; feeName: string | undefined }) {
+type ZoneCardProps = { zone: ZoneView; feeName: string | undefined; onEdit: () => void };
+
+function ZoneCard({ zone, feeName, onEdit }: ZoneCardProps) {
   return (
     <Card className="gap-3">
       <CardHeader className="flex flex-row items-start justify-between gap-3">
@@ -53,9 +64,15 @@ function ZoneCard({ zone, feeName }: { zone: ZoneView; feeName: string | undefin
         </CardTitle>
         <Badge variant={zone.active ? 'success' : 'secondary'}>{zone.active ? 'Ativa' : 'Inativa'}</Badge>
       </CardHeader>
-      <CardContent className="text-sm">
-        <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Taxa de entrega</p>
-        <p>{feeName}</p>
+      <CardContent className="flex items-end justify-between gap-3 text-sm">
+        <div>
+          <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Taxa de entrega</p>
+          <p>{feeName}</p>
+        </div>
+        <Button variant="outline" size="sm" aria-label={`Editar ${zone.name}`} onClick={onEdit}>
+          <Pencil aria-hidden="true" />
+          Editar
+        </Button>
       </CardContent>
     </Card>
   );

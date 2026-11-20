@@ -1,10 +1,10 @@
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
-import { centro, dish, feeFar, feeNear, polana, zone, zonesServer } from '../../test/delivery-fixtures';
+import { centro, dish, feeFar, feeFarNight, feeNear, polana, zone, zonesServer } from '../../test/delivery-fixtures';
 import { api, baixa, problem } from '../../test/fixtures';
 import { CSRF_TOKEN, renderApp } from '../../test/render-app';
-import type { ZoneCreateRequest } from './types';
+import type { ZoneCreateRequest, ZoneUpdateRequest, ZoneView } from './types';
 import { server } from '../../test/server';
 
 const ZONES = `/delivery/zones?storeId=${baixa.id}`;
@@ -20,10 +20,10 @@ describe('delivery zones list', () => {
     expect(items).toHaveLength(2);
     expect(within(items[0]!).getByRole('heading', { name: `${centro.code} ${centro.name}` })).toBeInTheDocument();
     expect(within(items[0]!).getByText('Ativa')).toBeInTheDocument();
-    expect(await within(items[0]!).findByText(feeNear.name!)).toBeInTheDocument();
+    expect(await within(items[0]!).findByText(feeNear.name)).toBeInTheDocument();
     expect(within(items[1]!).getByRole('heading', { name: `${polana.code} ${polana.name}` })).toBeInTheDocument();
     expect(within(items[1]!).getByText('Inativa')).toBeInTheDocument();
-    expect(within(items[1]!).getByText(feeFar.name!)).toBeInTheDocument();
+    expect(within(items[1]!).getByText(feeFar.name)).toBeInTheDocument();
     expect(state.lists).toEqual([`?storeId=${baixa.id}`]);
   });
 
@@ -86,7 +86,7 @@ async function sent(request: Request): Promise<Sent> {
 }
 
 /** The create handler adds the zone to the store's list, as the server would. */
-function creating(state: ReturnType<typeof zonesServer>, answer?: () => Response) {
+function creating(state: ReturnType<typeof zonesServer>, answer?: () => Response | undefined) {
   const posts: Sent[] = [];
   server.use(
     http.post(api('/api/v1/backoffice/delivery-zones'), async ({ request }) => {
@@ -114,8 +114,8 @@ describe('creating a zone', () => {
     await user.type(within(dialog).getByLabelText('Nome'), 'Baixa');
     const fee = within(dialog).getByLabelText('Artigo de taxa');
     expect(await within(fee).findByRole('option', { name: `${feeNear.name} (${feeNear.code})` })).toBeInTheDocument();
-    expect(within(fee).queryByRole('option', { name: new RegExp(dish.name!) })).not.toBeInTheDocument();
-    await user.selectOptions(fee, feeNear.id!);
+    expect(within(fee).queryByRole('option', { name: new RegExp(dish.name) })).not.toBeInTheDocument();
+    await user.selectOptions(fee, feeNear.id);
     await user.click(within(dialog).getByRole('button', { name: 'Criar zona' }));
 
     expect(await screen.findByRole('heading', { name: 'Z3 Baixa' })).toBeInTheDocument();
@@ -184,6 +184,102 @@ describe('creating a zone', () => {
   });
 });
 
+/** The update handler changes the zone in the store's list and bumps its version, as the server would. */
+function updating(state: ReturnType<typeof zonesServer>, answer?: () => Response | undefined) {
+  const puts: (Sent & { id: string })[] = [];
+  server.use(
+    http.put(api('/api/v1/backoffice/delivery-zones/:id'), async ({ request, params }) => {
+      puts.push({ ...(await sent(request)), id: String(params.id) });
+      const failure = answer?.();
+      if (failure) return failure;
+      const body = puts.at(-1)!.body as ZoneUpdateRequest;
+      const index = state.zones.findIndex((each) => each.id === params.id);
+      const { version, ...change } = body;
+      const changed: ZoneView = { ...state.zones[index]!, feeVariantId: undefined, ...change, version: version + 1 };
+      state.zones[index] = changed;
+      return HttpResponse.json(changed);
+    }),
+  );
+  return puts;
+}
+
+describe('editing a zone', () => {
+  it("changes a zone's name, fee variant and state, guarded by its version", async () => {
+    const state = zonesServer();
+    const puts = updating(state);
+    const { user } = renderApp(ZONES);
+
+    await user.click(await screen.findByRole('button', { name: `Editar ${polana.name}` }));
+    const dialog = screen.getByRole('dialog', { name: `Editar zona ${polana.code}` });
+    expect(within(dialog).queryByLabelText('Código')).not.toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Artigo de taxa')).toHaveValue(feeFar.id);
+    const variant = await within(dialog).findByLabelText('Variante');
+    expect(variant).toHaveValue(feeFarNight.id);
+    await user.clear(within(dialog).getByLabelText('Nome'));
+    await user.type(within(dialog).getByLabelText('Nome'), 'Polana Cimento');
+    await user.selectOptions(variant, '');
+    await user.click(within(dialog).getByLabelText('Zona ativa'));
+    await user.click(within(dialog).getByRole('button', { name: 'Guardar' }));
+
+    expect(await screen.findByRole('heading', { name: 'Z2 Polana Cimento' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(puts).toEqual([
+      {
+        id: polana.id,
+        body: { name: 'Polana Cimento', feeItemId: feeFar.id, active: true, version: 0 },
+        idempotencyKey: null,
+        csrf: CSRF_TOKEN,
+      },
+    ]);
+  });
+
+  it('offers the variants of a newly picked fee item, and sends the one chosen', async () => {
+    const state = zonesServer();
+    const puts = updating(state);
+    const { user } = renderApp(ZONES);
+
+    await user.click(await screen.findByRole('button', { name: `Editar ${centro.name}` }));
+    const dialog = screen.getByRole('dialog', { name: `Editar zona ${centro.code}` });
+    expect(within(dialog).queryByLabelText('Variante')).not.toBeInTheDocument();
+    await user.selectOptions(within(dialog).getByLabelText('Artigo de taxa'), feeFar.id);
+    await user.selectOptions(await within(dialog).findByLabelText('Variante'), feeFarNight.id);
+    await user.click(within(dialog).getByRole('button', { name: 'Guardar' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(puts.map((put) => put.body)).toEqual([
+      { name: centro.name, feeItemId: feeFar.id, feeVariantId: feeFarNight.id, active: true, version: 0 },
+    ]);
+  });
+
+  it('shows the zone as it now is when someone changed it meanwhile, and saves on the new version', async () => {
+    const state = zonesServer();
+    let calls = 0;
+    const puts = updating(state, () => {
+      calls += 1;
+      if (calls > 1) return undefined;
+      state.zones[0] = { ...centro, name: 'Centro Histórico', version: 1 };
+      return problem(409, 'VERSION_CONFLICT', 'Conflict');
+    });
+    const { user } = renderApp(ZONES);
+
+    await user.click(await screen.findByRole('button', { name: `Editar ${centro.name}` }));
+    let dialog = screen.getByRole('dialog', { name: `Editar zona ${centro.code}` });
+    await user.click(within(dialog).getByLabelText('Zona ativa'));
+    await user.click(within(dialog).getByRole('button', { name: 'Guardar' }));
+
+    dialog = await screen.findByRole('dialog', { name: `Editar zona ${centro.code}` });
+    expect(await within(dialog).findByText('A zona foi alterada por outra pessoa. Reveja os dados atuais e guarde de novo.')).toBeInTheDocument();
+    await waitFor(() => expect(within(dialog).getByLabelText('Nome')).toHaveValue('Centro Histórico'));
+    await user.click(within(dialog).getByRole('button', { name: 'Guardar' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(puts.map((put) => put.body)).toEqual([
+      { name: centro.name, feeItemId: centro.feeItemId, active: false, version: 0 },
+      { name: 'Centro Histórico', feeItemId: centro.feeItemId, active: true, version: 1 },
+    ]);
+  });
+});
+
 type User = ReturnType<typeof renderApp>['user'];
 
 async function openNewZone(user: User) {
@@ -195,5 +291,5 @@ async function fillNewZone(user: User, dialog: HTMLElement) {
   await user.type(within(dialog).getByLabelText('Código'), 'z3');
   await user.type(within(dialog).getByLabelText('Nome'), 'Baixa');
   await within(dialog).findByRole('option', { name: `${feeNear.name} (${feeNear.code})` });
-  await user.selectOptions(within(dialog).getByLabelText('Artigo de taxa'), feeNear.id!);
+  await user.selectOptions(within(dialog).getByLabelText('Artigo de taxa'), feeNear.id);
 }

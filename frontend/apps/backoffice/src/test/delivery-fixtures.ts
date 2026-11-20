@@ -10,7 +10,7 @@ export type ItemSummary = Schemas['com.xavier.backend.catalog.model.dto.ItemSumm
 export type ItemVariantSummary = Schemas['com.xavier.backend.catalog.model.dto.ItemVariantSummary'];
 export type EmployeeSummary = Schemas['com.xavier.backend.identity.model.dto.EmployeeSummary'];
 
-export function item(id: string, code: string, name: string, kind = 'FEE'): ItemSummary {
+export function item(id: string, code: string, name: string, kind = 'FEE'): ItemSummary & { id: string; code: string; name: string } {
   return { id, code, name, kind, availability: 'AVAILABLE', soldByWeight: false, version: 0 };
 }
 
@@ -18,7 +18,7 @@ export function item(id: string, code: string, name: string, kind = 'FEE'): Item
 export const feeNear = item('f0000000-0000-4000-8000-000000000001', 'TX-PERTO', 'Taxa de entrega perto');
 export const feeFar = item('f0000000-0000-4000-8000-000000000002', 'TX-LONGE', 'Taxa de entrega longe');
 export const dish = item('f0000000-0000-4000-8000-000000000003', 'PRATO-1', 'Frango à zambeziana', 'STANDARD');
-export const feeFarNight: ItemVariantSummary = {
+export const feeFarNight: ItemVariantSummary & { id: string } = {
   id: 'f1000000-0000-4000-8000-000000000001',
   itemId: feeFar.id,
   code: 'NOITE',

@@ -21,7 +21,7 @@ export function NewZoneDialog({ storeId }: { storeId: string }) {
             Uma área onde a loja entrega. A taxa é um artigo de taxa do catálogo, lançado no pedido ao abrir a entrega.
           </DialogDescription>
         </DialogHeader>
-        <ZoneForm storeId={storeId} onDone={() => setOpen(false)}>
+        <ZoneForm storeId={storeId} submitLabel="Criar zona" onDone={() => setOpen(false)}>
           <Button type="button" variant="outline" onClick={() => setOpen(false)}>
             Cancelar
           </Button>
