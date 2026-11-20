@@ -47,6 +47,32 @@ export function useRecordMovement(approver: () => Approver | undefined, onRecord
   }, (movement) => movement && onRecorded(movement));
 }
 
+export type CloseSessionRequest = Schemas['com.xavier.backend.settlement.model.dto.CloseSessionRequest'];
+
+/** `POST /api/v1/pos/cash/sessions/{id}/close`: the operator's own session, closed with its blind count. */
+export function useCloseSession(sessionId: string) {
+  const { api } = useServices();
+  return useCashIntent(
+    async (body: CloseSessionRequest, key: string) =>
+      (
+        await api.POST('/api/v1/pos/cash/sessions/{id}/close', {
+          params: { path: { id: sessionId }, header: { 'Idempotency-Key': key } },
+          body,
+        })
+      ).data,
+  );
+}
+
+/** `POST /api/v1/pos/drawer-kicks`: the manual "open drawer" (D158), a print job the printer runs. */
+export function useDrawerKick(onSent: () => void) {
+  const { api } = useServices();
+  return useIntent(
+    async (_: undefined, key: string) =>
+      (await api.POST('/api/v1/pos/drawer-kicks', { params: { header: { 'Idempotency-Key': key } }, body: {} })).data,
+    { onSuccess: onSent },
+  );
+}
+
 /** `POST /api/v1/pos/cash/sessions`: opens the employee's session on a register with its float. */
 export function useOpenSession() {
   const { api } = useServices();
