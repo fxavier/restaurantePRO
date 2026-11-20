@@ -1,6 +1,7 @@
 import { Badge, Button, Money, type MoneyValue } from '@restaurantpro/ui';
-import { Minus, NotebookPen, Plus, Trash2 } from 'lucide-react';
+import { Minus, NotebookPen, Plus, ReceiptText, Trash2 } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { Link } from 'react-router';
 import { useStoreTimeZone } from '../../../lib/auth/use-employee';
 import { ScrollRegion } from '../../../lib/scroll-region';
 import { clockTime, guestsLabel } from '../../dining/format';
@@ -136,6 +137,12 @@ export function OrderPanel({ order, catalog, commands, message, action, back, sh
           </p>
         </div>
         {action}
+        <Button asChild variant="outline" size="touch" className="w-full">
+          <Link to={`/orders/${order.id}/payment`}>
+            <ReceiptText aria-hidden="true" />
+            Conta & Pagamento
+          </Link>
+        </Button>
       </footer>
     </aside>
   );
