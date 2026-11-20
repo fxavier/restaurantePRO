@@ -135,6 +135,21 @@ export function peopleHandlers({
       await record(request);
       return HttpResponse.json(state.employees.find((e) => e.id === params.id));
     }),
+    http.post(api(`${base}/employees/:id/assignments`), async ({ request, params }) => {
+      const { body } = await record(request);
+      const added = {
+        id: `d2000000-0000-4000-8000-00000000000${state.assignments.length}`,
+        employeeId: String(params.id),
+        ...(body as { storeId: string; roleId: string }),
+      };
+      state.assignments.push(added);
+      return HttpResponse.json(added, { status: 201 });
+    }),
+    http.delete(api(`${base}/employees/:id/assignments/:assignmentId`), async ({ request, params }) => {
+      await record(request);
+      state.assignments = state.assignments.filter((a) => a.id !== params.assignmentId);
+      return new HttpResponse(null, { status: 204 });
+    }),
     http.post(api(`${base}/employees/:id/unlock`), async ({ request, params }) => {
       await record(request);
       state.employees = state.employees.map((e) => (e.id === params.id ? { ...e, locked: false } : e));

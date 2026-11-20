@@ -1,7 +1,7 @@
 import type { ApiClient } from '@restaurantpro/api-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useApi } from '../../../lib/api';
-import type { EmployeeCreateRequest, EmployeeSummary } from '../types';
+import type { AssignmentRequest, EmployeeCreateRequest, EmployeeSummary } from '../types';
 import { PEOPLE_KEY } from './use-people-queries';
 
 const BASE = '/api/v1/backoffice';
@@ -36,6 +36,21 @@ export function useResetPin() {
         .data as EmployeeSummary,
     true,
   );
+}
+
+export function useAddAssignment(employeeId: string) {
+  return usePeopleCommand(
+    async (api, body: AssignmentRequest) =>
+      (await api.POST(`${BASE}/employees/{id}/assignments`, { params: { path: { id: employeeId } }, body })).data,
+  );
+}
+
+export function useRemoveAssignment(employeeId: string) {
+  return usePeopleCommand(async (api, assignmentId: string) => {
+    await api.DELETE(`${BASE}/employees/{id}/assignments/{assignmentId}`, {
+      params: { path: { id: employeeId, assignmentId } },
+    });
+  });
 }
 
 export function useUnlockEmployee() {

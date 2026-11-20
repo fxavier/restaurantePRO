@@ -4,10 +4,9 @@ import { useForm } from 'react-hook-form';
 import { useStoreSelection } from '../../organization';
 import { useHireEmployee } from '../hooks/use-people-commands';
 import { useFormCommand } from '../hooks/use-form-command';
-import { useRoleChoices, useStoreChoices } from '../hooks/use-people-queries';
 import { newEmployeeSchema, type NewEmployeeValues } from '../schemas';
 import { FormFooter } from './form-footer';
-import { SelectField, TextField } from './form-fields';
+import { StoreAndRoleFields, TextField } from './form-fields';
 
 /**
  * "Novo empregado" (§5): code, name, initial PIN, and the first store and role, which the contract hires with. The
@@ -15,8 +14,6 @@ import { SelectField, TextField } from './form-fields';
  */
 export function NewEmployeeForm({ onClose }: { onClose: () => void }) {
   const { storeId } = useStoreSelection();
-  const stores = useStoreChoices();
-  const roles = useRoleChoices();
   const hire = useHireEmployee();
   const form = useForm<NewEmployeeValues>({
     resolver: zodResolver(newEmployeeSchema),
@@ -40,20 +37,7 @@ export function NewEmployeeForm({ onClose }: { onClose: () => void }) {
           maxLength={8}
           className="max-w-48"
         />
-        <SelectField
-          control={form.control}
-          name="storeId"
-          label="Loja"
-          placeholder={stores.isPending ? 'A carregar…' : 'Escolher loja'}
-          choices={(stores.data ?? []).map((store) => ({ value: store.id, label: store.name }))}
-        />
-        <SelectField
-          control={form.control}
-          name="roleId"
-          label="Função"
-          placeholder={roles.isPending ? 'A carregar…' : 'Escolher função'}
-          choices={(roles.data ?? []).map((role) => ({ value: role.id ?? '', label: role.name ?? '' }))}
-        />
+        <StoreAndRoleFields control={form.control} />
         <FormFooter
           rootMessage={form.formState.errors.root?.message}
           generalError={command.generalError}

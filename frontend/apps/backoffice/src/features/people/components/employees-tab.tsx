@@ -9,7 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from '@restaurantpro/ui';
-import { KeyRound, LockOpen, UserPlus } from 'lucide-react';
+import { KeyRound, LockOpen, Store, UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import { isStepUpRequired } from '../../../lib/step-up';
 import { useStoreSelection } from '../../organization';
@@ -17,6 +17,7 @@ import { useUnlockEmployee } from '../hooks/use-people-commands';
 import { useEmployees } from '../hooks/use-people-queries';
 import { usePeopleStepUp } from '../hooks/use-people-step-up';
 import type { EmployeeSummary } from '../types';
+import { AssignmentsPanel } from './assignments-panel';
 import { CommandError } from './command-error';
 import { FormDialog } from './form-dialog';
 import { employeeState, employeeStatuses } from './labels';
@@ -24,7 +25,11 @@ import { ListCard } from './list-card';
 import { NewEmployeeForm } from './new-employee-form';
 import { ResetPinForm } from './reset-pin-form';
 
-type Open = { kind: 'new' } | { kind: 'reset-pin'; employee: EmployeeSummary } | null;
+type Open =
+  | { kind: 'new' }
+  | { kind: 'reset-pin'; employee: EmployeeSummary }
+  | { kind: 'assignments'; employee: EmployeeSummary }
+  | null;
 
 /** "Empregados" (§5): who works in the company, or in the store chosen in the top bar, and what can be done to each. */
 export function EmployeesTab() {
@@ -101,6 +106,15 @@ export function EmployeesTab() {
                       <Button
                         variant="outline"
                         size="sm"
+                        aria-label={`Lojas e funções de ${employee.name}`}
+                        onClick={() => setOpen({ kind: 'assignments', employee })}
+                      >
+                        <Store aria-hidden="true" />
+                        Lojas
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
                         aria-label={`Repor PIN de ${employee.name}`}
                         onClick={() => setOpen({ kind: 'reset-pin', employee })}
                       >
@@ -139,6 +153,14 @@ export function EmployeesTab() {
             }}
           />
         )}
+      </FormDialog>
+      <FormDialog
+        title={open?.kind === 'assignments' ? `Lojas e funções de ${open.employee.name}` : ''}
+        description="O empregado abre sessão no POS das lojas onde tem uma função, com as permissões dessa função."
+        open={open?.kind === 'assignments'}
+        onClose={close}
+      >
+        {open?.kind === 'assignments' && <AssignmentsPanel employee={open.employee} onClose={close} />}
       </FormDialog>
       {stepUp.dialog}
     </div>
