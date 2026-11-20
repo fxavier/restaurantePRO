@@ -16,7 +16,7 @@ export function TablePage() {
   if (table?.openOrderId) return <Navigate to={`/orders/${table.openOrderId}`} replace />;
 
   return (
-    <div className="flex min-h-screen flex-col bg-muted">
+    <div className="flex min-h-screen flex-col bg-background">
       <StatusBar />
       <main className="flex flex-1 flex-col items-start gap-4 p-4">
         <Button asChild variant="outline" size="touch">
