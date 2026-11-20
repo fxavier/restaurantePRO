@@ -1,5 +1,8 @@
-import { DataState } from '@restaurantpro/ui';
+import { Button, DataState } from '@restaurantpro/ui';
+import { Armchair, MonitorSmartphone } from 'lucide-react';
+import { Link } from 'react-router';
 import { isUnavailable } from '../../../lib/errors';
+import { storeSearch } from '../hooks/use-store-selection';
 import { useStores } from '../hooks/use-stores';
 import { EditStoreDialog } from './edit-store-dialog';
 import { NewStoreDialog } from './new-store-dialog';
@@ -27,6 +30,18 @@ export function CompanyStores() {
             <StoreCard key={store.id} store={store}>
               <div className="flex flex-wrap gap-2">
                 <EditStoreDialog store={store} />
+                <Button asChild variant="outline" size="sm">
+                  <Link to={`/organization/dining${storeSearch(store.id)}`} aria-label={`Salas & Mesas de ${store.name}`}>
+                    <Armchair aria-hidden="true" />
+                    Salas & Mesas
+                  </Link>
+                </Button>
+                <Button asChild variant="outline" size="sm">
+                  <Link to={`/organization/terminals${storeSearch(store.id)}`} aria-label={`Terminais de ${store.name}`}>
+                    <MonitorSmartphone aria-hidden="true" />
+                    Terminais
+                  </Link>
+                </Button>
               </div>
             </StoreCard>
           ))}

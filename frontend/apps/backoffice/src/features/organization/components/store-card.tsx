@@ -3,6 +3,7 @@ import { CircleCheck, CircleOff, Store } from 'lucide-react';
 import { useId, type ReactNode } from 'react';
 import { cutoffLabel } from '../store-values';
 import type { StoreSummary } from '../types';
+import { Facts } from './facts';
 
 const states: StatusMap<'active' | 'inactive'> = {
   active: { label: 'Ativa', icon: CircleCheck, tone: 'success' },
@@ -29,22 +30,16 @@ export function StoreCard({ store, children }: { store: StoreSummary; children?:
         <StatusBadge status={store.active ? 'active' : 'inactive'} statuses={states} />
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <dl className="grid grid-cols-3 gap-3 text-center">
-          <Fact label="Fuso horário" value={store.timezone} />
-          <Fact label="Fecho do dia" value={cutoffLabel(store.businessDayCutoff)} />
-          <Fact label="Moeda" value={store.currency} />
-        </dl>
+        <Facts
+          className="sm:grid-cols-3"
+          facts={[
+            ['Fuso horário', store.timezone],
+            ['Fecho do dia', cutoffLabel(store.businessDayCutoff)],
+            ['Moeda', store.currency],
+          ]}
+        />
         {children}
       </CardContent>
     </Card>
-  );
-}
-
-function Fact({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="font-semibold break-words">{value}</dd>
-    </div>
   );
 }

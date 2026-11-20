@@ -1,4 +1,4 @@
-import { CompanyStores } from '../features/organization';
+import { CompanyProfileCard, CompanyStores } from '../features/organization';
 
 /** `/organization/stores` (§5, Stitch "Lojas, Terminais & Organização"): the company's profile and its stores. */
 export function StoresPage() {
@@ -9,6 +9,7 @@ export function StoresPage() {
       </p>
       <h1 className="mt-2 text-2xl font-semibold">Lojas</h1>
       <p className="mt-1 text-muted-foreground">A empresa e as suas lojas.</p>
+      <CompanyProfileCard />
       <CompanyStores />
     </>
   );

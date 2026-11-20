@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
-import { api, baixa, problem, store } from '../../test/fixtures';
+import { api, baixa, problem, store, storePage } from '../../test/fixtures';
 import { organizationServer, sent } from '../../test/organization-fixtures';
 import { CSRF_TOKEN, renderApp } from '../../test/render-app';
 import { server } from '../../test/server';
@@ -22,6 +22,38 @@ describe('stores', () => {
     expect(within(card).getByText('MZN')).toBeInTheDocument();
     expect(within(card).getByText('Inativa')).toBeInTheDocument();
     expect(within(screen.getByRole('article', { name: 'Loja Baixa' })).getByText('Ativa')).toBeInTheDocument();
+  });
+
+  it("leads from a store to its rooms and tables, and to its terminals", async () => {
+    organizationServer();
+    const { user, currentUrl } = renderApp(STORES);
+
+    const card = await screen.findByRole('article', { name: 'Loja Baixa' });
+    expect(within(card).getByRole('link', { name: 'Terminais de Loja Baixa' })).toHaveAttribute(
+      'href',
+      `/organization/terminals?storeId=${baixa.id}`,
+    );
+    await user.click(within(card).getByRole('link', { name: 'Salas & Mesas de Loja Baixa' }));
+
+    expect(currentUrl()).toBe(`/organization/dining?storeId=${baixa.id}`);
+  });
+
+  it('says there is no connection when the list cannot be read, and reads it again on request', async () => {
+    organizationServer();
+    let fail = true;
+    server.use(
+      http.get(api('/api/v1/backoffice/stores'), () =>
+        fail ? HttpResponse.error() : HttpResponse.json(storePage([baixa])),
+      ),
+    );
+    const { user } = renderApp(STORES);
+
+    expect(await screen.findByText('Sem ligação ao serviço.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Nova loja' })).not.toBeInTheDocument();
+    fail = false;
+    await user.click(screen.getAllByRole('button', { name: 'Tentar novamente' })[0]!);
+
+    expect(await screen.findByRole('article', { name: 'Loja Baixa' })).toBeInTheDocument();
   });
 
   it('creates a store with its code, name, timezone and business-day cutoff, then shows it', async () => {

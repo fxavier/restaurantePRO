@@ -1,15 +1,28 @@
 import { Alert, AlertDescription } from '@restaurantpro/ui';
-import { TriangleAlert, WifiOff } from 'lucide-react';
+import { ShieldCheck, TriangleAlert, WifiOff } from 'lucide-react';
 import { errorMessage, type FeatureMessages } from '../../../lib/error-messages';
 import { isTenantChanged, isUnavailable } from '../../../lib/errors';
+import { isStepUpRequired } from '../../../lib/step-up';
+import { StepUpButton } from './step-up-button';
 
 /**
  * A configuration command's answer that is not about a field (FC §9). These commands carry no Idempotency-Key, so
  * nothing is resent for the user: without an answer the outcome is unknown, the list is read again, and the user
- * decides. A 409 TENANT_CHANGED reloads the page instead (FE-F16).
+ * decides. A step-up offers the hop; a 409 TENANT_CHANGED reloads the page instead (FE-F16).
  */
 export function FormError({ error, messages }: { error: unknown; messages?: FeatureMessages }) {
   if (error === undefined || isTenantChanged(error)) return null;
+  if (isStepUpRequired(error)) {
+    return (
+      <Alert>
+        <ShieldCheck aria-hidden="true" />
+        <AlertDescription className="flex flex-wrap items-center gap-3">
+          <span>Esta alteração pede que confirme a sua identidade. Depois, volte a fazê-la.</span>
+          <StepUpButton error={error} />
+        </AlertDescription>
+      </Alert>
+    );
+  }
   const Icon = isUnavailable(error) ? WifiOff : TriangleAlert;
   return (
     <Alert variant="destructive">

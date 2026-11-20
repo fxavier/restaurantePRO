@@ -1,10 +1,11 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ConfirmButton, Form, FormControl, FormField, FormItem, FormLabel, FormMessage, Input } from '@restaurantpro/ui';
+import { ConfirmButton, Form } from '@restaurantpro/ui';
 import type { ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { useCommandForm } from '../hooks/use-command-form';
 import { storeSchema, storeUpdateSchema, type StoreValues } from '../store-schemas';
 import { FormError, RootError } from './form-error';
+import { CheckboxField, TextField } from './form-fields';
 
 type StoreFormProps = {
   defaultValues: StoreValues;
@@ -26,96 +27,33 @@ export function StoreForm({ defaultValues, editing, submitLabel, onSubmit, child
   const form = useForm<StoreValues>({ resolver: zodResolver(editing ? storeUpdateSchema : storeSchema), defaultValues });
   const { error, submit } = useCommandForm(form, FIELDS, TAKEN);
   const handle = submit(onSubmit);
+  const { control } = form;
 
   return (
     <Form {...form}>
       <form onSubmit={(event) => void handle(event)} noValidate className="flex flex-col gap-4">
         <div className="grid gap-4 sm:grid-cols-3">
-          <FormField
-            control={form.control}
-            name="code"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Código</FormLabel>
-                <FormControl>
-                  <Input {...field} autoComplete="off" maxLength={20} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="name"
-            render={({ field }) => (
-              <FormItem className="sm:col-span-2">
-                <FormLabel>Nome</FormLabel>
-                <FormControl>
-                  <Input {...field} autoComplete="off" maxLength={120} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </div>
-        <div className="grid gap-4 sm:grid-cols-3">
-          <FormField
-            control={form.control}
+          <TextField control={control} name="code" label="Código" maxLength={20} />
+          <TextField control={control} name="name" label="Nome" maxLength={120} className="sm:col-span-2" />
+          <TextField
+            control={control}
             name="timezone"
-            render={({ field }) => (
-              <FormItem className="sm:col-span-2">
-                <FormLabel>Fuso horário</FormLabel>
-                <FormControl>
-                  <Input {...field} autoComplete="off" maxLength={64} list="store-time-zones" />
-                </FormControl>
-                <datalist id="store-time-zones">
-                  {TIME_ZONES.map((zone) => (
-                    <option key={zone} value={zone} />
-                  ))}
-                </datalist>
-                <FormMessage />
-              </FormItem>
-            )}
+            label="Fuso horário"
+            maxLength={64}
+            list="store-time-zones"
+            className="sm:col-span-2"
           />
-          <FormField
-            control={form.control}
-            name="businessDayCutoff"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Fecho do dia</FormLabel>
-                <FormControl>
-                  <Input {...field} type="time" />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          <TextField control={control} name="businessDayCutoff" label="Fecho do dia" type="time" />
         </div>
+        <datalist id="store-time-zones">
+          {TIME_ZONES.map((zone) => (
+            <option key={zone} value={zone} />
+          ))}
+        </datalist>
         <p className="-mt-2 text-sm text-muted-foreground">
           O dia de negócio muda à hora de fecho, no fuso horário da loja (pode passar da meia-noite).
         </p>
-        {editing && (
-          <FormField
-            control={form.control}
-            name="active"
-            render={({ field }) => (
-              <FormItem className="flex flex-row items-center gap-2">
-                <FormControl>
-                  <input
-                    type="checkbox"
-                    checked={field.value}
-                    onChange={(event) => field.onChange(event.target.checked)}
-                    onBlur={field.onBlur}
-                    ref={field.ref}
-                    name={field.name}
-                    className="size-5 accent-primary"
-                  />
-                </FormControl>
-                <FormLabel>Loja ativa</FormLabel>
-              </FormItem>
-            )}
-          />
-        )}
+        {editing && <CheckboxField control={control} name="active" label="Loja ativa" />}
         <RootError message={form.formState.errors.root?.message} />
         <FormError error={error} />
         <div className="flex flex-wrap justify-end gap-2">
