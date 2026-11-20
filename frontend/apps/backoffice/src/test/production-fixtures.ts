@@ -32,6 +32,7 @@ export function printer(id: string, code: string, name: string, extra: Partial<P
 
 export const kitchen = printer('cccc0000-0000-4000-8000-000000000001', 'COZ', 'Cozinha Quentes');
 export const bar = printer('cccc0000-0000-4000-8000-000000000002', 'BAR', 'Bar Central', { host: '192.168.1.183' });
+export const copa = printer('cccc0000-0000-4000-8000-000000000003', 'COPA', 'Copa', { host: '192.168.1.182' });
 
 export const presets: PrinterPresetView[] = [
   { name: 'EPSON_TM_80', codePage: 'CP860', profile: PROFILE },

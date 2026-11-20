@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useApi } from '../../../lib/api';
-import type { PrinterView } from '../types';
+import { parsePrinters, type Printer } from '../parse';
 
 export const PRINTERS_KEY = ['backoffice', 'printers'] as const;
 
@@ -11,9 +11,9 @@ export function usePrinters(storeId: string) {
   const api = useApi();
   return useQuery({
     queryKey: [...PRINTERS_KEY, storeId],
-    queryFn: async (): Promise<PrinterView[]> => {
+    queryFn: async (): Promise<Printer[]> => {
       const { data } = await api.GET('/api/v1/backoffice/printers', { params: { query: { storeId, ...PRINTER_PAGE } } });
-      return data?.content ?? [];
+      return parsePrinters(data?.content ?? []);
     },
   });
 }
