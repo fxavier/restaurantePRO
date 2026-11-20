@@ -1,12 +1,13 @@
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import { http } from 'msw';
 import { describe, expect, it } from 'vitest';
-import { api, baixa, problem, signedIn } from '../../test/fixtures';
+import { admin, api, baixa, problem, signedIn } from '../../test/fixtures';
 import { bar, copa, kitchen, productionHandlers, type ProductionState } from '../../test/production-fixtures';
 import { renderApp } from '../../test/render-app';
 import { server } from '../../test/server';
 
 const PRODUCTION = `/production?storeId=${baixa.id}`;
+const A_KEY = expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
 
 function productionServer(initial: Partial<ProductionState> = {}, session?: Parameters<typeof signedIn>[0]) {
   const { state, handlers } = productionHandlers(initial);
@@ -155,5 +156,100 @@ describe('adding a printer', () => {
 
     expect(await within(dialog).findByText('Já existe uma impressora com este código nesta loja.')).toBeInTheDocument();
     expect(within(dialog).getByLabelText('Código')).toHaveAttribute('aria-invalid', 'true');
+  });
+});
+
+describe('configuring a printer', () => {
+  it('sends the changed printer at the version it was read, and shows the answer', async () => {
+    const state = productionServer();
+    const { user } = renderApp(PRODUCTION);
+
+    await user.click(await screen.findByRole('button', { name: 'Configurar Bar Central' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Configurar Bar Central' });
+    expect(within(dialog).getByLabelText('Endereço IP')).toHaveValue('192.168.1.183');
+    await user.clear(within(dialog).getByLabelText('Nome'));
+    await user.type(within(dialog).getByLabelText('Nome'), 'Bar Principal');
+    await user.click(within(dialog).getByRole('checkbox', { name: 'Ativa' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Guardar' }));
+
+    const card = await screen.findByRole('listitem', { name: 'Bar Principal' });
+    expect(within(card).getByText('Inativa')).toBeInTheDocument();
+    expect(state.requests.find((request) => request.method === 'PUT')).toEqual({
+      method: 'PUT',
+      url: `/api/v1/backoffice/printers/${bar.id}`,
+      idempotencyKey: null,
+      body: { code: 'BAR', name: 'Bar Principal', host: '192.168.1.183', port: 9100, codePage: 'CP860', active: false, version: 3 },
+    });
+  });
+
+  it('says another person changed it and reads the printers again on a version conflict', async () => {
+    const state = productionServer();
+    server.use(
+      http.put(api('/api/v1/backoffice/printers/:id'), () => problem(409, 'VERSION_CONFLICT', 'Conflict')),
+    );
+    const { user } = renderApp(PRODUCTION);
+
+    await user.click(await screen.findByRole('button', { name: 'Configurar Bar Central' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Configurar Bar Central' });
+    const reads = state.requests.filter((request) => request.url.startsWith('/api/v1/backoffice/printers?')).length;
+    await user.click(within(dialog).getByRole('button', { name: 'Guardar' }));
+
+    expect(await within(dialog).findByText('Foi alterado por outra pessoa. Recarregue e tente de novo.')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(state.requests.filter((request) => request.url.startsWith('/api/v1/backoffice/printers?')).length).toBe(reads + 1),
+    );
+  });
+});
+
+describe("a printer's mode", () => {
+  it('redirects to another printer of the store, at the version it was read', async () => {
+    const state = productionServer();
+    const { user } = renderApp(PRODUCTION);
+
+    await user.click(await screen.findByRole('button', { name: 'Modo de Cozinha Quentes' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Modo de Cozinha Quentes' });
+    expect(within(dialog).queryByRole('radio', { name: /Ignorar/ })).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole('radio', { name: /Redirecionar/ }));
+    await user.selectOptions(within(dialog).getByLabelText('Enviar para'), 'Bar Central');
+    await user.click(within(dialog).getByRole('button', { name: 'Mudar modo' }));
+
+    const card = await screen.findByRole('listitem', { name: 'Cozinha Quentes' });
+    expect(await within(card).findByText('Envia para Bar Central')).toBeInTheDocument();
+    expect(state.requests.find((request) => request.method === 'PUT')).toMatchObject({
+      url: `/api/v1/backoffice/printers/${kitchen.id}/mode`,
+      body: { mode: 'REDIRECT', redirectPrinterId: bar.id, version: 3 },
+    });
+  });
+
+  it('offers Ignorar only to who may suppress printing in this store', async () => {
+    productionServer({}, { session: { ...admin, permissions: [...admin.permissions!, `PERM_PRODUCTION_SUPPRESS@${baixa.id}`] } });
+    const { user } = renderApp(PRODUCTION);
+
+    await user.click(await screen.findByRole('button', { name: 'Modo de Cozinha Quentes' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Modo de Cozinha Quentes' });
+    expect(within(dialog).getByRole('radio', { name: /Ignorar/ })).toBeInTheDocument();
+    expect(within(dialog).getByRole('radio', { name: /Normal/ })).toBeChecked();
+  });
+});
+
+describe('a test page', () => {
+  it('is one intent: "Sem ligação" sends it again under the same key, then says it is queued', async () => {
+    const state = productionServer();
+    const keys: (string | null)[] = [];
+    server.use(
+      http.post(api('/api/v1/backoffice/printers/:id/test'), ({ request }) => {
+        keys.push(request.headers.get('Idempotency-Key'));
+        return keys.length === 1 ? problem(503, 'BACKEND_UNAVAILABLE') : undefined;
+      }),
+    );
+    const { user } = renderApp(PRODUCTION);
+
+    await user.click(await screen.findByRole('button', { name: 'Imprimir teste em Cozinha Quentes' }));
+    expect(await screen.findByText('Sem ligação — a operação não foi confirmada.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+
+    expect(await screen.findByText('Página de teste de Cozinha Quentes enviada para a fila.')).toBeInTheDocument();
+    expect(keys).toEqual([A_KEY, keys[0]]);
+    expect(state.requests.filter((request) => request.url.endsWith('/test'))).toHaveLength(1);
   });
 });
