@@ -1,0 +1,200 @@
+/*
+ * The BackOffice sign-in in the app's Stitch dark theme. Keycloak cannot read the app's tokens, so the `.dark` values
+ * of packages/ui/src/styles/tokens.css (docs/design/DESIGN.md) are repeated here once, as --rp-* variables; keep the
+ * two in step. Everything below maps them onto PatternFly 5's variables, which keycloak.v2's templates use.
+ */
+@font-face {
+  font-family: "Inter Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("../fonts/inter-latin-wght-normal.woff2") format("woff2-variations");
+}
+
+:root,
+:root.pf-v5-theme-dark {
+  color-scheme: dark;
+  --rp-background: #0B0F19;
+  --rp-foreground: #DAE2FD;
+  --rp-card: #151D2E;
+  --rp-muted: #1E293B;
+  --rp-muted-foreground: #BBCABF;
+  --rp-border: #334155;
+  --rp-input: #86948A;
+  --rp-primary: #10B981;
+  --rp-primary-hover: #4EDEA3;
+  --rp-primary-foreground: #0B0F19;
+  --rp-ring: #4EDEA3;
+  --rp-error: #FFB4AB;
+  --rp-destructive: #EF4444;
+  --rp-font: "Inter Variable", system-ui, sans-serif;
+
+  --pf-v5-global--FontFamily--text: var(--rp-font);
+  --pf-v5-global--FontFamily--heading: var(--rp-font);
+  --pf-v5-global--Color--100: var(--rp-foreground);
+  --pf-v5-global--Color--200: var(--rp-muted-foreground);
+  --pf-v5-global--BackgroundColor--100: var(--rp-card);
+  --pf-v5-global--BackgroundColor--200: var(--rp-muted);
+  --pf-v5-global--BorderColor--100: var(--rp-border);
+  --pf-v5-global--BorderColor--200: var(--rp-input);
+  --pf-v5-global--primary-color--100: var(--rp-primary);
+  --pf-v5-global--primary-color--200: var(--rp-primary-hover);
+  --pf-v5-global--link--Color: var(--rp-primary-hover);
+  --pf-v5-global--link--Color--hover: var(--rp-primary-hover);
+  --pf-v5-global--danger-color--100: var(--rp-error);
+  --pf-v5-global--danger-color--200: var(--rp-error);
+  /* keycloak.v2's coloured stripe on the card and its background art: not in the app's look */
+  --keycloak-card-top-color: transparent;
+  --keycloak-bg-logo-url: none;
+}
+
+.login-pf body,
+#keycloak-bg {
+  background: var(--rp-background);
+  color: var(--rp-foreground);
+  font-family: var(--rp-font);
+}
+
+.pf-v5-c-login__container {
+  grid-template-columns: minmax(0, 28rem);
+}
+
+/* The brand block of the BackOffice sidebar: the mark on the primary, the product and "BackOffice" beside it. */
+#kc-header-wrapper {
+  display: inline-grid;
+  grid-template-columns: auto auto;
+  grid-template-rows: auto auto;
+  column-gap: 0.75rem;
+  align-items: center;
+  text-align: start;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+  line-height: 1.2;
+  color: var(--rp-foreground) !important;
+}
+#kc-header {
+  display: flex;
+  justify-content: center;
+}
+#kc-header-wrapper::before {
+  content: "";
+  grid-row: 1 / span 2;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.5rem;
+  background: var(--rp-primary)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230B0F19' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m16 2-2.3 2.3a3 3 0 0 0 0 4.2l1.8 1.8a3 3 0 0 0 4.2 0L22 8'/%3E%3Cpath d='M15 15 3.3 3.3a4.2 4.2 0 0 0 0 6l7.3 7.3c.7.7 2 .7 2.8 0L15 15Zm0 0 7 7'/%3E%3Cpath d='m2.1 21.8 6.4-6.3'/%3E%3Cpath d='m19 5-7 7'/%3E%3C/svg%3E")
+    center / 1.25rem no-repeat;
+}
+#kc-header-wrapper::after {
+  content: "BackOffice";
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--rp-primary);
+}
+
+/* The card: Stitch's card surface, 1px border, 12px corners, no shadow. */
+.pf-v5-c-login__main {
+  --pf-v5-c-login__main--BackgroundColor: var(--rp-card);
+  background: var(--rp-card);
+  border: 1px solid var(--rp-border);
+  border-radius: 0.75rem;
+  box-shadow: none;
+}
+.pf-v5-c-login__main-header {
+  border-top: 0;
+}
+#kc-page-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--rp-foreground);
+}
+
+/* Fields: the raised surface, the input boundary (≥ 3:1), the ring on focus; 48 px like the app's touch inputs. */
+.pf-v5-c-form-control {
+  --pf-v5-c-form-control--BackgroundColor: var(--rp-muted);
+  --pf-v5-c-form-control--Color: var(--rp-foreground);
+  --pf-v5-c-form-control--before--BorderColor: var(--rp-input);
+  --pf-v5-c-form-control--after--BorderBottomColor: var(--rp-input);
+  --pf-v5-c-form-control--hover--after--BorderBottomColor: var(--rp-ring);
+  --pf-v5-c-form-control--focus--after--BorderBottomColor: var(--rp-ring);
+  --pf-v5-c-form-control--focus-within--after--BorderBottomColor: var(--rp-ring);
+  --pf-v5-c-form-control--before--BorderRadius: 0.375rem;
+  --pf-v5-c-form-control--after--BorderRadius: 0.375rem;
+  border-radius: 0.375rem;
+  background-color: var(--rp-muted);
+}
+.pf-v5-c-form-control > input {
+  min-height: 3rem;
+}
+/* One focus ring, on the field's wrapper below; not PatternFly's own inner outline as well. */
+.pf-v5-c-form-control > input:focus,
+.pf-v5-c-form-control > input:focus-visible {
+  outline: none;
+}
+.pf-v5-c-form__label-text {
+  color: var(--rp-foreground);
+  font-weight: 500;
+}
+
+/* The one primary action: emerald with dark text, semibold, 48 px. */
+.pf-v5-c-button.pf-m-primary {
+  --pf-v5-c-button--m-primary--BackgroundColor: var(--rp-primary);
+  --pf-v5-c-button--m-primary--Color: var(--rp-primary-foreground);
+  --pf-v5-c-button--m-primary--hover--BackgroundColor: var(--rp-primary-hover);
+  --pf-v5-c-button--m-primary--hover--Color: var(--rp-primary-foreground);
+  --pf-v5-c-button--m-primary--focus--BackgroundColor: var(--rp-primary-hover);
+  --pf-v5-c-button--m-primary--focus--Color: var(--rp-primary-foreground);
+  --pf-v5-c-button--m-primary--active--BackgroundColor: var(--rp-primary-hover);
+  --pf-v5-c-button--m-primary--active--Color: var(--rp-primary-foreground);
+  min-height: 3rem;
+  border-radius: 0.375rem;
+  font-weight: 600;
+}
+.pf-v5-c-button.pf-m-control {
+  --pf-v5-c-button--m-control--BackgroundColor: var(--rp-muted);
+  --pf-v5-c-button--m-control--Color: var(--rp-muted-foreground);
+}
+
+/* Visible focus everywhere (the app's 2 px ring). */
+.pf-v5-c-button:focus-visible,
+.pf-v5-c-form-control:focus-within,
+a:focus-visible {
+  outline: 2px solid var(--rp-ring);
+  outline-offset: 2px;
+}
+
+/* An error ("E-mail ou palavra-passe inválidos"): Stitch's tinted red with the AA error text. */
+.pf-v5-c-alert {
+  --pf-v5-c-alert--BackgroundColor: var(--rp-muted);
+  --pf-v5-c-alert--m-danger__title--Color: var(--rp-error);
+  --pf-v5-c-alert--m-danger__icon--Color: var(--rp-error);
+  --pf-v5-c-alert--m-danger--BorderTopColor: var(--rp-destructive);
+  border-radius: 0.5rem;
+}
+.pf-v5-c-helper-text__item.pf-m-error,
+.kc-feedback-text {
+  color: var(--rp-error);
+}
+
+a,
+.pf-v5-c-button.pf-m-link {
+  color: var(--rp-primary-hover);
+}
+
+/* keycloak.v2 puts the restart button's tooltip to its right, off a narrow screen (the page then scrolls sideways):
+   below the button, aligned to its right edge, instead. */
+.kc-login-tooltip .kc-tooltip-text {
+  top: calc(100% + 0.25rem);
+  right: 0;
+  left: auto;
+  background-color: var(--rp-muted);
+  color: var(--rp-foreground);
+}
+.kc-login-tooltip .kc-tooltip-text::after {
+  display: none;
+}
