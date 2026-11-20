@@ -4,15 +4,18 @@ import type { ReactNode } from 'react';
 import { useSearchParams } from 'react-router';
 import { useSession } from '../../identity';
 import { selectedTab, visibleTabs, type PeopleTabId } from '../tabs';
+import { AccountsTab } from './accounts-tab';
 import { EmployeesTab } from './employees-tab';
+import { RolesTab } from './roles-tab';
+import { SupportTab } from './support-tab';
 
 const PARAM = 'tab';
 
 const content: Record<PeopleTabId, () => ReactNode> = {
   empregados: () => <EmployeesTab />,
-  funcoes: () => null,
-  utilizadores: () => null,
-  suporte: () => null,
+  funcoes: () => <RolesTab />,
+  utilizadores: () => <AccountsTab />,
+  suporte: () => <SupportTab />,
 };
 
 /**
