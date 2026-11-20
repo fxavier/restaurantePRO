@@ -1,6 +1,12 @@
 import { ApiError } from '@restaurantpro/api-client';
 import {
+  Badge,
   Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
   DataState,
   StatusBadge,
   Table,
@@ -71,76 +77,87 @@ export function StoreTerminals({ storeId }: { storeId: string }) {
       {revoke.error && !isStepUpRequired(revoke.error) && (
         <CommandError error={revoke.error} pending={revoke.isPending} onRetry={() => revoke.variables && revokeOne(revoke.variables)} />
       )}
-      <DataState
-        state={terminals.isPending ? 'loading' : data?.terminals.length ? 'ready' : 'empty'}
-        emptyMessage="Esta loja ainda não tem terminais."
-      >
-        <Table>
-          <TableCaption className="sr-only">Terminais da loja</TableCaption>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Nome</TableHead>
-              <TableHead>Código</TableHead>
-              <TableHead>Tipo</TableHead>
-              <TableHead>Estado</TableHead>
-              <TableHead>
-                <span className="sr-only">Ações</span>
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data?.terminals.map((terminal) => (
-              <TableRow key={terminal.id}>
-                <TableCell className="font-medium">{terminal.name}</TableCell>
-                <TableCell className="font-mono">{terminal.code}</TableCell>
-                <TableCell>{kindLabel(terminal.kind)}</TableCell>
-                <TableCell>
-                  <StatusBadge status={terminal.status} statuses={terminalStatuses(terminal.status)} />
-                </TableCell>
-                <TableCell>
-                  {terminal.status !== 'REVOKED' && (
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        aria-label={`Emitir código para ${terminal.name}`}
-                        disabled={issue.isPending}
-                        onClick={() => issueCode(target(terminal))}
-                      >
-                        <KeyRound aria-hidden="true" />
-                        Emitir código
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        aria-label={`Revogar ${terminal.name}`}
-                        disabled={revoke.isPending}
-                        onClick={() => setToRevoke(terminal)}
-                      >
-                        <Ban aria-hidden="true" />
-                        Revogar
-                      </Button>
-                    </div>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        {pages > 1 && (
-          <nav aria-label="Páginas" className="flex items-center justify-end gap-2 text-sm">
-            <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(page - 1)}>
-              Anterior
-            </Button>
-            <span>
-              Página {page + 1} de {pages}
-            </span>
-            <Button variant="outline" size="sm" disabled={page + 1 >= pages} onClick={() => setPage(page + 1)}>
-              Seguinte
-            </Button>
-          </nav>
-        )}
-      </DataState>
+      {/* Stitch's "Registo & Controlo de Terminais": the list in a card with its own title. */}
+      <Card className="gap-4">
+        <CardHeader>
+          <CardTitle className="text-lg">Terminais da loja</CardTitle>
+          <CardDescription>Cada terminal pede um código de ativação para se ligar à loja.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <DataState
+            state={terminals.isPending ? 'loading' : data?.terminals.length ? 'ready' : 'empty'}
+            emptyMessage="Esta loja ainda não tem terminais."
+          >
+            <Table>
+              <TableCaption className="sr-only">Terminais da loja</TableCaption>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>Código</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead>
+                    <span className="sr-only">Ações</span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data?.terminals.map((terminal) => (
+                  <TableRow key={terminal.id}>
+                    <TableCell className="font-medium">{terminal.name}</TableCell>
+                    <TableCell className="font-mono text-muted-foreground">{terminal.code}</TableCell>
+                    <TableCell>
+                      <Badge variant="secondary">{kindLabel(terminal.kind)}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge status={terminal.status} statuses={terminalStatuses(terminal.status)} />
+                    </TableCell>
+                    <TableCell>
+                      {terminal.status !== 'REVOKED' && (
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            aria-label={`Emitir código para ${terminal.name}`}
+                            disabled={issue.isPending}
+                            onClick={() => issueCode(target(terminal))}
+                          >
+                            <KeyRound aria-hidden="true" />
+                            Emitir código
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            aria-label={`Revogar ${terminal.name}`}
+                            disabled={revoke.isPending}
+                            onClick={() => setToRevoke(terminal)}
+                          >
+                            <Ban aria-hidden="true" />
+                            Revogar
+                          </Button>
+                        </div>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            {pages > 1 && (
+              <nav aria-label="Páginas" className="flex items-center justify-end gap-2 text-sm">
+                <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(page - 1)}>
+                  Anterior
+                </Button>
+                <span>
+                  Página {page + 1} de {pages}
+                </span>
+                <Button variant="outline" size="sm" disabled={page + 1 >= pages} onClick={() => setPage(page + 1)}>
+                  Seguinte
+                </Button>
+              </nav>
+            )}
+          </DataState>
+        </CardContent>
+      </Card>
       <RevokeTerminalDialog
         terminal={toRevoke}
         onCancel={() => setToRevoke(null)}
@@ -183,7 +200,7 @@ function ListError({ error, returnTo, onRetry }: { error: unknown; returnTo: str
 
 function Notice({ icon: Icon, text, children }: { icon: typeof Lock; text: string; children?: React.ReactNode }) {
   return (
-    <div className="mt-6 flex flex-col items-center gap-3 rounded-lg border p-8 text-center">
+    <div className="mt-6 flex flex-col items-center gap-3 rounded-xl border bg-card p-8 text-center">
       <Icon aria-hidden="true" className="size-8 text-muted-foreground" />
       <p>{text}</p>
       {children}

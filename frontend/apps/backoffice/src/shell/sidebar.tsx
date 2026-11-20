@@ -18,10 +18,16 @@ export function Sidebar() {
   const groups = visibleAreas(session?.permissions ?? []);
 
   return (
-    <aside className="flex w-16 shrink-0 flex-col border-r bg-muted xl:w-60">
-      <div className="flex h-14 items-center gap-2 border-b px-5 xl:px-4">
-        <UtensilsCrossed aria-hidden="true" className="size-6 shrink-0 text-brand" />
-        <span className="sr-only text-lg font-semibold text-foreground xl:not-sr-only">restaurantPRO</span>
+    <aside className="flex w-16 shrink-0 flex-col border-r bg-card xl:w-60">
+      <div className="flex h-14 items-center gap-2 border-b px-3 xl:px-4">
+        {/* Stitch's brand block: the mark on the primary, the product and "BackOffice" beside it. */}
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+          <UtensilsCrossed aria-hidden="true" className="size-5" />
+        </span>
+        <span className="sr-only flex-col xl:not-sr-only xl:flex">
+          <span className="text-base leading-tight font-semibold text-foreground">restaurantPRO</span>
+          <span className="text-xs font-semibold tracking-wide text-primary uppercase">BackOffice</span>
+        </span>
       </div>
       <TooltipProvider>
         <nav aria-label="Áreas" className="flex flex-col gap-4 p-2 xl:p-3">
@@ -51,7 +57,7 @@ function AreaList({ group, search }: { group: AreaGroup; search: string }) {
                 <NavLink
                   to={{ pathname: to, search }}
                   end={end}
-                  className="flex h-10 items-center justify-center gap-3 rounded-md px-3 text-sm font-medium text-foreground outline-none hover:bg-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-muted aria-[current=page]:bg-background aria-[current=page]:text-primary-hover aria-[current=page]:shadow-xs xl:justify-start"
+                  className="flex h-10 items-center justify-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card aria-[current=page]:bg-primary aria-[current=page]:font-semibold aria-[current=page]:text-primary-foreground xl:justify-start"
                 >
                   <Icon aria-hidden="true" className="size-5 shrink-0" />
                   <span className="sr-only xl:not-sr-only">{label}</span>
