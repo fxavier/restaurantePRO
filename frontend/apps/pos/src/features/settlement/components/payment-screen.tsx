@@ -3,8 +3,10 @@ import { Button, Money, type MoneyValue, Skeleton } from '@restaurantpro/ui';
 import { errorMessage, isOffline } from '../../../lib/error-messages';
 import { useOrderHeading, useSettlement } from '../hooks/use-settlement';
 import { useState } from 'react';
+import { useNavigate } from 'react-router';
 import { SETTLEMENT_MESSAGES } from '../messages';
 import { targetOf } from '../settlement';
+import { ClosingPanel } from './closing-panel';
 import { OpenAttempts } from './open-attempts';
 import { PartitionList } from './partition-list';
 import { PaymentPanel } from './payment-panel';
@@ -22,6 +24,7 @@ export function PaymentScreen({ orderId, blocked }: Props) {
   const heading = useOrderHeading(orderId);
   const tableCode = heading.data?.tableCode;
   const [selected, setSelected] = useState<string>();
+  const navigate = useNavigate();
 
   return (
     <main className="flex min-h-0 flex-1 flex-col gap-4 p-4">
@@ -42,6 +45,7 @@ export function PaymentScreen({ orderId, blocked }: Props) {
             targetLabel={(attempt) => targetOf(settlement.data, attempt.partitionId).label}
             disabled={blocked}
           />
+          <ClosingPanel settlement={settlement.data} disabled={blocked} onClosed={() => void navigate('/tables')} />
         </>
       ) : settlement.isError ? (
         <div className="flex flex-col items-center gap-3 p-6 text-center">

@@ -42,6 +42,41 @@ export function useCharge(orderId: string, onCharged: (attempt: Attempt | undefi
   );
 }
 
+export type FiscalDocument = components['schemas']['com.xavier.backend.fiscal.model.dto.DocumentView'];
+export type Buyer = components['schemas']['com.xavier.backend.fiscal.model.dto.Buyer'];
+
+/** `POST /api/v1/pos/orders/{id}/documents`: the order's document, issued for the buyer given (or none). */
+export function useIssueOrderDocument(orderId: string, onIssued: (document: FiscalDocument | undefined) => void) {
+  const { api } = useServices();
+  return useSettlementIntent(
+    orderId,
+    async (buyer: Buyer | undefined, key) =>
+      (
+        await api.POST('/api/v1/pos/orders/{id}/documents', {
+          params: { path: { id: orderId }, header: { 'Idempotency-Key': key } },
+          body: buyer ? { buyer } : {},
+        })
+      ).data,
+    onIssued,
+  );
+}
+
+/** `POST /api/v1/pos/orders/{id}/close` at the bill's version: the order and its table are closed (D55, D70). */
+export function useCloseOrder(orderId: string, onClosed: () => void) {
+  const { api } = useServices();
+  return useSettlementIntent(
+    orderId,
+    async (orderVersion: number, key) =>
+      (
+        await api.POST('/api/v1/pos/orders/{id}/close', {
+          params: { path: { id: orderId }, header: { 'Idempotency-Key': key } },
+          body: { orderVersion },
+        })
+      ).data,
+    onClosed,
+  );
+}
+
 /**
  * `POST /api/v1/pos/payment-attempts/{id}/resolve` without an outcome: the provider is asked for an UNKNOWN attempt's
  * result (D81). Reclassifying it by hand needs an approver, which the POS does not offer here.

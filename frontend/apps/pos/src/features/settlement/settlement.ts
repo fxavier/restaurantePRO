@@ -30,6 +30,11 @@ export type Settlement = {
   due: MoneyValue;
   paid: MoneyValue;
   balance: MoneyValue;
+  /** The server's financial state is SETTLED (§8.3): nothing left to collect. */
+  settled: boolean;
+  /** The order's own (residual) document: NONE, DRAFT or ISSUED, with its id once drafted. */
+  fiscalState: string;
+  documentId?: string;
   /** What the order itself (outside its live parts) still has to collect (D69). */
   residualBalance: MoneyValue;
   /** The live parts, oldest first; a cancelled one is history, not shown. */
@@ -64,6 +69,9 @@ export function toSettlement(view: SettlementView | undefined): Settlement {
     due: view.due,
     paid: view.paid,
     balance: view.balance,
+    settled: view.financialState === 'SETTLED',
+    fiscalState: view.fiscalState ?? 'NONE',
+    documentId: view.documentId,
     residualBalance: view.residualBalance ?? view.balance,
     partitions: (view.partitions ?? []).filter((partition) => partition.status === 'LIVE').map(toPartition),
     undivided: (view.coverage ?? []).flatMap(toUndivided),
@@ -81,6 +89,19 @@ function toOpenAttempt(view: AttemptView): OpenAttempt {
     amount: view.amount,
     partitionId: view.partitionId,
   };
+}
+
+/**
+ * Whether the bill may close (D50 §7.8): open, settled, and no payment still open. The server checks again, and
+ * issues the residual document itself when none is issued yet (D70).
+ */
+export function canClose(settlement: Settlement): boolean {
+  return settlement.lifecycle === 'OPEN' && settlement.settled && settlement.openAttempts.length === 0;
+}
+
+/** Whether the order's document may be issued now (for a buyer's NIF): as for the close, and not issued yet. */
+export function canIssueDocument(settlement: Settlement): boolean {
+  return canClose(settlement) && settlement.fiscalState !== 'ISSUED';
 }
 
 /** A payment of this target still open: the target is not charged again until it is resolved. */
