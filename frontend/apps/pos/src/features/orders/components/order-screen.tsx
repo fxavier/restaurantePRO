@@ -246,7 +246,7 @@ function AddStatus({ add, blocked, notice }: { add: ReturnType<typeof useAddLine
     // An unknown outcome: the same intent may be sent again, with its key, or given up.
     return (
       <div role="alert" className="flex w-full items-center gap-2">
-        <p className="flex-1 font-medium text-destructive">
+        <p className="flex-1 font-medium text-error">
           {isInProgress(add.error) ? `${label} ainda está a ser processado pelo servidor.` : `Sem ligação — ${label} não foi confirmado.`}
         </p>
         <Button variant="outline" size="touch" onClick={add.retry} disabled={blocked}>
@@ -262,14 +262,14 @@ function AddStatus({ add, blocked, notice }: { add: ReturnType<typeof useAddLine
   }
   if (add.error) {
     return (
-      <p role="alert" className="font-medium text-destructive">
+      <p role="alert" className="font-medium text-error">
         {`${add.last?.meta.label ?? 'O artigo'} não foi adicionado. ${addRefusal(add.error)}`}
       </p>
     );
   }
   if (notice) {
     return (
-      <p role="alert" className="font-medium text-destructive">
+      <p role="alert" className="font-medium text-error">
         {notice}
       </p>
     );

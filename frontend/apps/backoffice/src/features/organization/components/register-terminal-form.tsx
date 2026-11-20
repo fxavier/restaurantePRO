@@ -100,7 +100,7 @@ export function RegisterTerminalForm({
           )}
         />
         {rootMessage && (
-          <p role="alert" className="text-sm text-destructive">
+          <p role="alert" className="text-sm text-error">
             {rootMessage}
           </p>
         )}

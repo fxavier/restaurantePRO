@@ -14,7 +14,7 @@ import {
 } from '../../test/order';
 import { renderPos } from '../../test/render-pos';
 import { notificationsEndpoint, problem, tableMap, tablesEndpoint, token, tokenEndpoint } from '../../test/server';
-import { id, M1_OCCUPIED, MAP } from '../../test/table-map';
+import { id, M1_OCCUPIED, MAP, openFromMap } from '../../test/table-map';
 
 /** MAP with M1 locked while still free. */
 const M1_LOCKED = {
@@ -47,7 +47,7 @@ describe('opening a table', () => {
     orderEndpoint(NEW_ORDER_ID, json(NEW_ORDER));
     const { user, router } = await atTables();
 
-    await user.click(screen.getByRole('button', { name: /^Mesa M1 / }));
+    await openFromMap(user, /^Mesa M1 /);
     const dialog = await guestsDialog();
     expect(within(dialog).getByRole('button', { name: 'Abrir mesa' })).toBeDisabled();
     await enterGuests(user, '2');
@@ -67,7 +67,7 @@ describe('opening a table', () => {
     orderEndpoint(NEW_ORDER_ID, json(NEW_ORDER));
     const { user } = await atTables();
 
-    await user.click(screen.getByRole('button', { name: /^Mesa M1 / }));
+    await openFromMap(user, /^Mesa M1 /);
     await user.type(within(await guestsDialog()).getByLabelText('Número de pessoas'), '12{Enter}');
 
     await screen.findByRole('heading', { name: 'Mesa M1' });
@@ -78,7 +78,7 @@ describe('opening a table', () => {
     orderEndpoint(ORDER_ID, json(ORDER));
     const { user, router } = await atTables();
 
-    await user.click(screen.getByRole('button', { name: /^Mesa M2 / }));
+    await openFromMap(user, /^Mesa M2 /);
 
     expect(await screen.findByRole('heading', { name: 'Mesa M2' })).toBeInTheDocument();
     expect(router.state.location.pathname).toBe(`/orders/${ORDER_ID}`);
@@ -110,12 +110,12 @@ describe('opening a table', () => {
     orderEndpoint(NEW_ORDER_ID, json(NEW_ORDER));
     const { user, router } = await renderPos({ device: 'enrolled', loggedIn: true, path: '/tables' });
 
-    await user.click(await screen.findByRole('button', { name: /^Mesa M1 / }));
+    await openFromMap(user, /^Mesa M1 /);
     await enterGuests(user, '2');
     await user.click(within(await guestsDialog()).getByRole('button', { name: 'Abrir mesa' }));
     await within(await guestsDialog()).findByRole('alert');
     await user.click(screen.getByRole('button', { name: 'Cancelar' }));
-    await user.click(screen.getByRole('button', { name: /^Mesa M1 Livre/ }));
+    await openFromMap(user, /^Mesa M1 Livre/);
     await enterGuests(user, '2');
     await user.click(within(await guestsDialog()).getByRole('button', { name: 'Abrir mesa' }));
 
@@ -127,7 +127,7 @@ describe('opening a table', () => {
   it('a locked free table is refused with the reason, without asking for guests', async () => {
     const { user } = await atTables(M1_LOCKED);
 
-    await user.click(screen.getByRole('button', { name: /^Mesa M1 / }));
+    await openFromMap(user, /^Mesa M1 /);
 
     const dialog = await screen.findByRole('dialog', { name: 'Mesa M1 bloqueada' });
     expect(within(dialog).getByText(/Um gerente tem de a desbloquear/)).toBeInTheDocument();
@@ -140,7 +140,7 @@ describe('opening a table', () => {
     openTableEndpoint(id(1), () => problem(422, 'TABLE_LOCKED'));
     const { user } = await atTables();
 
-    await user.click(screen.getByRole('button', { name: /^Mesa M1 / }));
+    await openFromMap(user, /^Mesa M1 /);
     await enterGuests(user, '2');
     await user.click(within(await guestsDialog()).getByRole('button', { name: 'Abrir mesa' }));
 
@@ -156,7 +156,7 @@ describe('opening a table', () => {
     openTableEndpoint(id(1), () => problem(409, 'TABLE_OCCUPIED'));
     const { user } = await renderPos({ device: 'enrolled', loggedIn: true, path: '/tables' });
 
-    await user.click(await screen.findByRole('button', { name: /^Mesa M1 / }));
+    await openFromMap(user, /^Mesa M1 /);
     await enterGuests(user, '4');
     await user.click(within(await guestsDialog()).getByRole('button', { name: 'Abrir mesa' }));
 
@@ -173,7 +173,7 @@ describe('opening a table', () => {
     orderEndpoint(NEW_ORDER_ID, json(NEW_ORDER));
     const { user } = await atTables();
 
-    await user.click(screen.getByRole('button', { name: /^Mesa M1 / }));
+    await openFromMap(user, /^Mesa M1 /);
     await enterGuests(user, '2');
     await user.click(within(await guestsDialog()).getByRole('button', { name: 'Abrir mesa' }));
 
@@ -190,7 +190,7 @@ describe('opening a table', () => {
     const opened = openTableEndpoint(id(1), () => problem(422, 'TABLE_LOCKED'));
     const { user } = await atTables();
 
-    await user.click(screen.getByRole('button', { name: /^Mesa M1 / }));
+    await openFromMap(user, /^Mesa M1 /);
     await enterGuests(user, '2');
     await user.click(within(await guestsDialog()).getByRole('button', { name: 'Abrir mesa' }));
     await within(await guestsDialog()).findByRole('alert');
@@ -205,7 +205,7 @@ describe('opening a table', () => {
     const { user } = await atTables();
     await waitFor(() => expect(screen.getByRole('status', { name: 'Ligação' })).toHaveTextContent('Sem ligação'));
 
-    await user.click(screen.getByRole('button', { name: /^Mesa M1 / }));
+    await openFromMap(user, /^Mesa M1 /);
     await enterGuests(user, '2');
 
     const dialog = await guestsDialog();

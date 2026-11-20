@@ -78,7 +78,7 @@ export function KeypadStep({
         </div>
         <div className="min-h-18">
           {error ? (
-            <p role="alert" className="font-medium text-destructive">
+            <p role="alert" className="font-medium text-error">
               {error}
             </p>
           ) : (

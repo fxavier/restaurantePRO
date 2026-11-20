@@ -7,6 +7,9 @@
 /* The package's components live outside the app's root, so Tailwind is told to scan them. */
 @source "..";
 
+/* `dark:` follows the `.dark` class on <html>, not the OS setting. */
+@custom-variant dark (&:is(.dark *));
+
 @theme inline {
   --font-sans: "Inter Variable", system-ui, sans-serif;
   --color-background: var(--background);
@@ -31,6 +34,11 @@
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
   --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-error: var(--error);
+  --color-route-kitchen: var(--route-kitchen);
+  --color-route-bar: var(--route-bar);
+  --color-route-copa: var(--route-copa);
   --color-brand: var(--brand);
   --color-border: var(--border);
   --color-input: var(--input);

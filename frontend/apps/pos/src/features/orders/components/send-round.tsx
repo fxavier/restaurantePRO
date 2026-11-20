@@ -64,7 +64,7 @@ function SendStatus({ send, sentBatchNo }: Pick<Props, 'send' | 'sentBatchNo'>) 
         : 'Sem ligação — a ronda não foi confirmada.'
       : refusal(send.error);
     return (
-      <p role="alert" className="font-medium text-destructive">
+      <p role="alert" className="font-medium text-error">
         {text}
       </p>
     );

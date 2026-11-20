@@ -50,6 +50,45 @@ The enclosing git repository is rooted at `/Users/xavier` (the home directory), 
 
 `.github/modernize/java-upgrade/` holds tool-use recording hooks from a Java-upgrade tool. It is not CI.
 
+## UI refactor (Google Stitch)
+
+The frontends are being restyled to Google Stitch project **15612001253409631373**. The design system it implies, the token diff and the change set are in [docs/design/DESIGN.md](docs/design/DESIGN.md).
+
+Rules:
+
+- Use only Stitch project ID 15612001253409631373 (`projects/15612001253409631373` where a tool wants that form). Do not list or read other Stitch projects.
+- Stitch output is a visual and structural spec, never source code. Do not paste Stitch HTML or CSS into the codebase.
+- The refactor is presentation only. Preserve data fetching, state, handlers, routing, validation, i18n keys (pt-PT), analytics events and test IDs. Do not change API clients, stores or backend contracts.
+- Reuse existing components before creating new ones. Use design tokens, not hard-coded colours, px values or arbitrary Tailwind values.
+- Accessibility: semantic HTML, labelled controls, visible focus states and WCAG AA contrast.
+- Each phase and each screen stops for the user's approval.
+
+Stitch screen → route:
+
+| Stitch screen | Screen ID | Route / files |
+| --- | --- | --- |
+| POS — Sala e Gestão de Mesas | `490260d04c6544c691d6d99fb5504725` | POS `/tables`: `routes/tables-page.tsx`, `features/dining/components/*`, `routes/status-bar.tsx` |
+| POS — Registo de Pedidos e Rondas | `0915c4b97df3450a9254db74db6ebf93` | POS `/orders/:orderId`: `routes/order-page.tsx`, `features/orders/components/*`, `features/catalog/components/*` |
+| BackOffice — Lojas, Terminais & Organização | `80048f80f7ab42548ccb6abde024709c` | BackOffice `/organization/terminals`: `routes/terminals-page.tsx`, `features/organization/components/*`, `shell/*` (partial: stores and org settings have no route) |
+| POS — Conta e Pagamento (Split) | `918d457984464ab8aab66c8a10b5dc04` | none yet |
+| POS — Caixa e Fecho de Turno | `46816d9f62244326a86cc297374c57f2` | none yet |
+| POS — Gestão de Reservas de Sala | `120ebed0d8ce45bdb2f41b862ca34536` | none yet |
+| POS — Modal Nova Reserva (F2) | `b9dea7eb834f4ced8187cee7750abe36` | none yet |
+| POS — Modal Novo Pedido Takeaway & Delivery (F3) | `5f9e2ce74f7446638b80784c115639f9` | none yet |
+| POS — Despacho de Takeaway & Delivery | `89da103fa7cf4862bf796c0a322a0310` | none yet |
+| POS — Guia de Transporte & Conferência (F8) | `2115493c9fef47659a64933b32a49005` | none yet |
+| KDS — Kitchen Display System & Controlo de Produção | `306764cb38734a80b69d62d00055a2c6` | none yet (no KDS app) |
+| BackOffice — Catálogo & Versões | `f1207b54e1394391bec6f36576f5db94` | none yet |
+| BackOffice — Produção, Encaminhamento & Impressoras | `0d63d74ec522441585ba71fae5c16a83` | none yet |
+| BackOffice — Stocks, Receitas & Compras | `cb5e3c5de1ab40929f2150dc1a8f91d3` | none yet |
+| BackOffice — Financeiro, Fechos & Auditoria | `45594d6f3d8a49c99a2628a8720811d2` | none yet |
+| BackOffice — Clientes, Crédito & Conta Corrente | `8937697b29084dc98845ed0a91e1351f` | none yet |
+| BackOffice — Utilizadores, Empregados & Permissões RBAC | `e1e8204a948a449b830addea0d42f0db` | none yet |
+| BackOffice — Zonas & Tarifários de Delivery | `836f7a7c24fd4403b7dd6a9907e2963a` | none yet |
+| BackOffice — Relatório & Conferência de Entregas e Guias AT | `88b0c854343d4a64817fcd880a7e755e` | none yet |
+
+Routes with no Stitch screen take the tokens only: POS `/enrol`, `/login` and `/tables/:tableId` (a redirect), and BackOffice `/`, `/step-up/resume` and not-found.
+
 ## Agent skills
 
 ### Issue tracker

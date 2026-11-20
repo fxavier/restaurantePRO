@@ -116,12 +116,12 @@ function GuestsForm({ table, onClose, onOpened, mayHaveOpened, onUnknownOutcome,
       {/* One line kept for the message, so the buttons never move when one appears. */}
       <div className="min-h-12">
         {blocked ? (
-          <p className="flex items-center gap-2 font-medium text-destructive">
+          <p className="flex items-center gap-2 font-medium text-error">
             <WifiOff aria-hidden="true" className="size-5 shrink-0" />
             {OFFLINE}
           </p>
         ) : open.error ? (
-          <p role="alert" className="font-medium text-destructive">
+          <p role="alert" className="font-medium text-error">
             {refusal(open.error)}
           </p>
         ) : null}

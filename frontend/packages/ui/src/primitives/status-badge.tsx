@@ -1,7 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
 import { Badge } from '../components/badge';
 
-export type StatusTone = 'neutral' | 'primary' | 'success' | 'warning' | 'destructive';
+export type StatusTone = 'neutral' | 'primary' | 'success' | 'warning' | 'destructive' | 'info';
 
 export type StatusMap<S extends string> = Record<S, { label: string; icon: LucideIcon; tone: StatusTone }>;
 
@@ -11,6 +11,7 @@ const variantOf = {
   success: 'success',
   warning: 'warning',
   destructive: 'destructive',
+  info: 'info',
 } as const;
 
 /** A status by colour, icon and label together, never colour alone (§8.4, DS principle 3). */

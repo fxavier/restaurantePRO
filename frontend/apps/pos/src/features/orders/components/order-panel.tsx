@@ -41,7 +41,6 @@ export function lineName(line: OrderLine, catalog: PosCatalog | undefined): stri
  * provisional price and the drafts' subtotal the server's provisional `draftGross`.
  */
 export function OrderPanel({ order, catalog, commands, message, action, back, shownBefore }: Props) {
-  const timeZone = useStoreTimeZone();
   const details = [order.guests !== null ? guestsLabel(order.guests) : undefined, `Pedido n.º ${order.orderNumber}`]
     .filter(Boolean)
     .join(' · ');
@@ -56,7 +55,7 @@ export function OrderPanel({ order, catalog, commands, message, action, back, sh
       </header>
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-3">
         {message && (
-          <p role="alert" className="rounded-md border border-destructive px-3 py-2 font-medium text-destructive">
+          <p role="alert" className="rounded-md border border-destructive px-3 py-2 font-medium text-error">
             {message}
           </p>
         )}
@@ -99,31 +98,7 @@ export function OrderPanel({ order, catalog, commands, message, action, back, sh
           {order.rounds.length === 0 && order.unbatched.length === 0 ? (
             <p className="text-muted-foreground">Nada enviado ainda.</p>
           ) : (
-            <>
-              {order.rounds.map((round) => {
-                const title = `Ronda ${round.batchNo}, ${clockTime(round.confirmedAt, timeZone)}`;
-                return (
-                  <div key={round.id} className="flex flex-col">
-                    <h4 className="text-sm font-semibold text-muted-foreground">{title}</h4>
-                    <ul aria-label={title} className="flex flex-col">
-                      {round.lines.map((line) => (
-                        <SentRow key={line.id} line={line} name={lineName(line, catalog)} />
-                      ))}
-                    </ul>
-                  </div>
-                );
-              })}
-              {order.unbatched.length > 0 && (
-                <div className="flex flex-col">
-                  <h4 className="text-sm font-semibold text-muted-foreground">Sem ronda (transferidas)</h4>
-                  <ul aria-label="Sem ronda" className="flex flex-col">
-                    {order.unbatched.map((line) => (
-                      <SentRow key={line.id} line={line} name={lineName(line, catalog)} />
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </>
+            <SentRounds order={order} catalog={catalog} />
           )}
         </section>
       </div>
@@ -141,6 +116,38 @@ export function OrderPanel({ order, catalog, commands, message, action, back, sh
         {action}
       </footer>
     </aside>
+  );
+}
+
+/** The confirmed lines, per round, then those outside any round; the order screen's "Enviado" and the table panel's. */
+export function SentRounds({ order, catalog }: { order: Order; catalog?: PosCatalog }) {
+  const timeZone = useStoreTimeZone();
+  return (
+    <>
+      {order.rounds.map((round) => {
+        const title = `Ronda ${round.batchNo}, ${clockTime(round.confirmedAt, timeZone)}`;
+        return (
+          <div key={round.id} className="flex flex-col">
+            <h4 className="text-sm font-semibold text-muted-foreground">{title}</h4>
+            <ul aria-label={title} className="flex flex-col">
+              {round.lines.map((line) => (
+                <SentRow key={line.id} line={line} name={lineName(line, catalog)} />
+              ))}
+            </ul>
+          </div>
+        );
+      })}
+      {order.unbatched.length > 0 && (
+        <div className="flex flex-col">
+          <h4 className="text-sm font-semibold text-muted-foreground">Sem ronda (transferidas)</h4>
+          <ul aria-label="Sem ronda" className="flex flex-col">
+            {order.unbatched.map((line) => (
+              <SentRow key={line.id} line={line} name={lineName(line, catalog)} />
+            ))}
+          </ul>
+        </div>
+      )}
+    </>
   );
 }
 

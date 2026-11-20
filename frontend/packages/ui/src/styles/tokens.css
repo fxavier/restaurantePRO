@@ -1,7 +1,8 @@
 /*
  * Design tokens (docs/design/frontend-design-system.md), in the variable names shadcn/ui expects.
- * Light theme only in R1; dark mode will be a `.dark` block over the same names.
- * tokens.test.ts asserts these values against the DS table and checks the contrast pairs.
+ * `:root` is the R1 light theme; `.dark` is the Google Stitch theme (docs/design/DESIGN.md) over the same names,
+ * which both apps turn on with `<html class="dark">`.
+ * tokens.test.ts asserts these values against the DS tables and checks the contrast pairs.
  */
 :root {
   --background: #FFFFFF;
@@ -22,6 +23,13 @@
   --destructive: #B91C1C;
   --destructive-foreground: #FFFFFF;
   --info: var(--primary);
+  --info-foreground: var(--primary-foreground);
+  /* error text; `--destructive` is the fill, border and tint */
+  --error: var(--destructive);
+  /* production-route chips, the same in both themes */
+  --route-kitchen: #F97316;
+  --route-bar: #8B5CF6;
+  --route-copa: #06B6D4;
   --radius: 0.5rem;
 
   /* shadcn names the DS does not list, mapped onto the DS surfaces */
@@ -33,4 +41,31 @@
   --secondary-foreground: var(--foreground);
   --accent: var(--muted);
   --accent-foreground: var(--foreground);
+}
+
+/* Stitch theme. Status hues (success, warning, destructive, info, route-*) are fills with dark text; `--error` is text. */
+.dark {
+  color-scheme: dark;
+  --background: #0B0F19;
+  --foreground: #DAE2FD;
+  --card: #151D2E;
+  --popover: #151D2E;
+  --muted: #1E293B;
+  --muted-foreground: #BBCABF;
+  --border: #334155;
+  --input: #86948A;
+  --primary: #10B981;
+  --primary-hover: #4EDEA3;
+  --primary-foreground: #0B0F19;
+  --brand: #10B981;
+  --ring: #4EDEA3;
+  --success: #10B981;
+  --success-foreground: #0B0F19;
+  --warning: #F59E0B;
+  --warning-foreground: #0B0F19;
+  --destructive: #EF4444;
+  --destructive-foreground: #0B0F19;
+  --info: #0284C7;
+  --info-foreground: #0B0F19;
+  --error: #FFB4AB;
 }

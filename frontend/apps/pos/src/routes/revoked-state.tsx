@@ -25,7 +25,7 @@ export function RevokedState({ onReEnrol }: { onReEnrol: () => void }) {
         className="flex w-full max-w-xl flex-col gap-4 rounded-xl border bg-background p-6"
       >
         <div className="flex items-center gap-3">
-          <ShieldX aria-hidden="true" className="size-8 shrink-0 text-destructive" />
+          <ShieldX aria-hidden="true" className="size-8 shrink-0 text-error" />
           <h2 id="revoked-title" className="text-2xl font-semibold">
             Terminal revogado ou inválido
           </h2>

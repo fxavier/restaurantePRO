@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { expectNoAxeViolations } from '../axe';
-import { enrolAndLogIn, openTable, orderPanel, readAs, recordBatchBodies, replay, screens, tile } from '../support/pos';
+import { enrolAndLogIn, openFromMap, openTable, orderPanel, readAs, recordBatchBodies, replay, screens, tile } from '../support/pos';
 
 // Flow (b) on the real stack (ticket 12, PRD 45-49, AC5-AC9, spec §14 #2, #6, #7): terminal A enrols with a code
 // issued through the API, logs the waiter in with the PIN, opens M1 and sends a round of three lines (a variant, a
@@ -27,7 +27,7 @@ test('a round sent from one terminal shows on the second, live; a replayed "Pedi
 
   // B's map follows the change stream: no reload.
   await expect(tile(b, 'M1')).toContainText('Ocupada');
-  await tile(b, 'M1').click();
+  await openFromMap(b, 'M1');
   await expect(b.getByRole('heading', { name: 'Mesa M1' })).toBeVisible();
   await expect(orderPanel(b).getByText('Nada enviado ainda.')).toBeVisible();
 

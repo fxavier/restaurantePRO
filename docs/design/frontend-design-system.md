@@ -2,6 +2,8 @@
 
 Status: **APPROVED** 2026-11-18 by Xavier Francisco ("aprovado", frontend R1 Phase 2 gate). Decided with the user in alignment round R4. Conventions: [frontend-conventions.md](../architecture/frontend-conventions.md). The visual direction is approved on screenshots of the first POS and BackOffice screens (Phase 4 gate) before any further screen is built.
 
+> **Amended 2026-11-20:** both apps now use the Google Stitch dark theme. Its colours and table states are in [DESIGN.md](DESIGN.md), which replaces the colour-token and POS-table-state sections below.
+
 ## Principles
 
 1. Modern and clean: white surfaces, slate neutrals, one accent (blue), no decoration that carries no information.

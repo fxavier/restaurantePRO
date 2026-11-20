@@ -37,3 +37,14 @@ export async function logIn(page: Page) {
   await page.getByLabel('PIN').fill('739164');
   await page.getByRole('button', { name: 'Entrar' }).click();
 }
+
+export const tile = (page: Page, code: string) => page.getByRole('button', { name: new RegExp(`^Mesa ${code} `) });
+
+/** A tile tapped, then the detail panel's action: "Abrir mesa" for a free table, "Registar artigos" for an occupied one. */
+export async function openFromMap(page: Page, code: string) {
+  await tile(page, code).click();
+  await page
+    .getByRole('complementary', { name: 'Detalhe da mesa' })
+    .getByRole('button', { name: /^(Abrir mesa|Registar artigos)$/ })
+    .click();
+}

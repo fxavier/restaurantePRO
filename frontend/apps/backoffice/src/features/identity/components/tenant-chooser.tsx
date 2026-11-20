@@ -31,7 +31,7 @@ export function TenantChooser({ tenants }: { tenants: TenantChoice[] }) {
         })}
       </ul>
       {select.isError && (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="text-sm text-error">
           {errorMessage(select.error)}
         </p>
       )}
