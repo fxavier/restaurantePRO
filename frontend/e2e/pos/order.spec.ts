@@ -160,17 +160,24 @@ const MAP = {
   ],
 };
 
-async function standIn(page: Page) {
+/** Twelve rounds' worth of sent lines and no draft: the panel's body scrolls at 1024 × 768 with nothing to tab to. */
+const ALL_SENT = {
+  ...ORDER,
+  lines: Array.from({ length: 12 }, (_, index) => sent(820 + index, `Prato ${index + 1}`, 1, 100)),
+  due: { amount: 1200, currency: 'MZN' },
+};
+
+async function standIn(page: Page, order: object = ORDER) {
   await standInDevice(page);
   await page.route('**/api/v1/pos/tables', (route) => route.fulfill({ json: MAP }));
   // The stream stays pending: this screen does not need a change.
   await page.route('**/api/v1/pos/notifications', () => undefined);
   await page.route('**/api/v1/pos/catalog', (route) => route.fulfill({ json: CATALOG }));
-  await page.route(`**/api/v1/pos/orders/${ORDER_ID}`, (route) => route.fulfill({ json: ORDER }));
+  await page.route(`**/api/v1/pos/orders/${ORDER_ID}`, (route) => route.fulfill({ json: order }));
 }
 
-async function atOrder(page: Page) {
-  await standIn(page);
+async function atOrder(page: Page, order: object = ORDER) {
+  await standIn(page, order);
   await logIn(page);
   await openFromMap(page, 'M2');
   await expect(page.getByRole('heading', { name: 'Mesa M2' })).toBeVisible();
@@ -226,6 +233,20 @@ test('the order screen is accessible, and so is its choice sheet', async ({ page
   expect(sheetBox.y).toBeGreaterThanOrEqual(0);
   expect(sheetBox.y + sheetBox.height).toBeLessThanOrEqual(768);
   await expectNoAxeViolations(page);
+});
+
+// axe's scrollable-region-focusable: a scrolling body with no control inside must itself take the focus, or a
+// keyboard user cannot scroll it (main's CI failed on the order panel once every line was sent).
+test('an order with only sent lines scrolls, and its lines are reachable by keyboard', async ({ page }) => {
+  await atOrder(page, ALL_SENT);
+  await expect(page.getByText('Sem linhas por enviar.')).toBeVisible();
+
+  await expectNoAxeViolations(page);
+
+  const lines = page.getByRole('region', { name: 'Linhas do pedido' });
+  expect(await lines.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+  await lines.focus();
+  await expect(lines).toBeFocused();
 });
 
 test('the guests pad is accessible', async ({ page }) => {

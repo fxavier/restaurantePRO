@@ -49,10 +49,19 @@ export function isVersionConflict(error: unknown): boolean {
   return error instanceof ApiError && error.status === 409 && (error.code === 'VERSION_CONFLICT' || isUncodedConflict(error));
 }
 
-export function errorMessage(error: ApiError, { offline = `${OFFLINE}.` }: { offline?: string } = {}): string {
+/** A feature's own Portuguese text per backend code; it wins over the shared list, so a feature never edits this file. */
+export type FeatureMessages = Readonly<Record<string, string>>;
+
+/**
+ * @param messages the calling feature's texts for its codes; "no connection" and throttling still come first
+ */
+export function errorMessage(
+  error: ApiError,
+  { offline = `${OFFLINE}.`, messages }: { offline?: string; messages?: FeatureMessages } = {},
+): string {
   if (isOffline(error)) return offline;
   if (error.status === 429) return `Demasiadas tentativas. Tente novamente dentro de ${wait(error)}.`;
-  const known = MESSAGES[error.code];
+  const known = messages?.[error.code] ?? MESSAGES[error.code];
   if (known) return known;
   if (error.status === 403) return 'Sem permissão para esta ação.';
   if (error.status >= 500) return `Erro inesperado (${error.code}).`;

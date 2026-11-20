@@ -28,7 +28,20 @@ const selectedStore = stores[1]!.id;
 const session = {
   kind: 'ACCOUNT',
   name: 'Ana Admin',
-  permissions: ['PERM_TERMINAL_MANAGE', 'PERM_STORE_MANAGE'],
+  // One per sidebar area (apps/backoffice/src/shell/navigation.ts): axe checks the whole sidebar.
+  permissions: [
+    'PERM_TERMINAL_MANAGE',
+    'PERM_STORE_MANAGE',
+    'PERM_DINING_MANAGE',
+    'PERM_CATALOG_MANAGE',
+    'PERM_PRODUCTION_MANAGE',
+    'PERM_INVENTORY_VIEW',
+    'PERM_CUSTOMER_VIEW',
+    'PERM_CASH_VIEW',
+    'PERM_EMPLOYEE_MANAGE',
+    'PERM_DELIVERY_ZONE_MANAGE',
+    'PERM_ORDER_VIEW',
+  ],
   tenantId: tenants[0]!.tenantId,
   tenantName: tenants[0]!.legalName,
 };
@@ -90,6 +103,8 @@ for (const viewport of [
     expect(await overview.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe('none');
 
     await page.keyboard.press('Tab');
+    await expect(page.getByRole('navigation', { name: 'Áreas' }).getByRole('link', { name: 'Lojas' })).toBeFocused();
+    await page.keyboard.press('Tab');
     await page.keyboard.press('Enter');
     await expect(page.getByRole('heading', { level: 1, name: 'Terminais' })).toBeVisible();
     await expect(page).toHaveURL(`/organization/terminals?storeId=${selectedStore}`);
@@ -103,3 +118,17 @@ for (const viewport of [
     await expect(switcher).toBeFocused();
   });
 }
+
+test('an area not built yet shows its page header, and passes axe', async ({ page }) => {
+  await signedIn(page);
+
+  await page.goto(`/catalog?storeId=${selectedStore}`);
+
+  await expect(page.getByRole('heading', { level: 1, name: 'Catálogo' })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Áreas' }).getByRole('link', { name: 'Catálogo' })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  await expect(page.getByText('Em preparação.')).toBeVisible();
+  await expectNoAxeViolations(page);
+});

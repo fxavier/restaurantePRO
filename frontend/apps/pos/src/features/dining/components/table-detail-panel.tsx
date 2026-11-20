@@ -2,6 +2,7 @@ import { Badge, Button, DataState, Money } from '@restaurantpro/ui';
 import { ClipboardPlus, DoorOpen, X } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useStoreTimeZone } from '../../../lib/auth/use-employee';
+import { ScrollRegion } from '../../../lib/scroll-region';
 import { SentRounds } from '../../orders/components/order-panel';
 import { useOrder } from '../../orders/hooks/use-order';
 import { clockTime, guestsLabel, seatsLabel } from '../format';
@@ -76,7 +77,7 @@ export function TableDetailPanel({ table, areaName, onOpenTable, onGoToOrder, on
           <X aria-hidden="true" />
         </Button>
       </header>
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+      <ScrollRegion label={`Detalhe da mesa ${table.code}`} className="flex min-h-0 flex-1 flex-col gap-4 p-4">
         <dl className="grid grid-cols-2 gap-3">
           <div>
             <dt className="text-sm text-muted-foreground">Estado</dt>
@@ -102,7 +103,7 @@ export function TableDetailPanel({ table, areaName, onOpenTable, onGoToOrder, on
           </ul>
         )}
         {occupied && table.openOrderId && <OrderSummary orderId={table.openOrderId} />}
-      </div>
+      </ScrollRegion>
       <footer className="border-t p-4">
         {occupied ? (
           <Button size="touch-primary" className="w-full" onClick={() => onGoToOrder(table)}>

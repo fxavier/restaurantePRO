@@ -2,6 +2,7 @@ import { Badge, Button, Money, type MoneyValue } from '@restaurantpro/ui';
 import { Minus, NotebookPen, Plus, Trash2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useStoreTimeZone } from '../../../lib/auth/use-employee';
+import { ScrollRegion } from '../../../lib/scroll-region';
 import { clockTime, guestsLabel } from '../../dining/format';
 import { itemLabel, type PosCatalog } from '../../catalog/catalog';
 import { DestinationBadge } from '../../catalog/components/destination-badge';
@@ -63,7 +64,7 @@ export function OrderPanel({ order, catalog, commands, message, action, back, sh
         </div>
         {back}
       </header>
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-3">
+      <ScrollRegion label="Linhas do pedido" className="flex min-h-0 flex-1 flex-col gap-4 px-4 py-3">
         {message && (
           <p role="alert" className="rounded-md border border-destructive px-3 py-2 font-medium text-error">
             {message}
@@ -122,7 +123,7 @@ export function OrderPanel({ order, catalog, commands, message, action, back, sh
             </div>
           )}
         </section>
-      </div>
+      </ScrollRegion>
       <footer className="flex flex-col gap-3 border-t px-4 py-3">
         <div role="group" aria-label="Total" className="flex flex-col">
           <div className="flex items-baseline justify-between">

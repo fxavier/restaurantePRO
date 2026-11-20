@@ -3,6 +3,7 @@ import { Button, Input, Skeleton } from '@restaurantpro/ui';
 import { RotateCcw, Search, X } from 'lucide-react';
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import { errorMessage, isOffline, isVersionConflict } from '../../../lib/error-messages';
+import { ScrollRegion } from '../../../lib/scroll-region';
 import { isInProgress } from '../../../lib/use-intent';
 import { byCode, type CatalogItem, itemLabel, needsChoices, search } from '../../catalog/catalog';
 import { FamilyRail } from '../../catalog/components/family-rail';
@@ -166,7 +167,7 @@ export function OrderScreen({ order, blocked, back }: Props) {
         <div className="flex min-h-12 items-center">
           <AddStatus add={add} blocked={!canCommand} notice={notice} />
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <ScrollRegion label="Lista de artigos" className="min-h-0 flex-1">
           {catalog.data ? (
             <ProductGrid
               items={
@@ -191,7 +192,7 @@ export function OrderScreen({ order, blocked, back }: Props) {
               ))}
             </div>
           )}
-        </div>
+        </ScrollRegion>
       </section>
       <OrderPanel
         order={order}

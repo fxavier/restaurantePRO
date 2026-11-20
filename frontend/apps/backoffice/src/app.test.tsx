@@ -264,7 +264,8 @@ describe('BackOffice access shell', () => {
   });
 
   it('hides an area the user has no permission for', async () => {
-    server.use(...signedIn({ session: { ...admin, permissions: ['PERM_STORE_MANAGE', 'TERMINAL_MANAGE'] } }));
+    // An unprefixed name is not an authority; CATALOG_MANAGE shows an area outside Organização.
+    server.use(...signedIn({ session: { ...admin, permissions: ['PERM_CATALOG_MANAGE', 'TERMINAL_MANAGE'] } }));
 
     renderApp();
 
