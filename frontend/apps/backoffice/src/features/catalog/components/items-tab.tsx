@@ -18,6 +18,7 @@ import { useFamilies, useItems, useTaxCategories } from '../hooks/use-catalog-qu
 import { countByFamily, filterItems } from '../item-filter';
 import type { FamilySummary, ItemSummary, TaxCategorySummary } from '../types';
 import { FamilyPills } from './family-pills';
+import { ItemFormDialog } from './item-form-dialog';
 import { LoadError } from './load-error';
 
 /** "Artigos": the company's items, narrowed by family and search, with their destination, tax category and state. */
@@ -39,7 +40,8 @@ export function ItemsTab() {
     <div className="flex flex-col gap-4">
       <Card>
         <CardContent className="flex flex-col gap-4">
-          <div className="relative">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative min-w-64 flex-1">
             <Search aria-hidden="true" className="absolute top-2.5 left-3 size-4 text-muted-foreground" />
             <Input
               type="search"
@@ -49,6 +51,8 @@ export function ItemsTab() {
               onChange={(event) => setSearch(event.target.value)}
               className="pl-9"
             />
+            </div>
+            {items.data && <ItemFormDialog />}
           </div>
           <FamilyPills
             families={families.data ?? []}
@@ -87,6 +91,9 @@ function ItemsTable({ items, families, taxCategories }: ItemsTableProps) {
           <TableHead>Destino de produção</TableHead>
           <TableHead>IVA</TableHead>
           <TableHead>Estado</TableHead>
+          <TableHead>
+            <span className="sr-only">Ações</span>
+          </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -102,6 +109,9 @@ function ItemsTable({ items, families, taxCategories }: ItemsTableProps) {
             </TableCell>
             <TableCell>{taxLabel(taxOf(item.taxCategoryId), now)}</TableCell>
             <TableCell>{availabilityLabel(item.availability)}</TableCell>
+            <TableCell className="text-right">
+              <ItemFormDialog item={item} />
+            </TableCell>
           </TableRow>
         ))}
       </TableBody>

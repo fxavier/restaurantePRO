@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useApi } from '../../../lib/api';
-import type { FamilySummary } from '../types';
+import type { FamilySummary, ItemCreateRequest, ItemSummary, ItemUpdateRequest } from '../types';
 import { CATALOG_KEY } from './use-catalog-queries';
 
 type FamilyBody = { code: string; name: string; parentId?: string };
@@ -20,5 +20,25 @@ export function useSaveFamily() {
       return data as FamilySummary;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: [...CATALOG_KEY, 'families'] }),
+  });
+}
+
+type ItemSave =
+  | { id?: undefined; body: ItemCreateRequest }
+  | { id: string; body: ItemUpdateRequest };
+
+/** Create or update an item (no Idempotency-Key in the contract; a resend meets CATALOG_CODE_TAKEN). */
+export function useSaveItem() {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (save: ItemSave): Promise<ItemSummary> => {
+      const { data } =
+        save.id === undefined
+          ? await api.POST('/api/v1/backoffice/catalog/items', { body: save.body })
+          : await api.PUT('/api/v1/backoffice/catalog/items/{id}', { params: { path: { id: save.id } }, body: save.body });
+      return data as ItemSummary;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [...CATALOG_KEY, 'items'] }),
   });
 }

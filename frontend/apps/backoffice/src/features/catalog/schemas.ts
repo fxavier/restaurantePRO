@@ -10,3 +10,18 @@ const optionalId = z.string();
 /** "Nova família" / "Editar família" (`FamilyCreateRequest`, `FamilyUpdateRequest`). */
 export const familySchema = z.object({ code: code(30), name: name(120), parentId: optionalId });
 export type FamilyValues = z.infer<typeof familySchema>;
+
+const required = (message: string) => z.string().min(1, message);
+
+/** "Novo artigo" / "Editar artigo" (`ItemCreateRequest`, `ItemUpdateRequest`); availability only matters on edit. */
+export const itemSchema = z.object({
+  code: code(30),
+  name: name(120),
+  familyId: required('Escolha a família.'),
+  unitId: required('Escolha a unidade.'),
+  taxCategoryId: required('Escolha a categoria de IVA.'),
+  productionDestination: z.string(),
+  soldByWeight: z.boolean(),
+  availability: z.enum(['ACTIVE', 'INACTIVE']),
+});
+export type ItemValues = z.infer<typeof itemSchema>;
