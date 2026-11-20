@@ -50,6 +50,20 @@ export function parseJobs(views: unknown[]): PrintJob[] {
   return views.map((view) => printJob.parse(view));
 }
 
+const ticket = z.object({
+  id: z.string(),
+  sourceType: z.string(),
+  destination: z.string().nullish(),
+  lines: z.array(z.string()).nullish(),
+  createdAt: z.string(),
+});
+
+export type Ticket = z.infer<typeof ticket>;
+
+export function parseTickets(views: unknown[]): Ticket[] {
+  return views.map((view) => ticket.parse(view));
+}
+
 /**
  * What may still be done with a job (r2-decisions §4): a FAILED or UNKNOWN job not yet resolved is retried as a new
  * job; an UNKNOWN one may instead be acknowledged as printed. A drawer kick is never repeated (D158).

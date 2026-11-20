@@ -10,6 +10,7 @@ import {
   kitchen,
   productionHandlers,
   sala,
+  ticket,
   type ProductionState,
 } from '../../test/production-fixtures';
 import { renderApp } from '../../test/render-app';
@@ -449,6 +450,67 @@ describe('printers of the terminals', () => {
     );
     const kitchenCard = screen.getByRole('listitem', { name: 'Cozinha Quentes' });
     expect(await within(kitchenCard).findByText('Sala')).toBeInTheDocument();
+  });
+});
+
+const unrouted = ticket('eeee0000-0000-4000-8000-000000000009', { destination: 'SOBREMESAS', lines: ['1x Pudim', '2x Mousse'] });
+
+describe('the summary', () => {
+  it('counts the active printers and, from the server, the jobs and tickets that need someone', async () => {
+    productionServer({
+      printers: [kitchen, bar, { ...copa, active: false }],
+      jobs: [sent, failed, unknown],
+      tickets: [unrouted, ticket('eeee0000-0000-4000-8000-000000000008', { routing: 'ROUTED' })],
+    });
+
+    renderApp(PRODUCTION);
+
+    const summary = await screen.findByRole('region', { name: 'Resumo' });
+    await waitFor(() =>
+      expect(within(summary).getAllByRole('definition').map((value) => value.textContent)).toEqual(['2 / 3', '1', '1', '1']),
+    );
+    expect(within(summary).getAllByRole('term').map((term) => term.textContent)).toEqual([
+      'Impressoras ativas',
+      'Trabalhos falhados',
+      'Por confirmar',
+      'Talões por encaminhar',
+    ]);
+  });
+});
+
+describe('tickets with no route', () => {
+  it('lists them and sends one to its printer once a route exists, under one key', async () => {
+    const state = productionServer({ tickets: [unrouted] }, OPERATOR);
+    const { user } = renderApp(PRODUCTION);
+
+    const list = await screen.findByRole('list', { name: 'Talões por encaminhar' });
+    const item = await within(list).findByRole('listitem', { name: 'Pedido · SOBREMESAS' });
+    expect(within(item).getByText('1x Pudim, 2x Mousse')).toBeInTheDocument();
+    await user.click(within(item).getByRole('button', { name: 'Encaminhar' }));
+
+    expect(await screen.findByText('Todos os talões têm rota.')).toBeInTheDocument();
+    expect(state.requests.find((request) => request.method === 'POST')).toMatchObject({
+      url: `/api/v1/backoffice/production-tickets/${unrouted.id}/route`,
+      idempotencyKey: A_KEY,
+    });
+    expect(state.requests.map((request) => request.url)).toContain(
+      `/api/v1/backoffice/production-tickets?storeId=${baixa.id}&routing=UNROUTED&page=0&size=20`,
+    );
+  });
+
+  it('says the ticket still has no route', async () => {
+    productionServer({ tickets: [unrouted] }, OPERATOR);
+    server.use(
+      http.post(api('/api/v1/backoffice/production-tickets/:id/route'), () => problem(422, 'STILL_UNROUTED', 'Unprocessable')),
+    );
+    const { user } = renderApp(PRODUCTION);
+
+    const item = await screen.findByRole('listitem', { name: 'Pedido · SOBREMESAS' });
+    await user.click(within(item).getByRole('button', { name: 'Encaminhar' }));
+
+    expect(
+      await screen.findByText('O talão ainda não tem rota: configure uma rota para o seu destino primeiro.'),
+    ).toBeInTheDocument();
   });
 });
 
