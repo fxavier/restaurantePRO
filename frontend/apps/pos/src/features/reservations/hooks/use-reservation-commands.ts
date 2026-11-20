@@ -53,7 +53,6 @@ export function useUpdateReservation(reservationId: string, { onDone }: { onDone
   return useMutation({
     mutationFn: async (body: ReservationUpdateRequest) =>
       (await api.PUT('/api/v1/pos/reservations/{id}', { params: { path: { id: reservationId } }, body })).data,
-    retry: false,
     onSuccess: onDone,
     onSettled: () => queryClient.invalidateQueries({ queryKey: RESERVATIONS_KEY }),
   });

@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useStoreTimeZone } from '../../../lib/auth/use-employee';
 import { errorMessage, isOffline } from '../../../lib/error-messages';
+import { useCan } from '../hooks/use-can';
 import { useReservations } from '../hooks/use-reservations';
 import { matches, type ReservableArea, type Reservation, type StatusFilter, summarize, tableCodes } from '../reservation';
 import { storeClock, storeDate } from '../store-time';
@@ -31,6 +32,7 @@ export function ReservationsScreen({ areas }: Props) {
   const navigate = useNavigate();
   const [command, setCommand] = useState<Command>();
   const [booking, setBooking] = useState(false);
+  const canManage = useCan('RESERVATION_MANAGE');
   const target = day.data?.find((reservation) => reservation.id === command?.id);
   const close = () => setCommand(undefined);
 
@@ -39,10 +41,12 @@ export function ReservationsScreen({ areas }: Props) {
       <h2 className="sr-only">Reservas</h2>
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border bg-card p-4">
         <DayBar date={date} today={today} onDate={setDate} />
-        <Button size="touch-primary" onClick={() => setBooking(true)}>
-          <CalendarPlus aria-hidden="true" />
-          Nova reserva
-        </Button>
+        {canManage && (
+          <Button size="touch-primary" onClick={() => setBooking(true)}>
+            <CalendarPlus aria-hidden="true" />
+            Nova reserva
+          </Button>
+        )}
       </div>
       {booking && <NewReservationDialog date={date} today={today} areas={areas} onClose={() => setBooking(false)} />}
       {command && target && (
@@ -56,7 +60,7 @@ export function ReservationsScreen({ areas }: Props) {
         />
       )}
       {day.data ? (
-        <Day reservations={day.data} areas={areas} timeZone={timeZone} onCommand={setCommand} />
+        <Day reservations={day.data} areas={areas} timeZone={timeZone} onCommand={canManage ? setCommand : undefined} />
       ) : day.isError ? (
         <div className="flex flex-col items-center gap-3 py-6 text-center">
           <p role="alert">{loadError(day.error)}</p>
@@ -104,7 +108,8 @@ type DayProps = {
   reservations: Reservation[];
   areas: ReservableArea[];
   timeZone: string;
-  onCommand: (command: Command) => void;
+  /** None for who may not manage reservations: the day is shown without its commands. */
+  onCommand: ((command: Command) => void) | undefined;
 };
 
 function Day({ reservations, areas, timeZone, onCommand }: DayProps) {
@@ -136,7 +141,7 @@ function Day({ reservations, areas, timeZone, onCommand }: DayProps) {
                     selected={reservation.id === selectedId}
                     onSelect={() => setSelectedId(reservation.id)}
                   >
-                    {reservation.status === 'BOOKED' && (
+                    {onCommand && reservation.status === 'BOOKED' && (
                       <Button size="touch" onClick={() => onCommand({ kind: 'seat', id: reservation.id })}>
                         <Armchair aria-hidden="true" />
                         Sentar
@@ -153,7 +158,8 @@ function Day({ reservations, areas, timeZone, onCommand }: DayProps) {
           time={selected ? time(selected) : ''}
           tables={selected ? tableCodes(selected.tableIds, areas) : ''}
           actions={
-            selected && (
+            selected &&
+            onCommand && (
               <BookedActions
                 onSeat={() => onCommand({ kind: 'seat', id: selected.id })}
                 onEdit={() => onCommand({ kind: 'edit', id: selected.id })}

@@ -131,6 +131,19 @@ export const seatEndpoint = (tableId: string, ...answers: Answer<OpenTableReques
 export const customersEndpoint = (...answers: Answer[]) =>
   recording<undefined>('get', '/api/v1/pos/customers', answering(answers));
 
+/** `GET /api/v1/pos/customers/{id}`. */
+export const customerEndpoint = (customerId: string, ...answers: Answer[]) =>
+  recording<undefined>('get', `/api/v1/pos/customers/${customerId}`, answering(answers));
+
+export const ANA_DETAILS: CustomerDetails = {
+  id: CUSTOMER_ID,
+  name: 'Ana Ferreira',
+  active: true,
+  phones: [],
+  addresses: [],
+  version: 1,
+};
+
 /** `POST /api/v1/pos/customers`. */
 export const createCustomerEndpoint = (...answers: Answer<CustomerCreateRequest>[]) =>
   recording('post', '/api/v1/pos/customers', answering(answers));

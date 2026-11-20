@@ -137,6 +137,18 @@ describe('the reservations of a day', () => {
     expect(within(await row('Carla Lopes')).queryByRole('button', { name: 'Sentar' })).not.toBeInTheDocument();
   });
 
+  it('without the permission to manage reservations the day is shown, with no command', async () => {
+    const { user } = await atReservations({ permissions: [`PERM_RESERVATION_VIEW@${SESSION.storeId}`] });
+
+    await user.click(within(await row('Ana Ferreira')).getByRole('button', { name: 'Ana Ferreira' }));
+
+    const panel = screen.getByRole('complementary', { name: 'Detalhe da reserva' });
+    expect(within(panel).getByRole('heading', { name: 'Ana Ferreira' })).toBeInTheDocument();
+    expect(within(panel).queryAllByRole('button')).toEqual([]);
+    expect(screen.queryByRole('button', { name: 'Nova reserva' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sentar' })).not.toBeInTheDocument();
+  });
+
   it('says when the server cannot be reached', async () => {
     await atReservations({ day: [() => HttpResponse.error()] });
 

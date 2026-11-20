@@ -8,6 +8,7 @@ import { useBookReservation, useUpdateReservation } from '../hooks/use-reservati
 import { refusal } from '../messages';
 import type { ReservableArea, Reservation } from '../reservation';
 import { CommandDialog, CommandFooter } from './command-footer';
+import { CustomerPicker } from './customer-picker';
 import { ReservationForm } from './reservation-form';
 
 type ReservationRequest = components['schemas']['com.xavier.backend.dining.model.dto.ReservationRequest'];
@@ -70,6 +71,7 @@ type Props = Shared & {
 function ReservationDialog({ icon, title, initial, label, pending, awaitingRetry, error, onSave, today, areas, onClose }: Props) {
   const timeZone = useStoreTimeZone();
   const [draft, setDraft] = useState(initial);
+  const locked = pending || awaitingRetry;
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -91,7 +93,30 @@ function ReservationDialog({ icon, title, initial, label, pending, awaitingRetry
             <DialogDescription>Registo informativo: pessoas, mesas e contacto. Não verifica a lotação.</DialogDescription>
           </div>
         </DialogHeader>
-        <ReservationForm draft={draft} onChange={setDraft} today={today} areas={areas} locked={pending || awaitingRetry} />
+        <ReservationForm
+          draft={draft}
+          onChange={setDraft}
+          today={today}
+          areas={areas}
+          locked={locked}
+          customer={
+            <CustomerPicker
+              customerId={draft.customerId}
+              contact={{ name: draft.contactName, phone: draft.contactPhone }}
+              // Linking takes the record's contact; functional updates, as a created record links after its answer.
+              onLink={({ id, name, phones }) =>
+                setDraft((current) => ({
+                  ...current,
+                  customerId: id,
+                  contactName: name,
+                  contactPhone: phones[0] ?? current.contactPhone,
+                }))
+              }
+              onUnlink={() => setDraft((current) => ({ ...current, customerId: null }))}
+              locked={locked}
+            />
+          }
+        />
         <CommandFooter
           label={label}
           error={error}

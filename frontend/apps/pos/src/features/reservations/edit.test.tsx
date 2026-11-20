@@ -2,11 +2,23 @@ import { screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { problem } from '../../test/server';
 import { id } from '../../test/table-map';
-import { atReservations, BOOKED, CUSTOMER_ID, DAY, json, RESERVATION, row, updateEndpoint } from '../../test/reservations';
+import {
+  ANA_DETAILS,
+  atReservations,
+  BOOKED,
+  CUSTOMER_ID,
+  customerEndpoint,
+  DAY,
+  json,
+  RESERVATION,
+  row,
+  updateEndpoint,
+} from '../../test/reservations';
 
 type User = Awaited<ReturnType<typeof atReservations>>['user'];
 
 async function editAna(user: User) {
+  customerEndpoint(CUSTOMER_ID, json(ANA_DETAILS));
   await user.click(within(await row('Ana Ferreira')).getByRole('button', { name: 'Ana Ferreira' }));
   await user.click(
     within(screen.getByRole('complementary', { name: 'Detalhe da reserva' })).getByRole('button', { name: 'Editar reserva' }),
@@ -25,6 +37,7 @@ describe('editing a reservation', () => {
     expect(within(form).getByRole('checkbox', { name: /^M1/ })).toBeChecked();
     expect(within(form).getByRole('checkbox', { name: /^E1/ })).toBeChecked();
     expect(within(form).getByRole('textbox', { name: 'Nome' })).toHaveValue('Ana Ferreira');
+    expect(await within(form).findByText('Ana Ferreira', { selector: 'span' })).toBeInTheDocument();
     await user.click(within(form).getByRole('button', { name: '6 pessoas' }));
     await user.click(within(form).getByRole('checkbox', { name: /^E1/ }));
     await user.click(within(form).getByRole('button', { name: 'Guardar alterações' }));
