@@ -13,6 +13,17 @@ export type FamilyValues = z.infer<typeof familySchema>;
 
 const required = (message: string) => z.string().min(1, message);
 
+/** "Adicionar variante" (`ItemVariantCreateRequest`). */
+export const variantSchema = z.object({ code: code(30), name: name(120) });
+export type VariantValues = z.infer<typeof variantSchema>;
+
+/** "Adicionar código" (`BarcodeCreateRequest`): the code as scanned, the variant optional ('' is the item itself). */
+export const barcodeSchema = z.object({
+  code: z.string().trim().min(1, 'Indique o código de barras.').max(64, 'O código de barras tem no máximo 64 caracteres.'),
+  variantId: optionalId,
+});
+export type BarcodeValues = z.infer<typeof barcodeSchema>;
+
 /** "Novo artigo" / "Editar artigo" (`ItemCreateRequest`, `ItemUpdateRequest`); availability only matters on edit. */
 export const itemSchema = z.object({
   code: code(30),

@@ -23,6 +23,28 @@ export function useSaveFamily() {
   });
 }
 
+/** Adds a variant to an item (no Idempotency-Key in the contract; a resend meets CATALOG_CODE_TAKEN). */
+export function useAddVariant(itemId: string) {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: { code: string; name: string }) =>
+      (await api.POST('/api/v1/backoffice/catalog/items/{id}/variants', { params: { path: { id: itemId } }, body })).data,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [...CATALOG_KEY, 'items', itemId, 'variants'] }),
+  });
+}
+
+/** Adds a barcode to an item, or to one of its variants. */
+export function useAddBarcode(itemId: string) {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: { code: string; itemId: string; variantId?: string }) =>
+      (await api.POST('/api/v1/backoffice/catalog/barcodes', { body })).data,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [...CATALOG_KEY, 'items', itemId, 'barcodes'] }),
+  });
+}
+
 type ItemSave =
   | { id?: undefined; body: ItemCreateRequest }
   | { id: string; body: ItemUpdateRequest };

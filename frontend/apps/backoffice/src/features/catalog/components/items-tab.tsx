@@ -19,6 +19,7 @@ import { countByFamily, filterItems } from '../item-filter';
 import type { FamilySummary, ItemSummary, TaxCategorySummary } from '../types';
 import { FamilyPills } from './family-pills';
 import { ItemFormDialog } from './item-form-dialog';
+import { ItemSheet } from './item-sheet';
 import { LoadError } from './load-error';
 
 /** "Artigos": the company's items, narrowed by family and search, with their destination, tax category and state. */
@@ -109,8 +110,11 @@ function ItemsTable({ items, families, taxCategories }: ItemsTableProps) {
             </TableCell>
             <TableCell>{taxLabel(taxOf(item.taxCategoryId), now)}</TableCell>
             <TableCell>{availabilityLabel(item.availability)}</TableCell>
-            <TableCell className="text-right">
-              <ItemFormDialog item={item} />
+            <TableCell>
+              <div className="flex justify-end gap-2">
+                <ItemSheet item={item} />
+                <ItemFormDialog item={item} />
+              </div>
             </TableCell>
           </TableRow>
         ))}

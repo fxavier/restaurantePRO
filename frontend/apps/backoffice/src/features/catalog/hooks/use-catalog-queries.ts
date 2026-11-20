@@ -1,6 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { useApi } from '../../../lib/api';
-import type { FamilySummary, ItemSummary, TaxCategorySummary, UnitSummary } from '../types';
+import type {
+  BarcodeSummary,
+  FamilySummary,
+  ItemSummary,
+  ItemVariantSummary,
+  TaxCategorySummary,
+  UnitSummary,
+} from '../types';
 
 export const CATALOG_KEY = ['backoffice', 'catalog'] as const;
 
@@ -21,6 +28,24 @@ export function useItems() {
       const { data } = await api.GET('/api/v1/backoffice/catalog/items', { params: { query: LIST_PAGE } });
       return { content: data?.content ?? [], totalElements: data?.totalElements ?? 0 };
     },
+  });
+}
+
+export function useVariants(itemId: string) {
+  const api = useApi();
+  return useQuery({
+    queryKey: [...CATALOG_KEY, 'items', itemId, 'variants'],
+    queryFn: async (): Promise<ItemVariantSummary[]> =>
+      (await api.GET('/api/v1/backoffice/catalog/items/{id}/variants', { params: { path: { id: itemId } } })).data ?? [],
+  });
+}
+
+export function useBarcodes(itemId: string) {
+  const api = useApi();
+  return useQuery({
+    queryKey: [...CATALOG_KEY, 'items', itemId, 'barcodes'],
+    queryFn: async (): Promise<BarcodeSummary[]> =>
+      (await api.GET('/api/v1/backoffice/catalog/barcodes', { params: { query: { itemId } } })).data ?? [],
   });
 }
 
