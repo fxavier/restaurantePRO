@@ -2,10 +2,13 @@ import { FormControl, FormField, FormItem, FormLabel, FormMessage, Input } from 
 import type { ComponentProps } from 'react';
 import type { Control, FieldValues, Path } from 'react-hook-form';
 
-type TextFieldProps<Values extends FieldValues> = {
+type FieldProps<Values extends FieldValues> = {
   control: Control<Values>;
   name: Path<Values>;
   label: string;
+};
+
+type TextFieldProps<Values extends FieldValues> = FieldProps<Values> & {
   /** Classes of the field's wrapper (its grid span). */
   className?: string;
 } & Omit<ComponentProps<'input'>, 'name' | 'className'>;
@@ -30,7 +33,7 @@ export function TextField<Values extends FieldValues>({ control, name, label, cl
 }
 
 /** "Ativo/a": a native checkbox, labelled on its right. */
-export function CheckboxField<Values extends FieldValues>({ control, name, label }: { control: Control<Values>; name: Path<Values>; label: string }) {
+export function CheckboxField<Values extends FieldValues>({ control, name, label }: FieldProps<Values>) {
   return (
     <FormField
       control={control}

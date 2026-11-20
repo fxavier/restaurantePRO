@@ -1,0 +1,167 @@
+import { zodResolver } from '@hookform/resolvers/zod';
+import { Button, ConfirmButton, Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@restaurantpro/ui';
+import { Plus } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { useForm } from 'react-hook-form';
+import {
+  CheckboxField,
+  ConflictNotice,
+  FormDialog,
+  FormError,
+  RootError,
+  TextField,
+  useCommandForm,
+  useEditBase,
+} from '../../organization';
+import { useCreateTable, useReadFloorItem, useUpdateTable } from '../hooks/use-floor-commands';
+import { tableSchema, type TableValues } from '../schemas';
+import type { RestaurantTableSummary, RoomAreaSummary } from '../types';
+import { DINING_TAKEN } from './dining-messages';
+
+const FIELDS = ['code', 'seats', 'areaId', 'active'] as const;
+const MESSAGES = { OCCUPIED: 'A mesa está aberta: feche-a antes de a desativar.' };
+
+/** "Nova mesa" in an area (§5): a code unique among the store's tables, and its seats. */
+export function NewTableDialog({ area }: { area: RoomAreaSummary }) {
+  const create = useCreateTable();
+  return (
+    <FormDialog
+      title="Nova mesa"
+      description={`Em ${area.name}.`}
+      trigger={
+        <Button variant="outline" size="sm" aria-label={`Nova mesa em ${area.name}`}>
+          <Plus aria-hidden="true" />
+          Nova mesa
+        </Button>
+      }
+    >
+      {(close) => (
+        <TableForm
+          areas={undefined}
+          submitLabel="Criar mesa"
+          defaultValues={{ code: '', seats: '', areaId: area.id, active: true }}
+          onCancel={close}
+          onSubmit={async ({ code, seats }) => {
+            await create.mutateAsync({ storeId: area.storeId, areaId: area.id, code, seats: Number(seats) });
+            close();
+          }}
+        />
+      )}
+    </FormDialog>
+  );
+}
+
+/** "Editar mesa": its code, seats, area and whether it is active, at the version read; the trigger is the table. */
+export function EditTableDialog({ table, areas, children }: { table: RestaurantTableSummary; areas: RoomAreaSummary[]; children: ReactNode }) {
+  return (
+    <FormDialog
+      title="Editar mesa"
+      description={`Mesa ${table.code}`}
+      trigger={
+        <Button variant="outline" aria-label={`Editar mesa ${table.code}`} className="h-auto min-w-20 justify-start px-3 py-2">
+          {children}
+        </Button>
+      }
+    >
+      {(close) => <EditTable table={table} areas={areas} onDone={close} />}
+    </FormDialog>
+  );
+}
+
+function EditTable({ table, areas, onDone }: { table: RestaurantTableSummary; areas: RoomAreaSummary[]; onDone: () => void }) {
+  const update = useUpdateTable();
+  const read = useReadFloorItem();
+  const { base, reloaded, save } = useEditBase(table);
+  return (
+    <>
+      <ConflictNotice
+        shown={reloaded}
+        text="A mesa foi alterada por outra pessoa entretanto. Estes são os valores atuais: reveja-os e guarde de novo."
+      />
+      <TableForm
+        key={base.version}
+        areas={areas}
+        submitLabel="Guardar"
+        defaultValues={{
+          code: base.code ?? '',
+          seats: String(base.seats ?? ''),
+          areaId: base.areaId ?? '',
+          active: base.active ?? true,
+        }}
+        onCancel={onDone}
+        onSubmit={({ seats, ...values }) =>
+          save(
+            async ({ version }) => {
+              await update.mutateAsync({ id: table.id!, body: { ...values, seats: Number(seats), version: version ?? 0 } });
+              onDone();
+            },
+            () => read.table(table.id!),
+          )
+        }
+      />
+    </>
+  );
+}
+
+type TableFormProps = {
+  defaultValues: TableValues;
+  /** On an edit, the areas the table can move to; a new table stays in its area. */
+  areas: RoomAreaSummary[] | undefined;
+  submitLabel: string;
+  onSubmit: (values: TableValues) => Promise<unknown>;
+  onCancel: () => void;
+};
+
+function TableForm({ defaultValues, areas, submitLabel, onSubmit, onCancel }: TableFormProps) {
+  const form = useForm<TableValues>({ resolver: zodResolver(tableSchema), defaultValues });
+  const { error, submit } = useCommandForm(form, FIELDS, DINING_TAKEN);
+  const handle = submit(onSubmit);
+  const { control } = form;
+  return (
+    <Form {...form}>
+      <form onSubmit={(event) => void handle(event)} noValidate className="flex flex-col gap-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <TextField control={control} name="code" label="Código" maxLength={20} />
+          <TextField control={control} name="seats" label="Lugares" type="number" inputMode="numeric" min={1} step={1} />
+        </div>
+        {areas && (
+          <>
+            <FormField
+              control={control}
+              name="areaId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Área</FormLabel>
+                  <FormControl>
+                    <select
+                      {...field}
+                      className="h-9 rounded-md border border-input bg-muted px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                    >
+                      {areas.map((area) => (
+                        <option key={area.id} value={area.id}>
+                          {area.active ? area.name : `${area.name} (inativa)`}
+                        </option>
+                      ))}
+                    </select>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <CheckboxField control={control} name="active" label="Mesa ativa" />
+          </>
+        )}
+        <RootError message={form.formState.errors.root?.message} />
+        <FormError error={error} messages={MESSAGES} />
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Cancelar
+          </Button>
+          <ConfirmButton type="submit" pending={form.formState.isSubmitting}>
+            {submitLabel}
+          </ConfirmButton>
+        </div>
+      </form>
+    </Form>
+  );
+}

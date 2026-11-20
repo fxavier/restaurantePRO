@@ -1,17 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import {
-  Button,
-  ConfirmButton,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  Form,
-} from '@restaurantpro/ui';
+import { Button, ConfirmButton, Form } from '@restaurantpro/ui';
 import { Pencil } from 'lucide-react';
-import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { companyProfileSchema, type CompanyProfileValues } from '../company-schemas';
 import { useCommandForm } from '../hooks/use-command-form';
@@ -19,6 +8,7 @@ import { useReadCompanyProfile, useUpdateCompanyProfile } from '../hooks/use-com
 import { useEditBase } from '../hooks/use-edit-base';
 import type { CompanyProfileView } from '../store-types';
 import { ConflictNotice } from './conflict-notice';
+import { FormDialog } from './form-dialog';
 import { FormError, RootError } from './form-error';
 import { TextField } from './form-fields';
 
@@ -28,23 +18,19 @@ const MESSAGES = { HTTP_422: 'A moeda da empresa não pode mudar depois de criad
 
 /** "Editar perfil" (§5): the company's legal name, tax number, country and currency, at the version read. */
 export function EditCompanyProfileDialog({ profile }: { profile: CompanyProfileView }) {
-  const [open, setOpen] = useState(false);
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
+    <FormDialog
+      title="Editar perfil da empresa"
+      description="Os dados legais que identificam a empresa."
+      trigger={
         <Button variant="outline">
           <Pencil aria-hidden="true" />
           Editar perfil
         </Button>
-      </DialogTrigger>
-      <DialogContent showCloseButton={false}>
-        <DialogHeader>
-          <DialogTitle>Editar perfil da empresa</DialogTitle>
-          <DialogDescription>Os dados legais que identificam a empresa.</DialogDescription>
-        </DialogHeader>
-        <EditCompanyProfile profile={profile} onDone={() => setOpen(false)} />
-      </DialogContent>
-    </Dialog>
+      }
+    >
+      {(close) => <EditCompanyProfile profile={profile} onDone={close} />}
+    </FormDialog>
   );
 }
 

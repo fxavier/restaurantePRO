@@ -1,32 +1,28 @@
-import { Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@restaurantpro/ui';
+import { Button } from '@restaurantpro/ui';
 import { Pencil } from 'lucide-react';
-import { useState } from 'react';
 import { useEditBase } from '../hooks/use-edit-base';
 import { useReadStore, useUpdateStore } from '../hooks/use-store-commands';
 import { cutoffLabel, toCutoff } from '../store-values';
 import type { StoreSummary } from '../types';
 import { ConflictNotice } from './conflict-notice';
+import { FormDialog } from './form-dialog';
 import { StoreForm } from './store-form';
 
 /** "Editar loja" (§5): the store's settings at the version it was read. */
 export function EditStoreDialog({ store }: { store: StoreSummary }) {
-  const [open, setOpen] = useState(false);
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
+    <FormDialog
+      title="Editar loja"
+      description={store.name}
+      trigger={
         <Button variant="outline" size="sm" aria-label={`Editar ${store.name}`}>
           <Pencil aria-hidden="true" />
           Editar
         </Button>
-      </DialogTrigger>
-      <DialogContent showCloseButton={false} className="sm:max-w-xl">
-        <DialogHeader>
-          <DialogTitle>Editar loja</DialogTitle>
-          <DialogDescription>{store.name}</DialogDescription>
-        </DialogHeader>
-        <EditStore store={store} onDone={() => setOpen(false)} />
-      </DialogContent>
-    </Dialog>
+      }
+    >
+      {(close) => <EditStore store={store} onDone={close} />}
+    </FormDialog>
   );
 }
 
