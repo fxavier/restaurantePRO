@@ -63,6 +63,46 @@ export function useCloseSession(sessionId: string) {
   );
 }
 
+export type ClosingView = Schemas['com.xavier.backend.cash.model.dto.ClosingView'];
+export type CreateClosingRequest = Schemas['com.xavier.backend.cash.model.dto.CreateClosingRequest'];
+export type JustifyClosingRequest = Schemas['com.xavier.backend.cash.model.dto.JustifyClosingRequest'];
+
+/**
+ * `POST /api/v1/pos/cash/closings`: drafts the register's closing for the day (§8.3) from the server's expected and
+ * counted amounts. The answer goes to `onClosing`: the POS has no read of a closing by id.
+ */
+export function useCreateClosing(onClosing: (closing: ClosingView) => void) {
+  const { api } = useServices();
+  return useCashIntent(
+    async (body: CreateClosingRequest, key: string) =>
+      (await api.POST('/api/v1/pos/cash/closings', { params: { header: { 'Idempotency-Key': key } }, body })).data,
+    (closing) => closing && onClosing(closing),
+  );
+}
+
+/**
+ * A drafted closing's next steps (§8.3: DRAFT → SUBMITTED): `justify` explains its differences, `submit` hands it to
+ * the manager. Each answer is the closing as the server now holds it, passed to `onClosing`.
+ */
+export function useClosingSteps(closingId: string, onClosing: (closing: ClosingView) => void) {
+  const { api } = useServices();
+  const done = (closing: ClosingView | undefined) => closing && onClosing(closing);
+  const path = { id: closingId };
+  const justify = useCashIntent(
+    async (body: JustifyClosingRequest, key: string) =>
+      (await api.PUT('/api/v1/pos/cash/closings/{id}', { params: { path, header: { 'Idempotency-Key': key } }, body }))
+        .data,
+    done,
+  );
+  const submit = useCashIntent(
+    async (_: undefined, key: string) =>
+      (await api.POST('/api/v1/pos/cash/closings/{id}/submit', { params: { path, header: { 'Idempotency-Key': key } } }))
+        .data,
+    done,
+  );
+  return { justify, submit };
+}
+
 /** `POST /api/v1/pos/drawer-kicks`: the manual "open drawer" (D158), a print job the printer runs. */
 export function useDrawerKick(onSent: () => void) {
   const { api } = useServices();

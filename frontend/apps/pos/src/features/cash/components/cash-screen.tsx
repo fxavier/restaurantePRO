@@ -3,9 +3,16 @@ import { Button, Skeleton } from '@restaurantpro/ui';
 import { useEmployee } from '../../../lib/auth/use-employee';
 import { errorMessage, isOffline } from '../../../lib/error-messages';
 import { holds } from '../cash';
-import { type RegisterSummary, type SessionDetails, useCurrentSession, useRegisters } from '../hooks/use-cash';
+import {
+  type RegisterSummary,
+  type SessionDetails,
+  useCurrentDay,
+  useCurrentSession,
+  useRegisters,
+} from '../hooks/use-cash';
 import { OpenSession } from './open-session';
 import { OpenSessionForm } from './open-session-form';
+import { RegisterClosing } from './register-closing';
 
 /**
  * `/cash` (§4, Stitch "Caixa e Fecho de Turno"): the operator's cash session, from opening with a float to the blind
@@ -41,9 +48,17 @@ export function CashScreen() {
 }
 
 function CashContent({ session, registers }: { session: SessionDetails | null; registers: RegisterSummary[] }) {
-  if (!session) return <OpenSessionForm registers={registers} />;
-  const register = registers.find((candidate) => candidate.id === session.registerId);
-  return <OpenSession session={session} register={register} />;
+  const day = useCurrentDay(true);
+  if (session) {
+    const register = registers.find((candidate) => candidate.id === session.registerId);
+    return <OpenSession session={session} register={register} />;
+  }
+  return (
+    <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+      <OpenSessionForm registers={registers} />
+      {day.data?.id && <RegisterClosing registers={registers} dayId={day.data.id} />}
+    </div>
+  );
 }
 
 function loadError(error: Error): string {

@@ -1,6 +1,7 @@
 import { screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { atCash, json, noOpenSession, OPEN_SESSION, openSessionEndpoint, REGISTER } from '../../test/cash';
+import { HttpResponse } from 'msw';
+import { atCash, heldSession, noOpenSession, OPEN_SESSION, openSessionEndpoint, REGISTER } from '../../test/cash';
 import { problem } from '../../test/server';
 
 const sessionCard = () => screen.findByRole('region', { name: /^Caixa Principal/ });
@@ -25,8 +26,12 @@ describe('opening a cash session', () => {
   const openForm = () => screen.findByRole('form', { name: 'Abrir sessão de caixa' });
 
   it('without an open session, opens one on an active register with the float typed, then shows it', async () => {
-    const opened = openSessionEndpoint(json(OPEN_SESSION, 201));
-    const { user } = await atCash({ session: [noOpenSession, json(OPEN_SESSION)] });
+    const held = heldSession(null);
+    const opened = openSessionEndpoint(() => {
+      held.set(OPEN_SESSION);
+      return HttpResponse.json(OPEN_SESSION, { status: 201 });
+    });
+    const { user } = await atCash({ session: [held.answer] });
 
     const form = await openForm();
     expect(within(form).queryByRole('radio', { name: /Caixa Antiga/ })).not.toBeInTheDocument();

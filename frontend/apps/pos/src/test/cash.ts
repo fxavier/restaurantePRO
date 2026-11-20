@@ -105,6 +105,20 @@ type Answer<Body = undefined> = (body: Body) => Response | Promise<Response>;
 export const json = (body: object, status = 200) => () => HttpResponse.json(body, { status });
 /** What `GET /cash/sessions/current` answers when the employee has no open session. */
 export const noOpenSession = () => problem(404, 'NOT_FOUND');
+
+/**
+ * The employee's open session as the server holds it, which a command's stand-in changes: the screen may read it any
+ * number of times (a reconnection reads everything again), so a test never counts on a queue of answers.
+ */
+export function heldSession(initial: SessionDetails | null) {
+  let current = initial;
+  return {
+    answer: () => (current ? HttpResponse.json(current) : noOpenSession()),
+    set(next: SessionDetails | null) {
+      current = next;
+    },
+  };
+}
 const BASE = '/api/v1/pos/cash';
 
 export const currentSessionEndpoint = (...answers: Answer[]) =>
