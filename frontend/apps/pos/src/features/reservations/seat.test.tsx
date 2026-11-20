@@ -1,8 +1,8 @@
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import { HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { catalogEndpoint, created, NEW_ORDER, NEW_ORDER_ID, orderEndpoint, json as orderJson } from '../../test/order';
-import { problem } from '../../test/server';
+import { notificationsEndpoint, problem } from '../../test/server';
 import { id, MAP } from '../../test/table-map';
 import { atReservations, BOOKED, DAY, json, row, seatEndpoint } from '../../test/reservations';
 
@@ -96,6 +96,25 @@ describe('seating a reservation', () => {
     expect(router.state.location.pathname).toBe(`/orders/${NEW_ORDER_ID}`);
     expect(seated).toHaveLength(2);
     expect(seated[1]!.idempotencyKey).toBe(seated[0]!.idempotencyKey);
+  });
+
+  it('"Sem ligação" disables every confirmation, and says why', async () => {
+    notificationsEndpoint(() => HttpResponse.error());
+    const { user } = await atReservations();
+    await waitFor(() => expect(screen.getByRole('status', { name: 'Ligação' })).toHaveTextContent('Sem ligação'));
+
+    const dialog = await openSeat(user);
+    expect(within(dialog).getByRole('button', { name: 'Sentar' })).toBeDisabled();
+    expect(within(dialog).getByText('Sem ligação — nenhuma operação é confirmada')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Voltar' }));
+
+    await user.click(screen.getByRole('button', { name: 'Nova reserva' }));
+    const form = await screen.findByRole('dialog', { name: 'Nova reserva' });
+    await user.type(within(form).getByLabelText('Hora'), '20:30');
+    await user.click(within(form).getByRole('button', { name: '2 pessoas' }));
+    await user.type(within(form).getByRole('textbox', { name: 'Nome' }), 'Rui');
+    expect(within(form).getByRole('button', { name: 'Guardar reserva' })).toBeDisabled();
+    expect(within(form).getByRole('button', { name: 'Criar ficha de cliente' })).toBeDisabled();
   });
 
   it('a day without a free table says so, and offers nothing to confirm', async () => {
