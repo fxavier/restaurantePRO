@@ -12,7 +12,9 @@ type Props = {
 /** Keeps the focus in the code field, so a keyboard or scanner still types there after a tap. */
 const keepFocus = (event: PointerEvent) => event.preventDefault();
 
-const KEY = 'size-16 px-0 font-mono text-2xl font-semibold';
+// ponytail: below `sm` five 48 px columns (the touch minimum) instead of eleven 64 px ones, so a handheld fits it.
+const SIZE = 'size-16 max-sm:h-12 max-sm:w-full';
+const KEY = `${SIZE} px-0 font-mono text-2xl font-semibold`;
 
 /**
  * The code's 32 characters on 64 px keys (DS: ≥ 48 px, ≥ 8 px apart): digits and "Apagar" on the first row, the
@@ -22,7 +24,7 @@ export function CodeKeypad({ onCharacter, onDelete, disabled = false }: Props) {
   const digits = CODE_CHARACTERS.slice(0, 10);
   const letters = CODE_CHARACTERS.slice(10);
   return (
-    <div role="group" aria-label="Teclado do código" className="grid grid-cols-11 gap-2 self-center">
+    <div role="group" aria-label="Teclado do código" className="grid grid-cols-5 gap-2 max-sm:w-full sm:grid-cols-11 sm:self-center">
       {digits.split('').map((character) => (
         <Key key={character} character={character} onCharacter={onCharacter} disabled={disabled} />
       ))}
@@ -30,7 +32,7 @@ export function CodeKeypad({ onCharacter, onDelete, disabled = false }: Props) {
         type="button"
         variant="outline"
         size="touch"
-        className="size-16 flex-col gap-0 px-0 text-sm"
+        className={`${SIZE} flex-col gap-0 px-0 text-sm`}
         onPointerDown={keepFocus}
         onClick={onDelete}
         disabled={disabled}

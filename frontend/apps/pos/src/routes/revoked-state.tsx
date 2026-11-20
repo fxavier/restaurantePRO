@@ -22,7 +22,7 @@ export function RevokedState({ onReEnrol }: { onReEnrol: () => void }) {
     <PosScreen>
       <section
         aria-labelledby="revoked-title"
-        className="flex w-full max-w-xl flex-col gap-4 rounded-xl border bg-background p-6"
+        className="flex w-full max-w-xl flex-col gap-4 rounded-xl border bg-card p-6"
       >
         <div className="flex items-center gap-3">
           <ShieldX aria-hidden="true" className="size-8 shrink-0 text-error" />
