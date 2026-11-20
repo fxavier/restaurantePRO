@@ -9,11 +9,20 @@ type FormFooterProps = {
   /** Sends the same request again after "Sem ligação" (FC §8). */
   onRetry: () => void;
   onCancel: () => void;
+  cancelLabel?: string;
   submitLabel: string;
 };
 
 /** The end of a people form: the form-level and general errors, then "Cancelar" and the one-tap submit. */
-export function FormFooter({ rootMessage, generalError, pending, onRetry, onCancel, submitLabel }: FormFooterProps) {
+export function FormFooter({
+  rootMessage,
+  generalError,
+  pending,
+  onRetry,
+  onCancel,
+  cancelLabel = 'Cancelar',
+  submitLabel,
+}: FormFooterProps) {
   return (
     <>
       {rootMessage && (
@@ -24,7 +33,7 @@ export function FormFooter({ rootMessage, generalError, pending, onRetry, onCanc
       <CommandError error={generalError} pending={pending} onRetry={onRetry} />
       <div className="flex flex-wrap justify-end gap-2">
         <Button type="button" variant="outline" onClick={onCancel}>
-          Cancelar
+          {cancelLabel}
         </Button>
         <ConfirmButton type="submit" pending={pending}>
           {submitLabel}

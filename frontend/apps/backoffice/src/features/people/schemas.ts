@@ -19,6 +19,14 @@ export const newEmployeeSchema = z.object({
 
 export type NewEmployeeValues = z.infer<typeof newEmployeeSchema>;
 
+/** "Atribuir" (`AssignmentRequest`): a role in a store. */
+export const assignmentSchema = z.object({
+  storeId: z.string().min(1, 'Escolha a loja.'),
+  roleId: z.string().min(1, 'Escolha a função.'),
+});
+
+export type AssignmentValues = z.infer<typeof assignmentSchema>;
+
 /** "Repor PIN" (`PinResetRequest`). */
 export const resetPinSchema = z.object({ pin });
 

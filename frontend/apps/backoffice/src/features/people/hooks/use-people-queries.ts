@@ -1,7 +1,7 @@
 import type { ApiClient } from '@restaurantpro/api-client';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useApi } from '../../../lib/api';
-import type { EmployeeSummary, ListPage, RoleSummary, StoreSummary } from '../types';
+import type { AssignmentSummary, EmployeeSummary, ListPage, RoleSummary, StoreSummary } from '../types';
 
 /** Every people query starts with this, so a command refreshes what it may have changed in one invalidation. */
 export const PEOPLE_KEY = ['backoffice', 'people'] as const;
@@ -43,6 +43,16 @@ export function useStoreChoices() {
     queryKey: [...PEOPLE_KEY, 'store-choices'],
     queryFn: async (): Promise<StoreSummary[]> =>
       (await api.GET('/api/v1/backoffice/stores', { params: { query: CHOICES } })).data?.content ?? [],
+  });
+}
+
+/** The stores where an employee holds a role, each with that role (`EmployeeStoreAssignment`). */
+export function useAssignments(employeeId: string) {
+  const api = useApi();
+  return useQuery({
+    queryKey: [...PEOPLE_KEY, 'assignments', employeeId],
+    queryFn: async (): Promise<AssignmentSummary[]> =>
+      (await api.GET('/api/v1/backoffice/employees/{id}/assignments', { params: { path: { id: employeeId } } })).data ?? [],
   });
 }
 

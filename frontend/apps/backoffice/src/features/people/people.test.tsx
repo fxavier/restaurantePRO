@@ -1,8 +1,8 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import { http } from 'msw';
 import { describe, expect, it } from 'vitest';
-import { admin, api, baixa, problem, stepUpRequired } from '../../test/fixtures';
-import { gerente, joao, maria, peopleHandlers } from '../../test/people-fixtures';
+import { admin, api, baixa, problem, sommerschield, stepUpRequired } from '../../test/fixtures';
+import { empregadoSala, gerente, joao, maria, peopleHandlers } from '../../test/people-fixtures';
 import { renderApp } from '../../test/render-app';
 import { server } from '../../test/server';
 
@@ -139,6 +139,54 @@ describe('employee PIN', () => {
     expect(state.requests.filter((r) => r.method === 'POST').map((r) => r.url)).toEqual([
       `/api/v1/backoffice/employees/${joao.id}/unlock`,
     ]);
+  });
+});
+
+describe('store assignments', () => {
+  const atBaixa = { id: 'd1000000-0000-4000-8000-000000000001', employeeId: maria.id!, storeId: baixa.id, roleId: gerente.id! };
+
+  it("shows an employee's stores and roles, adds one and removes one", async () => {
+    const state = peopleServer({ assignments: [atBaixa] });
+    const { user } = renderApp('/people');
+
+    await user.click(await screen.findByRole('button', { name: 'Lojas e funções de Maria Sitoe' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Lojas e funções de Maria Sitoe' });
+    const list = await within(dialog).findByRole('list', { name: 'Atribuições' });
+    expect(within(list).getAllByRole('listitem').map((item) => item.textContent)).toEqual([
+      expect.stringContaining('Loja Baixa · Gerente'),
+    ]);
+
+    await user.selectOptions(within(dialog).getByLabelText('Loja'), 'Loja Sommerschield');
+    await user.selectOptions(within(dialog).getByLabelText('Função'), 'Empregado de sala');
+    await user.click(within(dialog).getByRole('button', { name: 'Atribuir' }));
+    expect(await within(list).findByText('Loja Sommerschield · Empregado de sala')).toBeInTheDocument();
+
+    await user.click(within(list).getByRole('button', { name: 'Retirar Gerente em Loja Baixa' }));
+    await waitFor(() => expect(within(list).queryByText('Loja Baixa · Gerente')).not.toBeInTheDocument());
+    expect(state.requests.filter((r) => r.method !== 'GET').map(({ method, url, body }) => ({ method, url, body }))).toEqual([
+      {
+        method: 'POST',
+        url: `/api/v1/backoffice/employees/${maria.id}/assignments`,
+        body: { storeId: sommerschield.id, roleId: empregadoSala.id },
+      },
+      { method: 'DELETE', url: `/api/v1/backoffice/employees/${maria.id}/assignments/${atBaixa.id}`, body: undefined },
+    ]);
+  });
+
+  it('explains a role the employee already holds in that store', async () => {
+    peopleServer({ assignments: [atBaixa] });
+    server.use(
+      http.post(api('/api/v1/backoffice/employees/:id/assignments'), () => problem(409, 'ROLE_ALREADY_ASSIGNED')),
+    );
+    const { user } = renderApp('/people');
+
+    await user.click(await screen.findByRole('button', { name: 'Lojas e funções de Maria Sitoe' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Lojas e funções de Maria Sitoe' });
+    await user.selectOptions(within(dialog).getByLabelText('Loja'), 'Loja Baixa');
+    await user.selectOptions(within(dialog).getByLabelText('Função'), 'Gerente');
+    await user.click(within(dialog).getByRole('button', { name: 'Atribuir' }));
+
+    expect(await within(dialog).findByText('O empregado já tem esta função nesta loja.')).toBeInTheDocument();
   });
 });
 
