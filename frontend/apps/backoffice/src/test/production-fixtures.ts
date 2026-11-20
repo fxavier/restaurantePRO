@@ -107,7 +107,8 @@ export function productionHandlers(initial: Partial<ProductionState> = {}) {
     jobs: [],
     tickets: [],
     requests: [],
-    ...initial,
+    // A copy: the handlers change jobs and tickets in place, and the fixtures are shared by the tests.
+    ...structuredClone(initial),
   };
   const record = async (request: Request) => {
     const text = await request.clone().text();

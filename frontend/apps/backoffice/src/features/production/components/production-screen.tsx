@@ -6,11 +6,13 @@ import { useTestPrint } from '../hooks/use-printer-commands';
 import { usePrinters } from '../hooks/use-printers';
 import { useRoutes, useTerminalPrinters } from '../hooks/use-routing';
 import { useStoreTerminals } from '../hooks/use-store-terminals';
+import { useStoreTimeZone } from '../hooks/use-store-time-zone';
 import type { Printer } from '../parse';
 import { holdsIn } from '../permissions';
 import { AddPrinterDialog } from './add-printer-dialog';
 import { EditPrinterDialog } from './edit-printer-dialog';
 import { ModeDialog } from './mode-dialog';
+import { PrintQueue } from './print-queue';
 import { PrinterCard } from './printer-card';
 import { ProblemAlert } from './problem-alert';
 import { SectionError } from './section-error';
@@ -23,6 +25,7 @@ export function ProductionScreen({ storeId }: { storeId: string }) {
   const assignments = useTerminalPrinters(storeId);
   const terminals = useStoreTerminals(storeId);
   const testPrint = useTestPrint();
+  const timeZone = useStoreTimeZone(storeId);
   const [editing, setEditing] = useState<string>();
   const [moding, setModing] = useState<string>();
 
@@ -33,7 +36,8 @@ export function ProductionScreen({ storeId }: { storeId: string }) {
     testPrint.mutate({ printerId: printer.id, printerName: printer.name, idempotencyKey: crypto.randomUUID() });
 
   return (
-    <section aria-labelledby="printers-title" className="mt-6 flex flex-col gap-4">
+    <div className="mt-6 grid items-start gap-6 lg:grid-cols-5">
+    <section aria-labelledby="printers-title" className="flex flex-col gap-4 lg:col-span-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 id="printers-title" className="text-xl font-semibold">
           Impressoras e encaminhamento
@@ -101,5 +105,14 @@ export function ProductionScreen({ storeId }: { storeId: string }) {
         onClose={() => setModing(undefined)}
       />
     </section>
+    <div className="flex flex-col gap-6 lg:col-span-2">
+      <PrintQueue
+        storeId={storeId}
+        timeZone={timeZone}
+        printerName={(id) => find(id)?.name ?? 'Impressora desconhecida'}
+        mayOperate={holdsIn(permissions, 'PRODUCTION_OPERATE', storeId)}
+      />
+    </div>
+    </div>
   );
 }

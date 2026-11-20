@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { CodePage, PrinterMode } from './types';
+import type { CodePage, PrinterMode, PrintJobStatus } from './types';
 
 /**
  * The contract marks every field of the production views optional (openapi.json), while the backend always fills the
@@ -27,4 +27,37 @@ export type Printer = z.infer<typeof printer>;
 
 export function parsePrinters(views: unknown[]): Printer[] {
   return views.map((view) => printer.parse(view));
+}
+
+export const JOB_STATUSES = ['QUEUED', 'PROCESSING', 'SENT', 'RETRY_WAIT', 'FAILED', 'UNKNOWN'] as const satisfies readonly PrintJobStatus[];
+
+const printJob = z.object({
+  id: z.string(),
+  printerId: z.string(),
+  status: z.enum(JOB_STATUSES),
+  sourceType: z.string(),
+  kind: z.enum(['ORIGINAL', 'COPY']),
+  destination: z.string().nullish(),
+  attempts: z.number(),
+  lastError: z.string().nullish(),
+  resolution: z.enum(['CONFIRMED_PRINTED', 'RETRIED']).nullish(),
+  createdAt: z.string(),
+});
+
+export type PrintJob = z.infer<typeof printJob>;
+
+export function parseJobs(views: unknown[]): PrintJob[] {
+  return views.map((view) => printJob.parse(view));
+}
+
+/**
+ * What may still be done with a job (r2-decisions §4): a FAILED or UNKNOWN job not yet resolved is retried as a new
+ * job; an UNKNOWN one may instead be acknowledged as printed. A drawer kick is never repeated (D158).
+ */
+export function canRetry(job: PrintJob): boolean {
+  return (job.status === 'FAILED' || job.status === 'UNKNOWN') && !job.resolution && job.sourceType !== 'DRAWER_KICK';
+}
+
+export function canAcknowledge(job: PrintJob): boolean {
+  return job.status === 'UNKNOWN' && !job.resolution;
 }

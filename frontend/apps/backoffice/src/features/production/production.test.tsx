@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import { http } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { admin, api, baixa, problem, signedIn } from '../../test/fixtures';
-import { bar, copa, kitchen, productionHandlers, type ProductionState } from '../../test/production-fixtures';
+import { bar, copa, job, kitchen, productionHandlers, type ProductionState } from '../../test/production-fixtures';
 import { renderApp } from '../../test/render-app';
 import { server } from '../../test/server';
 
@@ -229,6 +229,124 @@ describe("a printer's mode", () => {
     const dialog = await screen.findByRole('dialog', { name: 'Modo de Cozinha Quentes' });
     expect(within(dialog).getByRole('radio', { name: /Ignorar/ })).toBeInTheDocument();
     expect(within(dialog).getByRole('radio', { name: /Normal/ })).toBeChecked();
+  });
+});
+
+const OPERATOR = { session: { ...admin, permissions: [...admin.permissions!, `PERM_PRODUCTION_OPERATE@${baixa.id}`] } };
+const sent = job('dddd0000-0000-4000-8000-000000000001', { sourceType: 'BATCH', destination: 'COZINHA', status: 'SENT' });
+const failed = job('dddd0000-0000-4000-8000-000000000002', {
+  sourceType: 'SUBTOTAL',
+  destination: undefined,
+  printerId: bar.id,
+  status: 'FAILED',
+  attempts: 5,
+  lastError: 'Connection refused',
+  createdAt: '2026-11-20T12:11:02Z',
+});
+const unknown = job('dddd0000-0000-4000-8000-000000000003', { kind: 'COPY', status: 'UNKNOWN', createdAt: '2026-11-20T12:06:50Z' });
+
+describe('the print queue', () => {
+  it("lists the store's jobs newest first, each with its printer, state and time in the store's timezone", async () => {
+    const state = productionServer({ jobs: [sent, failed, unknown] });
+
+    renderApp(PRODUCTION);
+
+    const queue = await screen.findByRole('list', { name: 'Trabalhos de impressão' });
+    const items = await within(queue).findAllByRole('listitem');
+    expect(items.map((item) => item.getAttribute('aria-label'))).toEqual([
+      'Pedido · COZINHA',
+      'Consulta de mesa',
+      'Pedido · COZINHA',
+    ]);
+    expect(within(items[0]!).getByText('Enviado')).toBeInTheDocument();
+    expect(within(items[0]!).getByText('Cozinha Quentes')).toBeInTheDocument();
+    expect(within(items[0]!).getByText('14:15')).toBeInTheDocument();
+    expect(within(items[1]!).getByText('Falhou')).toBeInTheDocument();
+    expect(within(items[1]!).getByText('Connection refused')).toBeInTheDocument();
+    // An unknown outcome is never shown as a failure (§7, §8.3).
+    expect(within(items[2]!).getByText('Por confirmar')).toBeInTheDocument();
+    expect(within(items[2]!).getByText('Cópia')).toBeInTheDocument();
+    expect(state.requests.map((request) => request.url)).toContain(
+      `/api/v1/backoffice/print-jobs?storeId=${baixa.id}&page=0&size=20`,
+    );
+  });
+
+  it('filters by state on the server', async () => {
+    const state = productionServer({ jobs: [sent, failed, unknown] });
+    const { user } = renderApp(PRODUCTION);
+
+    await user.selectOptions(await screen.findByLabelText('Estado dos trabalhos'), 'Falhados');
+
+    const queue = screen.getByRole('list', { name: 'Trabalhos de impressão' });
+    await waitFor(() => expect(within(queue).getAllByRole('listitem')).toHaveLength(1));
+    expect(state.requests.map((request) => request.url)).toContain(
+      `/api/v1/backoffice/print-jobs?storeId=${baixa.id}&status=FAILED&page=0&size=20`,
+    );
+  });
+
+  it('says so when nothing was printed yet', async () => {
+    productionServer();
+
+    renderApp(PRODUCTION);
+
+    expect(await screen.findByText('Sem trabalhos de impressão.')).toBeInTheDocument();
+  });
+
+  it('offers no retry or acknowledgement to who may not operate production', async () => {
+    productionServer({ jobs: [failed, unknown] });
+
+    renderApp(PRODUCTION);
+
+    const queue = await screen.findByRole('list', { name: 'Trabalhos de impressão' });
+    await within(queue).findAllByRole('listitem');
+    expect(within(queue).queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('retries a failed job as a new job, under one key, and shows the queue again', async () => {
+    const state = productionServer({ jobs: [failed] }, OPERATOR);
+    const { user } = renderApp(PRODUCTION);
+
+    const queue = await screen.findByRole('list', { name: 'Trabalhos de impressão' });
+    const item = await within(queue).findByRole('listitem', { name: 'Consulta de mesa' });
+    await user.click(within(item).getByRole('button', { name: 'Reenviar' }));
+
+    expect(await within(queue).findByText('Em fila')).toBeInTheDocument();
+    expect(within(queue).getByText('Reenviado')).toBeInTheDocument();
+    const retry = state.requests.find((request) => request.method === 'POST');
+    expect(retry).toMatchObject({ url: `/api/v1/backoffice/print-jobs/${failed.id}/retry`, idempotencyKey: A_KEY });
+  });
+
+  it('acknowledges a job of unknown outcome as printed, without a new print', async () => {
+    const state = productionServer({ jobs: [unknown] }, OPERATOR);
+    const { user } = renderApp(PRODUCTION);
+
+    const queue = await screen.findByRole('list', { name: 'Trabalhos de impressão' });
+    const item = await within(queue).findByRole('listitem', { name: 'Pedido · COZINHA' });
+    await user.click(within(item).getByRole('button', { name: 'Confirmar impresso' }));
+
+    expect(await within(queue).findByText('Confirmado como impresso')).toBeInTheDocument();
+    expect(within(queue).queryByRole('button', { name: 'Reenviar' })).not.toBeInTheDocument();
+    expect(state.requests.filter((request) => request.method === 'POST')).toEqual([
+      expect.objectContaining({ url: `/api/v1/backoffice/print-jobs/${unknown.id}/acknowledge`, idempotencyKey: A_KEY }),
+    ]);
+  });
+
+  it('explains a job someone else already resolved, and reads the queue again', async () => {
+    const state = productionServer({ jobs: [failed] }, OPERATOR);
+    server.use(
+      http.post(api('/api/v1/backoffice/print-jobs/:id/retry'), () => problem(409, 'PRINT_JOB_ALREADY_RESOLVED', 'Conflict')),
+    );
+    const { user } = renderApp(PRODUCTION);
+
+    const queue = await screen.findByRole('list', { name: 'Trabalhos de impressão' });
+    const item = await within(queue).findByRole('listitem', { name: 'Consulta de mesa' });
+    const reads = state.requests.filter((request) => request.url.includes('print-jobs?')).length;
+    await user.click(within(item).getByRole('button', { name: 'Reenviar' }));
+
+    expect(await screen.findByText('Este trabalho já foi resolvido por outra pessoa. A fila foi atualizada.')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(state.requests.filter((request) => request.url.includes('print-jobs?')).length).toBeGreaterThan(reads),
+    );
   });
 });
 
