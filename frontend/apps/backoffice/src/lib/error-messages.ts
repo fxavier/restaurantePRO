@@ -37,10 +37,14 @@ const messages: Record<string, string> = {
 
 const UNKNOWN_CONFLICT = 'Os dados foram alterados entretanto. Atualize e tente de novo.';
 
-export function errorMessage(error: unknown): string {
+/** A feature's own Portuguese text per backend code; it wins over the shared list, so a feature never edits this file. */
+export type FeatureMessages = Readonly<Record<string, string>>;
+
+/** @param options.messages the calling feature's texts for its codes; "no connection" still comes first */
+export function errorMessage(error: unknown, options: { messages?: FeatureMessages } = {}): string {
   if (isUnavailable(error)) return 'Sem ligação — a operação não foi confirmada.';
   if (!(error instanceof ApiError)) return 'Erro inesperado.';
-  const known = messages[error.code];
+  const known = options.messages?.[error.code] ?? messages[error.code];
   if (known) return known;
   if (error.status === 403) return 'Sem permissão para esta ação.';
   if (error.status === 409) return UNKNOWN_CONFLICT;

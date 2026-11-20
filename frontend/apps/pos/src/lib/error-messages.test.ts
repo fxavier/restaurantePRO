@@ -21,3 +21,21 @@ describe('coded 409s (FE-F29)', () => {
     expect(isVersionConflict(conflict('HTTP_409'))).toBe(true);
   });
 });
+
+describe("a feature's own messages", () => {
+  const messages = { RESERVATION_SLOT_TAKEN: 'A hora já está reservada.', TABLE_LOCKED: 'A mesa reservada está bloqueada.' };
+
+  it('explain a code the shared list does not know', () => {
+    expect(errorMessage(conflict('RESERVATION_SLOT_TAKEN'), { messages })).toBe('A hora já está reservada.');
+  });
+
+  it("win over the shared text, which every other code keeps", () => {
+    expect(errorMessage(conflict('TABLE_LOCKED'), { messages })).toBe('A mesa reservada está bloqueada.');
+    expect(errorMessage(conflict('TABLE_OCCUPIED'), { messages })).toBe('A mesa acabou de ser aberta noutro terminal.');
+  });
+
+  it('never hide "no connection"', () => {
+    const down = new ApiError({ status: 503, code: 'TABLE_LOCKED', title: 'Service Unavailable' });
+    expect(errorMessage(down, { messages })).toBe('Sem ligação — nenhuma operação é confirmada.');
+  });
+});
