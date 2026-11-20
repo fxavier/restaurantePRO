@@ -24,6 +24,23 @@ export function methodLabel(code: string): string {
   return code === CASH ? 'Numerário' : code;
 }
 
+/** Whether a decimal string is zero ("0.00", "-0"): a test of its digits, not arithmetic. */
+export function isZero(amount: string): boolean {
+  return !/[1-9]/.test(amount);
+}
+
+type ClosingLine = { methodCode?: string; difference?: { amount: string }; justification?: string };
+
+/** The closing's lines with a difference: each needs a justification before the closing is submitted. */
+export function linesWithDifference<Line extends ClosingLine>(lines: readonly Line[] | undefined): Line[] {
+  return (lines ?? []).filter((line) => line.difference !== undefined && !isZero(line.difference.amount));
+}
+
+/** Whether every difference has a justification on the server: only then may the closing be submitted. */
+export function fullyJustified(lines: readonly ClosingLine[] | undefined): boolean {
+  return linesWithDifference(lines).every((line) => !!line.justification?.trim());
+}
+
 /** Whether the employee holds `PERM_<name>` in their store: for showing controls only, the backend enforces. */
 export function holds(employee: { permissions: string[]; storeId: string } | undefined, name: string): boolean {
   return employee?.permissions.includes(`PERM_${name}@${employee.storeId}`) ?? false;

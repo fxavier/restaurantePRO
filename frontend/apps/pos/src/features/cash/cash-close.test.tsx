@@ -6,8 +6,8 @@ import {
   CLOSED_SESSION,
   closeSessionEndpoint,
   drawerKickEndpoint,
+  heldSession,
   json,
-  noOpenSession,
   OPEN_SESSION,
 } from '../../test/cash';
 import { problem } from '../../test/server';
@@ -41,8 +41,12 @@ describe('the blind count and the session close', () => {
   });
 
   it('closes the session with the counts typed, after a confirmation, and then offers a new session', async () => {
-    const closed = closeSessionEndpoint(json(CLOSED_SESSION));
-    const { user } = await atCash({ session: [json(OPEN_SESSION), noOpenSession] });
+    const held = heldSession(OPEN_SESSION);
+    const closed = closeSessionEndpoint(() => {
+      held.set(null);
+      return HttpResponse.json(CLOSED_SESSION);
+    });
+    const { user } = await atCash({ session: [held.answer] });
 
     const form = await blindCount();
     const close = within(form).getByRole('button', { name: 'Fechar sessão' });
@@ -79,8 +83,15 @@ describe('the blind count and the session close', () => {
   });
 
   it('with no answer, "Tentar novamente" resends the same count with the same key', async () => {
-    const closed = closeSessionEndpoint(() => HttpResponse.error(), json(CLOSED_SESSION));
-    const { user } = await atCash({ session: [json(OPEN_SESSION), json(OPEN_SESSION), noOpenSession] });
+    const held = heldSession(OPEN_SESSION);
+    const closed = closeSessionEndpoint(
+      () => HttpResponse.error(),
+      () => {
+        held.set(null);
+        return HttpResponse.json(CLOSED_SESSION);
+      },
+    );
+    const { user } = await atCash({ session: [held.answer] });
 
     const form = await blindCount();
     await user.type(within(form).getByLabelText(/^Numerário/), '10');
