@@ -1,3 +1,4 @@
+import { Store } from 'lucide-react';
 import { StoreTerminals, useStoreSelection } from '../features/organization';
 
 /** `/organization/terminals?storeId=…`: the selected store's terminals (FC §4); without a store, the way to pick one. */
@@ -5,12 +6,19 @@ export function TerminalsPage() {
   const { storeId } = useStoreSelection();
   return (
     <>
-      <h1 className="text-2xl font-semibold">Terminais</h1>
+      {/* Stitch's page header: the area's group as an eyebrow, then the title and what the page holds. */}
+      <p className="w-fit rounded-sm bg-primary/15 px-2 py-0.5 text-xs font-semibold tracking-wide text-primary uppercase">
+        Organização
+      </p>
+      <h1 className="mt-2 text-2xl font-semibold">Terminais</h1>
       <p className="mt-1 text-muted-foreground">Os terminais POS e as pontes de impressão da loja.</p>
       {storeId ? (
         <StoreTerminals key={storeId} storeId={storeId} />
       ) : (
-        <p className="mt-6 rounded-lg border p-8 text-center">Escolha uma loja na barra superior para ver os seus terminais.</p>
+        <div className="mt-6 flex flex-col items-center gap-3 rounded-xl border bg-card p-8 text-center">
+          <Store aria-hidden="true" className="size-8 text-muted-foreground" />
+          <p>Escolha uma loja na barra superior para ver os seus terminais.</p>
+        </div>
       )}
     </>
   );
