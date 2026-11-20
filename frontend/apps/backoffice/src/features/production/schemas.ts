@@ -20,3 +20,34 @@ export const printerSchema = z.object({
 });
 
 export type PrinterFormValues = z.infer<typeof printerSchema>;
+
+/**
+ * "Rotas por destino": the store's whole destination → printer table (`RoutesRequest`). A destination is the catalog's
+ * upper-case production code (KITCHEN, BAR…), so it is sent in capitals; each appears once (DUPLICATE_ROUTE).
+ */
+export const routesSchema = z.object({
+  routes: z
+    .array(
+      z.object({
+        destinationCode: z
+          .string()
+          .trim()
+          .min(1, 'Indique o destino.')
+          .max(40, 'O destino tem no máximo 40 caracteres.')
+          .toUpperCase(),
+        printerId: z.string().min(1, 'Escolha a impressora.'),
+      }),
+    )
+    .superRefine((routes, context) => {
+      const seen = new Set<string>();
+      routes.forEach(({ destinationCode }, index) => {
+        const code = destinationCode.trim().toUpperCase();
+        if (code && seen.has(code)) {
+          context.addIssue({ code: 'custom', path: [index, 'destinationCode'], message: 'Este destino já tem rota.' });
+        }
+        seen.add(code);
+      });
+    }),
+});
+
+export type RoutesFormValues = z.infer<typeof routesSchema>;

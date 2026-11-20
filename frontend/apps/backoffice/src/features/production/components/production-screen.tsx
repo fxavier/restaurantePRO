@@ -15,6 +15,7 @@ import { ModeDialog } from './mode-dialog';
 import { PrintQueue } from './print-queue';
 import { PrinterCard } from './printer-card';
 import { ProblemAlert } from './problem-alert';
+import { RoutingMatrix } from './routing-matrix';
 import { SectionError } from './section-error';
 
 /** The store's production setup: printers, routing and the print queue (§5, §8.6). */
@@ -113,6 +114,15 @@ export function ProductionScreen({ storeId }: { storeId: string }) {
         mayOperate={holdsIn(permissions, 'PRODUCTION_OPERATE', storeId)}
       />
     </div>
+    {printers.data && (
+      <RoutingMatrix
+        storeId={storeId}
+        printers={printers.data}
+        routes={routes}
+        assignments={assignments}
+        terminals={terminals}
+      />
+    )}
     </div>
   );
 }

@@ -2,7 +2,16 @@ import { screen, waitFor, within } from '@testing-library/react';
 import { http } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { admin, api, baixa, problem, signedIn } from '../../test/fixtures';
-import { bar, copa, job, kitchen, productionHandlers, type ProductionState } from '../../test/production-fixtures';
+import {
+  bar,
+  caixa,
+  copa,
+  job,
+  kitchen,
+  productionHandlers,
+  sala,
+  type ProductionState,
+} from '../../test/production-fixtures';
 import { renderApp } from '../../test/render-app';
 import { server } from '../../test/server';
 
@@ -347,6 +356,99 @@ describe('the print queue', () => {
     await waitFor(() =>
       expect(state.requests.filter((request) => request.url.includes('print-jobs?')).length).toBeGreaterThan(reads),
     );
+  });
+});
+
+describe('routing by destination', () => {
+  it("replaces the store's routes with the edited table, and the printers show what they now receive", async () => {
+    const state = productionServer();
+    const { user } = renderApp(PRODUCTION);
+
+    const routes = await screen.findByRole('form', { name: 'Rotas por destino' });
+    expect(await within(routes).findByDisplayValue('COZINHA')).toBeInTheDocument();
+    await user.click(within(routes).getByRole('button', { name: 'Adicionar destino' }));
+    await user.type(within(routes).getByLabelText('Destino 2'), 'bebidas');
+    await user.selectOptions(within(routes).getByLabelText('Impressora do destino 2'), 'Bar Central');
+    await user.click(within(routes).getByRole('button', { name: 'Guardar rotas' }));
+
+    const barCard = await screen.findByRole('listitem', { name: 'Bar Central' });
+    expect(await within(barCard).findByText('BEBIDAS')).toBeInTheDocument();
+    expect(state.requests.find((request) => request.url === '/api/v1/backoffice/production-routes')).toMatchObject({
+      method: 'PUT',
+      body: {
+        storeId: baixa.id,
+        routes: [
+          { destinationCode: 'COZINHA', printerId: kitchen.id },
+          { destinationCode: 'BEBIDAS', printerId: bar.id },
+        ],
+      },
+    });
+  });
+
+  it('refuses a destination twice or without a printer before sending, and removes a row', async () => {
+    const state = productionServer();
+    const { user } = renderApp(PRODUCTION);
+
+    const routes = await screen.findByRole('form', { name: 'Rotas por destino' });
+    await within(routes).findByDisplayValue('COZINHA');
+    await user.click(within(routes).getByRole('button', { name: 'Adicionar destino' }));
+    await user.type(within(routes).getByLabelText('Destino 2'), 'cozinha');
+    await user.click(within(routes).getByRole('button', { name: 'Guardar rotas' }));
+
+    expect(await within(routes).findByText('Este destino já tem rota.')).toBeInTheDocument();
+    expect(within(routes).getByText('Escolha a impressora.')).toBeInTheDocument();
+    expect(state.requests.filter((request) => request.method === 'PUT')).toEqual([]);
+
+    await user.click(within(routes).getByRole('button', { name: 'Remover destino 2' }));
+    await user.click(within(routes).getByRole('button', { name: 'Remover destino 1' }));
+    await user.click(within(routes).getByRole('button', { name: 'Guardar rotas' }));
+    await waitFor(() =>
+      expect(state.requests.find((request) => request.method === 'PUT')?.body).toEqual({ storeId: baixa.id, routes: [] }),
+    );
+  });
+
+  it('explains routes changed by someone else meanwhile, and reads them again', async () => {
+    productionServer();
+    server.use(
+      http.put(api('/api/v1/backoffice/production-routes'), () => problem(409, 'ROUTES_CHANGED_CONCURRENTLY', 'Conflict')),
+    );
+    const { user } = renderApp(PRODUCTION);
+
+    const routes = await screen.findByRole('form', { name: 'Rotas por destino' });
+    await within(routes).findByDisplayValue('COZINHA');
+    await user.click(within(routes).getByRole('button', { name: 'Guardar rotas' }));
+
+    expect(
+      await within(routes).findByText('O encaminhamento foi alterado por outra pessoa. Reveja e guarde de novo.'),
+    ).toBeInTheDocument();
+  });
+});
+
+describe('printers of the terminals', () => {
+  it("replaces the store's terminal → printer table", async () => {
+    const state = productionServer();
+    const { user } = renderApp(PRODUCTION);
+
+    const form = await screen.findByRole('form', { name: 'Impressora por terminal' });
+    await waitFor(() => expect(within(form).getByLabelText('Caixa 1')).toHaveDisplayValue('Bar Central'));
+    expect(within(form).getByLabelText('Sala')).toHaveDisplayValue('Sem impressora');
+    await user.selectOptions(within(form).getByLabelText('Sala'), 'Cozinha Quentes');
+    await user.click(within(form).getByRole('button', { name: 'Guardar terminais' }));
+
+    await waitFor(() =>
+      expect(state.requests.find((request) => request.url === '/api/v1/backoffice/terminal-printers')).toMatchObject({
+        method: 'PUT',
+        body: {
+          storeId: baixa.id,
+          assignments: [
+            { terminalId: caixa.id, printerId: bar.id },
+            { terminalId: sala.id, printerId: kitchen.id },
+          ],
+        },
+      }),
+    );
+    const kitchenCard = screen.getByRole('listitem', { name: 'Cozinha Quentes' });
+    expect(await within(kitchenCard).findByText('Sala')).toBeInTheDocument();
   });
 });
 
