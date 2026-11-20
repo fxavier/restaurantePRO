@@ -28,8 +28,7 @@ describe('reservations', () => {
   it.each(['id', 'version', 'status', 'startsAt', 'partySize', 'contactName'] as const)(
     'an answer without %s is incomplete',
     (field) => {
-      const { [field]: _, ...rest } = DAY[2]!;
-      expect(() => toReservations([rest])).toThrow('Incomplete reservation');
+      expect(() => toReservations([{ ...DAY[2]!, [field]: undefined }])).toThrow('Incomplete reservation');
     },
   );
 

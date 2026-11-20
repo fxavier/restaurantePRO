@@ -1,5 +1,6 @@
-import { StatusBadge, type StatusMap } from '@restaurantpro/ui';
-import { CalendarClock, CalendarX, Phone, Armchair, UserX, Users, UtensilsCrossed } from 'lucide-react';
+import { cn, StatusBadge, type StatusMap } from '@restaurantpro/ui';
+import { Armchair, CalendarClock, CalendarX, Phone, UserX, Users, UtensilsCrossed } from 'lucide-react';
+import type { ReactNode } from 'react';
 import type { Reservation, ReservationStatus } from '../reservation';
 import { guestsLabel } from '../labels';
 
@@ -16,21 +17,38 @@ type Props = {
   time: string;
   /** The codes of its tables ("M1 + E1"), as the map names them. */
   tables: string;
+  selected: boolean;
+  onSelect: () => void;
+  /** The card's own action (Stitch's "Sentar"), when there is one. */
+  children?: ReactNode;
 };
 
-/** One reservation of the day (Stitch's card): its time, name, state, party, tables, phone and notes. */
-export function ReservationCard({ reservation, time, tables }: Props) {
+/**
+ * One reservation of the day (Stitch's card): its time, name, state, party, tables, phone and notes. Its name selects
+ * it for the detail panel; a selected card has the primary border.
+ */
+export function ReservationCard({ reservation, time, tables, selected, onSelect, children }: Props) {
   const closed = reservation.status === 'CANCELLED' || reservation.status === 'NO_SHOW';
   return (
     <article
       aria-label={`${reservation.contactName}, ${time}`}
-      className="flex gap-4 rounded-xl border bg-card p-4"
+      className={cn('flex gap-4 rounded-xl border-2 bg-card p-4', selected ? 'border-primary' : 'border-border')}
     >
       <p className="w-16 shrink-0 text-2xl font-semibold tabular-nums">{time}</p>
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className={closed ? 'text-xl font-semibold text-muted-foreground line-through' : 'text-xl font-semibold'}>
-            {reservation.contactName}
+          <h3>
+            <button
+              type="button"
+              aria-pressed={selected}
+              onClick={onSelect}
+              className={cn(
+                'min-h-12 rounded-md text-left text-xl font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                closed && 'text-muted-foreground line-through',
+              )}
+            >
+              {reservation.contactName}
+            </button>
           </h3>
           <StatusBadge status={reservation.status} statuses={STATUSES} />
         </div>
@@ -56,6 +74,7 @@ export function ReservationCard({ reservation, time, tables }: Props) {
         </p>
         {reservation.notes && <p className="text-sm text-muted-foreground">{reservation.notes}</p>}
       </div>
+      {children && <div className="shrink-0">{children}</div>}
     </article>
   );
 }

@@ -105,6 +105,38 @@ describe('the reservations of a day', () => {
     expect(screen.getByText('Nenhuma reserva corresponde à pesquisa.')).toBeInTheDocument();
   });
 
+  it("a tapped reservation shows its detail, with the actions a booked one allows", async () => {
+    const { user } = await atReservations();
+    const panel = await screen.findByRole('complementary', { name: 'Detalhe da reserva' });
+    expect(panel).toHaveTextContent('Escolha uma reserva para ver o detalhe.');
+
+    await user.click(within(await row('Ana Ferreira')).getByRole('button', { name: 'Ana Ferreira' }));
+
+    expect(within(panel).getByRole('heading', { name: 'Ana Ferreira' })).toBeInTheDocument();
+    expect(panel).toHaveTextContent('Por chegar');
+    expect(panel).toHaveTextContent('19:30');
+    expect(panel).toHaveTextContent('4 pessoas');
+    expect(panel).toHaveTextContent('M1 + E1');
+    expect(panel).toHaveTextContent('841234567');
+    expect(panel).toHaveTextContent('Cadeira de bebé');
+    for (const action of ['Sentar', 'Editar reserva', 'Registar não comparência', 'Cancelar reserva']) {
+      expect(within(panel).getByRole('button', { name: action })).toBeEnabled();
+    }
+    expect(within(await row('Ana Ferreira')).getByRole('button', { name: 'Ana Ferreira' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('a reservation that is no longer booked shows its outcome and no actions', async () => {
+    const { user } = await atReservations();
+    const panel = await screen.findByRole('complementary', { name: 'Detalhe da reserva' });
+
+    await user.click(within(await row('Carla Lopes')).getByRole('button', { name: 'Carla Lopes' }));
+
+    expect(panel).toHaveTextContent('Cancelada');
+    expect(panel).toHaveTextContent('O cliente telefonou');
+    expect(within(panel).queryAllByRole('button').map((button) => button.textContent)).toEqual([]);
+    expect(within(await row('Carla Lopes')).queryByRole('button', { name: 'Sentar' })).not.toBeInTheDocument();
+  });
+
   it('says when the server cannot be reached', async () => {
     await atReservations({ day: [() => HttpResponse.error()] });
 

@@ -16,6 +16,7 @@ export type CustomerCandidate = Schemas['com.xavier.backend.customers.model.dto.
 export type CustomerCreateRequest = Schemas['com.xavier.backend.customers.model.dto.CustomerCreateRequest'];
 export type CustomerDetails = Schemas['com.xavier.backend.customers.model.dto.CustomerDetails'];
 type OpenTableRequest = Schemas['com.xavier.backend.orders.model.dto.OpenTableRequest'];
+type TableMap = Schemas['com.xavier.backend.dining.model.dto.TableMap'];
 
 type Answer<Body = undefined> = (body: Body) => Response | Promise<Response>;
 
@@ -150,17 +151,18 @@ export const RESERVATION_PERMISSIONS = [
 export async function atReservations({
   day = [json(DAY)] as Answer[],
   permissions = RESERVATION_PERMISSIONS,
-}: { day?: Answer[]; permissions?: string[] } = {}) {
+  map = MAP,
+}: { day?: Answer[]; permissions?: string[]; map?: TableMap } = {}) {
   vi.setSystemTime(new Date(NOW));
   onTestFinished(() => void vi.useRealTimers());
   tokenEndpoint(token('jwt-1'));
-  tablesEndpoint(tableMap(MAP));
+  const tables = tablesEndpoint(tableMap(map));
   const days = reservationsEndpoint(...day);
   const rendered = await renderPos({ device: 'enrolled', path: '/login' });
   await waitFor(() => expect(rendered.services.tokens.status()).toBe('ready'));
   act(() => rendered.services.session.start({ ...SESSION, permissions }));
   await act(() => rendered.router.navigate('/reservations'));
-  return { ...rendered, days };
+  return { ...rendered, days, tables };
 }
 
 /** The reservation's row in the day list. */
