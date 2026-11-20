@@ -2,8 +2,11 @@ import { ApiError } from '@restaurantpro/api-client';
 import { Button, Money, type MoneyValue, Skeleton } from '@restaurantpro/ui';
 import { errorMessage, isOffline } from '../../../lib/error-messages';
 import { useOrderHeading, useSettlement } from '../hooks/use-settlement';
+import { useState } from 'react';
 import { SETTLEMENT_MESSAGES } from '../messages';
+import { targetOf } from '../settlement';
 import { PartitionList } from './partition-list';
+import { PaymentPanel } from './payment-panel';
 import { SplitPanel } from './split-panel';
 
 type Props = {
@@ -17,6 +20,7 @@ export function PaymentScreen({ orderId, blocked }: Props) {
   const settlement = useSettlement(orderId);
   const heading = useOrderHeading(orderId);
   const tableCode = heading.data?.tableCode;
+  const [selected] = useState<string>();
 
   return (
     <main className="flex min-h-0 flex-1 flex-col gap-4 p-4">
@@ -30,6 +34,7 @@ export function PaymentScreen({ orderId, blocked }: Props) {
           </dl>
           <SplitPanel settlement={settlement.data} guests={heading.data?.guests} disabled={blocked} />
           <PartitionList partitions={settlement.data.partitions} />
+          <PaymentPanel settlement={settlement.data} target={targetOf(settlement.data, selected)} disabled={blocked} />
         </>
       ) : settlement.isError ? (
         <div className="flex flex-col items-center gap-3 p-6 text-center">

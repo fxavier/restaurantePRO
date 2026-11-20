@@ -2,6 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import { HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { atPayment, billShown } from '../../test/payment-screen';
+import { problem } from '../../test/server';
 import {
   equalPartsEndpoint,
   ITEMS_PARTITION,
@@ -76,5 +77,46 @@ describe('splitting the bill', () => {
     expect(requests).toHaveLength(1);
     expect(requests[0]!.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
     expect(requests[0]!.body).toEqual({ orderVersion: 4, kind: 'ITEMS', lines: [{ lineId: LINE_IDS.steak, quantity: '2' }] });
+  });
+
+  it('without an answer, keeps the split unconfirmed and resends it with the same key', async () => {
+    const server = serverSettlement();
+    const requests = equalPartsEndpoint(
+      () => problem(503, 'BACKEND_UNAVAILABLE'),
+      () => {
+        server.set(SPLIT_IN_THREE);
+        return HttpResponse.json([part(1), part(2), part(3)], { status: 201 });
+      },
+    );
+    const { user } = await atPayment();
+    await billShown();
+    await user.click(within(splitPanel()).getByRole('tab', { name: /Partes iguais/ }));
+    await user.click(within(splitPanel()).getByRole('button', { name: 'Dividir em 3 partes' }));
+
+    expect(await within(splitPanel()).findByRole('alert')).toHaveTextContent('Sem ligação — a divisão não foi confirmada.');
+    expect(within(splitPanel()).getByRole('button', { name: 'Dividir em 3 partes' })).toBeDisabled();
+    await user.click(within(splitPanel()).getByRole('button', { name: 'Tentar novamente' }));
+
+    await waitFor(() => expect(within(parts()).getAllByRole('listitem')).toHaveLength(3));
+    expect(requests).toHaveLength(2);
+    expect(requests[1]!.idempotencyKey).toBe(requests[0]!.idempotencyKey);
+  });
+
+  it.each([
+    [409, 'VERSION_CONFLICT', 'A conta foi alterada noutro terminal. Reveja-a e tente de novo.'],
+    [422, 'NOTHING_TO_SPLIT', 'Não há valor suficiente para dividir em tantas partes.'],
+  ])('a %i %s refusal says why and reads the bill again', async (status, code, text) => {
+    const server = serverSettlement();
+    equalPartsEndpoint(() => problem(status, code));
+    const { user } = await atPayment();
+    await billShown();
+    await user.click(within(splitPanel()).getByRole('tab', { name: /Partes iguais/ }));
+    const before = server.reads.length;
+
+    await user.click(within(splitPanel()).getByRole('button', { name: 'Dividir em 3 partes' }));
+
+    expect(await within(splitPanel()).findByRole('alert')).toHaveTextContent(`A divisão não foi feita. ${text}`);
+    await waitFor(() => expect(server.reads.length).toBeGreaterThan(before));
+    expect(within(splitPanel()).getByRole('button', { name: 'Dividir em 3 partes' })).toBeEnabled();
   });
 });
