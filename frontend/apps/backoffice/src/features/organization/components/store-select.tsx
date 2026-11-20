@@ -34,7 +34,7 @@ export function StoreSelect() {
       <p role="alert" className="flex items-center gap-1 text-sm">
         {icon}
         <span className="font-medium">Loja:</span>
-        <span className="text-destructive">
+        <span className="text-error">
           {isUnavailable(stores.error) ? 'Sem ligação' : errorMessage(stores.error)}
         </span>
       </p>

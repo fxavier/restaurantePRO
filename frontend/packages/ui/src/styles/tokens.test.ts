@@ -4,11 +4,13 @@ import { describe, expect, it } from 'vitest';
 
 const tokensCss = readFileSync(new URL('./tokens.css', import.meta.url), 'utf8');
 
-/** The light theme's `:root` variables, as written in tokens.css. */
-function tokens(): Record<string, string> {
-  const root = /:root\s*{([^}]*)}/.exec(tokensCss)?.[1] ?? '';
-  return Object.fromEntries([...root.matchAll(/--([\w-]+):\s*([^;]+);/g)].map((m) => [m[1], m[2]!.trim()]));
+/** A block's variables, as written in tokens.css: `:root` (light) or `.dark` (Stitch). */
+function block(selector: string): Record<string, string> {
+  const body = new RegExp(`${selector}\\s*{([^}]*)}`).exec(tokensCss)?.[1] ?? '';
+  return Object.fromEntries([...body.matchAll(/--([\w-]+):\s*([^;]+);/g)].map((m) => [m[1], m[2]!.trim()]));
 }
+
+const tokens = () => block(':root');
 
 function luminance(hex: string): number {
   const [r, g, b] = [1, 3, 5].map((i) => {
@@ -69,5 +71,66 @@ describe('design tokens', () => {
   ])('give the boundary %s on %s a contrast of at least 3:1', (boundary, surface) => {
     const t = tokens();
     expect(contrast(t[boundary]!, t[surface]!)).toBeGreaterThanOrEqual(3);
+  });
+
+  describe('dark (Stitch)', () => {
+    const dark = () => ({ ...tokens(), ...block('\\.dark') });
+
+    it('match DESIGN.md', () => {
+      expect(dark()).toMatchObject({
+        background: '#0B0F19',
+        foreground: '#DAE2FD',
+        card: '#151D2E',
+        muted: '#1E293B',
+        'muted-foreground': '#BBCABF',
+        border: '#334155',
+        input: '#86948A',
+        primary: '#10B981',
+        'primary-hover': '#4EDEA3',
+        'primary-foreground': '#0B0F19',
+        ring: '#4EDEA3',
+        success: '#10B981',
+        warning: '#F59E0B',
+        destructive: '#EF4444',
+        info: '#0284C7',
+        error: '#FFB4AB',
+        'route-kitchen': '#F97316',
+        'route-bar': '#8B5CF6',
+        'route-copa': '#06B6D4',
+      });
+    });
+
+    it.each([
+      ['foreground', 'background'],
+      ['foreground', 'card'],
+      ['muted-foreground', 'card'],
+      ['muted-foreground', 'muted'],
+      ['primary', 'card'],
+      ['primary-hover', 'muted'],
+      ['error', 'card'],
+      ['error', 'muted'],
+      ['primary-foreground', 'primary'],
+      ['primary-foreground', 'primary-hover'],
+      ['success-foreground', 'success'],
+      ['warning-foreground', 'warning'],
+      ['destructive-foreground', 'destructive'],
+      ['info-foreground', 'info'],
+      ['background', 'route-kitchen'],
+      ['background', 'route-bar'],
+      ['background', 'route-copa'],
+    ])('give text %s on %s a contrast of at least 4.5:1', (text, surface) => {
+      const t = dark();
+      expect(contrast(t[text]!, t[surface]!)).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it.each([
+      ['input', 'card'],
+      ['ring', 'background'],
+      ['ring', 'card'],
+      ['destructive', 'card'],
+    ])('give the boundary %s on %s a contrast of at least 3:1', (boundary, surface) => {
+      const t = dark();
+      expect(contrast(t[boundary]!, t[surface]!)).toBeGreaterThanOrEqual(3);
+    });
   });
 });

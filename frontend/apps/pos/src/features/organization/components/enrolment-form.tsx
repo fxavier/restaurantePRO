@@ -57,7 +57,7 @@ export function EnrolmentForm({ onSubmit, pending, message }: Props) {
       />
       <div className="min-h-12">
         {message && (
-          <p role="alert" className="font-medium text-destructive">
+          <p role="alert" className="font-medium text-error">
             {message}
           </p>
         )}
