@@ -1,8 +1,9 @@
+import { formatMoney } from '@restaurantpro/ui';
 import { screen, within } from '@testing-library/react';
 import { delay, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { problem, SESSION, tableMap, tablesEndpoint, token, tokenEndpoint } from '../../test/server';
-import { id, MAP } from '../../test/table-map';
+import { id, MAP, openFromMap } from '../../test/table-map';
 import { catalogEndpoint, json, ORDER, ORDER_ID, orderEndpoint } from '../../test/order';
 import { renderPos } from '../../test/render-pos';
 
@@ -39,8 +40,12 @@ describe('table map', () => {
   it('shows one tab per area, the first selected, with its tables', async () => {
     await atTables();
 
+    // Each pill shows its occupied/total count too, hidden from assistive technology (the summary says it).
     const tabs = await screen.findAllByRole('tab');
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['Sala', 'Esplanada']);
+    expect(tabs).toHaveLength(2);
+    expect(tabs[0]).toHaveAccessibleName('Sala');
+    expect(tabs[0]).toHaveTextContent('Sala2/4');
+    expect(tabs[1]).toHaveAccessibleName('Esplanada');
     expect(screen.getByRole('tab', { name: 'Sala' })).toHaveAttribute('aria-selected', 'true');
     const panel = screen.getByRole('tabpanel', { name: 'Sala' });
     expect(within(panel).getAllByRole('button').map((button) => button.textContent)).toEqual([
@@ -83,6 +88,50 @@ describe('table map', () => {
     expect(tile(/^Mesa M4 /)).toHaveAccessibleName('Mesa M4 Livre 1 lugar Reservada 21:00');
   });
 
+  it('sums up the store by state, each table once (locked before occupied)', async () => {
+    await atTables();
+
+    const summary = await screen.findByRole('list', { name: 'Resumo das mesas' });
+    expect(within(summary).getAllByRole('listitem').map((item) => item.textContent)).toEqual([
+      'Livres 3',
+      'Ocupadas 1',
+      'Conta pedida 0',
+      'Bloqueadas 1',
+    ]);
+  });
+
+  it('a tap selects a table for the detail panel, which opens a free one', async () => {
+    const { user } = await atTables();
+    const panel = await screen.findByRole('complementary', { name: 'Detalhe da mesa' });
+    expect(panel).toHaveTextContent('Toque numa mesa para ver o detalhe.');
+
+    await user.click(tile(/^Mesa M1 /));
+
+    expect(tile(/^Mesa M1 /)).toHaveAttribute('aria-pressed', 'true');
+    expect(within(panel).getByRole('heading', { name: 'Mesa M1' })).toHaveFocus();
+    expect(panel).toHaveTextContent('Sala · 4 lugares');
+    await user.click(within(panel).getByRole('button', { name: 'Abrir mesa' }));
+    expect(await screen.findByRole('dialog', { name: 'Abrir mesa M1' })).toBeInTheDocument();
+  });
+
+  it("the panel shows an occupied table's rounds and the server's total, and goes to its order", async () => {
+    catalogEndpoint();
+    orderEndpoint(ORDER_ID, json(ORDER));
+    const { user, router } = await atTables();
+
+    await user.click(await screen.findByRole('button', { name: /^Mesa M2 / }));
+
+    const panel = screen.getByRole('complementary', { name: 'Detalhe da mesa' });
+    expect(within(panel).getByText('Sala · 3 pessoas')).toBeInTheDocument();
+    expect(within(panel).getByText('Abertura').nextSibling).toHaveTextContent('12:05');
+    expect(await within(panel).findByRole('list', { name: 'Ronda 1, 12:10' })).toHaveTextContent('Bitoque');
+    expect(within(panel).getByRole('group', { name: 'Total' })).toHaveTextContent(
+      formatMoney({ amount: '1350.00', currency: 'MZN' }).replace(/\s/g, ' '),
+    );
+    await user.click(within(panel).getByRole('button', { name: 'Registar artigos' }));
+    expect(router.state.location.pathname).toBe(`/orders/${ORDER_ID}`);
+  });
+
   it('names the store in the status bar', async () => {
     await atTables();
 
@@ -94,7 +143,7 @@ describe('table map', () => {
     orderEndpoint(ORDER_ID, json(ORDER));
     const { user, router } = await atTables();
 
-    await user.click(await screen.findByRole('button', { name: /^Mesa M2 / }));
+    await openFromMap(user, /^Mesa M2 /);
 
     expect(await screen.findByRole('heading', { name: 'Mesa M2' })).toBeInTheDocument();
     expect(router.state.location.pathname).toBe(`/orders/${ORDER_ID}`);
@@ -109,7 +158,7 @@ describe('table map', () => {
     const { user } = await atTables(tableMap(E1_OCCUPIED));
 
     await user.click(await screen.findByRole('tab', { name: 'Esplanada' }));
-    await user.click(screen.getByRole('button', { name: /^Mesa E1 / }));
+    await openFromMap(user, /^Mesa E1 /);
     await screen.findByRole('heading', { name: 'Mesa E1' });
     await user.click(screen.getByRole('link', { name: 'Voltar às mesas' }));
 

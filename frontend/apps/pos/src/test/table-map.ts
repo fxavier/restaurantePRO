@@ -1,4 +1,6 @@
 import type { components } from '@restaurantpro/api-client';
+import { screen, within } from '@testing-library/react';
+import type { UserEvent } from '@testing-library/user-event';
 import { SESSION } from './server';
 
 type TableMap = components['schemas']['com.xavier.backend.dining.model.dto.TableMap'];
@@ -69,3 +71,10 @@ export const M1_OCCUPIED: TableMap = {
     ),
   })),
 };
+
+/** A tile tapped, then the detail panel's action: "Abrir mesa" for a free table, "Registar artigos" for an occupied one. */
+export async function openFromMap(user: UserEvent, tile: RegExp) {
+  await user.click(await screen.findByRole('button', { name: tile }));
+  const panel = screen.getByRole('complementary', { name: 'Detalhe da mesa' });
+  await user.click(within(panel).getByRole('button', { name: /^(Abrir mesa|Registar artigos)$/ }));
+}

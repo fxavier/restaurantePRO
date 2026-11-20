@@ -1,6 +1,6 @@
 import { expect, type Page, test } from '@playwright/test';
 import { expectNoAxeViolations } from '../axe';
-import { id, logIn, standInDevice, STORE } from './stand-in';
+import { id, logIn, openFromMap, standInDevice, STORE } from './stand-in';
 
 // The order screen in the built POS, its API stood in by page.route: what jsdom cannot check, the three panes' real
 // geometry at the smallest POS viewport (DS: 1024 × 768), the touch targets, and axe on the screen and its dialogs.
@@ -172,7 +172,7 @@ async function standIn(page: Page) {
 async function atOrder(page: Page) {
   await standIn(page);
   await logIn(page);
-  await page.getByRole('button', { name: /^Mesa M2 / }).click();
+  await openFromMap(page, 'M2');
   await expect(page.getByRole('heading', { name: 'Mesa M2' })).toBeVisible();
   await expect(page.getByRole('button', { name: /^Bica/ })).toBeVisible();
 }
@@ -231,7 +231,7 @@ test('the order screen is accessible, and so is its choice sheet', async ({ page
 test('the guests pad is accessible', async ({ page }) => {
   await standIn(page);
   await logIn(page);
-  await page.getByRole('button', { name: /^Mesa M1 / }).click();
+  await openFromMap(page, 'M1');
   await expect(page.getByRole('dialog', { name: 'Abrir mesa M1' })).toBeVisible();
 
   await expectNoAxeViolations(page);
@@ -259,11 +259,11 @@ test('screens for the PR, at 1024 × 768 and 1366 × 768', async ({ page }) => {
     await page.screenshot({ path: `${dir}/choice-sheet-${width}x${height}.png`, animations: 'disabled' });
     await sheet.getByRole('button', { name: 'Cancelar' }).click();
     await page.getByRole('link', { name: 'Voltar às mesas' }).click();
-    await page.getByRole('button', { name: /^Mesa M1 / }).click();
+    await openFromMap(page, 'M1');
     await page.getByRole('dialog', { name: 'Abrir mesa M1' }).getByRole('button', { name: '2', exact: true }).click();
     await page.screenshot({ path: `${dir}/guests-${width}x${height}.png`, animations: 'disabled' });
     await page.getByRole('button', { name: 'Cancelar' }).click();
-    await page.getByRole('button', { name: /^Mesa M2 / }).click();
+    await openFromMap(page, 'M2');
     await expect(page.getByRole('heading', { name: 'Mesa M2' })).toBeVisible();
   }
 });

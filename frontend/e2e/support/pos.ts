@@ -1,6 +1,9 @@
 import { expect, type APIRequestContext, type Page, type Request } from '@playwright/test';
 import { expectNoAxeViolations } from '../axe';
+import { openFromMap, tile } from '../pos/stand-in';
 import { seeded, stack } from './stack';
+
+export { openFromMap, tile };
 
 /** DS: the POS viewports; screens are saved at each when E2E_SCREENS names a directory (for the PR). */
 export const POS_VIEWPORTS = [
@@ -39,17 +42,16 @@ export async function expectLive(page: Page, timeout = 15_000) {
   await expect(page.getByRole('status', { name: 'Ligação' })).toHaveText(/Ligado/, { timeout });
 }
 
-export const tile = (page: Page, code: string) => page.getByRole('button', { name: new RegExp(`^Mesa ${code} `) });
 export const orderPanel = (page: Page) => page.getByRole('complementary', { name: 'Pedido' });
 
 /** Opens a free table for `guests` from the map and waits for its order screen. */
 export async function openTable(page: Page, code: string, guests: number, { check = false } = {}) {
-  await tile(page, code).click();
+  await openFromMap(page, code);
   const dialog = page.getByRole('dialog', { name: `Abrir mesa ${code}` });
   await dialog.getByRole('button', { name: String(guests), exact: true }).click();
   if (check) await expectNoAxeViolations(page);
   await dialog.getByRole('button', { name: 'Abrir mesa' }).click();
-  await expect(page.getByRole('heading', { name: `Mesa ${code}` })).toBeVisible();
+  await expect(orderPanel(page).getByRole('heading', { name: `Mesa ${code}` })).toBeVisible();
 }
 
 /**

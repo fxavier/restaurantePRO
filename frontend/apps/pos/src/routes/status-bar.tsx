@@ -23,9 +23,9 @@ export function StatusBar() {
   const connection = useConnection();
 
   return (
-    <header className="flex h-16 items-center gap-6 border-b bg-background px-4">
-      <h1 className="text-lg font-semibold">restaurantPRO — Ponto de venda</h1>
-      <p className="flex items-center gap-2 font-medium">
+    <header className="flex min-h-16 flex-wrap items-center gap-x-6 gap-y-2 border-b bg-card px-4 py-2">
+      <h1 className="text-base font-semibold text-muted-foreground">restaurantPRO — Ponto de venda</h1>
+      <p className="flex items-center gap-2 text-lg font-semibold">
         <Store aria-hidden="true" className="size-6" />
         <span className="sr-only">Loja:</span>
         {employee?.storeName}
@@ -38,9 +38,9 @@ export function StatusBar() {
       {/* A fixed width, so the button beside it never moves when the state changes (DS: no layout shift). */}
       <p role="status" aria-label="Ligação" className="flex w-60 items-center gap-2 text-muted-foreground">
         {connection === 'open' ? (
-          <Wifi aria-hidden="true" className="size-6" />
+          <Wifi aria-hidden="true" className="size-6 text-success" />
         ) : connection === 'down' ? (
-          <WifiOff aria-hidden="true" className="size-6 text-destructive" />
+          <WifiOff aria-hidden="true" className="size-6 text-error" />
         ) : connection === 'refused' ? (
           <RefreshCwOff aria-hidden="true" className="size-6" />
         ) : (
@@ -48,7 +48,8 @@ export function StatusBar() {
         )}
         {LABELS[connection]}
       </p>
-      <Button variant="outline" size="touch" className="ml-auto" onClick={() => endSession('switch')}>
+      {/* Stitch's red "Trancar Terminal": the same tinted destructive style for the action that hands the terminal over. */}
+      <Button variant="destructive" size="touch" className="ml-auto" onClick={() => endSession('switch')}>
         <Users aria-hidden="true" />
         Trocar empregado
       </Button>
