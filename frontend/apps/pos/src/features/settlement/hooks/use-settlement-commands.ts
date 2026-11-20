@@ -61,6 +61,41 @@ export function useIssueOrderDocument(orderId: string, onIssued: (document: Fisc
   );
 }
 
+/**
+ * `POST /api/v1/pos/partitions/{id}/documents`: a part by items invoiced on its own (D70); the order is not frozen, so
+ * the table goes on ordering.
+ */
+export function useIssuePartitionDocument(orderId: string, onIssued: (document: FiscalDocument | undefined) => void) {
+  const { api } = useServices();
+  return useSettlementIntent(
+    orderId,
+    async ({ partitionId, buyer }: { partitionId: string; buyer: Buyer | undefined }, key) =>
+      (
+        await api.POST('/api/v1/pos/partitions/{id}/documents', {
+          params: { path: { id: partitionId }, header: { 'Idempotency-Key': key } },
+          body: buyer ? { buyer } : {},
+        })
+      ).data,
+    onIssued,
+  );
+}
+
+export type Reprint = components['schemas']['com.xavier.backend.fiscal.model.dto.ReprintView'];
+
+/** `POST /api/v1/pos/documents/{id}/reprints`: a copy ("2ª via"), never a new document, payment or movement. */
+export function useReprint(onPrinted: (reprint: Reprint | undefined) => void) {
+  const { api } = useServices();
+  return useIntent<string, Reprint | undefined>(
+    async (documentId, key) =>
+      (
+        await api.POST('/api/v1/pos/documents/{id}/reprints', {
+          params: { path: { id: documentId }, header: { 'Idempotency-Key': key } },
+        })
+      ).data,
+    { onSuccess: onPrinted },
+  );
+}
+
 /** `POST /api/v1/pos/orders/{id}/close` at the bill's version: the order and its table are closed (D55, D70). */
 export function useCloseOrder(orderId: string, onClosed: () => void) {
   const { api } = useServices();

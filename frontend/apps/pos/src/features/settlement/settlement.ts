@@ -153,6 +153,22 @@ export function amountInput(text: string): string | undefined {
   return /^\d+(\.\d{1,2})?$/.test(decimal) && /[1-9]/.test(decimal) ? decimal : undefined;
 }
 
+/** Who a document is for, as typed: a final consumer, or a buyer with a NIF. */
+export type BuyerChoice = { withTaxId: boolean; taxId: string; name: string; address: string };
+
+export const FINAL_CONSUMER: BuyerChoice = { withTaxId: false, taxId: '', name: '', address: '' };
+
+/**
+ * The document request's buyer: none for a final consumer; otherwise only the fields typed, trimmed. Not `ready`
+ * while a NIF is asked for and still empty.
+ */
+export function buyerOf(choice: BuyerChoice): { ready: boolean; buyer?: { taxId?: string; name?: string; address?: string } } {
+  if (!choice.withTaxId) return { ready: true };
+  const fields = { taxId: choice.taxId.trim(), name: choice.name.trim(), address: choice.address.trim() };
+  const buyer = Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== ''));
+  return { ready: fields.taxId !== '', buyer };
+}
+
 /** One unit, in thousandths. */
 export const UNIT = 1_000;
 
