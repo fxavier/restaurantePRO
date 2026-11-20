@@ -66,6 +66,27 @@ docker compose rm -sf keycloak keycloak-db && docker volume rm backend_restauran
 
 The volume name has the Compose project as its prefix (`backend` by default; see `docker volume ls`).
 
+## BackOffice sign-in theme (UI refactor, 2026-11-20)
+
+`themes/restaurantpro/login/` restyles the `restaurantpro` realm's login pages in the app's Stitch dark theme
+([DESIGN.md](../../docs/design/DESIGN.md)). It is a child of `keycloak.v2`: Keycloak's own templates and flows stay, so
+the password, the TOTP code, step-up (`acr_values=2`, ADR 0035), required actions and password reset all work
+unchanged. A redirect to Keycloak remains by design; a form in the SPA with the password grant was ruled out because
+`directAccessGrantsEnabled` is `false` on every client and the grant bypasses that flow.
+
+- `theme.properties`: parent `keycloak.v2`, its stylesheet then ours, Portuguese only.
+- `resources/css/restaurantpro.css`: the app's `.dark` token values as `--rp-*` (keep them in step with
+  `frontend/packages/ui/src/styles/tokens.css`), mapped onto PatternFly 5's variables; Inter is bundled (no external
+  font host: installations may be offline).
+- `resources/js/restaurantpro.js`: points keycloak.v2's mislabelled read-only username at its field (an axe `label`
+  violation upstream).
+- `messages/messages_pt.properties`: the pt-PT texts that differ from Keycloak's.
+
+The realm selects it (`loginTheme`, with `pt` as its only and default locale). `backend/compose.yaml` and
+`deploy/e2e/compose.yaml` mount it at `/opt/keycloak/themes/restaurantpro`; a production Keycloak (open item O3) must do
+the same. Without the directory, Keycloak falls back to its default theme. An existing dev or e2e Keycloak keeps its
+imported realm: set the theme in the admin console (Realm settings → Themes) or recreate it as above.
+
 ## The BFF's key in development and end-to-end stacks (frontend R1, ticket 05)
 
 Nothing in the realm exports or in `keycloak-provisioners.sh` registers a key on `backoffice-bff`, so a locally run

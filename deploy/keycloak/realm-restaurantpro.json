@@ -1,6 +1,10 @@
 {
   "realm": "restaurantpro",
   "displayName": "restaurantPRO",
+  "loginTheme": "restaurantpro",
+  "internationalizationEnabled": true,
+  "supportedLocales": ["pt"],
+  "defaultLocale": "pt",
   "enabled": true,
   "sslRequired": "external",
   "registrationAllowed": false,

@@ -95,3 +95,10 @@ The route tokens live in `:root`, so they are the same in both themes. In the li
 | Apps' `index.html` | `<html class="dark">` |
 
 App-only: POS `TableTile`, `StatusBar`, order panel; BackOffice `Sidebar` (filled active item). These belong to Phase 4.
+
+## BackOffice sign-in (Keycloak theme)
+
+The BackOffice signs in through Keycloak's own pages (ADR 0040, step-up per ADR 0035), restyled by the
+`restaurantpro` login theme (`deploy/keycloak/themes/restaurantpro`, see its README section): the page background,
+the card, the sidebar's brand block, Inter, the emerald primary and pt-PT texts. Its colours repeat the `.dark` values
+above as `--rp-*`; a token change here is a change there too.

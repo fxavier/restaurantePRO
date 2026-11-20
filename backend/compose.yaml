@@ -93,6 +93,7 @@ services:
       - "127.0.0.1:8180:8080" # localhost only (spec §10)
     volumes:
       - ../deploy/keycloak:/opt/keycloak/data/import:ro
+      - ../deploy/keycloak/themes/restaurantpro:/opt/keycloak/themes/restaurantpro:ro # the BackOffice sign-in theme
     healthcheck:
       # the management port answers /health/ready once the realms are imported
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
