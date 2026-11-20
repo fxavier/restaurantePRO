@@ -1,0 +1,71 @@
+import { Badge, Card, CardContent, CardHeader, DataState, Tabs, TabsContent, TabsList, TabsTrigger } from '@restaurantpro/ui';
+import { Mail } from 'lucide-react';
+import { useId } from 'react';
+import { useCustomer } from '../hooks/use-customer-queries';
+import type { CustomerDetails } from '../types';
+import { QueryFailure } from './query-failure';
+
+/** The right pane (Stitch's customer card): who the customer is, then one tab per concern. */
+export function CustomerDetail({ customerId }: { customerId: string }) {
+  const customer = useCustomer(customerId);
+  const titleId = useId();
+
+  if (!customer.data) {
+    return (
+      <Card role="region" aria-label="Cliente">
+        <CardContent>
+          {customer.isError ? (
+            <QueryFailure error={customer.error} onRetry={() => void customer.refetch()} notFound="Cliente não encontrado." />
+          ) : (
+            <DataState state="loading">{null}</DataState>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const data = customer.data;
+  return (
+    <Card role="region" aria-labelledby={titleId} className="gap-4">
+      <CardHeader>
+        <CustomerHeading customer={data} titleId={titleId} />
+      </CardHeader>
+      <CardContent>
+        <Tabs defaultValue="data">
+          <TabsList className="flex-wrap">
+            <TabsTrigger value="data">Dados</TabsTrigger>
+            <TabsTrigger value="contacts">Moradas & Contactos</TabsTrigger>
+            <TabsTrigger value="credit">Crédito</TabsTrigger>
+            <TabsTrigger value="loyalty">Fidelização</TabsTrigger>
+          </TabsList>
+          <TabsContent value="data" className="pt-4" />
+          <TabsContent value="contacts" className="pt-4" />
+          <TabsContent value="credit" className="pt-4" />
+          <TabsContent value="loyalty" className="pt-4" />
+        </Tabs>
+      </CardContent>
+    </Card>
+  );
+}
+
+function CustomerHeading({ customer, titleId }: { customer: CustomerDetails; titleId: string }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 id={titleId} className="text-xl font-semibold">
+          {customer.name}
+        </h2>
+        {customer.active === false && <Badge variant="secondary">Inativo</Badge>}
+      </div>
+      <p className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+        {customer.taxId && <span className="font-mono">NIF {customer.taxId}</span>}
+        {customer.email && (
+          <span className="inline-flex items-center gap-1 text-primary-hover">
+            <Mail aria-hidden="true" className="size-4" />
+            {customer.email}
+          </span>
+        )}
+      </p>
+    </div>
+  );
+}
