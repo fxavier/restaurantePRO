@@ -1,6 +1,6 @@
 import type { components } from '@restaurantpro/api-client';
 import { http, HttpResponse } from 'msw';
-import { admin, api, baixa, signedIn, sommerschield, type SessionView } from './fixtures';
+import { admin, api, baixa, problem, signedIn, sommerschield, type SessionView } from './fixtures';
 
 type Schemas = components['schemas'];
 const DTO = 'com.xavier.backend.identity.model.dto';
@@ -149,6 +149,49 @@ export function peopleHandlers({
       await record(request);
       state.assignments = state.assignments.filter((a) => a.id !== params.assignmentId);
       return new HttpResponse(null, { status: 204 });
+    }),
+    http.post(api(`${base}/roles`), async ({ request }) => {
+      const { body } = await record(request);
+      const { name, permissions } = body as { name: string; permissions: RoleSummary['permissions'] };
+      const created = role(`c2000000-0000-4000-8000-00000000000${state.roles.length}`, name, permissions);
+      state.roles.push(created);
+      return HttpResponse.json(created, { status: 201 });
+    }),
+    http.put(api(`${base}/roles/:id`), async ({ request, params }) => {
+      const { body } = await record(request);
+      const { name, permissions, version } = body as { name: string; permissions: RoleSummary['permissions']; version: number };
+      const current = state.roles.find((r) => r.id === params.id)!;
+      if (current.version !== version) return problem(409, 'VERSION_CONFLICT', 'Version conflict');
+      const updated = role(current.id!, name, permissions, version + 1);
+      state.roles = state.roles.map((r) => (r.id === params.id ? updated : r));
+      return HttpResponse.json(updated);
+    }),
+    http.post(api(`${base}/users`), async ({ request }) => {
+      const { body } = await record(request);
+      const created = account(`a2000000-0000-4000-8000-00000000000${state.users.length}`, '', body as Partial<UserSummary>);
+      state.users.push(created);
+      return HttpResponse.json(created, { status: 201 });
+    }),
+    http.put(api(`${base}/users/:id`), async ({ request, params }) => {
+      const { body } = await record(request);
+      const current = state.users.find((u) => u.id === params.id)!;
+      const changes = body as Partial<UserSummary>;
+      if (current.version !== changes.version) return problem(409, 'VERSION_CONFLICT', 'Version conflict');
+      const updated = { ...current, employeeId: undefined, ...changes, version: current.version! + 1 };
+      state.users = state.users.map((u) => (u.id === params.id ? updated : u));
+      return HttpResponse.json(updated);
+    }),
+    http.post(api(`${base}/support-grants`), async ({ request }) => {
+      const { body } = await record(request);
+      const { accountId, reason } = body as { accountId: string; reason: string };
+      const granted = grant(`f2000000-0000-4000-8000-00000000000${state.grants.length}`, accountId, { reason });
+      state.grants.push(granted);
+      return HttpResponse.json(granted, { status: 201 });
+    }),
+    http.post(api(`${base}/support-grants/:id/revoke`), async ({ request, params }) => {
+      await record(request);
+      state.grants = state.grants.map((g) => (g.id === params.id ? { ...g, status: 'REVOKED' as const } : g));
+      return HttpResponse.json(state.grants.find((g) => g.id === params.id));
     }),
     http.post(api(`${base}/employees/:id/unlock`), async ({ request, params }) => {
       await record(request);

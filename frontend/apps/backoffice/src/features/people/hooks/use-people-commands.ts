@@ -1,7 +1,16 @@
 import type { ApiClient } from '@restaurantpro/api-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useApi } from '../../../lib/api';
-import type { AssignmentRequest, EmployeeCreateRequest, EmployeeSummary } from '../types';
+import { sendWaitingWhileInProgress } from '../../../lib/in-progress';
+import { toCreateRequest, toUpdateRequest, type AccountValues } from '../account-requests';
+import type {
+  AssignmentRequest,
+  EmployeeCreateRequest,
+  EmployeeSummary,
+  RoleCreateRequest,
+  RoleUpdateRequest,
+  SupportGrantRequest,
+} from '../types';
 import { PEOPLE_KEY } from './use-people-queries';
 
 const BASE = '/api/v1/backoffice';
@@ -51,6 +60,54 @@ export function useRemoveAssignment(employeeId: string) {
       params: { path: { id: employeeId, assignmentId } },
     });
   });
+}
+
+/**
+ * Creates a role, or with `roleId` replaces one; `version` is the one the form was loaded from, so a newer one answers
+ * 409 VERSION_CONFLICT.
+ */
+export function useSaveRole() {
+  return usePeopleCommand(async (api, { roleId, body }: { roleId?: string; body: RoleCreateRequest & { version: number } }) => {
+    if (!roleId) return (await api.POST(`${BASE}/roles`, { body: { name: body.name, permissions: body.permissions } })).data;
+    const update: RoleUpdateRequest = body;
+    return (await api.PUT(`${BASE}/roles/{id}`, { params: { path: { id: roleId } }, body: update })).data;
+  });
+}
+
+/** Opens an account, or with `userId` and the loaded `version` replaces one (409 VERSION_CONFLICT if newer). */
+export function useSaveAccount() {
+  return usePeopleCommand(
+    async (api, { userId, values, version }: { userId?: string; values: AccountValues; version: number }) =>
+      userId
+        ? (await api.PUT(`${BASE}/users/{id}`, { params: { path: { id: userId } }, body: toUpdateRequest(values, version) })).data
+        : (await api.POST(`${BASE}/users`, { body: toCreateRequest(values) })).data,
+  );
+}
+
+/**
+ * The contract requires an Idempotency-Key for both: the caller makes one per intent and sends it again for every retry
+ * of that intent (FC §8); a 409 IDEMPOTENCY_IN_PROGRESS waits and resends it (FE-F25).
+ */
+export function useGrantSupport() {
+  return usePeopleCommand(
+    async (api, { body, idempotencyKey }: { body: SupportGrantRequest; idempotencyKey: string }) =>
+      (
+        await sendWaitingWhileInProgress(() =>
+          api.POST(`${BASE}/support-grants`, { body, params: { header: { 'Idempotency-Key': idempotencyKey } } }),
+        )
+      ).data,
+  );
+}
+
+export function useRevokeSupport() {
+  return usePeopleCommand(
+    async (api, { grantId, idempotencyKey }: { grantId: string; idempotencyKey: string }) =>
+      (
+        await api.POST(`${BASE}/support-grants/{id}/revoke`, {
+          params: { path: { id: grantId }, header: { 'Idempotency-Key': idempotencyKey } },
+        })
+      ).data,
+  );
 }
 
 export function useUnlockEmployee() {

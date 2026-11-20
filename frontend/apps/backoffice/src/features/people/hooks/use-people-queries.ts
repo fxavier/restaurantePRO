@@ -1,7 +1,15 @@
 import type { ApiClient } from '@restaurantpro/api-client';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useApi } from '../../../lib/api';
-import type { AssignmentSummary, EmployeeSummary, ListPage, RoleSummary, StoreSummary } from '../types';
+import type {
+  AssignmentSummary,
+  EmployeeSummary,
+  ListPage,
+  RoleSummary,
+  StoreSummary,
+  SupportGrantSummary,
+  UserSummary,
+} from '../types';
 
 /** Every people query starts with this, so a command refreshes what it may have changed in one invalidation. */
 export const PEOPLE_KEY = ['backoffice', 'people'] as const;
@@ -54,6 +62,34 @@ export function useAssignments(employeeId: string) {
     queryFn: async (): Promise<AssignmentSummary[]> =>
       (await api.GET('/api/v1/backoffice/employees/{id}/assignments', { params: { path: { id: employeeId } } })).data ?? [],
   });
+}
+
+export function useRoles(page: number) {
+  return usePagedList<RoleSummary>(['roles'], page, async (api, query) =>
+    (await api.GET('/api/v1/backoffice/roles', { params: { query } })).data,
+  );
+}
+
+/** The employees an account can be linked to, for the picker (one large page, like the other pickers). */
+export function useEmployeeChoices() {
+  const api = useApi();
+  return useQuery({
+    queryKey: [...PEOPLE_KEY, 'employee-choices'],
+    queryFn: async (): Promise<EmployeeSummary[]> =>
+      (await api.GET('/api/v1/backoffice/employees', { params: { query: CHOICES } })).data?.content ?? [],
+  });
+}
+
+export function useUsers(page: number) {
+  return usePagedList<UserSummary>(['users'], page, async (api, query) =>
+    (await api.GET('/api/v1/backoffice/users', { params: { query } })).data,
+  );
+}
+
+export function useSupportGrants(page: number) {
+  return usePagedList<SupportGrantSummary>(['support-grants'], page, async (api, query) =>
+    (await api.GET('/api/v1/backoffice/support-grants', { params: { query } })).data,
+  );
 }
 
 /** The company's employees, or only those assigned to the store chosen in the top bar. */
