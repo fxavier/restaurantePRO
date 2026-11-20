@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { useStoreTimeZone } from '../../../lib/auth/use-employee';
 import { clockTime, guestsLabel } from '../../dining/format';
 import { itemLabel, type PosCatalog } from '../../catalog/catalog';
+import { DestinationBadge } from '../../catalog/components/destination-badge';
 import { type Order, type OrderLine, quantityLabel, sameAmount, stepQuantity } from '../order';
 
 export type DraftCommands = {
@@ -45,9 +46,18 @@ export function OrderPanel({ order, catalog, commands, message, action, back, sh
     .filter(Boolean)
     .join(' · ');
   return (
-    <aside aria-label="Pedido" className="flex min-h-0 flex-col border-l bg-background">
-      <header className="flex items-start justify-between gap-2 border-b px-4 py-3">
-        <div className="min-w-0">
+    <aside aria-label="Pedido" className="flex min-h-0 flex-col border-l bg-card">
+      <header className="flex items-start gap-3 border-b px-4 py-3">
+        {order.tableCode && (
+          // Stitch's amber table block: the table is open, so occupied's colour.
+          <span
+            aria-hidden="true"
+            className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-warning text-lg font-bold text-warning-foreground tabular-nums"
+          >
+            {order.tableCode}
+          </span>
+        )}
+        <div className="min-w-0 flex-1">
           <h2 className="truncate text-2xl font-semibold">{order.tableCode ? `Mesa ${order.tableCode}` : 'Pedido'}</h2>
           <p className="text-muted-foreground">{details}</p>
         </div>
@@ -59,8 +69,29 @@ export function OrderPanel({ order, catalog, commands, message, action, back, sh
             {message}
           </p>
         )}
-        <section aria-labelledby="drafts-title" className="flex flex-col gap-2">
-          <h3 id="drafts-title" className="text-lg font-semibold">
+        <section aria-labelledby="sent-title" className="flex flex-col gap-2">
+          <div className="flex items-baseline justify-between gap-2">
+            <h3 id="sent-title" className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">
+              Enviado
+            </h3>
+            {order.rounds.length > 0 && (
+              <span className="text-sm text-muted-foreground tabular-nums">
+                {order.rounds.length === 1 ? '1 ronda' : `${order.rounds.length} rondas`}
+              </span>
+            )}
+          </div>
+          {order.rounds.length === 0 && order.unbatched.length === 0 ? (
+            <p className="text-muted-foreground">Nada enviado ainda.</p>
+          ) : (
+            <SentRounds order={order} catalog={catalog} />
+          )}
+        </section>
+        <section
+          aria-labelledby="drafts-title"
+          // Stitch: the draft round is dashed until it is sent.
+          className="flex flex-col gap-2 rounded-lg border border-dashed border-primary p-3"
+        >
+          <h3 id="drafts-title" className="text-sm font-semibold tracking-wide text-primary uppercase">
             Por enviar
           </h3>
           {order.drafts.length === 0 ? (
@@ -91,22 +122,12 @@ export function OrderPanel({ order, catalog, commands, message, action, back, sh
             </div>
           )}
         </section>
-        <section aria-labelledby="sent-title" className="flex flex-col gap-2">
-          <h3 id="sent-title" className="text-lg font-semibold">
-            Enviado
-          </h3>
-          {order.rounds.length === 0 && order.unbatched.length === 0 ? (
-            <p className="text-muted-foreground">Nada enviado ainda.</p>
-          ) : (
-            <SentRounds order={order} catalog={catalog} />
-          )}
-        </section>
       </div>
       <footer className="flex flex-col gap-3 border-t px-4 py-3">
         <div role="group" aria-label="Total" className="flex flex-col">
           <div className="flex items-baseline justify-between">
-            <span className="text-lg font-semibold">Total</span>
-            <Money value={order.due} className="text-[28px] leading-9 font-bold" />
+            <span className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">Total</span>
+            <Money value={order.due} className="text-4xl font-bold text-primary" />
           </div>
           {/* Always one line high, so the button below never moves. */}
           <p className="min-h-5 text-sm text-muted-foreground">
@@ -127,28 +148,38 @@ export function SentRounds({ order, catalog }: { order: Order; catalog?: PosCata
       {order.rounds.map((round) => {
         const title = `Ronda ${round.batchNo}, ${clockTime(round.confirmedAt, timeZone)}`;
         return (
-          <div key={round.id} className="flex flex-col">
-            <h4 className="text-sm font-semibold text-muted-foreground">{title}</h4>
+          <div key={round.id} className="flex flex-col rounded-lg border bg-background p-3">
+            <h4 className="text-sm font-semibold">{title}</h4>
             <ul aria-label={title} className="flex flex-col">
               {round.lines.map((line) => (
-                <SentRow key={line.id} line={line} name={lineName(line, catalog)} />
+                <SentRow key={line.id} line={line} name={lineName(line, catalog)} catalog={catalog} />
               ))}
             </ul>
           </div>
         );
       })}
       {order.unbatched.length > 0 && (
-        <div className="flex flex-col">
-          <h4 className="text-sm font-semibold text-muted-foreground">Sem ronda (transferidas)</h4>
+        <div className="flex flex-col rounded-lg border bg-background p-3">
+          <h4 className="text-sm font-semibold">Sem ronda (transferidas)</h4>
           <ul aria-label="Sem ronda" className="flex flex-col">
             {order.unbatched.map((line) => (
-              <SentRow key={line.id} line={line} name={lineName(line, catalog)} />
+              <SentRow key={line.id} line={line} name={lineName(line, catalog)} catalog={catalog} />
             ))}
           </ul>
         </div>
       )}
     </>
   );
+}
+
+/** "2 ×", in the primary colour (Stitch's line count). */
+function Quantity({ line }: { line: OrderLine }) {
+  return <span className="font-bold text-primary tabular-nums">{quantityLabel(line.quantity)} ×</span>;
+}
+
+/** Where the line's item is prepared, from the catalog; nothing without a catalog or a destination. */
+function Destination({ line, catalog }: { line: OrderLine; catalog: PosCatalog | undefined }) {
+  return <DestinationBadge code={catalog?.item(line.itemId)?.productionDestination} />;
 }
 
 function Price({ line }: { line: OrderLine }) {
@@ -215,10 +246,11 @@ function DraftRow({
   const more = stepQuantity(line.quantity, 1);
   return (
     <li className="flex flex-col gap-1 border-b py-2 last:border-b-0">
-      <div className="flex items-start justify-between gap-2">
-        <span className="font-medium">
-          {quantityLabel(line.quantity)} × {name}
+      <div className="flex items-start gap-2">
+        <span className="flex-1 font-medium">
+          <Quantity line={line} /> {name}
         </span>{' '}
+        <Destination line={line} catalog={catalog} />
         <Price line={line} />
       </div>{' '}
       <Details line={line} catalog={catalog} />
@@ -247,13 +279,14 @@ function DraftRow({
   );
 }
 
-function SentRow({ line, name }: { line: OrderLine; name: string }) {
+function SentRow({ line, name, catalog }: { line: OrderLine; name: string; catalog: PosCatalog | undefined }) {
   return (
     <li className="flex flex-col gap-1 border-b py-2 last:border-b-0">
-      <div className="flex items-start justify-between gap-2">
-        <span>
-          {quantityLabel(line.quantity)} × {name}
+      <div className="flex items-start gap-2">
+        <span className="flex-1">
+          <Quantity line={line} /> {name}
         </span>{' '}
+        <Destination line={line} catalog={catalog} />
         <Price line={line} />
       </div>{' '}
       <Details line={line} catalog={undefined} />
