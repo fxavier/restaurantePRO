@@ -13,9 +13,10 @@ export const CASH_KEY = ['pos', 'cash'] as const;
 /**
  * `GET /api/v1/pos/cash/sessions/current`: the employee's own open session, or `null` when there is none (404).
  */
-export function useCurrentSession() {
+export function useCurrentSession(enabled: boolean) {
   const { api } = useServices();
   return useQuery({
+    enabled,
     queryKey: [...CASH_KEY, 'sessions', 'current'],
     queryFn: async ({ signal }) => {
       try {
@@ -29,9 +30,10 @@ export function useCurrentSession() {
 }
 
 /** `GET /api/v1/pos/cash/registers`: the store's registers (a store has a handful; one page holds them all). */
-export function useRegisters() {
+export function useRegisters(enabled: boolean) {
   const { api } = useServices();
   return useQuery({
+    enabled,
     queryKey: [...CASH_KEY, 'registers'],
     queryFn: async ({ signal }) =>
       (await api.GET('/api/v1/pos/cash/registers', { params: { query: { size: 100 } }, signal })).data?.content ?? [],
@@ -39,9 +41,10 @@ export function useRegisters() {
 }
 
 /** `GET /api/v1/pos/cash/days/current`: the store's business day now. */
-export function useCurrentDay() {
+export function useCurrentDay(enabled: boolean) {
   const { api } = useServices();
   return useQuery({
+    enabled,
     queryKey: [...CASH_KEY, 'days', 'current'],
     queryFn: async ({ signal }) => (await api.GET('/api/v1/pos/cash/days/current', { signal })).data ?? null,
   });

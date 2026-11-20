@@ -4,6 +4,7 @@ import { useCommandsBlocked } from '../../../lib/live/use-connection';
 import { parseAmount } from '../cash';
 import type { RegisterSummary } from '../hooks/use-cash';
 import { useOpenSession } from '../hooks/use-cash-commands';
+import { cashRefusal } from '../messages';
 import { AmountField } from './amount-field';
 import { CommandFeedback } from './command-feedback';
 import { RegisterChoice } from './register-choice';
@@ -40,7 +41,7 @@ export function OpenSessionForm({ registers }: { registers: RegisterSummary[] })
       </div>
       <RegisterChoice name="open-register" registers={registers} value={registerId} onChange={setRegisterId} disabled={locked} />
       <AmountField label="Fundo de caixa inicial" value={float} onChange={setFloat} readOnly={locked} />
-      <CommandFeedback blocked={blocked} error={open.error} what="a abertura da sessão" />
+      <CommandFeedback blocked={blocked} error={open.error && cashRefusal(open.error, 'a abertura da sessão')} />
       <ConfirmButton
         type="submit"
         size="touch-primary"
