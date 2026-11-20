@@ -4,10 +4,13 @@ import { describe, expect, it } from 'vitest';
 import { atPayment, billShown } from '../../test/payment-screen';
 import { problem } from '../../test/server';
 import {
+  cancelPartitionEndpoint,
   equalPartsEndpoint,
   ITEMS_PARTITION,
   LINE_IDS,
+  mzn,
   part,
+  PARTITION_IDS,
   partitionEndpoint,
   serverSettlement,
   SETTLEMENT,
@@ -100,6 +103,35 @@ describe('splitting the bill', () => {
     await waitFor(() => expect(within(parts()).getAllByRole('listitem')).toHaveLength(3));
     expect(requests).toHaveLength(2);
     expect(requests[1]!.idempotencyKey).toBe(requests[0]!.idempotencyKey);
+  });
+
+  it('a part is cancelled at its version, and its quantities go back to the bill', async () => {
+    const server = serverSettlement(SPLIT_IN_THREE);
+    const requests = cancelPartitionEndpoint(PARTITION_IDS.third, () => {
+      server.set({ ...SPLIT_IN_THREE, partitions: [part(1), part(2), part(3, { status: 'CANCELLED' })] });
+      return HttpResponse.json(part(3, { status: 'CANCELLED', version: 1 }));
+    });
+    const { user } = await atPayment();
+    await billShown();
+
+    const third = within(parts()).getAllByRole('listitem')[2]!;
+    await user.click(within(third).getByRole('button', { name: 'Cancelar Parte 3 de 3' }));
+
+    await waitFor(() => expect(within(parts()).getAllByRole('listitem')).toHaveLength(2));
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
+    expect(requests[0]!.body).toEqual({ version: 0, reason: 'Divisão refeita no ponto de venda' });
+  });
+
+  it('a part already paid is not offered to be cancelled', async () => {
+    serverSettlement({ ...SPLIT_IN_THREE, partitions: [part(1, { paid: mzn('510.00'), balance: mzn('0.00'), paymentStatus: 'PAID', financialState: 'SETTLED' }), part(2), part(3)] });
+    await atPayment();
+    await billShown();
+
+    const first = within(parts()).getAllByRole('listitem')[0]!;
+    expect(first).toHaveTextContent('Pago');
+    expect(within(first).queryByRole('button', { name: /^Cancelar/ })).not.toBeInTheDocument();
+    expect(within(first).queryByRole('button', { name: /^Cobrar/ })).not.toBeInTheDocument();
   });
 
   it.each([

@@ -37,7 +37,13 @@ export function PaymentScreen({ orderId, blocked }: Props) {
             <Stat label="Saldo pendente" value={settlement.data.balance} />
           </dl>
           <SplitPanel settlement={settlement.data} guests={heading.data?.guests} disabled={blocked} />
-          <PartitionList partitions={settlement.data.partitions} selected={selected} onSelect={setSelected} />
+          <PartitionList
+            orderId={orderId}
+            partitions={settlement.data.partitions}
+            selected={selected}
+            onSelect={setSelected}
+            disabled={blocked}
+          />
           <PaymentPanel settlement={settlement.data} target={targetOf(settlement.data, selected)} disabled={blocked} />
           <OpenAttempts
             orderId={orderId}

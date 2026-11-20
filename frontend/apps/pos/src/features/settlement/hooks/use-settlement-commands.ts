@@ -119,6 +119,19 @@ export function useCancelAttempt(orderId: string) {
   );
 }
 
+/** `POST /api/v1/pos/partitions/{id}/cancel` at its version: refused once it has a payment or a document (D67). */
+export function useCancelPartition(orderId: string) {
+  const { api } = useServices();
+  return useSettlementIntent(orderId, async ({ partitionId, version }: { partitionId: string; version: number }, key) =>
+    (
+      await api.POST('/api/v1/pos/partitions/{id}/cancel', {
+        params: { path: { id: partitionId }, header: { 'Idempotency-Key': key } },
+        body: { version, reason: 'Divisão refeita no ponto de venda' },
+      })
+    ).data,
+  );
+}
+
 /** `POST /api/v1/pos/orders/{id}/partitions` with kind `ITEMS`: quantities of lines as one part (D67). */
 export function useSplitByItems(orderId: string) {
   const { api } = useServices();
