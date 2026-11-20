@@ -3,7 +3,15 @@ import { HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { ORDER_ID } from '../../test/order';
 import { atPayment, billShown } from '../../test/payment-screen';
-import { attempt, attemptEndpoint, PAID, serverSettlement } from '../../test/settlement';
+import {
+  attempt,
+  attemptEndpoint,
+  mzn,
+  PAID,
+  PARTITION_IDS,
+  serverSettlement,
+  SPLIT_IN_THREE,
+} from '../../test/settlement';
 
 const payPanel = () => screen.getByRole('region', { name: 'Pagamento' });
 const outstanding = () => within(screen.getByRole('group', { name: 'Resumo da conta' })).getByText('Saldo pendente').nextSibling;
@@ -33,5 +41,24 @@ describe('charging the bill', () => {
     expect(requests[0]!.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
     // The amounts as typed and as the server sent them, never a sum made here.
     expect(requests[0]!.raw).toBe(JSON.stringify({ orderId: ORDER_ID, methodCode: 'CASH', amount: '1530.00', tendered: '2000' }));
+  });
+
+  it('a part chosen in the list is what is charged, at its own balance', async () => {
+    serverSettlement(SPLIT_IN_THREE);
+    const requests = attemptEndpoint(() => HttpResponse.json(attempt({ amount: mzn('510.00'), targetType: 'PARTITION' }), { status: 201 }));
+    const { user } = await atPayment();
+    await billShown();
+    expect(within(payPanel()).getByRole('heading', { name: 'Valor a cobrar — Restante da conta' })).toBeInTheDocument();
+
+    const second = within(screen.getByRole('list', { name: 'Divisões' })).getByRole('button', { name: 'Cobrar Parte 2 de 3' });
+    await user.click(second);
+
+    expect(second).toHaveAttribute('aria-pressed', 'true');
+    expect(within(payPanel()).getByRole('heading', { name: 'Valor a cobrar — Parte 2 de 3' })).toBeInTheDocument();
+    expect(within(payPanel()).getByLabelText('Valor a pagar')).toHaveValue('510.00');
+    await user.click(within(payPanel()).getByRole('button', { name: /^Cobrar 510,00\sMTn$/ }));
+
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0]!.body).toEqual({ orderId: ORDER_ID, partitionId: PARTITION_IDS.second, methodCode: 'CASH', amount: '510.00' });
   });
 });

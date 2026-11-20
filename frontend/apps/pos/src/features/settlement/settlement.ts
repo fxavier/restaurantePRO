@@ -5,6 +5,7 @@ type Schemas = components['schemas'];
 type SettlementView = Schemas['com.xavier.backend.settlement.model.dto.OrderSettlementView'];
 type PartitionView = Schemas['com.xavier.backend.settlement.model.dto.PartitionView'];
 type LineCoverage = Schemas['com.xavier.backend.settlement.model.dto.LineCoverage'];
+type AttemptView = Schemas['com.xavier.backend.settlement.model.dto.AttemptView'];
 
 /** A part of the bill (BillPartition, D67): by items, or an amount (an equal part, with its number). */
 export type Partition = {
@@ -35,6 +36,17 @@ export type Settlement = {
   partitions: Partition[];
   /** The billable lines with a quantity in no live part yet, which a split by items may take. */
   undivided: UndividedLine[];
+  /** Payments still CREATED, PENDING or UNKNOWN on any target: each blocks a new charge of its target (§7.4). */
+  openAttempts: OpenAttempt[];
+};
+
+export type OpenAttempt = {
+  id: string;
+  status: string;
+  methodCode: string;
+  methodKind: string;
+  amount: MoneyValue;
+  partitionId?: string;
 };
 
 /** A line's quantity still in no part, in thousandths (the contract's 3 decimals), so stepping it is exact. */
@@ -55,7 +67,25 @@ export function toSettlement(view: SettlementView | undefined): Settlement {
     residualBalance: view.residualBalance ?? view.balance,
     partitions: (view.partitions ?? []).filter((partition) => partition.status === 'LIVE').map(toPartition),
     undivided: (view.coverage ?? []).flatMap(toUndivided),
+    openAttempts: (view.openAttempts ?? []).map(toOpenAttempt),
   };
+}
+
+function toOpenAttempt(view: AttemptView): OpenAttempt {
+  if (!view.id || !view.status || !view.methodCode || !view.amount) throw new Error('Incomplete attempt');
+  return {
+    id: view.id,
+    status: view.status,
+    methodCode: view.methodCode,
+    methodKind: view.methodKind ?? '',
+    amount: view.amount,
+    partitionId: view.partitionId,
+  };
+}
+
+/** A payment of this target still open: the target is not charged again until it is resolved. */
+export function openAttemptOn(settlement: Settlement, target: Target): OpenAttempt | undefined {
+  return settlement.openAttempts.find((attempt) => attempt.partitionId === target.partitionId);
 }
 
 function toUndivided(line: LineCoverage): UndividedLine[] {

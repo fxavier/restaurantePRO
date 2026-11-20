@@ -42,6 +42,48 @@ export function useCharge(orderId: string, onCharged: (attempt: Attempt | undefi
   );
 }
 
+/**
+ * `POST /api/v1/pos/payment-attempts/{id}/resolve` without an outcome: the provider is asked for an UNKNOWN attempt's
+ * result (D81). Reclassifying it by hand needs an approver, which the POS does not offer here.
+ */
+export function useResolveAttempt(orderId: string) {
+  const { api } = useServices();
+  return useSettlementIntent(orderId, async (attemptId: string, key) =>
+    (
+      await api.POST('/api/v1/pos/payment-attempts/{id}/resolve', {
+        params: { path: { id: attemptId }, header: { 'Idempotency-Key': key } },
+        body: {},
+      })
+    ).data,
+  );
+}
+
+/** `POST /api/v1/pos/payment-attempts/{id}/confirm`: the operator saw the card terminal approve it (D50 §7.5). */
+export function useConfirmAttempt(orderId: string) {
+  const { api } = useServices();
+  return useSettlementIntent(orderId, async ({ attemptId, authorizationCode }: { attemptId: string; authorizationCode?: string }, key) =>
+    (
+      await api.POST('/api/v1/pos/payment-attempts/{id}/confirm', {
+        params: { path: { id: attemptId }, header: { 'Idempotency-Key': key } },
+        body: { authorizationCode },
+      })
+    ).data,
+  );
+}
+
+/** `POST /api/v1/pos/payment-attempts/{id}/cancel`: the card terminal did not approve it. */
+export function useCancelAttempt(orderId: string) {
+  const { api } = useServices();
+  return useSettlementIntent(orderId, async ({ attemptId, reason }: { attemptId: string; reason: string }, key) =>
+    (
+      await api.POST('/api/v1/pos/payment-attempts/{id}/cancel', {
+        params: { path: { id: attemptId }, header: { 'Idempotency-Key': key } },
+        body: { reason },
+      })
+    ).data,
+  );
+}
+
 /** `POST /api/v1/pos/orders/{id}/partitions` with kind `ITEMS`: quantities of lines as one part (D67). */
 export function useSplitByItems(orderId: string) {
   const { api } = useServices();
