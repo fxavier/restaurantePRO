@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useApi } from '../../../lib/api';
-import type { CustomerCandidate, CustomerDetails, DebtRow } from '../types';
+import type { CreditView, CustomerCandidate, CustomerDetails, DebtRow, StatementView } from '../types';
 
 /** Every customers query key starts here, so a command refreshes what it may have changed (FC §5). */
 export const CUSTOMERS_KEY = ['backoffice', 'customers'] as const;
@@ -17,6 +17,31 @@ export function useCustomer(customerId: string) {
     queryKey: customerKey(customerId),
     queryFn: async (): Promise<CustomerDetails> =>
       (await api.GET('/api/v1/backoffice/customers/{id}', { params: { path: { id: customerId } } })).data!,
+  });
+}
+
+export const creditKey = (customerId: string) => [...customerKey(customerId), 'credit'] as const;
+
+/**
+ * The credit account now: limit, debt, reserved, available and block, all computed by the server (D73). A customer
+ * without an account answers 422 CREDIT_ACCOUNT_MISSING, which the tab shows as "no account", not as a failure.
+ */
+export function useCredit(customerId: string) {
+  const api = useApi();
+  return useQuery({
+    queryKey: creditKey(customerId),
+    queryFn: async (): Promise<CreditView> =>
+      (await api.GET('/api/v1/backoffice/customers/{id}/credit', { params: { path: { id: customerId } } })).data!,
+  });
+}
+
+/** The current-account statement, from the start until now (the server's defaults), with its running balance. */
+export function useStatement(customerId: string) {
+  const api = useApi();
+  return useQuery({
+    queryKey: [...creditKey(customerId), 'statement'],
+    queryFn: async (): Promise<StatementView> =>
+      (await api.GET('/api/v1/backoffice/customers/{id}/statement', { params: { path: { id: customerId } } })).data!,
   });
 }
 

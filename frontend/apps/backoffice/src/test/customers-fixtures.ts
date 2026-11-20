@@ -15,7 +15,10 @@ export type LoyaltyStatement = Schemas['com.xavier.backend.promotions.loyalty.mo
 /** MZN, as the company's currency arrives in every Money of the fixtures (never hard-coded in the app). */
 export const mzn = (amount: string) => ({ amount, currency: 'MZN' });
 
-export const lusitania: CustomerDetails = {
+/** A customer as the tests address it: with its id. */
+export type Customer = CustomerDetails & { id: string; name: string };
+
+export const lusitania: Customer = {
   id: 'c0000000-0000-4000-8000-000000000001',
   name: 'Lusitânia Tech, Lda.',
   taxId: '501234567',
@@ -38,7 +41,7 @@ export const lusitania: CustomerDetails = {
   ],
 };
 
-export const tejo: CustomerDetails = {
+export const tejo: Customer = {
   id: 'c0000000-0000-4000-8000-000000000002',
   name: 'Construtora Tejo & Filhos, SA',
   taxId: '509876543',

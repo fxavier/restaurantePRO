@@ -2,11 +2,21 @@ import { Badge, Card, CardContent, CardHeader, DataState, Tabs, TabsContent, Tab
 import { Mail } from 'lucide-react';
 import { useId } from 'react';
 import { useCustomer } from '../hooks/use-customer-queries';
+import type { Allowed } from '../permissions';
 import type { CustomerDetails } from '../types';
+import { CreditTab } from './credit-tab';
 import { QueryFailure } from './query-failure';
 
 /** The right pane (Stitch's customer card): who the customer is, then one tab per concern. */
-export function CustomerDetail({ customerId }: { customerId: string }) {
+export function CustomerDetail({
+  customerId,
+  allowed,
+  storeId,
+}: {
+  customerId: string;
+  allowed: Allowed;
+  storeId: string | undefined;
+}) {
   const customer = useCustomer(customerId);
   const titleId = useId();
 
@@ -40,7 +50,9 @@ export function CustomerDetail({ customerId }: { customerId: string }) {
           </TabsList>
           <TabsContent value="data" className="pt-4" />
           <TabsContent value="contacts" className="pt-4" />
-          <TabsContent value="credit" className="pt-4" />
+          <TabsContent value="credit" className="pt-4">
+            <CreditTab customerId={customerId} canManage={allowed.CREDIT_LIMIT_MANAGE} />
+          </TabsContent>
           <TabsContent value="loyalty" className="pt-4" />
         </Tabs>
       </CardContent>
