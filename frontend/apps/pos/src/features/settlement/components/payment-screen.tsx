@@ -5,6 +5,7 @@ import { useOrderHeading, useSettlement } from '../hooks/use-settlement';
 import { useState } from 'react';
 import { SETTLEMENT_MESSAGES } from '../messages';
 import { targetOf } from '../settlement';
+import { OpenAttempts } from './open-attempts';
 import { PartitionList } from './partition-list';
 import { PaymentPanel } from './payment-panel';
 import { SplitPanel } from './split-panel';
@@ -20,7 +21,7 @@ export function PaymentScreen({ orderId, blocked }: Props) {
   const settlement = useSettlement(orderId);
   const heading = useOrderHeading(orderId);
   const tableCode = heading.data?.tableCode;
-  const [selected] = useState<string>();
+  const [selected, setSelected] = useState<string>();
 
   return (
     <main className="flex min-h-0 flex-1 flex-col gap-4 p-4">
@@ -33,8 +34,14 @@ export function PaymentScreen({ orderId, blocked }: Props) {
             <Stat label="Saldo pendente" value={settlement.data.balance} />
           </dl>
           <SplitPanel settlement={settlement.data} guests={heading.data?.guests} disabled={blocked} />
-          <PartitionList partitions={settlement.data.partitions} />
+          <PartitionList partitions={settlement.data.partitions} selected={selected} onSelect={setSelected} />
           <PaymentPanel settlement={settlement.data} target={targetOf(settlement.data, selected)} disabled={blocked} />
+          <OpenAttempts
+            orderId={orderId}
+            attempts={settlement.data.openAttempts}
+            targetLabel={(attempt) => targetOf(settlement.data, attempt.partitionId).label}
+            disabled={blocked}
+          />
         </>
       ) : settlement.isError ? (
         <div className="flex flex-col items-center gap-3 p-6 text-center">

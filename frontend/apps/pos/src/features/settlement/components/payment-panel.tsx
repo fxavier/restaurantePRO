@@ -2,7 +2,7 @@ import { Button, formatMoney, Input, Label, Money, type MoneyValue } from '@rest
 import { Banknote } from 'lucide-react';
 import { useState } from 'react';
 import { type Attempt, useCharge } from '../hooks/use-settlement-commands';
-import { amountInput, type Settlement, type Target } from '../settlement';
+import { amountInput, openAttemptOn, type Settlement, type Target } from '../settlement';
 import { CommandStatus } from './command-status';
 
 type Props = {
@@ -22,6 +22,7 @@ const CASH = { code: 'CASH', name: 'Numerário', detail: 'Com troco' };
 export function PaymentPanel({ settlement, target, disabled }: Props) {
   const [last, setLast] = useState<Attempt>();
   const charge = useCharge(settlement.orderId, setLast);
+  const inDoubt = openAttemptOn(settlement, target) !== undefined;
 
   return (
     <section aria-labelledby="pay-title" className="flex flex-col gap-4">
@@ -32,11 +33,16 @@ export function PaymentPanel({ settlement, target, disabled }: Props) {
         <h4 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Valor a cobrar — {target.label}</h4>
         <Money value={target.balance} className="text-4xl font-bold lg:text-5xl" />
       </div>
+      {inDoubt && (
+        <p className="rounded-lg border border-warning p-3 font-medium">
+          Há um pagamento em curso nesta conta. Resolva-o antes de cobrar de novo.
+        </p>
+      )}
       {/* A new target, or a new balance from the server, starts the amounts again. */}
       <ChargeForm
         key={`${target.key}:${target.balance.amount}`}
         due={target.balance}
-        disabled={disabled || charge.intent !== undefined}
+        disabled={disabled || inDoubt || charge.intent !== undefined}
         onCharge={(amount, tendered) => {
           setLast(undefined);
           charge.start({ orderId: settlement.orderId, partitionId: target.partitionId, methodCode: CASH.code, amount, tendered }, undefined);
