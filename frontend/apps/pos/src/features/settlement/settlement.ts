@@ -15,9 +15,24 @@ export type Partition = {
   version: number;
   due: MoneyValue;
   balance: MoneyValue;
-  paymentStatus: string;
+  paymentStatus: PaymentStatus;
+  /** Nothing left to collect on it (§8.3). */
+  settled: boolean;
+  /** Its own document is ISSUED (an ITEMS part only, D70), with its id once drafted. */
+  invoiced: boolean;
+  documentId?: string;
   lines: { lineId: string; description: string; quantity: string }[];
 };
+
+/** D97: from gross, paid and credit; live on the settlement views. */
+export type PaymentStatus = 'UNPAID' | 'PARTIALLY_PAID' | 'PAID' | 'ON_ACCOUNT' | 'MIXED';
+const PAYMENT_STATUSES: readonly string[] = ['UNPAID', 'PARTIALLY_PAID', 'PAID', 'ON_ACCOUNT', 'MIXED'];
+const isPaymentStatus = (status: string | undefined): status is PaymentStatus => PAYMENT_STATUSES.includes(status ?? '');
+
+/** A part nothing has touched yet (no payment, no document): the only kind that can be cancelled (D67). */
+export function isCancellable(partition: Partition): boolean {
+  return partition.paymentStatus === 'UNPAID' && !partition.invoiced && partition.documentId === undefined;
+}
 
 /**
  * An order's bill as settlement has it (`GET /orders/{id}/settlement`): every amount and state is the server's, read
@@ -162,7 +177,10 @@ function toPartition(view: PartitionView): Partition {
     version: view.version,
     due: view.due,
     balance: view.balance,
-    paymentStatus: view.paymentStatus ?? 'UNPAID',
+    paymentStatus: isPaymentStatus(view.paymentStatus) ? view.paymentStatus : 'UNPAID',
+    settled: view.financialState === 'SETTLED',
+    invoiced: view.invoiced ?? false,
+    documentId: view.documentId,
     lines: (view.lines ?? []).map((line) => ({
       lineId: line.lineId ?? '',
       description: line.description ?? '',
