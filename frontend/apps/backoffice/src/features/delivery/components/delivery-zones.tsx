@@ -2,6 +2,8 @@ import { Badge, Card, CardContent, CardHeader, CardTitle, DataState } from '@res
 import { useFeeItems } from '../hooks/use-fee-items';
 import { useZones } from '../hooks/use-zones';
 import type { ZoneView } from '../types';
+import { ListError } from './list-error';
+import { NewZoneDialog } from './new-zone-dialog';
 
 /** The selected store's delivery zones (§4 delivery, D128): each with its fee item. */
 export function DeliveryZones({ storeId }: { storeId: string }) {
@@ -9,9 +11,27 @@ export function DeliveryZones({ storeId }: { storeId: string }) {
   const feeItems = useFeeItems();
   const feeName = (zone: ZoneView) => feeItems.data?.find((item) => item.id === zone.feeItemId)?.name;
 
+  if (zones.isError) {
+    return (
+      <ListError
+        error={zones.error}
+        forbidden="Sem permissão para ver as zonas de entrega desta loja."
+        onRetry={() => void zones.refetch()}
+      />
+    );
+  }
+
   return (
     <div className="mt-6 flex flex-col gap-4">
-      <DataState state={zones.isPending ? 'loading' : zones.data?.length ? 'ready' : 'empty'}>
+      {zones.data && (
+        <div className="flex justify-end">
+          <NewZoneDialog storeId={storeId} />
+        </div>
+      )}
+      <DataState
+        state={zones.isPending ? 'loading' : zones.data?.length ? 'ready' : 'empty'}
+        emptyMessage="Esta loja ainda não tem zonas de entrega."
+      >
         <ul aria-label="Zonas da loja" className="grid gap-4 lg:grid-cols-2">
           {zones.data?.map((zone) => (
             <li key={zone.id}>
