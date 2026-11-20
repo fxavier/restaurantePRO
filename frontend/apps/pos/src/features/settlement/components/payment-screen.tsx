@@ -3,6 +3,8 @@ import { Button, Money, type MoneyValue, Skeleton } from '@restaurantpro/ui';
 import { errorMessage, isOffline } from '../../../lib/error-messages';
 import { useOrderHeading, useSettlement } from '../hooks/use-settlement';
 import { SETTLEMENT_MESSAGES } from '../messages';
+import { PartitionList } from './partition-list';
+import { SplitPanel } from './split-panel';
 
 type Props = {
   orderId: string;
@@ -11,7 +13,7 @@ type Props = {
 };
 
 /** "Conta & Pagamento" (Stitch; §4, §8.5): one order's bill, its split, its payments, its document and its close. */
-export function PaymentScreen({ orderId }: Props) {
+export function PaymentScreen({ orderId, blocked }: Props) {
   const settlement = useSettlement(orderId);
   const heading = useOrderHeading(orderId);
   const tableCode = heading.data?.tableCode;
@@ -20,11 +22,15 @@ export function PaymentScreen({ orderId }: Props) {
     <main className="flex min-h-0 flex-1 flex-col gap-4 p-4">
       <h2 className="text-2xl font-semibold">{tableCode ? `Conta da mesa ${tableCode}` : 'Conta do pedido'}</h2>
       {settlement.data ? (
-        <dl role="group" aria-label="Resumo da conta" className="flex gap-4">
-          <Stat label="Total da conta" value={settlement.data.due} />
-          <Stat label="Pago" value={settlement.data.paid} />
-          <Stat label="Saldo pendente" value={settlement.data.balance} />
-        </dl>
+        <>
+          <dl role="group" aria-label="Resumo da conta" className="flex gap-4">
+            <Stat label="Total da conta" value={settlement.data.due} />
+            <Stat label="Pago" value={settlement.data.paid} />
+            <Stat label="Saldo pendente" value={settlement.data.balance} />
+          </dl>
+          <SplitPanel settlement={settlement.data} guests={heading.data?.guests} disabled={blocked} />
+          <PartitionList partitions={settlement.data.partitions} />
+        </>
       ) : settlement.isError ? (
         <div className="flex flex-col items-center gap-3 p-6 text-center">
           <p role="alert">{loadError(settlement.error)}</p>
