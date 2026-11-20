@@ -33,6 +33,37 @@ export function tableCodes(tableIds: string[], areas: ReservableArea[]): string 
   return tableIds.flatMap((tableId) => codes.get(tableId) ?? []).join(' + ');
 }
 
+/** A state, or every state. */
+export type StatusFilter = ReservationStatus | 'ALL';
+
+const STATUS_FILTERS: StatusFilter[] = ['ALL', 'BOOKED', 'SEATED', 'NO_SHOW', 'CANCELLED'];
+
+export type DaySummary = Record<StatusFilter, { count: number; people: number }>;
+
+/** How many reservations, and how many people, the day has in each state (counts only: no capacity check, D126). */
+export function summarize(reservations: Reservation[]): DaySummary {
+  const summary = Object.fromEntries(STATUS_FILTERS.map((status) => [status, { count: 0, people: 0 }])) as DaySummary;
+  for (const { status, partySize } of reservations) {
+    for (const key of ['ALL', status] as const) {
+      summary[key].count += 1;
+      summary[key].people += partySize;
+    }
+  }
+  return summary;
+}
+
+const fold = (text: string) => text.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+
+/** The state filter, and the search: part of the name (case and accents ignored), or of the phone's digits. */
+export function matches(reservation: Reservation, { status, query }: { status: StatusFilter; query: string }): boolean {
+  if (status !== 'ALL' && reservation.status !== status) return false;
+  const name = fold(query.trim());
+  const digits = query.replace(/\D/g, '');
+  return (
+    fold(reservation.contactName).includes(name) || (digits !== '' && (reservation.phone ?? '').includes(digits))
+  );
+}
+
 /** The contract marks no field required; an answer missing what the screen needs is an error, not a crash. */
 export function toReservations(views: ReservationView[] | undefined): Reservation[] {
   if (!views) throw new Error('Incomplete reservations');

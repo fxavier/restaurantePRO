@@ -4,8 +4,11 @@ import { useState } from 'react';
 import { useStoreTimeZone } from '../../../lib/auth/use-employee';
 import { errorMessage, isOffline } from '../../../lib/error-messages';
 import { useReservations } from '../hooks/use-reservations';
-import { type ReservableArea, type Reservation, tableCodes } from '../reservation';
-import { dayTitle, storeClock, storeDate } from '../store-time';
+import { matches, type ReservableArea, type Reservation, type StatusFilter, summarize, tableCodes } from '../reservation';
+import { storeClock, storeDate } from '../store-time';
+import { DayBar } from './day-bar';
+import { DaySummary } from './day-summary';
+import { ListFilter } from './list-filter';
 import { ReservationCard } from './reservation-card';
 
 type Props = {
@@ -16,15 +19,18 @@ type Props = {
 /** `/reservations` (§4, Stitch "Gestão de Reservas"): the store's reservations of one day. */
 export function ReservationsScreen({ areas }: Props) {
   const timeZone = useStoreTimeZone();
-  const [date] = useState(() => storeDate(new Date(), timeZone));
+  const [today] = useState(() => storeDate(new Date(), timeZone));
+  const [date, setDate] = useState(today);
   const day = useReservations(date);
 
   return (
     <div className="flex flex-col gap-4">
       <h2 className="sr-only">Reservas</h2>
-      <h3 className="text-2xl font-semibold">{dayTitle(date)}</h3>
+      <div className="flex flex-col gap-4 rounded-xl border bg-card p-4">
+        <DayBar date={date} today={today} onDate={setDate} />
+      </div>
       {day.data ? (
-        <DayList reservations={day.data} areas={areas} timeZone={timeZone} />
+        <Day reservations={day.data} areas={areas} timeZone={timeZone} />
       ) : day.isError ? (
         <div className="flex flex-col items-center gap-3 py-6 text-center">
           <p role="alert">{loadError(day.error)}</p>
@@ -43,20 +49,34 @@ export function ReservationsScreen({ areas }: Props) {
   );
 }
 
-function DayList({ reservations, areas, timeZone }: { reservations: Reservation[]; areas: ReservableArea[]; timeZone: string }) {
+type DayProps = { reservations: Reservation[]; areas: ReservableArea[]; timeZone: string };
+
+function Day({ reservations, areas, timeZone }: DayProps) {
+  const [status, setStatus] = useState<StatusFilter>('ALL');
+  const [query, setQuery] = useState('');
   if (reservations.length === 0) return <p className="py-6 text-center text-muted-foreground">Não há reservas neste dia.</p>;
+  const summary = summarize(reservations);
+  const shown = reservations.filter((reservation) => matches(reservation, { status, query }));
   return (
-    <ul className="flex flex-col gap-3">
-      {reservations.map((reservation) => (
-        <li key={reservation.id}>
-          <ReservationCard
-            reservation={reservation}
-            time={storeClock(reservation.startsAt, timeZone).time}
-            tables={tableCodes(reservation.tableIds, areas)}
-          />
-        </li>
-      ))}
-    </ul>
+    <>
+      <DaySummary summary={summary} />
+      <ListFilter summary={summary} status={status} onStatus={setStatus} query={query} onQuery={setQuery} />
+      {shown.length === 0 ? (
+        <p className="py-6 text-center text-muted-foreground">Nenhuma reserva corresponde à pesquisa.</p>
+      ) : (
+        <ul className="flex flex-col gap-3">
+          {shown.map((reservation) => (
+            <li key={reservation.id}>
+              <ReservationCard
+                reservation={reservation}
+                time={storeClock(reservation.startsAt, timeZone).time}
+                tables={tableCodes(reservation.tableIds, areas)}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
   );
 }
 

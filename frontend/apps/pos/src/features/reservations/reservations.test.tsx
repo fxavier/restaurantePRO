@@ -52,6 +52,59 @@ describe('the reservations of a day', () => {
     expect(days.length).toBeGreaterThanOrEqual(2);
   });
 
+  it('goes to another day and back to today', async () => {
+    const { user, days } = await atReservations({ day: [json(DAY), json([])] });
+    await row('Ana Ferreira');
+    const dates = () => days.map((seen) => new URL(seen.url).searchParams.get('date'));
+
+    await user.click(screen.getByRole('button', { name: 'Dia seguinte' }));
+    expect(await screen.findByRole('heading', { name: 'Sábado, 21 de novembro de 2026' })).toBeInTheDocument();
+    expect(await screen.findByText('Não há reservas neste dia.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Amanhã' })).toHaveAttribute('aria-pressed', 'true');
+
+    await user.click(screen.getByRole('button', { name: 'Dia anterior' }));
+    await user.click(screen.getByRole('button', { name: 'Dia anterior' }));
+    expect(await screen.findByRole('heading', { name: 'Quinta-feira, 19 de novembro de 2026' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Hoje' })).toHaveAttribute('aria-pressed', 'false');
+
+    await user.click(screen.getByRole('button', { name: 'Hoje' }));
+    expect(await screen.findByRole('heading', { name: 'Sexta-feira, 20 de novembro de 2026' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Amanhã' }));
+    expect(await screen.findByRole('heading', { name: 'Sábado, 21 de novembro de 2026' })).toBeInTheDocument();
+    expect(dates()).toEqual(expect.arrayContaining([TODAY, '2026-11-21', '2026-11-19']));
+  });
+
+  it('sums the day up by state, with the people of each', async () => {
+    await atReservations();
+    await row('Ana Ferreira');
+
+    const summary = screen.getByRole('region', { name: 'Resumo do dia' });
+    expect(within(summary).getByRole('group', { name: 'Total' })).toHaveTextContent(/4\s*reservas\s*·\s*14 pessoas/);
+    expect(within(summary).getByRole('group', { name: 'Por chegar' })).toHaveTextContent(/1\s*reserva\s*·\s*4 pessoas/);
+    expect(within(summary).getByRole('group', { name: 'Em sala' })).toHaveTextContent(/1\s*reserva\s*·\s*3 pessoas/);
+    expect(within(summary).getByRole('group', { name: 'Não compareceram' })).toHaveTextContent(/1\s*reserva/);
+    expect(within(summary).getByRole('group', { name: 'Canceladas' })).toHaveTextContent(/1\s*reserva/);
+  });
+
+  it('shows one state only, or the reservations whose name or phone matches the search', async () => {
+    const { user } = await atReservations();
+    await row('Ana Ferreira');
+    const names = () => screen.queryAllByRole('article').map((article) => article.getAttribute('aria-label'));
+
+    await user.click(screen.getByRole('button', { name: 'Sentadas (1)' }));
+    expect(names()).toEqual(['Família Costa, 11:30']);
+    expect(screen.getByRole('button', { name: 'Sentadas (1)' })).toHaveAttribute('aria-pressed', 'true');
+
+    await user.click(screen.getByRole('button', { name: 'Todas (4)' }));
+    await user.type(screen.getByRole('searchbox', { name: 'Procurar por nome ou telefone' }), '841 234');
+    expect(names()).toEqual(['Ana Ferreira, 19:30']);
+
+    await user.clear(screen.getByRole('searchbox', { name: 'Procurar por nome ou telefone' }));
+    await user.type(screen.getByRole('searchbox', { name: 'Procurar por nome ou telefone' }), 'ninguém');
+    expect(names()).toEqual([]);
+    expect(screen.getByText('Nenhuma reserva corresponde à pesquisa.')).toBeInTheDocument();
+  });
+
   it('says when the server cannot be reached', async () => {
     await atReservations({ day: [() => HttpResponse.error()] });
 
