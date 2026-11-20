@@ -29,6 +29,8 @@ export type Settlement = {
   due: MoneyValue;
   paid: MoneyValue;
   balance: MoneyValue;
+  /** What the order itself (outside its live parts) still has to collect (D69). */
+  residualBalance: MoneyValue;
   /** The live parts, oldest first; a cancelled one is history, not shown. */
   partitions: Partition[];
   /** The billable lines with a quantity in no live part yet, which a split by items may take. */
@@ -50,6 +52,7 @@ export function toSettlement(view: SettlementView | undefined): Settlement {
     due: view.due,
     paid: view.paid,
     balance: view.balance,
+    residualBalance: view.residualBalance ?? view.balance,
     partitions: (view.partitions ?? []).filter((partition) => partition.status === 'LIVE').map(toPartition),
     undivided: (view.coverage ?? []).flatMap(toUndivided),
   };
@@ -59,6 +62,29 @@ function toUndivided(line: LineCoverage): UndividedLine[] {
   if (!line.lineId || line.netQty === undefined) return [];
   const available = thousandths(line.netQty) - thousandths(line.partitioned ?? '0');
   return available > 0 ? [{ lineId: line.lineId, description: line.description ?? '', available }] : [];
+}
+
+/** What a payment pays (D69): a live part, or the order's residual (the whole bill when it is not split). */
+export type Target = { key: string; label: string; balance: MoneyValue; partitionId?: string };
+
+/** The selected part, while it is live; otherwise the order's residual. */
+export function targetOf(settlement: Settlement, partitionId: string | undefined): Target {
+  const partition = settlement.partitions.find((candidate) => candidate.id === partitionId);
+  if (partition) return { key: partition.id, label: partition.label, balance: partition.balance, partitionId: partition.id };
+  return {
+    key: 'order',
+    label: settlement.partitions.length > 0 ? 'Restante da conta' : 'Conta total',
+    balance: settlement.residualBalance,
+  };
+}
+
+/**
+ * An amount as typed ("12,5", "1530.00") as the decimal string the contract takes, or undefined when it is not a
+ * positive amount with at most two decimals. Text in, text out: nothing is computed with it.
+ */
+export function amountInput(text: string): string | undefined {
+  const decimal = text.trim().replace(',', '.');
+  return /^\d+(\.\d{1,2})?$/.test(decimal) && /[1-9]/.test(decimal) ? decimal : undefined;
 }
 
 /** One unit, in thousandths. */

@@ -3,6 +3,7 @@ import { Minus, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { useSplitByItems, useSplitEqually } from '../hooks/use-settlement-commands';
 import type { Settlement } from '../settlement';
+import { CommandStatus } from './command-status';
 import { ItemsSplit } from './items-split';
 
 type Props = {
@@ -85,6 +86,19 @@ export function SplitPanel({ settlement, guests, disabled }: Props) {
           />
         </TabsContent>
       </Tabs>
+      {/* One line for what the last split did, so the panel never jumps when it changes. */}
+      <div className="min-h-12">
+        {[split, byItems].map((command, index) => (
+          <CommandStatus
+            key={index}
+            command={command}
+            pendingText="A dividir a conta…"
+            unconfirmedText="Sem ligação — a divisão não foi confirmada."
+            refusedText="A divisão não foi feita."
+            blocked={disabled}
+          />
+        ))}
+      </div>
     </section>
   );
 }
