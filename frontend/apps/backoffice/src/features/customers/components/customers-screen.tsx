@@ -2,6 +2,7 @@ import { useCustomerSelection } from '../hooks/use-customer-selection';
 import { allowedFrom } from '../permissions';
 import { CustomerDetail } from './customer-detail';
 import { CustomerList } from './customer-list';
+import { NewCustomerDialog } from './new-customer-dialog';
 
 type CustomersScreenProps = {
   /** The session's `permissions`: which controls to show (the backend enforces). */
@@ -15,9 +16,16 @@ export function CustomersScreen({ authorities, storeId }: CustomersScreenProps) 
   const { customerId, selectCustomer } = useCustomerSelection();
   const allowed = allowedFrom(authorities);
   return (
-    <div className="mt-6 grid items-start gap-6 lg:grid-cols-2">
-      <CustomerList onSelect={selectCustomer} />
-      {customerId && <CustomerDetail key={customerId} customerId={customerId} allowed={allowed} storeId={storeId} />}
-    </div>
+    <>
+      {allowed.CUSTOMER_MANAGE && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          <NewCustomerDialog onCreated={selectCustomer} />
+        </div>
+      )}
+      <div className="mt-6 grid items-start gap-6 lg:grid-cols-2">
+        <CustomerList onSelect={selectCustomer} />
+        {customerId && <CustomerDetail key={customerId} customerId={customerId} allowed={allowed} storeId={storeId} />}
+      </div>
+    </>
   );
 }

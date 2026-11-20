@@ -1,3 +1,5 @@
+import { LOCALE } from '@restaurantpro/ui';
+
 /**
  * A business day (`LocalDate`, "2026-11-02") as the store reads it, "02/11/2026": shown as given, never through a
  * `Date`, which would move it by the browser's timezone (FC §12). Anything else is shown unchanged.
@@ -27,4 +29,17 @@ const loyaltyKinds: Record<string, string> = {
 /** A loyalty movement's kind (backend `promotions.loyalty.model.EntryKind`); an unknown one is shown as sent. */
 export function loyaltyKindLabel(kind: string | undefined): string {
   return (kind && loyaltyKinds[kind]) ?? kind ?? '';
+}
+
+const signed = new Intl.NumberFormat(LOCALE, { signDisplay: 'exceptZero' });
+const plain = new Intl.NumberFormat(LOCALE);
+
+/** A movement of points, with its sign ("+300", "−20"). */
+export function formatPointsChange(points: number | undefined): string {
+  return points === undefined ? '' : signed.format(points);
+}
+
+/** A balance of points ("1 320"). */
+export function formatPoints(points: number | undefined): string {
+  return points === undefined ? '' : plain.format(points);
 }

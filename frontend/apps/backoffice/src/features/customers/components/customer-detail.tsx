@@ -5,6 +5,8 @@ import { useCustomer } from '../hooks/use-customer-queries';
 import type { Allowed } from '../permissions';
 import type { CustomerDetails } from '../types';
 import { CreditTab } from './credit-tab';
+import { CustomerDataTab } from './customer-data-tab';
+import { LoyaltyTab } from './loyalty-tab';
 import { QueryFailure } from './query-failure';
 
 /** The right pane (Stitch's customer card): who the customer is, then one tab per concern. */
@@ -46,14 +48,20 @@ export function CustomerDetail({
             <TabsTrigger value="data">Dados</TabsTrigger>
             <TabsTrigger value="contacts">Moradas & Contactos</TabsTrigger>
             <TabsTrigger value="credit">Crédito</TabsTrigger>
-            <TabsTrigger value="loyalty">Fidelização</TabsTrigger>
+            {allowed.LOYALTY_VIEW && <TabsTrigger value="loyalty">Fidelização</TabsTrigger>}
           </TabsList>
-          <TabsContent value="data" className="pt-4" />
+          <TabsContent value="data" className="pt-4">
+            <CustomerDataTab customer={data} canManage={allowed.CUSTOMER_MANAGE} />
+          </TabsContent>
           <TabsContent value="contacts" className="pt-4" />
           <TabsContent value="credit" className="pt-4">
             <CreditTab customerId={customerId} canManage={allowed.CREDIT_LIMIT_MANAGE} />
           </TabsContent>
-          <TabsContent value="loyalty" className="pt-4" />
+          {allowed.LOYALTY_VIEW && (
+            <TabsContent value="loyalty" className="pt-4">
+              <LoyaltyTab customerId={customerId} allowed={allowed} storeId={storeId} />
+            </TabsContent>
+          )}
         </Tabs>
       </CardContent>
     </Card>
