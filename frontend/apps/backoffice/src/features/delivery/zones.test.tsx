@@ -128,4 +128,72 @@ describe('creating a zone', () => {
       },
     ]);
   });
+
+  it('shows a taken code on the code field and a server violation on its field', async () => {
+    const state = zonesServer();
+    let calls = 0;
+    creating(state, () => {
+      calls += 1;
+      return calls === 1
+        ? problem(409, 'DELIVERY_ZONE_CODE_TAKEN', 'Conflict')
+        : problem(400, 'VALIDATION', 'Bad Request', { errors: [{ field: 'name', message: 'Nome inválido.' }] });
+    });
+    const { user } = renderApp(ZONES);
+
+    const dialog = await openNewZone(user);
+    await fillNewZone(user, dialog);
+    await user.click(within(dialog).getByRole('button', { name: 'Criar zona' }));
+    expect(await within(dialog).findByText('Já existe uma zona com este código nesta loja.')).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Criar zona' }));
+    expect(await within(dialog).findByText('Nome inválido.')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Nome')).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('offers "Tentar novamente" without a connection, resending the same request under the same key', async () => {
+    const state = zonesServer();
+    let calls = 0;
+    const posts = creating(state, () => {
+      calls += 1;
+      return calls === 1 ? problem(502, 'BACKEND_UNAVAILABLE') : undefined;
+    });
+    const { user } = renderApp(ZONES);
+
+    const dialog = await openNewZone(user);
+    await fillNewZone(user, dialog);
+    await user.click(within(dialog).getByRole('button', { name: 'Criar zona' }));
+    expect(await within(dialog).findByText('Sem ligação — a operação não foi confirmada.')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Tentar novamente' }));
+
+    expect(await screen.findByRole('heading', { name: 'Z3 Baixa' })).toBeInTheDocument();
+    expect(posts).toHaveLength(2);
+    expect(posts[1]).toEqual(posts[0]);
+  });
+
+  it('says the fee items cannot be listed when the catalog refuses, and creates nothing', async () => {
+    const state = zonesServer();
+    const posts = creating(state);
+    server.use(http.get(api('/api/v1/backoffice/catalog/items'), () => problem(403, 'HTTP_403', 'Forbidden')));
+    const { user } = renderApp(ZONES);
+
+    const dialog = await openNewZone(user);
+    expect(await within(dialog).findByText('Sem permissão para ver os artigos do catálogo.')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Criar zona' }));
+    expect(await within(dialog).findByText('Escolha o artigo de taxa.')).toBeInTheDocument();
+    expect(posts).toEqual([]);
+  });
 });
+
+type User = ReturnType<typeof renderApp>['user'];
+
+async function openNewZone(user: User) {
+  await user.click(await screen.findByRole('button', { name: 'Nova zona' }));
+  return screen.getByRole('dialog', { name: 'Nova zona de entrega' });
+}
+
+async function fillNewZone(user: User, dialog: HTMLElement) {
+  await user.type(within(dialog).getByLabelText('Código'), 'z3');
+  await user.type(within(dialog).getByLabelText('Nome'), 'Baixa');
+  await within(dialog).findByRole('option', { name: `${feeNear.name} (${feeNear.code})` });
+  await user.selectOptions(within(dialog).getByLabelText('Artigo de taxa'), feeNear.id!);
+}
