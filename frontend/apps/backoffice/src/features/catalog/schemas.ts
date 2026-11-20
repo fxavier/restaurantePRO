@@ -13,6 +13,34 @@ export type FamilyValues = z.infer<typeof familySchema>;
 
 const required = (message: string) => z.string().min(1, message);
 
+/**
+ * A price as typed, with a comma or a point for the decimals, sent as the contract's decimal string: the text itself,
+ * never a float (FC §12). Up to 13 digits and 4 decimals.
+ */
+export function decimalAmount(typed: string): string | undefined {
+  const text = typed.trim().replace(',', '.');
+  return /^\d{1,13}(\.\d{1,4})?$/.test(text) ? text : undefined;
+}
+
+const amount = z
+  .string()
+  .refine((typed) => decimalAmount(typed) !== undefined, 'Indique um valor como 1250,50.')
+  .transform((typed) => decimalAmount(typed) ?? typed);
+
+/** "Nova tabela de preços" (`PriceListCreateRequest`). */
+export const priceListSchema = z.object({ name: name(120) });
+export type PriceListValues = z.infer<typeof priceListSchema>;
+
+/** "Definir preço" (`ItemPriceCreateRequest`): the item, optionally one of its variants, and the amount. */
+export const newPriceSchema = z.object({ itemId: required('Escolha o artigo.'), variantId: optionalId, amount });
+export type NewPriceValues = z.input<typeof newPriceSchema>;
+export type NewPrice = z.output<typeof newPriceSchema>;
+
+/** "Alterar preço" (`ItemPriceUpdateRequest`). */
+export const priceSchema = z.object({ amount });
+export type PriceValues = z.input<typeof priceSchema>;
+export type Price = z.output<typeof priceSchema>;
+
 /** "Adicionar variante" (`ItemVariantCreateRequest`). */
 export const variantSchema = z.object({ code: code(30), name: name(120) });
 export type VariantValues = z.infer<typeof variantSchema>;

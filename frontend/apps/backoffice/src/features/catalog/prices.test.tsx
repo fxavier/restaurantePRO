@@ -1,5 +1,5 @@
 import { formatMoney } from '@restaurantpro/ui';
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import {
@@ -122,7 +122,12 @@ describe('Preços', () => {
     await user.type(within(dialog).getByLabelText('Preço'), '1250,50');
     await user.click(within(dialog).getByRole('button', { name: 'Guardar' }));
 
-    expect(await screen.findByText('SangriaB07')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(priceRows()).toEqual([
+        ['Bife da VaziaC09', '—', formatMoney({ amount: '450.00', currency: 'MZN' })],
+        ['SangriaB07', '—', formatMoney({ amount: '1250.50', currency: 'MZN' })],
+      ]),
+    );
     expect(state.sent).toEqual([
       { method: 'POST', path: `/price-lists/${salaList.id}/prices`, body: { itemId: sangria.id, amount: '1250.50' } },
     ]);
@@ -140,7 +145,7 @@ describe('Preços', () => {
     await user.type(within(dialog).getByLabelText('Preço'), '475');
     await user.click(within(dialog).getByRole('button', { name: 'Guardar' }));
 
-    expect(await screen.findByText(formatMoney({ amount: '475', currency: 'MZN' }))).toBeInTheDocument();
+    await waitFor(() => expect(priceRows()).toEqual([['Bife da VaziaC09', '—', formatMoney({ amount: '475', currency: 'MZN' })]]));
     expect(state.sent).toEqual([
       { method: 'PUT', path: `/price-lists/${salaList.id}/prices/${bifePrice.id}`, body: { amount: '475', version: 2 } },
     ]);

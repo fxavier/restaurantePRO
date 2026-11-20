@@ -3,8 +3,10 @@ import { useApi } from '../../../lib/api';
 import type {
   BarcodeSummary,
   FamilySummary,
+  ItemPriceSummary,
   ItemSummary,
   ItemVariantSummary,
+  PriceListSummary,
   TaxCategorySummary,
   UnitSummary,
 } from '../types';
@@ -31,9 +33,30 @@ export function useItems() {
   });
 }
 
+/** A store's price lists (each in the store's currency). */
+export function usePriceLists(storeId: string) {
+  const api = useApi();
+  return useQuery({
+    queryKey: [...CATALOG_KEY, 'price-lists', storeId],
+    queryFn: async (): Promise<PriceListSummary[]> =>
+      (await api.GET('/api/v1/backoffice/catalog/price-lists', { params: { query: { storeId } } })).data ?? [],
+  });
+}
+
+export function usePrices(priceListId: string) {
+  const api = useApi();
+  return useQuery({
+    queryKey: [...CATALOG_KEY, 'price-lists', 'prices', priceListId],
+    queryFn: async (): Promise<ItemPriceSummary[]> =>
+      (await api.GET('/api/v1/backoffice/catalog/price-lists/{id}/prices', { params: { path: { id: priceListId } } })).data ?? [],
+  });
+}
+
+/** An item's variants; not read until an item is chosen (`itemId` empty). */
 export function useVariants(itemId: string) {
   const api = useApi();
   return useQuery({
+    enabled: itemId !== '',
     queryKey: [...CATALOG_KEY, 'items', itemId, 'variants'],
     queryFn: async (): Promise<ItemVariantSummary[]> =>
       (await api.GET('/api/v1/backoffice/catalog/items/{id}/variants', { params: { path: { id: itemId } } })).data ?? [],

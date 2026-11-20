@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useApi } from '../../../lib/api';
-import type { FamilySummary, ItemCreateRequest, ItemSummary, ItemUpdateRequest } from '../types';
+import type { FamilySummary, ItemCreateRequest, ItemSummary, ItemUpdateRequest, PriceListSummary } from '../types';
 import { CATALOG_KEY } from './use-catalog-queries';
 
 type FamilyBody = { code: string; name: string; parentId?: string };
@@ -42,6 +42,41 @@ export function useAddBarcode(itemId: string) {
     mutationFn: async (body: { code: string; itemId: string; variantId?: string }) =>
       (await api.POST('/api/v1/backoffice/catalog/barcodes', { body })).data,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: [...CATALOG_KEY, 'items', itemId, 'barcodes'] }),
+  });
+}
+
+/** A new price list of the store; its currency is the store's, set by the server. */
+export function useCreatePriceList(storeId: string) {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (name: string): Promise<PriceListSummary> =>
+      (await api.POST('/api/v1/backoffice/catalog/price-lists', { body: { name, storeId } })).data as PriceListSummary,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [...CATALOG_KEY, 'price-lists', storeId] }),
+  });
+}
+
+type PriceSave =
+  | { priceId?: undefined; body: { itemId: string; variantId?: string; amount: string } }
+  | { priceId: string; body: { amount: string; version: number } };
+
+/** A new price in the list, or a changed amount under the version it was read at; the amount is a decimal string. */
+export function useSavePrice(priceListId: string) {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (save: PriceSave) => {
+      const path = { id: priceListId };
+      const { data } =
+        save.priceId === undefined
+          ? await api.POST('/api/v1/backoffice/catalog/price-lists/{id}/prices', { params: { path }, body: save.body })
+          : await api.PUT('/api/v1/backoffice/catalog/price-lists/{id}/prices/{priceId}', {
+              params: { path: { ...path, priceId: save.priceId } },
+              body: save.body,
+            });
+      return data;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [...CATALOG_KEY, 'price-lists', 'prices', priceListId] }),
   });
 }
 

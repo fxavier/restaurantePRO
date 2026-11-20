@@ -29,8 +29,8 @@ export function itemValues(item: ItemSummary): ItemValues {
 
 /** A create request: no destination is sent as none, and the kind is the server's default (STANDARD). */
 export function createItemRequest(values: ItemValues): ItemCreateRequest {
-  const { availability: _unused, productionDestination, ...rest } = values;
-  return { ...rest, ...(productionDestination ? { productionDestination } : {}) };
+  const { code, name, familyId, unitId, taxCategoryId, soldByWeight, productionDestination } = values;
+  return { code, name, familyId, unitId, taxCategoryId, soldByWeight, ...(productionDestination ? { productionDestination } : {}) };
 }
 
 /** An update request: the item's own kind goes back unchanged, under the version it was read at. */
