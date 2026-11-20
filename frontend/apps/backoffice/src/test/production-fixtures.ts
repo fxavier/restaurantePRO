@@ -3,17 +3,20 @@ import { http, HttpResponse } from 'msw';
 import { api, baixa, terminal, terminalPage, type TerminalSummary } from './fixtures';
 
 type Schemas = components['schemas'];
-const DTO = 'com.xavier.backend.production.model.dto';
-export type PrinterView = Schemas[`${typeof DTO}.PrinterView`];
-export type PrintJobView = Schemas[`${typeof DTO}.PrintJobView`];
-export type TicketView = Schemas[`${typeof DTO}.TicketView`];
-export type DestinationRouteView = Schemas[`${typeof DTO}.DestinationRouteView`];
-export type TerminalPrinterView = Schemas[`${typeof DTO}.TerminalPrinterView`];
-export type PrinterPresetView = Schemas[`${typeof DTO}.PrinterPresetView`];
+type DTO = 'com.xavier.backend.production.model.dto';
+export type PrinterView = Schemas[`${DTO}.PrinterView`];
+export type PrintJobView = Schemas[`${DTO}.PrintJobView`];
+export type TicketView = Schemas[`${DTO}.TicketView`];
+export type DestinationRouteView = Schemas[`${DTO}.DestinationRouteView`];
+export type TerminalPrinterView = Schemas[`${DTO}.TerminalPrinterView`];
+export type PrinterPresetView = Schemas[`${DTO}.PrinterPresetView`];
+type PrinterCreateRequest = Schemas[`${DTO}.PrinterCreateRequest`];
+type PrinterUpdateRequest = Schemas[`${DTO}.PrinterUpdateRequest`];
+type PrinterModeRequest = Schemas[`${DTO}.PrinterModeRequest`];
 
 const PROFILE = { paperWidthMm: 80, columns: 48, cutMode: 'PARTIAL', feedLines: 4, statusProbe: true, drawerPulseMs: 100 } as const;
 
-export function printer(id: string, code: string, name: string, extra: Partial<PrinterView> = {}): PrinterView {
+export function printer(id: string, code: string, name: string, extra: Partial<PrinterView> = {}): PrinterView & { id: string } {
   return {
     id,
     storeId: baixa.id,
@@ -143,6 +146,78 @@ export function productionHandlers(initial: Partial<ProductionState> = {}) {
       const matching = state.tickets.filter((one) => !routing || one.routing === routing);
       return HttpResponse.json(page(matching, 0, Number(url.searchParams.get('size') ?? 20)));
     }),
+    http.post(api(`${base}/printers`), async ({ request }) => {
+      await record(request);
+      const body = (await request.json()) as PrinterCreateRequest;
+      const created = printer(`cccc0000-0000-4000-8000-00000000010${state.printers.length}`, body.code, body.name, {
+        host: body.host,
+        port: body.port,
+        codePage: body.codePage,
+        version: 0,
+      });
+      state.printers.push(created);
+      return HttpResponse.json(created, { status: 201 });
+    }),
+    http.put(api(`${base}/printers/:id`), async ({ request, params }) => {
+      await record(request);
+      const body = (await request.json()) as PrinterUpdateRequest;
+      return replacePrinter(String(params.id), { ...body, version: body.version + 1 });
+    }),
+    http.put(api(`${base}/printers/:id/mode`), async ({ request, params }) => {
+      await record(request);
+      const body = (await request.json()) as PrinterModeRequest;
+      return replacePrinter(String(params.id), { ...body, version: body.version + 1 });
+    }),
+    http.post(api(`${base}/printers/:id/test`), async ({ request, params }) => {
+      await record(request);
+      const created = job(`dddd0000-0000-4000-8000-00000000090${state.jobs.length}`, {
+        printerId: String(params.id),
+        sourceType: 'TEST',
+        destination: undefined,
+        status: 'QUEUED',
+        attempts: 0,
+      });
+      state.jobs.unshift(created);
+      return HttpResponse.json(created, { status: 201 });
+    }),
+    http.put(api(`${base}/production-routes`), async ({ request }) => {
+      await record(request);
+      state.routes = ((await request.json()) as { routes: DestinationRouteView[] }).routes;
+      return HttpResponse.json({ storeId: baixa.id, routes: state.routes });
+    }),
+    http.put(api(`${base}/terminal-printers`), async ({ request }) => {
+      await record(request);
+      state.assignments = ((await request.json()) as { assignments: TerminalPrinterView[] }).assignments;
+      return HttpResponse.json({ storeId: baixa.id, assignments: state.assignments });
+    }),
+    http.post(api(`${base}/print-jobs/:id/retry`), async ({ request, params }) => {
+      await record(request);
+      const original = state.jobs.find((one) => one.id === params.id)!;
+      original.resolution = 'RETRIED';
+      const retry = { ...original, id: `dddd0000-0000-4000-8000-00000000080${state.jobs.length}`, status: 'QUEUED' as const,
+        retryOf: original.id, resolution: undefined, attempts: 0 };
+      state.jobs.unshift(retry);
+      return HttpResponse.json(retry, { status: 201 });
+    }),
+    http.post(api(`${base}/print-jobs/:id/acknowledge`), async ({ request, params }) => {
+      await record(request);
+      const acknowledged = state.jobs.find((one) => one.id === params.id)!;
+      acknowledged.resolution = 'CONFIRMED_PRINTED';
+      return HttpResponse.json(acknowledged);
+    }),
+    http.post(api(`${base}/production-tickets/:id/route`), async ({ request, params }) => {
+      await record(request);
+      const routed = state.tickets.find((one) => one.id === params.id)!;
+      routed.routing = 'ROUTED';
+      const created = job(`dddd0000-0000-4000-8000-00000000070${state.jobs.length}`, { ticketId: routed.id, status: 'QUEUED' });
+      state.jobs.unshift(created);
+      return HttpResponse.json(created, { status: 201 });
+    }),
   ];
+  function replacePrinter(id: string, change: Partial<PrinterView>) {
+    const index = state.printers.findIndex((one) => one.id === id);
+    state.printers[index] = { ...state.printers[index]!, ...change };
+    return HttpResponse.json(state.printers[index]);
+  }
   return { state, handlers, record };
 }

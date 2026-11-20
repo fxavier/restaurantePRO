@@ -90,3 +90,70 @@ describe('printers', () => {
     expect(within(copaCard).getByText('Sem destinos encaminhados.')).toBeInTheDocument();
   });
 });
+
+describe('adding a printer', () => {
+  it("sends the printer with the chosen profile's settings and shows it in the list", async () => {
+    const state = productionServer();
+    const { user } = renderApp(PRODUCTION);
+
+    await user.click(await screen.findByRole('button', { name: 'Adicionar impressora' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Adicionar impressora' });
+    await user.type(within(dialog).getByLabelText('Código'), 'copa');
+    await user.type(within(dialog).getByLabelText('Nome'), 'Copa');
+    await user.type(within(dialog).getByLabelText('Endereço IP'), '192.168.1.182');
+    await user.selectOptions(within(dialog).getByLabelText('Perfil'), 'GENERIC_58');
+    await user.click(within(dialog).getByRole('button', { name: 'Adicionar' }));
+
+    expect(await screen.findByRole('listitem', { name: 'Copa' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    const sent = state.requests.find((request) => request.method === 'POST');
+    expect(sent).toEqual({
+      method: 'POST',
+      url: '/api/v1/backoffice/printers',
+      idempotencyKey: null,
+      body: {
+        storeId: baixa.id,
+        code: 'COPA',
+        name: 'Copa',
+        host: '192.168.1.182',
+        port: 9100,
+        codePage: 'CP437',
+        paperWidthMm: 58,
+        columns: 32,
+        cutMode: 'NONE',
+        feedLines: 4,
+        statusProbe: true,
+        drawerPulseMs: 100,
+      },
+    });
+  });
+
+  it('checks the fields before sending, and puts a taken code on the code field', async () => {
+    const state = productionServer();
+    server.use(
+      http.post(api('/api/v1/backoffice/printers'), () => problem(409, 'PRINTER_CODE_TAKEN', 'Conflict')),
+    );
+    const { user } = renderApp(PRODUCTION);
+
+    await user.click(await screen.findByRole('button', { name: 'Adicionar impressora' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Adicionar impressora' });
+    await user.clear(within(dialog).getByLabelText('Porta'));
+    await user.type(within(dialog).getByLabelText('Porta'), '70000');
+    await user.click(within(dialog).getByRole('button', { name: 'Adicionar' }));
+
+    expect(await within(dialog).findByText('Indique o código.')).toBeInTheDocument();
+    expect(within(dialog).getByText('Indique o endereço da impressora.')).toBeInTheDocument();
+    expect(within(dialog).getByText('A porta vai de 1 a 65535.')).toBeInTheDocument();
+    expect(state.requests.filter((request) => request.method === 'POST')).toEqual([]);
+
+    await user.type(within(dialog).getByLabelText('Código'), 'COZ');
+    await user.type(within(dialog).getByLabelText('Nome'), 'Outra');
+    await user.type(within(dialog).getByLabelText('Endereço IP'), '192.168.1.190');
+    await user.clear(within(dialog).getByLabelText('Porta'));
+    await user.type(within(dialog).getByLabelText('Porta'), '9100');
+    await user.click(within(dialog).getByRole('button', { name: 'Adicionar' }));
+
+    expect(await within(dialog).findByText('Já existe uma impressora com este código nesta loja.')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Código')).toHaveAttribute('aria-invalid', 'true');
+  });
+});

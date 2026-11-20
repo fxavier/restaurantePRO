@@ -2,6 +2,7 @@ import { DataState } from '@restaurantpro/ui';
 import { usePrinters } from '../hooks/use-printers';
 import { useRoutes, useTerminalPrinters } from '../hooks/use-routing';
 import { useStoreTerminals } from '../hooks/use-store-terminals';
+import { AddPrinterDialog } from './add-printer-dialog';
 import { PrinterCard } from './printer-card';
 import { SectionError } from './section-error';
 
@@ -17,9 +18,12 @@ export function ProductionScreen({ storeId }: { storeId: string }) {
 
   return (
     <section aria-labelledby="printers-title" className="mt-6 flex flex-col gap-4">
-      <h2 id="printers-title" className="text-xl font-semibold">
-        Impressoras e encaminhamento
-      </h2>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 id="printers-title" className="text-xl font-semibold">
+          Impressoras e encaminhamento
+        </h2>
+        {printers.data && <AddPrinterDialog storeId={storeId} />}
+      </div>
       {printers.isError ? (
         <SectionError error={printers.error} subject="as impressoras" onRetry={() => void printers.refetch()} />
       ) : (
