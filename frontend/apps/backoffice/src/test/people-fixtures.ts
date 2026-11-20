@@ -83,7 +83,10 @@ type PeopleState = {
  * The BackOffice people endpoints over one in-memory company, as the server would answer them; `state.requests` keeps
  * every request in order. A test overrides one answer with a later `server.use`.
  */
-export function peopleHandlers(initial: Partial<Omit<PeopleState, 'requests'>> = {}) {
+export function peopleHandlers({
+  session = peopleAdmin,
+  ...initial
+}: Partial<Omit<PeopleState, 'requests'>> & { session?: SessionView } = {}) {
   const state: PeopleState = {
     employees: [maria, joao, rui],
     roles: [gerente, empregadoSala],
@@ -100,7 +103,7 @@ export function peopleHandlers(initial: Partial<Omit<PeopleState, 'requests'>> =
     return entry;
   };
   const handlers = [
-    ...signedIn({ session: peopleAdmin, stores: [baixa, sommerschield] }),
+    ...signedIn({ session, stores: [baixa, sommerschield] }),
     http.get(api(`${base}/employees`), async ({ request }) => {
       await record(request);
       return HttpResponse.json(page(state.employees));
@@ -120,6 +123,13 @@ export function peopleHandlers(initial: Partial<Omit<PeopleState, 'requests'>> =
     http.get(api(`${base}/employees/:id/assignments`), async ({ request, params }) => {
       await record(request);
       return HttpResponse.json(state.assignments.filter((a) => a.employeeId === params.id));
+    }),
+    http.post(api(`${base}/employees`), async ({ request }) => {
+      const { body } = await record(request);
+      const { code, name } = body as { code: string; name: string };
+      const hired = employee(`e2000000-0000-4000-8000-00000000000${state.employees.length}`, code, name);
+      state.employees.push(hired);
+      return HttpResponse.json(hired, { status: 201 });
     }),
   ];
   return { state, handlers };
