@@ -23,13 +23,14 @@ export function OrderPage() {
       {/* Back to the table's own area, the one the map showed. */}
       <Link to={area ? `/tables?area=${encodeURIComponent(area.id)}` : '/tables'}>
         <ArrowLeft aria-hidden="true" />
-        Voltar às mesas
+        {/* Arrow only beside the table's title, which keeps its room; the name stays "Voltar às mesas". */}
+        <span className="sr-only">Voltar às mesas</span>
       </Link>
     </Button>
   );
 
   return (
-    <div className="flex h-screen flex-col bg-muted">
+    <div className="flex h-screen flex-col bg-background">
       <StatusBar />
       {/* The banner takes its own row; the three panes below keep their widths. */}
       {blocked && <ConnectionBanner />}

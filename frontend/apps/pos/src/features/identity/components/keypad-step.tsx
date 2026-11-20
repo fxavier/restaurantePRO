@@ -55,7 +55,7 @@ export function KeypadStep({
   }
 
   return (
-    <form onSubmit={submit} className="grid w-full max-w-[720px] grid-cols-[1fr_auto] gap-8 rounded-xl border bg-background p-6">
+    <form onSubmit={submit} className="grid w-full max-w-[720px] gap-8 rounded-xl border bg-card p-6 sm:grid-cols-[1fr_auto]">
       <div className="flex flex-col gap-4">
         {children}
         <div className="flex flex-col gap-2">
