@@ -1,8 +1,8 @@
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import { http } from 'msw';
 import { describe, expect, it } from 'vitest';
-import { admin, api, baixa, problem } from '../../test/fixtures';
-import { gerente, peopleHandlers } from '../../test/people-fixtures';
+import { admin, api, baixa, problem, stepUpRequired } from '../../test/fixtures';
+import { gerente, joao, maria, peopleHandlers } from '../../test/people-fixtures';
 import { renderApp } from '../../test/render-app';
 import { server } from '../../test/server';
 
@@ -84,6 +84,60 @@ describe('employees tab', () => {
     await screen.findByRole('table', { name: 'Empregados' });
     expect(urls(state, '/api/v1/backoffice/employees')).toEqual([
       `/api/v1/backoffice/employees?storeId=${baixa.id}&page=0&size=20`,
+    ]);
+  });
+});
+
+describe('employee PIN', () => {
+  it("resets an employee's PIN, which the POS asks them to change at the next sign-in", async () => {
+    const state = peopleServer();
+    const { user } = renderApp('/people');
+
+    await user.click(await screen.findByRole('button', { name: 'Repor PIN de Maria Sitoe' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Repor o PIN de Maria Sitoe' });
+    await user.type(within(dialog).getByLabelText('Novo PIN'), '908172');
+    await user.click(within(dialog).getByRole('button', { name: 'Repor PIN' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(state.requests.filter((r) => r.method === 'POST')).toEqual([
+      {
+        method: 'POST',
+        url: `/api/v1/backoffice/employees/${maria.id}/reset-pin`,
+        body: { pin: '908172' },
+        idempotencyKey: null,
+      },
+    ]);
+    expect(await screen.findByRole('status')).toHaveTextContent('PIN de Maria Sitoe reposto.');
+  });
+
+  it('asks for a fresh second factor and comes back to this tab, keeping no PIN anywhere', async () => {
+    peopleServer();
+    server.use(http.post(api('/api/v1/backoffice/employees/:id/reset-pin'), () => stepUpRequired(300)));
+    const { user, leave } = renderApp('/people?tab=empregados');
+
+    await user.click(await screen.findByRole('button', { name: 'Repor PIN de Maria Sitoe' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Repor o PIN de Maria Sitoe' });
+    await user.type(within(dialog).getByLabelText('Novo PIN'), '908172');
+    await user.click(within(dialog).getByRole('button', { name: 'Repor PIN' }));
+    const stepUp = await screen.findByRole('alertdialog', { name: 'Confirme a sua identidade' });
+    await user.click(within(stepUp).getByRole('button', { name: 'Confirmar identidade' }));
+
+    expect(leave).toHaveBeenCalledWith('/bff/step-up?acr_values=2&max_age=300&return=%2Fpeople%3Ftab%3Dempregados');
+    expect(storedText()).not.toContain('908172');
+  });
+
+  it('unlocks only a locked employee', async () => {
+    const state = peopleServer();
+    const { user } = renderApp('/people');
+
+    const table = await screen.findByRole('table', { name: 'Empregados' });
+    expect(within(table).getAllByRole('button', { name: /^Desbloquear/ })).toHaveLength(1);
+    await user.click(within(table).getByRole('button', { name: 'Desbloquear João Macuácua' }));
+
+    const row = await screen.findByRole('row', { name: /João Macuácua/ });
+    await waitFor(() => expect(within(row).getByText('Ativo')).toBeInTheDocument());
+    expect(state.requests.filter((r) => r.method === 'POST').map((r) => r.url)).toEqual([
+      `/api/v1/backoffice/employees/${joao.id}/unlock`,
     ]);
   });
 });

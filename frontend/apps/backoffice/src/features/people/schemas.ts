@@ -18,3 +18,8 @@ export const newEmployeeSchema = z.object({
 });
 
 export type NewEmployeeValues = z.infer<typeof newEmployeeSchema>;
+
+/** "Repor PIN" (`PinResetRequest`). */
+export const resetPinSchema = z.object({ pin });
+
+export type ResetPinValues = z.infer<typeof resetPinSchema>;

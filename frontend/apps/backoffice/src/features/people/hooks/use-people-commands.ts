@@ -27,3 +27,20 @@ export function useHireEmployee() {
     true,
   );
 }
+
+/** The new PIN the manager sets; the POS asks the employee to change it at the next sign-in. */
+export function useResetPin() {
+  return usePeopleCommand(
+    async (api, { employeeId, pin }: { employeeId: string; pin: string }) =>
+      (await api.POST(`${BASE}/employees/{id}/reset-pin`, { params: { path: { id: employeeId } }, body: { pin } }))
+        .data as EmployeeSummary,
+    true,
+  );
+}
+
+export function useUnlockEmployee() {
+  return usePeopleCommand(
+    async (api, employee: EmployeeSummary) =>
+      (await api.POST(`${BASE}/employees/{id}/unlock`, { params: { path: { id: employee.id ?? '' } } })).data as EmployeeSummary,
+  );
+}

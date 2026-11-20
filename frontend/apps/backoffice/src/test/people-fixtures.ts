@@ -131,6 +131,15 @@ export function peopleHandlers({
       state.employees.push(hired);
       return HttpResponse.json(hired, { status: 201 });
     }),
+    http.post(api(`${base}/employees/:id/reset-pin`), async ({ request, params }) => {
+      await record(request);
+      return HttpResponse.json(state.employees.find((e) => e.id === params.id));
+    }),
+    http.post(api(`${base}/employees/:id/unlock`), async ({ request, params }) => {
+      await record(request);
+      state.employees = state.employees.map((e) => (e.id === params.id ? { ...e, locked: false } : e));
+      return HttpResponse.json(state.employees.find((e) => e.id === params.id));
+    }),
   ];
   return { state, handlers };
 }
