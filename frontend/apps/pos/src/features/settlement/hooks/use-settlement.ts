@@ -28,6 +28,6 @@ export function useOrderHeading(orderId: string) {
   return useQuery({
     queryKey: ['pos', 'orders', orderId],
     queryFn: async ({ signal }) => (await api.GET('/api/v1/pos/orders/{id}', { params: { path: { id: orderId } }, signal })).data,
-    select: (order) => ({ tableCode: order?.tableCode ?? null, orderNumber: order?.orderNumber }),
+    select: (order) => ({ tableCode: order?.tableCode ?? null, orderNumber: order?.orderNumber, guests: order?.guests ?? null }),
   });
 }
