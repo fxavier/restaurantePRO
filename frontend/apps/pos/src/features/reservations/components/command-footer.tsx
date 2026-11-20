@@ -1,4 +1,5 @@
-import { Button, ConfirmButton, DialogFooter } from '@restaurantpro/ui';
+import { Button, ConfirmButton, Dialog, DialogContent, DialogFooter } from '@restaurantpro/ui';
+import type { ReactNode } from 'react';
 import { WifiOff } from 'lucide-react';
 import { OFFLINE } from '../../../lib/error-messages';
 import { useCommandsBlocked } from '../../../lib/live/use-connection';
@@ -46,5 +47,16 @@ export function CommandFooter({ label, error, pending, awaitingRetry, disabled =
         </ConfirmButton>
       </DialogFooter>
     </>
+  );
+}
+
+/** A reservation command's dialog: it cannot be dismissed while its command is in flight. */
+export function CommandDialog({ pending, onClose, children }: { pending: boolean; onClose: () => void; children: ReactNode }) {
+  return (
+    <Dialog open onOpenChange={(open) => !open && !pending && onClose()}>
+      <DialogContent showCloseButton={false} className="sm:max-w-lg">
+        {children}
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -1,10 +1,10 @@
-import { cn, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@restaurantpro/ui';
+import { cn, DialogDescription, DialogHeader, DialogTitle } from '@restaurantpro/ui';
 import { type FormEvent, useState } from 'react';
 import { useSeat } from '../hooks/use-reservation-commands';
 import { guestsLabel, seatsLabel } from '../labels';
 import { refusal } from '../messages';
 import type { ReservableArea, Reservation } from '../reservation';
-import { CommandFooter } from './command-footer';
+import { CommandDialog, CommandFooter } from './command-footer';
 
 type Props = {
   reservation: Reservation;
@@ -34,8 +34,7 @@ export function SeatDialog({ reservation, areas, onClose, onSeated }: Props) {
   }
 
   return (
-    <Dialog open onOpenChange={(open) => !open && !seat.pending && onClose()}>
-      <DialogContent showCloseButton={false} className="sm:max-w-lg">
+    <CommandDialog pending={seat.pending} onClose={onClose}>
         <form onSubmit={submit} className="flex flex-col gap-4">
           <DialogHeader>
             <DialogTitle>Sentar {reservation.contactName}</DialogTitle>
@@ -89,7 +88,6 @@ export function SeatDialog({ reservation, areas, onClose, onSeated }: Props) {
             onClose={onClose}
           />
         </form>
-      </DialogContent>
-    </Dialog>
+    </CommandDialog>
   );
 }

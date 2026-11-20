@@ -8,6 +8,7 @@ import { errorMessage, isOffline } from '../../../lib/error-messages';
 import { useReservations } from '../hooks/use-reservations';
 import { matches, type ReservableArea, type Reservation, type StatusFilter, summarize, tableCodes } from '../reservation';
 import { storeClock, storeDate } from '../store-time';
+import { CancelDialog, NoShowDialog } from './close-dialogs';
 import { DayBar } from './day-bar';
 import { DaySummary } from './day-summary';
 import { ListFilter } from './list-filter';
@@ -45,6 +46,8 @@ export function ReservationsScreen({ areas }: Props) {
           onSeated={(orderId) => navigate(`/orders/${orderId}`)}
         />
       )}
+      {command?.kind === 'cancel' && target && <CancelDialog reservation={target} onClose={close} />}
+      {command?.kind === 'no-show' && target && <NoShowDialog reservation={target} onClose={close} />}
       {day.data ? (
         <Day reservations={day.data} areas={areas} timeZone={timeZone} onCommand={setCommand} />
       ) : day.isError ? (
