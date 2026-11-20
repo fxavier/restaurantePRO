@@ -36,12 +36,14 @@ export function PaymentScreen({ orderId, blocked }: Props) {
 
   return (
     <main className="flex min-h-0 flex-1 flex-col gap-4 p-4 lg:p-6">
-      <header className="flex flex-wrap items-center gap-4 rounded-xl border bg-card p-4">
+      {/* The page's eyebrow: the section bar has no tab for it, since it is one order's page. */}
+      <h2 className="text-xs font-semibold tracking-wide text-primary uppercase">Conta & Pagamento</h2>
+      <header className="-mt-2 flex flex-wrap items-center gap-4 rounded-xl border bg-card p-4">
         <span aria-hidden="true" className="flex size-14 shrink-0 items-center justify-center rounded-lg bg-warning text-warning-foreground">
           <ReceiptText className="size-7" />
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-2xl font-semibold">{tableCode ? `Conta da mesa ${tableCode}` : 'Conta do pedido'}</h2>
+          <h3 className="truncate text-2xl font-semibold">{tableCode ? `Conta da mesa ${tableCode}` : 'Conta do pedido'}</h3>
           <p className="text-muted-foreground">{meta}</p>
         </div>
         {settlement.data && <Summary settlement={settlement.data} />}
