@@ -1,8 +1,10 @@
 import { screen, waitFor, within } from '@testing-library/react';
+import { http, HttpResponse } from 'msw';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { delivery, joao, reportServer, tiago } from '../../test/delivery-fixtures';
-import { baixa } from '../../test/fixtures';
+import { delivery, joao, page, reportServer, tiago } from '../../test/delivery-fixtures';
+import { api, baixa, problem } from '../../test/fixtures';
 import { renderApp } from '../../test/render-app';
+import { server } from '../../test/server';
 
 const REPORT = `/delivery/report?storeId=${baixa.id}`;
 /** 22:30 UTC is 00:30 of the next day in Maputo (UTC+2): the default range is the store's today, not UTC's. */
@@ -95,5 +97,60 @@ describe('delivery report', () => {
       }),
     );
     expect(screen.queryByText('A data inicial é posterior à final.')).not.toBeInTheDocument();
+  });
+});
+
+describe('delivery report states', () => {
+  it('asks for a store before listing anything', async () => {
+    const state = reportServer();
+
+    renderApp('/delivery/report');
+
+    expect(await screen.findByText('Escolha uma loja na barra superior para ver as suas entregas.')).toBeInTheDocument();
+    expect(state.queries).toEqual([]);
+  });
+
+  it('says so when the period has no delivery', async () => {
+    reportServer();
+
+    renderApp(REPORT);
+
+    expect(await screen.findByText('Não há entregas neste período.')).toBeInTheDocument();
+  });
+
+  it('shows the API refusal to a user without the permission in this store', async () => {
+    reportServer();
+    server.use(http.get(api('/api/v1/backoffice/deliveries'), () => problem(403, 'HTTP_403', 'Forbidden')));
+
+    renderApp(REPORT);
+
+    expect(await screen.findByText('Sem permissão para ver as entregas desta loja.')).toBeInTheDocument();
+  });
+
+  it('shows "Sem ligação" with a retry when the deliveries cannot be reached', async () => {
+    let calls = 0;
+    reportServer();
+    server.use(
+      http.get(api('/api/v1/backoffice/deliveries'), () => {
+        calls += 1;
+        return calls <= 3 ? problem(502, 'BACKEND_UNAVAILABLE') : HttpResponse.json(page([delivery(7, 'PENDING')]));
+      }),
+    );
+    const { user } = renderApp(REPORT);
+
+    expect(await screen.findByText('Sem ligação ao serviço.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+    expect(await screen.findByRole('cell', { name: '#7' })).toBeInTheDocument();
+  });
+
+  it('still lists the deliveries without the employee list, with neither courier names nor the courier filter', async () => {
+    reportServer({ deliveries: [delivery(9, 'OUT_FOR_DELIVERY', { courierEmployeeId: joao.id })] });
+    server.use(http.get(api('/api/v1/backoffice/employees'), () => problem(403, 'HTTP_403', 'Forbidden')));
+
+    renderApp(REPORT);
+
+    const table = await screen.findByRole('table', { name: 'Entregas' });
+    expect(within(table).getByRole('cell', { name: 'Estafeta' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Estafeta')).not.toBeInTheDocument();
   });
 });

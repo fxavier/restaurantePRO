@@ -42,7 +42,7 @@ export function DeliveriesTable({ deliveries, timeZone, courierName }: Deliverie
             <TableCell className="font-mono text-muted-foreground">{delivery.zoneCode}</TableCell>
             <TableCell>{courierLabel(delivery.courierEmployeeId, courierName)}</TableCell>
             <TableCell>
-              <StatusBadge status={delivery.status} statuses={deliveryStatuses} />
+              {delivery.status && <StatusBadge status={delivery.status} statuses={deliveryStatuses} />}
             </TableCell>
             <TableCell className="tabular-nums">{timeIn(delivery.promisedAt, timeZone)}</TableCell>
             <TableCell className="tabular-nums">{timeIn(delivery.dispatchedAt, timeZone)}</TableCell>
