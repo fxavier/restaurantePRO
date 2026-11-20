@@ -100,6 +100,19 @@ describe('order screen', () => {
     expect(steak).not.toHaveTextContent('Preço provisório');
   });
 
+  it('marks where each item is prepared, on its product tile and on its lines (from the catalog)', async () => {
+    await atOrder();
+    await ready();
+
+    expect(tile(/^Bica/)).toHaveTextContent('Bar');
+    expect(tile(/^Bica/)).toHaveTextContent('#BICA');
+    const [, coffee] = within(drafts()).getAllByRole('listitem');
+    expect(within(coffee!).getByText('Bar')).toHaveClass('bg-route-bar');
+    const [steak] = within(within(panel()).getByRole('list', { name: 'Ronda 1, 12:10' })).getAllByRole('listitem');
+    expect(within(steak!).getByText('Cozinha')).toHaveClass('bg-route-kitchen');
+    expect(within(panel()).getByText('1 ronda')).toBeInTheDocument();
+  });
+
   it('"Por enviar" ends with the server\'s draft total, marked provisional and never a sum made here', async () => {
     await atOrder([json({ ...ORDER, draftGross: { amount: 777.77, currency: 'MZN' } })]);
     await ready();

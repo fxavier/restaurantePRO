@@ -43,7 +43,10 @@ const item = (n: number, code: string, name: string, familyId: string, price: st
 export const VARIANT = { small: id(721), large: id(722) };
 
 export const ITEM = {
-  coffee: item(701, 'BICA', 'Bica', FAMILY.coffees, '50.00', { barcodes: [{ code: '5601234000011', variantId: null }] }),
+  coffee: item(701, 'BICA', 'Bica', FAMILY.coffees, '50.00', {
+    barcodes: [{ code: '5601234000011', variantId: null }],
+    productionDestination: 'BAR',
+  }),
   water: item(702, 'AGUA', 'Água', FAMILY.drinks, '60.00', {
     variants: [
       { id: VARIANT.small, code: 'AGUA-P', name: 'Pequena', price: null },
@@ -52,7 +55,7 @@ export const ITEM = {
     barcodes: [{ code: '5601234000028', variantId: VARIANT.large }],
   }),
   juice: item(703, 'SUMO', 'Sumo de laranja', FAMILY.drinks, '120.00'),
-  steak: item(704, 'BITOQUE', 'Bitoque', FAMILY.dishes, '450.00'),
+  steak: item(704, 'BITOQUE', 'Bitoque', FAMILY.dishes, '450.00', { productionDestination: 'KITCHEN' }),
   chicken: item(705, 'FRANGO', 'Frango grelhado', FAMILY.dishes, '400.00'),
   menu: item(706, 'MENU', 'Menu do dia', FAMILY.menus, '600.00', {
     kind: 'MENU',

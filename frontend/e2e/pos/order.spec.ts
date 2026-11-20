@@ -40,20 +40,20 @@ const CATALOG = {
       { id: MENUS, code: 'MENUS', name: 'Menus' },
     ],
     items: [
-      item(701, 'BICA', 'Bica', DRINKS, '50.00'),
+      item(701, 'BICA', 'Bica', DRINKS, '50.00', { productionDestination: 'COPA' }),
       item(702, 'AGUA', 'Água', DRINKS, '60.00', {
         variants: [
           { id: SMALL, code: 'AGUA-P', name: 'Pequena' },
           { id: id(722), code: 'AGUA-G', name: 'Grande', price: mzn('90.00') },
         ],
       }),
-      item(703, 'SUMO', 'Sumo de laranja natural', DRINKS, '120.00'),
-      item(708, 'CERVEJA', 'Cerveja 2M', DRINKS, '90.00'),
+      item(703, 'SUMO', 'Sumo de laranja natural', DRINKS, '120.00', { productionDestination: 'GRILL' }),
+      item(708, 'CERVEJA', 'Cerveja 2M', DRINKS, '90.00', { productionDestination: 'BAR' }),
       item(709, 'LAURENTINA', 'Laurentina Preta', DRINKS, '100.00'),
       item(710, 'REFRI', 'Refrigerante lata', DRINKS, '70.00'),
       item(711, 'CHA', 'Chá', DRINKS, '50.00'),
       item(712, 'VINHO', 'Vinho da casa (copo)', DRINKS, '150.00'),
-      item(704, 'BITOQUE', 'Bitoque', DISHES, '450.00'),
+      item(704, 'BITOQUE', 'Bitoque', DISHES, '450.00', { productionDestination: 'KITCHEN' }),
       item(705, 'FRANGO', 'Frango grelhado', DISHES, '400.00'),
       item(706, 'MENU', 'Menu do dia', MENUS, '600.00', {
         kind: 'MENU',
