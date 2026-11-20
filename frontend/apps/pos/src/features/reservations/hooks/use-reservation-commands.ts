@@ -1,9 +1,13 @@
-import { useQueryClient } from '@tanstack/react-query';
+import type { components } from '@restaurantpro/api-client';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useServices } from '../../../lib/services';
 import { useIntent } from '../../../lib/use-intent';
 import { RESERVATIONS_KEY } from './use-reservations';
 
 const TABLES_KEY = ['pos', 'tables'] as const;
+
+type ReservationRequest = components['schemas']['com.xavier.backend.dining.model.dto.ReservationRequest'];
+type ReservationUpdateRequest = components['schemas']['com.xavier.backend.dining.model.dto.ReservationUpdateRequest'];
 
 /**
  * A reservation command whose contract requires an Idempotency-Key: one intent per tap (FC §8). Whatever the answer,
@@ -25,6 +29,33 @@ function useReservationIntent<Request, Result>(
     },
     onError: refresh,
     onDiscard: refresh,
+  });
+}
+
+/** `POST /api/v1/pos/reservations`: one intent per "Guardar reserva". Informative: no capacity check (D126). */
+export function useBookReservation({ onDone }: { onDone: () => void }) {
+  const { api } = useServices();
+  return useReservationIntent(
+    (body: ReservationRequest, key: string) =>
+      api.POST('/api/v1/pos/reservations', { params: { header: { 'Idempotency-Key': key } }, body }),
+    onDone,
+  );
+}
+
+/**
+ * `PUT /api/v1/pos/reservations/{id}`: a full replacement with the version read (D17). The contract has no
+ * Idempotency-Key here; the version guards a repeat, so a resend after an unknown outcome is refused as a conflict
+ * rather than applied twice. Never retried on its own (FC §8).
+ */
+export function useUpdateReservation(reservationId: string, { onDone }: { onDone: () => void }) {
+  const { api } = useServices();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: ReservationUpdateRequest) =>
+      (await api.PUT('/api/v1/pos/reservations/{id}', { params: { path: { id: reservationId } }, body })).data,
+    retry: false,
+    onSuccess: onDone,
+    onSettled: () => queryClient.invalidateQueries({ queryKey: RESERVATIONS_KEY }),
   });
 }
 

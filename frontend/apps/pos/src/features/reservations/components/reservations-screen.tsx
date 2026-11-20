@@ -1,6 +1,6 @@
 import { ApiError } from '@restaurantpro/api-client';
 import { Button, Skeleton } from '@restaurantpro/ui';
-import { Armchair } from 'lucide-react';
+import { Armchair, CalendarPlus } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useStoreTimeZone } from '../../../lib/auth/use-employee';
@@ -14,6 +14,7 @@ import { DaySummary } from './day-summary';
 import { ListFilter } from './list-filter';
 import { ReservationCard } from './reservation-card';
 import { BookedActions, ReservationDetail } from './reservation-detail';
+import { EditReservationDialog, NewReservationDialog } from './reservation-dialog';
 import { SeatDialog } from './seat-dialog';
 
 type Props = {
@@ -29,25 +30,31 @@ export function ReservationsScreen({ areas }: Props) {
   const day = useReservations(date);
   const navigate = useNavigate();
   const [command, setCommand] = useState<Command>();
+  const [booking, setBooking] = useState(false);
   const target = day.data?.find((reservation) => reservation.id === command?.id);
   const close = () => setCommand(undefined);
 
   return (
     <div className="flex flex-col gap-4">
       <h2 className="sr-only">Reservas</h2>
-      <div className="flex flex-col gap-4 rounded-xl border bg-card p-4">
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border bg-card p-4">
         <DayBar date={date} today={today} onDate={setDate} />
+        <Button size="touch-primary" onClick={() => setBooking(true)}>
+          <CalendarPlus aria-hidden="true" />
+          Nova reserva
+        </Button>
       </div>
-      {command?.kind === 'seat' && target && (
-        <SeatDialog
+      {booking && <NewReservationDialog date={date} today={today} areas={areas} onClose={() => setBooking(false)} />}
+      {command && target && (
+        <CommandOn
+          kind={command.kind}
           reservation={target}
+          today={today}
           areas={areas}
           onClose={close}
           onSeated={(orderId) => navigate(`/orders/${orderId}`)}
         />
       )}
-      {command?.kind === 'cancel' && target && <CancelDialog reservation={target} onClose={close} />}
-      {command?.kind === 'no-show' && target && <NoShowDialog reservation={target} onClose={close} />}
       {day.data ? (
         <Day reservations={day.data} areas={areas} timeZone={timeZone} onCommand={setCommand} />
       ) : day.isError ? (
@@ -70,6 +77,28 @@ export function ReservationsScreen({ areas }: Props) {
 
 /** The dialog open over the day: a command on one reservation, named by id so it always shows the current one. */
 type Command = { kind: 'seat' | 'edit' | 'no-show' | 'cancel'; id: string };
+
+type CommandProps = {
+  kind: Command['kind'];
+  reservation: Reservation;
+  today: string;
+  areas: ReservableArea[];
+  onClose: () => void;
+  onSeated: (orderId: string) => void;
+};
+
+function CommandOn({ kind, reservation, today, areas, onClose, onSeated }: CommandProps) {
+  switch (kind) {
+    case 'seat':
+      return <SeatDialog reservation={reservation} areas={areas} onClose={onClose} onSeated={onSeated} />;
+    case 'cancel':
+      return <CancelDialog reservation={reservation} onClose={onClose} />;
+    case 'no-show':
+      return <NoShowDialog reservation={reservation} onClose={onClose} />;
+    case 'edit':
+      return <EditReservationDialog reservation={reservation} today={today} areas={areas} onClose={onClose} />;
+  }
+}
 
 type DayProps = {
   reservations: Reservation[];

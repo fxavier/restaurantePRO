@@ -50,11 +50,22 @@ export function CommandFooter({ label, error, pending, awaitingRetry, disabled =
   );
 }
 
+type DialogProps = {
+  pending: boolean;
+  onClose: () => void;
+  /** The reservation form's width, scrolling within the screen's height. */
+  wide?: boolean;
+  children: ReactNode;
+};
+
 /** A reservation command's dialog: it cannot be dismissed while its command is in flight. */
-export function CommandDialog({ pending, onClose, children }: { pending: boolean; onClose: () => void; children: ReactNode }) {
+export function CommandDialog({ pending, onClose, wide = false, children }: DialogProps) {
   return (
     <Dialog open onOpenChange={(open) => !open && !pending && onClose()}>
-      <DialogContent showCloseButton={false} className="sm:max-w-lg">
+      <DialogContent
+        showCloseButton={false}
+        className={wide ? 'max-h-screen overflow-y-auto sm:max-w-3xl' : 'sm:max-w-lg'}
+      >
         {children}
       </DialogContent>
     </Dialog>
