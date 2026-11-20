@@ -1,0 +1,126 @@
+import type { components } from '@restaurantpro/api-client';
+import { http, HttpResponse } from 'msw';
+import { admin, api, baixa, signedIn, sommerschield, type SessionView } from './fixtures';
+
+type Schemas = components['schemas'];
+const DTO = 'com.xavier.backend.identity.model.dto';
+export type EmployeeSummary = Schemas[`${typeof DTO}.EmployeeSummary`];
+export type RoleSummary = Schemas[`${typeof DTO}.RoleSummary`];
+export type UserSummary = Schemas[`${typeof DTO}.UserSummary`];
+export type AssignmentSummary = Schemas[`${typeof DTO}.AssignmentSummary`];
+export type SupportGrantSummary = Schemas[`${typeof DTO}.SupportGrantSummary`];
+
+export function employee(id: string, code: string, name: string, extra: Partial<EmployeeSummary> = {}): EmployeeSummary {
+  return { id, code, name, active: true, locked: false, version: 0, ...extra };
+}
+
+export function role(id: string, name: string, permissions: RoleSummary['permissions'] = [], version = 0): RoleSummary {
+  return { id, name, permissions, version };
+}
+
+export function account(id: string, username: string, extra: Partial<UserSummary> = {}): UserSummary {
+  return { id, username, active: true, support: false, roleIds: [], version: 0, ...extra };
+}
+
+export function grant(id: string, accountId: string, extra: Partial<SupportGrantSummary> = {}): SupportGrantSummary {
+  return {
+    id,
+    accountId,
+    status: 'ACTIVE',
+    reason: 'Erro na impressão',
+    validFrom: '2026-11-20T08:00:00Z',
+    validUntil: '2026-11-20T10:00:00Z',
+    version: 0,
+    ...extra,
+  };
+}
+
+export function page<T>(content: T[], number = 0, size = 20, totalElements = content.length) {
+  return { content, page: number, size, totalElements };
+}
+
+export const maria = employee('e1000000-0000-4000-8000-000000000001', 'EMP-01', 'Maria Sitoe');
+export const joao = employee('e1000000-0000-4000-8000-000000000002', 'EMP-04', 'João Macuácua', { locked: true });
+export const rui = employee('e1000000-0000-4000-8000-000000000003', 'EMP-11', 'Rui Bila', { active: false });
+
+const GERENTE = 'c1000000-0000-4000-8000-000000000001';
+export const gerente = role(GERENTE, 'Gerente', ['ORDER_VOID_APPROVE', 'CASH_VIEW'], 3);
+export const empregadoSala = role('c1000000-0000-4000-8000-000000000002', 'Empregado de sala', ['ORDER_EDIT']);
+
+export const ana = account('a1000000-0000-4000-8000-000000000001', 'ana.admin', { roleIds: [GERENTE] });
+export const suporte = account('a1000000-0000-4000-8000-000000000002', 'suporte.ops', { support: true });
+
+/** The administrator with the four permissions of the people screen's tabs. */
+export const peopleAdmin: SessionView = {
+  ...admin,
+  permissions: [...admin.permissions, 'PERM_ROLE_MANAGE', 'PERM_USER_MANAGE', 'PERM_SUPPORT_ACCESS_MANAGE'],
+};
+
+/** What the handlers saw: the path and query, the JSON body and the two headers the contract cares about. */
+export type Seen = { method: string; url: string; body: unknown; idempotencyKey: string | null };
+
+async function seen(request: Request): Promise<Seen> {
+  const text = await request.clone().text();
+  const url = new URL(request.url);
+  return {
+    method: request.method,
+    url: url.pathname + url.search,
+    body: text ? JSON.parse(text) : undefined,
+    idempotencyKey: request.headers.get('Idempotency-Key'),
+  };
+}
+
+type PeopleState = {
+  employees: EmployeeSummary[];
+  roles: RoleSummary[];
+  users: UserSummary[];
+  grants: SupportGrantSummary[];
+  assignments: AssignmentSummary[];
+  requests: Seen[];
+};
+
+/**
+ * The BackOffice people endpoints over one in-memory company, as the server would answer them; `state.requests` keeps
+ * every request in order. A test overrides one answer with a later `server.use`.
+ */
+export function peopleHandlers(initial: Partial<Omit<PeopleState, 'requests'>> = {}) {
+  const state: PeopleState = {
+    employees: [maria, joao, rui],
+    roles: [gerente, empregadoSala],
+    users: [ana, suporte],
+    grants: [],
+    assignments: [],
+    requests: [],
+    ...initial,
+  };
+  const base = '/api/v1/backoffice';
+  const record = async (request: Request) => {
+    const entry = await seen(request);
+    state.requests.push(entry);
+    return entry;
+  };
+  const handlers = [
+    ...signedIn({ session: peopleAdmin, stores: [baixa, sommerschield] }),
+    http.get(api(`${base}/employees`), async ({ request }) => {
+      await record(request);
+      return HttpResponse.json(page(state.employees));
+    }),
+    http.get(api(`${base}/roles`), async ({ request }) => {
+      await record(request);
+      return HttpResponse.json(page(state.roles));
+    }),
+    http.get(api(`${base}/users`), async ({ request }) => {
+      await record(request);
+      return HttpResponse.json(page(state.users));
+    }),
+    http.get(api(`${base}/support-grants`), async ({ request }) => {
+      await record(request);
+      return HttpResponse.json(page(state.grants));
+    }),
+    http.get(api(`${base}/employees/:id/assignments`), async ({ request, params }) => {
+      await record(request);
+      return HttpResponse.json(state.assignments.filter((a) => a.employeeId === params.id));
+    }),
+  ];
+  return { state, handlers };
+}
