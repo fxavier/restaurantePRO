@@ -27,6 +27,26 @@ function useCashIntent<Request, Result>(
   });
 }
 
+export type MovementRequest = Schemas['com.xavier.backend.cash.model.dto.ManualMovementRequest'];
+export type MovementView = Schemas['com.xavier.backend.cash.MovementView'];
+export type Approver = { code: string; pin: string };
+
+/**
+ * `POST /api/v1/pos/cash/movements`: a cash in, cash out or expense in the operator's session. An expense's approver
+ * (P24) is read from `approver` when the request is sent and goes in headers only: the intent never holds the PIN.
+ */
+export function useRecordMovement(approver: () => Approver | undefined, onRecorded: (movement: MovementView) => void) {
+  const { api } = useServices();
+  return useCashIntent(async (body: MovementRequest, key: string) => {
+    const approval = approver();
+    const header = {
+      'Idempotency-Key': key,
+      ...(approval && { 'X-Approver-Code': approval.code, 'X-Approver-Pin': approval.pin }),
+    };
+    return (await api.POST('/api/v1/pos/cash/movements', { params: { header }, body })).data;
+  }, (movement) => movement && onRecorded(movement));
+}
+
 /** `POST /api/v1/pos/cash/sessions`: opens the employee's session on a register with its float. */
 export function useOpenSession() {
   const { api } = useServices();

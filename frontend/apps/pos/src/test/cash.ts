@@ -1,8 +1,9 @@
 import type { components } from '@restaurantpro/api-client';
-import { act } from '@testing-library/react';
-import { HttpResponse } from 'msw';
+import { act, waitFor } from '@testing-library/react';
+import { expect } from 'vitest';
+import { http, HttpResponse } from 'msw';
 import { renderPos } from './render-pos';
-import { problem, queue, recording, SESSION, token, tokenEndpoint } from './server';
+import { problem, queue, recording, server, SESSION, token, tokenEndpoint } from './server';
 
 type Schemas = components['schemas'];
 export type SessionDetails = Schemas['com.xavier.backend.cash.model.dto.SessionDetails'];
@@ -114,8 +115,29 @@ export const currentDayEndpoint = (...answers: Answer[]) =>
   recording<undefined>('get', `${BASE}/days/current`, queue(...(answers.length ? answers : [json(DAY)])));
 export const openSessionEndpoint = (...answers: Answer<OpenSessionRequest>[]) =>
   recording<OpenSessionRequest>('post', `${BASE}/sessions`, queue(...answers));
-export const movementEndpoint = (...answers: Answer<ManualMovementRequest>[]) =>
-  recording<ManualMovementRequest>('post', `${BASE}/movements`, queue(...answers));
+/** `POST /cash/movements`; `approvers` holds the approver headers of each request (an expense's), never in the body. */
+export function movementEndpoint(...answers: Answer<ManualMovementRequest>[]) {
+  const approvers: { code: string | null; pin: string | null }[] = [];
+  const answer = queue(...answers);
+  const seen = recording<ManualMovementRequest>('post', `${BASE}/movements`, (body) => answer(body));
+  server.use(
+    // Answers nothing, so the recording handler above answers.
+    http.post(`*${BASE}/movements`, ({ request }) => {
+      approvers.push({ code: request.headers.get('X-Approver-Code'), pin: request.headers.get('X-Approver-Pin') });
+    }),
+  );
+  return Object.assign(seen, { approvers });
+}
+
+export const movement = (fields: Partial<MovementView>): MovementView => ({
+  id: cid(840),
+  sessionId: SESSION_ID,
+  storeId: STORE,
+  cashDayId: DAY_ID,
+  methodCode: 'CASH',
+  occurredAt: '2026-11-19T10:00:00Z',
+  ...fields,
+});
 export const closeSessionEndpoint = (...answers: Answer<CloseSessionRequest>[]) =>
   recording<CloseSessionRequest>('post', `${BASE}/sessions/${SESSION_ID}/close`, queue(...answers));
 export const createClosingEndpoint = (...answers: Answer<CreateClosingRequest>[]) =>
@@ -154,6 +176,8 @@ export async function atCash({
   registersEndpoint(...registers);
   const rendered = await renderPos({ device: 'enrolled', loggedIn: true, path: '/tables' });
   act(() => rendered.services.session.start({ ...SESSION, permissions }));
+  // The login page's redirect to the tables lands first; navigating before it would be undone by it.
+  await waitFor(() => expect(rendered.router.state.location.pathname).toBe('/tables'));
   await act(() => rendered.router.navigate('/cash'));
   return { ...rendered, sessions, days };
 }
