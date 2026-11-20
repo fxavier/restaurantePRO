@@ -1,9 +1,13 @@
 import { Navigate, type RouteObject } from 'react-router';
+import { CashPage } from './cash-page';
+import { DeliveryPage } from './delivery-page';
 import { EnrolPage } from './enrol-page';
 import { LoginPage } from './login-page';
 import { OrderPage } from './order-page';
+import { PaymentPage } from './payment-page';
 import { RequireDevice } from './require-device';
 import { RequireSession } from './require-session';
+import { ReservationsPage } from './reservations-page';
 import { TablePage } from './table-page';
 import { TablesPage } from './tables-page';
 
@@ -20,6 +24,10 @@ export const routes: RouteObject[] = [
           { path: '/tables', element: <TablesPage /> },
           { path: '/tables/:tableId', element: <TablePage /> },
           { path: '/orders/:orderId', element: <OrderPage /> },
+          { path: '/orders/:orderId/payment', element: <PaymentPage /> },
+          { path: '/delivery', element: <DeliveryPage /> },
+          { path: '/reservations', element: <ReservationsPage /> },
+          { path: '/cash', element: <CashPage /> },
           { path: '*', element: <Navigate to="/tables" replace /> },
         ],
       },
