@@ -50,8 +50,21 @@ export const admin: SessionView = {
   terminalId: null,
   storeId: null,
   mustChangePin: false,
-  // As the backend sends them (SessionView): PERM_<NAME> company-wide, PERM_<NAME>@<storeId> in one store.
-  permissions: ['PERM_TERMINAL_MANAGE', 'PERM_STORE_MANAGE'],
+  // As the backend sends them (SessionView): PERM_<NAME> company-wide, PERM_<NAME>@<storeId> in one store. One per
+  // sidebar area (shell/navigation.ts), so the administrator sees them all.
+  permissions: [
+    'PERM_TERMINAL_MANAGE',
+    'PERM_STORE_MANAGE',
+    'PERM_DINING_MANAGE',
+    'PERM_CATALOG_MANAGE',
+    'PERM_PRODUCTION_MANAGE',
+    'PERM_INVENTORY_VIEW',
+    'PERM_CUSTOMER_VIEW',
+    'PERM_CASH_VIEW',
+    'PERM_EMPLOYEE_MANAGE',
+    'PERM_DELIVERY_ZONE_MANAGE',
+    'PERM_ORDER_VIEW',
+  ],
   tenantId: companyA.tenantId,
   tenantName: companyA.legalName,
   storeName: null,
