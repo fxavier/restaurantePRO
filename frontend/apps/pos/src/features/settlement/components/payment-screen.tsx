@@ -4,6 +4,7 @@ import { ArrowLeft, ClipboardList, ReceiptText } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { errorMessage, isOffline } from '../../../lib/error-messages';
+import { useSettlementPermissions } from '../hooks/use-permissions';
 import { useOrderHeading, useSettlement } from '../hooks/use-settlement';
 import { SETTLEMENT_MESSAGES } from '../messages';
 import { buyerOf, FINAL_CONSUMER, type Settlement, targetOf } from '../settlement';
@@ -98,6 +99,7 @@ function Bill({
   // A closed or cancelled bill takes no command, nor does any while "Sem ligação" (FC §11).
   const disabled = blocked || !open;
   const documentBuyer = buyerOf(buyer);
+  const can = useSettlementPermissions();
 
   return (
     <>
@@ -106,29 +108,35 @@ function Bill({
           {settlement.lifecycle === 'CANCELLED' ? 'Este pedido foi cancelado.' : 'Esta conta está fechada.'}
         </p>
       )}
+      {!can.split && !can.collect && (
+        <p className="rounded-lg border border-border bg-muted p-3 font-medium">Sem permissão para dividir ou cobrar esta conta.</p>
+      )}
       <div className="grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div className="flex flex-col gap-4">
-          <SplitPanel settlement={settlement} guests={guests} disabled={disabled} />
+          {can.split && <SplitPanel settlement={settlement} guests={guests} disabled={disabled} />}
           <PartitionList
             orderId={settlement.orderId}
             partitions={settlement.partitions}
             selected={selected}
             onSelect={setSelected}
             buyer={documentBuyer}
-            disabled={disabled}
+            blocked={blocked}
+            open={open}
+            can={can}
           />
         </div>
         <div className="flex flex-col gap-4">
-          <PaymentPanel settlement={settlement} target={targetOf(settlement, selected)} disabled={disabled} />
+          {can.collect && <PaymentPanel settlement={settlement} target={targetOf(settlement, selected)} disabled={disabled} />}
           <OpenAttempts
             orderId={settlement.orderId}
             attempts={settlement.openAttempts}
             targetLabel={(attempt) => targetOf(settlement, attempt.partitionId).label}
             disabled={disabled}
+            canResolve={can.collect}
           />
         </div>
         <div className="flex flex-col gap-4 sm:col-span-2 lg:col-span-1">
-          <ClosingPanel settlement={settlement} buyer={documentBuyer} disabled={disabled} onClosed={onClosed}>
+          <ClosingPanel settlement={settlement} buyer={documentBuyer} blocked={blocked} onClosed={onClosed} can={can}>
             <BuyerFields value={buyer} onChange={setBuyer} />
           </ClosingPanel>
         </div>

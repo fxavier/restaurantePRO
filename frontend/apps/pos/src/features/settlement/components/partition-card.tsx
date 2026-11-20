@@ -2,6 +2,7 @@ import { Button, cn, LOCALE, Money, type StatusMap, StatusBadge } from '@restaur
 import { Circle, CircleCheck, CircleDot, FileText, NotebookText, Split, X } from 'lucide-react';
 import { useState } from 'react';
 import { type Buyer, type FiscalDocument, type Reprint, useCancelPartition, useIssuePartitionDocument } from '../hooks/use-settlement-commands';
+import type { Can } from '../hooks/use-permissions';
 import { isCancellable, type Partition, type PaymentStatus } from '../settlement';
 import { CommandStatus } from './command-status';
 import { DocumentNotice, ReprintButton } from './document-actions';
@@ -25,14 +26,19 @@ type Props = {
   onChoose: () => void;
   /** Who a document issued here is for; undefined while a NIF is asked for and still empty. */
   buyer: { ready: boolean; buyer?: Buyer };
-  disabled: boolean;
+  /** "Sem ligação": no command, not even a copy (FC §11). */
+  blocked: boolean;
+  /** The bill is open: a closed one only reprints. */
+  open: boolean;
+  can: Can;
 };
 
 /**
  * One part of the bill (Stitch's "Subconta"): what it holds and still owes, its payment status, and its commands —
  * charge it, cancel it while untouched, issue its own document (by items, once paid, D70) or a copy of it.
  */
-export function PartitionCard({ orderId, partition, chosen, onChoose, buyer, disabled }: Props) {
+export function PartitionCard({ orderId, partition, chosen, onChoose, buyer, blocked, open, can }: Props) {
+  const disabled = blocked || !open;
   const cancel = useCancelPartition(orderId);
   const [issued, setIssued] = useState<FiscalDocument>();
   const [reprint, setReprint] = useState<Reprint>();
@@ -40,7 +46,7 @@ export function PartitionCard({ orderId, partition, chosen, onChoose, buyer, dis
     setReprint(undefined);
     setIssued(document);
   });
-  const invoiceable = partition.kind === 'ITEMS' && partition.settled && !partition.invoiced;
+  const invoiceable = can.collect && partition.kind === 'ITEMS' && partition.settled && !partition.invoiced;
 
   return (
     <li className={cn('flex flex-col gap-2 rounded-xl border-2 bg-card p-4', chosen ? 'border-primary' : 'border-border')}>
@@ -57,7 +63,7 @@ export function PartitionCard({ orderId, partition, chosen, onChoose, buyer, dis
         </p>
       )}
       <div className="flex flex-wrap gap-2">
-        {!partition.settled && (
+        {can.collect && !partition.settled && (
           <Button variant={chosen ? 'default' : 'outline'} size="touch" aria-pressed={chosen} disabled={disabled} onClick={onChoose}>
             Cobrar {partition.label}
           </Button>
@@ -73,18 +79,18 @@ export function PartitionCard({ orderId, partition, chosen, onChoose, buyer, dis
             Emitir documento de {partition.label}
           </Button>
         )}
-        {partition.invoiced && partition.documentId && (
+        {can.reprint && partition.invoiced && partition.documentId && (
           <ReprintButton
             documentId={partition.documentId}
             name={`de ${partition.label}`}
-            disabled={disabled}
+            disabled={blocked}
             onPrinted={(copy) => {
               setIssued(undefined);
               setReprint(copy);
             }}
           />
         )}
-        {isCancellable(partition) && (
+        {can.split && isCancellable(partition) && (
           <Button
             variant="ghost"
             size="touch"
@@ -103,14 +109,14 @@ export function PartitionCard({ orderId, partition, chosen, onChoose, buyer, dis
         pendingText="A emitir o documento…"
         unconfirmedText="Sem ligação — o documento não foi confirmado."
         refusedText="O documento não foi emitido."
-        blocked={disabled}
+        blocked={blocked}
       />
       <CommandStatus
         command={cancel}
         pendingText="A cancelar a divisão…"
         unconfirmedText="Sem ligação — o cancelamento não foi confirmado."
         refusedText="A divisão não foi cancelada."
-        blocked={disabled}
+        blocked={blocked}
       />
     </li>
   );
