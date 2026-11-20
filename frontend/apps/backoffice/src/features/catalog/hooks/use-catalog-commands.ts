@@ -1,0 +1,24 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useApi } from '../../../lib/api';
+import type { FamilySummary } from '../types';
+import { CATALOG_KEY } from './use-catalog-queries';
+
+type FamilyBody = { code: string; name: string; parentId?: string };
+
+/**
+ * Create (no `id`) or update a family. The contract takes no Idempotency-Key here; a resend after no answer may meet
+ * the first one's code, which comes back as CATALOG_CODE_TAKEN. Mutations never retry by themselves (FC §8).
+ */
+export function useSaveFamily() {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, version, body }: { id?: string; version?: number; body: FamilyBody }): Promise<FamilySummary> => {
+      const { data } = id
+        ? await api.PUT('/api/v1/backoffice/catalog/families/{id}', { params: { path: { id } }, body: { ...body, version: version ?? 0 } })
+        : await api.POST('/api/v1/backoffice/catalog/families', { body });
+      return data as FamilySummary;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [...CATALOG_KEY, 'families'] }),
+  });
+}
