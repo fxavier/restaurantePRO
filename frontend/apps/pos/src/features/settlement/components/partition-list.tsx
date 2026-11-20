@@ -1,3 +1,4 @@
+import type { Can } from '../hooks/use-permissions';
 import type { Buyer } from '../hooks/use-settlement-commands';
 import type { Partition } from '../settlement';
 import { PartitionCard } from './partition-card';
@@ -9,12 +10,15 @@ type Props = {
   selected: string | undefined;
   onSelect: (partitionId: string | undefined) => void;
   buyer: { ready: boolean; buyer?: Buyer };
-  /** "Sem ligação" or a closed order: no command. */
-  disabled: boolean;
+  /** "Sem ligação": no command (FC §11). */
+  blocked: boolean;
+  /** The bill is open: a closed one only reprints. */
+  open: boolean;
+  can: Can;
 };
 
 /** Stitch's "Subcontas": the bill's live parts; one is chosen to be charged. */
-export function PartitionList({ orderId, partitions, selected, onSelect, buyer, disabled }: Props) {
+export function PartitionList({ orderId, partitions, selected, onSelect, buyer, blocked, open, can }: Props) {
   return (
     <section aria-labelledby="parts-title" className="flex flex-col gap-2">
       <h3 id="parts-title" className="text-xl font-semibold">
@@ -32,7 +36,9 @@ export function PartitionList({ orderId, partitions, selected, onSelect, buyer, 
               chosen={partition.id === selected}
               onChoose={() => onSelect(partition.id === selected ? undefined : partition.id)}
               buyer={buyer}
-              disabled={disabled}
+              blocked={blocked}
+              open={open}
+              can={can}
             />
           ))}
         </ul>

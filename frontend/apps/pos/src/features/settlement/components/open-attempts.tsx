@@ -11,13 +11,15 @@ type Props = {
   /** The label of each attempt's target ("Parte 2 de 3", "Conta total"). */
   targetLabel: (attempt: OpenAttempt) => string;
   disabled: boolean;
+  /** PAYMENT_COLLECT: confirm, cancel or resolve; without it the list is only shown. */
+  canResolve: boolean;
 };
 
 /**
  * Stitch's "Status Terminal Integrado": the bill's payments still open. One in doubt (UNKNOWN) is pending
  * reconciliation, never shown as failed (§7.4); a card terminal's waits for the operator's confirmation.
  */
-export function OpenAttempts({ orderId, attempts, targetLabel, disabled }: Props) {
+export function OpenAttempts({ orderId, attempts, targetLabel, disabled, canResolve }: Props) {
   if (attempts.length === 0) return null;
   return (
     <section aria-labelledby="attempts-title" className="flex flex-col gap-3 rounded-xl border bg-card p-4">
@@ -26,14 +28,33 @@ export function OpenAttempts({ orderId, attempts, targetLabel, disabled }: Props
       </h3>
       <ul className="flex flex-col gap-3">
         {attempts.map((attempt) => (
-          <AttemptRow key={attempt.id} orderId={orderId} attempt={attempt} target={targetLabel(attempt)} disabled={disabled} />
+          <AttemptRow
+            key={attempt.id}
+            orderId={orderId}
+            attempt={attempt}
+            target={targetLabel(attempt)}
+            disabled={disabled}
+            canResolve={canResolve}
+          />
         ))}
       </ul>
     </section>
   );
 }
 
-function AttemptRow({ orderId, attempt, target, disabled }: { orderId: string; attempt: OpenAttempt; target: string; disabled: boolean }) {
+function AttemptRow({
+  orderId,
+  attempt,
+  target,
+  disabled,
+  canResolve,
+}: {
+  orderId: string;
+  attempt: OpenAttempt;
+  target: string;
+  disabled: boolean;
+  canResolve: boolean;
+}) {
   const resolve = useResolveAttempt(orderId);
   const confirm = useConfirmAttempt(orderId);
   const cancel = useCancelAttempt(orderId);
@@ -58,7 +79,7 @@ function AttemptRow({ orderId, attempt, target, disabled }: { orderId: string; a
         </div>
         <Money value={attempt.amount} className="text-lg font-bold" />
       </div>
-      {awaitingOperator ? (
+      {!canResolve ? null : awaitingOperator ? (
         <div className="flex flex-wrap items-end gap-2">
           <div className="flex min-w-40 flex-1 flex-col gap-1">
             <Label htmlFor={codeId}>Código de autorização</Label>
