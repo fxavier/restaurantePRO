@@ -1,6 +1,13 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useApi } from '../../../lib/api';
-import type { StockRow, StoreSummary, WarehouseView } from '../types';
+import type {
+  BelowMinimumReport,
+  StockItemView,
+  StockRow,
+  StoreSummary,
+  ValuationReport,
+  WarehouseView,
+} from '../types';
 
 /** Every inventory read starts with this key, so a command refreshes the whole area at once (FC §5). */
 export const INVENTORY_KEY = ['backoffice', 'inventory'] as const;
@@ -29,7 +36,36 @@ export function useWarehouses(storeId: string) {
   });
 }
 
-export type StockPage = { rows: StockRow[]; page: number; totalElements: number };
+/** The company's stock items (one page of up to 200, enough to pick from; a search is a follow-up). */
+export function useStockItems() {
+  const api = useApi();
+  return useQuery({
+    queryKey: [...INVENTORY_KEY, 'stock-items'],
+    queryFn: async (): Promise<StockItemView[]> =>
+      (await api.GET('/api/v1/backoffice/inventory/stock-items', { params: { query: { page: 0, size: 200 } } })).data
+        ?.content ?? [],
+  });
+}
+
+export function useValuation(storeId: string) {
+  const api = useApi();
+  return useQuery({
+    queryKey: [...INVENTORY_KEY, 'valuation', storeId],
+    queryFn: async (): Promise<ValuationReport> =>
+      (await api.GET('/api/v1/backoffice/inventory/reports/valuation', { params: { query: { storeId } } })).data ?? {},
+  });
+}
+
+export function useBelowMinimum(storeId: string) {
+  const api = useApi();
+  return useQuery({
+    queryKey: [...INVENTORY_KEY, 'below-minimum', storeId],
+    queryFn: async (): Promise<BelowMinimumReport> =>
+      (await api.GET('/api/v1/backoffice/inventory/reports/below-minimum', { params: { query: { storeId } } })).data ?? {},
+  });
+}
+
+export type StockPage ={ rows: StockRow[]; page: number; totalElements: number };
 
 /** One page of a warehouse's stock, optionally only what is below its minimum. */
 export function useStock(warehouseId: string | undefined, belowMinimum: boolean, page: number) {

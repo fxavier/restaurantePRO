@@ -3,7 +3,6 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-  DataState,
   StatusBadge,
   Table,
   TableBody,
@@ -17,20 +16,27 @@ import {
 import { CircleCheck, TriangleAlert } from 'lucide-react';
 import { useState } from 'react';
 import { formatQuantity } from '../format';
-import { useStock, useWarehouses } from '../hooks/use-inventory-reads';
+import { STOCK_PAGE_SIZE, useStock, useWarehouses } from '../hooks/use-inventory-reads';
+import { usePermission } from '../hooks/use-permission';
 import { Amount } from './amount';
+import { SELECT } from './command-form';
+import { MovementDialog } from './movement-dialog';
+import { Pages, QueryState } from './query-state';
 
 const levels: StatusMap<'LOW' | 'OK'> = {
   LOW: { label: 'Abaixo do mínimo', icon: TriangleAlert, tone: 'warning' },
   OK: { label: 'Normal', icon: CircleCheck, tone: 'success' },
 };
 
-/** "Stock": a warehouse's balances, with its minimum and value (§5 inventory). */
+/** "Stock": a warehouse's balances, with its minimum and value, and the waste and adjustment commands (§5 inventory). */
 export function StockTab({ storeId, currency }: { storeId: string; currency: string | undefined }) {
   const warehouses = useWarehouses(storeId);
   const [chosen, setChosen] = useState<string>();
+  const [belowMinimum, setBelowMinimum] = useState(false);
+  const [page, setPage] = useState(0);
   const warehouseId = chosen ?? warehouses.data?.[0]?.id;
-  const stock = useStock(warehouseId, false, 0);
+  const stock = useStock(warehouseId, belowMinimum, page);
+  const canMove = usePermission('INVENTORY_MOVE', storeId);
   const rows = stock.data?.rows;
 
   return (
@@ -39,21 +45,49 @@ export function StockTab({ storeId, currency }: { storeId: string; currency: str
         <CardTitle className="text-lg">Stock por armazém</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <label className="flex w-fit flex-col gap-1 text-sm font-medium">
-          Armazém
-          <select
-            className="h-9 rounded-md border border-input bg-muted px-3 text-sm"
-            value={warehouseId ?? ''}
-            onChange={(event) => setChosen(event.target.value)}
-          >
-            {warehouses.data?.map((warehouse) => (
-              <option key={warehouse.id} value={warehouse.id}>
-                {warehouse.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <DataState state={stock.isPending ? 'loading' : rows?.length ? 'ready' : 'empty'} emptyMessage="Sem stock neste armazém.">
+        <div className="flex flex-wrap items-end gap-4">
+          <label className="flex w-fit flex-col gap-1 text-sm font-medium">
+            Armazém
+            <select
+              className={SELECT}
+              value={warehouseId ?? ''}
+              onChange={(event) => {
+                setChosen(event.target.value);
+                setPage(0);
+              }}
+            >
+              {warehouses.data?.map((warehouse) => (
+                <option key={warehouse.id} value={warehouse.id}>
+                  {warehouse.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex h-9 items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="size-4 accent-primary"
+              checked={belowMinimum}
+              onChange={(event) => {
+                setBelowMinimum(event.target.checked);
+                setPage(0);
+              }}
+            />
+            Só abaixo do mínimo
+          </label>
+          {canMove && warehouseId && (
+            <div className="ml-auto flex flex-wrap gap-2">
+              <MovementDialog kind="waste" warehouseId={warehouseId} />
+              <MovementDialog kind="manual-adjustments" warehouseId={warehouseId} />
+            </div>
+          )}
+        </div>
+        <QueryState
+          query={warehouses.isError ? warehouses : stock}
+          pending={warehouses.isPending || (warehouseId !== undefined && stock.isPending)}
+          empty={!rows?.length}
+          emptyMessage={warehouseId ? 'Sem stock neste armazém.' : 'Esta loja ainda não tem armazéns.'}
+        >
           <Table>
             <TableCaption className="sr-only">Stock do armazém</TableCaption>
             <TableHeader>
@@ -88,7 +122,8 @@ export function StockTab({ storeId, currency }: { storeId: string; currency: str
               ))}
             </TableBody>
           </Table>
-        </DataState>
+          <Pages page={page} total={stock.data?.totalElements ?? 0} size={STOCK_PAGE_SIZE} onPage={setPage} />
+        </QueryState>
       </CardContent>
     </Card>
   );
