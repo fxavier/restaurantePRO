@@ -50,7 +50,7 @@ function CreditAccount({ customerId, credit, canManage }: CreditTabProps & { cre
   return (
     <div className="flex flex-col gap-4">
       <StatusBadge status={credit.blocked ? 'blocked' : 'active'} statuses={creditStatuses} />
-      <ul aria-label="Conta de crédito" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <ul aria-label="Conta de crédito" className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-4">
         <Figure label="Limite" value={credit.limit} />
         <Figure label="Dívida" value={credit.balance} />
         <Figure label="Reservado" value={credit.reserved} />
@@ -68,7 +68,7 @@ function CreditAccount({ customerId, credit, canManage }: CreditTabProps & { cre
 
 function Figure({ label, value }: { label: string; value: MoneyValue | undefined }) {
   return (
-    <li className="flex flex-col gap-1 rounded-lg border bg-muted p-3">
+    <li className="flex min-w-0 flex-col gap-1 rounded-lg border bg-muted p-3">
       <span className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{label}</span>
       <span className="text-xl font-bold">{value ? <Money value={value} /> : '—'}</span>
     </li>

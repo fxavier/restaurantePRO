@@ -45,7 +45,7 @@ export function CustomerDetail({
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="data">
-          <TabsList className="flex-wrap">
+          <TabsList className="max-w-full justify-start overflow-x-auto">
             <TabsTrigger value="data">Dados</TabsTrigger>
             <TabsTrigger value="contacts">Moradas & Contactos</TabsTrigger>
             <TabsTrigger value="credit">Crédito</TabsTrigger>

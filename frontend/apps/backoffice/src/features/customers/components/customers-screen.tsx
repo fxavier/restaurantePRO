@@ -22,7 +22,7 @@ export function CustomersScreen({ authorities, storeId }: CustomersScreenProps) 
           <NewCustomerDialog onCreated={selectCustomer} />
         </div>
       )}
-      <div className="mt-6 grid items-start gap-6 lg:grid-cols-2">
+      <div className="mt-6 grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
         <CustomerList onSelect={selectCustomer} />
         {customerId && <CustomerDetail key={customerId} customerId={customerId} allowed={allowed} storeId={storeId} />}
       </div>

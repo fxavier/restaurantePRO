@@ -28,8 +28,7 @@ export function CreditStatement({ customerId }: { customerId: string }) {
           <TableHeader>
             <TableRow>
               <TableHead>Data</TableHead>
-              <TableHead>Descrição</TableHead>
-              <TableHead>Tipo</TableHead>
+              <TableHead>Movimento</TableHead>
               <TableHead className="text-right">Valor</TableHead>
               <TableHead className="text-right">Saldo</TableHead>
             </TableRow>
@@ -38,8 +37,10 @@ export function CreditStatement({ customerId }: { customerId: string }) {
             {data?.lines?.map((line) => (
               <TableRow key={line.entryId}>
                 <TableCell className="whitespace-nowrap">{formatBusinessDate(line.businessDate)}</TableCell>
-                <TableCell className="whitespace-normal">{line.description}</TableCell>
-                <TableCell>{ledgerKindLabel(line.kind)}</TableCell>
+                <TableCell className="whitespace-normal">
+                  <span className="block">{line.description}</span>
+                  <span className="block text-xs text-muted-foreground">{ledgerKindLabel(line.kind)}</span>
+                </TableCell>
                 <TableCell className="text-right">{line.amount && <Money value={line.amount} />}</TableCell>
                 <TableCell className="text-right">{line.balance && <Money value={line.balance} />}</TableCell>
               </TableRow>
