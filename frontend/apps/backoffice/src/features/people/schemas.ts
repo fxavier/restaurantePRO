@@ -41,6 +41,14 @@ export const newEmployeeSchema = z.object({
 
 export type NewEmployeeValues = z.infer<typeof newEmployeeSchema>;
 
+/** "Editar" an employee (`EmployeeUpdateRequest` without its version): the name, and whether they still work here. */
+export const employeeSchema = z.object({
+  name: newEmployeeSchema.shape.name,
+  active: z.boolean(),
+});
+
+export type EmployeeValues = z.infer<typeof employeeSchema>;
+
 /** "Nova conta" and "Editar" (`UserCreateRequest`, `UserUpdateRequest`); the username is fixed once created. */
 export const accountSchema = z.object({
   username: z

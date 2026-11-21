@@ -158,6 +158,52 @@ describe('employees tab', () => {
   });
 });
 
+describe('edit employee', () => {
+  it('renames and deactivates an employee against the version it was loaded from', async () => {
+    const state = peopleServer({ employees: [{ ...maria, version: 2 }] });
+    const { user } = renderApp('/people');
+
+    await user.click(await screen.findByRole('button', { name: 'Editar Maria Sitoe' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Editar Maria Sitoe' });
+    expect(within(dialog).getByRole('checkbox', { name: 'Ativo' })).toBeChecked();
+    await user.clear(within(dialog).getByLabelText('Nome'));
+    await user.type(within(dialog).getByLabelText('Nome'), 'Maria J. Sitoe');
+    await user.click(within(dialog).getByRole('checkbox', { name: 'Ativo' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Guardar' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    const row = await screen.findByRole('row', { name: /Maria J\. Sitoe/ });
+    expect(within(row).getByText('Inativo')).toBeInTheDocument();
+    expect(state.requests.filter((r) => r.method === 'PUT').map(({ url, body }) => ({ url, body }))).toEqual([
+      { url: `/api/v1/backoffice/employees/${maria.id}`, body: { name: 'Maria J. Sitoe', active: false, version: 2 } },
+    ]);
+  });
+
+  it('after a conflicting edit, loads the current version and saves against it', async () => {
+    const state = peopleServer();
+    const { user } = renderApp('/people');
+
+    await user.click(await screen.findByRole('button', { name: 'Editar Maria Sitoe' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Editar Maria Sitoe' });
+    // Someone else renames her meanwhile.
+    state.employees[0] = { ...maria, name: 'Maria Sitoe Nhantumbo', version: 1 };
+    await user.click(within(dialog).getByRole('checkbox', { name: 'Ativo' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Guardar' }));
+
+    expect(await within(dialog).findByText('Foi alterado por outra pessoa. Recarregue e tente de novo.')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Carregar a versão atual' }));
+    expect(within(dialog).getByLabelText('Nome')).toHaveValue('Maria Sitoe Nhantumbo');
+    await user.click(within(dialog).getByRole('checkbox', { name: 'Ativo' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Guardar' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(state.requests.filter((r) => r.method === 'PUT').map((r) => r.body)).toEqual([
+      { name: 'Maria Sitoe', active: false, version: 0 },
+      { name: 'Maria Sitoe Nhantumbo', active: false, version: 1 },
+    ]);
+  });
+});
+
 describe('employee PIN', () => {
   it("resets an employee's PIN, which the POS asks them to change at the next sign-in", async () => {
     const state = peopleServer();

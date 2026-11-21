@@ -7,6 +7,7 @@ import type {
   AssignmentRequest,
   EmployeeCreateRequest,
   EmployeeSummary,
+  EmployeeUpdateRequest,
   RoleCreateRequest,
   RoleUpdateRequest,
   SupportGrantRequest,
@@ -34,6 +35,17 @@ export function useHireEmployee() {
   return usePeopleCommand(
     async (api, body: EmployeeCreateRequest) => (await api.POST(`${BASE}/employees`, { body })).data as EmployeeSummary,
     true,
+  );
+}
+
+/**
+ * Renames an employee or switches them off (`active: false`: no POS sign-in in any store); `version` is the one the form
+ * was loaded from, so a newer one answers 409 VERSION_CONFLICT.
+ */
+export function useUpdateEmployee() {
+  return usePeopleCommand(
+    async (api, { employeeId, body }: { employeeId: string; body: EmployeeUpdateRequest }) =>
+      (await api.PUT(`${BASE}/employees/{id}`, { params: { path: { id: employeeId } }, body })).data as EmployeeSummary,
   );
 }
 

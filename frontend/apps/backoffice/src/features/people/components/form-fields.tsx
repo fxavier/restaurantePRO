@@ -69,6 +69,31 @@ export function SelectField<Values extends FieldValues>({
   );
 }
 
+/** A labelled checkbox over a boolean field. */
+export function CheckboxField<Values extends FieldValues>({ control, name, label }: FieldProps<Values>) {
+  return (
+    <FormField
+      control={control}
+      name={name}
+      render={({ field }) => (
+        <FormItem className="flex flex-row items-center gap-2">
+          <FormControl>
+            <input
+              type="checkbox"
+              className="size-4 accent-primary"
+              checked={field.value}
+              onChange={(event) => field.onChange(event.target.checked)}
+              onBlur={field.onBlur}
+              ref={field.ref}
+            />
+          </FormControl>
+          <FormLabel className="font-normal">{label}</FormLabel>
+        </FormItem>
+      )}
+    />
+  );
+}
+
 type StoreAndRole = { storeId: string; roleId: string };
 
 /** "Loja" and "Função", the pair an employee is hired or assigned with. */
