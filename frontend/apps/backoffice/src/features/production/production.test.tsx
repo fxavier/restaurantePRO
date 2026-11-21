@@ -167,6 +167,39 @@ describe('adding a printer', () => {
     expect(await within(dialog).findByText('Já existe uma impressora com este código nesta loja.')).toBeInTheDocument();
     expect(within(dialog).getByLabelText('Código')).toHaveAttribute('aria-invalid', 'true');
   });
+
+  it('after a lost answer, a resend that finds the code taken says the printer may already exist and shows it', async () => {
+    const state = productionServer();
+    let posts = 0;
+    server.use(
+      http.post(api('/api/v1/backoffice/printers'), async ({ request }) => {
+        posts += 1;
+        if (posts === 1) {
+          // The create commits, but its answer never arrives.
+          state.printers.push({ ...copa, version: 0 });
+          return problem(502, 'BACKEND_UNAVAILABLE');
+        }
+        await request.text();
+        return problem(409, 'PRINTER_CODE_TAKEN', 'Conflict');
+      }),
+    );
+    const { user } = renderApp(PRODUCTION);
+
+    await user.click(await screen.findByRole('button', { name: 'Adicionar impressora' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Adicionar impressora' });
+    await user.type(within(dialog).getByLabelText('Código'), 'COPA');
+    await user.type(within(dialog).getByLabelText('Nome'), 'Copa');
+    await user.type(within(dialog).getByLabelText('Endereço IP'), '192.168.1.182');
+    await user.click(within(dialog).getByRole('button', { name: 'Adicionar' }));
+    await user.click(await within(dialog).findByRole('button', { name: 'Tentar novamente' }));
+
+    expect(
+      await within(dialog).findByText('O envio anterior pode já ter criado esta impressora: confira a lista antes de tentar outra vez.'),
+    ).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
+    expect(await screen.findByRole('listitem', { name: 'Copa' })).toBeInTheDocument();
+    expect(posts).toBe(2);
+  });
 });
 
 describe('configuring a printer', () => {

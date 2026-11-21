@@ -19,14 +19,15 @@ export function usePrinterPresets() {
 
 /**
  * Printer configuration (FC §8: mutations never retry). The contract asks no Idempotency-Key here: a create sent
- * twice meets the store's code uniqueness (PRINTER_CODE_TAKEN), an update its version.
+ * twice meets the store's code uniqueness (PRINTER_CODE_TAKEN), an update its version. The list is read again after
+ * any answer, since a create whose answer was lost may have committed.
  */
 export function useCreatePrinter() {
   const api = useApi();
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (body: PrinterCreateRequest) => (await api.POST('/api/v1/backoffice/printers', { body })).data,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: PRINTERS_KEY }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: PRINTERS_KEY }),
   });
 }
 
