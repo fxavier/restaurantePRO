@@ -47,6 +47,33 @@ export async function signInToBackOffice(page: Page, email: string, password: st
   await page.waitForURL(`${stack.backOffice()}/`);
 }
 
+/** Keycloak asks again for what max_age expired: the password (the user name may be fixed) and the TOTP code. */
+export async function reauthenticate(page: Page, retry = 0) {
+  const password = page.locator('#password');
+  const otp = page.locator('#otp');
+  await expect(password.or(otp)).toBeVisible();
+  if (await password.isVisible()) {
+    const username = page.locator('#username');
+    if (await username.isVisible()) await username.fill(seeded.adminEmail());
+    await password.fill(seeded.adminPassword());
+    await page.locator('#kc-login').click();
+  }
+  await otp.fill(await freshTotp(seeded.adminTotpSecret(), retry));
+  await page.locator('#kc-login').click();
+}
+
+/**
+ * A fresh second factor for a sensitive command (the stack's step-up age is 30 s), through the BFF's step-up as the SPA
+ * does it. max_age=0 always asks again: a factor Keycloak still accepts at 29 s would be stale at the backend a moment
+ * later. Keycloak's session is open, so it asks only for what expired; freshTotp waits for an unused period.
+ */
+export async function stepUpBackOffice(page: Page, retry = 0) {
+  await page.goto(`${stack.backOffice()}/bff/step-up?acr_values=2&max_age=0&return=/`);
+  if (new URL(page.url()).origin === new URL(stack.backOffice()).origin) return; // no prompt was needed
+  await reauthenticate(page, retry);
+  await page.waitForURL(`${stack.backOffice()}/`);
+}
+
 /** The BFF's CSRF token, as the SPA reads it: the __Host-XSRF-TOKEN cookie of the BackOffice origin. */
 export async function csrfToken(page: Page): Promise<string> {
   const cookie = (await page.context().cookies(stack.backOffice())).find((c) => c.name === '__Host-XSRF-TOKEN');
