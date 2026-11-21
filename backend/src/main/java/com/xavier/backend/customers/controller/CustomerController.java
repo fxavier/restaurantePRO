@@ -71,6 +71,11 @@ class CustomerController {
         return customers.details(Channel.POS, id);
     }
 
+    @GetMapping(POS + "/{id}/addresses")
+    List<AddressView> addressesAtPos(@PathVariable UUID id) {
+        return customers.details(Channel.POS, id).addresses();
+    }
+
     @PostMapping(BACKOFFICE)
     ResponseEntity<CustomerDetails> create(@RequestHeader("Idempotency-Key") String key,
                                            @Valid @RequestBody CustomerCreateRequest body, HttpServletRequest request) {
