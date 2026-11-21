@@ -10,3 +10,19 @@ export function formatQuantity(quantity: string | number | undefined, unit: stri
   const number = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 3 }).format(value);
   return unit ? `${number} ${unit}` : number;
 }
+
+const DATE = { day: '2-digit', month: '2-digit', year: 'numeric' } as const;
+
+/** A calendar date as the API sends it (`2026-11-21`, no time, no zone): shown as that same day, never shifted. */
+export function formatDate(date: string | undefined): string {
+  if (!date) return '—';
+  return new Intl.DateTimeFormat(LOCALE, { ...DATE, timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`));
+}
+
+/** An instant in the store's timezone (§12: the business day can cross midnight). */
+export function formatDateTime(instant: string | undefined, timeZone: string | undefined): string {
+  if (!instant) return '—';
+  return new Intl.DateTimeFormat(LOCALE, { ...DATE, hour: '2-digit', minute: '2-digit', ...(timeZone ? { timeZone } : {}) }).format(
+    new Date(instant),
+  );
+}

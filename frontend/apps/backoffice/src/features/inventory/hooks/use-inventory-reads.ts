@@ -2,9 +2,12 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useApi } from '../../../lib/api';
 import type {
   BelowMinimumReport,
+  PurchaseOrderView,
+  ReceiptView,
   StockItemView,
   StockRow,
   StoreSummary,
+  SupplierView,
   ValuationReport,
   WarehouseView,
 } from '../types';
@@ -65,7 +68,46 @@ export function useBelowMinimum(storeId: string) {
   });
 }
 
-export type StockPage ={ rows: StockRow[]; page: number; totalElements: number };
+export const LIST_PAGE_SIZE = 50;
+export type ListPage<Row> = { rows: Row[]; totalElements: number };
+type Paged<Row> = { content?: Row[]; totalElements?: number } | undefined;
+const listPage = <Row,>(data: Paged<Row>): ListPage<Row> => ({ rows: data?.content ?? [], totalElements: data?.totalElements ?? 0 });
+
+export function useSuppliers(page = 0) {
+  const api = useApi();
+  return useQuery({
+    queryKey: [...INVENTORY_KEY, 'suppliers', page],
+    queryFn: async (): Promise<ListPage<SupplierView>> =>
+      listPage((await api.GET('/api/v1/backoffice/inventory/suppliers', { params: { query: { page, size: LIST_PAGE_SIZE } } })).data),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** The store's purchase orders in the server's order, one page at a time. */
+export function usePurchaseOrders(storeId: string, page = 0) {
+  const api = useApi();
+  return useQuery({
+    queryKey: [...INVENTORY_KEY, 'purchase-orders', storeId, page],
+    queryFn: async (): Promise<ListPage<PurchaseOrderView>> =>
+      listPage(
+        (await api.GET('/api/v1/backoffice/inventory/purchase-orders', { params: { query: { storeId, page, size: LIST_PAGE_SIZE } } }))
+          .data,
+      ),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useReceipts(storeId: string, page = 0) {
+  const api = useApi();
+  return useQuery({
+    queryKey: [...INVENTORY_KEY, 'receipts', storeId, page],
+    queryFn: async (): Promise<ListPage<ReceiptView>> =>
+      listPage((await api.GET('/api/v1/backoffice/inventory/receipts', { params: { query: { storeId, page, size: LIST_PAGE_SIZE } } })).data),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export type StockPage = { rows: StockRow[]; page: number; totalElements: number };
 
 /** One page of a warehouse's stock, optionally only what is below its minimum. */
 export function useStock(warehouseId: string | undefined, belowMinimum: boolean, page: number) {

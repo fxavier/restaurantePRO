@@ -32,15 +32,23 @@ export type FieldErrors = { fields: [field: string, message: string][]; others: 
 
 /**
  * A 400's field violations split into the form's fields and the rest. A line's field (`lines[0].unitCost`) lands on
- * the form's field of that name, as the dialogs edit one line at a time or name the line fields the same.
+ * the form's array field (`lines.0.unitCost`) when the form lists the array (`lines`), else on the form's field of
+ * that name (a one-line dialog names it `unitCost`).
  */
 export function fieldErrors(error: unknown, fields: readonly string[]): FieldErrors | undefined {
   if (!(error instanceof ApiError) || error.status !== 400 || !error.errors?.length) return undefined;
   const result: FieldErrors = { fields: [], others: [] };
   for (const { field, message } of error.errors) {
-    const name = field.replace(/^lines\[\d+\]\./, '');
-    if (fields.includes(name)) result.fields.push([name, message]);
+    const name = formField(field, fields);
+    if (name) result.fields.push([name, message]);
     else result.others.push(message);
   }
   return result;
+}
+
+function formField(field: string, fields: readonly string[]): string | undefined {
+  const dotted = field.replace(/\[(\d+)\]/g, '.$1');
+  if (fields.some((name) => dotted === name || dotted.startsWith(`${name}.`))) return dotted;
+  const single = field.replace(/^lines\[\d+\]\./, '');
+  return fields.includes(single) ? single : undefined;
 }

@@ -41,7 +41,7 @@ export type MovementValues = z.output<typeof movementSchema>;
 export const supplierSchema = z.object({
   code: z.string().trim().min(1, 'Indique o código.').max(40, 'O código tem no máximo 40 caracteres.'),
   name: z.string().trim().min(1, 'Indique o nome.').max(160, 'O nome tem no máximo 160 caracteres.'),
-  taxId: text(40, 'O NUIT tem no máximo 40 caracteres.'),
+  taxId: text(40, 'O número de contribuinte tem no máximo 40 caracteres.'),
   phone: text(40, 'O telefone tem no máximo 40 caracteres.'),
   email: z.union([z.literal(''), z.email('Indique um email válido.').max(200)]),
 });
