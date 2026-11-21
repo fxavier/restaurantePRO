@@ -1,7 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@restaurantpro/ui';
 import { PackageMinus, SlidersHorizontal } from 'lucide-react';
-import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useFormCommand } from '../hooks/use-form-command';
 import { useRecordMovement, type MovementKind } from '../hooks/use-inventory-commands';
@@ -9,6 +7,7 @@ import { useStockItems } from '../hooks/use-inventory-reads';
 import { movementSchema, wasteSchema, type MovementInput, type MovementValues } from '../schemas';
 import type { ManualMovementRequest } from '../types';
 import { CommandForm, SelectField, TextField } from './command-form';
+import { FormDialog } from './form-dialog';
 
 const copy = {
   waste: {
@@ -25,26 +24,23 @@ const copy = {
   },
 } as const;
 
-/** "Registar quebra" and "Ajustar stock" (§5 inventory): one item of the warehouse; mounted only while open. */
+/** "Registar quebra" and "Ajustar stock" (§5 inventory): one item of the warehouse. */
 export function MovementDialog({ kind, warehouseId }: { kind: MovementKind; warehouseId: string }) {
-  const [open, setOpen] = useState(false);
   const { title, description, icon: Icon } = copy[kind];
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant={kind === 'waste' ? 'outline' : 'default'}>
+    <FormDialog
+      trigger={
+        <>
           <Icon aria-hidden="true" />
           {title}
-        </Button>
-      </DialogTrigger>
-      <DialogContent showCloseButton={false}>
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
-        </DialogHeader>
-        <MovementForm kind={kind} warehouseId={warehouseId} onDone={() => setOpen(false)} />
-      </DialogContent>
-    </Dialog>
+        </>
+      }
+      triggerVariant={kind === 'waste' ? 'outline' : 'default'}
+      title={title}
+      description={description}
+    >
+      {(close) => <MovementForm kind={kind} warehouseId={warehouseId} onDone={close} />}
+    </FormDialog>
   );
 }
 
