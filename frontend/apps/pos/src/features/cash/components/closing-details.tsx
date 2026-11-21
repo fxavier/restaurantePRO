@@ -37,13 +37,8 @@ type Props = { closing: ClosingView & { id: string }; onClosing: (closing: Closi
  * then "Submeter fecho" hands it to the manager for approval.
  */
 export function ClosingDetails({ closing, onClosing }: Props) {
-  const { justify, submit } = useClosingSteps(closing.id, onClosing);
-  const blocked = useCommandsBlocked();
   const lines = closingLines(closing.lines);
-  const differences = linesWithDifference(lines);
   const status = closing.status && closing.status in STATUSES ? (closing.status as ClosingStatus) : undefined;
-  const error = justify.error ?? submit.error;
-  const awaitingSubmit = !submit.pending && submit.intent !== undefined;
 
   return (
     <div className="flex flex-col gap-4">
@@ -53,36 +48,54 @@ export function ClosingDetails({ closing, onClosing }: Props) {
       </div>
       <ClosingTable lines={lines} />
       {closing.status === 'DRAFT' ? (
-        <>
-          {differences.length > 0 && (
-            <Justifications
-              differences={differences}
-              pending={justify.pending}
-              awaitingRetry={!justify.pending && justify.intent !== undefined}
-              disabled={blocked || submit.pending}
-              onSave={(justifications) =>
-                justify.intent ? justify.retry() : justify.start({ justifications, version: closing.version ?? 0 }, undefined)
-              }
-            />
-          )}
-          <CommandFeedback blocked={blocked} error={error && cashRefusal(error, 'o fecho da caixa')} />
-          <ConfirmButton
-            type="button"
-            size="touch-primary"
-            pending={submit.pending}
-            disabled={blocked || !fullyJustified(lines) || justify.pending}
-            onClick={() => (awaitingSubmit ? submit.retry() : submit.start(undefined, undefined))}
-          >
-            <Send aria-hidden="true" />
-            {awaitingSubmit ? 'Tentar novamente' : 'Submeter fecho'}
-          </ConfirmButton>
-        </>
-      ) : closing.status === 'SUBMITTED' ? (
-        <p className="font-medium">O fecho foi submetido para aprovação do gerente.</p>
-      ) : closing.rejectionReason ? (
-        <p className="font-medium">Motivo da rejeição: {closing.rejectionReason}</p>
-      ) : null}
+        <DraftActions closing={closing} lines={lines} onClosing={onClosing} />
+      ) : (
+        <ClosingOutcome closing={closing} />
+      )}
     </div>
+  );
+}
+
+/** A submitted closing waits for the manager; a rejected one says why. */
+function ClosingOutcome({ closing }: { closing: ClosingView }) {
+  if (closing.status === 'SUBMITTED') return <p className="font-medium">O fecho foi submetido para aprovação do gerente.</p>;
+  if (!closing.rejectionReason) return null;
+  return <p className="font-medium">Motivo da rejeição: {closing.rejectionReason}</p>;
+}
+
+/** A draft's steps: justify its differences, then submit it. */
+function DraftActions({ closing, lines, onClosing }: Props & { lines: ClosingLine[] }) {
+  const { justify, submit } = useClosingSteps(closing.id, onClosing);
+  const blocked = useCommandsBlocked();
+  const differences = linesWithDifference(lines);
+  const error = justify.error ?? submit.error;
+  const awaitingSubmit = !submit.pending && submit.intent !== undefined;
+
+  return (
+    <>
+      {differences.length > 0 && (
+        <Justifications
+          differences={differences}
+          pending={justify.pending}
+          awaitingRetry={!justify.pending && justify.intent !== undefined}
+          disabled={blocked || submit.pending}
+          onSave={(justifications) =>
+            justify.intent ? justify.retry() : justify.start({ justifications, version: closing.version ?? 0 }, undefined)
+          }
+        />
+      )}
+      <CommandFeedback blocked={blocked} error={error && cashRefusal(error, 'o fecho da caixa')} />
+      <ConfirmButton
+        type="button"
+        size="touch-primary"
+        pending={submit.pending}
+        disabled={blocked || !fullyJustified(lines) || justify.pending}
+        onClick={() => (awaitingSubmit ? submit.retry() : submit.start(undefined, undefined))}
+      >
+        <Send aria-hidden="true" />
+        {awaitingSubmit ? 'Tentar novamente' : 'Submeter fecho'}
+      </ConfirmButton>
+    </>
   );
 }
 
