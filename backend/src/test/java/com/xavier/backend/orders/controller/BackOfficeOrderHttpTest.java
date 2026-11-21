@@ -42,6 +42,7 @@ class BackOfficeOrderHttpTest {
     UUID terminal = UUID.randomUUID();
     JsonNode dineIn;
     UUID takeaway;
+    UUID cancelled;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -49,11 +50,24 @@ class BackOfficeOrderHttpTest {
         dineIn = fixtures.openedOrder(shop, employee, terminal);
         fixtures.confirmedLine(shop, OrdersFixtures.id(dineIn), "2", dineIn.get("version").asLong(), employee,
                 terminal);
-        takeaway = OrdersFixtures.id(OrdersFixtures.json(mvc.perform(post("/api/v1/pos/orders")
+        takeaway = OrdersFixtures.id(openTakeaway());
+        JsonNode toCancel = openTakeaway();
+        cancelled = OrdersFixtures.id(toCancel);
+        mvc.perform(post("/api/v1/pos/orders/" + cancelled + "/cancel")
+                        .with(OrdersActors.pos(shop.store(), employee, terminal, Permission.ORDER_CANCEL)).with(csrf())
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"orderVersion": %d, "reason": "customer left"}"""
+                                .formatted(toCancel.get("version").asLong())))
+                .andExpect(status().isOk());
+    }
+
+    private JsonNode openTakeaway() throws Exception {
+        return OrdersFixtures.json(mvc.perform(post("/api/v1/pos/orders")
                         .with(OrdersActors.pos(shop.store(), employee, terminal, Permission.ORDER_EDIT)).with(csrf())
                         .header("Idempotency-Key", UUID.randomUUID().toString())
                         .contentType(MediaType.APPLICATION_JSON).content("{\"mode\": \"TAKEAWAY\"}"))
-                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()));
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
     }
 
     @Test
@@ -89,10 +103,14 @@ class BackOfficeOrderHttpTest {
                         takeaway.toString())));
         mvc.perform(get(ORDERS).param("storeId", store).param("status", "CLOSED").with(viewer(shop.store())))
                 .andExpect(jsonPath("$.totalElements").value(0));
+        mvc.perform(get(ORDERS).param("storeId", store).param("status", "CANCELLED").with(viewer(shop.store())))
+                .andExpect(jsonPath("$.content[*].id", contains(cancelled.toString())))
+                .andExpect(jsonPath("$.content[0].lifecycle").value("CANCELLED"))
+                .andExpect(jsonPath("$.content[0].closedAt").isString());
         mvc.perform(get(ORDERS).param("storeId", store).param("to", "2000-01-01").with(viewer(shop.store())))
                 .andExpect(jsonPath("$.totalElements").value(0));
         mvc.perform(get(ORDERS).param("storeId", store).param("size", "1").with(viewer(shop.store())))
-                .andExpect(jsonPath("$.totalElements").value(2))
+                .andExpect(jsonPath("$.totalElements").value(3))
                 .andExpect(jsonPath("$.content.length()").value(1));
     }
 
@@ -105,6 +123,14 @@ class BackOfficeOrderHttpTest {
                 .andExpect(jsonPath("$.lines.length()").value(1))
                 .andExpect(jsonPath("$.lines[0].status").value("CONFIRMED"))
                 .andExpect(jsonPath("$.due.amount").value("25.00"));
+    }
+
+    @Test
+    void aCancelledOrderIsReadWithWhenItClosed() throws Exception {
+        mvc.perform(get(ORDERS + "/" + cancelled).with(viewer(shop.store())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.lifecycle").value("CANCELLED"))
+                .andExpect(jsonPath("$.closedAt").isString());
     }
 
     @Test

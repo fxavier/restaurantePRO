@@ -195,6 +195,7 @@ export const ORDER: OrderView = {
   businessDay: '2026-11-18',
   openedAt: '2026-11-18T10:05:00Z',
   openedByEmployeeId: id(77),
+  closedAt: null,
   version: 4,
   catalogVersion: 7,
   promotionVersion: null,
