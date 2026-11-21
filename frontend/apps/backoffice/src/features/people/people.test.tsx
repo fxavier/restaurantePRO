@@ -607,6 +607,38 @@ describe('new employee', () => {
     expect(storedText()).not.toContain('4821');
   });
 
+  it('after "Sem ligação", reads a taken code on the retry as a hire that may have happened', async () => {
+    const state = peopleServer();
+    let attempts = 0;
+    server.use(
+      http.post(api('/api/v1/backoffice/employees'), () => {
+        attempts += 1;
+        // The first hire reaches the server, but its answer is lost; the retry then finds the code taken.
+        if (attempts > 1) return problem(409, 'EMPLOYEE_CODE_TAKEN', 'Employee code taken');
+        state.employees.push({ ...maria, id: 'e2000000-0000-4000-8000-000000000009', code: 'EMP-20', name: 'Carla Nhaca' });
+        return HttpResponse.error();
+      }),
+    );
+    const { user } = renderApp(`/people?storeId=${baixa.id}`);
+
+    await user.click(await screen.findByRole('button', { name: 'Novo empregado' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Novo empregado' });
+    await user.type(within(dialog).getByLabelText('Código'), 'EMP-20');
+    await user.type(within(dialog).getByLabelText('Nome'), 'Carla Nhaca');
+    await user.type(within(dialog).getByLabelText('PIN inicial'), '4821');
+    await user.selectOptions(within(dialog).getByLabelText('Função'), 'Gerente');
+    await user.click(within(dialog).getByRole('button', { name: 'Criar empregado' }));
+    await user.click(await within(dialog).findByRole('button', { name: 'Tentar novamente' }));
+
+    expect(
+      await within(dialog).findByText('O primeiro pedido pode já ter criado este empregado. Veja a lista antes de tentar de novo.'),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Código')).not.toHaveAttribute('aria-invalid', 'true');
+    expect(within(dialog).queryByRole('button', { name: 'Tentar novamente' })).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
+    expect(await screen.findByRole('cell', { name: 'Carla Nhaca' })).toBeInTheDocument();
+  });
+
   it('checks the PIN before sending, and shows a taken code on its field', async () => {
     const state = peopleServer();
     server.use(
