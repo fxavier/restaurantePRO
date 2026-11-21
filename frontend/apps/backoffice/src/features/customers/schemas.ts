@@ -68,3 +68,21 @@ export const adjustmentSchema = z.object({
     .refine((points) => points !== 0, 'Indique um número inteiro de pontos, diferente de zero.'),
   reason,
 });
+
+/** "Adicionar telefone" (PhoneRequest): the number as typed (the server keeps its digits), a label, and primary or not. */
+export const phoneSchema = z.object({
+  number: z.string().trim().min(1, 'Indique o número.').max(40, 'O número tem no máximo 40 caracteres.'),
+  label: optionalText(40, 'A etiqueta tem no máximo 40 caracteres.'),
+  primary: z.boolean(),
+});
+
+/** "Adicionar morada" (AddressRequest): billing or delivery, the first line required. */
+export const addressSchema = z.object({
+  kind: z.enum(['BILLING', 'DELIVERY'], 'Escolha o tipo.'),
+  line1: z.string().trim().min(1, 'Indique a morada.').max(200, 'A morada tem no máximo 200 caracteres.'),
+  line2: optionalText(200, 'A linha tem no máximo 200 caracteres.'),
+  postalCode: optionalText(20, 'O código postal tem no máximo 20 caracteres.'),
+  city: optionalText(100, 'A cidade tem no máximo 100 caracteres.'),
+  country: optionalText(60, 'O país tem no máximo 60 caracteres.'),
+  notes,
+});

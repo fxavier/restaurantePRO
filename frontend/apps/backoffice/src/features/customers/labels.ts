@@ -39,6 +39,13 @@ export function formatPointsChange(points: number | undefined): string {
   return points === undefined ? '' : signed.format(points);
 }
 
+const addressKinds: Record<string, string> = { BILLING: 'Faturação', DELIVERY: 'Entrega' };
+
+/** An address's kind (AddressRequest.kind); an unknown one is shown as sent. */
+export function addressKindLabel(kind: string | undefined): string {
+  return (kind && addressKinds[kind]) ?? kind ?? '';
+}
+
 /** A balance of points ("1 320"). */
 export function formatPoints(points: number | undefined): string {
   return points === undefined ? '' : plain.format(points);

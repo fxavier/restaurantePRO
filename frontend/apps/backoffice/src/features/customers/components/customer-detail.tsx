@@ -4,6 +4,7 @@ import { useId } from 'react';
 import { useCustomer } from '../hooks/use-customer-queries';
 import type { Allowed } from '../permissions';
 import type { CustomerDetails } from '../types';
+import { ContactsTab } from './contacts-tab';
 import { CreditTab } from './credit-tab';
 import { CustomerDataTab } from './customer-data-tab';
 import { LoyaltyTab } from './loyalty-tab';
@@ -53,7 +54,9 @@ export function CustomerDetail({
           <TabsContent value="data" className="pt-4">
             <CustomerDataTab customer={data} canManage={allowed.CUSTOMER_MANAGE} />
           </TabsContent>
-          <TabsContent value="contacts" className="pt-4" />
+          <TabsContent value="contacts" className="pt-4">
+            <ContactsTab customer={data} customerId={customerId} canManage={allowed.CUSTOMER_MANAGE} />
+          </TabsContent>
           <TabsContent value="credit" className="pt-4">
             <CreditTab customerId={customerId} canManage={allowed.CREDIT_LIMIT_MANAGE} />
           </TabsContent>
