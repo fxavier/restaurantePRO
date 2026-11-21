@@ -1,6 +1,6 @@
 import { Button, formatMoney } from '@restaurantpro/ui';
 import { CircleMinus, CirclePlus, Inbox, ReceiptText } from 'lucide-react';
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { useEmployee, useStoreTimeZone } from '../../../lib/auth/use-employee';
 import { useCommandsBlocked } from '../../../lib/live/use-connection';
 import { MOVEMENTS, type MovementType } from '../cash';
@@ -17,7 +17,14 @@ const ICONS = { CASH_IN: CirclePlus, CASH_OUT: CircleMinus, EXPENSE: ReceiptText
  * The operator's open session with its commands (cash in, cash out, an approved expense, the drawer) and the blind
  * count that closes it.
  */
-export function OpenSession({ session, register }: { session: SessionDetails; register: RegisterSummary | undefined }) {
+type Props = {
+  session: SessionDetails;
+  register: RegisterSummary | undefined;
+  /** Beside the blind count on a wide screen (the day's card). */
+  children?: ReactNode;
+};
+
+export function OpenSession({ session, register, children }: Props) {
   const employee = useEmployee();
   const timeZone = useStoreTimeZone();
   const blocked = useCommandsBlocked();
@@ -63,7 +70,10 @@ export function OpenSession({ session, register }: { session: SessionDetails; re
           {cashRefusal(drawer.error, 'a abertura da gaveta')}
         </p>
       )}
-      {session.id && <BlindCount session={session} sessionId={session.id} />}
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-5">
+        <div className="lg:col-span-3">{session.id && <BlindCount session={session} sessionId={session.id} />}</div>
+        <div className="flex flex-col gap-4 lg:col-span-2">{children}</div>
+      </div>
       {moving && session.id && (
         <MovementDialog
           type={moving}

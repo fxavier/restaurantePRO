@@ -103,6 +103,20 @@ export function useClosingSteps(closingId: string, onClosing: (closing: ClosingV
   return { justify, submit };
 }
 
+/** `POST /api/v1/pos/cash/days/{id}/operational-close` at the day's version: OPEN → OPERATIONALLY_CLOSED (§8.3). */
+export function useCloseDay(dayId: string) {
+  const { api } = useServices();
+  return useCashIntent(
+    async (version: number, key: string) =>
+      (
+        await api.POST('/api/v1/pos/cash/days/{id}/operational-close', {
+          params: { path: { id: dayId }, header: { 'Idempotency-Key': key } },
+          body: { version },
+        })
+      ).data,
+  );
+}
+
 /** `POST /api/v1/pos/drawer-kicks`: the manual "open drawer" (D158), a print job the printer runs. */
 export function useDrawerKick(onSent: () => void) {
   const { api } = useServices();
