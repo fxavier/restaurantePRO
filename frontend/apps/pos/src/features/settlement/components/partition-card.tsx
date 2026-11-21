@@ -39,14 +39,6 @@ type Props = {
  */
 export function PartitionCard({ orderId, partition, chosen, onChoose, buyer, blocked, open, can }: Props) {
   const disabled = blocked || !open;
-  const cancel = useCancelPartition(orderId);
-  const [issued, setIssued] = useState<FiscalDocument>();
-  const [reprint, setReprint] = useState<Reprint>();
-  const issue = useIssuePartitionDocument(orderId, (document) => {
-    setReprint(undefined);
-    setIssued(document);
-  });
-  const invoiceable = can.collect && partition.kind === 'ITEMS' && partition.settled && !partition.invoiced;
 
   return (
     <li className={cn('flex flex-col gap-2 rounded-xl border-2 bg-card p-4', chosen ? 'border-primary' : 'border-border')}>
@@ -64,7 +56,10 @@ export function PartitionCard({ orderId, partition, chosen, onChoose, buyer, blo
       )}
       <div className="flex flex-wrap gap-2">
         {can.collect && !partition.settled && (
-          <Button variant={chosen ? 'default' : 'outline'} size="touch" aria-pressed={chosen}
+          <Button
+            variant={chosen ? 'default' : 'outline'}
+            size="touch"
+            aria-pressed={chosen}
             aria-label={`Cobrar ${partition.label}`}
             disabled={disabled}
             onClick={onChoose}
@@ -72,56 +67,99 @@ export function PartitionCard({ orderId, partition, chosen, onChoose, buyer, blo
             Cobrar
           </Button>
         )}
-        {invoiceable && (
-          <Button
-            variant="outline"
-            size="touch"
-            disabled={disabled || !buyer.ready || issue.intent !== undefined}
-            onClick={() => issue.start({ partitionId: partition.id, buyer: buyer.buyer }, undefined)}
-          >
-            <FileText aria-hidden="true" />
-            Emitir documento de {partition.label}
-          </Button>
-        )}
-        {can.reprint && partition.invoiced && partition.documentId && (
-          <ReprintButton
-            documentId={partition.documentId}
-            name={`de ${partition.label}`}
-            disabled={blocked}
-            onPrinted={(copy) => {
-              setIssued(undefined);
-              setReprint(copy);
-            }}
-          />
-        )}
-        {can.split && isCancellable(partition) && (
-          <Button
-            variant="ghost"
-            size="touch"
-            aria-label={`Cancelar ${partition.label}`}
-            disabled={disabled || cancel.intent !== undefined}
-            onClick={() => cancel.start({ partitionId: partition.id, version: partition.version }, undefined)}
-          >
-            <X aria-hidden="true" />
-            Cancelar
-          </Button>
-        )}
+        <PartitionDocument orderId={orderId} partition={partition} buyer={buyer} blocked={blocked} disabled={disabled} can={can} />
+        <CancelPartition
+          orderId={orderId}
+          partition={partition}
+          allowed={can.split && isCancellable(partition)}
+          blocked={blocked}
+          disabled={disabled}
+        />
       </div>
-      <DocumentNotice label={`Documento de ${partition.label}`} issued={issued} reprint={reprint} />
-      <CommandStatus
-        command={issue}
-        pendingText="A emitir o documento…"
-        unconfirmedText="Sem ligação — o documento não foi confirmado."
-        refusedText="O documento não foi emitido."
-        blocked={blocked}
-      />
-      <CommandStatus
-        command={cancel}
-        pendingText="A cancelar a divisão…"
-        unconfirmedText="Sem ligação — o cancelamento não foi confirmado."
-        refusedText="A divisão não foi cancelada."
-        blocked={blocked}
-      />
     </li>
+  );
+}
+
+type CommandProps = { orderId: string; partition: Partition; blocked: boolean; disabled: boolean };
+
+/** A part by items, once paid, issues its own document (D70); once issued, a copy of it. */
+function PartitionDocument({ orderId, partition, buyer, blocked, disabled, can }: CommandProps & Pick<Props, 'buyer' | 'can'>) {
+  const [issued, setIssued] = useState<FiscalDocument>();
+  const [reprint, setReprint] = useState<Reprint>();
+  const issue = useIssuePartitionDocument(orderId, (document) => {
+    setReprint(undefined);
+    setIssued(document);
+  });
+  const invoiceable = can.collect && partition.kind === 'ITEMS' && partition.settled && !partition.invoiced;
+  const reprintable = can.reprint && partition.invoiced && partition.documentId;
+
+  return (
+    <>
+      {invoiceable && (
+        <Button
+          variant="outline"
+          size="touch"
+          disabled={disabled || !buyer.ready || issue.intent !== undefined}
+          onClick={() => issue.start({ partitionId: partition.id, buyer: buyer.buyer }, undefined)}
+        >
+          <FileText aria-hidden="true" />
+          Emitir documento de {partition.label}
+        </Button>
+      )}
+      {reprintable && (
+        <ReprintButton
+          documentId={reprintable}
+          name={`de ${partition.label}`}
+          disabled={blocked}
+          onPrinted={(copy) => {
+            setIssued(undefined);
+            setReprint(copy);
+          }}
+        />
+      )}
+      <div className="w-full empty:hidden">
+        <DocumentNotice label={`Documento de ${partition.label}`} issued={issued} reprint={reprint} />
+        <CommandStatus
+          command={issue}
+          pendingText="A emitir o documento…"
+          unconfirmedText="Sem ligação — o documento não foi confirmado."
+          refusedText="O documento não foi emitido."
+          blocked={blocked}
+        />
+      </div>
+    </>
+  );
+}
+
+/**
+ * Cancel a part nothing has touched yet (D67), at its version. Mounted even when not allowed, so a refusal (the part
+ * was paid meanwhile) stays on screen after the button goes.
+ */
+function CancelPartition({ orderId, partition, allowed, blocked, disabled }: CommandProps & { allowed: boolean }) {
+  const cancel = useCancelPartition(orderId);
+  return (
+    <>
+      {allowed && (
+        <Button
+          variant="ghost"
+          size="touch"
+          aria-label={`Cancelar ${partition.label}`}
+          disabled={disabled || cancel.intent !== undefined}
+          onClick={() => cancel.start({ partitionId: partition.id, version: partition.version }, undefined)}
+        >
+          <X aria-hidden="true" />
+          Cancelar
+        </Button>
+      )}
+      <div className="w-full empty:hidden">
+        <CommandStatus
+          command={cancel}
+          pendingText="A cancelar a divisão…"
+          unconfirmedText="Sem ligação — o cancelamento não foi confirmado."
+          refusedText="A divisão não foi cancelada."
+          blocked={blocked}
+        />
+      </div>
+    </>
   );
 }
