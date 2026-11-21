@@ -8,6 +8,7 @@ import {
   cancelAttemptEndpoint,
   confirmAttemptEndpoint,
   mzn,
+  NULL,
   PAID,
   resolveAttemptEndpoint,
   serverSettlement,
@@ -17,21 +18,24 @@ import {
 const payPanel = () => screen.getByRole('region', { name: 'Pagamento' });
 const inFlight = () => screen.getByRole('region', { name: 'Pagamentos em curso' });
 
+// On the whole order: the server sends `partitionId: null`, never leaves it out.
 const UNKNOWN = attempt({
   status: 'UNKNOWN',
   methodCode: 'MPESA',
   methodKind: 'INTEGRATED',
   amount: mzn('1530.00'),
-  tendered: undefined,
-  change: undefined,
+  partitionId: NULL,
+  tendered: NULL,
+  change: NULL,
 });
 const PENDING = attempt({
   status: 'PENDING',
   methodCode: 'CARD',
   methodKind: 'EXTERNAL_TERMINAL',
   amount: mzn('1530.00'),
-  tendered: undefined,
-  change: undefined,
+  partitionId: NULL,
+  tendered: NULL,
+  change: NULL,
 });
 
 describe('a payment in doubt', () => {
