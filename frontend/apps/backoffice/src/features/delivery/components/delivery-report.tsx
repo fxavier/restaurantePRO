@@ -1,4 +1,5 @@
 import { Card, CardContent, DataState } from '@restaurantpro/ui';
+import { Truck } from 'lucide-react';
 import { useState } from 'react';
 import { useDeliveries, type DeliveryFilter } from '../hooks/use-deliveries';
 import { useCouriers, useStoreTimeZone } from '../hooks/use-store-context';
@@ -46,7 +47,10 @@ function Report({ storeId, timeZone }: { storeId: string; timeZone: string | und
       </Card>
       {/* Stitch's summary cards: only what the server counts; the contract has no amounts per delivery. */}
       <div role="group" aria-label="Total de entregas" className="w-fit min-w-56 rounded-xl border bg-card p-4">
-        <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Total de entregas</p>
+        <p className="flex items-center justify-between gap-3 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+          Total de entregas
+          <Truck aria-hidden="true" className="size-5 text-primary" />
+        </p>
         <p className="text-3xl font-semibold tabular-nums">{deliveries.data?.totalElements ?? '—'}</p>
       </div>
       <DeliveriesCard

@@ -28,8 +28,13 @@ export function DeliveryZones({ storeId }: { storeId: string }) {
   return (
     <div className="mt-6 flex flex-col gap-4">
       {zones.data && (
-        <div className="flex justify-end">
-          <NewZoneDialog storeId={storeId} />
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="text-lg font-semibold">Zonas da loja</h2>
+          {/* Stitch's count pill; a count of the server's list, not a figure of its own */}
+          <Badge variant="secondary">{`${zones.data.filter((zone) => zone.active).length} ativas`}</Badge>
+          <div className="ml-auto">
+            <NewZoneDialog storeId={storeId} />
+          </div>
         </div>
       )}
       <DataState
@@ -57,10 +62,12 @@ type ZoneCardProps = { zone: ZoneView; feeName: string | undefined; onEdit: () =
 
 function ZoneCard({ zone, feeName, onEdit }: ZoneCardProps) {
   return (
-    <Card className="gap-3">
+    // Stitch's zone card: a left accent, emerald while the zone is offered, neutral once retired (the badge says which)
+    <Card className={`gap-3 border-l-4 ${zone.active ? 'border-l-primary' : 'border-l-border'}`}>
       <CardHeader className="flex flex-row items-start justify-between gap-3">
-        <CardTitle className="text-lg" role="heading" aria-level={2}>
-          <span className="font-mono text-muted-foreground">{zone.code}</span> {zone.name}
+        <CardTitle className="flex items-center gap-2 text-lg" role="heading" aria-level={3}>
+          <span className="rounded-sm border bg-muted px-1.5 font-mono text-sm text-muted-foreground">{zone.code}</span>{' '}
+          {zone.name}
         </CardTitle>
         <Badge variant={zone.active ? 'success' : 'secondary'}>{zone.active ? 'Ativa' : 'Inativa'}</Badge>
       </CardHeader>
