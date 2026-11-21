@@ -151,6 +151,20 @@ describe('fiscal', () => {
     await vi.waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
+  it('sends the series code in capitals, as the field shows it', async () => {
+    financeServer();
+    const sent = writes('post', '/api/v1/backoffice/fiscal/series', () => HttpResponse.json(series, { status: 201 }));
+    const { user } = renderApp(tab('fiscal'));
+
+    await user.click(await screen.findByRole('button', { name: 'Nova série' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Nova série' });
+    await user.type(within(dialog).getByLabelText('Código'), 'fr2027');
+    await user.click(within(dialog).getByRole('button', { name: 'Criar série' }));
+
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]!.body).toEqual({ storeId: baixa.id, code: 'FR2027' });
+  });
+
   it("shows the server's refusal of a second active series in the dialog", async () => {
     financeServer({ series: [series] });
     writes('post', '/api/v1/backoffice/fiscal/series', () => problem(409, 'ACTIVE_SERIES_EXISTS'));

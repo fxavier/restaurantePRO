@@ -14,7 +14,8 @@ export const reopenDaySchema = z.object({
 export type ReopenDayValues = z.infer<typeof reopenDaySchema>;
 
 export const seriesSchema = z.object({
-  code: z.string().trim().min(1, 'Indique o código.').max(20, 'No máximo 20 caracteres.'),
+  /** Sent in capitals, as the field shows it: a series can't be renamed, and its code prefixes every document number. */
+  code: z.string().trim().toUpperCase().min(1, 'Indique o código.').max(20, 'No máximo 20 caracteres.'),
   /** As typed; empty lets the server start at 1. */
   firstNumber: z.string().trim().regex(/^(\d{1,9})?$/, 'Indique um número inteiro positivo.'),
 });
