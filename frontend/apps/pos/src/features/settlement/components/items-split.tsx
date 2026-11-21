@@ -11,7 +11,10 @@ type Props = {
 
 const quantity = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 3 });
 
-/** A split by items (§4 "por artigos/quantidades"): whole units of each line still in no part, as one new part. */
+/**
+ * A split by items (§4 "por artigos/quantidades"): whole units of each line still in no part, as one new part. The
+ * quantities chosen stay until the parent mounts a new one (on a split the server made), so a refusal loses nothing.
+ */
 export function ItemsSplit({ settlement, disabled, onSplit }: Props) {
   // Thousandths chosen per line; a line the server no longer offers is simply not shown.
   const [chosen, setChosen] = useState<ReadonlyMap<string, number>>(new Map());
@@ -55,10 +58,7 @@ export function ItemsSplit({ settlement, disabled, onSplit }: Props) {
       <Button
         size="touch"
         disabled={disabled || picked.length === 0}
-        onClick={() => {
-          onSplit(picked);
-          setChosen(new Map());
-        }}
+        onClick={() => onSplit(picked)}
       >
         Criar divisão
       </Button>
