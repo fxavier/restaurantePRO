@@ -6,6 +6,7 @@ import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.identity.exception.RoleNameTakenException;
 import com.xavier.backend.identity.exception.RoleNotFoundException;
 import com.xavier.backend.identity.model.Role;
+import com.xavier.backend.identity.model.dto.PermissionView;
 import com.xavier.backend.identity.model.dto.RoleCreateRequest;
 import com.xavier.backend.identity.model.dto.RoleSummary;
 import com.xavier.backend.identity.model.dto.RoleUpdateRequest;
@@ -14,6 +15,8 @@ import com.xavier.backend.shared.persistence.OptimisticLocking;
 import com.xavier.backend.shared.persistence.UniqueConstraints;
 import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.data.domain.Pageable;
@@ -76,6 +79,12 @@ public class RoleService {
     public PageResponse<RoleSummary> list(Pageable pageable) {
         accessPolicy.require(Permission.ROLE_MANAGE);
         return PageResponse.from(roles.findAll(pageable).map(Role::toSummary));
+    }
+
+    /** The permission catalogue for the role editor, in declaration order. */
+    public List<PermissionView> permissions() {
+        accessPolicy.require(Permission.ROLE_MANAGE);
+        return Arrays.stream(Permission.values()).map(PermissionView::of).toList();
     }
 
     private Role role(UUID id) {

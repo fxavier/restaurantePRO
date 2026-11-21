@@ -662,6 +662,90 @@
         },
         "type": "object"
       },
+      "com.xavier.backend.cash.model.dto.SessionRow": {
+        "properties": {
+          "businessDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "cashDayId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "closeKind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "closedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "closedByEmployeeId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "counted": {
+            "items": {
+              "$ref": "#/components/schemas/com.xavier.backend.cash.model.dto.MethodAmount"
+            },
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "openedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "openingFloat": {
+            "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
+          },
+          "operatorEmployeeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "registerCode": {
+            "type": "string"
+          },
+          "registerId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "storeId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "businessDate",
+          "cashDayId",
+          "closeKind",
+          "closedAt",
+          "closedByEmployeeId",
+          "counted",
+          "id",
+          "openedAt",
+          "openingFloat",
+          "operatorEmployeeId",
+          "registerCode",
+          "registerId",
+          "status",
+          "storeId"
+        ],
+        "type": "object"
+      },
       "com.xavier.backend.catalog.model.dto.AutomaticItemCreateRequest": {
         "properties": {
           "active": {
@@ -4243,6 +4327,25 @@
           "active",
           "name",
           "version"
+        ],
+        "type": "object"
+      },
+      "com.xavier.backend.identity.model.dto.PermissionView": {
+        "properties": {
+          "area": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sensitive": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "area",
+          "name",
+          "sensitive"
         ],
         "type": "object"
       },
@@ -7906,6 +8009,26 @@
         ],
         "type": "object"
       },
+      "com.xavier.backend.orders.delivery.model.dto.CourierView": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
       "com.xavier.backend.orders.delivery.model.dto.DeliveredRequest": {
         "properties": {
           "version": {
@@ -8880,6 +9003,92 @@
         ],
         "type": "object"
       },
+      "com.xavier.backend.orders.model.dto.OrderRow": {
+        "properties": {
+          "businessDay": {
+            "format": "date",
+            "type": "string"
+          },
+          "closedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "customerId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "due": {
+            "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
+          },
+          "guests": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "lifecycle": {
+            "enum": [
+              "OPEN",
+              "CLOSED",
+              "CANCELLED"
+            ],
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "DINE_IN",
+              "COUNTER",
+              "TAKEAWAY",
+              "DELIVERY"
+            ],
+            "type": "string"
+          },
+          "openedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "orderNumber": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "storeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "tableCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "businessDay",
+          "closedAt",
+          "customerId",
+          "due",
+          "guests",
+          "id",
+          "lifecycle",
+          "mode",
+          "openedAt",
+          "orderNumber",
+          "storeId",
+          "tableCode"
+        ],
+        "type": "object"
+      },
       "com.xavier.backend.orders.model.dto.OrderSummary": {
         "properties": {
           "billingLock": {
@@ -8995,6 +9204,13 @@
               "null"
             ]
           },
+          "closedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "customerId": {
             "format": "uuid",
             "type": [
@@ -9099,6 +9315,7 @@
           "billingLock",
           "businessDay",
           "catalogVersion",
+          "closedAt",
           "customerId",
           "draftGross",
           "due",
@@ -13492,6 +13709,35 @@
         ],
         "type": "object"
       },
+      "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.cash.model.dto.SessionRow": {
+        "properties": {
+          "content": {
+            "items": {
+              "$ref": "#/components/schemas/com.xavier.backend.cash.model.dto.SessionRow"
+            },
+            "type": "array"
+          },
+          "page": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "size": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "totalElements": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
+        "type": "object"
+      },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.catalog.model.dto.FamilySummary": {
         "properties": {
           "content": {
@@ -14246,6 +14492,35 @@
         ],
         "type": "object"
       },
+      "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.orders.model.dto.OrderRow": {
+        "properties": {
+          "content": {
+            "items": {
+              "$ref": "#/components/schemas/com.xavier.backend.orders.model.dto.OrderRow"
+            },
+            "type": "array"
+          },
+          "page": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "size": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "totalElements": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "content",
+          "page",
+          "size",
+          "totalElements"
+        ],
+        "type": "object"
+      },
       "com.xavier.backend.shared.web.PageResponseCom.xavier.backend.orders.model.dto.OrderSummary": {
         "properties": {
           "content": {
@@ -14856,7 +15131,7 @@
     },
     "/api/v1/backoffice/alerts": {
       "get": {
-        "operationId": "list_42",
+        "operationId": "list_44",
         "responses": {
           "200": {
             "content": {
@@ -15114,7 +15389,7 @@
     },
     "/api/v1/backoffice/audit/events": {
       "get": {
-        "operationId": "list_41",
+        "operationId": "list_43",
         "parameters": [
           {
             "in": "query",
@@ -15245,7 +15520,7 @@
     },
     "/api/v1/backoffice/audit/events/{id}": {
       "get": {
-        "operationId": "get_38",
+        "operationId": "get_39",
         "parameters": [
           {
             "in": "path",
@@ -15299,7 +15574,7 @@
     },
     "/api/v1/backoffice/cash/closings": {
       "get": {
-        "operationId": "list_40",
+        "operationId": "list_42",
         "parameters": [
           {
             "in": "query",
@@ -15784,6 +16059,104 @@
         },
         "tags": [
           "cash-register-controller"
+        ]
+      }
+    },
+    "/api/v1/backoffice/cash/sessions": {
+      "get": {
+        "operationId": "list_41",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "storeId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "enum": [
+                "OPEN",
+                "CLOSED"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Zero-based page index (0..N)",
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": [
+                "openedAt,DESC"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/com.xavier.backend.shared.web.PageResponseCom.xavier.backend.cash.model.dto.SessionRow"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "cash-session-list-controller"
         ]
       }
     },
@@ -17515,7 +17888,7 @@
     },
     "/api/v1/backoffice/catalog/releases/{id}": {
       "get": {
-        "operationId": "get_37",
+        "operationId": "get_38",
         "parameters": [
           {
             "in": "path",
@@ -17625,7 +17998,7 @@
     },
     "/api/v1/backoffice/catalog/stores/{storeId}/item-exclusions": {
       "get": {
-        "operationId": "list_39",
+        "operationId": "list_40",
         "parameters": [
           {
             "in": "path",
@@ -19508,7 +19881,7 @@
     },
     "/api/v1/backoffice/fiscal/documents": {
       "get": {
-        "operationId": "list_38",
+        "operationId": "list_39",
         "parameters": [
           {
             "in": "query",
@@ -19612,7 +19985,7 @@
     },
     "/api/v1/backoffice/fiscal/documents/{id}": {
       "get": {
-        "operationId": "get_36",
+        "operationId": "get_37",
         "parameters": [
           {
             "in": "path",
@@ -19850,7 +20223,7 @@
     },
     "/api/v1/backoffice/inventory/consumption-exceptions": {
       "get": {
-        "operationId": "list_37",
+        "operationId": "list_38",
         "parameters": [
           {
             "in": "query",
@@ -20296,7 +20669,7 @@
     },
     "/api/v1/backoffice/inventory/counts/{id}": {
       "get": {
-        "operationId": "get_35",
+        "operationId": "get_36",
         "parameters": [
           {
             "in": "path",
@@ -20859,7 +21232,7 @@
     },
     "/api/v1/backoffice/inventory/preparations/{id}": {
       "get": {
-        "operationId": "get_34",
+        "operationId": "get_35",
         "parameters": [
           {
             "in": "path",
@@ -24275,6 +24648,158 @@
         ]
       }
     },
+    "/api/v1/backoffice/orders": {
+      "get": {
+        "operationId": "search_1",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "storeId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "enum": [
+                "OPEN",
+                "CLOSED",
+                "CANCELLED"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "enum": [
+                "DINE_IN",
+                "COUNTER",
+                "TAKEAWAY",
+                "DELIVERY"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Zero-based page index (0..N)",
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": [
+                "openedAt,DESC"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/com.xavier.backend.shared.web.PageResponseCom.xavier.backend.orders.model.dto.OrderRow"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "back-office-order-controller"
+        ]
+      }
+    },
+    "/api/v1/backoffice/orders/{id}": {
+      "get": {
+        "operationId": "get_34",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/com.xavier.backend.orders.model.dto.OrderView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "back-office-order-controller"
+        ]
+      }
+    },
     "/api/v1/backoffice/payment-methods": {
       "get": {
         "operationId": "list_10",
@@ -24364,6 +24889,29 @@
         },
         "tags": [
           "payment-method-controller"
+        ]
+      }
+    },
+    "/api/v1/backoffice/permissions": {
+      "get": {
+        "operationId": "list_37",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/com.xavier.backend.identity.model.dto.PermissionView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "permission-controller"
         ]
       }
     },
@@ -28765,6 +29313,34 @@
         ]
       }
     },
+    "/api/v1/pos/couriers": {
+      "get": {
+        "operationId": "couriers",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/com.xavier.backend.orders.delivery.model.dto.CourierView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
+        "tags": [
+          "pos-delivery-controller"
+        ]
+      }
+    },
     "/api/v1/pos/credit-charges/{id}/cancel": {
       "post": {
         "operationId": "cancel_4",
@@ -28920,6 +29496,45 @@
               "*/*": {
                 "schema": {
                   "$ref": "#/components/schemas/com.xavier.backend.customers.model.dto.CustomerDetails"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
+        "tags": [
+          "customer-controller"
+        ]
+      }
+    },
+    "/api/v1/pos/customers/{id}/addresses": {
+      "get": {
+        "operationId": "addressesAtPos",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/com.xavier.backend.customers.model.dto.AddressView"
+                  },
+                  "type": "array"
                 }
               }
             },
