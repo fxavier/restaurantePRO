@@ -2,7 +2,7 @@ import { Button } from '@restaurantpro/ui';
 import { Ban, CircleCheck, SlidersHorizontal } from 'lucide-react';
 import { useCreditCommand } from '../hooks/use-credit-commands';
 import { creditLimitSchema, optionalReasonSchema, reasonSchema } from '../schemas';
-import { CommandDialog, TextField } from './command-dialog';
+import { CommandDialog, ReasonDialog, TextField } from './command-dialog';
 
 /** "Alterar limite" / "Definir limite": the first change opens the account, in the company's currency (D73). */
 export function CreditLimitDialog({ customerId, label }: { customerId: string; label: 'Alterar limite' | 'Definir limite' }) {
@@ -35,7 +35,7 @@ export function CreditLimitDialog({ customerId, label }: { customerId: string; l
 export function BlockCreditDialog({ customerId }: { customerId: string }) {
   const runner = useCreditCommand(customerId, 'block');
   return (
-    <CommandDialog
+    <ReasonDialog
       trigger={
         <Button variant="destructive">
           <Ban aria-hidden="true" />
@@ -46,9 +46,7 @@ export function BlockCreditDialog({ customerId }: { customerId: string }) {
       description="Enquanto estiver bloqueado, o cliente não pode comprar a crédito. A dívida mantém-se."
       submitLabel="Bloquear"
       schema={reasonSchema}
-      defaultValues={{ reason: '' }}
       runner={runner}
-      fields={(form) => <TextField form={form} name="reason" label="Motivo" maxLength={500} />}
     />
   );
 }
@@ -57,7 +55,7 @@ export function BlockCreditDialog({ customerId }: { customerId: string }) {
 export function UnblockCreditDialog({ customerId }: { customerId: string }) {
   const runner = useCreditCommand(customerId, 'unblock');
   return (
-    <CommandDialog
+    <ReasonDialog
       trigger={
         <Button variant="outline">
           <CircleCheck aria-hidden="true" />
@@ -68,9 +66,8 @@ export function UnblockCreditDialog({ customerId }: { customerId: string }) {
       description="O cliente volta a poder comprar a crédito, dentro do limite."
       submitLabel="Desbloquear"
       schema={optionalReasonSchema}
-      defaultValues={{ reason: '' }}
       runner={runner}
-      fields={(form) => <TextField form={form} name="reason" label="Motivo (opcional)" maxLength={500} />}
+      reasonLabel="Motivo (opcional)"
     />
   );
 }

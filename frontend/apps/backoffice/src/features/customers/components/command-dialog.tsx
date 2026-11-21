@@ -85,6 +85,22 @@ export function CommandDialog<Values extends FieldValues, Body, Result>({
   );
 }
 
+type ReasonValues = { reason: string };
+
+/** A command whose only field is its reason (block, unblock, suspend, resume). */
+export function ReasonDialog<Body, Result>({
+  reasonLabel = 'Motivo',
+  ...props
+}: Omit<CommandDialogProps<ReasonValues, Body, Result>, 'defaultValues' | 'fields'> & { reasonLabel?: string }) {
+  return (
+    <CommandDialog
+      {...props}
+      defaultValues={{ reason: '' }}
+      fields={(form) => <TextField form={form} name="reason" label={reasonLabel} maxLength={500} />}
+    />
+  );
+}
+
 type CommandFormProps<Values extends FieldValues, Body, Result> = Omit<
   CommandDialogProps<Values, Body, Result>,
   'trigger' | 'title' | 'description' | 'onDone'

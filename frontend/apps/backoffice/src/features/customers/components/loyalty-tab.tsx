@@ -19,7 +19,7 @@ import { formatBusinessDate, formatPoints, formatPointsChange, loyaltyKindLabel 
 import type { Allowed } from '../permissions';
 import { adjustmentSchema, reasonSchema } from '../schemas';
 import type { LoyaltyBalance } from '../types';
-import { CommandDialog, TextField } from './command-dialog';
+import { CommandDialog, ReasonDialog, TextField } from './command-dialog';
 import { QueryFailure } from './query-failure';
 
 const accountStatuses: StatusMap<'ACTIVE' | 'SUSPENDED'> = {
@@ -61,7 +61,7 @@ function LoyaltyCommands({ customerId, account, allowed, storeId }: LoyaltyTabPr
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap gap-2">
         {allowed.LOYALTY_ENROLL &&
-          (account.status === 'SUSPENDED' ? <ResumeDialog customerId={customerId} /> : <SuspendDialog customerId={customerId} />)}
+          <AccountStateDialog customerId={customerId} command={account.status === 'SUSPENDED' ? 'resume' : 'suspend'} />}
         {allowed.LOYALTY_ADJUST &&
           (storeId ? (
             <AdjustDialog customerId={customerId} storeId={storeId} />
@@ -81,44 +81,40 @@ function LoyaltyCommands({ customerId, account, allowed, storeId }: LoyaltyTabPr
   );
 }
 
-function SuspendDialog({ customerId }: { customerId: string }) {
-  const runner = useLoyaltyCommand(customerId, 'suspend');
-  return (
-    <CommandDialog
-      trigger={
-        <Button variant="destructive">
-          <CirclePause aria-hidden="true" />
-          Suspender
-        </Button>
-      }
-      title="Suspender a conta de fidelização"
-      description="Enquanto estiver suspensa, a conta não acumula nem resgata pontos. Os pontos mantêm-se."
-      submitLabel="Suspender conta"
-      schema={reasonSchema}
-      defaultValues={{ reason: '' }}
-      runner={runner}
-      fields={(form) => <TextField form={form} name="reason" label="Motivo" maxLength={500} />}
-    />
-  );
-}
+/** Suspend and resume differ only in what they say; both carry a reason (ReasonRequest). */
+const accountCommands = {
+  suspend: {
+    icon: CirclePause,
+    variant: 'destructive',
+    trigger: 'Suspender',
+    title: 'Suspender a conta de fidelização',
+    description: 'Enquanto estiver suspensa, a conta não acumula nem resgata pontos. Os pontos mantêm-se.',
+    submitLabel: 'Suspender conta',
+  },
+  resume: {
+    icon: CirclePlay,
+    variant: 'outline',
+    trigger: 'Reativar',
+    title: 'Reativar a conta de fidelização',
+    description: 'A conta volta a acumular e a resgatar pontos.',
+    submitLabel: 'Reativar conta',
+  },
+} as const;
 
-function ResumeDialog({ customerId }: { customerId: string }) {
-  const runner = useLoyaltyCommand(customerId, 'resume');
+function AccountStateDialog({ customerId, command }: { customerId: string; command: keyof typeof accountCommands }) {
+  const runner = useLoyaltyCommand(customerId, command);
+  const { icon: Icon, variant, trigger, ...text } = accountCommands[command];
   return (
-    <CommandDialog
+    <ReasonDialog
       trigger={
-        <Button variant="outline">
-          <CirclePlay aria-hidden="true" />
-          Reativar
+        <Button variant={variant}>
+          <Icon aria-hidden="true" />
+          {trigger}
         </Button>
       }
-      title="Reativar a conta de fidelização"
-      description="A conta volta a acumular e a resgatar pontos."
-      submitLabel="Reativar conta"
+      {...text}
       schema={reasonSchema}
-      defaultValues={{ reason: '' }}
       runner={runner}
-      fields={(form) => <TextField form={form} name="reason" label="Motivo" maxLength={500} />}
     />
   );
 }
