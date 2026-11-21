@@ -68,7 +68,9 @@ function DraftActions({ closing, lines, onClosing }: Props & { lines: ClosingLin
   const { justify, submit } = useClosingSteps(closing.id, onClosing);
   const blocked = useCommandsBlocked();
   const differences = linesWithDifference(lines);
-  const error = justify.error ?? submit.error;
+  // The failure shown is the latest command's: an older one's error stays in its hook until it runs again.
+  const [latest, setLatest] = useState<'justify' | 'submit'>();
+  const error = latest === 'submit' ? submit.error : justify.error;
   const awaitingSubmit = !submit.pending && submit.intent !== undefined;
 
   return (
@@ -78,10 +80,13 @@ function DraftActions({ closing, lines, onClosing }: Props & { lines: ClosingLin
           differences={differences}
           pending={justify.pending}
           awaitingRetry={!justify.pending && justify.intent !== undefined}
-          disabled={blocked || submit.pending}
-          onSave={(justifications) =>
-            justify.intent ? justify.retry() : justify.start({ justifications, version: closing.version ?? 0 }, undefined)
-          }
+          // A submit with no answer may already have reached SUBMITTED: nothing is saved over it until it is known.
+          disabled={blocked || submit.pending || awaitingSubmit}
+          onSave={(justifications) => {
+            setLatest('justify');
+            if (justify.intent) justify.retry();
+            else justify.start({ justifications, version: closing.version ?? 0 }, undefined);
+          }}
         />
       )}
       <CommandFeedback blocked={blocked} error={error && cashRefusal(error, 'o fecho da caixa')} />
@@ -90,7 +95,11 @@ function DraftActions({ closing, lines, onClosing }: Props & { lines: ClosingLin
         size="touch-primary"
         pending={submit.pending}
         disabled={blocked || !fullyJustified(lines) || justify.pending}
-        onClick={() => (awaitingSubmit ? submit.retry() : submit.start(undefined, undefined))}
+        onClick={() => {
+          setLatest('submit');
+          if (awaitingSubmit) submit.retry();
+          else submit.start(undefined, undefined);
+        }}
       >
         <Send aria-hidden="true" />
         {awaitingSubmit ? 'Tentar novamente' : 'Submeter fecho'}

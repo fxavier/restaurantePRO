@@ -1,3 +1,4 @@
+import { ApiError } from '@restaurantpro/api-client';
 import { ConfirmButton } from '@restaurantpro/ui';
 import { ClipboardCheck } from 'lucide-react';
 import { useId, useState } from 'react';
@@ -55,7 +56,7 @@ export function RegisterClosing({ registers, dayId }: Props) {
             onChange={setRegisterId}
             disabled={create.pending || awaitingRetry}
           />
-          <CommandFeedback blocked={blocked} error={create.error && cashRefusal(create.error, 'a preparação do fecho')} />
+          <CommandFeedback blocked={blocked} error={create.error && refusal(create.error)} />
           <ConfirmButton
             type="button"
             size="touch"
@@ -69,4 +70,18 @@ export function RegisterClosing({ registers, dayId }: Props) {
       )}
     </section>
   );
+}
+
+/**
+ * Drafting refuses with `ILLEGAL_CASH_STATE` when the register already has a live closing for the day (a DRAFT this
+ * screen lost on navigation or reload, or a SUBMITTED one). The POS has no read of it yet, so the text says what to do.
+ */
+function refusal(error: Error): string {
+  if (error instanceof ApiError && error.code === 'ILLEGAL_CASH_STATE') {
+    return (
+      'Esta caixa já tem um fecho em curso neste dia (em rascunho ou submetido), que este terminal não consegue reabrir. ' +
+      'Se foi submetido, aguarde a decisão do gerente; se ficou em rascunho, peça ajuda ao gerente.'
+    );
+  }
+  return cashRefusal(error, 'a preparação do fecho');
 }

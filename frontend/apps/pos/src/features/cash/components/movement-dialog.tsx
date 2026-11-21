@@ -60,7 +60,9 @@ export function MovementDialog({ type, sessionId, currency, onClose, onRecorded 
   }
 
   return (
-    <Dialog open onOpenChange={(open) => !open && !record.pending && onClose()}>
+    // With no answer the server may already hold the movement: the dialog keeps its intent (and key) until a retry
+    // gets a definitive answer, so a second "Registar" can never record it twice (FC §8).
+    <Dialog open onOpenChange={(open) => !open && !locked && onClose()}>
       <DialogContent showCloseButton={false} className="sm:max-w-lg">
         <form onSubmit={submit} className="flex flex-col gap-4">
           <DialogHeader>
@@ -77,7 +79,7 @@ export function MovementDialog({ type, sessionId, currency, onClose, onRecorded 
           )}
           <CommandFeedback blocked={blocked} error={record.error && refusal(record.error, expense)} />
           <DialogFooter>
-            <Button type="button" variant="outline" size="touch" onClick={onClose} disabled={record.pending}>
+            <Button type="button" variant="outline" size="touch" onClick={onClose} disabled={locked}>
               Cancelar
             </Button>
             <ConfirmButton type="submit" size="touch-primary" pending={record.pending} disabled={blocked || !request}>

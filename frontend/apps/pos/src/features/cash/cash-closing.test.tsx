@@ -1,4 +1,5 @@
 import { screen, waitFor, within } from '@testing-library/react';
+import { HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import {
   atCash,
@@ -66,6 +67,47 @@ describe("the register's closing", () => {
     expect(justified[0]!.url).toContain(`/closings/${CLOSING_ID}`);
     expect(submitted).toHaveLength(1);
     expect(submitted[0]!.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it('a closing already live for the register (a lost draft, or one submitted) is named, with what to do', async () => {
+    createClosingEndpoint(() => problem(409, 'ILLEGAL_CASH_STATE'));
+    const { user } = await atCash({ session: [noOpenSession] });
+
+    const card = await prepare(user);
+
+    expect(await within(card).findByRole('alert')).toHaveTextContent(
+      'Esta caixa já tem um fecho em curso neste dia (em rascunho ou submetido), que este terminal não consegue reabrir. ' +
+        'Se foi submetido, aguarde a decisão do gerente; se ficou em rascunho, peça ajuda ao gerente.',
+    );
+  });
+
+  it("shows the latest command's failure, not an older one's", async () => {
+    // The server already holds the justification, so the closing can be submitted even after a failed save.
+    createClosingEndpoint(json(JUSTIFIED));
+    justifyClosingEndpoint(() => problem(409, 'VERSION_CONFLICT'));
+    submitClosingEndpoint(() => problem(422, 'JUSTIFICATION_REQUIRED'));
+    const { user } = await atCash({ session: [noOpenSession] });
+
+    const card = await prepare(user);
+    await user.click(await within(card).findByRole('button', { name: 'Guardar justificações' }));
+    expect(await within(card).findByRole('alert')).toHaveTextContent('Foi alterado noutro terminal.');
+    await user.click(within(card).getByRole('button', { name: 'Submeter fecho' }));
+
+    await waitFor(() =>
+      expect(within(card).getByRole('alert')).toHaveTextContent('Justifique cada diferença antes de submeter o fecho.'),
+    );
+  });
+
+  it('while a submit with no answer waits for its retry, the justifications cannot be saved', async () => {
+    createClosingEndpoint(json(JUSTIFIED));
+    submitClosingEndpoint(() => HttpResponse.error());
+    const { user } = await atCash({ session: [noOpenSession] });
+
+    const card = await prepare(user);
+    await user.click(await within(card).findByRole('button', { name: 'Submeter fecho' }));
+
+    expect(await within(card).findByRole('button', { name: 'Tentar novamente' })).toBeEnabled();
+    expect(within(card).getByRole('button', { name: 'Guardar justificações' })).toBeDisabled();
   });
 
   it('says why the server refuses to prepare it', async () => {
