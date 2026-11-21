@@ -487,6 +487,28 @@ describe('printers of the terminals', () => {
     const kitchenCard = screen.getByRole('listitem', { name: 'Cozinha Quentes' });
     expect(await within(kitchenCard).findByText('Sala')).toBeInTheDocument();
   });
+
+  it('keeps the assignments of terminals the table does not list, since the save replaces the whole table', async () => {
+    const unlisted = 'aaaa0000-0000-4000-8000-000000000099';
+    const state = productionServer({
+      assignments: [
+        { terminalId: caixa.id, printerId: bar.id },
+        { terminalId: unlisted, printerId: kitchen.id },
+      ],
+    });
+    const { user } = renderApp(PRODUCTION);
+
+    const form = await screen.findByRole('form', { name: 'Impressora por terminal' });
+    await waitFor(() => expect(within(form).getByLabelText('Caixa 1')).toHaveDisplayValue('Bar Central'));
+    await user.selectOptions(within(form).getByLabelText('Caixa 1'), 'Sem impressora');
+    await user.click(within(form).getByRole('button', { name: 'Guardar terminais' }));
+
+    await waitFor(() =>
+      expect(state.requests.find((request) => request.url === '/api/v1/backoffice/terminal-printers')).toMatchObject({
+        body: { storeId: baixa.id, assignments: [{ terminalId: unlisted, printerId: kitchen.id }] },
+      }),
+    );
+  });
 });
 
 const unrouted = ticket('eeee0000-0000-4000-8000-000000000009', { destination: 'SOBREMESAS', lines: ['1x Pudim', '2x Mousse'] });

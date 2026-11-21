@@ -18,7 +18,8 @@ type Values = { terminals: TerminalPrinterView[] };
 
 /**
  * Where each POS terminal prints its subtotals and documents (CONTEXT: TerminalPrinter): one select per terminal,
- * "Sem impressora" leaving it out; the table is replaced whole. Nothing to validate beyond the select itself.
+ * "Sem impressora" leaving it out; the table is replaced whole, with the unlisted terminals' rows kept as read.
+ * Nothing to validate beyond the select itself.
  */
 export function TerminalPrintersEditor({ storeId, terminals, assignments, printers }: TerminalPrintersEditorProps) {
   const rows = terminals.map((terminal) => ({
@@ -27,7 +28,12 @@ export function TerminalPrintersEditor({ storeId, terminals, assignments, printe
   }));
   const form = useForm<Values>({ values: { terminals: rows }, resetOptions: { keepDirtyValues: true } });
   const replace = useReplaceTerminalPrinters(storeId);
-  const save = form.handleSubmit((values) => replace.mutate(values.terminals.filter((row) => row.printerId !== '')));
+  // The PUT replaces the store's whole table: assignments of terminals not listed here (another kind, revoked, past
+  // the first page) go back unchanged, so saving never deletes them unseen.
+  const unlisted = assignments.filter((assignment) => !terminals.some((terminal) => terminal.id === assignment.terminalId));
+  const save = form.handleSubmit((values) =>
+    replace.mutate([...values.terminals.filter((row) => row.printerId !== ''), ...unlisted]),
+  );
 
   return (
     <Form {...form}>
