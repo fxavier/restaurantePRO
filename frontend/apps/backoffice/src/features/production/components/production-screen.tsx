@@ -1,10 +1,10 @@
 import type { UseQueryResult } from '@tanstack/react-query';
 import { useSession } from '../../identity';
+import { useStoreTimeZone } from '../../organization';
 import { usePrintJobs } from '../hooks/use-print-jobs';
 import { usePrinters } from '../hooks/use-printers';
 import { useRoutes, useTerminalPrinters } from '../hooks/use-routing';
 import { useStoreTerminals } from '../hooks/use-store-terminals';
-import { useStoreTimeZone } from '../hooks/use-store-time-zone';
 import { useUnroutedTickets, type TicketPage } from '../hooks/use-tickets';
 import { nameOf, type Printer } from '../parse';
 import { holdsIn } from '../permissions';
