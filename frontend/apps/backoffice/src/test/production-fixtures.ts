@@ -1,6 +1,6 @@
 import type { components } from '@restaurantpro/api-client';
 import { http, HttpResponse } from 'msw';
-import { api, baixa, terminal, terminalPage, type TerminalSummary } from './fixtures';
+import { api, baixa, problem, terminal, terminalPage, type TerminalSummary } from './fixtures';
 
 type Schemas = components['schemas'];
 type DTO = 'com.xavier.backend.production.model.dto';
@@ -215,8 +215,10 @@ export function productionHandlers(initial: Partial<ProductionState> = {}) {
       return HttpResponse.json(created, { status: 201 });
     }),
   ];
-  function replacePrinter(id: string, change: Partial<PrinterView>) {
+  /** Optimistic locking as the backend has it: a change sent at an older version is refused with VERSION_CONFLICT. */
+  function replacePrinter(id: string, change: Partial<PrinterView> & { version: number }) {
     const index = state.printers.findIndex((one) => one.id === id);
+    if (state.printers[index]!.version !== change.version - 1) return problem(409, 'VERSION_CONFLICT', 'Conflict');
     state.printers[index] = { ...state.printers[index]!, ...change };
     return HttpResponse.json(state.printers[index]);
   }

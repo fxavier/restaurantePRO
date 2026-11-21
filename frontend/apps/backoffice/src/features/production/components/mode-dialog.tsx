@@ -33,25 +33,37 @@ type ModeDialogProps = {
   onClose: () => void;
 };
 
-/** Spec §8.6: Normal, Espera, Ignorar, Redirecionar. The dialog is mounted per printer, so it opens on its mode. */
+/**
+ * Spec §8.6: Normal, Espera, Ignorar, Redirecionar. The form is mounted per printer version, so it opens on the
+ * printer's mode and, after a conflict refetches the printer, shows the mode it has now. The command lives here so
+ * its refusal stays on screen across that remount.
+ */
 export function ModeDialog({ printer, onClose, ...rest }: ModeDialogProps) {
+  const change = useChangeMode();
+  const close = () => {
+    change.reset();
+    onClose();
+  };
   return (
-    <Dialog open={printer !== undefined} onOpenChange={(open) => !open && onClose()}>
+    <Dialog open={printer !== undefined} onOpenChange={(open) => !open && close()}>
       <DialogContent showCloseButton={false}>
         <DialogHeader>
           <DialogTitle>Modo de {printer?.name}</DialogTitle>
           <DialogDescription>O que a impressora faz com os talões que lhe chegam.</DialogDescription>
         </DialogHeader>
-        {printer && <ModeForm key={printer.id} printer={printer} onClose={onClose} {...rest} />}
+        {printer && (
+          <ModeForm key={`${printer.id}:${printer.version}`} printer={printer} change={change} onClose={close} {...rest} />
+        )}
       </DialogContent>
     </Dialog>
   );
 }
 
-function ModeForm({ printer, printers, maySuppress, onClose }: ModeDialogProps & { printer: Printer }) {
+type ModeFormProps = ModeDialogProps & { printer: Printer; change: ReturnType<typeof useChangeMode> };
+
+function ModeForm({ printer, printers, maySuppress, change, onClose }: ModeFormProps) {
   const [mode, setMode] = useState<PrinterMode>(printer.mode);
   const [target, setTarget] = useState(printer.redirectPrinterId ?? '');
-  const change = useChangeMode();
   const baseId = useId();
   const targetId = `${baseId}-target`;
   const modes = PRINTER_MODES.filter((one) => one !== 'IGNORE' || maySuppress || printer.mode === 'IGNORE');

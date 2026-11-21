@@ -2,7 +2,9 @@ import type { FeatureMessages } from '../../lib/error-messages';
 
 /** Portuguese text for the production module's codes (ProductionRule, its 409s); passed to `errorMessage`. */
 export const productionMessages: FeatureMessages = {
-  PRINTER_CODE_TAKEN: 'Já existe uma impressora com este código nesta loja.',
+  // The printer dialogs are remounted on the refetched version (FC: refetch, show what changed, let the user retry).
+  VERSION_CONFLICT: 'A impressora foi alterada por outra pessoa. O formulário mostra agora os dados atuais: reveja e guarde de novo.',
+  PRINTER_CODE_TAKEN:'Já existe uma impressora com este código nesta loja.',
   PRINTER_REDIRECT_INVALID:
     'Não é possível redirecionar para essa impressora: tem de ser outra impressora da loja que não esteja a redirecionar.',
   PRINTER_NOT_IN_STORE: 'Uma das impressoras escolhidas não pertence a esta loja.',

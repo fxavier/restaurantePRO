@@ -192,22 +192,30 @@ describe('configuring a printer', () => {
     });
   });
 
-  it('says another person changed it and reads the printers again on a version conflict', async () => {
+  it("on a version conflict shows the printer as it is now, and a resend never reverts the other person's change", async () => {
     const state = productionServer();
-    server.use(
-      http.put(api('/api/v1/backoffice/printers/:id'), () => problem(409, 'VERSION_CONFLICT', 'Conflict')),
-    );
     const { user } = renderApp(PRODUCTION);
 
     await user.click(await screen.findByRole('button', { name: 'Configurar Bar Central' }));
     const dialog = await screen.findByRole('dialog', { name: 'Configurar Bar Central' });
-    const reads = state.requests.filter((request) => request.url.startsWith('/api/v1/backoffice/printers?')).length;
+    // Someone else moves the printer while this dialog is open.
+    state.printers[1] = { ...state.printers[1]!, host: '10.0.0.9', version: 4 };
+    await user.clear(within(dialog).getByLabelText('Nome'));
+    await user.type(within(dialog).getByLabelText('Nome'), 'Bar Principal');
     await user.click(within(dialog).getByRole('button', { name: 'Guardar' }));
 
-    expect(await within(dialog).findByText('Foi alterado por outra pessoa. Recarregue e tente de novo.')).toBeInTheDocument();
-    await waitFor(() =>
-      expect(state.requests.filter((request) => request.url.startsWith('/api/v1/backoffice/printers?')).length).toBe(reads + 1),
-    );
+    expect(
+      await within(dialog).findByText('A impressora foi alterada por outra pessoa. O formulário mostra agora os dados atuais: reveja e guarde de novo.'),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(within(dialog).getByLabelText('Endereço IP')).toHaveValue('10.0.0.9'));
+    expect(within(dialog).getByLabelText('Nome')).toHaveValue('Bar Central');
+    await user.click(within(dialog).getByRole('button', { name: 'Guardar' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(state.requests.filter((request) => request.method === 'PUT').map((request) => request.body)).toEqual([
+      { code: 'BAR', name: 'Bar Principal', host: '192.168.1.183', port: 9100, codePage: 'CP860', active: true, version: 3 },
+      { code: 'BAR', name: 'Bar Central', host: '10.0.0.9', port: 9100, codePage: 'CP860', active: true, version: 4 },
+    ]);
   });
 });
 
@@ -229,6 +237,30 @@ describe("a printer's mode", () => {
       url: `/api/v1/backoffice/printers/${kitchen.id}/mode`,
       body: { mode: 'REDIRECT', redirectPrinterId: bar.id, version: 3 },
     });
+  });
+
+  it('on a version conflict shows the mode the printer has now, and resends only what is chosen again', async () => {
+    const state = productionServer();
+    const { user } = renderApp(PRODUCTION);
+
+    await user.click(await screen.findByRole('button', { name: 'Modo de Cozinha Quentes' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Modo de Cozinha Quentes' });
+    // Someone else puts the printer on hold while this dialog is open.
+    state.printers[0] = { ...state.printers[0]!, mode: 'HOLD', version: 4 };
+    await user.click(within(dialog).getByRole('radio', { name: /Redirecionar/ }));
+    await user.selectOptions(within(dialog).getByLabelText('Enviar para'), 'Bar Central');
+    await user.click(within(dialog).getByRole('button', { name: 'Mudar modo' }));
+
+    expect(await within(dialog).findByText(/alterada por outra pessoa/)).toBeInTheDocument();
+    await waitFor(() => expect(within(dialog).getByRole('radio', { name: /Em espera/ })).toBeChecked());
+    await user.click(within(dialog).getByRole('radio', { name: /Normal/ }));
+    await user.click(within(dialog).getByRole('button', { name: 'Mudar modo' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(state.requests.filter((request) => request.method === 'PUT').map((request) => request.body)).toEqual([
+      { mode: 'REDIRECT', redirectPrinterId: bar.id, version: 3 },
+      { mode: 'NORMAL', version: 4 },
+    ]);
   });
 
   it('offers Ignorar only to who may suppress printing in this store', async () => {

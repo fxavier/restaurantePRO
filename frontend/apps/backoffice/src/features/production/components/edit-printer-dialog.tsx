@@ -18,7 +18,10 @@ import type { PrinterFormValues } from '../schemas';
 import { PrinterForm } from './printer-form';
 
 type EditPrinterDialogProps = {
-  /** The printer as last read: a version conflict refetches it, and the next "Guardar" goes at the new version. */
+  /**
+   * The printer as last read. The form is keyed on its version: after a conflict refetches it, the form shows the
+   * printer as it is now, so the next "Guardar" never sends stale fields at the new version.
+   */
   printer: Printer | undefined;
   onClose: () => void;
 };
@@ -39,6 +42,7 @@ export function EditPrinterDialog({ printer, onClose }: EditPrinterDialogProps) 
         </DialogHeader>
         {printer && (
           <PrinterForm
+            key={`${printer.id}:${printer.version}`}
             defaultValues={valuesOf(printer)}
             submitLabel="Guardar"
             pending={update.isPending}
