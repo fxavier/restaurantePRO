@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ConfirmButton, Form, FormControl, FormField, FormItem, FormLabel, FormMessage, Input } from '@restaurantpro/ui';
 import type { ReactNode } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useFormContext } from 'react-hook-form';
 import { errorCode } from '../../../lib/errors';
 import { useSaveZone } from '../hooks/use-save-zone';
 import { zoneSchema, type ZoneValues } from '../schemas';
@@ -36,53 +36,21 @@ export function ZoneForm({ storeId, zone, submitLabel, onDone, onConflict, child
     save(values, {
       onSuccess: onDone,
       onError: (failure) => {
-        if (errorCode(failure) === 'VERSION_CONFLICT') onConflict?.();
+        if (isConflict(failure)) onConflict?.();
         onFields(failure)?.forEach(({ field, message }) => form.setError(field, { message }));
       },
     }),
   );
-  const rootMessage = form.formState.errors.root?.message;
-  const generalError = error && !onFields(error) && errorCode(error) !== 'VERSION_CONFLICT';
 
   return (
     <Form {...form}>
       <form onSubmit={(event) => void onSubmit(event)} noValidate className="flex flex-col gap-4">
-        {!zone && (
-          <FormField
-            control={form.control}
-            name="code"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Código</FormLabel>
-                <FormControl>
-                  <Input {...field} autoComplete="off" maxLength={20} className="max-w-48 uppercase" />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        )}
-        <FormField
-          control={form.control}
-          name="name"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Nome</FormLabel>
-              <FormControl>
-                <Input {...field} autoComplete="off" maxLength={80} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        {!zone && <CodeField />}
+        <NameField />
         <FeeFields />
         {zone && <ActiveField />}
-        {rootMessage && (
-          <p role="alert" className="text-sm text-error">
-            {rootMessage}
-          </p>
-        )}
-        {generalError && <CommandError error={error} pending={isPending} onRetry={() => void onSubmit()} />}
+        <RootMessage />
+        <GeneralError error={error} pending={isPending} onRetry={() => void onSubmit()} />
         <div className="flex flex-wrap justify-end gap-2">
           {children}
           <ConfirmButton type="submit" pending={isPending}>
@@ -92,6 +60,62 @@ export function ZoneForm({ storeId, zone, submitLabel, onDone, onConflict, child
       </form>
     </Form>
   );
+}
+
+const isConflict = (error: unknown) => errorCode(error) === 'VERSION_CONFLICT';
+
+/** The code is set once, at creation (the update request has none). */
+function CodeField() {
+  return (
+    <FormField
+      name="code"
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>Código</FormLabel>
+          <FormControl>
+            <Input {...field} autoComplete="off" maxLength={20} className="max-w-48 uppercase" />
+          </FormControl>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}
+
+function NameField() {
+  return (
+    <FormField
+      name="name"
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>Nome</FormLabel>
+          <FormControl>
+            <Input {...field} autoComplete="off" maxLength={80} />
+          </FormControl>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}
+
+/** The server's violations that belong to no field of the form. */
+function RootMessage() {
+  const message = useFormContext<ZoneValues>().formState.errors.root?.message;
+  if (!message) return null;
+  return (
+    <p role="alert" className="text-sm text-error">
+      {message}
+    </p>
+  );
+}
+
+type GeneralErrorProps = { error: unknown; pending: boolean; onRetry: () => void };
+
+/** A refusal that is neither on the fields nor a conflict (the caller shows the zone anew for that one). */
+function GeneralError({ error, pending, onRetry }: GeneralErrorProps) {
+  if (!error || onFields(error) || isConflict(error)) return null;
+  return <CommandError error={error} pending={pending} onRetry={onRetry} />;
 }
 
 /** A retired zone stays in the deliveries' history; the POS no longer offers it (D128: zones are never deleted). */

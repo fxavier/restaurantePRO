@@ -3,13 +3,8 @@ import type { ZoneCreateRequest, ZoneUpdateRequest, ZoneView } from './types';
 
 /** The form's values for a zone being edited, or empty ones for a new zone (active from the start). */
 export function zoneValues(zone?: ZoneView): ZoneValues {
-  return {
-    code: zone?.code ?? '',
-    name: zone?.name ?? '',
-    feeItemId: zone?.feeItemId ?? '',
-    feeVariantId: zone?.feeVariantId ?? '',
-    active: zone?.active ?? true,
-  };
+  const { code = '', name = '', feeItemId = '', feeVariantId = '', active = true } = zone ?? {};
+  return { code, name, feeItemId, feeVariantId, active };
 }
 
 /** The variant is sent only when one is chosen: '' in the form is "the item itself". */

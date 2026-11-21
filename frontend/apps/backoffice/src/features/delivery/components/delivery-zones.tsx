@@ -27,18 +27,9 @@ export function DeliveryZones({ storeId }: { storeId: string }) {
 
   return (
     <div className="mt-6 flex flex-col gap-4">
-      {zones.data && (
-        <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-lg font-semibold">Zonas da loja</h2>
-          {/* Stitch's count pill; a count of the server's list, not a figure of its own */}
-          <Badge variant="secondary">{`${zones.data.filter((zone) => zone.active).length} ativas`}</Badge>
-          <div className="ml-auto">
-            <NewZoneDialog storeId={storeId} />
-          </div>
-        </div>
-      )}
+      {zones.data && <ZonesHeader storeId={storeId} zones={zones.data} />}
       <DataState
-        state={zones.isPending ? 'loading' : zones.data?.length ? 'ready' : 'empty'}
+        state={listState(zones.isPending, zones.data)}
         emptyMessage="Esta loja ainda não tem zonas de entrega."
       >
         <ul aria-label="Zonas da loja" className="grid gap-4 lg:grid-cols-2">
@@ -58,7 +49,25 @@ export function DeliveryZones({ storeId }: { storeId: string }) {
   );
 }
 
-type ZoneCardProps = { zone: ZoneView; feeName: string | undefined; onEdit: () => void };
+function listState(pending: boolean, zones: ZoneView[] | undefined): 'loading' | 'ready' | 'empty' {
+  if (pending) return 'loading';
+  return zones?.length ? 'ready' : 'empty';
+}
+
+function ZonesHeader({ storeId, zones }: { storeId: string; zones: ZoneView[] }) {
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <h2 className="text-lg font-semibold">Zonas da loja</h2>
+      {/* Stitch's count pill; a count of the server's list, not a figure of its own */}
+      <Badge variant="secondary">{`${zones.filter((zone) => zone.active).length} ativas`}</Badge>
+      <div className="ml-auto">
+        <NewZoneDialog storeId={storeId} />
+      </div>
+    </div>
+  );
+}
+
+type ZoneCardProps ={ zone: ZoneView; feeName: string | undefined; onEdit: () => void };
 
 function ZoneCard({ zone, feeName, onEdit }: ZoneCardProps) {
   return (
