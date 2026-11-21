@@ -29,15 +29,29 @@ export function isZero(amount: string): boolean {
   return !/[1-9]/.test(amount);
 }
 
-type ClosingLine = { methodCode?: string; difference?: { amount: string }; justification?: string };
+type Amount = { amount: string; currency: string };
+
+/** A closing's line per method (`ClosingLineView`), as the screen uses it: its method always named. */
+export type ClosingLine = {
+  methodCode: string;
+  expected?: Amount;
+  counted?: Amount;
+  difference?: Amount;
+  justification?: string;
+};
+
+/** The closing's lines as received, parsed once: a line that names no method cannot be shown or justified. */
+export function closingLines(lines: readonly (Omit<ClosingLine, 'methodCode'> & { methodCode?: string })[] | undefined) {
+  return (lines ?? []).flatMap(({ methodCode, ...line }): ClosingLine[] => (methodCode ? [{ methodCode, ...line }] : []));
+}
 
 /** The closing's lines with a difference: each needs a justification before the closing is submitted. */
-export function linesWithDifference<Line extends ClosingLine>(lines: readonly Line[] | undefined): Line[] {
-  return (lines ?? []).filter((line) => line.difference !== undefined && !isZero(line.difference.amount));
+export function linesWithDifference(lines: readonly ClosingLine[]): ClosingLine[] {
+  return lines.filter((line) => line.difference !== undefined && !isZero(line.difference.amount));
 }
 
 /** Whether every difference has a justification on the server: only then may the closing be submitted. */
-export function fullyJustified(lines: readonly ClosingLine[] | undefined): boolean {
+export function fullyJustified(lines: readonly ClosingLine[]): boolean {
   return linesWithDifference(lines).every((line) => !!line.justification?.trim());
 }
 
