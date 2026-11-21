@@ -1,14 +1,16 @@
 import { Button, StatusBadge, TableCell, TableRow } from '@restaurantpro/ui';
-import { KeyRound, LockOpen, Store, UserPlus } from 'lucide-react';
+import { KeyRound, LockOpen, Pencil, Store, UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import { isStepUpRequired } from '../../../lib/step-up';
 import { useStoreSelection } from '../../organization';
+import { useEditing } from '../hooks/use-editing';
 import { useUnlockEmployee } from '../hooks/use-people-commands';
 import { useEmployees } from '../hooks/use-people-queries';
 import { usePeopleStepUp } from '../hooks/use-people-step-up';
 import type { EmployeeSummary } from '../types';
 import { AssignmentsPanel } from './assignments-panel';
 import { CommandError } from './command-error';
+import { EmployeeForm } from './employee-form';
 import { FormDialog } from './form-dialog';
 import { employeeState, employeeStatuses } from './labels';
 import { ListCard } from './list-card';
@@ -23,7 +25,7 @@ export function EmployeesTab() {
   const employees = useEmployees(storeId, page);
   const unlock = useUnlockEmployee();
   const stepUp = usePeopleStepUp();
-  const [creating, setCreating] = useState(false);
+  const { creating, startCreating, stopCreating, editing, startEditing, stopEditing } = useEditing(employees.data?.rows);
   const [resetting, setResetting] = useState<EmployeeSummary | null>(null);
   const [assigning, setAssigning] = useState<EmployeeSummary | null>(null);
   const [done, setDone] = useState('');
@@ -44,7 +46,7 @@ export function EmployeesTab() {
         title="Empregados"
         description="Quem abre sessão nos terminais POS com o seu código e PIN."
         actions={
-          <Button onClick={() => setCreating(true)}>
+          <Button onClick={startCreating}>
             <UserPlus aria-hidden="true" />
             Novo empregado
           </Button>
@@ -61,6 +63,7 @@ export function EmployeesTab() {
                 key={employee.id}
                 employee={employee}
                 unlocking={unlock.isPending}
+                onEdit={() => startEditing(employee)}
                 onUnlock={() => unlockOne(employee)}
                 onAssignments={() => setAssigning(employee)}
                 onResetPin={() => setResetting(employee)}
@@ -73,9 +76,17 @@ export function EmployeesTab() {
         title="Novo empregado"
         description="O empregado abre sessão no POS com o código e o PIN, nas lojas onde tem uma função."
         open={creating}
-        onClose={() => setCreating(false)}
+        onClose={stopCreating}
       >
-        <NewEmployeeForm onClose={() => setCreating(false)} />
+        <NewEmployeeForm onClose={stopCreating} />
+      </FormDialog>
+      <FormDialog
+        title={`Editar ${editing?.name}`}
+        description="Um empregado inativo deixa de abrir sessão no POS em todas as lojas."
+        open={editing !== undefined}
+        onClose={stopEditing}
+      >
+        {editing && <EmployeeForm employee={editing} onClose={stopEditing} />}
       </FormDialog>
       <FormDialog
         title={`Repor o PIN de ${resetting?.name}`}
@@ -108,13 +119,14 @@ export function EmployeesTab() {
 type EmployeeRowProps = {
   employee: EmployeeSummary;
   unlocking: boolean;
+  onEdit: () => void;
   onUnlock: () => void;
   onAssignments: () => void;
   onResetPin: () => void;
 };
 
 /** One employee: name, code, state, and the commands; "Desbloquear" only while the PIN is locked. */
-function EmployeeRow({ employee, unlocking, onUnlock, onAssignments, onResetPin }: EmployeeRowProps) {
+function EmployeeRow({ employee, unlocking, onEdit, onUnlock, onAssignments, onResetPin }: EmployeeRowProps) {
   return (
     <TableRow>
       <TableCell className="font-medium">{employee.name}</TableCell>
@@ -130,6 +142,10 @@ function EmployeeRow({ employee, unlocking, onUnlock, onAssignments, onResetPin 
               Desbloquear
             </Button>
           )}
+          <Button variant="outline" size="sm" aria-label={`Editar ${employee.name}`} onClick={onEdit}>
+            <Pencil aria-hidden="true" />
+            Editar
+          </Button>
           <Button variant="outline" size="sm" aria-label={`Lojas e funções de ${employee.name}`} onClick={onAssignments}>
             <Store aria-hidden="true" />
             Lojas

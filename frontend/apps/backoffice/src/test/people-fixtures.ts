@@ -131,6 +131,15 @@ export function peopleHandlers({
       state.employees.push(hired);
       return HttpResponse.json(hired, { status: 201 });
     }),
+    http.put(api(`${base}/employees/:id`), async ({ request, params }) => {
+      const { body } = await record(request);
+      const { name, active, version } = body as { name: string; active: boolean; version: number };
+      const current = state.employees.find((e) => e.id === params.id)!;
+      if (current.version !== version) return problem(409, 'VERSION_CONFLICT', 'Version conflict');
+      const updated = { ...current, name, active, version: version + 1 };
+      state.employees = state.employees.map((e) => (e.id === params.id ? updated : e));
+      return HttpResponse.json(updated);
+    }),
     http.post(api(`${base}/employees/:id/reset-pin`), async ({ request, params }) => {
       await record(request);
       return HttpResponse.json(state.employees.find((e) => e.id === params.id));
