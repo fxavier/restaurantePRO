@@ -64,12 +64,12 @@ export async function reauthenticate(page: Page, retry = 0) {
 
 /**
  * A fresh second factor for a sensitive command (the stack's step-up age is 30 s), through the BFF's step-up as the SPA
- * does it; Keycloak's session is still open, so it asks only for what `max_age` expired.
+ * does it. max_age=0 always asks again: a factor Keycloak still accepts at 29 s would be stale at the backend a moment
+ * later. Keycloak's session is open, so it asks only for what expired; freshTotp waits for an unused period.
  */
 export async function stepUpBackOffice(page: Page, retry = 0) {
-  await page.goto(`${stack.backOffice()}/bff/step-up?acr_values=2&max_age=30&return=/`);
-  // A second factor younger than max_age needs no prompt: Keycloak sends the browser straight back.
-  if (page.url().startsWith(stack.backOffice())) return;
+  await page.goto(`${stack.backOffice()}/bff/step-up?acr_values=2&max_age=0&return=/`);
+  if (new URL(page.url()).origin === new URL(stack.backOffice()).origin) return; // no prompt was needed
   await reauthenticate(page, retry);
   await page.waitForURL(`${stack.backOffice()}/`);
 }
