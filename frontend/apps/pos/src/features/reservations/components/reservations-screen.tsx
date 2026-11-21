@@ -7,8 +7,9 @@ import { useStoreTimeZone } from '../../../lib/auth/use-employee';
 import { errorMessage, isOffline } from '../../../lib/error-messages';
 import { useCan } from '../hooks/use-can';
 import { useReservations } from '../hooks/use-reservations';
+import { useStoreToday } from '../hooks/use-store-today';
 import { matches, type ReservableArea, type Reservation, type StatusFilter, summarize, tableCodes } from '../reservation';
-import { storeClock, storeDate } from '../store-time';
+import { storeClock } from '../store-time';
 import { CancelDialog, NoShowDialog } from './close-dialogs';
 import { DayBar } from './day-bar';
 import { DaySummary } from './day-summary';
@@ -26,7 +27,7 @@ type Props = {
 /** `/reservations` (§4, Stitch "Gestão de Reservas"): the store's reservations of one day. */
 export function ReservationsScreen({ areas }: Props) {
   const timeZone = useStoreTimeZone();
-  const [today] = useState(() => storeDate(new Date(), timeZone));
+  const today = useStoreToday(timeZone);
   const [date, setDate] = useState(today);
   const day = useReservations(date);
   const navigate = useNavigate();
