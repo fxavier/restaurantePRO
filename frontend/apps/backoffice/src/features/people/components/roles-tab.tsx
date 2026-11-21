@@ -1,30 +1,19 @@
-import {
-  Badge,
-  Button,
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@restaurantpro/ui';
+import { Badge, Button, TableCell, TableRow } from '@restaurantpro/ui';
 import { Pencil, ShieldPlus } from 'lucide-react';
 import { useState } from 'react';
+import { useEditing } from '../hooks/use-editing';
 import { useRoles } from '../hooks/use-people-queries';
 import type { RoleSummary } from '../types';
 import { FormDialog } from './form-dialog';
 import { ListCard } from './list-card';
+import { ListTable } from './list-table';
 import { RoleForm } from './role-form';
 
 /** "Funções" (§5, RBAC): each role and the permissions it grants wherever it is assigned. */
 export function RolesTab() {
   const [page, setPage] = useState(0);
   const roles = useRoles(page);
-  const [creating, setCreating] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  // The role as the list holds it now, so a conflict's refetch reaches the open form.
-  const editing = roles.data?.rows.find((role) => role.id === editingId);
+  const { creating, startCreating, stopCreating, editing, startEditing, stopEditing } = useEditing(roles.data?.rows);
 
   return (
     <>
@@ -32,7 +21,7 @@ export function RolesTab() {
         title="Funções"
         description="Cada função concede permissões em todas as lojas onde é atribuída."
         actions={
-          <Button onClick={() => setCreating(true)}>
+          <Button onClick={startCreating}>
             <ShieldPlus aria-hidden="true" />
             Nova função
           </Button>
@@ -43,40 +32,28 @@ export function RolesTab() {
         onPage={setPage}
       >
         {(rows) => (
-          <Table>
-            <TableCaption className="sr-only">Funções</TableCaption>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nome</TableHead>
-                <TableHead>Permissões</TableHead>
-                <TableHead>
-                  <span className="sr-only">Ações</span>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((role) => (
-                <RoleRow key={role.id} role={role} onEdit={() => setEditingId(role.id ?? '')} />
-              ))}
-            </TableBody>
-          </Table>
+          <ListTable caption="Funções" headers={['Nome', 'Permissões']}>
+            {rows.map((role) => (
+              <RoleRow key={role.id} role={role} onEdit={() => startEditing(role)} />
+            ))}
+          </ListTable>
         )}
       </ListCard>
       <FormDialog
         title="Nova função"
         description="Dê-lhe um nome e as permissões que concede. Atribua-a depois a empregados ou a contas."
         open={creating}
-        onClose={() => setCreating(false)}
+        onClose={stopCreating}
       >
-        <RoleForm onClose={() => setCreating(false)} />
+        <RoleForm onClose={stopCreating} />
       </FormDialog>
       <FormDialog
         title={`Editar a função ${editing?.name}`}
         description="As alterações valem de imediato para todos os que têm esta função."
         open={editing !== undefined}
-        onClose={() => setEditingId(null)}
+        onClose={stopEditing}
       >
-        <RoleForm role={editing} onClose={() => setEditingId(null)} />
+        <RoleForm role={editing} onClose={stopEditing} />
       </FormDialog>
     </>
   );

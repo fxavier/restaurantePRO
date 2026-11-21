@@ -1,33 +1,23 @@
-import {
-  Badge,
-  Button,
-  StatusBadge,
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@restaurantpro/ui';
+import { Badge, Button, StatusBadge, TableCell, TableRow } from '@restaurantpro/ui';
 import { Pencil, UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import { useStoreAndRoleChoices } from '../hooks/use-choices';
+import { useEditing } from '../hooks/use-editing';
 import { useUsers } from '../hooks/use-people-queries';
 import type { UserSummary } from '../types';
 import { AccountForm } from './account-form';
 import { FormDialog } from './form-dialog';
 import { accountStatuses } from './labels';
 import { ListCard } from './list-card';
+import { ListTable } from './list-table';
 
 /** "Utilizadores" (§5): the BackOffice accounts, their roles in every store, and whether each is a support account. */
 export function AccountsTab() {
   const [page, setPage] = useState(0);
   const users = useUsers(page);
-  const [creating, setCreating] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  // The account as the list holds it now, so a conflict's refetch reaches the open form.
-  const editing = users.data?.rows.find((user) => user.id === editingId);
+  // Started with the list, so the roles' names are there when the rows are.
+  const { roleName } = useStoreAndRoleChoices();
+  const { creating, startCreating, stopCreating, editing, startEditing, stopEditing } = useEditing(users.data?.rows);
 
   return (
     <>
@@ -35,7 +25,7 @@ export function AccountsTab() {
         title="Contas do BackOffice"
         description="Quem entra no BackOffice. A palavra-passe e o segundo fator são geridos no início de sessão."
         actions={
-          <Button onClick={() => setCreating(true)}>
+          <Button onClick={startCreating}>
             <UserPlus aria-hidden="true" />
             Nova conta
           </Button>
@@ -46,50 +36,43 @@ export function AccountsTab() {
         onPage={setPage}
       >
         {(rows) => (
-          <Table>
-            <TableCaption className="sr-only">Contas do BackOffice</TableCaption>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Utilizador</TableHead>
-                <TableHead>Funções</TableHead>
-                <TableHead>Tipo</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead>
-                  <span className="sr-only">Ações</span>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((user) => (
-                <AccountRow key={user.id} account={user} onEdit={() => setEditingId(user.id ?? '')} />
-              ))}
-            </TableBody>
-          </Table>
+          <ListTable caption="Contas do BackOffice" headers={['Utilizador', 'Funções', 'Tipo', 'Estado']}>
+            {rows.map((user) => (
+              <AccountRow key={user.id} account={user} roleName={roleName} onEdit={() => startEditing(user)} />
+            ))}
+          </ListTable>
         )}
       </ListCard>
       <FormDialog
         title="Nova conta"
         description="A pessoa define a palavra-passe e o segundo fator no primeiro início de sessão."
         open={creating}
-        onClose={() => setCreating(false)}
+        onClose={stopCreating}
       >
-        <AccountForm onClose={() => setCreating(false)} />
+        <AccountForm onClose={stopCreating} />
       </FormDialog>
       <FormDialog
         title={`Editar a conta ${editing?.username}`}
         description="As funções valem em todas as lojas; as do empregado ligado valem nas lojas dele."
         open={editing !== undefined}
-        onClose={() => setEditingId(null)}
+        onClose={stopEditing}
       >
-        <AccountForm account={editing} onClose={() => setEditingId(null)} />
+        <AccountForm account={editing} onClose={stopEditing} />
       </FormDialog>
     </>
   );
 }
 
 /** One account: username, the names of its roles, support or not, active or not. */
-function AccountRow({ account, onEdit }: { account: UserSummary; onEdit: () => void }) {
-  const { roleName } = useStoreAndRoleChoices();
+function AccountRow({
+  account,
+  roleName,
+  onEdit,
+}: {
+  account: UserSummary;
+  roleName: (id: string | undefined) => string;
+  onEdit: () => void;
+}) {
   const roleIds = account.roleIds ?? [];
   return (
     <TableRow>

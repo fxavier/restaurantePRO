@@ -1,14 +1,4 @@
-import {
-  Button,
-  StatusBadge,
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@restaurantpro/ui';
+import { Button, StatusBadge, TableCell, TableRow } from '@restaurantpro/ui';
 import { KeyRound, LockOpen, Store, UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import { isStepUpRequired } from '../../../lib/step-up';
@@ -22,6 +12,7 @@ import { CommandError } from './command-error';
 import { FormDialog } from './form-dialog';
 import { employeeState, employeeStatuses } from './labels';
 import { ListCard } from './list-card';
+import { ListTable } from './list-table';
 import { NewEmployeeForm } from './new-employee-form';
 import { ResetPinForm } from './reset-pin-form';
 
@@ -64,31 +55,18 @@ export function EmployeesTab() {
         onPage={setPage}
       >
         {(rows) => (
-          <Table>
-            <TableCaption className="sr-only">Empregados</TableCaption>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nome</TableHead>
-                <TableHead>Código</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead>
-                  <span className="sr-only">Ações</span>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((employee) => (
-                <EmployeeRow
-                  key={employee.id}
-                  employee={employee}
-                  unlocking={unlock.isPending}
-                  onUnlock={() => unlockOne(employee)}
-                  onAssignments={() => setAssigning(employee)}
-                  onResetPin={() => setResetting(employee)}
-                />
-              ))}
-            </TableBody>
-          </Table>
+          <ListTable caption="Empregados" headers={['Nome', 'Código', 'Estado']}>
+            {rows.map((employee) => (
+              <EmployeeRow
+                key={employee.id}
+                employee={employee}
+                unlocking={unlock.isPending}
+                onUnlock={() => unlockOne(employee)}
+                onAssignments={() => setAssigning(employee)}
+                onResetPin={() => setResetting(employee)}
+              />
+            ))}
+          </ListTable>
         )}
       </ListCard>
       <FormDialog

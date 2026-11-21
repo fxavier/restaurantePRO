@@ -10,12 +10,7 @@ import {
   Button,
   LOCALE,
   StatusBadge,
-  Table,
-  TableBody,
-  TableCaption,
   TableCell,
-  TableHead,
-  TableHeader,
   TableRow,
 } from '@restaurantpro/ui';
 import { Ban, LifeBuoy } from 'lucide-react';
@@ -32,6 +27,7 @@ import { FormDialog } from './form-dialog';
 import { GrantForm } from './grant-form';
 import { grantStatuses } from './labels';
 import { ListCard } from './list-card';
+import { ListTable } from './list-table';
 
 type Revocation = { grantId: string; idempotencyKey: string };
 
@@ -70,32 +66,18 @@ export function SupportTab() {
         onPage={setPage}
       >
         {(rows) => (
-          <Table>
-            <TableCaption className="sr-only">Acessos de suporte</TableCaption>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Conta</TableHead>
-                <TableHead>Motivo</TableHead>
-                <TableHead>Válido até</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead>
-                  <span className="sr-only">Ações</span>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((grant) => (
-                <GrantRow
-                  key={grant.id}
-                  grant={grant}
-                  username={usernameOf(grant.accountId)}
-                  validUntil={formatInstant(grant.validUntil, timeZone)}
-                  revoking={revoke.isPending}
-                  onRevoke={() => setToRevoke(grant)}
-                />
-              ))}
-            </TableBody>
-          </Table>
+          <ListTable caption="Acessos de suporte" headers={['Conta', 'Motivo', 'Válido até', 'Estado']}>
+            {rows.map((grant) => (
+              <GrantRow
+                key={grant.id}
+                grant={grant}
+                username={usernameOf(grant.accountId)}
+                validUntil={formatInstant(grant.validUntil, timeZone)}
+                revoking={revoke.isPending}
+                onRevoke={() => setToRevoke(grant)}
+              />
+            ))}
+          </ListTable>
         )}
       </ListCard>
       <FormDialog
