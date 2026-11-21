@@ -91,5 +91,3 @@ export const recipeVersionSchema = z.object({
 });
 export type RecipeVersionInput = z.input<typeof recipeVersionSchema>;
 export type RecipeVersionValues = z.output<typeof recipeVersionSchema>;
-
-export const countLineSchema = z.object({ countedQuantity: decimal(QUANTITY) });
