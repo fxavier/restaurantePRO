@@ -29,7 +29,8 @@ export const movementSchema = z.object({
   stockItemId: pick('Escolha o artigo.'),
   quantity: decimal(QUANTITY).refine((value) => value === '' || /[1-9]/.test(value), 'A quantidade não pode ser zero.'),
   unitCost: optionalDecimal(COST),
-  reason: text(500, 'O motivo tem no máximo 500 caracteres.'),
+  /** The server refuses a waste or an adjustment without one (REASON_REQUIRED). */
+  reason: z.string().trim().min(1, 'Indique o motivo.').max(500, 'O motivo tem no máximo 500 caracteres.'),
 });
 export const wasteSchema = movementSchema.refine((values) => isPositive(values.quantity), {
   path: ['quantity'],
@@ -64,10 +65,25 @@ export const purchaseOrderSchema = z.object({
 export type PurchaseOrderInput = z.input<typeof purchaseOrderSchema>;
 export type PurchaseOrderValues = z.output<typeof purchaseOrderSchema>;
 
-export const receiptSchema = z.object({
-  supplierDocumentRef: text(60, 'A referência tem no máximo 60 caracteres.'),
-  lines: z.array(z.object({ purchaseOrderLineId: z.string(), stockItemId: z.string(), packQuantity: decimal(QUANTITY) })),
+/** What arrived of a line: empty or zero is "not received" (undefined, left out of the receipt); below zero is refused. */
+const receivedQuantity = z.string().transform((input, context) => {
+  if (!input.trim()) return undefined;
+  const value = toDecimal(input);
+  if (value === undefined) context.addIssue({ code: 'custom', message: QUANTITY });
+  else if (value.startsWith('-')) context.addIssue({ code: 'custom', message: POSITIVE });
+  return value !== undefined && isPositive(value) ? value : undefined;
 });
+
+/** A goods receipt of an order: a partial delivery leaves out the lines that did not arrive; at least one did. */
+export const receiptSchema = z
+  .object({
+    supplierDocumentRef: text(60, 'A referência tem no máximo 60 caracteres.'),
+    lines: z.array(z.object({ purchaseOrderLineId: z.string(), stockItemId: z.string(), packQuantity: receivedQuantity })),
+  })
+  .refine((values) => values.lines.some((line) => line.packQuantity !== undefined), {
+    path: ['root'],
+    message: 'Indique pelo menos um artigo recebido.',
+  });
 export type ReceiptInput = z.input<typeof receiptSchema>;
 export type ReceiptValues = z.output<typeof receiptSchema>;
 

@@ -18,6 +18,7 @@ import { LIST_PAGE_SIZE, useReceipts } from '../hooks/use-inventory-reads';
 import { usePermission } from '../hooks/use-permission';
 import { useRowCommand } from '../hooks/use-row-command';
 import { CommandError } from './command-error';
+import { ConfirmDialog, type Confirmation } from './form-dialog';
 import { Pages, QueryState } from './query-state';
 import { ScrollTable } from './scroll-table';
 import { documentStates, StateBadge } from './state-badge';
@@ -31,6 +32,15 @@ export function ReceiptsCard({ storeId, timeZone, supplierName }: ReceiptsCardPr
   const action = useRowCommand(useReceiptAction());
   const canReceive = usePermission('GOODS_RECEIVE', storeId);
   const rows = receipts.data?.rows;
+  const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
+  const confirmReceipt = (id: string, name: string) =>
+    setConfirmation({
+      title: `Confirmar a receção ${name}?`,
+      description:
+        'A mercadoria entra no armazém e o custo médio dos artigos é atualizado. Não pode ser desfeito: uma correção exige um ajuste de stock.',
+      action: 'Confirmar receção',
+      onConfirm: () => action.run({ id, action: 'confirm', label: name }),
+    });
 
   return (
     <Card className="gap-4">
@@ -70,7 +80,7 @@ export function ReceiptsCard({ storeId, timeZone, supplierName }: ReceiptsCardPr
                             size="sm"
                             aria-label={`Confirmar receção ${name}`}
                             disabled={action.pending}
-                            onClick={() => action.run({ id: receipt.id!, action: 'confirm', label: name })}
+                            onClick={() => confirmReceipt(receipt.id!, name)}
                           >
                             <PackageCheck aria-hidden="true" />
                             Confirmar
@@ -86,6 +96,7 @@ export function ReceiptsCard({ storeId, timeZone, supplierName }: ReceiptsCardPr
           <Pages page={page} total={receipts.data?.totalElements ?? 0} size={LIST_PAGE_SIZE} onPage={setPage} />
         </QueryState>
       </CardContent>
+      <ConfirmDialog confirmation={confirmation} onClose={() => setConfirmation(null)} />
     </Card>
   );
 }

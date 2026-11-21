@@ -33,13 +33,18 @@ export type FieldErrors = { fields: [field: string, message: string][]; others: 
 /**
  * A 400's field violations split into the form's fields and the rest. A line's field (`lines[0].unitCost`) lands on
  * the form's array field (`lines.0.unitCost`) when the form lists the array (`lines`), else on the form's field of
- * that name (a one-line dialog names it `unitCost`).
+ * that name (a one-line dialog names it `unitCost`). `toForm` first rewrites a request field into the form's, when
+ * the request leaves some of the form's lines out (a partial receipt).
  */
-export function fieldErrors(error: unknown, fields: readonly string[]): FieldErrors | undefined {
+export function fieldErrors(
+  error: unknown,
+  fields: readonly string[],
+  toForm: (field: string) => string = (field) => field,
+): FieldErrors | undefined {
   if (!(error instanceof ApiError) || error.status !== 400 || !error.errors?.length) return undefined;
   const result: FieldErrors = { fields: [], others: [] };
   for (const { field, message } of error.errors) {
-    const name = formField(field, fields);
+    const name = formField(toForm(field), fields);
     if (name) result.fields.push([name, message]);
     else result.others.push(message);
   }
