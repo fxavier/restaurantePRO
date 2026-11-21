@@ -86,3 +86,6 @@ export const addressSchema = z.object({
   country: optionalText(60, 'O país tem no máximo 60 caracteres.'),
   notes,
 });
+
+/** "Editar morada" (AddressUpdateRequest): the same fields, with the version the address was read at (stale → 409). */
+export const addressEditSchema = addressSchema.extend({ version: z.number() });

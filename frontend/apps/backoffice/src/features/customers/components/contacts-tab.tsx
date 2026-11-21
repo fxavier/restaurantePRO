@@ -15,11 +15,13 @@ import {
   FormLabel,
   FormMessage,
 } from '@restaurantpro/ui';
-import { MapPin, Phone, Plus, Trash2 } from 'lucide-react';
+import { MapPin, Pencil, Phone, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
-import { useAddAddress, useAddPhone, useDeletePhone } from '../hooks/use-customer-commands';
+import type { FieldValues, UseFormReturn } from 'react-hook-form';
+import type { z } from 'zod';
+import { useAddAddress, useAddPhone, useDeletePhone, useUpdateAddress } from '../hooks/use-customer-commands';
 import { addressKindLabel } from '../labels';
-import { addressSchema, phoneSchema } from '../schemas';
+import { addressEditSchema, addressSchema, phoneSchema } from '../schemas';
 import type { AddressView, CustomerDetails, PhoneView } from '../types';
 import { CheckboxField, CommandDialog, TextField } from './command-dialog';
 import { CommandFeedback } from './command-feedback';
@@ -49,23 +51,12 @@ function Phones({ phones, customerId, canManage }: { phones: PhoneView[]; custom
       {phones.length === 0 && <p className="text-muted-foreground">Sem telefones.</p>}
       <ul aria-label="Telefones" className="flex flex-col gap-2">
         {phones.map((phone) => (
-          <li key={phone.id} className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted px-3 py-2">
-            <span className="font-mono">{phone.digits}</span>
-            {phone.label && <span className="text-sm text-muted-foreground">{phone.label}</span>}
-            {phone.primary && <Badge variant="success">Principal</Badge>}
-            {canManage && (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="ml-auto"
-                aria-label={`Remover ${phone.digits}`}
-                disabled={remove.isPending}
-                onClick={() => setToRemove(phone)}
-              >
-                <Trash2 aria-hidden="true" />
-              </Button>
-            )}
-          </li>
+          <PhoneItem
+            key={phone.id}
+            phone={phone}
+            onRemove={canManage ? () => setToRemove(phone) : undefined}
+            disabled={remove.isPending}
+          />
         ))}
       </ul>
       <CommandFeedback
@@ -74,23 +65,58 @@ function Phones({ phones, customerId, canManage }: { phones: PhoneView[]; custom
         onRetry={() => remove.variables && removeOne(remove.variables)}
       />
       {canManage && <AddPhoneDialog customerId={customerId} />}
-      <AlertDialog open={toRemove !== null} onOpenChange={(open) => !open && setToRemove(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remover o telefone {toRemove?.digits}?</AlertDialogTitle>
-            <AlertDialogDescription>O cliente deixa de ser encontrado por este número.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => toRemove?.id && removeOne({ phoneId: toRemove.id, label: toRemove.digits ?? '' })}
-            >
-              Remover
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <RemovePhoneConfirm
+        phone={toRemove}
+        onClose={() => setToRemove(null)}
+        onConfirm={(phone) => phone.id && removeOne({ phoneId: phone.id, label: phone.digits ?? '' })}
+      />
     </section>
+  );
+}
+
+/** One phone; the remove button only when the user may manage customers (`onRemove` given). */
+function PhoneItem({ phone, onRemove, disabled }: { phone: PhoneView; onRemove?: () => void; disabled: boolean }) {
+  return (
+    <li className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted px-3 py-2">
+      <span className="font-mono">{phone.digits}</span>
+      {phone.label && <span className="text-sm text-muted-foreground">{phone.label}</span>}
+      {phone.primary && <Badge variant="success">Principal</Badge>}
+      {onRemove && (
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="ml-auto"
+          aria-label={`Remover ${phone.digits}`}
+          disabled={disabled}
+          onClick={onRemove}
+        >
+          <Trash2 aria-hidden="true" />
+        </Button>
+      )}
+    </li>
+  );
+}
+
+type RemovePhoneConfirmProps = {
+  phone: PhoneView | null;
+  onClose: () => void;
+  onConfirm: (phone: PhoneView) => void;
+};
+
+function RemovePhoneConfirm({ phone, onClose, onConfirm }: RemovePhoneConfirmProps) {
+  return (
+    <AlertDialog open={phone !== null} onOpenChange={(open) => !open && onClose()}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Remover o telefone {phone?.digits}?</AlertDialogTitle>
+          <AlertDialogDescription>O cliente deixa de ser encontrado por este número.</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+          <AlertDialogAction onClick={() => phone && onConfirm(phone)}>Remover</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
@@ -132,7 +158,12 @@ function Addresses({ addresses, customerId, canManage }: { addresses: AddressVie
       <ul aria-label="Moradas" className="flex flex-col gap-2">
         {addresses.map((address) => (
           <li key={address.id} className="flex flex-col gap-1 rounded-lg border bg-muted px-3 py-2">
-            <Badge variant="secondary">{addressKindLabel(address.kind)}</Badge>
+            <div className="flex items-center justify-between gap-2">
+              <Badge variant="secondary">{addressKindLabel(address.kind)}</Badge>
+              {canManage && address.id && (
+                <EditAddressDialog address={address} addressId={address.id} customerId={customerId} />
+              )}
+            </div>
             <span>{address.line1}</span>
             {address.line2 && <span>{address.line2}</span>}
             <span>{[address.postalCode, address.city].filter(Boolean).join(' ')}</span>
@@ -162,37 +193,81 @@ function AddAddressDialog({ customerId }: { customerId: string }) {
       schema={addressSchema}
       defaultValues={{ kind: 'BILLING', line1: '', line2: '', postalCode: '', city: '', country: '', notes: '' }}
       runner={runner}
-      fields={(form) => (
-        <>
-          <FormField
-            control={form.control}
-            name="kind"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Tipo</FormLabel>
-                <FormControl>
-                  <select
-                    {...field}
-                    className="h-9 w-full max-w-48 rounded-md border border-input bg-muted px-3 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                  >
-                    <option value="BILLING">Faturação</option>
-                    <option value="DELIVERY">Entrega</option>
-                  </select>
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <TextField form={form} name="line1" label="Morada" maxLength={200} />
-          <TextField form={form} name="line2" label="Complemento" maxLength={200} />
-          <div className="grid gap-4 sm:grid-cols-2">
-            <TextField form={form} name="postalCode" label="Código postal" maxLength={20} />
-            <TextField form={form} name="city" label="Cidade" maxLength={100} />
-          </div>
-          <TextField form={form} name="country" label="País" maxLength={60} />
-          <TextField form={form} name="notes" label="Indicações" />
-        </>
-      )}
+      fields={(form) => <AddressFields form={form} />}
     />
+  );
+}
+
+/** The edit sends the version the dialog opened with: if someone saved meanwhile, the server answers 409. */
+function EditAddressDialog({ address, addressId, customerId }: { address: AddressView; addressId: string; customerId: string }) {
+  const runner = useUpdateAddress(customerId, addressId);
+  return (
+    <CommandDialog
+      trigger={
+        <Button variant="ghost" size="icon-sm" className="self-end" aria-label={`Editar morada ${address.line1 ?? ''}`}>
+          <Pencil aria-hidden="true" />
+        </Button>
+      }
+      title="Editar morada"
+      description="A morada passa a valer assim em todas as lojas."
+      submitLabel="Guardar"
+      schema={addressEditSchema}
+      defaultValues={editDefaults(address)}
+      runner={runner}
+      fields={(form) => <AddressFields form={form} />}
+    />
+  );
+}
+
+type AddressValues = z.input<typeof addressSchema>;
+
+/** The address as read, with its version, as the edit form starts. */
+function editDefaults(address: AddressView): z.input<typeof addressEditSchema> {
+  return {
+    kind: address.kind === 'DELIVERY' ? 'DELIVERY' : 'BILLING',
+    line1: address.line1 ?? '',
+    line2: address.line2 ?? '',
+    postalCode: address.postalCode ?? '',
+    city: address.city ?? '',
+    country: address.country ?? '',
+    notes: address.notes ?? '',
+    version: address.version ?? 0,
+  };
+}
+
+/** The fields of an address form (add or edit). */
+function AddressFields<Values extends FieldValues>({ form: anyForm }: { form: UseFormReturn<Values> }) {
+  // Both forms hold these fields; the edit form only adds its version.
+  const form = anyForm as unknown as UseFormReturn<AddressValues>;
+  return (
+    <>
+      <FormField
+        control={form.control}
+        name="kind"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Tipo</FormLabel>
+            <FormControl>
+              <select
+                {...field}
+                className="h-9 w-full max-w-48 rounded-md border border-input bg-muted px-3 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              >
+                <option value="BILLING">Faturação</option>
+                <option value="DELIVERY">Entrega</option>
+              </select>
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <TextField form={form} name="line1" label="Morada" maxLength={200} />
+      <TextField form={form} name="line2" label="Complemento" maxLength={200} />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <TextField form={form} name="postalCode" label="Código postal" maxLength={20} />
+        <TextField form={form} name="city" label="Cidade" maxLength={100} />
+      </div>
+      <TextField form={form} name="country" label="País" maxLength={60} />
+      <TextField form={form} name="notes" label="Indicações" />
+    </>
   );
 }

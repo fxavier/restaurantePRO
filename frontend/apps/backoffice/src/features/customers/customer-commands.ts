@@ -2,6 +2,7 @@ import type { ApiClient } from '@restaurantpro/api-client';
 import { sendWaitingWhileInProgress } from '../../lib/in-progress';
 import type {
   AddressRequest,
+  AddressUpdateRequest,
   AddressView,
   CustomerCreateRequest,
   CustomerDetails,
@@ -51,4 +52,13 @@ export function addAddress(api: ApiClient, customerId: string, body: AddressRequ
       body,
     }),
   ).then(({ data }) => data as AddressView);
+}
+
+export function updateAddress(api: ApiClient, customerId: string, addressId: string, body: AddressUpdateRequest) {
+  return api
+    .PUT('/api/v1/backoffice/customers/{id}/addresses/{addressId}', {
+      params: { path: { id: customerId, addressId } },
+      body,
+    })
+    .then(({ data }) => data as AddressView);
 }

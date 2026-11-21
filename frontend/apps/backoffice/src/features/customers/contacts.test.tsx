@@ -36,6 +36,12 @@ function contactsServer() {
       current = { ...current, addresses: [...(current.addresses ?? []), address] };
       return HttpResponse.json(address);
     }),
+    http.put(api(`${BASE}/addresses/:addressId`), async ({ params, request }) => {
+      const body = (await request.json()) as Record<string, string | number>;
+      const address = { ...body, id: params.addressId as string, version: Number(body.version) + 1 };
+      current = { ...current, addresses: current.addresses?.map((a) => (a.id === params.addressId ? address : a)) };
+      return HttpResponse.json(address);
+    }),
   );
 }
 
@@ -122,6 +128,38 @@ describe('addresses and contacts', () => {
     const post = requests.find((r) => r.path.endsWith('/addresses'));
     expect(post?.body).toEqual({ kind: 'DELIVERY', line1: 'Rua da Sé 12', city: 'Maputo' });
     expect(post?.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it('edits an address with the version it was read at, and lists what the server saved', async () => {
+    const { requests } = customersServer();
+    contactsServer();
+    const { panel, user } = await openContacts();
+
+    await user.click(within(panel).getByRole('button', { name: 'Editar morada Av. Julius Nyerere 102' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Editar morada' });
+    expect(within(dialog).getByLabelText('Morada')).toHaveValue('Av. Julius Nyerere 102');
+    await user.clear(within(dialog).getByLabelText('Cidade'));
+    await user.type(within(dialog).getByLabelText('Cidade'), 'Matola');
+    await user.click(within(dialog).getByRole('button', { name: 'Guardar' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    const addresses = within(panel).getByRole('list', { name: 'Moradas' });
+    await waitFor(() => expect(within(addresses).getByRole('listitem')).toHaveTextContent(/Matola/));
+    const put = requests.find((r) => r.method === 'PUT');
+    expect(put?.path).toBe(`${BASE}/addresses/a0000000-0000-4000-8000-000000000001`);
+    expect(put?.body).toMatchObject({ kind: 'BILLING', line1: 'Av. Julius Nyerere 102', city: 'Matola', version: 0 });
+  });
+
+  it('says the address changed meanwhile when the server refuses a stale version', async () => {
+    customersServer();
+    server.use(http.put(api(`${BASE}/addresses/:addressId`), () => problem(409, 'VERSION_CONFLICT')));
+    const { panel, user } = await openContacts();
+
+    await user.click(within(panel).getByRole('button', { name: 'Editar morada Av. Julius Nyerere 102' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Editar morada' });
+    await user.click(within(dialog).getByRole('button', { name: 'Guardar' }));
+
+    expect(await within(dialog).findByRole('alert')).toBeInTheDocument();
   });
 
   it('shows no change to a user who may only view customers', async () => {

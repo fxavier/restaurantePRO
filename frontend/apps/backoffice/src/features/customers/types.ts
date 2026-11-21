@@ -7,6 +7,7 @@ export type CustomerCreateRequest = Schemas['com.xavier.backend.customers.model.
 export type CustomerUpdateRequest = Schemas['com.xavier.backend.customers.model.dto.CustomerUpdateRequest'];
 export type AddressView = Schemas['com.xavier.backend.customers.model.dto.AddressView'];
 export type AddressRequest = Schemas['com.xavier.backend.customers.model.dto.AddressRequest'];
+export type AddressUpdateRequest = Schemas['com.xavier.backend.customers.model.dto.AddressUpdateRequest'];
 export type PhoneView = Schemas['com.xavier.backend.customers.model.dto.PhoneView'];
 export type PhoneRequest = Schemas['com.xavier.backend.customers.model.dto.PhoneRequest'];
 export type CreditView = Schemas['com.xavier.backend.customers.CreditView'];
