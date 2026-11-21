@@ -7,10 +7,13 @@ import { problem } from '../../test/server';
 import {
   attempt,
   attemptEndpoint,
+  ITEMS_PARTITION,
   mzn,
+  NULL,
   PAID,
   PARTITION_IDS,
   serverSettlement,
+  SETTLEMENT,
   SPLIT_IN_THREE,
 } from '../../test/settlement';
 
@@ -109,5 +112,37 @@ describe('charging the bill', () => {
     await choose('Cobrar Parte 3 de 3');
     expect(within(payPanel()).getByRole('heading', { name: 'Valor a cobrar — Parte 3 de 3' })).toBeInTheDocument();
     expect(within(payPanel()).queryByRole('status', { name: 'Último pagamento' })).not.toBeInTheDocument();
+  });
+
+  it('once a part is paid in full, the rest of the bill can still be chosen and charged', async () => {
+    const paidPart = { ...ITEMS_PARTITION, paid: mzn('900.00'), balance: mzn('0.00'), paymentStatus: 'PAID', financialState: 'SETTLED' } as const;
+    const server = serverSettlement({ ...SETTLEMENT, orderVersion: 5, residualBalance: mzn('630.00'), partitions: [ITEMS_PARTITION] });
+    const requests = attemptEndpoint(
+      () => {
+        server.set({ ...server.state.current, paid: mzn('900.00'), balance: mzn('630.00'), partitions: [paidPart] });
+        return HttpResponse.json(
+          attempt({ amount: mzn('900.00'), tendered: NULL, change: NULL, targetType: 'PARTITION', partitionId: ITEMS_PARTITION.id }),
+          { status: 201 },
+        );
+      },
+      () => HttpResponse.json(attempt({ amount: mzn('630.00'), tendered: NULL, change: NULL }), { status: 201 }),
+    );
+    const { user } = await atPayment();
+    await billShown();
+    const parts = () => within(screen.getByRole('region', { name: /^Divisões/ }));
+
+    await user.click(parts().getByRole('button', { name: 'Cobrar Por artigos' }));
+    await user.click(within(payPanel()).getByRole('button', { name: /^Cobrar 900,00\sMTn$/ }));
+    await waitFor(() => expect(parts().getByText('Pago')).toBeInTheDocument());
+
+    const rest = parts().getByRole('button', { name: /^Cobrar Restante da conta 630,00\sMTn$/ });
+    expect(rest).toHaveAttribute('aria-pressed', 'false');
+    await user.click(rest);
+    expect(rest).toHaveAttribute('aria-pressed', 'true');
+    expect(within(payPanel()).getByRole('heading', { name: 'Valor a cobrar — Restante da conta' })).toBeInTheDocument();
+    await user.click(within(payPanel()).getByRole('button', { name: /^Cobrar 630,00\sMTn$/ }));
+
+    await waitFor(() => expect(requests).toHaveLength(2));
+    expect(requests[1]!.body).toEqual({ orderId: ORDER_ID, methodCode: 'CASH', amount: '630.00' });
   });
 });

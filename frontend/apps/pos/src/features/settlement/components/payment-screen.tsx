@@ -120,6 +120,7 @@ function Bill({
             orderId={settlement.orderId}
             partitions={settlement.partitions}
             selected={selected}
+            residual={settlement.residualBalance}
             onSelect={setSelected}
             buyer={documentBuyer}
             blocked={blocked}
