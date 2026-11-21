@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import { HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
-import { atCash, json, movement, movementEndpoint, SESSION_ID } from '../../test/cash';
+import { atCash, DAY, json, movement, movementEndpoint, OPEN_SESSION, REGISTERS, SESSION_ID } from '../../test/cash';
 import { problem } from '../../test/server';
 
 const lastMovement = () => screen.getByRole('status', { name: 'Último movimento' });
@@ -108,6 +108,39 @@ describe('cash movements', () => {
     expect(screen.getByRole('dialog', { name: 'Saída de numerário' })).toBeInTheDocument();
 
     await user.click(within(dialog).getByRole('button', { name: 'Tentar novamente' }));
+    await waitFor(() => expect(lastMovement()).toHaveTextContent(/Saída de numerário registada: 200,00\sMTn/));
+    expect(recorded).toHaveLength(2);
+    expect(recorded[1]!.idempotencyKey).toBe(recorded[0]!.idempotencyKey);
+  });
+
+  it('with no answer and the screen unreadable too, the dialog and its key survive until the server is back', async () => {
+    // The server is unreachable: the command and the re-read it triggers both get no answer.
+    let reachable = true;
+    const offline = (answer: () => Response) => () => (reachable ? answer() : HttpResponse.error());
+    const recorded = movementEndpoint(
+      () => {
+        reachable = false;
+        return HttpResponse.error();
+      },
+      json(movement({ type: 'CASH_OUT', amount: { amount: '200.00', currency: 'MZN' } }), 201),
+    );
+    const { user } = await atCash({
+      session: [offline(() => HttpResponse.json(OPEN_SESSION))],
+      registers: [offline(() => HttpResponse.json(REGISTERS))],
+      day: [offline(() => HttpResponse.json(DAY))],
+    });
+
+    const dialog = await startMovement(user, 'Saída de numerário');
+    await user.type(within(dialog).getByLabelText('Valor (MZN)'), '200');
+    await user.type(within(dialog).getByLabelText('Motivo'), 'Cofre');
+    await user.click(within(dialog).getByRole('button', { name: 'Registar' }));
+    await within(dialog).findByRole('alert');
+    // The failed re-read is said without swapping the screen (and the kept intent) for a load error.
+    expect(await screen.findByText(/Sem ligação — não foi possível atualizar a caixa/)).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Saída de numerário' })).toBeInTheDocument();
+
+    reachable = true;
+    await user.click(within(screen.getByRole('dialog', { name: 'Saída de numerário' })).getByRole('button', { name: 'Tentar novamente' }));
     await waitFor(() => expect(lastMovement()).toHaveTextContent(/Saída de numerário registada: 200,00\sMTn/));
     expect(recorded).toHaveLength(2);
     expect(recorded[1]!.idempotencyKey).toBe(recorded[0]!.idempotencyKey);
