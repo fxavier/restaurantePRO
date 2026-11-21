@@ -1,24 +1,40 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@restaurantpro/ui';
-import { Boxes, CookingPot, ShoppingCart, type LucideIcon } from 'lucide-react';
+import { ArrowLeftRight, Boxes, ChartColumn, ClipboardList, CookingPot, ShoppingCart, type LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useSearchParams } from 'react-router';
 import { useStore } from '../hooks/use-inventory-reads';
+import { CountsTab } from './counts-tab';
 import { PurchasingTab } from './purchasing-tab';
 import { RecipesTab } from './recipes-tab';
+import { ReportsTab } from './reports-tab';
 import { StockSummary } from './stock-summary';
 import { StockTab } from './stock-tab';
+import { TransfersTab } from './transfers-tab';
 
 type Store = { storeId: string; currency: string | undefined; timeZone: string | undefined };
 type Tab = { value: string; label: string; icon: LucideIcon; render: (store: Store) => ReactNode };
 
 const TABS: Tab[] = [
   { value: 'stock', label: 'Stock', icon: Boxes, render: ({ storeId, currency }) => <StockTab storeId={storeId} currency={currency} /> },
+  { value: 'contagens', label: 'Contagens', icon: ClipboardList, render: ({ storeId }) => <CountsTab storeId={storeId} /> },
   { value: 'receitas', label: 'Fichas técnicas', icon: CookingPot, render: ({ storeId }) => <RecipesTab storeId={storeId} /> },
   {
     value: 'compras',
     label: 'Compras',
     icon: ShoppingCart,
     render: ({ storeId, timeZone }) => <PurchasingTab storeId={storeId} timeZone={timeZone} />,
+  },
+  {
+    value: 'transferencias',
+    label: 'Transferências',
+    icon: ArrowLeftRight,
+    render: ({ storeId, timeZone }) => <TransfersTab storeId={storeId} timeZone={timeZone} />,
+  },
+  {
+    value: 'relatorios',
+    label: 'Relatórios',
+    icon: ChartColumn,
+    render: ({ storeId, currency }) => <ReportsTab storeId={storeId} currency={currency} />,
   },
 ];
 const PARAM = 'tab';
