@@ -21,7 +21,10 @@ import { ResetPinForm } from './reset-pin-form';
 /** "Empregados" (§5): who works in the company, or in the store chosen in the top bar, and what can be done to each. */
 export function EmployeesTab() {
   const { storeId } = useStoreSelection();
-  const [page, setPage] = useState(0);
+  // The page belongs to the store it was turned in: another store in the top bar starts again at its first page.
+  const [paging, setPaging] = useState({ storeId, page: 0 });
+  const page = paging.storeId === storeId ? paging.page : 0;
+  const setPage = (next: number) => setPaging({ storeId, page: next });
   const employees = useEmployees(storeId, page);
   const unlock = useUnlockEmployee();
   const stepUp = usePeopleStepUp();

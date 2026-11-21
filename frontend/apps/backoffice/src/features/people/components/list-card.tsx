@@ -29,6 +29,8 @@ type ListCardProps<Row> = {
  */
 export function ListCard<Row>({ title, description, actions, query, what, emptyMessage, onPage, children }: ListCardProps<Row>) {
   const data = query.data;
+  // "Empty" only when the server holds none: a page past the end still shows the pager, to go back.
+  const state = query.isPending ? 'loading' : data?.rows.length || data?.totalElements ? 'ready' : 'empty';
   return (
     <Card className="gap-4">
       <CardHeader>
@@ -40,7 +42,7 @@ export function ListCard<Row>({ title, description, actions, query, what, emptyM
         {query.isError ? (
           <ListError error={query.error} what={what} onRetry={() => void query.refetch()} />
         ) : (
-          <DataState state={query.isPending ? 'loading' : data?.rows.length ? 'ready' : 'empty'} emptyMessage={emptyMessage}>
+          <DataState state={state} emptyMessage={emptyMessage}>
             {data && children(data.rows)}
             {data && <Pager page={data.page} totalElements={data.totalElements} onPage={onPage} />}
           </DataState>

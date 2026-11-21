@@ -156,6 +156,52 @@ describe('employees tab', () => {
       `/api/v1/backoffice/employees?storeId=${baixa.id}&page=0&size=20`,
     ]);
   });
+
+  it('goes back to the first page when another store is chosen in the top bar', async () => {
+    peopleServer();
+    const storeReads: string[] = [];
+    server.use(
+      http.get(api('/api/v1/backoffice/employees'), ({ request }) => {
+        const url = new URL(request.url);
+        if (url.searchParams.get('storeId')) storeReads.push(`${url.pathname}${url.search}`);
+        const pageNo = Number(url.searchParams.get('page'));
+        if (url.searchParams.get('storeId')) {
+          return HttpResponse.json({ content: pageNo === 0 ? [maria] : [], page: pageNo, size: 20, totalElements: 5 });
+        }
+        return HttpResponse.json({ content: [{ ...joao, name: `Página ${pageNo + 1}` }], page: pageNo, size: 20, totalElements: 45 });
+      }),
+    );
+    const { user } = renderApp('/people');
+
+    await screen.findByRole('cell', { name: 'Página 1' });
+    await user.click(screen.getByRole('button', { name: 'Seguinte' }));
+    await user.click(await screen.findByRole('button', { name: 'Seguinte' }));
+    expect(await screen.findByText('Página 3 de 3')).toBeInTheDocument();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Loja' }), 'Loja Sommerschield');
+
+    expect(await screen.findByRole('cell', { name: 'Maria Sitoe' })).toBeInTheDocument();
+    expect(screen.queryByText('Ainda não há empregados.')).not.toBeInTheDocument();
+    expect(storeReads).toEqual([
+      `/api/v1/backoffice/employees?storeId=${sommerschield.id}&page=0&size=20`,
+    ]);
+  });
+
+  it('keeps the pages within reach when a page comes back empty', async () => {
+    peopleServer();
+    server.use(
+      http.get(api('/api/v1/backoffice/employees'), ({ request }) => {
+        const pageNo = Number(new URL(request.url).searchParams.get('page'));
+        return HttpResponse.json({ content: pageNo === 0 ? [maria] : [], page: pageNo, size: 20, totalElements: 25 });
+      }),
+    );
+    const { user } = renderApp('/people');
+
+    await screen.findByRole('cell', { name: 'Maria Sitoe' });
+    await user.click(screen.getByRole('button', { name: 'Seguinte' }));
+    expect(await screen.findByText('Página 2 de 2')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Anterior' }));
+    expect(await screen.findByRole('cell', { name: 'Maria Sitoe' })).toBeInTheDocument();
+  });
 });
 
 describe('edit employee', () => {
