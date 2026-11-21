@@ -17,10 +17,22 @@ export type Draft = {
   notes: string;
   /** The customer record it is linked to, if any. */
   customerId: string | null;
+  /** Not on the form: the reservation's own, carried through so an edit (a full replacement) keeps it. */
+  durationMinutes: number | null;
 };
 
 export function emptyDraft(date: string): Draft {
-  return { date, time: '', partySize: '', tableIds: [], contactName: '', contactPhone: '', notes: '', customerId: null };
+  return {
+    date,
+    time: '',
+    partySize: '',
+    tableIds: [],
+    contactName: '',
+    contactPhone: '',
+    notes: '',
+    customerId: null,
+    durationMinutes: null,
+  };
 }
 
 /** The reservation being edited, as the draft it would have been. */
@@ -35,6 +47,7 @@ export function draftOf(reservation: Reservation, timeZone: string): Draft {
     contactPhone: reservation.phone ?? '',
     notes: reservation.notes ?? '',
     customerId: reservation.customerId,
+    durationMinutes: reservation.durationMinutes,
   };
 }
 
@@ -55,5 +68,6 @@ export function toRequest(draft: Draft, timeZone: string): ReservationRequest {
     ...(notes && { notes }),
     ...(draft.customerId && { customerId: draft.customerId }),
     tableIds: draft.tableIds,
+    ...(draft.durationMinutes !== null && { durationMinutes: draft.durationMinutes }),
   };
 }

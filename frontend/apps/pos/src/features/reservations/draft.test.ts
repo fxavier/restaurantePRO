@@ -27,6 +27,7 @@ describe('a reservation draft', () => {
       contactPhone: '',
       notes: '',
       customerId: null,
+      durationMinutes: null,
     });
   });
 
@@ -56,6 +57,8 @@ describe('a reservation draft', () => {
       customerId: CUSTOMER_ID,
       tableIds: [id(1)],
     });
+    // A full replacement (PUT) keeps the duration the reservation was booked with.
+    expect(toRequest({ ...filled, durationMinutes: 90 }, MAPUTO)).toMatchObject({ durationMinutes: 90 });
   });
 
   it('a reservation being edited starts as the draft it would have been', () => {
@@ -69,6 +72,7 @@ describe('a reservation draft', () => {
       contactPhone: '841234567',
       notes: 'Cadeira de bebé',
       customerId: CUSTOMER_ID,
+      durationMinutes: 120,
     });
     const bare = toReservations([DAY[3]!])[0]!;
     expect(draftOf(bare, MAPUTO)).toMatchObject({ contactPhone: '', notes: '', customerId: null, tableIds: [] });

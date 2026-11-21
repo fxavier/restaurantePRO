@@ -13,6 +13,8 @@ export type Reservation = {
   status: ReservationStatus;
   /** ISO-8601 UTC. */
   startsAt: string;
+  /** How long it holds its tables, when it was booked with one; kept as it is by an edit (a PUT replaces it all). */
+  durationMinutes: number | null;
   partySize: number;
   contactName: string;
   /** Digits only, as the backend keeps it. */
@@ -80,6 +82,7 @@ function toReservation(view: ReservationView): Reservation {
     version,
     status,
     startsAt,
+    durationMinutes: view.durationMinutes ?? null,
     partySize,
     contactName,
     phone: view.contactPhoneDigits ?? null,

@@ -13,6 +13,7 @@ describe('reservations', () => {
       version: 3,
       status: 'BOOKED',
       startsAt: '2026-11-20T17:30:00Z',
+      durationMinutes: 120,
       partySize: 4,
       contactName: 'Ana Ferreira',
       phone: '841234567',
@@ -23,6 +24,7 @@ describe('reservations', () => {
     });
     expect(byName('Carla Lopes')).toMatchObject({ phone: null, customerId: null, notes: null, tableIds: [] });
     expect(byName('Carla Lopes').cancelReason).toBe('O cliente telefonou');
+    expect(toReservations([{ ...DAY[2]!, durationMinutes: undefined }])[0]!.durationMinutes).toBeNull();
   });
 
   it.each(['id', 'version', 'status', 'startsAt', 'partySize', 'contactName'] as const)(
