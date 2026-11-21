@@ -23,6 +23,9 @@ export function PaymentPanel({ settlement, target, disabled }: Props) {
   const [last, setLast] = useState<Attempt>();
   const charge = useCharge(settlement.orderId, setLast);
   const inDoubt = openAttemptOn(settlement, target) !== undefined;
+  // The last payment (and its change) belongs to the target it paid: another target chosen does not show it. The
+  // answer is the server's view, so a payment of the whole order says `partitionId: null`.
+  const lastHere = last && (last.partitionId ?? undefined) === target.partitionId ? last : undefined;
 
   return (
     <section aria-labelledby="pay-title" className="flex flex-col gap-4">
@@ -57,7 +60,7 @@ export function PaymentPanel({ settlement, target, disabled }: Props) {
           blocked={disabled}
           discardable={false}
         />
-        {last && <LastPayment attempt={last} />}
+        {lastHere && <LastPayment attempt={lastHere} />}
       </div>
     </section>
   );

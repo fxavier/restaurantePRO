@@ -88,4 +88,26 @@ describe('charging the bill', () => {
     await waitFor(() => expect(requests).toHaveLength(1));
     expect(requests[0]!.body).toEqual({ orderId: ORDER_ID, partitionId: PARTITION_IDS.second, methodCode: 'CASH', amount: '510.00' });
   });
+
+  it("a part's change is shown under that part only, never under the next one chosen", async () => {
+    serverSettlement(SPLIT_IN_THREE);
+    attemptEndpoint(() =>
+      HttpResponse.json(
+        attempt({ amount: mzn('510.00'), tendered: mzn('1000.00'), change: mzn('490.00'), targetType: 'PARTITION', partitionId: PARTITION_IDS.second }),
+        { status: 201 },
+      ),
+    );
+    const { user } = await atPayment();
+    await billShown();
+    const choose = (name: string) => user.click(within(screen.getByRole('list', { name: 'Divisões' })).getByRole('button', { name }));
+
+    await choose('Cobrar Parte 2 de 3');
+    await user.type(within(payPanel()).getByLabelText('Valor recebido'), '1000');
+    await user.click(within(payPanel()).getByRole('button', { name: /^Cobrar 510,00\sMTn$/ }));
+    expect(await within(payPanel()).findByRole('status', { name: 'Último pagamento' })).toHaveTextContent('Troco: 490,00 MTn.');
+
+    await choose('Cobrar Parte 3 de 3');
+    expect(within(payPanel()).getByRole('heading', { name: 'Valor a cobrar — Parte 3 de 3' })).toBeInTheDocument();
+    expect(within(payPanel()).queryByRole('status', { name: 'Último pagamento' })).not.toBeInTheDocument();
+  });
 });
