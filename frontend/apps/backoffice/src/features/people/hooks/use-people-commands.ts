@@ -1,6 +1,8 @@
-import type { ApiClient } from '@restaurantpro/api-client';
+import { ApiError, type ApiClient } from '@restaurantpro/api-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useRef } from 'react';
 import { useApi } from '../../../lib/api';
+import { isUnavailable } from '../../../lib/errors';
 import { sendWaitingWhileInProgress } from '../../../lib/in-progress';
 import { toCreateRequest, toUpdateRequest, type AccountValues } from '../account-requests';
 import type {
@@ -31,11 +33,26 @@ function usePeopleCommand<Variables, Result>(send: (api: ApiClient, variables: V
   });
 }
 
+/** Our answer to a taken code when an earlier hire of that code got no answer: that hire may be the one holding it. */
+const MAYBE_HIRED = 'EMPLOYEE_MAYBE_HIRED';
+
+/**
+ * POST /employees has no Idempotency-Key, so a hire sent again after no answer can meet itself: the code it took. While
+ * the form is open, a taken code that an unanswered hire sent is answered as MAYBE_HIRED, never as a field error.
+ */
 export function useHireEmployee() {
-  return usePeopleCommand(
-    async (api, body: EmployeeCreateRequest) => (await api.POST(`${BASE}/employees`, { body })).data as EmployeeSummary,
-    true,
-  );
+  const unanswered = useRef<string | undefined>(undefined);
+  return usePeopleCommand(async (api, body: EmployeeCreateRequest) => {
+    try {
+      return (await api.POST(`${BASE}/employees`, { body })).data as EmployeeSummary;
+    } catch (error) {
+      if (isUnavailable(error)) unanswered.current = body.code;
+      if (error instanceof ApiError && error.code === 'EMPLOYEE_CODE_TAKEN' && unanswered.current === body.code) {
+        throw new ApiError({ status: error.status, code: MAYBE_HIRED, title: error.title }, { cause: error });
+      }
+      throw error;
+    }
+  }, true);
 }
 
 /**

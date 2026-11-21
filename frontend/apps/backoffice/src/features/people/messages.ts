@@ -7,4 +7,6 @@ export const peopleMessages: FeatureMessages = {
   SUPPORT_GRANT_ACTIVE: 'Esta conta já tem um acesso de suporte ativo.',
   SUPPORT_GRANT_ENDED: 'Este acesso de suporte já terminou.',
   SUPPORT_GRANT_DURATION: 'Um acesso de suporte dura entre 1 minuto e 24 horas.',
+  // use-people-commands MAYBE_HIRED: a taken code after a hire that got no answer
+  EMPLOYEE_MAYBE_HIRED: 'O primeiro pedido pode já ter criado este empregado. Veja a lista antes de tentar de novo.',
 };
