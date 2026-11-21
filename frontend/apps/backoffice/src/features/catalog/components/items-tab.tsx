@@ -42,17 +42,7 @@ export function ItemsTab() {
       <Card>
         <CardContent className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-3">
-            <div className="relative min-w-64 flex-1">
-            <Search aria-hidden="true" className="absolute top-2.5 left-3 size-4 text-muted-foreground" />
-            <Input
-              type="search"
-              aria-label="Pesquisar artigos"
-              placeholder="Pesquisar por nome ou código"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              className="pl-9"
-            />
-            </div>
+            <SearchBox value={search} onChange={setSearch} />
             {items.data && <ItemFormDialog />}
           </div>
           <FamilyPills
@@ -67,8 +57,7 @@ export function ItemsTab() {
       <Card>
         <CardContent>
           <DataState state={items.isPending ? 'loading' : all.length ? 'ready' : 'empty'} emptyMessage="Ainda não há artigos.">
-            <ItemsTable items={shown} families={families.data ?? []} taxCategories={taxCategories.data ?? []} />
-            {shown.length === 0 && <p className="py-6 text-center text-muted-foreground">Nenhum artigo corresponde à pesquisa.</p>}
+            <ItemsTable items={shown} families={families.data} taxCategories={taxCategories.data} />
           </DataState>
         </CardContent>
       </Card>
@@ -76,12 +65,30 @@ export function ItemsTab() {
   );
 }
 
-type ItemsTableProps = { items: ItemSummary[]; families: FamilySummary[]; taxCategories: TaxCategorySummary[] };
+function SearchBox({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <div className="relative min-w-64 flex-1">
+      <Search aria-hidden="true" className="absolute top-2.5 left-3 size-4 text-muted-foreground" />
+      <Input
+        type="search"
+        aria-label="Pesquisar artigos"
+        placeholder="Pesquisar por nome ou código"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="pl-9"
+      />
+    </div>
+  );
+}
+
+/** The items the search and family leave, or why there are none. */
+type ItemsTableProps = { items: ItemSummary[]; families: FamilySummary[] | undefined; taxCategories: TaxCategorySummary[] | undefined };
 
 function ItemsTable({ items, families, taxCategories }: ItemsTableProps) {
   const [now] = useState(() => new Date().toISOString());
-  const familyName = (id: string | undefined) => families.find((family) => family.id === id)?.name ?? '—';
-  const taxOf = (id: string | undefined) => taxCategories.find((category) => category.id === id);
+  const familyName = (id: string | undefined) => families?.find((family) => family.id === id)?.name ?? '—';
+  const taxOf = (id: string | undefined) => taxCategories?.find((category) => category.id === id);
+  if (!items.length) return <p className="py-6 text-center text-muted-foreground">Nenhum artigo corresponde à pesquisa.</p>;
   return (
     <Table>
       <TableCaption className="sr-only">Artigos do catálogo</TableCaption>

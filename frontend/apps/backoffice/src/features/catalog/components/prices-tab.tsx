@@ -15,15 +15,14 @@ import {
 } from '@restaurantpro/ui';
 import { useState } from 'react';
 import { useItems, usePriceLists, usePrices, useVariants } from '../hooks/use-catalog-queries';
-import type { ItemSummary, PriceListSummary } from '../types';
+import type { ItemPriceSummary, ItemSummary, PriceListSummary } from '../types';
 import { LoadError } from './load-error';
 import { EditPriceDialog, NewPriceDialog, PriceListDialog } from './price-dialogs';
-import { StoreRequired } from './store-required';
+import { ForStore } from './store-required';
 
 /** "Preços": the store's price lists, and the prices of the chosen one as the server holds them. */
 export function PricesTab({ storeId }: { storeId: string | undefined }) {
-  if (!storeId) return <StoreRequired what="as tabelas de preços" />;
-  return <StorePrices key={storeId} storeId={storeId} />;
+  return <ForStore storeId={storeId} what="as tabelas de preços">{(id) => <StorePrices storeId={id} />}</ForStore>;
 }
 
 function StorePrices({ storeId }: { storeId: string }) {
@@ -70,55 +69,67 @@ function StorePrices({ storeId }: { storeId: string }) {
 }
 
 function PriceListPrices({ list }: { list: PriceListSummary }) {
-  const prices = usePrices(list.id ?? '');
+  const listId = list.id ?? '';
+  const prices = usePrices(listId);
   const items = useItems();
-  const itemOf = (id: string | undefined) => items.data?.content.find((item) => item.id === id);
   const rows = prices.data ?? [];
   return (
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
         <CardTitle className="text-lg">Tabela {list.name}</CardTitle>
-        {prices.data && <NewPriceDialog priceListId={list.id ?? ''} currency={list.currency ?? ''} />}
+        {prices.data && <NewPriceDialog priceListId={listId} currency={list.currency ?? ''} />}
       </CardHeader>
       <CardContent>
         {prices.isError ? (
           <LoadError error={prices.error} onRetry={() => void prices.refetch()} forbidden="Sem permissão para ver estes preços." />
         ) : (
           <DataState state={prices.isPending ? 'loading' : rows.length ? 'ready' : 'empty'} emptyMessage="Esta tabela ainda não tem preços.">
-            <Table>
-              <TableCaption className="sr-only">Preços da tabela {list.name}</TableCaption>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Artigo</TableHead>
-                  <TableHead>Variante</TableHead>
-                  <TableHead className="text-right">Preço com IVA</TableHead>
-                  <TableHead>
-                    <span className="sr-only">Ações</span>
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((price) => {
-                  const item = itemOf(price.itemId);
-                  return (
-                    <TableRow key={price.id}>
-                      <TableCell>
-                        <ItemName item={item} />
-                      </TableCell>
-                      <TableCell>{price.variantId ? <VariantName itemId={price.itemId ?? ''} variantId={price.variantId} /> : '—'}</TableCell>
-                      <TableCell className="text-right">{price.price ? <Money value={price.price} /> : '—'}</TableCell>
-                      <TableCell className="text-right">
-                        <EditPriceDialog priceListId={list.id ?? ''} price={price} itemName={item?.name ?? 'artigo'} />
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+            <PricesTable listId={listId} listName={list.name} prices={rows} items={items.data?.content} />
           </DataState>
         )}
       </CardContent>
     </Card>
+  );
+}
+
+type PricesTableProps = { listId: string; listName: string | undefined; prices: ItemPriceSummary[]; items: ItemSummary[] | undefined };
+
+function PricesTable({ listId, listName, prices, items }: PricesTableProps) {
+  const itemOf = (id: string | undefined) => items?.find((item) => item.id === id);
+  return (
+    <Table>
+      <TableCaption className="sr-only">Preços da tabela {listName}</TableCaption>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Artigo</TableHead>
+          <TableHead>Variante</TableHead>
+          <TableHead className="text-right">Preço com IVA</TableHead>
+          <TableHead>
+            <span className="sr-only">Ações</span>
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {prices.map((price) => (
+          <PriceRow key={price.id} listId={listId} price={price} item={itemOf(price.itemId)} />
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+function PriceRow({ listId, price, item }: { listId: string; price: ItemPriceSummary; item: ItemSummary | undefined }) {
+  return (
+    <TableRow>
+      <TableCell>
+        <ItemName item={item} />
+      </TableCell>
+      <TableCell>{price.variantId ? <VariantName itemId={price.itemId ?? ''} variantId={price.variantId} /> : '—'}</TableCell>
+      <TableCell className="text-right">{price.price ? <Money value={price.price} /> : '—'}</TableCell>
+      <TableCell className="text-right">
+        <EditPriceDialog priceListId={listId} price={price} itemName={item?.name ?? 'artigo'} />
+      </TableCell>
+    </TableRow>
   );
 }
 

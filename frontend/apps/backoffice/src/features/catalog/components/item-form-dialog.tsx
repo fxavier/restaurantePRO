@@ -107,14 +107,20 @@ function useItemOptions(currentDestination: string | undefined) {
   const units = useUnits();
   const taxCategories = useTaxCategories();
   const [now] = useState(() => new Date().toISOString());
-  const known = DESTINATIONS.some((destination) => destination.code === currentDestination);
   return {
-    families: (families.data ?? []).map((family) => ({ value: family.id ?? '', label: family.name ?? '' })),
-    units: (units.data ?? []).map((unit) => ({ value: unit.id ?? '', label: unit.name ?? '' })),
+    families: namedOptions(families.data),
+    units: namedOptions(units.data),
     taxCategories: (taxCategories.data ?? []).map((category) => ({ value: category.id ?? '', label: taxLabel(category, now) })),
-    destinations: [
-      ...DESTINATIONS.map((destination) => ({ value: destination.code, label: destination.label })),
-      ...(currentDestination && !known ? [{ value: currentDestination, label: currentDestination }] : []),
-    ],
+    destinations: destinationOptions(currentDestination),
   };
+}
+
+function namedOptions(list: readonly { id?: string; name?: string }[] | undefined): Option[] {
+  return (list ?? []).map((one) => ({ value: one.id ?? '', label: one.name ?? '' }));
+}
+
+function destinationOptions(current: string | undefined): Option[] {
+  const known = DESTINATIONS.map((destination) => ({ value: destination.code, label: destination.label }));
+  const unknown = current && !known.some((option) => option.value === current);
+  return unknown ? [...known, { value: current, label: current }] : known;
 }

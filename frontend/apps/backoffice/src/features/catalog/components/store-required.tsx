@@ -1,4 +1,5 @@
 import { Store } from 'lucide-react';
+import { Fragment, type ReactNode } from 'react';
 
 /** A tab whose data belongs to one store, before a store is chosen in the top bar. */
 export function StoreRequired({ what }: { what: string }) {
@@ -8,4 +9,9 @@ export function StoreRequired({ what }: { what: string }) {
       <p>Escolha uma loja na barra superior para ver {what}.</p>
     </div>
   );
+}
+
+/** A store's tab: what it shows for the chosen store, remounted per store; `StoreRequired` until one is chosen. */
+export function ForStore({ storeId, what, children }: { storeId: string | undefined; what: string; children: (storeId: string) => ReactNode }) {
+  return storeId ? <Fragment key={storeId}>{children(storeId)}</Fragment> : <StoreRequired what={what} />;
 }

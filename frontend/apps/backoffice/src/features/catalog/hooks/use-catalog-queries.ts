@@ -1,3 +1,4 @@
+import type { ApiClient } from '@restaurantpro/api-client';
 import { useQuery } from '@tanstack/react-query';
 import { useApi } from '../../../lib/api';
 import type {
@@ -61,68 +62,44 @@ export function useStore(storeId: string) {
   });
 }
 
+/** A catalog list under `key`, read with `read`; an absent answer is an empty list. */
+function useCatalogList<T>(key: readonly string[], read: (api: ApiClient) => Promise<T[] | undefined>, enabled = true) {
+  const api = useApi();
+  return useQuery({ queryKey: [...CATALOG_KEY, ...key], queryFn: async (): Promise<T[]> => (await read(api)) ?? [], enabled });
+}
+
 /** A store's price lists (each in the store's currency). */
 export function usePriceLists(storeId: string) {
-  const api = useApi();
-  return useQuery({
-    queryKey: [...CATALOG_KEY, 'price-lists', storeId],
-    queryFn: async (): Promise<PriceListSummary[]> =>
-      (await api.GET('/api/v1/backoffice/catalog/price-lists', { params: { query: { storeId } } })).data ?? [],
-  });
+  return useCatalogList<PriceListSummary>(['price-lists', storeId], async (api) =>
+    (await api.GET('/api/v1/backoffice/catalog/price-lists', { params: { query: { storeId } } })).data,
+  );
 }
 
 export function usePrices(priceListId: string) {
-  const api = useApi();
-  return useQuery({
-    queryKey: [...CATALOG_KEY, 'price-lists', 'prices', priceListId],
-    queryFn: async (): Promise<ItemPriceSummary[]> =>
-      (await api.GET('/api/v1/backoffice/catalog/price-lists/{id}/prices', { params: { path: { id: priceListId } } })).data ?? [],
-  });
+  return useCatalogList<ItemPriceSummary>(['price-lists', 'prices', priceListId], async (api) =>
+    (await api.GET('/api/v1/backoffice/catalog/price-lists/{id}/prices', { params: { path: { id: priceListId } } })).data,
+  );
 }
 
 /** An item's variants; not read until an item is chosen (`itemId` empty). */
 export function useVariants(itemId: string) {
-  const api = useApi();
-  return useQuery({
-    enabled: itemId !== '',
-    queryKey: [...CATALOG_KEY, 'items', itemId, 'variants'],
-    queryFn: async (): Promise<ItemVariantSummary[]> =>
-      (await api.GET('/api/v1/backoffice/catalog/items/{id}/variants', { params: { path: { id: itemId } } })).data ?? [],
-  });
+  return useCatalogList<ItemVariantSummary>(
+    ['items', itemId, 'variants'],
+    async (api) => (await api.GET('/api/v1/backoffice/catalog/items/{id}/variants', { params: { path: { id: itemId } } })).data,
+    itemId !== '',
+  );
 }
 
 export function useBarcodes(itemId: string) {
-  const api = useApi();
-  return useQuery({
-    queryKey: [...CATALOG_KEY, 'items', itemId, 'barcodes'],
-    queryFn: async (): Promise<BarcodeSummary[]> =>
-      (await api.GET('/api/v1/backoffice/catalog/barcodes', { params: { query: { itemId } } })).data ?? [],
-  });
+  return useCatalogList<BarcodeSummary>(['items', itemId, 'barcodes'], async (api) =>
+    (await api.GET('/api/v1/backoffice/catalog/barcodes', { params: { query: { itemId } } })).data,
+  );
 }
 
-export function useFamilies() {
-  const api = useApi();
-  return useQuery({
-    queryKey: [...CATALOG_KEY, 'families'],
-    queryFn: async (): Promise<FamilySummary[]> =>
-      (await api.GET('/api/v1/backoffice/catalog/families', { params: { query: LIST_PAGE } })).data?.content ?? [],
-  });
-}
+/** The reference lists the item form and list need: one page of 200 each, by code. */
+const REFERENCE_PAGE = { params: { query: LIST_PAGE } };
+const content = <T>(answer: { data?: { content?: T[] } }) => answer.data?.content;
 
-export function useUnits() {
-  const api = useApi();
-  return useQuery({
-    queryKey: [...CATALOG_KEY, 'units'],
-    queryFn: async (): Promise<UnitSummary[]> =>
-      (await api.GET('/api/v1/backoffice/catalog/units', { params: { query: LIST_PAGE } })).data?.content ?? [],
-  });
-}
-
-export function useTaxCategories() {
-  const api = useApi();
-  return useQuery({
-    queryKey: [...CATALOG_KEY, 'tax-categories'],
-    queryFn: async (): Promise<TaxCategorySummary[]> =>
-      (await api.GET('/api/v1/backoffice/catalog/tax-categories', { params: { query: LIST_PAGE } })).data?.content ?? [],
-  });
-}
+export const useFamilies = () => useCatalogList<FamilySummary>(['families'], async (api) => content(await api.GET('/api/v1/backoffice/catalog/families', REFERENCE_PAGE)));
+export const useUnits = () => useCatalogList<UnitSummary>(['units'], async (api) => content(await api.GET('/api/v1/backoffice/catalog/units', REFERENCE_PAGE)));
+export const useTaxCategories = () => useCatalogList<TaxCategorySummary>(['tax-categories'], async (api) => content(await api.GET('/api/v1/backoffice/catalog/tax-categories', REFERENCE_PAGE)));

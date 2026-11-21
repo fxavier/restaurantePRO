@@ -8,7 +8,7 @@ import { useSaveFamily } from '../hooks/use-catalog-commands';
 import { familySchema, type FamilyValues } from '../schemas';
 import type { FamilySummary } from '../types';
 import { FormDialog } from './form-dialog';
-import { FormFooter, SelectField, showOnFields, TextField } from './form-parts';
+import { FormFooter, SelectField, showOnFields, TextField, type Option } from './form-parts';
 
 type Props = { family?: FamilySummary; families: readonly FamilySummary[] };
 
@@ -41,17 +41,26 @@ export function FamilyFormDialog({ family, families }: Props) {
 
 const FIELDS = ['code', 'name', 'parentId'] as const;
 
-function FamilyForm({ family, families, onDone }: Props & { onDone: () => void }) {
-  const form = useForm<FamilyValues>({
-    resolver: zodResolver(familySchema),
-    defaultValues: { code: family?.code ?? '', name: family?.name ?? '', parentId: family?.parentId ?? '' },
-  });
-  const save = useSaveFamily();
-  const parents = families.filter((candidate) => candidate.id !== family?.id).map((candidate) => ({ value: candidate.id ?? '', label: candidate.name ?? '' }));
+/** The form's starting values: the family's, or empty for a new one. */
+function familyValues(family: FamilySummary | undefined): FamilyValues {
+  return { code: family?.code ?? '', name: family?.name ?? '', parentId: family?.parentId ?? '' };
+}
 
-  const send = (values: FamilyValues) =>
+/** The families that can be this one's parent: any but itself. */
+function parentOptions(families: readonly FamilySummary[], self: FamilySummary | undefined): Option[] {
+  return families
+    .filter((candidate) => candidate.id !== self?.id)
+    .map((candidate) => ({ value: candidate.id ?? '', label: candidate.name ?? '' }));
+}
+
+function FamilyForm({ family, families, onDone }: Props & { onDone: () => void }) {
+  const form = useForm<FamilyValues>({ resolver: zodResolver(familySchema), defaultValues: familyValues(family) });
+  const save = useSaveFamily();
+  const parents = parentOptions(families, family);
+
+  const send = ({ code, name, parentId }: FamilyValues) =>
     save.mutate(
-      { id: family?.id, version: family?.version, body: { code: values.code, name: values.name, parentId: values.parentId || undefined } },
+      { id: family?.id, version: family?.version, body: { code, name, parentId: parentId || undefined } },
       { onSuccess: onDone, onError: (error) => showOnFields(form, error, FIELDS) },
     );
   const onSubmit = form.handleSubmit(send);

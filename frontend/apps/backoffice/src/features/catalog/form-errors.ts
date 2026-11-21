@@ -27,12 +27,20 @@ export type FieldPlacement = { fields: { name: string; message: string }[]; rest
  */
 export function placeOnFields(error: unknown, fieldNames: readonly string[]): FieldPlacement | undefined {
   if (!(error instanceof ApiError)) return undefined;
-  if (error.status === 409 && error.code === 'CATALOG_CODE_TAKEN' && fieldNames.includes('code')) {
+  if (isCodeTaken(error) && fieldNames.includes('code')) {
     return { fields: [{ name: 'code', message: catalogErrorMessage(error) }], rest: [] };
   }
   if (error.status !== 400 || !error.errors?.length) return undefined;
+  return splitViolations(error.errors, fieldNames);
+}
+
+function isCodeTaken(error: ApiError): boolean {
+  return error.status === 409 && error.code === 'CATALOG_CODE_TAKEN';
+}
+
+function splitViolations(violations: readonly { field: string; message: string }[], fieldNames: readonly string[]): FieldPlacement {
   const placement: FieldPlacement = { fields: [], rest: [] };
-  for (const { field, message } of error.errors) {
+  for (const { field, message } of violations) {
     if (fieldNames.includes(field)) placement.fields.push({ name: field, message });
     else placement.rest.push(message);
   }

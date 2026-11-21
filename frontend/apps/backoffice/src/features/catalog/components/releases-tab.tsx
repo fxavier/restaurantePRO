@@ -29,26 +29,22 @@ import { CommandAlert } from './form-parts';
 import { LoadError } from './load-error';
 import { PublishDialog } from './publish-dialog';
 import { ResumePublication } from './resume-publication';
-import { StoreRequired } from './store-required';
+import { ForStore } from './store-required';
 
 /** "Versões": the store's catalog releases (spec §8.3), and starting, validating and publishing one. */
 export function ReleasesTab({ storeId }: { storeId: string | undefined }) {
-  if (!storeId) return <StoreRequired what="as versões do catálogo" />;
-  return <StoreReleases key={storeId} storeId={storeId} />;
+  return <ForStore storeId={storeId} what="as versões do catálogo">{(id) => <StoreReleases storeId={id} />}</ForStore>;
 }
 
 function StoreReleases({ storeId }: { storeId: string }) {
   const releases = useReleases(storeId);
-  const timeZone = useStore(storeId).data?.timezone;
   const create = useCreateRelease(storeId);
   const validate = useValidateRelease(storeId);
-  const publishAllowed = canPublish(useSession().data?.permissions ?? [], storeId);
   const [toPublish, setToPublish] = useState<string | undefined>();
 
   if (releases.isError) {
     return <LoadError error={releases.error} onRetry={() => void releases.refetch()} forbidden="Sem permissão para ver as versões desta loja." />;
   }
-  const list = releases.data?.content ?? [];
   return (
     <div className="flex flex-col gap-4">
       <ResumePublication storeId={storeId} />
@@ -69,37 +65,58 @@ function StoreReleases({ storeId }: { storeId: string }) {
           )}
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          {create.error && <CommandAlert error={create.error} pending={create.isPending} onRetry={() => create.mutate(undefined)} />}
-          {validate.error && (
-            <CommandAlert
-              error={validate.error}
-              pending={validate.isPending}
-              onRetry={() => validate.variables && validate.mutate(validate.variables)}
-            />
-          )}
-          <DataState
-            state={releases.isPending ? 'loading' : list.length ? 'ready' : 'empty'}
-            emptyMessage="Esta loja ainda não tem versões do catálogo."
-          >
-            <ReleasesTable
-              releases={list}
-              timeZone={timeZone}
-              actions={(release) => (
-                <ReleaseActions
-                  release={release}
-                  validating={validate.isPending}
-                  publishAllowed={publishAllowed}
-                  onValidate={() => validate.mutate(release.id ?? '')}
-                  onPublish={() => setToPublish(release.id)}
-                />
-              )}
-            />
-          </DataState>
+          <FailedCommand command={create} retry={() => create.mutate(undefined)} />
+          <FailedCommand command={validate} retry={() => validate.variables && validate.mutate(validate.variables)} />
+          <ReleasesList
+            storeId={storeId}
+            loading={releases.isPending}
+            releases={releases.data?.content ?? []}
+            validating={validate.isPending}
+            onValidate={(releaseId) => validate.mutate(releaseId)}
+            onPublish={setToPublish}
+          />
         </CardContent>
       </Card>
       <PublishDialog releaseId={toPublish} storeId={storeId} onClose={() => setToPublish(undefined)} />
     </div>
   );
+}
+
+type ReleasesListProps = {
+  storeId: string;
+  loading: boolean;
+  releases: ReleaseSummary[];
+  validating: boolean;
+  onValidate: (releaseId: string) => void;
+  onPublish: (releaseId: string | undefined) => void;
+};
+
+function ReleasesList({ storeId, loading, releases, validating, onValidate, onPublish }: ReleasesListProps) {
+  const timeZone = useStore(storeId).data?.timezone;
+  const publishAllowed = canPublish(useSession().data?.permissions ?? [], storeId);
+  return (
+    <DataState state={loading ? 'loading' : releases.length ? 'ready' : 'empty'} emptyMessage="Esta loja ainda não tem versões do catálogo.">
+      <ReleasesTable
+        releases={releases}
+        timeZone={timeZone}
+        actions={(release) => (
+          <ReleaseActions
+            release={release}
+            validating={validating}
+            publishAllowed={publishAllowed}
+            onValidate={() => onValidate(release.id ?? '')}
+            onPublish={() => onPublish(release.id)}
+          />
+        )}
+      />
+    </DataState>
+  );
+}
+
+/** A release command's failure, with "Tentar novamente" when resending can help; nothing while it has not failed. */
+function FailedCommand({ command, retry }: { command: { error: unknown; isPending: boolean }; retry: () => void }) {
+  if (!command.error) return null;
+  return <CommandAlert error={command.error} pending={command.isPending} onRetry={retry} />;
 }
 
 type ReleasesTableProps = {
