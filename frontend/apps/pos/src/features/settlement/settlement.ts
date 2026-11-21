@@ -1,0 +1,218 @@
+import type { components } from '@restaurantpro/api-client';
+import type { MoneyValue } from '@restaurantpro/ui';
+
+type Schemas = components['schemas'];
+type SettlementView = Schemas['com.xavier.backend.settlement.model.dto.OrderSettlementView'];
+type PartitionView = Schemas['com.xavier.backend.settlement.model.dto.PartitionView'];
+type LineCoverage = Schemas['com.xavier.backend.settlement.model.dto.LineCoverage'];
+type AttemptView = Schemas['com.xavier.backend.settlement.model.dto.AttemptView'];
+
+/** A part of the bill (BillPartition, D67): by items, or an amount (an equal part, with its number). */
+export type Partition = {
+  id: string;
+  label: string;
+  kind: 'ITEMS' | 'AMOUNT';
+  version: number;
+  due: MoneyValue;
+  balance: MoneyValue;
+  paymentStatus: PaymentStatus;
+  /** Nothing left to collect on it (§8.3). */
+  settled: boolean;
+  /** Its own document is ISSUED (an ITEMS part only, D70), with its id once drafted. */
+  invoiced: boolean;
+  documentId?: string;
+  lines: { lineId: string; description: string; quantity: string }[];
+};
+
+/** D97: from gross, paid and credit; live on the settlement views. */
+export type PaymentStatus = 'UNPAID' | 'PARTIALLY_PAID' | 'PAID' | 'ON_ACCOUNT' | 'MIXED';
+const PAYMENT_STATUSES: readonly string[] = ['UNPAID', 'PARTIALLY_PAID', 'PAID', 'ON_ACCOUNT', 'MIXED'];
+const isPaymentStatus = (status: string | undefined): status is PaymentStatus => PAYMENT_STATUSES.includes(status ?? '');
+
+/** A part nothing has touched yet (no payment, no document): the only kind that can be cancelled (D67). */
+export function isCancellable(partition: Partition): boolean {
+  return partition.paymentStatus === 'UNPAID' && !partition.invoiced && partition.documentId === undefined;
+}
+
+/**
+ * An order's bill as settlement has it (`GET /orders/{id}/settlement`): every amount and state is the server's, read
+ * again after every command; nothing here is computed from them.
+ */
+export type Settlement = {
+  orderId: string;
+  lifecycle: string;
+  orderVersion: number;
+  due: MoneyValue;
+  paid: MoneyValue;
+  balance: MoneyValue;
+  /** The server's financial state is SETTLED (§8.3): nothing left to collect. */
+  settled: boolean;
+  /** The order's own (residual) document: NONE, DRAFT or ISSUED, with its id once drafted. */
+  fiscalState: string;
+  documentId?: string;
+  /** What the order itself (outside its live parts) still has to collect (D69). */
+  residualBalance: MoneyValue;
+  /** The live parts, oldest first; a cancelled one is history, not shown. */
+  partitions: Partition[];
+  /** The billable lines with a quantity in no live part yet, which a split by items may take. */
+  undivided: UndividedLine[];
+  /** Payments still CREATED, PENDING or UNKNOWN on any target: each blocks a new charge of its target (§7.4). */
+  openAttempts: OpenAttempt[];
+};
+
+export type OpenAttempt = {
+  id: string;
+  status: string;
+  methodCode: string;
+  methodKind: string;
+  amount: MoneyValue;
+  partitionId?: string;
+};
+
+/** A line's quantity still in no part, in thousandths (the contract's 3 decimals), so stepping it is exact. */
+export type UndividedLine = { lineId: string; description: string; available: number };
+
+/**
+ * The contract marks no field of the view required; a bill without these cannot be shown or acted on. An empty id
+ * arrives as `null` (the server writes its records' nulls), which becomes undefined here, once.
+ */
+export function toSettlement(view: SettlementView | undefined): Settlement {
+  if (!view?.orderId || !view.lifecycle || view.orderVersion === undefined || !view.due || !view.paid || !view.balance) {
+    throw new Error('Incomplete settlement');
+  }
+  return {
+    orderId: view.orderId,
+    lifecycle: view.lifecycle,
+    orderVersion: view.orderVersion,
+    due: view.due,
+    paid: view.paid,
+    balance: view.balance,
+    settled: view.financialState === 'SETTLED',
+    fiscalState: view.fiscalState ?? 'NONE',
+    documentId: view.documentId ?? undefined,
+    residualBalance: view.residualBalance ?? view.balance,
+    partitions: (view.partitions ?? []).filter((partition) => partition.status === 'LIVE').map(toPartition),
+    undivided: (view.coverage ?? []).flatMap(toUndivided),
+    openAttempts: (view.openAttempts ?? []).map(toOpenAttempt),
+  };
+}
+
+function toOpenAttempt(view: AttemptView): OpenAttempt {
+  if (!view.id || !view.status || !view.methodCode || !view.amount) throw new Error('Incomplete attempt');
+  return {
+    id: view.id,
+    status: view.status,
+    methodCode: view.methodCode,
+    methodKind: view.methodKind ?? '',
+    amount: view.amount,
+    partitionId: view.partitionId ?? undefined,
+  };
+}
+
+/**
+ * Whether the bill may close (D50 §7.8): open, settled, and no payment still open. The server checks again, and
+ * issues the residual document itself when none is issued yet (D70).
+ */
+export function canClose(settlement: Settlement): boolean {
+  return settlement.lifecycle === 'OPEN' && settlement.settled && settlement.openAttempts.length === 0;
+}
+
+/** Whether the order's document may be issued now (for a buyer's NIF): as for the close, and not issued yet. */
+export function canIssueDocument(settlement: Settlement): boolean {
+  return canClose(settlement) && settlement.fiscalState !== 'ISSUED';
+}
+
+/** A payment of this target still open: the target is not charged again until it is resolved. */
+export function openAttemptOn(settlement: Settlement, target: Target): OpenAttempt | undefined {
+  return settlement.openAttempts.find((attempt) => attempt.partitionId === target.partitionId);
+}
+
+function toUndivided(line: LineCoverage): UndividedLine[] {
+  if (!line.lineId || line.netQty === undefined) return [];
+  const available = thousandths(line.netQty) - thousandths(line.partitioned ?? '0');
+  return available > 0 ? [{ lineId: line.lineId, description: line.description ?? '', available }] : [];
+}
+
+/** What a payment pays (D69): a live part, or the order's residual (the whole bill when it is not split). */
+export type Target = { key: string; label: string; balance: MoneyValue; partitionId?: string };
+
+/** The selected part, while it is live; otherwise the order's residual. */
+export function targetOf(settlement: Settlement, partitionId: string | undefined): Target {
+  const partition = settlement.partitions.find((candidate) => candidate.id === partitionId);
+  if (partition) return { key: partition.id, label: partition.label, balance: partition.balance, partitionId: partition.id };
+  return {
+    key: 'order',
+    label: settlement.partitions.length > 0 ? 'Restante da conta' : 'Conta total',
+    balance: settlement.residualBalance,
+  };
+}
+
+/**
+ * An amount as typed ("12,5", "1530.00") as the decimal string the contract takes, or undefined when it is not a
+ * positive amount with at most two decimals. Text in, text out: nothing is computed with it.
+ */
+export function amountInput(text: string): string | undefined {
+  const decimal = text.trim().replace(',', '.');
+  return /^\d+(\.\d{1,2})?$/.test(decimal) && /[1-9]/.test(decimal) ? decimal : undefined;
+}
+
+/** Who a document is for, as typed: a final consumer, or a buyer with a NIF. */
+export type BuyerChoice = { withTaxId: boolean; taxId: string; name: string; address: string };
+
+export const FINAL_CONSUMER: BuyerChoice = { withTaxId: false, taxId: '', name: '', address: '' };
+
+/**
+ * The document request's buyer: none for a final consumer; otherwise only the fields typed, trimmed. Not `ready`
+ * while a NIF is asked for and still empty.
+ */
+export function buyerOf(choice: BuyerChoice): { ready: boolean; buyer?: { taxId?: string; name?: string; address?: string } } {
+  if (!choice.withTaxId) return { ready: true };
+  const fields = { taxId: choice.taxId.trim(), name: choice.name.trim(), address: choice.address.trim() };
+  const buyer = Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== ''));
+  return { ready: fields.taxId !== '', buyer };
+}
+
+/** One unit, in thousandths. */
+export const UNIT = 1_000;
+
+/** A decimal quantity (3 decimals at most, `@Digits(fraction = 3)`) as whole thousandths. */
+export function thousandths(quantity: string | number): number {
+  return Math.round(Number(quantity) * UNIT);
+}
+
+/** Whole thousandths as the decimal string the contract takes ("2", "0.5"). */
+export function quantityText(value: number): string {
+  return String(value / UNIT);
+}
+
+function toPartition(view: PartitionView): Partition {
+  if (!view.id || !view.due || !view.balance || view.version === undefined || !isKind(view.kind)) {
+    throw new Error('Incomplete partition');
+  }
+  return {
+    id: view.id,
+    label: partitionLabel(view),
+    kind: view.kind,
+    version: view.version,
+    due: view.due,
+    balance: view.balance,
+    paymentStatus: isPaymentStatus(view.paymentStatus) ? view.paymentStatus : 'UNPAID',
+    settled: view.financialState === 'SETTLED',
+    invoiced: view.invoiced ?? false,
+    documentId: view.documentId ?? undefined,
+    lines: (view.lines ?? []).map((line) => ({
+      lineId: line.lineId ?? '',
+      description: line.description ?? '',
+      quantity: String(line.quantity ?? ''),
+    })),
+  };
+}
+
+const isKind = (kind: string | undefined): kind is Partition['kind'] => kind === 'ITEMS' || kind === 'AMOUNT';
+
+/** "Parte 2 de 3" for an equal part; otherwise its label, or what it holds. */
+function partitionLabel({ label, kind, partNo, parts }: PartitionView): string {
+  if (partNo && parts) return `Parte ${partNo} de ${parts}`;
+  if (label) return label;
+  return kind === 'ITEMS' ? 'Por artigos' : 'Por valor';
+}
