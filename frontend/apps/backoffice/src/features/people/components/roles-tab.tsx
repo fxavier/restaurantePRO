@@ -12,20 +12,19 @@ import {
 import { Pencil, ShieldPlus } from 'lucide-react';
 import { useState } from 'react';
 import { useRoles } from '../hooks/use-people-queries';
+import type { RoleSummary } from '../types';
 import { FormDialog } from './form-dialog';
 import { ListCard } from './list-card';
 import { RoleForm } from './role-form';
-
-type Open = { kind: 'new' } | { kind: 'edit'; roleId: string } | null;
 
 /** "Funções" (§5, RBAC): each role and the permissions it grants wherever it is assigned. */
 export function RolesTab() {
   const [page, setPage] = useState(0);
   const roles = useRoles(page);
-  const [open, setOpen] = useState<Open>(null);
-  const close = () => setOpen(null);
+  const [creating, setCreating] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   // The role as the list holds it now, so a conflict's refetch reaches the open form.
-  const editing = open?.kind === 'edit' ? roles.data?.rows.find((role) => role.id === open.roleId) : undefined;
+  const editing = roles.data?.rows.find((role) => role.id === editingId);
 
   return (
     <>
@@ -33,7 +32,7 @@ export function RolesTab() {
         title="Funções"
         description="Cada função concede permissões em todas as lojas onde é atribuída."
         actions={
-          <Button onClick={() => setOpen({ kind: 'new' })}>
+          <Button onClick={() => setCreating(true)}>
             <ShieldPlus aria-hidden="true" />
             Nova função
           </Button>
@@ -57,32 +56,7 @@ export function RolesTab() {
             </TableHeader>
             <TableBody>
               {rows.map((role) => (
-                <TableRow key={role.id}>
-                  <TableCell className="font-medium">{role.name}</TableCell>
-                  <TableCell className="whitespace-normal">
-                    <span className="sr-only">{role.permissions?.length ?? 0} permissões: </span>
-                    <span className="flex flex-wrap gap-1">
-                      {role.permissions?.map((permission) => (
-                        <Badge key={permission} variant="secondary" className="font-mono normal-case">
-                          {permission}
-                        </Badge>
-                      ))}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex justify-end">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        aria-label={`Editar ${role.name}`}
-                        onClick={() => setOpen({ kind: 'edit', roleId: role.id ?? '' })}
-                      >
-                        <Pencil aria-hidden="true" />
-                        Editar
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
+                <RoleRow key={role.id} role={role} onEdit={() => setEditingId(role.id ?? '')} />
               ))}
             </TableBody>
           </Table>
@@ -91,19 +65,47 @@ export function RolesTab() {
       <FormDialog
         title="Nova função"
         description="Dê-lhe um nome e as permissões que concede. Atribua-a depois a empregados ou a contas."
-        open={open?.kind === 'new'}
-        onClose={close}
+        open={creating}
+        onClose={() => setCreating(false)}
       >
-        <RoleForm onClose={close} />
+        <RoleForm onClose={() => setCreating(false)} />
       </FormDialog>
       <FormDialog
-        title={`Editar a função ${editing?.name ?? ''}`}
+        title={`Editar a função ${editing?.name}`}
         description="As alterações valem de imediato para todos os que têm esta função."
-        open={open?.kind === 'edit' && editing !== undefined}
-        onClose={close}
+        open={editing !== undefined}
+        onClose={() => setEditingId(null)}
       >
-        <RoleForm role={editing} onClose={close} />
+        <RoleForm role={editing} onClose={() => setEditingId(null)} />
       </FormDialog>
     </>
+  );
+}
+
+/** One role: its name and the permissions it grants, each a code. */
+function RoleRow({ role, onEdit }: { role: RoleSummary; onEdit: () => void }) {
+  const permissions = role.permissions ?? [];
+  return (
+    <TableRow>
+      <TableCell className="font-medium">{role.name}</TableCell>
+      <TableCell className="whitespace-normal">
+        <span className="sr-only">{permissions.length} permissões: </span>
+        <span className="flex flex-wrap gap-1">
+          {permissions.map((permission) => (
+            <Badge key={permission} variant="secondary" className="font-mono normal-case">
+              {permission}
+            </Badge>
+          ))}
+        </span>
+      </TableCell>
+      <TableCell>
+        <div className="flex justify-end">
+          <Button variant="outline" size="sm" aria-label={`Editar ${role.name}`} onClick={onEdit}>
+            <Pencil aria-hidden="true" />
+            Editar
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
   );
 }

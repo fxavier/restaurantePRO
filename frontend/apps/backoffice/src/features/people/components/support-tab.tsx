@@ -23,7 +23,8 @@ import { useState } from 'react';
 import { isStepUpRequired } from '../../../lib/step-up';
 import { useRevokeSupport } from '../hooks/use-people-commands';
 import { usePeopleStepUp } from '../hooks/use-people-step-up';
-import { useSupportGrants, useUsers } from '../hooks/use-people-queries';
+import { useSupportAccounts } from '../hooks/use-choices';
+import { useSupportGrants } from '../hooks/use-people-queries';
 import { useDisplayTimeZone } from '../hooks/use-time-zone';
 import type { SupportGrantSummary } from '../types';
 import { CommandError } from './command-error';
@@ -41,9 +42,7 @@ type Revocation = { grantId: string; idempotencyKey: string };
 export function SupportTab() {
   const [page, setPage] = useState(0);
   const grants = useSupportGrants(page);
-  // The support accounts, to name each grant's account and to choose one; one page holds a company's few accounts.
-  const accounts = useUsers(0).data?.rows ?? [];
-  const usernameOf = (id: string | undefined) => accounts.find((account) => account.id === id)?.username ?? id ?? '';
+  const { supportAccounts, usernameOf } = useSupportAccounts();
   const timeZone = useDisplayTimeZone();
   const revoke = useRevokeSupport();
   const stepUp = usePeopleStepUp();
@@ -86,28 +85,14 @@ export function SupportTab() {
             </TableHeader>
             <TableBody>
               {rows.map((grant) => (
-                <TableRow key={grant.id}>
-                  <TableCell className="font-mono">{usernameOf(grant.accountId)}</TableCell>
-                  <TableCell className="whitespace-normal">{grant.reason}</TableCell>
-                  <TableCell className="tabular-nums">{formatInstant(grant.validUntil, timeZone)}</TableCell>
-                  <TableCell>{grant.status && <StatusBadge status={grant.status} statuses={grantStatuses} />}</TableCell>
-                  <TableCell>
-                    {grant.status === 'ACTIVE' && (
-                      <div className="flex justify-end">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          aria-label={`Revogar o acesso de ${usernameOf(grant.accountId)}`}
-                          disabled={revoke.isPending}
-                          onClick={() => setToRevoke(grant)}
-                        >
-                          <Ban aria-hidden="true" />
-                          Revogar
-                        </Button>
-                      </div>
-                    )}
-                  </TableCell>
-                </TableRow>
+                <GrantRow
+                  key={grant.id}
+                  grant={grant}
+                  username={usernameOf(grant.accountId)}
+                  validUntil={formatInstant(grant.validUntil, timeZone)}
+                  revoking={revoke.isPending}
+                  onRevoke={() => setToRevoke(grant)}
+                />
               ))}
             </TableBody>
           </Table>
@@ -119,27 +104,68 @@ export function SupportTab() {
         open={granting}
         onClose={() => setGranting(false)}
       >
-        <GrantForm supportAccounts={accounts.filter((account) => account.support)} onClose={() => setGranting(false)} />
+        <GrantForm supportAccounts={supportAccounts} onClose={() => setGranting(false)} />
       </FormDialog>
-      <AlertDialog open={toRevoke !== null} onOpenChange={(open) => !open && setToRevoke(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Revogar o acesso de {usernameOf(toRevoke?.accountId)}?</AlertDialogTitle>
-            <AlertDialogDescription>A pessoa de suporte deixa de entrar na empresa de imediato.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              onClick={() => toRevoke && revokeOne({ grantId: toRevoke.id ?? '', idempotencyKey: crypto.randomUUID() })}
-            >
-              Revogar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <RevokeGrantDialog
+        username={toRevoke ? usernameOf(toRevoke.accountId) : null}
+        onCancel={() => setToRevoke(null)}
+        // One revocation intent: a new key here, the same one for "Tentar novamente" (FC §8).
+        onConfirm={() => revokeOne({ grantId: toRevoke?.id ?? '', idempotencyKey: crypto.randomUUID() })}
+      />
       {stepUp.dialog}
     </div>
+  );
+}
+
+type GrantRowProps = {
+  grant: SupportGrantSummary;
+  username: string;
+  validUntil: string;
+  revoking: boolean;
+  onRevoke: () => void;
+};
+
+/** One grant: the account, why, until when, its state, and "Revogar" while it is active. */
+function GrantRow({ grant, username, validUntil, revoking, onRevoke }: GrantRowProps) {
+  return (
+    <TableRow>
+      <TableCell className="font-mono">{username}</TableCell>
+      <TableCell className="whitespace-normal">{grant.reason}</TableCell>
+      <TableCell className="tabular-nums">{validUntil}</TableCell>
+      <TableCell>{grant.status && <StatusBadge status={grant.status} statuses={grantStatuses} />}</TableCell>
+      <TableCell>
+        {grant.status === 'ACTIVE' && (
+          <div className="flex justify-end">
+            <Button variant="outline" size="sm" aria-label={`Revogar o acesso de ${username}`} disabled={revoking} onClick={onRevoke}>
+              <Ban aria-hidden="true" />
+              Revogar
+            </Button>
+          </div>
+        )}
+      </TableCell>
+    </TableRow>
+  );
+}
+
+type RevokeGrantDialogProps = { username: string | null; onConfirm: () => void; onCancel: () => void };
+
+/** Revoking ends the support person's access at once, so it is confirmed first. */
+function RevokeGrantDialog({ username, onConfirm, onCancel }: RevokeGrantDialogProps) {
+  return (
+    <AlertDialog open={username !== null} onOpenChange={(open) => !open && onCancel()}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Revogar o acesso de {username}?</AlertDialogTitle>
+          <AlertDialogDescription>A pessoa de suporte deixa de entrar na empresa de imediato.</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" onClick={onConfirm}>
+            Revogar
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

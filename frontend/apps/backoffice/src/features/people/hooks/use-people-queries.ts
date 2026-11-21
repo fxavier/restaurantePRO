@@ -14,6 +14,8 @@ import type {
 /** Every people query starts with this, so a command refreshes what it may have changed in one invalidation. */
 export const PEOPLE_KEY = ['backoffice', 'people'] as const;
 export const PAGE_SIZE = 20;
+/** One page large enough for a company's stores, roles and employees in a picker (simplification, no paging). */
+const CHOICES = { page: 0, size: 100 };
 
 type Paged<Row> = { content?: Row[]; totalElements?: number } | undefined;
 type PageQuery = { page: number; size: number };
@@ -31,70 +33,31 @@ function usePagedList<Row>(key: readonly unknown[], page: number, fetchPage: (ap
   });
 }
 
-/** One page large enough for a company's stores and roles; the pickers are not tables (simplification, no paging). */
-const CHOICES = { page: 0, size: 100 };
-
-/** Every role, for the pickers and for naming the roles of an account or an assignment. */
-export function useRoleChoices() {
+/** A whole list at once: a picker's choices, or an employee's assignments. */
+function useWholeList<Row>(key: readonly unknown[], fetchAll: (api: ApiClient) => Promise<Row[] | undefined>) {
   const api = useApi();
-  return useQuery({
-    queryKey: [...PEOPLE_KEY, 'role-choices'],
-    queryFn: async (): Promise<RoleSummary[]> =>
-      (await api.GET('/api/v1/backoffice/roles', { params: { query: CHOICES } })).data?.content ?? [],
-  });
+  return useQuery({ queryKey: [...PEOPLE_KEY, ...key], queryFn: async (): Promise<Row[]> => (await fetchAll(api)) ?? [] });
 }
 
-/** The stores the user may act in, for the pickers and for naming an assignment's store. */
-export function useStoreChoices() {
-  const api = useApi();
-  return useQuery({
-    queryKey: [...PEOPLE_KEY, 'store-choices'],
-    queryFn: async (): Promise<StoreSummary[]> =>
-      (await api.GET('/api/v1/backoffice/stores', { params: { query: CHOICES } })).data?.content ?? [],
-  });
-}
+// The lists of the tabs, one server page each.
+export const useRoles = (page: number) =>
+  usePagedList<RoleSummary>(['roles'], page, async (api, query) => (await api.GET('/api/v1/backoffice/roles', { params: { query } })).data);
+export const useUsers = (page: number) =>
+  usePagedList<UserSummary>(['users'], page, async (api, query) => (await api.GET('/api/v1/backoffice/users', { params: { query } })).data);
+export const useSupportGrants = (page: number) =>
+  usePagedList<SupportGrantSummary>(['support-grants'], page, async (api, query) => (await api.GET('/api/v1/backoffice/support-grants', { params: { query } })).data);
+/** The company's employees, or only those assigned to the store chosen in the top bar. */
+export const useEmployees = (storeId: string | undefined, page: number) =>
+  usePagedList<EmployeeSummary>(['employees', storeId], page, async (api, query) => (await api.GET('/api/v1/backoffice/employees', { params: { query: { storeId, ...query } } })).data);
+
+// The pickers' choices, which also name the ids other rows hold.
+export const useRoleChoices = () =>
+  useWholeList<RoleSummary>(['role-choices'], async (api) => (await api.GET('/api/v1/backoffice/roles', { params: { query: CHOICES } })).data?.content);
+export const useStoreChoices = () =>
+  useWholeList<StoreSummary>(['store-choices'], async (api) => (await api.GET('/api/v1/backoffice/stores', { params: { query: CHOICES } })).data?.content);
+export const useEmployeeChoices = () =>
+  useWholeList<EmployeeSummary>(['employee-choices'], async (api) => (await api.GET('/api/v1/backoffice/employees', { params: { query: CHOICES } })).data?.content);
 
 /** The stores where an employee holds a role, each with that role (`EmployeeStoreAssignment`). */
-export function useAssignments(employeeId: string) {
-  const api = useApi();
-  return useQuery({
-    queryKey: [...PEOPLE_KEY, 'assignments', employeeId],
-    queryFn: async (): Promise<AssignmentSummary[]> =>
-      (await api.GET('/api/v1/backoffice/employees/{id}/assignments', { params: { path: { id: employeeId } } })).data ?? [],
-  });
-}
-
-export function useRoles(page: number) {
-  return usePagedList<RoleSummary>(['roles'], page, async (api, query) =>
-    (await api.GET('/api/v1/backoffice/roles', { params: { query } })).data,
-  );
-}
-
-/** The employees an account can be linked to, for the picker (one large page, like the other pickers). */
-export function useEmployeeChoices() {
-  const api = useApi();
-  return useQuery({
-    queryKey: [...PEOPLE_KEY, 'employee-choices'],
-    queryFn: async (): Promise<EmployeeSummary[]> =>
-      (await api.GET('/api/v1/backoffice/employees', { params: { query: CHOICES } })).data?.content ?? [],
-  });
-}
-
-export function useUsers(page: number) {
-  return usePagedList<UserSummary>(['users'], page, async (api, query) =>
-    (await api.GET('/api/v1/backoffice/users', { params: { query } })).data,
-  );
-}
-
-export function useSupportGrants(page: number) {
-  return usePagedList<SupportGrantSummary>(['support-grants'], page, async (api, query) =>
-    (await api.GET('/api/v1/backoffice/support-grants', { params: { query } })).data,
-  );
-}
-
-/** The company's employees, or only those assigned to the store chosen in the top bar. */
-export function useEmployees(storeId: string | undefined, page: number) {
-  return usePagedList<EmployeeSummary>(['employees', storeId], page, async (api, query) =>
-    (await api.GET('/api/v1/backoffice/employees', { params: { query: { storeId, ...query } } })).data,
-  );
-}
+export const useAssignments = (employeeId: string) =>
+  useWholeList<AssignmentSummary>(['assignments', employeeId], async (api) => (await api.GET('/api/v1/backoffice/employees/{id}/assignments', { params: { path: { id: employeeId } } })).data);

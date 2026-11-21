@@ -1,9 +1,26 @@
-import { useRoleChoices, useStoreChoices } from './use-people-queries';
+import { useEmployeeChoices, useRoleChoices, useStoreChoices, useUsers } from './use-people-queries';
 
 export type Choice = { value: string; label: string };
 
 function choicesOf(items: readonly { id?: string; name?: string }[] | undefined): Choice[] {
   return (items ?? []).map(({ id, name }) => ({ value: id ?? '', label: name ?? '' }));
+}
+
+/**
+ * The support accounts, to name each grant's account and to choose one; the first page of accounts holds a company's
+ * few support accounts (simplification, no paging).
+ */
+export function useSupportAccounts() {
+  const accounts = useUsers(0).data?.rows ?? [];
+  return {
+    supportAccounts: accounts.filter((account) => account.support),
+    usernameOf: (id: string | undefined) => accounts.find((account) => account.id === id)?.username ?? id ?? '',
+  };
+}
+
+/** The employees an account can be linked to, as picker choices. */
+export function useEmployeeChoiceList(): Choice[] {
+  return choicesOf(useEmployeeChoices().data);
 }
 
 /** The stores and roles as picker choices, and their names by id (an unknown id shows as itself). */

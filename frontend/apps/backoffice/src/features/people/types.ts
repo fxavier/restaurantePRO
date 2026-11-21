@@ -1,8 +1,7 @@
 import type { components } from '@restaurantpro/api-client';
 
 type Schemas = components['schemas'];
-const DTO = 'com.xavier.backend.identity.model.dto';
-type Dto<Name extends string> = Schemas[`${typeof DTO}.${Name}` & keyof Schemas];
+type Dto<Name extends string> = Schemas[`com.xavier.backend.identity.model.dto.${Name}` & keyof Schemas];
 
 export type EmployeeSummary = Dto<'EmployeeSummary'>;
 export type EmployeeCreateRequest = Dto<'EmployeeCreateRequest'>;

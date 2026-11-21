@@ -61,6 +61,63 @@ describe('people tabs', () => {
   });
 });
 
+describe('list states', () => {
+  it('says so when there is nothing yet, and offers to create the first one', async () => {
+    peopleServer({ roles: [] });
+
+    renderApp('/people?tab=funcoes');
+
+    expect(await screen.findByText('Ainda não há funções.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Nova função' })).toBeEnabled();
+  });
+
+  it('shows "Sem ligação" with a retry when the list cannot be reached', async () => {
+    peopleServer();
+    let calls = 0;
+    server.use(
+      http.get(api('/api/v1/backoffice/employees'), () => {
+        calls += 1;
+        return calls <= 3 ? problem(503, 'BACKEND_UNAVAILABLE') : HttpResponse.json({ content: [maria], page: 0, size: 20, totalElements: 1 });
+      }),
+    );
+    const { user } = renderApp('/people');
+
+    expect(await screen.findByText('Sem ligação ao serviço.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Novo empregado' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+    expect(await screen.findByRole('cell', { name: 'Maria Sitoe' })).toBeInTheDocument();
+  });
+
+  it("shows the API's refusal to read the list", async () => {
+    peopleServer();
+    server.use(http.get(api('/api/v1/backoffice/users'), () => problem(403, 'HTTP_403', 'Forbidden')));
+
+    renderApp('/people?tab=utilizadores');
+
+    expect(await screen.findByText('Sem permissão para ver as contas.')).toBeInTheDocument();
+  });
+
+  it('asks for a fresh second factor when reading the list needs it, and comes back to this tab', async () => {
+    peopleServer();
+    server.use(http.get(api('/api/v1/backoffice/support-grants'), () => stepUpRequired(120)));
+    const { user, leave } = renderApp('/people?tab=suporte');
+
+    expect(await screen.findByText('Para ver os acessos de suporte, confirme a sua identidade.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Confirmar identidade' }));
+
+    expect(leave).toHaveBeenCalledWith('/bff/step-up?acr_values=2&max_age=120&return=%2Fpeople%3Ftab%3Dsuporte');
+  });
+
+  it('says so when the user holds none of the tabs’ permissions', async () => {
+    peopleServer({ session: { ...admin, permissions: ['PERM_CASH_VIEW'] } });
+
+    renderApp('/people');
+
+    expect(await screen.findByText('Sem permissão para gerir empregados, funções ou utilizadores.')).toBeInTheDocument();
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+  });
+});
+
 describe('employees tab', () => {
   it("lists the company's employees with their code and state, one server page at a time", async () => {
     const state = peopleServer();
