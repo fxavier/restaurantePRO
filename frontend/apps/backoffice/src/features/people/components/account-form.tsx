@@ -9,6 +9,7 @@ import { useSaveAccount } from '../hooks/use-people-commands';
 import { accountSchema } from '../schemas';
 import type { UserSummary } from '../types';
 import { CheckboxGroup } from './checkbox-group';
+import { ChoicesError } from './choices-error';
 import { FormFooter } from './form-footer';
 import { SelectField, TextField } from './form-fields';
 
@@ -29,7 +30,7 @@ function valuesOf({ username = '', active = true, support = false, roleIds = [],
  */
 export function AccountForm({ account, onClose }: AccountFormProps) {
   const save = useSaveAccount();
-  const roles = useStoreAndRoleChoices();
+  const { roles } = useStoreAndRoleChoices();
   const employees = useEmployeeChoiceList();
   const form = useForm<AccountValues>({ resolver: zodResolver(accountSchema), defaultValues: valuesOf(account) });
   const loaded = useLoadedVersion(form, save, account, () => valuesOf(account));
@@ -51,22 +52,16 @@ export function AccountForm({ account, onClose }: AccountFormProps) {
           render={({ field }) => (
             <CheckboxGroup
               legend="Funções"
-              choices={roles.roleChoices}
+              choices={roles.choices}
               value={field.value}
               onChange={field.onChange}
-              emptyMessage={roles.rolesPending ? 'A carregar…' : 'Ainda não há funções.'}
-            />
+              emptyMessage={roles.pending ? 'A carregar…' : roles.error ? '' : 'Ainda não há funções.'}
+            >
+              <ChoicesError list={roles} />
+            </CheckboxGroup>
           )}
         />
-        {!support && (
-          <SelectField
-            control={form.control}
-            name="employeeId"
-            label="Empregado"
-            placeholder="Nenhum"
-            choices={employees}
-          />
-        )}
+        {!support && <SelectField control={form.control} name="employeeId" label="Empregado" placeholder="Nenhum" list={employees} />}
         <FormFooter
           rootMessage={form.formState.errors.root?.message}
           generalError={command.generalError}

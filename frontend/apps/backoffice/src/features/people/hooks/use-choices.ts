@@ -1,42 +1,55 @@
-import { useEmployeeChoices, useRoleChoices, useStoreChoices, useUsers } from './use-people-queries';
+import type { UseQueryResult } from '@tanstack/react-query';
+import { useAccountChoices, useEmployeeChoices, useRoleChoices, useStoreChoices } from './use-people-queries';
 
 export type Choice = { value: string; label: string };
 
-function choicesOf(items: readonly { id?: string; name?: string }[] | undefined): Choice[] {
-  return (items ?? []).map(({ id, name }) => ({ value: id ?? '', label: name ?? '' }));
-}
+/** One picker's choices as the server answered them: still loading, refused or unreachable, or there. */
+export type ChoiceList = {
+  /** What it lists, for its refusal: "Sem permissão para ver {what}." */
+  what: string;
+  choices: Choice[];
+  pending: boolean;
+  error: Error | null;
+  retry: () => void;
+  /** The label of an id; an id the list does not hold (or a list that failed) shows as itself. */
+  nameOf: (id: string | undefined) => string;
+};
 
-/**
- * The support accounts, to name each grant's account and to choose one; the first page of accounts holds a company's
- * few support accounts (simplification, no paging).
- */
-export function useSupportAccounts() {
-  const accounts = useUsers(0).data?.rows ?? [];
+function choiceList<Item>(
+  what: string,
+  query: UseQueryResult<Item[]>,
+  toChoice: (item: Item) => Choice,
+  keep: (item: Item) => boolean = () => true,
+): ChoiceList {
+  const all = (query.data ?? []).map(toChoice);
   return {
-    supportAccounts: accounts.filter((account) => account.support),
-    usernameOf: (id: string | undefined) => accounts.find((account) => account.id === id)?.username ?? id ?? '',
+    what,
+    choices: (query.data ?? []).filter(keep).map(toChoice),
+    pending: query.isPending,
+    error: query.error,
+    retry: () => void query.refetch(),
+    nameOf: (id) => all.find((choice) => choice.value === id)?.label ?? id ?? '',
   };
 }
 
-/** The employees an account can be linked to, as picker choices. */
-export function useEmployeeChoiceList(): Choice[] {
-  return choicesOf(useEmployeeChoices().data);
+const named = ({ id, name }: { id?: string; name?: string }): Choice => ({ value: id ?? '', label: name ?? '' });
+
+/** The support accounts to choose one from; `nameOf` names any account, as a grant's row does. */
+export function useSupportAccounts(): ChoiceList {
+  return choiceList(
+    'as contas de suporte',
+    useAccountChoices(),
+    ({ id, username }) => ({ value: id ?? '', label: username ?? '' }),
+    (account) => account.support === true,
+  );
 }
 
-/** The stores and roles as picker choices, and their names by id (an unknown id shows as itself). */
-export function useStoreAndRoleChoices() {
-  const stores = useStoreChoices();
-  const roles = useRoleChoices();
-  const storeChoices = choicesOf(stores.data);
-  const roleChoices = choicesOf(roles.data);
-  const nameIn = (choices: Choice[]) => (id: string | undefined) =>
-    choices.find((choice) => choice.value === id)?.label ?? id ?? '';
-  return {
-    storeChoices,
-    roleChoices,
-    storesPending: stores.isPending,
-    rolesPending: roles.isPending,
-    storeName: nameIn(storeChoices),
-    roleName: nameIn(roleChoices),
-  };
+/** The employees an account can be linked to. */
+export function useEmployeeChoiceList(): ChoiceList {
+  return choiceList('os empregados', useEmployeeChoices(), named);
+}
+
+/** The stores and the roles, the pair an employee is hired or assigned with. */
+export function useStoreAndRoleChoices(): { stores: ChoiceList; roles: ChoiceList } {
+  return { stores: choiceList('as lojas', useStoreChoices(), named), roles: choiceList('as funções', useRoleChoices(), named) };
 }

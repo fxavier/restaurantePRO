@@ -16,7 +16,7 @@ export function AccountsTab() {
   const [page, setPage] = useState(0);
   const users = useUsers(page);
   // Started with the list, so the roles' names are there when the rows are.
-  const { roleName } = useStoreAndRoleChoices();
+  const roleName = useStoreAndRoleChoices().roles.nameOf;
   const { creating, startCreating, stopCreating, editing, startEditing, stopEditing } = useEditing(users.data?.rows);
 
   return (

@@ -21,7 +21,9 @@ import { StoreAndRoleFields } from './form-fields';
 export function AssignmentsPanel({ employee, onClose }: { employee: EmployeeSummary; onClose: () => void }) {
   const employeeId = employee.id ?? '';
   const assignments = useAssignments(employeeId);
-  const { storeName, roleName } = useStoreAndRoleChoices();
+  const { stores, roles } = useStoreAndRoleChoices();
+  const storeName = stores.nameOf;
+  const roleName = roles.nameOf;
   const remove = useRemoveAssignment(employeeId);
   const stepUp = usePeopleStepUp();
   const removeOne = (assignmentId: string) =>

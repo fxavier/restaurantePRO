@@ -6,11 +6,12 @@ import { useFormCommand } from '../hooks/use-form-command';
 import { useGrantSupport } from '../hooks/use-people-commands';
 import { nextIntent, type Intent } from '../intent';
 import { grantSchema, toGrantRequest, type GrantValues } from '../schemas';
-import type { SupportGrantRequest, UserSummary } from '../types';
+import type { ChoiceList } from '../hooks/use-choices';
+import type { SupportGrantRequest } from '../types';
 import { FormFooter } from './form-footer';
 import { SelectField, TextField } from './form-fields';
 
-type GrantFormProps = { supportAccounts: UserSummary[]; onClose: () => void };
+type GrantFormProps = { supportAccounts: ChoiceList; onClose: () => void };
 
 /**
  * "Conceder acesso de suporte" (D83): which support account, the support person's identifier in the operator's
@@ -38,8 +39,8 @@ export function GrantForm({ supportAccounts, onClose }: GrantFormProps) {
           control={form.control}
           name="accountId"
           label="Conta de suporte"
-          placeholder={supportAccounts.length ? 'Escolher conta' : 'Não há contas de suporte'}
-          choices={supportAccounts.map((account) => ({ value: account.id ?? '', label: account.username ?? '' }))}
+          placeholder={supportAccounts.choices.length || supportAccounts.error ? 'Escolher conta' : 'Não há contas de suporte'}
+          list={supportAccounts}
         />
         <TextField control={form.control} name="subject" label="Identificador da pessoa de suporte" maxLength={255} />
         <TextField
