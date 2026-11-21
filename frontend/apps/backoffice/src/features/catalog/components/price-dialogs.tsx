@@ -16,18 +16,18 @@ import {
   type PriceListValues,
   type PriceValues,
 } from '../schemas';
-import type { ItemPriceSummary, PriceListSummary } from '../types';
+import type { ItemPriceSummary } from '../types';
 import { CutListNotice } from './cut-list-notice';
 import { FormDialog } from './form-dialog';
 import { FormFooter, SelectField, showOnFields, TextField } from './form-parts';
 
-/** "Nova tabela de preços": a price list of the store, in the store's currency. */
-export function PriceListDialog({ storeId, onCreated }: { storeId: string; onCreated: (list: PriceListSummary) => void }) {
+/** "Nova tabela de preços": the store's one price list (`price_list_store_uk`), in the store's currency. */
+export function PriceListDialog({ storeId }: { storeId: string }) {
   const [open, setOpen] = useState(false);
   return (
     <FormDialog
       title="Nova tabela de preços"
-      description="Uma tabela de preços da loja (por exemplo, Sala ou Esplanada), na moeda da loja."
+      description="A tabela de preços da loja, na moeda da loja. Cada loja tem uma só tabela."
       open={open}
       onOpenChange={setOpen}
       trigger={
@@ -37,18 +37,16 @@ export function PriceListDialog({ storeId, onCreated }: { storeId: string; onCre
         </Button>
       }
     >
-      <PriceListForm
-        storeId={storeId}
-        onDone={(list) => {
-          setOpen(false);
-          if (list) onCreated(list);
-        }}
-      />
+      <PriceListForm storeId={storeId} onDone={() => setOpen(false)} />
     </FormDialog>
   );
 }
 
-function PriceListForm({ storeId, onDone }: { storeId: string; onDone: (list?: PriceListSummary) => void }) {
+/**
+ * The list's name. A 409 means another user gave the store its list first: the command reads the store's lists again,
+ * and the tab then shows that list in place of this dialog.
+ */
+function PriceListForm({ storeId, onDone }: { storeId: string; onDone: () => void }) {
   const form = useForm<PriceListValues>({ resolver: zodResolver(priceListSchema), defaultValues: { name: '' } });
   const create = useCreatePriceList(storeId);
   const onSubmit = form.handleSubmit(({ name }) =>

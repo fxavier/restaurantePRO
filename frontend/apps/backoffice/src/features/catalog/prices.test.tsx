@@ -11,7 +11,7 @@ import {
   type ItemPriceSummary,
   type PriceListSummary,
 } from './test-fixtures';
-import { api, baixa, signedIn } from '../../test/fixtures';
+import { api, baixa, problem, signedIn } from '../../test/fixtures';
 import { renderApp } from '../../test/render-app';
 import { server } from '../../test/server';
 
@@ -76,34 +76,57 @@ describe('Preços', () => {
 
     renderApp('/catalog?tab=precos');
 
-    expect(await screen.findByText('Escolha uma loja na barra superior para ver as tabelas de preços.')).toBeInTheDocument();
+    expect(await screen.findByText('Escolha uma loja na barra superior para ver a tabela de preços.')).toBeInTheDocument();
     expect(state.listReads).toEqual([]);
   });
 
-  it("lists the store's price lists and the prices of the chosen one, in the list's currency", async () => {
+  it("shows the store's one price list and its prices, in the list's currency, with no way to add a second", async () => {
     const state = pricesServer();
 
     renderApp(PRICES);
 
     await screen.findByRole('table', { name: 'Preços da tabela Sala' });
+    expect(screen.getByText('Tabela Sala')).toBeInTheDocument();
     expect(priceRows()).toEqual([['Bife da VaziaC09', '—', formatMoney({ amount: '450.00', currency: 'MZN' })]]);
-    expect(screen.getByRole('button', { name: /Sala/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('button', { name: 'Nova tabela' })).not.toBeInTheDocument();
     expect(state.listReads).toEqual([`?storeId=${baixa.id}`]);
   });
 
-  it('creates a price list for the store', async () => {
+  it('creates the price list of a store that has none, and then offers no second one', async () => {
     const state = pricesServer({ lists: [], prices: [] });
 
     const { user } = renderApp(PRICES);
 
-    expect(await screen.findByText('Esta loja ainda não tem tabelas de preços.')).toBeInTheDocument();
+    expect(await screen.findByText('Esta loja ainda não tem tabela de preços.')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Nova tabela' }));
+    const dialog = screen.getByRole('dialog', { name: 'Nova tabela de preços' });
+    await user.type(within(dialog).getByLabelText('Nome'), 'Sala');
+    await user.click(within(dialog).getByRole('button', { name: 'Criar' }));
+
+    expect(await screen.findByText('Tabela Sala')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Nova tabela' })).not.toBeInTheDocument();
+    expect(state.sent).toEqual([{ method: 'POST', path: '/price-lists', body: { name: 'Sala', storeId: baixa.id } }]);
+  });
+
+  it('shows the list that won when another user gave the store its price list first', async () => {
+    const state = pricesServer({ lists: [], prices: [] });
+    server.use(
+      http.post(api('/api/v1/backoffice/catalog/price-lists'), () => {
+        state.lists.push(salaList);
+        return problem(409, 'CATALOG_CODE_TAKEN');
+      }),
+    );
+
+    const { user } = renderApp(PRICES);
+
+    await user.click(await screen.findByRole('button', { name: 'Nova tabela' }));
     const dialog = screen.getByRole('dialog', { name: 'Nova tabela de preços' });
     await user.type(within(dialog).getByLabelText('Nome'), 'Esplanada');
     await user.click(within(dialog).getByRole('button', { name: 'Criar' }));
 
-    expect(await screen.findByRole('button', { name: /Esplanada/ })).toBeInTheDocument();
-    expect(state.sent).toEqual([{ method: 'POST', path: '/price-lists', body: { name: 'Esplanada', storeId: baixa.id } }]);
+    expect(await screen.findByText('Tabela Sala')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByText('Este código já está a ser utilizado no catálogo.')).not.toBeInTheDocument();
   });
 
   it('prices an item, sending the amount as the decimal string typed, comma or point', async () => {

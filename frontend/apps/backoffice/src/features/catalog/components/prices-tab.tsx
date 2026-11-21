@@ -13,58 +13,37 @@ import {
   TableHeader,
   TableRow,
 } from '@restaurantpro/ui';
-import { useState } from 'react';
 import { useItems, usePriceLists, usePrices, useVariants } from '../hooks/use-catalog-queries';
 import type { ItemPriceSummary, ItemSummary, PriceListSummary } from '../types';
 import { LoadError } from './load-error';
 import { EditPriceDialog, NewPriceDialog, PriceListDialog } from './price-dialogs';
 import { ForStore } from './store-required';
 
-/** "Preços": the store's price lists, and the prices of the chosen one as the server holds them. */
+/** "Preços": the store's price list (the schema allows one per store) and its prices as the server holds them. */
 export function PricesTab({ storeId }: { storeId: string | undefined }) {
-  return <ForStore storeId={storeId} what="as tabelas de preços">{(id) => <StorePrices storeId={id} />}</ForStore>;
+  return <ForStore storeId={storeId} what="a tabela de preços">{(id) => <StorePrices storeId={id} />}</ForStore>;
 }
 
 function StorePrices({ storeId }: { storeId: string }) {
   const lists = usePriceLists(storeId);
-  const [chosenId, setChosenId] = useState<string | undefined>();
   if (lists.isError) {
     return <LoadError error={lists.error} onRetry={() => void lists.refetch()} forbidden="Sem permissão para ver os preços desta loja." />;
   }
-  const all = lists.data ?? [];
-  const chosen = all.find((list) => list.id === chosenId) ?? all[0];
+  const list = lists.data?.[0];
+  if (list) return <PriceListPrices key={list.id} list={list} />;
   return (
-    <div className="flex flex-col gap-4">
-      <Card>
-        <CardContent className="flex flex-wrap items-center gap-2">
-          <DataState
-            state={lists.isPending ? 'loading' : all.length ? 'ready' : 'empty'}
-            emptyMessage="Esta loja ainda não tem tabelas de preços."
-          >
-            <div role="group" aria-label="Tabelas de preços" className="flex flex-wrap gap-2">
-              {all.map((list) => (
-                <button
-                  key={list.id}
-                  type="button"
-                  aria-pressed={list.id === chosen?.id}
-                  onClick={() => setChosenId(list.id)}
-                  className="inline-flex h-9 items-center gap-2 rounded-md border bg-muted px-3 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
-                >
-                  {list.name}
-                  <span className="text-xs">{list.currency}</span>
-                </button>
-              ))}
-            </div>
-          </DataState>
-          {lists.data && (
-            <div className="ml-auto">
-              <PriceListDialog storeId={storeId} onCreated={(list) => setChosenId(list.id)} />
-            </div>
-          )}
-        </CardContent>
-      </Card>
-      {chosen && <PriceListPrices key={chosen.id} list={chosen} />}
-    </div>
+    <Card>
+      <CardContent className="flex flex-wrap items-center gap-2">
+        <DataState state={lists.isPending ? 'loading' : 'empty'} emptyMessage="Esta loja ainda não tem tabela de preços.">
+          {null}
+        </DataState>
+        {lists.data && (
+          <div className="ml-auto">
+            <PriceListDialog storeId={storeId} />
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

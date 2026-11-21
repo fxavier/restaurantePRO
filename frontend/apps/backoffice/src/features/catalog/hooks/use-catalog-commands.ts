@@ -46,14 +46,17 @@ export function useAddBarcode(itemId: string) {
   });
 }
 
-/** A new price list of the store; its currency is the store's, set by the server. */
+/**
+ * The store's price list (one per store); its currency is the store's, set by the server. The store's lists are read
+ * again however it ends, so a 409 (the store already has one) shows the list that won.
+ */
 export function useCreatePriceList(storeId: string) {
   const api = useApi();
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (name: string): Promise<PriceListSummary> =>
       (await api.POST('/api/v1/backoffice/catalog/price-lists', { body: { name, storeId } })).data as PriceListSummary,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: [...CATALOG_KEY, 'price-lists', storeId] }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: [...CATALOG_KEY, 'price-lists', storeId] }),
   });
 }
 
