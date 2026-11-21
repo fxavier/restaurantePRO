@@ -313,6 +313,7 @@ describe('accounts tab', () => {
     renderApp('/people?tab=utilizadores');
 
     const table = await screen.findByRole('table', { name: 'Contas do BackOffice' });
+    await within(table).findByText('Gerente');
     expect(bodyRows(table).map((row) => within(row).getAllByRole('cell').slice(0, 4).map((cell) => cell.textContent))).toEqual([
       ['ana.admin', 'Gerente', 'Conta', 'Ativo'],
       ['suporte.ops', '—', 'Suporte', 'Ativo'],

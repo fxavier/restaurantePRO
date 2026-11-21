@@ -110,6 +110,9 @@ test('people: a PIN reset that needs a fresh second factor hops to the step-up a
   expect(stored).not.toContain(PIN);
 
   await stepUp.getByRole('button', { name: 'Confirmar identidade' }).click();
-  await expect(page).toHaveURL(/\/bff\/step-up\?acr_values=2&max_age=300&return=%2Fpeople%3Ftab%3Dempregados$/);
+  await expect(page).toHaveURL(/\/bff\/step-up\?acr_values=2&max_age=300&return=/);
+  // Back to this tab, with the store the top bar chose for the only store.
+  const back = new URL(page.url()).searchParams.get('return')!;
+  expect(back).toBe(`/people?tab=empregados&storeId=${STORE}`);
   expect(pinBodies).toEqual([JSON.stringify({ pin: PIN })]);
 });
