@@ -64,8 +64,12 @@ export function PartitionCard({ orderId, partition, chosen, onChoose, buyer, blo
       )}
       <div className="flex flex-wrap gap-2">
         {can.collect && !partition.settled && (
-          <Button variant={chosen ? 'default' : 'outline'} size="touch" aria-pressed={chosen} disabled={disabled} onClick={onChoose}>
-            Cobrar {partition.label}
+          <Button variant={chosen ? 'default' : 'outline'} size="touch" aria-pressed={chosen}
+            aria-label={`Cobrar ${partition.label}`}
+            disabled={disabled}
+            onClick={onChoose}
+          >
+            Cobrar
           </Button>
         )}
         {invoiceable && (
@@ -94,12 +98,12 @@ export function PartitionCard({ orderId, partition, chosen, onChoose, buyer, blo
           <Button
             variant="ghost"
             size="touch"
-            className="ml-auto"
+            aria-label={`Cancelar ${partition.label}`}
             disabled={disabled || cancel.intent !== undefined}
             onClick={() => cancel.start({ partitionId: partition.id, version: partition.version }, undefined)}
           >
             <X aria-hidden="true" />
-            Cancelar {partition.label}
+            Cancelar
           </Button>
         )}
       </div>

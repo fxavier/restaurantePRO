@@ -150,11 +150,14 @@ function Bill({
 /** Stitch's three figures: the total, what is paid, and what is still outstanding, as the server has them. */
 function Summary({ settlement }: { settlement: Settlement }) {
   return (
-    <dl role="group" aria-label="Resumo da conta" className="flex flex-wrap gap-2">
-      <Stat label="Total da conta" value={settlement.due} />
-      <Stat label="Pago" value={settlement.paid} className="text-primary" />
-      <Stat label="Saldo pendente" value={settlement.balance} className="text-warning" />
-    </dl>
+    // The group on a wrapper: a role on the <dl> itself would orphan its terms (axe dlitem).
+    <div role="group" aria-label="Resumo da conta">
+      <dl className="flex flex-wrap gap-2">
+        <Stat label="Total da conta" value={settlement.due} />
+        <Stat label="Pago" value={settlement.paid} className="text-primary" />
+        <Stat label="Saldo pendente" value={settlement.balance} className="text-warning" />
+      </dl>
+    </div>
   );
 }
 

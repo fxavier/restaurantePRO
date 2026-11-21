@@ -47,11 +47,12 @@ export function ClosingPanel({ settlement, buyer, blocked, onClosed, children, c
           Fechar conta
         </Button>
       )}
-      <div className="grid grid-cols-2 gap-2">
+      <div className="flex flex-wrap gap-2">
         {can.collect && (
           <Button
             variant="outline"
             size="touch"
+            className="flex-1"
             disabled={busy || !canIssueDocument(settlement) || !buyer.ready}
             onClick={() => issue.start(buyer.buyer, undefined)}
           >
