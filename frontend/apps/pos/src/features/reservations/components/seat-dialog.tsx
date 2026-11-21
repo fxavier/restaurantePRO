@@ -4,7 +4,7 @@ import { useSeat } from '../hooks/use-reservation-commands';
 import { guestsLabel, seatsLabel } from '../labels';
 import { refusal } from '../messages';
 import type { ReservableArea, Reservation } from '../reservation';
-import { CommandDialog, CommandFooter } from './command-footer';
+import { CommandDialog, CommandFooter, giveUp } from './command-footer';
 
 type Props = {
   reservation: Reservation;
@@ -26,6 +26,7 @@ export function SeatDialog({ reservation, areas, onClose, onSeated }: Props) {
   const seat = useSeat({ onSeated });
   const awaitingRetry = !seat.pending && seat.intent !== undefined;
   const locked = seat.pending || awaitingRetry;
+  const close = giveUp(seat, onClose);
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -34,7 +35,7 @@ export function SeatDialog({ reservation, areas, onClose, onSeated }: Props) {
   }
 
   return (
-    <CommandDialog pending={seat.pending} onClose={onClose}>
+    <CommandDialog pending={seat.pending} onClose={close}>
         <form onSubmit={submit} className="flex flex-col gap-4">
           <DialogHeader>
             <DialogTitle>Sentar {reservation.contactName}</DialogTitle>
@@ -85,7 +86,7 @@ export function SeatDialog({ reservation, areas, onClose, onSeated }: Props) {
             pending={seat.pending}
             awaitingRetry={awaitingRetry}
             disabled={!tableId}
-            onClose={onClose}
+            onClose={close}
           />
         </form>
     </CommandDialog>

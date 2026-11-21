@@ -3,7 +3,7 @@ import { type FormEvent, useState } from 'react';
 import { useCancelReservation, useMarkNoShow } from '../hooks/use-reservation-commands';
 import { refusal } from '../messages';
 import type { Reservation } from '../reservation';
-import { CommandDialog, CommandFooter } from './command-footer';
+import { CommandDialog, CommandFooter, giveUp } from './command-footer';
 
 type Props = { reservation: Reservation; onClose: () => void };
 
@@ -15,6 +15,7 @@ export function CancelDialog({ reservation, onClose }: Props) {
   const [reason, setReason] = useState('');
   const cancel = useCancelReservation(reservation.id, { onDone: onClose });
   const awaitingRetry = !cancel.pending && cancel.intent !== undefined;
+  const close = giveUp(cancel, onClose);
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -23,7 +24,7 @@ export function CancelDialog({ reservation, onClose }: Props) {
   }
 
   return (
-    <CommandDialog pending={cancel.pending} onClose={onClose}>
+    <CommandDialog pending={cancel.pending} onClose={close}>
       <form onSubmit={submit} className="flex flex-col gap-4">
         <DialogHeader>
           <DialogTitle>Cancelar a reserva de {reservation.contactName}</DialogTitle>
@@ -48,7 +49,7 @@ export function CancelDialog({ reservation, onClose }: Props) {
           pending={cancel.pending}
           awaitingRetry={awaitingRetry}
           disabled={reason.trim() === ''}
-          onClose={onClose}
+          onClose={close}
         />
       </form>
     </CommandDialog>
@@ -59,6 +60,7 @@ export function CancelDialog({ reservation, onClose }: Props) {
 export function NoShowDialog({ reservation, onClose }: Props) {
   const noShow = useMarkNoShow(reservation.id, { onDone: onClose });
   const awaitingRetry = !noShow.pending && noShow.intent !== undefined;
+  const close = giveUp(noShow, onClose);
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -67,7 +69,7 @@ export function NoShowDialog({ reservation, onClose }: Props) {
   }
 
   return (
-    <CommandDialog pending={noShow.pending} onClose={onClose}>
+    <CommandDialog pending={noShow.pending} onClose={close}>
       <form onSubmit={submit} className="flex flex-col gap-4">
         <DialogHeader>
           <DialogTitle>Não comparência de {reservation.contactName}</DialogTitle>
@@ -79,7 +81,7 @@ export function NoShowDialog({ reservation, onClose }: Props) {
           error={noShow.error && refusal(noShow.error, 'Sem ligação — não se sabe se a não comparência ficou registada.')}
           pending={noShow.pending}
           awaitingRetry={awaitingRetry}
-          onClose={onClose}
+          onClose={close}
         />
       </form>
     </CommandDialog>

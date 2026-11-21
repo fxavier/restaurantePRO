@@ -115,4 +115,20 @@ describe('recording a no-show', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(marked[1]!.idempotencyKey).toBe(marked[0]!.idempotencyKey);
   });
+
+  it('"Voltar" on an unknown outcome gives the intent up: the day is read again, as it may have happened', async () => {
+    const marked = noShowEndpoint(RESERVATION.booked, () => HttpResponse.error());
+    const { user, days } = await atReservations();
+
+    await fromPanel(user, 'Registar não comparência');
+    const dialog = await screen.findByRole('dialog', { name: 'Não comparência de Ana Ferreira' });
+    await user.click(within(dialog).getByRole('button', { name: 'Registar não comparência' }));
+    await within(dialog).findByRole('button', { name: 'Tentar novamente' });
+    await waitFor(() => expect(days).toHaveLength(2));
+    await user.click(within(dialog).getByRole('button', { name: 'Voltar' }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await waitFor(() => expect(days).toHaveLength(3));
+    expect(marked).toHaveLength(1);
+  });
 });

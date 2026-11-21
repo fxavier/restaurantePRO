@@ -50,6 +50,17 @@ export function CommandFooter({ label, error, pending, awaitingRetry, disabled =
   );
 }
 
+/**
+ * Closing a command's dialog gives its intent up: one whose outcome is unknown may still have happened, so the intent
+ * reads again what it changes (`onDiscard`), and the next open is a new intent.
+ */
+export function giveUp(intent: { discard: () => void }, onClose: () => void): () => void {
+  return () => {
+    intent.discard();
+    onClose();
+  };
+}
+
 type DialogProps = {
   pending: boolean;
   onClose: () => void;
