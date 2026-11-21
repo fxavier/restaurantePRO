@@ -4,6 +4,7 @@ import com.xavier.backend.identity.model.Employee;
 import com.xavier.backend.identity.repository.EmployeeRepository;
 import com.xavier.backend.identity.repository.EmployeeStoreAssignmentRepository;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -42,6 +43,15 @@ public class EmployeeDirectory {
                 && !assignments.findByEmployeeIdAndStoreId(employeeId, storeId).isEmpty();
     }
 
+    /**
+     * The active employees with at least one assignment in {@code storeId}, by name: exactly those
+     * {@link #isActiveInStore} accepts (S50: who may be a delivery's courier).
+     */
+    @Transactional(readOnly = true)
+    public List<EmployeeSummary> activeInStore(UUID storeId) {
+        return employees.findActiveAssignedTo(storeId).stream().map(EmployeeDirectory::summary).toList();
+    }
+
     /** The summary of every known id in {@code ids}; unknown ids are absent from the map. */
     @Transactional(readOnly = true)
     public Map<UUID, EmployeeSummary> summaries(Collection<UUID> ids) {
@@ -49,8 +59,11 @@ public class EmployeeDirectory {
         if (distinct.isEmpty()) {
             return Map.of();
         }
-        return employees.findAllById(distinct).stream()
-                .map(employee -> new EmployeeSummary(employee.getId(), employee.getCode(), employee.getName()))
+        return employees.findAllById(distinct).stream().map(EmployeeDirectory::summary)
                 .collect(Collectors.toUnmodifiableMap(EmployeeSummary::id, Function.identity()));
+    }
+
+    private static EmployeeSummary summary(Employee employee) {
+        return new EmployeeSummary(employee.getId(), employee.getCode(), employee.getName());
     }
 }

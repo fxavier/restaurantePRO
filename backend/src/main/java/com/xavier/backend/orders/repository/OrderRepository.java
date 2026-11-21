@@ -1,6 +1,7 @@
 package com.xavier.backend.orders.repository;
 
 import com.xavier.backend.orders.OrderLifecycle;
+import com.xavier.backend.orders.OrderMode;
 import com.xavier.backend.orders.model.Order;
 import java.time.LocalDate;
 import java.util.List;
@@ -59,6 +60,21 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
             @Param("to") java.time.LocalDate to, Pageable pageable);
 
     List<Order> findByStoreIdAndLifecycleOrderByOpenedAt(UUID storeId, OrderLifecycle lifecycle);
+
+    /**
+     * The BackOffice search: the store's orders whose business day is in {@code [from, to]}, optionally of one
+     * lifecycle and mode, and matching {@code number} or a table code {@code like} {@code tableCodePattern} (both
+     * {@code null} = no text filter).
+     */
+    @Query("""
+            select o from Order o where o.storeId = :storeId and o.businessDay between :from and :to
+              and (:lifecycle is null or o.lifecycle = :lifecycle) and (:mode is null or o.mode = :mode)
+              and (:tableCodePattern is null or o.orderNumber = :number
+                   or lower(o.tableCode) like :tableCodePattern)""")
+    Page<Order> search(@Param("storeId") UUID storeId, @Param("from") LocalDate from, @Param("to") LocalDate to,
+                       @Param("lifecycle") OrderLifecycle lifecycle, @Param("mode") OrderMode mode,
+                       @Param("number") Long number, @Param("tableCodePattern") String tableCodePattern,
+                       Pageable pageable);
 
     long countByStoreIdAndLifecycleAndBusinessDayLessThanEqual(UUID storeId, OrderLifecycle lifecycle,
                                                               LocalDate businessDay);

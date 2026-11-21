@@ -3,7 +3,9 @@ package com.xavier.backend.orders.delivery.service;
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.PosContext;
+import com.xavier.backend.identity.EmployeeDirectory;
 import com.xavier.backend.orders.DeliveryStatus;
+import com.xavier.backend.orders.delivery.model.dto.CourierView;
 import com.xavier.backend.orders.delivery.model.dto.DeliveryView;
 import com.xavier.backend.orders.delivery.repository.DeliveryRepository;
 import com.xavier.backend.shared.web.PageResponse;
@@ -31,12 +33,23 @@ public class DeliveryQueryService {
 
     private final DeliveryRepository deliveries;
     private final DeliveryViews views;
+    private final EmployeeDirectory employees;
     private final AccessPolicy accessPolicy;
 
-    DeliveryQueryService(DeliveryRepository deliveries, DeliveryViews views, AccessPolicy accessPolicy) {
+    DeliveryQueryService(DeliveryRepository deliveries, DeliveryViews views, EmployeeDirectory employees,
+                         AccessPolicy accessPolicy) {
         this.deliveries = deliveries;
         this.views = views;
+        this.employees = employees;
         this.accessPolicy = accessPolicy;
+    }
+
+    /** Who the session store may dispatch with: the store's active employees, as the dispatch checks (S50). */
+    @Transactional(readOnly = true)
+    public List<CourierView> couriers() {
+        PosContext pos = accessPolicy.requirePos(Permission.DELIVERY_OPERATE);
+        return employees.activeInStore(pos.storeId()).stream()
+                .map(employee -> new CourierView(employee.id(), employee.code(), employee.displayName())).toList();
     }
 
     /** The session store's deliveries in {@code status}, or the active ones when it is null, oldest order first. */

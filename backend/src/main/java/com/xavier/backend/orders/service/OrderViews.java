@@ -101,7 +101,8 @@ public class OrderViews {
                 order.getBillingLock(), order.getBusinessDay(), order.getOpenedAt(), order.getOpenedByEmployeeId(),
                 order.getVersion(), current.map(CatalogSnapshot::version).orElse(null), lineViews, batchViews,
                 due(order, billingLines(all, deducted, adjusted, inherited, lineage)), promotionVersion,
-                order.getCustomerId(), priced == null ? null : priced.gross(drafts).orElse(null));
+                order.getCustomerId(), priced == null ? null : priced.gross(drafts).orElse(null),
+                order.getClosedAt());
     }
 
     /** One draft as the POS shows it right after a change: priced alone, as confirmation would price it now. */

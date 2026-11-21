@@ -55,6 +55,10 @@ public class CashSessionCount {
         this.countedAt = countedAt;
     }
 
+    public UUID getSessionId() {
+        return sessionId;
+    }
+
     public String getMethodCode() {
         return methodCode;
     }
