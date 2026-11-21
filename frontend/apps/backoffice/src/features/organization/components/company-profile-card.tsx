@@ -56,7 +56,7 @@ export function CompanyProfileCard() {
         <span className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-muted">
           <Building2 aria-hidden="true" className="size-6 text-primary" />
         </span>
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex min-w-0 flex-1 basis-48 flex-col gap-1">
           <CardTitle id={titleId} className="text-xl">
             {company.name}
           </CardTitle>
