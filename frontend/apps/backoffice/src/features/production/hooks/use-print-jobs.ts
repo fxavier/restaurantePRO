@@ -30,29 +30,17 @@ export type JobCommand = { jobId: string; idempotencyKey: string };
  * Retry and acknowledge are one intent per tap, under one key for every resend (FC §8). Whatever the answer, the
  * queue is read again: a conflict means it changed.
  */
-export function useRetryJob() {
-  const api = useApi();
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ jobId, idempotencyKey }: JobCommand) =>
-      sendWaitingWhileInProgress(() =>
-        api.POST('/api/v1/backoffice/print-jobs/{id}/retry', {
-          params: { path: { id: jobId }, header: { 'Idempotency-Key': idempotencyKey } },
-        }),
-      ),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: PRINT_JOBS_KEY }),
-  });
-}
+export const useRetryJob = () => useJobCommand('/api/v1/backoffice/print-jobs/{id}/retry');
 
-export function useAcknowledgeJob() {
+export const useAcknowledgeJob = () => useJobCommand('/api/v1/backoffice/print-jobs/{id}/acknowledge');
+
+function useJobCommand(path: '/api/v1/backoffice/print-jobs/{id}/retry' | '/api/v1/backoffice/print-jobs/{id}/acknowledge') {
   const api = useApi();
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ jobId, idempotencyKey }: JobCommand) =>
       sendWaitingWhileInProgress(() =>
-        api.POST('/api/v1/backoffice/print-jobs/{id}/acknowledge', {
-          params: { path: { id: jobId }, header: { 'Idempotency-Key': idempotencyKey } },
-        }),
+        api.POST(path, { params: { path: { id: jobId }, header: { 'Idempotency-Key': idempotencyKey } } }),
       ),
     onSettled: () => queryClient.invalidateQueries({ queryKey: PRINT_JOBS_KEY }),
   });

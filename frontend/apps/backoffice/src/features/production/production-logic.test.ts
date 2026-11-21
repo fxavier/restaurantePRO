@@ -2,7 +2,7 @@ import { ApiError } from '@restaurantpro/api-client';
 import { describe, expect, it } from 'vitest';
 import { fieldErrors } from './form-errors';
 import { jobTitle } from './labels';
-import { canAcknowledge, canRetry, parseJobs, parsePrinters, type PrintJob } from './parse';
+import { canAcknowledge, canRetry, nameOf, parseJobs, parsePrinters, type PrintJob } from './parse';
 import { holdsIn } from './permissions';
 import { createRequest, updateRequest } from './printer-requests';
 import { routesSchema, type PrinterFormValues } from './schemas';
@@ -36,6 +36,18 @@ describe('what may be done with a job', () => {
     expect(canAcknowledge(aJob({ status: 'UNKNOWN' }))).toBe(true);
     expect(canAcknowledge(aJob({ status: 'FAILED' }))).toBe(false);
     expect(canAcknowledge(aJob({ status: 'UNKNOWN', resolution: 'CONFIRMED_PRINTED' }))).toBe(false);
+  });
+});
+
+describe('nameOf', () => {
+  it('names the item with that id, or says it is unknown', () => {
+    const items = [
+      { id: 'a', name: 'Cozinha' },
+      { id: 'b', name: 'Bar' },
+    ];
+    expect(nameOf(items, 'b', 'Desconhecida')).toBe('Bar');
+    expect(nameOf(items, 'z', 'Desconhecida')).toBe('Desconhecida');
+    expect(nameOf(undefined, 'a', 'Desconhecida')).toBe('Desconhecida');
   });
 });
 

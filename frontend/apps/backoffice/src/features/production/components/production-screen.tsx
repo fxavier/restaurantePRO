@@ -1,10 +1,12 @@
+import type { UseQueryResult } from '@tanstack/react-query';
 import { useSession } from '../../identity';
 import { usePrintJobs } from '../hooks/use-print-jobs';
 import { usePrinters } from '../hooks/use-printers';
 import { useRoutes, useTerminalPrinters } from '../hooks/use-routing';
 import { useStoreTerminals } from '../hooks/use-store-terminals';
 import { useStoreTimeZone } from '../hooks/use-store-time-zone';
-import { useUnroutedTickets } from '../hooks/use-tickets';
+import { useUnroutedTickets, type TicketPage } from '../hooks/use-tickets';
+import { nameOf, type Printer } from '../parse';
 import { holdsIn } from '../permissions';
 import { PrintQueue } from './print-queue';
 import { PrinterList } from './printer-list';
@@ -21,35 +23,27 @@ export function ProductionScreen({ storeId }: { storeId: string }) {
   const terminals = useStoreTerminals(storeId);
   const tickets = useUnroutedTickets(storeId);
   const timeZone = useStoreTimeZone(storeId);
-  // The counts are the server's totals of a one-row page, never a count of what this page happens to hold.
-  const failed = usePrintJobs(storeId, 'FAILED', 0, 1);
-  const unknown = usePrintJobs(storeId, 'UNKNOWN', 0, 1);
   const mayOperate = holdsIn(permissions, 'PRODUCTION_OPERATE', storeId);
-
-  const printerName = (id: string) =>
-    printers.data?.find((printer) => printer.id === id)?.name ?? 'Impressora desconhecida';
-  const terminalName = (id: string) => terminals.data?.find((terminal) => terminal.id === id)?.name ?? 'Terminal sem nome';
 
   return (
     <>
-      <ProductionSummary
-        activePrinters={printers.data?.filter((printer) => printer.active).length}
-        printers={printers.data?.length}
-        failed={failed.data?.totalElements}
-        unknown={unknown.data?.totalElements}
-        unrouted={tickets.data?.totalElements}
-      />
+      <Summary storeId={storeId} printers={printers} tickets={tickets} />
       <div className="mt-6 grid items-start gap-6 lg:grid-cols-5">
         <PrinterList
           storeId={storeId}
           printers={printers}
           routes={routes.data ?? []}
           assignments={assignments.data ?? []}
-          terminalName={terminalName}
+          terminalName={(id) => nameOf(terminals.data, id, 'Terminal sem nome')}
           maySuppress={holdsIn(permissions, 'PRODUCTION_SUPPRESS', storeId)}
         />
         <div className="flex flex-col gap-6 lg:col-span-2">
-          <PrintQueue storeId={storeId} timeZone={timeZone} printerName={printerName} mayOperate={mayOperate} />
+          <PrintQueue
+            storeId={storeId}
+            timeZone={timeZone}
+            printerName={(id) => nameOf(printers.data, id, 'Impressora desconhecida')}
+            mayOperate={mayOperate}
+          />
           <UnroutedTickets tickets={tickets} mayOperate={mayOperate} />
         </div>
         {printers.data && (
@@ -63,5 +57,22 @@ export function ProductionScreen({ storeId }: { storeId: string }) {
         )}
       </div>
     </>
+  );
+}
+
+type SummaryProps = { storeId: string; printers: UseQueryResult<Printer[]>; tickets: UseQueryResult<TicketPage> };
+
+/** The counts are the server's totals of a one-row page, never a count of what a list page happens to hold. */
+function Summary({ storeId, printers, tickets }: SummaryProps) {
+  const failed = usePrintJobs(storeId, 'FAILED', 0, 1);
+  const unknown = usePrintJobs(storeId, 'UNKNOWN', 0, 1);
+  return (
+    <ProductionSummary
+      activePrinters={printers.data?.filter((printer) => printer.active).length}
+      printers={printers.data?.length}
+      failed={failed.data?.totalElements}
+      unknown={unknown.data?.totalElements}
+      unrouted={tickets.data?.totalElements}
+    />
   );
 }

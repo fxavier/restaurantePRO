@@ -64,6 +64,11 @@ export function parseTickets(views: unknown[]): Ticket[] {
   return views.map((view) => ticket.parse(view));
 }
 
+/** The name of the printer or terminal with that id, or the fallback when the list holds no such id (yet). */
+export function nameOf(items: readonly { id: string; name: string }[] | undefined, id: string, fallback: string): string {
+  return items?.find((item) => item.id === id)?.name ?? fallback;
+}
+
 /**
  * What may still be done with a job (r2-decisions §4): a FAILED or UNKNOWN job not yet resolved is retried as a new
  * job; an UNKNOWN one may instead be acknowledged as printed. A drawer kick is never repeated (D158).

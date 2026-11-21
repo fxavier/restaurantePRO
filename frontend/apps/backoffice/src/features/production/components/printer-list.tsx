@@ -1,4 +1,4 @@
-import { Button, DataState } from '@restaurantpro/ui';
+import { Button } from '@restaurantpro/ui';
 import type { UseQueryResult } from '@tanstack/react-query';
 import { FileText, Settings2, SlidersHorizontal } from 'lucide-react';
 import { useState } from 'react';
@@ -10,7 +10,7 @@ import { EditPrinterDialog } from './edit-printer-dialog';
 import { ModeDialog } from './mode-dialog';
 import { PrinterCard } from './printer-card';
 import { ProblemAlert } from './problem-alert';
-import { SectionError } from './section-error';
+import { QueryState } from './query-state';
 
 type PrinterListProps = {
   storeId: string;
@@ -27,10 +27,12 @@ export function PrinterList({ storeId, printers, routes, assignments, terminalNa
   const testPrint = useTestPrint();
   const [editing, setEditing] = useState<string>();
   const [moding, setModing] = useState<string>();
-  const find = (id: string | null | undefined) => printers.data?.find((printer) => printer.id === id);
+  const all = printers.data ?? [];
+  const find = (id: string | null | undefined) => all.find((printer) => printer.id === id);
   /** One test page per tap, under one key for every resend of that tap (FC §8). */
   const printTest = (printer: Printer) =>
     testPrint.mutate({ printerId: printer.id, printerName: printer.name, idempotencyKey: crypto.randomUUID() });
+  const resendTest = () => testPrint.variables && testPrint.mutate(testPrint.variables);
 
   return (
     <section aria-labelledby="printers-title" className="flex flex-col gap-4 lg:col-span-3">
@@ -43,22 +45,16 @@ export function PrinterList({ storeId, printers, routes, assignments, terminalNa
       <p role="status" className="text-sm empty:hidden">
         {testPrint.isSuccess && `Página de teste de ${testPrint.variables.printerName} enviada para a fila.`}
       </p>
-      {testPrint.error ? (
-        <ProblemAlert
-          error={testPrint.error}
-          pending={testPrint.isPending}
-          onRetry={() => testPrint.variables && testPrint.mutate(testPrint.variables)}
-        />
-      ) : null}
-      {printers.isError ? (
-        <SectionError error={printers.error} subject="as impressoras" onRetry={() => void printers.refetch()} />
-      ) : (
-        <DataState
-          state={printers.isPending ? 'loading' : printers.data.length ? 'ready' : 'empty'}
-          emptyMessage="Esta loja ainda não tem impressoras."
-        >
+      {testPrint.error ? <ProblemAlert error={testPrint.error} pending={testPrint.isPending} onRetry={resendTest} /> : null}
+      <QueryState
+        query={printers}
+        subject="as impressoras"
+        isEmpty={(data) => data.length === 0}
+        emptyMessage="Esta loja ainda não tem impressoras."
+      >
+        {(data) => (
           <ul aria-label="Impressoras da loja" className="flex flex-col gap-4">
-            {printers.data?.map((printer) => (
+            {data.map((printer) => (
               <PrinterCard
                 key={printer.id}
                 printer={printer}
@@ -68,36 +64,47 @@ export function PrinterList({ storeId, printers, routes, assignments, terminalNa
                   .filter((assignment) => assignment.printerId === printer.id)
                   .map((assignment) => terminalName(assignment.terminalId))}
               >
-                <Button
-                  variant="outline"
-                  size="sm"
-                  aria-label={`Imprimir teste em ${printer.name}`}
-                  disabled={testPrint.isPending}
-                  onClick={() => printTest(printer)}
-                >
-                  <FileText aria-hidden="true" />
-                  Imprimir teste
-                </Button>
-                <Button variant="outline" size="sm" aria-label={`Modo de ${printer.name}`} onClick={() => setModing(printer.id)}>
-                  <SlidersHorizontal aria-hidden="true" />
-                  Modo
-                </Button>
-                <Button variant="outline" size="sm" aria-label={`Configurar ${printer.name}`} onClick={() => setEditing(printer.id)}>
-                  <Settings2 aria-hidden="true" />
-                  Configurar
-                </Button>
+                <PrinterActions
+                  printer={printer}
+                  testing={testPrint.isPending}
+                  onTest={() => printTest(printer)}
+                  onMode={() => setModing(printer.id)}
+                  onEdit={() => setEditing(printer.id)}
+                />
               </PrinterCard>
             ))}
           </ul>
-        </DataState>
-      )}
+        )}
+      </QueryState>
       <EditPrinterDialog printer={find(editing)} onClose={() => setEditing(undefined)} />
-      <ModeDialog
-        printer={find(moding)}
-        printers={printers.data ?? []}
-        maySuppress={maySuppress}
-        onClose={() => setModing(undefined)}
-      />
+      <ModeDialog printer={find(moding)} printers={all} maySuppress={maySuppress} onClose={() => setModing(undefined)} />
     </section>
+  );
+}
+
+type PrinterActionsProps = {
+  printer: Printer;
+  testing: boolean;
+  onTest: () => void;
+  onMode: () => void;
+  onEdit: () => void;
+};
+
+function PrinterActions({ printer, testing, onTest, onMode, onEdit }: PrinterActionsProps) {
+  return (
+    <>
+      <Button variant="outline" size="sm" aria-label={`Imprimir teste em ${printer.name}`} disabled={testing} onClick={onTest}>
+        <FileText aria-hidden="true" />
+        Imprimir teste
+      </Button>
+      <Button variant="outline" size="sm" aria-label={`Modo de ${printer.name}`} onClick={onMode}>
+        <SlidersHorizontal aria-hidden="true" />
+        Modo
+      </Button>
+      <Button variant="outline" size="sm" aria-label={`Configurar ${printer.name}`} onClick={onEdit}>
+        <Settings2 aria-hidden="true" />
+        Configurar
+      </Button>
+    </>
   );
 }
