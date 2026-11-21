@@ -18,11 +18,8 @@ type Props = {
 
 /** Where the delivery goes: one of the customer's saved addresses, or another one typed for this order only. */
 export function AddressPicker({ addresses, value, onChange, disabled }: Props) {
-  const saved = addresses.flatMap(({ id, ...address }) =>
-    id ? [{ value: id, label: addressText({ ...address, line1: address.line1 ?? '' }) }] : [],
-  );
-  // Without a saved address, the only way is to type one.
-  const typed = value?.kind === 'new' ? value : saved.length === 0 ? TYPED : undefined;
+  const saved = savedChoices(addresses);
+  const typed = typedAddress(value, saved.length > 0);
   return (
     <div className="flex flex-col gap-3">
       {saved.length > 0 && (
@@ -30,7 +27,7 @@ export function AddressPicker({ addresses, value, onChange, disabled }: Props) {
           legend="Moradas do cliente"
           name="address"
           choices={[...saved, { value: OTHER, label: 'Outra morada' }]}
-          value={value?.kind === 'saved' ? value.addressId : typed && OTHER}
+          value={chosen(value, typed)}
           onChange={(choice) => onChange(choice === OTHER ? TYPED : { kind: 'saved', addressId: choice })}
           disabled={disabled}
         />
@@ -38,6 +35,24 @@ export function AddressPicker({ addresses, value, onChange, disabled }: Props) {
       {typed && <AddressFields address={typed} onChange={onChange} readOnly={disabled} />}
     </div>
   );
+}
+
+function savedChoices(addresses: AddressView[]) {
+  return addresses.flatMap(({ id, ...address }) =>
+    id ? [{ value: id, label: addressText({ ...address, line1: address.line1 ?? '' }) }] : [],
+  );
+}
+
+/** The address being typed: the one chosen as "Outra morada", or, without a saved address, the only way left. */
+function typedAddress(value: AddressDraft | undefined, hasSaved: boolean): TypedAddress | undefined {
+  if (value?.kind === 'new') return value;
+  return hasSaved ? undefined : TYPED;
+}
+
+/** The radio that is on: a saved address, "Outra morada" while one is typed, or none yet. */
+function chosen(value: AddressDraft | undefined, typed: TypedAddress | undefined): string | undefined {
+  if (value?.kind === 'saved') return value.addressId;
+  return typed && OTHER;
 }
 
 function AddressFields({ address, onChange, readOnly }: { address: TypedAddress; onChange: (a: TypedAddress) => void; readOnly: boolean }) {

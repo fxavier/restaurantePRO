@@ -35,25 +35,9 @@ type Props = { onClose: () => void; onOpened: (orderId: string) => void };
  * first names its customer, address, zone and promised time. Either way the items are added on the order's screen.
  */
 export function NewOrderDialog({ onClose, onOpened }: Props) {
-  const employee = useEmployee();
-  const offered = mayRunDeliveries(employee) ? CHANNELS : CHANNELS.filter(({ value }) => value === 'TAKEAWAY');
-  const [channel, setChannel] = useState<Channel>('TAKEAWAY');
-  const [draft, setDraft] = useState<DeliveryDraft>(EMPTY);
-  const blocked = useCommandsBlocked();
-  const open = useOpenOrder({ onOpened });
-  const { awaitingRetry, locked } = intentState(open);
+  const offered = useOfferedChannels();
+  const { channel, setChannel, draft, setDraft, blocked, open, awaitingRetry, locked, ready, submit } = useNewOrder(onOpened);
   const delivery = channel === 'DELIVERY';
-  /** The order to open, or nothing while a delivery misses a detail; a promise counts from `now`, the tap. */
-  const order = (now: Date) => (delivery ? deliveryOrder(draft, now) : TAKEAWAY);
-  const ready = order(new Date()) !== undefined;
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    if (blocked) return;
-    if (awaitingRetry) return open.retry();
-    const body = order(new Date());
-    if (body) open.start(body, undefined);
-  }
 
   return (
     <Dialog open onOpenChange={(next) => !next && !open.pending && onClose()}>
@@ -68,25 +52,68 @@ export function NewOrderDialog({ onClose, onOpened }: Props) {
               <ChoiceGroup legend="1. Canal de venda" name="channel" choices={offered} value={channel} onChange={setChannel} disabled={locked} />
               {delivery && <PromiseField draft={draft} onChange={setDraft} disabled={locked} />}
             </div>
-            {delivery ? (
-              <DeliveryFields draft={draft} onChange={setDraft} disabled={locked} />
-            ) : (
-              <p className="flex items-start gap-3 text-muted-foreground lg:col-span-2">
-                <Store aria-hidden="true" className="size-6 shrink-0" />O pedido abre já, sem mesa; o cliente levanta-o na loja.
-              </p>
-            )}
+            {delivery ? <DeliveryFields draft={draft} onChange={setDraft} disabled={locked} /> : <TakeawayNote />}
           </div>
           <CommandMessage blocked={blocked} error={open.error} what="a abertura do pedido" />
-          <DialogFooter>
-            <Button type="button" variant="outline" size="touch" onClick={onClose} disabled={open.pending}>
-              Cancelar
-            </Button>
-            <Button type="submit" size="touch-primary" disabled={blocked || !ready || open.pending} aria-busy={open.pending}>
-              {awaitingRetry ? 'Tentar novamente' : SUBMIT[channel]}
-            </Button>
-          </DialogFooter>
+          <Footer
+            pending={open.pending}
+            canSubmit={!blocked && ready}
+            label={awaitingRetry ? 'Tentar novamente' : SUBMIT[channel]}
+            onCancel={onClose}
+          />
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Delivery only for an employee who may run deliveries here; takeaway for anyone. */
+function useOfferedChannels() {
+  const employee = useEmployee();
+  return mayRunDeliveries(employee) ? CHANNELS : CHANNELS.filter(({ value }) => value === 'TAKEAWAY');
+}
+
+/** The dialog's draft and its one "open" intent: a retry resends that intent, never a new one. */
+function useNewOrder(onOpened: (orderId: string) => void) {
+  const [channel, setChannel] = useState<Channel>('TAKEAWAY');
+  const [draft, setDraft] = useState<DeliveryDraft>(EMPTY);
+  const blocked = useCommandsBlocked();
+  const open = useOpenOrder({ onOpened });
+  const { awaitingRetry, locked } = intentState(open);
+  /** The order to open, or nothing while a delivery misses a detail; a promise counts from `now`, the tap. */
+  const order = (now: Date) => (channel === 'DELIVERY' ? deliveryOrder(draft, now) : TAKEAWAY);
+  const ready = order(new Date()) !== undefined;
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (blocked) return;
+    if (awaitingRetry) return open.retry();
+    const body = order(new Date());
+    if (body) open.start(body, undefined);
+  }
+
+  return { channel, setChannel, draft, setDraft, blocked, open, awaitingRetry, locked, ready, submit };
+}
+
+function TakeawayNote() {
+  return (
+    <p className="flex items-start gap-3 text-muted-foreground lg:col-span-2">
+      <Store aria-hidden="true" className="size-6 shrink-0" />O pedido abre já, sem mesa; o cliente levanta-o na loja.
+    </p>
+  );
+}
+
+type FooterProps = { pending: boolean; canSubmit: boolean; label: string; onCancel: () => void };
+
+function Footer({ pending, canSubmit, label, onCancel }: FooterProps) {
+  return (
+    <DialogFooter>
+      <Button type="button" variant="outline" size="touch" onClick={onCancel} disabled={pending}>
+        Cancelar
+      </Button>
+      <Button type="submit" size="touch-primary" disabled={!canSubmit || pending} aria-busy={pending}>
+        {label}
+      </Button>
+    </DialogFooter>
   );
 }
