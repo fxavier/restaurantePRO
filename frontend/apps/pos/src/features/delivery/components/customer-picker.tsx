@@ -1,20 +1,26 @@
 import { Button, Skeleton } from '@restaurantpro/ui';
 import { Search, UserPlus, UserRound } from 'lucide-react';
-import { type KeyboardEvent, useState } from 'react';
+import { type KeyboardEvent, useEffect, useState } from 'react';
 import { useCommandsBlocked } from '../../../lib/live/use-connection';
 import { intentState, newCustomer } from '../delivery';
 import { MIN_SEARCH, useCreateCustomer, useCustomer, useCustomerSearch } from '../hooks/use-customers';
-import { loadFailure } from '../messages';
+import { CUSTOMER_UNSETTLED, loadFailure } from '../messages';
 import { CommandMessage } from './command-message';
 import { TextField } from './text-field';
 
-type Props = { customerId: string | undefined; onChange: (customerId: string | undefined) => void; disabled: boolean };
+type Props = {
+  customerId: string | undefined;
+  onChange: (customerId: string | undefined) => void;
+  disabled: boolean;
+  /** A "Criar cliente" without an answer, or settled: while it waits, nothing may unmount it and lose its key. */
+  onUnsettledChange: (unsettled: boolean) => void;
+};
 
 /** Who the delivery is for (D127): a customer found by name or phone, or one created here with a name and phone. */
-export function CustomerPicker({ customerId, onChange, disabled }: Props) {
+export function CustomerPicker({ customerId, onChange, disabled, onUnsettledChange }: Props) {
   const [creating, setCreating] = useState(false);
   if (customerId) return <ChosenCustomer customerId={customerId} onChange={() => onChange(undefined)} disabled={disabled} />;
-  if (creating) return <NewCustomer onCreated={onChange} onCancel={() => setCreating(false)} />;
+  if (creating) return <NewCustomer onCreated={onChange} onCancel={() => setCreating(false)} onUnsettledChange={onUnsettledChange} />;
   return <CustomerSearch onChoose={onChange} onCreate={() => setCreating(true)} disabled={disabled} />;
 }
 
@@ -119,13 +125,28 @@ function CustomerSearch({ onChoose, onCreate, disabled }: { onChoose: (id: strin
   );
 }
 
-function NewCustomer({ onCreated, onCancel }: { onCreated: (id: string) => void; onCancel: () => void }) {
+type NewCustomerProps = {
+  onCreated: (id: string) => void;
+  onCancel: () => void;
+  onUnsettledChange: (unsettled: boolean) => void;
+};
+
+/**
+ * A customer created here. A "Criar cliente" without an answer may have created them: it holds its intent, so the
+ * only way on is "Tentar novamente" with the same key (FC §8); going back would make the next tap a second customer.
+ */
+function NewCustomer({ onCreated, onCancel, onUnsettledChange }: NewCustomerProps) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const blocked = useCommandsBlocked();
   const create = useCreateCustomer({ onCreated });
   const { awaitingRetry, locked } = intentState(create);
   const request = newCustomer(name, phone);
+
+  useEffect(() => {
+    onUnsettledChange(awaitingRetry);
+    return () => onUnsettledChange(false);
+  }, [awaitingRetry, onUnsettledChange]);
 
   function submit() {
     if (blocked || !request) return;
@@ -139,8 +160,9 @@ function NewCustomer({ onCreated, onCancel }: { onCreated: (id: string) => void;
       <TextField label="Telefone" value={phone} onChange={setPhone} readOnly={locked} inputMode="tel" />
       {/* "Sem ligação" is said once, by the dialog. */}
       <CommandMessage blocked={false} error={create.error} what="a criação do cliente" />
+      {awaitingRetry && <p className="text-muted-foreground">{CUSTOMER_UNSETTLED}</p>}
       <div className="flex gap-2">
-        <Button type="button" variant="outline" size="touch" onClick={onCancel} disabled={create.pending}>
+        <Button type="button" variant="outline" size="touch" onClick={onCancel} disabled={locked}>
           Voltar à pesquisa
         </Button>
         <Button type="button" size="touch" onClick={submit} disabled={blocked || !request || create.pending} aria-busy={create.pending}>

@@ -105,6 +105,30 @@ describe('a new delivery', () => {
     expect(createdCustomers[0]!.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
   });
 
+  it('a lost answer to "Criar cliente" keeps that intent: no way back to the search, no closing, the same key again', async () => {
+    const createdCustomers = createCustomerEndpoint(() => HttpResponse.error(), json(CUSTOMER.nova));
+    customerEndpoint(CUSTOMER.nova.id, json(CUSTOMER.nova));
+    const { user, dialog } = await newDelivery();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Novo cliente' }));
+    await user.type(within(dialog).getByLabelText('Nome'), 'Joana Nova');
+    await user.click(within(dialog).getByRole('button', { name: 'Criar cliente' }));
+    await within(dialog).findByRole('button', { name: 'Tentar novamente' });
+
+    expect(within(dialog).getByText(/O cliente pode já ter sido criado/)).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Voltar à pesquisa' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'Cancelar' })).toBeDisabled();
+    expect(within(dialog).getByRole('radio', { name: /^Takeaway/ })).toBeDisabled();
+    await user.keyboard('{Escape}');
+    expect(screen.getByRole('dialog', { name: 'Novo pedido fora de sala' })).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Tentar novamente' }));
+    expect(await within(dialog).findByText('Joana Nova')).toBeInTheDocument();
+    expect(createdCustomers).toHaveLength(2);
+    expect(createdCustomers[1]!.idempotencyKey).toBe(createdCustomers[0]!.idempotencyKey);
+    expect(within(dialog).getByRole('button', { name: 'Cancelar' })).toBeEnabled();
+  });
+
   it('a search without a match says so', async () => {
     customerSearchEndpoint(json([]));
     const { user, dialog } = await newDelivery();

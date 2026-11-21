@@ -13,6 +13,7 @@ import { useEmployee } from '../../../lib/auth/use-employee';
 import { useCommandsBlocked } from '../../../lib/live/use-connection';
 import { deliveryOrder, type DeliveryDraft, intentState, mayRunDeliveries } from '../delivery';
 import { useOpenOrder } from '../hooks/use-open-order';
+import { ORDER_UNSETTLED } from '../messages';
 import { type Choice, ChoiceGroup } from './choice-group';
 import { CommandMessage } from './command-message';
 import { DeliveryFields, PromiseField } from './delivery-fields';
@@ -37,10 +38,13 @@ type Props = { onClose: () => void; onOpened: (orderId: string) => void };
 export function NewOrderDialog({ onClose, onOpened }: Props) {
   const offered = useOfferedChannels();
   const { channel, setChannel, draft, setDraft, blocked, open, awaitingRetry, locked, ready, submit } = useNewOrder(onOpened);
+  const [customerUnsettled, setCustomerUnsettled] = useState(false);
   const delivery = channel === 'DELIVERY';
+  // An intent without an answer may already have happened: closing, or leaving the delivery, would lose its key (FC §8).
+  const held = locked || customerUnsettled;
 
   return (
-    <Dialog open onOpenChange={(next) => !next && !open.pending && onClose()}>
+    <Dialog open onOpenChange={(next) => !next && !held && onClose()}>
       <DialogContent showCloseButton={false} className="max-h-screen overflow-y-auto sm:max-w-5xl">
         <form onSubmit={submit} className="flex flex-col gap-4">
           <DialogHeader>
@@ -49,14 +53,20 @@ export function NewOrderDialog({ onClose, onOpened }: Props) {
           </DialogHeader>
           <div className="grid gap-6 lg:grid-cols-3">
             <div className="flex min-w-0 flex-col gap-6">
-              <ChoiceGroup legend="1. Canal de venda" name="channel" choices={offered} value={channel} onChange={setChannel} disabled={locked} />
+              <ChoiceGroup legend="1. Canal de venda" name="channel" choices={offered} value={channel} onChange={setChannel} disabled={held} />
               {delivery && <PromiseField draft={draft} onChange={setDraft} disabled={locked} />}
             </div>
-            {delivery ? <DeliveryFields draft={draft} onChange={setDraft} disabled={locked} /> : <TakeawayNote />}
+            {delivery ? (
+              <DeliveryFields draft={draft} onChange={setDraft} disabled={locked} onCustomerUnsettledChange={setCustomerUnsettled} />
+            ) : (
+              <TakeawayNote />
+            )}
           </div>
           <CommandMessage blocked={blocked} error={open.error} what="a abertura do pedido" />
+          {awaitingRetry && <p className="text-muted-foreground">{ORDER_UNSETTLED}</p>}
           <Footer
             pending={open.pending}
+            canCancel={!held}
             canSubmit={!blocked && ready}
             label={awaitingRetry ? 'Tentar novamente' : SUBMIT[channel]}
             onCancel={onClose}
@@ -103,12 +113,12 @@ function TakeawayNote() {
   );
 }
 
-type FooterProps = { pending: boolean; canSubmit: boolean; label: string; onCancel: () => void };
+type FooterProps = { pending: boolean; canCancel: boolean; canSubmit: boolean; label: string; onCancel: () => void };
 
-function Footer({ pending, canSubmit, label, onCancel }: FooterProps) {
+function Footer({ pending, canCancel, canSubmit, label, onCancel }: FooterProps) {
   return (
     <DialogFooter>
-      <Button type="button" variant="outline" size="touch" onClick={onCancel} disabled={pending}>
+      <Button type="button" variant="outline" size="touch" onClick={onCancel} disabled={!canCancel}>
         Cancelar
       </Button>
       <Button type="submit" size="touch-primary" disabled={!canSubmit || pending} aria-busy={pending}>

@@ -44,6 +44,24 @@ describe('a new takeaway or delivery order', () => {
     expect(opened[1]!.idempotencyKey).toBe(opened[0]!.idempotencyKey);
   });
 
+  it('a lost answer keeps the dialog open: the order may be open, and only "Tentar novamente" settles it', async () => {
+    const opened = openOrderEndpoint(() => HttpResponse.error(), created(TAKEAWAY_ORDER));
+    orderEndpoint(NEW_ORDER_ID, json(TAKEAWAY_ORDER));
+    const { user, router, dialog } = await openNewOrder();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Abrir takeaway' }));
+    await within(dialog).findByRole('button', { name: 'Tentar novamente' });
+    expect(within(dialog).getByText(/O pedido pode já ter sido aberto/)).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Cancelar' })).toBeDisabled();
+    await user.keyboard('{Escape}');
+    expect(screen.getByRole('dialog', { name: 'Novo pedido fora de sala' })).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Tentar novamente' }));
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/orders/${NEW_ORDER_ID}`));
+    expect(opened).toHaveLength(2);
+    expect(opened[1]!.idempotencyKey).toBe(opened[0]!.idempotencyKey);
+  });
+
   it('without the delivery permission only a takeaway is offered', async () => {
     const { dialog } = await openNewOrder({ permissions: [] });
 

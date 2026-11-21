@@ -17,6 +17,12 @@ export const DELIVERY_MESSAGES: FeatureMessages = {
 /** A transition refused because the delivery moved meanwhile (409 `DELIVERY_STATE`, or a stale version). */
 export const CHANGED_ELSEWHERE = 'A entrega foi alterada noutro terminal. O quadro foi atualizado; reveja e tente de novo.';
 
+/** A "Criar entrega" or "Abrir takeaway" without an answer: closing would make the next tap a second order. */
+export const ORDER_UNSETTLED = 'O pedido pode já ter sido aberto. Toque em "Tentar novamente" para o confirmar sem abrir outro.';
+
+/** A "Criar cliente" without an answer: going back would make the next tap a second customer. */
+export const CUSTOMER_UNSETTLED = 'O cliente pode já ter sido criado. Toque em "Tentar novamente" para o confirmar sem criar outro.';
+
 /**
  * Why a command failed, in Portuguese.
  *

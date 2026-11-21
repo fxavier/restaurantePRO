@@ -45,7 +45,12 @@ export function PromiseField({ draft, onChange, disabled }: Props) {
  * What else a delivery opens with (D127), in Stitch's second and third columns: the customer and the address; the
  * zone and the notes for the courier.
  */
-export function DeliveryFields({ draft, onChange, disabled }: Props) {
+export function DeliveryFields({
+  draft,
+  onChange,
+  disabled,
+  onCustomerUnsettledChange,
+}: Props & { onCustomerUnsettledChange: (unsettled: boolean) => void }) {
   const customer = useCustomer(draft.customerId);
   const set = (change: Partial<DeliveryDraft>) => onChange({ ...draft, ...change });
   const notesId = useId();
@@ -57,6 +62,7 @@ export function DeliveryFields({ draft, onChange, disabled }: Props) {
             customerId={draft.customerId}
             onChange={(customerId) => set({ customerId, address: undefined })}
             disabled={disabled}
+            onUnsettledChange={onCustomerUnsettledChange}
           />
         </Section>
         {customer.data && (
