@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { admin, baixa, signedIn } from '../test/fixtures';
 import { renderApp } from '../test/render-app';
@@ -35,28 +35,26 @@ describe('BackOffice areas', () => {
     expect(within(areas).getByRole('list', { name: 'Delivery' })).toBeInTheDocument();
   });
 
+  // The route and the sidebar only: each area's page owns its own heading and content (its feature tests check them).
   it.each([
-    ['/organization/stores', 'Organização', 'Lojas'],
-    ['/organization/dining', 'Organização', 'Salas & Mesas'],
-    ['/catalog', 'Catálogo', 'Catálogo'],
-    ['/production', 'Produção', 'Produção & Impressoras'],
-    ['/inventory', 'Stocks', 'Stocks'],
-    ['/customers', 'Clientes', 'Clientes'],
-    ['/finance', 'Financeiro', 'Financeiro'],
-    ['/people', 'Utilizadores', 'Utilizadores & Empregados'],
-    ['/delivery/zones', 'Delivery', 'Zonas'],
-    ['/delivery/report', 'Delivery', 'Entregas'],
-  ])('%s is its own page, marked current in the sidebar', async (path, eyebrow, title) => {
+    ['/organization/stores', 'Lojas'],
+    ['/organization/dining', 'Salas & Mesas'],
+    ['/catalog', 'Catálogo'],
+    ['/production', 'Produção & Impressoras'],
+    ['/inventory', 'Stocks'],
+    ['/customers', 'Clientes'],
+    ['/finance', 'Financeiro'],
+    ['/people', 'Utilizadores & Empregados'],
+    ['/delivery/zones', 'Zonas'],
+    ['/delivery/report', 'Entregas'],
+  ])('%s is a route of its own, marked current in the sidebar', async (path, title) => {
     server.use(...signedIn());
 
     renderApp(path);
 
-    expect(await screen.findByRole('heading', { level: 1, name: title })).toBeInTheDocument();
-    const main = screen.getByRole('main');
-    expect(within(main).getByText(eyebrow, { selector: 'p' })).toBeInTheDocument();
-    expect(within(main).getByText('Em preparação.')).toBeInTheDocument();
-    const areas = screen.getByRole('navigation', { name: 'Áreas' });
-    expect(within(areas).getByRole('link', { name: title })).toHaveAttribute('aria-current', 'page');
+    const areas = await screen.findByRole('navigation', { name: 'Áreas' });
+    await waitFor(() => expect(within(areas).getByRole('link', { name: title })).toHaveAttribute('aria-current', 'page'));
+    expect(screen.queryByRole('heading', { name: 'Página não encontrada' })).not.toBeInTheDocument();
   });
 
   it('hides the Delivery group from a user with neither of its permissions', async () => {

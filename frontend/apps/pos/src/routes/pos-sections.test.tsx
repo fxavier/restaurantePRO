@@ -11,13 +11,13 @@ async function at(path: string) {
   return rendered;
 }
 
+// The section bar and the routes only: each section's page owns its heading and content (its feature tests check them).
 describe('POS sections', () => {
-  it('names the current section in the section bar, and the page says it is being prepared', async () => {
-    await at('/cash');
+  it('marks the current section in the section bar, and only that one', async () => {
+    const { router } = await at('/cash');
 
-    expect(await screen.findByRole('heading', { name: 'Caixa & Turno' })).toBeInTheDocument();
-    expect(screen.getByText('Em preparação.')).toBeInTheDocument();
-    const sections = screen.getByRole('navigation', { name: 'Secções' });
+    const sections = await screen.findByRole('navigation', { name: 'Secções' });
+    expect(router.state.location.pathname).toBe('/cash');
     expect(within(sections).getByRole('link', { name: 'Caixa & Turno' })).toHaveAttribute('aria-current', 'page');
     expect(within(sections).getByRole('link', { name: 'Sala & Mesas' })).not.toHaveAttribute('aria-current');
   });
@@ -25,19 +25,20 @@ describe('POS sections', () => {
   it.each([
     ['/delivery', 'Takeaway & Delivery'],
     ['/reservations', 'Reservas'],
-  ])('%s is its own section page', async (path, name) => {
-    await at(path);
+  ])('%s is a section route of its own', async (path, name) => {
+    const { router } = await at(path);
 
-    expect(await screen.findByRole('heading', { name })).toBeInTheDocument();
-    const sections = screen.getByRole('navigation', { name: 'Secções' });
+    const sections = await screen.findByRole('navigation', { name: 'Secções' });
+    expect(router.state.location.pathname).toBe(path);
     expect(within(sections).getByRole('link', { name })).toHaveAttribute('aria-current', 'page');
   });
 
   it("opens an order's payment page under the section bar", async () => {
-    await at('/orders/6f1c2a9e-0000-4000-8000-000000000500/payment');
+    const path = '/orders/6f1c2a9e-0000-4000-8000-000000000500/payment';
+    const { router } = await at(path);
 
-    expect(await screen.findByRole('heading', { name: 'Conta & Pagamento' })).toBeInTheDocument();
-    expect(screen.getByRole('navigation', { name: 'Secções' })).toBeInTheDocument();
+    expect(await screen.findByRole('navigation', { name: 'Secções' })).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe(path);
   });
 
   it('goes from one section to another, and shows the section bar on the table map too', async () => {

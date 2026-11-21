@@ -118,17 +118,3 @@ for (const viewport of [
     await expect(switcher).toBeFocused();
   });
 }
-
-test('an area not built yet shows its page header, and passes axe', async ({ page }) => {
-  await signedIn(page);
-
-  await page.goto(`/catalog?storeId=${selectedStore}`);
-
-  await expect(page.getByRole('heading', { level: 1, name: 'Catálogo' })).toBeVisible();
-  await expect(page.getByRole('navigation', { name: 'Áreas' }).getByRole('link', { name: 'Catálogo' })).toHaveAttribute(
-    'aria-current',
-    'page',
-  );
-  await expect(page.getByText('Em preparação.')).toBeVisible();
-  await expectNoAxeViolations(page);
-});
