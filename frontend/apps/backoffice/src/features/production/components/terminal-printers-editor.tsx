@@ -39,7 +39,7 @@ export function TerminalPrintersEditor({ storeId, terminals, assignments, printe
                 control={form.control}
                 name={`terminals.${index}.printerId`}
                 render={({ field }) => (
-                  <FormItem className="grid grid-cols-2 items-center gap-2">
+                  <FormItem className="grid items-center gap-2 sm:grid-cols-2">
                     <FormLabel>{terminal.name}</FormLabel>
                     <FormControl>
                       <NativeSelect {...field}>

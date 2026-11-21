@@ -37,7 +37,7 @@ export function RoutesEditor({ storeId, routes, printers }: RoutesEditorProps) {
                 control={form.control}
                 name={`routes.${index}.destinationCode`}
                 render={({ field }) => (
-                  <FormItem className="col-span-5">
+                  <FormItem className="col-span-12 sm:col-span-5">
                     <FormLabel className="sr-only">Destino {index + 1}</FormLabel>
                     <FormControl>
                       <Input {...field} autoComplete="off" maxLength={40} placeholder="COZINHA" className="font-mono uppercase" />
@@ -50,7 +50,7 @@ export function RoutesEditor({ storeId, routes, printers }: RoutesEditorProps) {
                 control={form.control}
                 name={`routes.${index}.printerId`}
                 render={({ field }) => (
-                  <FormItem className="col-span-6">
+                  <FormItem className="col-span-10 sm:col-span-6">
                     <FormLabel className="sr-only">Impressora do destino {index + 1}</FormLabel>
                     <FormControl>
                       <NativeSelect {...field}>
@@ -72,7 +72,7 @@ export function RoutesEditor({ storeId, routes, printers }: RoutesEditorProps) {
                 size="icon"
                 aria-label={`Remover destino ${index + 1}`}
                 onClick={() => rows.remove(index)}
-                className="col-span-1"
+                className="col-span-2 sm:col-span-1"
               >
                 <Trash2 aria-hidden="true" />
               </Button>

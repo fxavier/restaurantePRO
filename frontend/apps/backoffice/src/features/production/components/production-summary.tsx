@@ -24,7 +24,7 @@ export function ProductionSummary({ activePrinters, printers, failed, unknown, u
   ];
   return (
     <section aria-label="Resumo" className="mt-6">
-      <dl className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {stats.map(({ label, value, icon: Icon, tint }) => (
           <div key={label} className="flex flex-col gap-2 rounded-xl border bg-card p-4">
             <dt className="flex items-start justify-between gap-3 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
