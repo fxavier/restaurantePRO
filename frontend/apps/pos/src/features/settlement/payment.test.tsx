@@ -3,6 +3,7 @@ import { HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { ORDER_ID } from '../../test/order';
 import { atPayment, billShown } from '../../test/payment-screen';
+import { problem } from '../../test/server';
 import {
   attempt,
   attemptEndpoint,
@@ -41,6 +42,32 @@ describe('charging the bill', () => {
     expect(requests[0]!.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
     // The amounts as typed and as the server sent them, never a sum made here.
     expect(requests[0]!.raw).toBe(JSON.stringify({ orderId: ORDER_ID, methodCode: 'CASH', amount: '1530.00', tendered: '2000' }));
+  });
+
+  it('without an answer, the charge is neither given up nor charged anew: only resent with the same key', async () => {
+    const server = serverSettlement();
+    const requests = attemptEndpoint(
+      () => problem(503, 'BACKEND_UNAVAILABLE'),
+      () => {
+        server.set(PAID);
+        return HttpResponse.json(attempt(), { status: 201 });
+      },
+    );
+    const { user } = await atPayment();
+    await billShown();
+    await user.click(within(payPanel()).getByRole('button', { name: /^Cobrar 1530,00\sMTn$/ }));
+
+    expect(await within(payPanel()).findByRole('alert')).toHaveTextContent(
+      'Sem ligação — o pagamento não foi confirmado. Não cobre de novo: tente novamente.',
+    );
+    expect(within(payPanel()).getByRole('button', { name: /^Cobrar/ })).toBeDisabled();
+    expect(within(payPanel()).queryByRole('button', { name: 'Descartar' })).not.toBeInTheDocument();
+    await user.click(within(payPanel()).getByRole('button', { name: 'Tentar novamente' }));
+
+    await waitFor(() => expect(outstanding()).toHaveTextContent('0,00 MTn'));
+    expect(requests).toHaveLength(2);
+    expect(requests[1]!.idempotencyKey).toBe(requests[0]!.idempotencyKey);
+    expect(requests[1]!.raw).toBe(requests[0]!.raw);
   });
 
   it('a part chosen in the list is what is charged, at its own balance', async () => {
