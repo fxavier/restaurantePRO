@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useApi } from '../../../lib/api';
 import type { FamilySummary, ItemCreateRequest, ItemSummary, ItemUpdateRequest, PriceListSummary } from '../types';
+import { publishRelease, type Publication } from '../release-commands';
 import { CATALOG_KEY } from './use-catalog-queries';
 
 type FamilyBody = { code: string; name: string; parentId?: string };
@@ -78,6 +79,35 @@ export function useSavePrice(priceListId: string) {
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: [...CATALOG_KEY, 'price-lists', 'prices', priceListId] }),
   });
+}
+
+/** The store's release commands; each refreshes the list when it ends, so a 409 shows the state that won. */
+function useReleaseMutation<Variables>(storeId: string, send: (variables: Variables) => Promise<unknown>) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: send,
+    onSettled: () => queryClient.invalidateQueries({ queryKey: [...CATALOG_KEY, 'releases', storeId] }),
+  });
+}
+
+/** A new DRAFT release of the store (no Idempotency-Key in the contract). */
+export function useCreateRelease(storeId: string) {
+  const api = useApi();
+  return useReleaseMutation(storeId, async () => (await api.POST('/api/v1/backoffice/catalog/releases', { body: { storeId } })).data);
+}
+
+/** Validates the store's working copy into this release (DRAFT or VALIDATED → VALIDATED); 422 lists the problems. */
+export function useValidateRelease(storeId: string) {
+  const api = useApi();
+  return useReleaseMutation(storeId, async (releaseId: string) =>
+    (await api.POST('/api/v1/backoffice/catalog/releases/{id}/validate', { params: { path: { id: releaseId } } })).data,
+  );
+}
+
+/** Publishes a VALIDATED release under the intent's Idempotency-Key (FC §8). */
+export function usePublishRelease(storeId: string) {
+  const api = useApi();
+  return useReleaseMutation(storeId, (publication: Publication) => publishRelease(api, publication));
 }
 
 type ItemSave =

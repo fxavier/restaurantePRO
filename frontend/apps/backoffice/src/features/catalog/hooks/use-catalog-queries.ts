@@ -7,6 +7,8 @@ import type {
   ItemSummary,
   ItemVariantSummary,
   PriceListSummary,
+  ReleaseSummary,
+  StoreSummary,
   TaxCategorySummary,
   UnitSummary,
 } from '../types';
@@ -30,6 +32,32 @@ export function useItems() {
       const { data } = await api.GET('/api/v1/backoffice/catalog/items', { params: { query: LIST_PAGE } });
       return { content: data?.content ?? [], totalElements: data?.totalElements ?? 0 };
     },
+  });
+}
+
+export const RELEASE_PAGE_SIZE = 20;
+
+/** A store's releases, newest first (the server's default order); the first page, which holds the live ones. */
+export function useReleases(storeId: string) {
+  const api = useApi();
+  return useQuery({
+    queryKey: [...CATALOG_KEY, 'releases', storeId],
+    queryFn: async (): Promise<ListPage<ReleaseSummary>> => {
+      const { data } = await api.GET('/api/v1/backoffice/catalog/releases', {
+        params: { query: { storeId, page: 0, size: RELEASE_PAGE_SIZE } },
+      });
+      return { content: data?.content ?? [], totalElements: data?.totalElements ?? 0 };
+    },
+  });
+}
+
+/** The store, for its timezone (instants are shown in it, FC §12). */
+export function useStore(storeId: string) {
+  const api = useApi();
+  return useQuery({
+    queryKey: ['backoffice', 'stores', storeId],
+    queryFn: async (): Promise<StoreSummary | undefined> =>
+      (await api.GET('/api/v1/backoffice/stores/{id}', { params: { path: { id: storeId } } })).data,
   });
 }
 

@@ -1,4 +1,5 @@
-import { LOCALE } from '@restaurantpro/ui';
+import { LOCALE, type StatusMap } from '@restaurantpro/ui';
+import { Archive, CircleCheck, CircleHelp, PencilLine, Rocket } from 'lucide-react';
 import type { TaxCategorySummary } from './types';
 
 /** A destination without a route colour: the raised surface with light text. */
@@ -39,6 +40,23 @@ export function taxLabel(category: TaxCategorySummary | undefined, at: string): 
   return rate === undefined
     ? (category.name ?? '')
     : `${category.name} (${percent.format(rate as Intl.StringNumericLiteral)}%)`;
+}
+
+/** `ReleaseSummary.status` (§8.3: DRAFT → VALIDATED → PUBLISHED → RETIRED); an unknown one shows as itself. */
+const releaseStatuses: StatusMap<string> = {
+  DRAFT: { label: 'Rascunho', icon: PencilLine, tone: 'warning' },
+  VALIDATED: { label: 'Validada', icon: CircleCheck, tone: 'info' },
+  PUBLISHED: { label: 'Publicada', icon: Rocket, tone: 'success' },
+  RETIRED: { label: 'Retirada', icon: Archive, tone: 'neutral' },
+};
+
+export function releaseStatusesFor(status: string): StatusMap<string> {
+  return status in releaseStatuses ? releaseStatuses : { [status]: { label: status, icon: CircleHelp, tone: 'neutral' } };
+}
+
+/** "1 aviso", "2 avisos". */
+export function warningsLabel(count: number): string {
+  return count === 1 ? '1 aviso' : `${count} avisos`;
 }
 
 /** `ItemSummary.availability` (ACTIVE, INACTIVE). */

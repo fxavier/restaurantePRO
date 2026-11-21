@@ -3,6 +3,7 @@ import { useCatalogTab } from '../hooks/use-catalog-tab';
 import { FamiliesTab } from './families-tab';
 import { ItemsTab } from './items-tab';
 import { PricesTab } from './prices-tab';
+import { ReleasesTab } from './releases-tab';
 
 /**
  * Stitch "Catálogo & Versões": one page, its sections as tabs kept in `?tab`. Items and families are the company's;
@@ -16,6 +17,7 @@ export function CatalogScreen({ storeId }: { storeId: string | undefined }) {
         <TabsTrigger value="artigos">Artigos</TabsTrigger>
         <TabsTrigger value="familias">Famílias</TabsTrigger>
         <TabsTrigger value="precos">Preços</TabsTrigger>
+        <TabsTrigger value="versoes">Versões</TabsTrigger>
       </TabsList>
       <TabsContent value="artigos">
         <ItemsTab />
@@ -25,6 +27,9 @@ export function CatalogScreen({ storeId }: { storeId: string | undefined }) {
       </TabsContent>
       <TabsContent value="precos">
         <PricesTab storeId={storeId} />
+      </TabsContent>
+      <TabsContent value="versoes">
+        <ReleasesTab storeId={storeId} />
       </TabsContent>
     </Tabs>
   );

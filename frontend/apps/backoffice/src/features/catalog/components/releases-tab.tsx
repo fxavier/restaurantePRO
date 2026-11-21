@@ -1,0 +1,200 @@
+import {
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  ConfirmButton,
+  DataState,
+  LOCALE,
+  StatusBadge,
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@restaurantpro/ui';
+import { Plus, Rocket, ShieldCheck } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { useSession } from '../../identity';
+import { releaseStatusesFor, warningsLabel } from '../catalog-labels';
+import { useCreateRelease, useValidateRelease } from '../hooks/use-catalog-commands';
+import { useReleases, useStore } from '../hooks/use-catalog-queries';
+import { canPublish } from '../release-commands';
+import type { ReleaseSummary } from '../types';
+import { CommandAlert } from './form-parts';
+import { LoadError } from './load-error';
+import { PublishDialog } from './publish-dialog';
+import { ResumePublication } from './resume-publication';
+import { StoreRequired } from './store-required';
+
+/** "Versões": the store's catalog releases (spec §8.3), and starting, validating and publishing one. */
+export function ReleasesTab({ storeId }: { storeId: string | undefined }) {
+  if (!storeId) return <StoreRequired what="as versões do catálogo" />;
+  return <StoreReleases key={storeId} storeId={storeId} />;
+}
+
+function StoreReleases({ storeId }: { storeId: string }) {
+  const releases = useReleases(storeId);
+  const timeZone = useStore(storeId).data?.timezone;
+  const create = useCreateRelease(storeId);
+  const validate = useValidateRelease(storeId);
+  const publishAllowed = canPublish(useSession().data?.permissions ?? [], storeId);
+  const [toPublish, setToPublish] = useState<string | undefined>();
+
+  if (releases.isError) {
+    return <LoadError error={releases.error} onRetry={() => void releases.refetch()} forbidden="Sem permissão para ver as versões desta loja." />;
+  }
+  const list = releases.data?.content ?? [];
+  return (
+    <div className="flex flex-col gap-4">
+      <ResumePublication storeId={storeId} />
+      <Card>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <CardTitle className="text-lg">Versões do catálogo</CardTitle>
+            <CardDescription>
+              Rascunho → Validada → Publicada → Retirada. Publicar uma versão não altera pedidos nem documentos já
+              registados.
+            </CardDescription>
+          </div>
+          {releases.data && (
+            <ConfirmButton pending={create.isPending} onClick={() => create.mutate(undefined)}>
+              <Plus aria-hidden="true" />
+              Nova versão
+            </ConfirmButton>
+          )}
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          {create.error && <CommandAlert error={create.error} pending={create.isPending} onRetry={() => create.mutate(undefined)} />}
+          {validate.error && (
+            <CommandAlert
+              error={validate.error}
+              pending={validate.isPending}
+              onRetry={() => validate.variables && validate.mutate(validate.variables)}
+            />
+          )}
+          <DataState
+            state={releases.isPending ? 'loading' : list.length ? 'ready' : 'empty'}
+            emptyMessage="Esta loja ainda não tem versões do catálogo."
+          >
+            <ReleasesTable
+              releases={list}
+              timeZone={timeZone}
+              actions={(release) => (
+                <ReleaseActions
+                  release={release}
+                  validating={validate.isPending}
+                  publishAllowed={publishAllowed}
+                  onValidate={() => validate.mutate(release.id ?? '')}
+                  onPublish={() => setToPublish(release.id)}
+                />
+              )}
+            />
+          </DataState>
+        </CardContent>
+      </Card>
+      <PublishDialog releaseId={toPublish} storeId={storeId} onClose={() => setToPublish(undefined)} />
+    </div>
+  );
+}
+
+type ReleasesTableProps = {
+  releases: ReleaseSummary[];
+  timeZone: string | undefined;
+  actions: (release: ReleaseSummary) => ReactNode;
+};
+
+function ReleasesTable({ releases, timeZone, actions }: ReleasesTableProps) {
+  return (
+    <Table>
+      <TableCaption className="sr-only">Versões do catálogo da loja</TableCaption>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Estado</TableHead>
+          <TableHead>Criada</TableHead>
+          <TableHead>Validada</TableHead>
+          <TableHead>Publicada</TableHead>
+          <TableHead>Avisos</TableHead>
+          <TableHead>
+            <span className="sr-only">Ações</span>
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {releases.map((release) => (
+          <TableRow key={release.id}>
+            <TableCell>
+              <StatusBadge status={release.status ?? ''} statuses={releaseStatusesFor(release.status ?? '')} />
+            </TableCell>
+            <TableCell className="tabular-nums">{instant(release.createdAt, timeZone)}</TableCell>
+            <TableCell className="tabular-nums">{instant(release.validatedAt, timeZone)}</TableCell>
+            <TableCell className="tabular-nums">{instant(release.effectiveAt, timeZone)}</TableCell>
+            <TableCell>
+              <Warnings release={release} />
+            </TableCell>
+            <TableCell>{actions(release)}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+type ReleaseActionsProps = {
+  release: ReleaseSummary;
+  validating: boolean;
+  publishAllowed: boolean;
+  onValidate: () => void;
+  onPublish: () => void;
+};
+
+/** What §8.3 allows from the release's state: validate a DRAFT or VALIDATED one, publish a VALIDATED one. */
+function ReleaseActions({ release, validating, publishAllowed, onValidate, onPublish }: ReleaseActionsProps) {
+  const validatable = release.status === 'DRAFT' || release.status === 'VALIDATED';
+  return (
+    <div className="flex justify-end gap-2">
+      {validatable && (
+        <Button variant="outline" size="sm" disabled={validating} onClick={onValidate}>
+          <ShieldCheck aria-hidden="true" />
+          Validar
+        </Button>
+      )}
+      {release.status === 'VALIDATED' && publishAllowed && (
+        <Button size="sm" onClick={onPublish}>
+          <Rocket aria-hidden="true" />
+          Publicar
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function Warnings({ release }: { release: ReleaseSummary }) {
+  const warnings = release.validationWarnings ?? [];
+  if (!warnings.length) return <span className="text-muted-foreground">—</span>;
+  return (
+    <details className="text-sm">
+      <summary className="cursor-pointer rounded-sm font-medium text-warning focus-visible:outline-2 focus-visible:outline-ring">
+        {warningsLabel(warnings.length)}
+      </summary>
+      <ul className="mt-2 flex flex-col gap-1 text-muted-foreground">
+        {warnings.map((warning, index) => (
+          <li key={`${warning.code}-${warning.itemId ?? index}`}>
+            {warning.itemCode ? `${warning.itemCode} · ${warning.message}` : warning.message}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+/** An instant in the store's timezone (FC §12); nothing until the timezone is known, never the browser's. */
+function instant(at: string | undefined, timeZone: string | undefined): string {
+  if (!at) return '—';
+  if (!timeZone) return '…';
+  return new Intl.DateTimeFormat(LOCALE, { dateStyle: 'short', timeStyle: 'short', timeZone }).format(new Date(at));
+}

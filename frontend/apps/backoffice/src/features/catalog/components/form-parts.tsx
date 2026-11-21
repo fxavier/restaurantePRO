@@ -13,6 +13,7 @@ import {
 import { TriangleAlert, WifiOff } from 'lucide-react';
 import type { Control, FieldPath, FieldValues, UseFormReturn } from 'react-hook-form';
 import { isTenantChanged, isUnavailable } from '../../../lib/errors';
+import { isInProgress } from '../../../lib/in-progress';
 import { catalogErrorMessage, placeOnFields } from '../form-errors';
 
 type FieldProps<Values extends FieldValues> = {
@@ -141,7 +142,7 @@ export function CommandAlert({ error, pending, onRetry }: { error: unknown; pend
       <Icon aria-hidden="true" />
       <AlertDescription className="flex flex-wrap items-center gap-3">
         <span>{catalogErrorMessage(error)}</span>
-        {unavailable && (
+        {(unavailable || isInProgress(error)) && (
           <Button type="button" variant="outline" size="sm" onClick={onRetry} disabled={pending}>
             Tentar novamente
           </Button>

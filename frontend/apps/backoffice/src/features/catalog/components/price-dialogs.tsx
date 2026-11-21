@@ -2,7 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Button, Form } from '@restaurantpro/ui';
 import { Pencil, Plus } from 'lucide-react';
 import { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { nonFieldError } from '../form-errors';
 import { useCreatePriceList, useSavePrice } from '../hooks/use-catalog-commands';
 import { useItems, useVariants } from '../hooks/use-catalog-queries';
@@ -100,7 +100,7 @@ function NewPriceForm({ priceListId, onDone }: { priceListId: string; onDone: ()
   });
   const save = useSavePrice(priceListId);
   const items = useItems();
-  const variants = useVariants(form.watch('itemId'));
+  const variants = useVariants(useWatch({ control: form.control, name: 'itemId' }));
   const onSubmit = form.handleSubmit(({ itemId, variantId, amount }) =>
     save.mutate(
       { body: { itemId, amount, ...(variantId ? { variantId } : {}) } },
