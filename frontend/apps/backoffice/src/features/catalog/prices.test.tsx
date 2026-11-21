@@ -133,6 +133,17 @@ describe('Preços', () => {
     ]);
   });
 
+  it('says, when pricing, that the items to choose from are cut at one page', async () => {
+    pricesServer();
+    server.use(http.get(api('/api/v1/backoffice/catalog/items'), () => HttpResponse.json(page([bife, sangria], 200, 250))));
+
+    const { user } = renderApp(PRICES);
+
+    await user.click(await screen.findByRole('button', { name: 'Definir preço' }));
+    const dialog = screen.getByRole('dialog', { name: 'Definir preço' });
+    expect(within(dialog).getByRole('note')).toHaveTextContent('Lista incompleta: mostra 2 de 250 artigos');
+  });
+
   it('changes a price under the version it was read at, and shows the amount the server answered', async () => {
     const state = pricesServer();
 

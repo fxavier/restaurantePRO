@@ -38,6 +38,30 @@ describe('Artigos', () => {
       ['SangriaB07', 'Bebidas', 'Bar', 'IVA normal (16%)', 'Ativo'],
     ]);
     expect(state.lists).toEqual(['?page=0&size=200']);
+    expect(screen.queryByRole('note')).not.toBeInTheDocument();
+  });
+
+  it('says the list is cut, and the search covers only what it shows, when the server holds more items than one page', async () => {
+    itemsServer();
+    server.use(http.get(api('/api/v1/backoffice/catalog/items'), () => HttpResponse.json(page([bife, sangria], 200, 201))));
+
+    renderApp('/catalog');
+
+    await screen.findByRole('table', { name: 'Artigos do catálogo' });
+    expect(screen.getByRole('note')).toHaveTextContent(
+      'Lista incompleta: mostra 2 de 201 artigos; o resto não aparece aqui nem na pesquisa.',
+    );
+  });
+
+  it('says in the item form which choice lists are cut', async () => {
+    itemsServer([bife]);
+    server.use(http.get(api('/api/v1/backoffice/catalog/tax-categories'), () => HttpResponse.json(page([ivaNormal], 200, 230))));
+
+    const { user } = renderApp('/catalog');
+
+    await user.click(await screen.findByRole('button', { name: 'Novo artigo' }));
+    const dialog = screen.getByRole('dialog', { name: 'Novo artigo' });
+    expect(await within(dialog).findByRole('note')).toHaveTextContent('Lista incompleta: mostra 1 de 230 categorias de IVA');
   });
 
   it('narrows the list by family and by a search on name or code', async () => {

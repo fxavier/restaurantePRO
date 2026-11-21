@@ -18,6 +18,16 @@ function familiesServer(initial: FamilySummary[] = [carnes, bebidas]) {
 }
 
 describe('Famílias', () => {
+  it('says the list is cut when the server holds more families than the one page it sends', async () => {
+    familiesServer();
+    server.use(http.get(api('/api/v1/backoffice/catalog/families'), () => HttpResponse.json(page([carnes, bebidas], 200, 201))));
+
+    renderApp('/catalog?tab=familias');
+
+    await screen.findByRole('table', { name: 'Famílias do catálogo' });
+    expect(screen.getByRole('note')).toHaveTextContent('Lista incompleta: mostra 2 de 201 famílias');
+  });
+
   it('is a tab of the page, kept in the address with the store', async () => {
     familiesServer();
 

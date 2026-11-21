@@ -17,6 +17,7 @@ import { availabilityLabel, destinationOf, taxLabel } from '../catalog-labels';
 import { useFamilies, useItems, useTaxCategories } from '../hooks/use-catalog-queries';
 import { countByFamily, filterItems } from '../item-filter';
 import type { FamilySummary, ItemSummary, TaxCategorySummary } from '../types';
+import { CutListNotice } from './cut-list-notice';
 import { FamilyPills } from './family-pills';
 import { ItemFormDialog } from './item-form-dialog';
 import { ItemSheet } from './item-sheet';
@@ -45,8 +46,9 @@ export function ItemsTab() {
             <SearchBox value={search} onChange={setSearch} />
             {items.data && <ItemFormDialog />}
           </div>
+          <CutListNotice list={items.data} what="artigos" />
           <FamilyPills
-            families={families.data ?? []}
+            families={families.data?.content ?? []}
             counts={countByFamily(all)}
             total={all.length}
             selected={familyId}
@@ -57,7 +59,7 @@ export function ItemsTab() {
       <Card>
         <CardContent>
           <DataState state={items.isPending ? 'loading' : all.length ? 'ready' : 'empty'} emptyMessage="Ainda não há artigos.">
-            <ItemsTable items={shown} families={families.data} taxCategories={taxCategories.data} />
+            <ItemsTable items={shown} families={families.data?.content} taxCategories={taxCategories.data?.content} />
           </DataState>
         </CardContent>
       </Card>

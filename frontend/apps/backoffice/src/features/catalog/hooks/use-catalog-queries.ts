@@ -18,23 +18,37 @@ export const CATALOG_KEY = ['backoffice', 'catalog'] as const;
 
 /**
  * The largest page the API serves (backend `max-page-size`, D23). The item list has no search or family filter in the
- * contract (gap CAT-1), so the screen reads one such page and filters it in the browser.
+ * contract (gap CAT-1), so the screen reads one such page and filters it in the browser; `totalElements` above the
+ * content says the list is cut (see CutListNotice).
  */
 export const LIST_PAGE = { page: 0, size: 200 };
 
 export type ListPage<T> = { content: T[]; totalElements: number };
 
-/** The company's items (one page of 200, by code). */
-export function useItems() {
-  const api = useApi();
-  return useQuery({
-    queryKey: [...CATALOG_KEY, 'items'],
-    queryFn: async (): Promise<ListPage<ItemSummary>> => {
-      const { data } = await api.GET('/api/v1/backoffice/catalog/items', { params: { query: LIST_PAGE } });
-      return { content: data?.content ?? [], totalElements: data?.totalElements ?? 0 };
-    },
-  });
+type PageAnswer<T> = { data?: { content?: T[]; totalElements?: number } };
+
+/** A page answer as a ListPage; an absent answer is an empty one. */
+function toListPage<T>({ data }: PageAnswer<T>): ListPage<T> {
+  const content = data?.content ?? [];
+  return { content, totalElements: data?.totalElements ?? content.length };
 }
+
+/** A catalog list read as its first page of 200, by code. */
+function usePagedList<T>(key: string, read: (api: ApiClient) => Promise<PageAnswer<T>>) {
+  const api = useApi();
+  return useQuery({ queryKey: [...CATALOG_KEY, key], queryFn: async () => toListPage(await read(api)) });
+}
+
+const REFERENCE_PAGE = { params: { query: LIST_PAGE } };
+
+export const useItems = () =>
+  usePagedList<ItemSummary>('items', (api) => api.GET('/api/v1/backoffice/catalog/items', REFERENCE_PAGE));
+export const useFamilies = () =>
+  usePagedList<FamilySummary>('families', (api) => api.GET('/api/v1/backoffice/catalog/families', REFERENCE_PAGE));
+export const useUnits = () =>
+  usePagedList<UnitSummary>('units', (api) => api.GET('/api/v1/backoffice/catalog/units', REFERENCE_PAGE));
+export const useTaxCategories = () =>
+  usePagedList<TaxCategorySummary>('tax-categories', (api) => api.GET('/api/v1/backoffice/catalog/tax-categories', REFERENCE_PAGE));
 
 export const RELEASE_PAGE_SIZE = 20;
 
@@ -43,12 +57,10 @@ export function useReleases(storeId: string) {
   const api = useApi();
   return useQuery({
     queryKey: [...CATALOG_KEY, 'releases', storeId],
-    queryFn: async (): Promise<ListPage<ReleaseSummary>> => {
-      const { data } = await api.GET('/api/v1/backoffice/catalog/releases', {
-        params: { query: { storeId, page: 0, size: RELEASE_PAGE_SIZE } },
-      });
-      return { content: data?.content ?? [], totalElements: data?.totalElements ?? 0 };
-    },
+    queryFn: async (): Promise<ListPage<ReleaseSummary>> =>
+      toListPage(
+        await api.GET('/api/v1/backoffice/catalog/releases', { params: { query: { storeId, page: 0, size: RELEASE_PAGE_SIZE } } }),
+      ),
   });
 }
 
@@ -95,11 +107,3 @@ export function useBarcodes(itemId: string) {
     (await api.GET('/api/v1/backoffice/catalog/barcodes', { params: { query: { itemId } } })).data,
   );
 }
-
-/** The reference lists the item form and list need: one page of 200 each, by code. */
-const REFERENCE_PAGE = { params: { query: LIST_PAGE } };
-const content = <T>(answer: { data?: { content?: T[] } }) => answer.data?.content;
-
-export const useFamilies = () => useCatalogList<FamilySummary>(['families'], async (api) => content(await api.GET('/api/v1/backoffice/catalog/families', REFERENCE_PAGE)));
-export const useUnits = () => useCatalogList<UnitSummary>(['units'], async (api) => content(await api.GET('/api/v1/backoffice/catalog/units', REFERENCE_PAGE)));
-export const useTaxCategories = () => useCatalogList<TaxCategorySummary>(['tax-categories'], async (api) => content(await api.GET('/api/v1/backoffice/catalog/tax-categories', REFERENCE_PAGE)));

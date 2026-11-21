@@ -13,6 +13,7 @@ import {
   TableRow,
 } from '@restaurantpro/ui';
 import { useFamilies } from '../hooks/use-catalog-queries';
+import { CutListNotice } from './cut-list-notice';
 import { FamilyFormDialog } from './family-form-dialog';
 import { LoadError } from './load-error';
 
@@ -22,7 +23,7 @@ export function FamiliesTab() {
   if (families.isError) {
     return <LoadError error={families.error} onRetry={() => void families.refetch()} forbidden="Sem permissão para ver as famílias." />;
   }
-  const list = families.data ?? [];
+  const list = families.data?.content ?? [];
   const nameOf = (id: string | undefined) => (id ? (list.find((family) => family.id === id)?.name ?? '—') : '—');
   return (
     <Card>
@@ -30,7 +31,8 @@ export function FamiliesTab() {
         <CardTitle className="text-lg">Famílias</CardTitle>
         {families.data && <FamilyFormDialog families={list} />}
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex flex-col gap-4">
+        <CutListNotice list={families.data} what="famílias" />
         <DataState state={families.isPending ? 'loading' : list.length ? 'ready' : 'empty'} emptyMessage="Ainda não há famílias.">
           <Table>
             <TableCaption className="sr-only">Famílias do catálogo</TableCaption>

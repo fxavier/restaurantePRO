@@ -14,9 +14,9 @@ export type PriceListSummary = Dto<'PriceListSummary'>;
 export type ItemPriceSummary = Dto<'ItemPriceSummary'>;
 export type ReleaseSummary = Dto<'ReleaseSummary'>;
 
-/** Spring's page answer, as every catalog list sends it. */
-export function page<T>(content: T[], size = 200) {
-  return { content, page: 0, size, totalElements: content.length };
+/** Spring's page answer, as every catalog list sends it; `totalElements` above the content is a list cut at one page. */
+export function page<T>(content: T[], size = 200, totalElements = content.length) {
+  return { content, page: 0, size, totalElements };
 }
 
 export const carnes: FamilySummary = { id: 'f0000000-0000-4000-8000-000000000001', code: 'CARNES', name: 'Carnes', version: 0 };

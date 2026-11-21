@@ -10,6 +10,7 @@ import { useFamilies, useTaxCategories, useUnits } from '../hooks/use-catalog-qu
 import { createItemRequest, itemValues, NEW_ITEM, updateItemRequest } from '../item-request';
 import { itemSchema, type ItemValues } from '../schemas';
 import type { ItemSummary } from '../types';
+import { CutListNotice } from './cut-list-notice';
 import { FormDialog } from './form-dialog';
 import { FormFooter, SelectField, showOnFields, TextField, type Option } from './form-parts';
 
@@ -61,6 +62,7 @@ function ItemForm({ item, onDone }: { item?: ItemSummary; onDone: () => void }) 
   return (
     <Form {...form}>
       <form onSubmit={(event) => void onSubmit(event)} noValidate className="grid gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-2 empty:hidden sm:col-span-2">{options.notices}</div>
         <TextField control={form.control} name="code" label="Código" maxLength={30} className="uppercase" />
         <TextField control={form.control} name="name" label="Nome" maxLength={120} />
         <SelectField control={form.control} name="familyId" label="Família" options={options.families} placeholder="Escolher família" />
@@ -108,10 +110,17 @@ function useItemOptions(currentDestination: string | undefined) {
   const taxCategories = useTaxCategories();
   const [now] = useState(() => new Date().toISOString());
   return {
-    families: namedOptions(families.data),
-    units: namedOptions(units.data),
-    taxCategories: (taxCategories.data ?? []).map((category) => ({ value: category.id ?? '', label: taxLabel(category, now) })),
+    families: namedOptions(families.data?.content),
+    units: namedOptions(units.data?.content),
+    taxCategories: (taxCategories.data?.content ?? []).map((category) => ({ value: category.id ?? '', label: taxLabel(category, now) })),
     destinations: destinationOptions(currentDestination),
+    notices: (
+      <>
+        <CutListNotice list={families.data} what="famílias" />
+        <CutListNotice list={units.data} what="unidades" />
+        <CutListNotice list={taxCategories.data} what="categorias de IVA" />
+      </>
+    ),
   };
 }
 

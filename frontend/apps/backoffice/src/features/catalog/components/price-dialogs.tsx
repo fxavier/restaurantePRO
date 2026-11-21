@@ -17,6 +17,7 @@ import {
   type PriceValues,
 } from '../schemas';
 import type { ItemPriceSummary, PriceListSummary } from '../types';
+import { CutListNotice } from './cut-list-notice';
 import { FormDialog } from './form-dialog';
 import { FormFooter, SelectField, showOnFields, TextField } from './form-parts';
 
@@ -112,6 +113,7 @@ function NewPriceForm({ priceListId, onDone }: { priceListId: string; onDone: ()
   return (
     <Form {...form}>
       <form onSubmit={(event) => void onSubmit(event)} noValidate className="flex flex-col gap-4">
+        <CutListNotice list={items.data} what="artigos" />
         <SelectField control={form.control} name="itemId" label="Artigo" options={itemOptions} placeholder="Escolher artigo" />
         <SelectField control={form.control} name="variantId" label="Variante" options={variantOptions} placeholder="O próprio artigo" />
         <TextField control={form.control} name="amount" label="Preço" inputMode="decimal" className="max-w-48 tabular-nums" />
