@@ -131,9 +131,10 @@ export function FormFooter({ submitLabel, pending, error, rootMessage, onCancel,
 
 /**
  * A command's failure (FC §9): explained in Portuguese; without an answer the outcome is unknown, so "Tentar novamente"
- * sends the same request again (FC §8). TENANT_CHANGED is not explained: the page reloads for it.
+ * sends the same request again (FC §8). A command a resend could duplicate passes no `onRetry`. TENANT_CHANGED is not
+ * explained: the page reloads for it.
  */
-export function CommandAlert({ error, pending, onRetry }: { error: unknown; pending: boolean; onRetry: () => void }) {
+export function CommandAlert({ error, pending, onRetry }: { error: unknown; pending: boolean; onRetry?: () => void }) {
   if (isTenantChanged(error)) return null;
   const unavailable = isUnavailable(error);
   const Icon = unavailable ? WifiOff : TriangleAlert;
@@ -142,7 +143,7 @@ export function CommandAlert({ error, pending, onRetry }: { error: unknown; pend
       <Icon aria-hidden="true" />
       <AlertDescription className="flex flex-wrap items-center gap-3">
         <span>{catalogErrorMessage(error)}</span>
-        {(unavailable || isInProgress(error)) && (
+        {onRetry && (unavailable || isInProgress(error)) && (
           <Button type="button" variant="outline" size="sm" onClick={onRetry} disabled={pending}>
             Tentar novamente
           </Button>

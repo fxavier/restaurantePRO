@@ -65,7 +65,8 @@ function StoreReleases({ storeId }: { storeId: string }) {
           )}
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <FailedCommand command={create} retry={() => create.mutate(undefined)} />
+          {/* No Idempotency-Key on POST /releases: a resend could make a second draft. The list, read again, shows whether it exists. */}
+          <FailedCommand command={create} />
           <FailedCommand command={validate} retry={() => validate.variables && validate.mutate(validate.variables)} />
           <ReleasesList
             storeId={storeId}
@@ -113,8 +114,8 @@ function ReleasesList({ storeId, loading, releases, validating, onValidate, onPu
   );
 }
 
-/** A release command's failure, with "Tentar novamente" when resending can help; nothing while it has not failed. */
-function FailedCommand({ command, retry }: { command: { error: unknown; isPending: boolean }; retry: () => void }) {
+/** A release command's failure, with "Tentar novamente" when `retry` is given and resending can help; nothing while it has not failed. */
+function FailedCommand({ command, retry }: { command: { error: unknown; isPending: boolean }; retry?: () => void }) {
   if (!command.error) return null;
   return <CommandAlert error={command.error} pending={command.isPending} onRetry={retry} />;
 }

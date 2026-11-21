@@ -93,7 +93,7 @@ function useReleaseMutation<Variables>(storeId: string, send: (variables: Variab
   });
 }
 
-/** A new DRAFT release of the store (no Idempotency-Key in the contract). */
+/** A new DRAFT release of the store. No Idempotency-Key in the contract, so it is never resent; the list read again shows the outcome. */
 export function useCreateRelease(storeId: string) {
   const api = useApi();
   return useReleaseMutation(storeId, async () => (await api.POST('/api/v1/backoffice/catalog/releases', { body: { storeId } })).data);

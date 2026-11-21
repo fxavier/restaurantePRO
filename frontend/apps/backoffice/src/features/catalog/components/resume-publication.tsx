@@ -29,6 +29,8 @@ export function ResumePublication({ storeId }: { storeId: string }) {
     clearPendingCommand();
     setPublication(undefined);
   };
+  // The command was cleared when sent: a resend would meet the same step-up, so only closing is left.
+  const expired = isStepUpRequired(publish.error);
   return (
     <Card role="region" aria-labelledby={titleId} className="border-primary">
       <CardHeader>
@@ -37,15 +39,17 @@ export function ResumePublication({ storeId }: { storeId: string }) {
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {publication.note && <p className="text-sm">Nota: {publication.note}</p>}
-        {publish.error && !isStepUpRequired(publish.error) && <CommandAlert error={publish.error} pending={publish.isPending} onRetry={send} />}
-        {isStepUpRequired(publish.error) && <p role="alert" className="text-sm text-error">A confirmação de identidade expirou. Publique de novo.</p>}
+        {publish.error && !expired && <CommandAlert error={publish.error} pending={publish.isPending} onRetry={send} />}
+        {expired && <p role="alert" className="text-sm text-error">A confirmação de identidade expirou. Publique de novo.</p>}
         <div className="flex flex-wrap justify-end gap-2">
           <Button type="button" variant="outline" onClick={cancel}>
-            Cancelar
+            {expired ? 'Fechar' : 'Cancelar'}
           </Button>
-          <ConfirmButton pending={publish.isPending} onClick={send}>
-            Continuar
-          </ConfirmButton>
+          {!expired && (
+            <ConfirmButton pending={publish.isPending} onClick={send}>
+              Continuar
+            </ConfirmButton>
+          )}
         </div>
       </CardContent>
     </Card>

@@ -101,6 +101,26 @@ describe('Versões', () => {
     expect(state.sent).toEqual([{ path: '/releases', body: { storeId: baixa.id }, idempotencyKey: null }]);
   });
 
+  it('does not resend "Nova versão" after no answer, but reads the list again to show whether the draft exists', async () => {
+    const state = releasesServer([published]);
+    server.use(
+      http.post(api('/api/v1/backoffice/catalog/releases'), async ({ request }) => {
+        await record(state, request, '/releases');
+        state.releases.unshift(draft);
+        return problem(503, 'BACKEND_UNAVAILABLE');
+      }),
+    );
+
+    const { user } = renderApp(VERSIONS);
+
+    await user.click(await screen.findByRole('button', { name: 'Nova versão' }));
+
+    expect(await screen.findByText('Sem ligação — a operação não foi confirmada.')).toBeInTheDocument();
+    await waitFor(() => expect(rows().map(([status]) => status)).toEqual(['Rascunho', 'Publicada']));
+    expect(screen.queryByRole('button', { name: 'Tentar novamente' })).not.toBeInTheDocument();
+    expect(state.sent).toHaveLength(1);
+  });
+
   it('validates a draft, and explains a validation that found problems', async () => {
     const state = releasesServer([draft, published]);
     let attempts = 0;
@@ -211,6 +231,29 @@ describe('publishing a release', () => {
       { path: `/releases/${validated.id}/publish`, body: {}, idempotencyKey: state.sent[0]!.idempotencyKey },
     ]);
     expect(sessionStorage.length).toBe(0);
+  });
+
+  it('offers no "Continuar" when the resumed publication asks for the second factor again', async () => {
+    const state = releasesServer();
+    publishing(state, [() => stepUpRequired(300), () => stepUpRequired(300)]);
+
+    const first = renderApp(VERSIONS);
+    await first.user.click(await screen.findByRole('button', { name: 'Publicar' }));
+    const dialog = screen.getByRole('dialog', { name: 'Publicar versão' });
+    await first.user.click(within(dialog).getByRole('button', { name: 'Publicar' }));
+    await first.user.click(await within(dialog).findByRole('button', { name: 'Confirmar identidade' }));
+    cleanup();
+    resetLoginGuard();
+    const { user } = renderApp(VERSIONS);
+
+    const resume = await screen.findByRole('region', { name: 'Publicação por continuar' });
+    await user.click(within(resume).getByRole('button', { name: 'Continuar' }));
+
+    expect(await within(resume).findByText('A confirmação de identidade expirou. Publique de novo.')).toBeInTheDocument();
+    expect(within(resume).queryByRole('button', { name: 'Continuar' })).not.toBeInTheDocument();
+    await user.click(within(resume).getByRole('button', { name: 'Fechar' }));
+    expect(screen.queryByRole('region', { name: 'Publicação por continuar' })).not.toBeInTheDocument();
+    expect(state.sent).toHaveLength(2);
   });
 
   it('explains a release that changed state meanwhile, and shows the list as it is now', async () => {
