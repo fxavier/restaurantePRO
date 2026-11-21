@@ -4,6 +4,7 @@ import type {
   BelowMinimumReport,
   PurchaseOrderView,
   ReceiptView,
+  RecipeView,
   StockItemView,
   StockRow,
   StoreSummary,
@@ -107,7 +108,17 @@ export function useReceipts(storeId: string, page = 0) {
   });
 }
 
-export type StockPage = { rows: StockRow[]; page: number; totalElements: number };
+export function useRecipes(page = 0) {
+  const api = useApi();
+  return useQuery({
+    queryKey: [...INVENTORY_KEY, 'recipes', page],
+    queryFn: async (): Promise<ListPage<RecipeView>> =>
+      listPage((await api.GET('/api/v1/backoffice/inventory/recipes', { params: { query: { page, size: LIST_PAGE_SIZE } } })).data),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export type StockPage ={ rows: StockRow[]; page: number; totalElements: number };
 
 /** One page of a warehouse's stock, optionally only what is below its minimum. */
 export function useStock(warehouseId: string | undefined, belowMinimum: boolean, page: number) {

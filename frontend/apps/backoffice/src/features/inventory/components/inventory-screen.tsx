@@ -1,9 +1,10 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@restaurantpro/ui';
-import { Boxes, ShoppingCart, type LucideIcon } from 'lucide-react';
+import { Boxes, CookingPot, ShoppingCart, type LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useSearchParams } from 'react-router';
 import { useStore } from '../hooks/use-inventory-reads';
 import { PurchasingTab } from './purchasing-tab';
+import { RecipesTab } from './recipes-tab';
 import { StockSummary } from './stock-summary';
 import { StockTab } from './stock-tab';
 
@@ -12,6 +13,7 @@ type Tab = { value: string; label: string; icon: LucideIcon; render: (store: Sto
 
 const TABS: Tab[] = [
   { value: 'stock', label: 'Stock', icon: Boxes, render: ({ storeId, currency }) => <StockTab storeId={storeId} currency={currency} /> },
+  { value: 'receitas', label: 'Fichas técnicas', icon: CookingPot, render: ({ storeId }) => <RecipesTab storeId={storeId} /> },
   {
     value: 'compras',
     label: 'Compras',
