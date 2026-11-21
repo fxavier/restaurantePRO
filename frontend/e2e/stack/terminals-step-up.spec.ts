@@ -1,8 +1,7 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { randomBytes } from 'node:crypto';
 import { expectNoAxeViolations } from '../axe';
-import { seeded, signInToBackOffice, stack } from '../support/stack';
-import { freshTotp } from '../support/totp';
+import { reauthenticate, seeded, signInToBackOffice, stack } from '../support/stack';
 
 // Flow (a) of ADR 0043 / PRD AC2 on the real stack: OTP sign-in, the store, register a terminal, then issue its
 // enrolment code with a stale second factor, through the BFF's step-up and back to "Continuar".
@@ -10,20 +9,6 @@ import { freshTotp } from '../support/totp';
 // is stale 30 s later instead of five minutes.
 const STEP_UP_MAX_AGE_MS = 30_000;
 
-/** Keycloak asks again for what max_age expired: the password (the user name may be fixed) and the TOTP code. */
-async function reauthenticate(page: Page, retry: number) {
-  const password = page.locator('#password');
-  const otp = page.locator('#otp');
-  await expect(password.or(otp)).toBeVisible();
-  if (await password.isVisible()) {
-    const username = page.locator('#username');
-    if (await username.isVisible()) await username.fill(seeded.adminEmail());
-    await password.fill(seeded.adminPassword());
-    await page.locator('#kc-login').click();
-  }
-  await otp.fill(await freshTotp(seeded.adminTotpSecret(), retry));
-  await page.locator('#kc-login').click();
-}
 
 test('flow (a): register a terminal, then issue its code through step-up, once', async ({ page }, testInfo) => {
   // two TOTP periods may be waited for (sign-in and step-up), plus the 30 s for the second factor to go stale

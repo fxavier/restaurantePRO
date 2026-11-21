@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { chmodSync, writeFileSync } from 'node:fs';
-import { backOfficeCall, seeded, signInToBackOffice, stack } from '../support/stack';
+import { backOfficeCall, seeded, signInToBackOffice, stack, stepUpBackOffice } from '../support/stack';
 
 // Demo seed for manual testing (opt-in: E2E_DEMO_SEED=1, else skipped): on top of the global setup's tenant, a fuller BackOffice (areas, tables,
 // catalog with production destinations, waiters, terminals) and POS activity (open tables with sent rounds and a draft),
@@ -87,14 +87,54 @@ test('demo seed', async ({ browser }, testInfo) => {
   }
   const release = await post(`${catalog}/releases`, { storeId });
   await post(`${catalog}/releases/${release.id}/validate`);
+  // Publishing is sensitive (D142): its step-up must be at most 30 s old on the stack, and the seeding above can take
+  // longer, so step up again right before it.
+  await stepUpBackOffice(bo, testInfo.retry);
   await post(`${catalog}/releases/${release.id}/publish`, { note: 'Demo seed' }, { 'Idempotency-Key': randomUUID() });
   await bo.close();
+
+  // The logins are usable as soon as the BackOffice data exists; the POS activity below only adds orders.
+  const writeCredentials = (posActivity: string) => {
+    const e = process.env;
+    const file = `${e.E2E_RUN_DIR}/manual-credentials.txt`;
+    writeFileSync(file, `restaurantPRO local stack: demo data (throwaway; gone after "pnpm e2e:stack:down")
+
+  BackOffice  ${stack.backOffice()}
+    company code   ${e.E2E_TENANT_CODE}
+    email          ${seeded.adminEmail()}
+    password       ${seeded.adminPassword()}
+    TOTP secret    ${seeded.adminTotpSecret()}
+
+  POS  ${stack.pos()}
+    enrolment codes (one per terminal, single use; BackOffice > Terminais > Emitir código for a new one)
+      Caixa 1        ${codes['Caixa 1']}
+      Bar            ${codes.Bar}
+      POS A          ${e.E2E_TERMINAL_A_CODE}
+      POS B          ${e.E2E_TERMINAL_B_CODE}
+    waiters (employee code / PIN)
+      ${seeded.waiterCode()}      ${seeded.waiterPin()}
+      JOAO           ${waiters.JOAO}
+      MARIA          ${waiters.MARIA}
+
+  Seeded: Sala M1–M10, Esplanada E1–E6, Bar B1–B4; 17 more items over Entradas, Pratos, Bebidas, Sobremesas and Cafetaria
+  (Cozinha/Bar/Copa); POS activity: ${posActivity}
+  `, { mode: 0o600 });
+    chmodSync(file, 0o600);
+    console.log(`written: ${file}`);
+  };
+  writeCredentials('not seeded yet (the POS part did not finish).');
 
   // POS activity, through its screens on the "Seed" terminal.
   const pos = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
   await pos.goto(`${stack.pos()}/enrol`);
   await pos.getByLabel('Código de registo').fill(codes['Seed (usado pelo script)']!);
-  await pos.getByRole('button', { name: 'Registar terminal' }).click();
+  // A loaded stack can time the request out ("Sem ligação"); the screen offers another try with the same code.
+  const employeeCode = pos.getByLabel('Código de empregado');
+  for (let attempt = 1; ; attempt++) {
+    await pos.getByRole('button', { name: 'Registar terminal' }).click();
+    await expect(employeeCode.or(pos.getByRole('alert'))).toBeVisible({ timeout: 30_000 });
+    if ((await employeeCode.isVisible()) || attempt === 3) break;
+  }
   await pos.getByLabel('Código de empregado').fill(seeded.waiterCode());
   await pos.getByRole('button', { name: 'Seguinte' }).click();
   await pos.getByLabel('PIN').fill(seeded.waiterPin());
@@ -134,30 +174,5 @@ test('demo seed', async ({ browser }, testInfo) => {
   await order('Esplanada', 'E2', 2, [['Galão', 'Bica']]);
   await order('Bar', 'B1', 1, [['Laurentina Preta']]);
 
-  const e = process.env;
-  const file = `${e.E2E_RUN_DIR}/manual-credentials.txt`;
-  writeFileSync(file, `restaurantPRO local stack: demo data (throwaway; gone after "pnpm e2e:stack:down")
-
-BackOffice  ${stack.backOffice()}
-  company code   ${e.E2E_TENANT_CODE}
-  email          ${seeded.adminEmail()}
-  password       ${seeded.adminPassword()}
-  TOTP secret    ${seeded.adminTotpSecret()}
-
-POS  ${stack.pos()}
-  enrolment codes (one per terminal, single use; BackOffice > Terminais > Emitir código for a new one)
-    Caixa 1        ${codes['Caixa 1']}
-    Bar            ${codes.Bar}
-    POS A          ${e.E2E_TERMINAL_A_CODE}
-    POS B          ${e.E2E_TERMINAL_B_CODE}
-  waiters (employee code / PIN)
-    ${seeded.waiterCode()}      ${seeded.waiterPin()}
-    JOAO           ${waiters.JOAO}
-    MARIA          ${waiters.MARIA}
-
-Seeded: Sala M1–M10, Esplanada E1–E6, Bar B1–B4; 17 more items over Entradas, Pratos, Bebidas, Sobremesas and Cafetaria
-(Cozinha/Bar/Copa); open tables M3 (2 rounds), M5, M7 (1 round + 2 unsent lines), E2, B1.
-`, { mode: 0o600 });
-  chmodSync(file, 0o600);
-  console.log(`written: ${file}`);
+  writeCredentials('open tables M3 (2 rounds), M5, M7 (1 round + 2 unsent lines), E2, B1.');
 });
