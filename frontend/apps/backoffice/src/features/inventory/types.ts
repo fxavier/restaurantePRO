@@ -10,7 +10,6 @@ export type StoreSummary = Schemas['com.xavier.backend.organization.model.dto.St
 export type WarehouseView = Dto<'model.dto.WarehouseView'>;
 export type StockItemView = Dto<'model.dto.StockItemView'>;
 export type StockRow = Dto<'model.dto.StockRow'>;
-export type StatusView = Dto<'model.dto.StatusView'>;
 export type ManualMovementRequest = Dto<'model.dto.ManualMovementRequest'>;
 export type ValuationReport = Report<'model.dto.ValuationRow'>;
 export type BelowMinimumReport = Report<'model.dto.BelowMinimumRow'>;
