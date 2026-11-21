@@ -9,6 +9,7 @@ import {
   ITEMS_PARTITION,
   LINE_IDS,
   mzn,
+  NULL,
   part,
   PARTITION_IDS,
   partitionEndpoint,
@@ -121,6 +122,15 @@ describe('splitting the bill', () => {
     expect(requests).toHaveLength(1);
     expect(requests[0]!.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
     expect(requests[0]!.body).toEqual({ version: 0, reason: 'Divisão refeita no ponto de venda' });
+  });
+
+  it('an untouched part as the server sends it (no document: `documentId: null`) is offered to be cancelled', async () => {
+    serverSettlement({ ...SPLIT_IN_THREE, partitions: [part(1, { documentId: NULL }), part(2), part(3)] });
+    await atPayment();
+    await billShown();
+
+    const first = within(parts()).getAllByRole('listitem')[0]!;
+    expect(within(first).getByRole('button', { name: 'Cancelar Parte 1 de 3' })).toBeEnabled();
   });
 
   it('a part already paid is not offered to be cancelled', async () => {

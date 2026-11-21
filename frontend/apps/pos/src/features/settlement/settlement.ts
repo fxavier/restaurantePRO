@@ -72,7 +72,10 @@ export type OpenAttempt = {
 /** A line's quantity still in no part, in thousandths (the contract's 3 decimals), so stepping it is exact. */
 export type UndividedLine = { lineId: string; description: string; available: number };
 
-/** The contract marks no field of the view required; a bill without these cannot be shown or acted on. */
+/**
+ * The contract marks no field of the view required; a bill without these cannot be shown or acted on. An empty id
+ * arrives as `null` (the server writes its records' nulls), which becomes undefined here, once.
+ */
 export function toSettlement(view: SettlementView | undefined): Settlement {
   if (!view?.orderId || !view.lifecycle || view.orderVersion === undefined || !view.due || !view.paid || !view.balance) {
     throw new Error('Incomplete settlement');
@@ -86,7 +89,7 @@ export function toSettlement(view: SettlementView | undefined): Settlement {
     balance: view.balance,
     settled: view.financialState === 'SETTLED',
     fiscalState: view.fiscalState ?? 'NONE',
-    documentId: view.documentId,
+    documentId: view.documentId ?? undefined,
     residualBalance: view.residualBalance ?? view.balance,
     partitions: (view.partitions ?? []).filter((partition) => partition.status === 'LIVE').map(toPartition),
     undivided: (view.coverage ?? []).flatMap(toUndivided),
@@ -102,7 +105,7 @@ function toOpenAttempt(view: AttemptView): OpenAttempt {
     methodCode: view.methodCode,
     methodKind: view.methodKind ?? '',
     amount: view.amount,
-    partitionId: view.partitionId,
+    partitionId: view.partitionId ?? undefined,
   };
 }
 
@@ -196,7 +199,7 @@ function toPartition(view: PartitionView): Partition {
     paymentStatus: isPaymentStatus(view.paymentStatus) ? view.paymentStatus : 'UNPAID',
     settled: view.financialState === 'SETTLED',
     invoiced: view.invoiced ?? false,
-    documentId: view.documentId,
+    documentId: view.documentId ?? undefined,
     lines: (view.lines ?? []).map((line) => ({
       lineId: line.lineId ?? '',
       description: line.description ?? '',

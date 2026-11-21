@@ -21,6 +21,13 @@ export type CloseOrderRequest = Schemas['com.xavier.backend.settlement.model.dto
 
 export const mzn = (amount: string) => ({ amount, currency: 'MZN' });
 
+/**
+ * What the server writes for a nullable field it leaves empty: the views are Java records and Jackson writes their
+ * nulls (no NON_NULL inclusion). The generated types only know such a field as optional, so the fixtures say `null`
+ * through this one cast, and every test reads the views as the server really sends them.
+ */
+export const NULL = null as unknown as undefined;
+
 /** The permissions a cashier has in the terminal's store: split, collect and reprint (§3). */
 export const CASHIER_PERMISSIONS = ['BILL_SPLIT', 'PAYMENT_COLLECT', 'FISCAL_DOCUMENT_REPRINT'].map(
   (permission) => `PERM_${permission}@${SESSION.storeId}`,
@@ -41,6 +48,7 @@ export const SETTLEMENT: SettlementView = {
   residualBalance: mzn('1530.00'),
   financialState: 'UNSETTLED',
   fiscalState: 'NONE',
+  documentId: NULL,
   paymentStatus: 'UNPAID',
   openAttempts: [],
   partitions: [],
@@ -83,6 +91,7 @@ export const part = (n: 1 | 2 | 3, fields: Partial<PartitionView> = {}): Partiti
   groupId: GROUP,
   partNo: n,
   parts: 3,
+  label: NULL,
   lines: [],
   due: mzn('510.00'),
   paid: mzn('0.00'),
@@ -91,6 +100,7 @@ export const part = (n: 1 | 2 | 3, fields: Partial<PartitionView> = {}): Partiti
   financialState: 'UNSETTLED',
   paymentStatus: 'UNPAID',
   invoiced: false,
+  documentId: NULL,
   version: 0,
   createdAt: '2026-11-18T11:00:00Z',
   ...fields,
@@ -102,6 +112,11 @@ export const ITEMS_PARTITION: PartitionView = {
   orderId: ORDER_ID,
   kind: 'ITEMS',
   status: 'LIVE',
+  groupId: NULL,
+  partNo: NULL,
+  parts: NULL,
+  label: NULL,
+  documentId: NULL,
   lines: [
     { lineId: LINE_IDS.steak, description: 'Bitoque', quantity: '2.000', gross: mzn('900.00'), net: mzn('775.86'), tax: mzn('124.14') },
   ],
@@ -137,6 +152,8 @@ export const attempt = (fields: Partial<AttemptView> = {}): AttemptView => ({
   tendered: mzn('2000.00'),
   change: mzn('470.00'),
   targetType: 'ORDER',
+  partitionId: NULL,
+  authorizationCode: NULL,
   createdAt: '2026-11-18T11:05:00Z',
   updatedAt: '2026-11-18T11:05:00Z',
   ...fields,

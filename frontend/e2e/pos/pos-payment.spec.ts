@@ -80,6 +80,8 @@ const BILL = {
   residualBalance: mzn('1530.00'),
   financialState: 'UNSETTLED',
   fiscalState: 'NONE',
+  // The server writes a record's empty fields as null, never leaves them out.
+  documentId: null,
   paymentStatus: 'UNPAID',
   openAttempts: [],
   partitions: [],
@@ -93,6 +95,7 @@ const part = (n: number, fields: object = {}) => ({
   status: 'LIVE',
   partNo: n,
   parts: 3,
+  label: null,
   lines: [],
   due: mzn('510.00'),
   paid: mzn('0.00'),
@@ -101,6 +104,7 @@ const part = (n: number, fields: object = {}) => ({
   financialState: 'UNSETTLED',
   paymentStatus: 'UNPAID',
   invoiced: false,
+  documentId: null,
   version: 0,
   ...fields,
 });
