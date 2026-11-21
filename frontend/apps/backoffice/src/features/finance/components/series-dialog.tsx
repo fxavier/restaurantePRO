@@ -19,13 +19,11 @@ import {
 import { Plus } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { isStepUpRequired } from '../../../lib/step-up';
-import type { FinanceCommand } from '../finance-commands';
 import { showOnFields } from '../form-errors';
-import { useFinanceCommand } from '../hooks/use-finance-commands';
-import { useFinanceStepUp } from '../hooks/use-finance-step-up';
+import { useSensitiveCommand } from '../hooks/use-sensitive-command';
 import { seriesSchema, type SeriesValues } from '../schemas';
 import { CommandAlert } from './command-alert';
+import { FormProblem } from './form-problem';
 
 /** "Nova série": the store's sale series, with the number its documents start at (spec §8.4 numbering). */
 export function SeriesDialog({ storeId }: { storeId: string }) {
@@ -47,24 +45,18 @@ export function SeriesDialog({ storeId }: { storeId: string }) {
   );
 }
 
+const FIELDS = ['code', 'firstNumber'] as const;
+
 function SeriesForm({ storeId, onDone }: { storeId: string; onDone: () => void }) {
   const form = useForm<SeriesValues>({ resolver: zodResolver(seriesSchema), defaultValues: { code: '', firstNumber: '' } });
-  const create = useFinanceCommand();
-  const stepUp = useFinanceStepUp(storeId);
-
-  const send = (command: FinanceCommand) =>
-    create.mutate(command, {
-      onSuccess: onDone,
-      onError: (error) => {
-        if (isStepUpRequired(error)) stepUp.prompt(error, command);
-        else showOnFields(form.setError, ['code', 'firstNumber'], error);
-      },
-    });
+  const create = useSensitiveCommand(storeId);
   const onSubmit = form.handleSubmit(({ code, firstNumber }) =>
-    send({ type: 'createSeries', body: { storeId, code, ...(firstNumber ? { firstNumber: Number(firstNumber) } : {}) } }),
+    create.send(
+      { type: 'createSeries', body: { storeId, code, ...(firstNumber ? { firstNumber: Number(firstNumber) } : {}) } },
+      { onSuccess: onDone, onError: (error) => showOnFields(form.setError, FIELDS, error) },
+    ),
   );
-  const rootMessage = form.formState.errors.root?.message;
-  const shown = create.error && !isStepUpRequired(create.error) && !form.formState.errors.code && !rootMessage;
+  const onField = FIELDS.some((field) => form.formState.errors[field]) || form.formState.errors.root;
 
   return (
     <Form {...form}>
@@ -95,22 +87,18 @@ function SeriesForm({ storeId, onDone }: { storeId: string; onDone: () => void }
             </FormItem>
           )}
         />
-        {rootMessage && (
-          <p role="alert" className="text-sm text-error">
-            {rootMessage}
-          </p>
-        )}
-        {shown && <CommandAlert error={create.error} pending={create.isPending} onRetry={() => create.variables && send(create.variables)} />}
+        <FormProblem message={form.formState.errors.root?.message} />
+        {create.failure && !onField && <CommandAlert {...create.failure} />}
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onDone}>
             Cancelar
           </Button>
-          <ConfirmButton type="submit" pending={create.isPending}>
+          <ConfirmButton type="submit" pending={create.pending}>
             Criar série
           </ConfirmButton>
         </DialogFooter>
       </form>
-      {stepUp.dialog}
+      {create.dialog}
     </Form>
   );
 }

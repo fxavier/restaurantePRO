@@ -1,6 +1,6 @@
 import type { StatusMap } from '@restaurantpro/ui';
 import { CheckCircle2, CircleDashed, Clock, HelpCircle, Lock, LockOpen, XCircle, type LucideIcon } from 'lucide-react';
-import type { ClosingStatus, ReconciliationLine } from './types';
+import type { ClosingStatus, ReconciliationLine, RegisterSummary } from './types';
 
 type Status = { label: string; icon: LucideIcon; tone: StatusMap<string>[string]['tone'] };
 
@@ -47,4 +47,9 @@ export function cashDays(lines: readonly ReconciliationLine[]): CashDay[] {
     }
   }
   return [...days.values()].sort((a, b) => b.businessDate.localeCompare(a.businessDate));
+}
+
+/** A register's name from the store's registers, or its id until they are read (or for one no longer listed). */
+export function registerName(registers: readonly RegisterSummary[] | undefined, id: string | undefined): string {
+  return registers?.find((register) => register.id === id)?.name ?? id ?? '';
 }

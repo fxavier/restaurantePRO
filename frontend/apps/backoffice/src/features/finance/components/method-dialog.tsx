@@ -17,16 +17,15 @@ import {
   FormMessage,
   Input,
 } from '@restaurantpro/ui';
-import { useForm } from 'react-hook-form';
-import { isStepUpRequired } from '../../../lib/step-up';
+import { useForm, type UseFormReturn } from 'react-hook-form';
 import type { FinanceCommand } from '../finance-commands';
 import { FINANCE_MESSAGES } from '../finance-messages';
 import { showOnFields } from '../form-errors';
-import { useFinanceCommand } from '../hooks/use-finance-commands';
-import { useFinanceStepUp } from '../hooks/use-finance-step-up';
+import { useSensitiveCommand } from '../hooks/use-sensitive-command';
 import { METHOD_KINDS, methodSchema, type MethodValues } from '../schemas';
 import type { PaymentMethodView } from '../types';
 import { CommandAlert } from './command-alert';
+import { FormProblem } from './form-problem';
 import { selectClass } from './styles';
 
 export const KIND_LABELS: Record<string, string> = {
@@ -40,12 +39,11 @@ type Props = { storeId: string; open: boolean; method?: PaymentMethodView; onClo
 
 /** A company payment method (§7): code and kind are fixed once created; name, state and provider can change. */
 export function MethodDialog({ storeId, open, method, onClose }: Props) {
-  const title = method ? 'Editar meio de pagamento' : 'Novo meio de pagamento';
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
+          <DialogTitle>{method ? 'Editar meio de pagamento' : 'Novo meio de pagamento'}</DialogTitle>
           <DialogDescription>Os meios de pagamento valem para todas as lojas da empresa.</DialogDescription>
         </DialogHeader>
         {open && <MethodForm storeId={storeId} method={method} onDone={onClose} />}
@@ -55,146 +53,133 @@ export function MethodDialog({ storeId, open, method, onClose }: Props) {
 }
 
 const FIELDS = ['code', 'name', 'kind', 'providerCode', 'active'] as const;
+type MethodFormApi = UseFormReturn<MethodValues>;
+
+const BLANK: MethodValues = { code: '', name: '', kind: 'CASH', providerCode: '', active: true };
+
+/** The form's values: a new method's blanks, or what the edited method holds (what it does not send stays blank). */
+function defaults(method: PaymentMethodView | undefined): MethodValues {
+  const { code, name, kind, providerCode, active } = method ?? {};
+  const held = Object.entries({ code, name, kind, providerCode, active }).filter(([, value]) => value != null);
+  return { ...BLANK, ...(Object.fromEntries(held) as Partial<MethodValues>) };
+}
+
+/** The request the form's values make: a create, or an update under the version the edit read (optimistic lock). */
+function toCommand(values: MethodValues, method: PaymentMethodView | undefined): FinanceCommand {
+  const { code, name, kind, providerCode, active } = values;
+  const provider = providerCode ? { providerCode } : {};
+  if (!method) return { type: 'createMethod', body: { code, name, kind, ...provider } };
+  return { type: 'updateMethod', methodId: method.id!, body: { name, active, ...provider, version: method.version ?? 0 } };
+}
+
+/** A taken code goes on the code field; a 400's violations on theirs. */
+function showError(form: MethodFormApi, error: Error) {
+  if (error instanceof ApiError && error.code === 'PAYMENT_METHOD_CODE_TAKEN') {
+    form.setError('code', { message: FINANCE_MESSAGES.PAYMENT_METHOD_CODE_TAKEN });
+    return;
+  }
+  showOnFields(form.setError, FIELDS, error);
+}
 
 function MethodForm({ storeId, method, onDone }: { storeId: string; method?: PaymentMethodView; onDone: () => void }) {
-  const form = useForm<MethodValues>({
-    resolver: zodResolver(methodSchema),
-    defaultValues: {
-      code: method?.code ?? '',
-      name: method?.name ?? '',
-      kind: (method?.kind as MethodValues['kind'] | undefined) ?? 'CASH',
-      providerCode: method?.providerCode ?? '',
-      active: method?.active ?? true,
-    },
-  });
-  const save = useFinanceCommand();
-  const stepUp = useFinanceStepUp(storeId);
-
-  const send = (command: FinanceCommand) =>
-    save.mutate(command, {
-      onSuccess: onDone,
-      onError: (error) => {
-        if (isStepUpRequired(error)) stepUp.prompt(error, command);
-        else if (error instanceof ApiError && error.code === 'PAYMENT_METHOD_CODE_TAKEN')
-          form.setError('code', { message: FINANCE_MESSAGES.PAYMENT_METHOD_CODE_TAKEN });
-        else showOnFields(form.setError, FIELDS, error);
-      },
-    });
-  const onSubmit = form.handleSubmit(({ code, name, kind, providerCode, active }) => {
-    const provider = providerCode ? { providerCode } : {};
-    send(
-      method
-        ? { type: 'updateMethod', methodId: method.id!, body: { name, active, ...provider, version: method.version ?? 0 } }
-        : { type: 'createMethod', body: { code, name, kind, ...provider } },
-    );
-  });
+  const form = useForm<MethodValues>({ resolver: zodResolver(methodSchema), defaultValues: defaults(method) });
+  const save = useSensitiveCommand(storeId);
+  const onSubmit = form.handleSubmit((values) =>
+    save.send(toCommand(values, method), { onSuccess: onDone, onError: (error) => showError(form, error) }),
+  );
   const errors = form.formState.errors;
   const onField = FIELDS.some((field) => errors[field]) || errors.root;
-  const shown = save.error && !isStepUpRequired(save.error) && !onField;
 
   return (
     <Form {...form}>
       <form onSubmit={(event) => void onSubmit(event)} noValidate className="flex flex-col gap-4">
-        {!method && (
-          <div className="grid gap-4 sm:grid-cols-2">
-            <FormField
-              control={form.control}
-              name="code"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Código</FormLabel>
-                  <FormControl>
-                    <Input {...field} autoComplete="off" maxLength={30} className="uppercase" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="kind"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Tipo</FormLabel>
-                  <FormControl>
-                    <select {...field} className={selectClass}>
-                      {METHOD_KINDS.map((kind) => (
-                        <option key={kind} value={kind}>
-                          {KIND_LABELS[kind]}
-                        </option>
-                      ))}
-                    </select>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
-        )}
-        <FormField
-          control={form.control}
-          name="name"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Nome</FormLabel>
-              <FormControl>
-                <Input {...field} autoComplete="off" maxLength={120} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="providerCode"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Fornecedor (opcional)</FormLabel>
-              <FormControl>
-                <Input {...field} autoComplete="off" maxLength={60} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        {method && (
-          <FormField
-            control={form.control}
-            name="active"
-            render={({ field }) => (
-              <FormItem className="flex flex-row items-center gap-2">
-                <FormControl>
-                  <input
-                    type="checkbox"
-                    className="size-5 accent-primary"
-                    checked={field.value}
-                    onChange={(event) => field.onChange(event.target.checked)}
-                    onBlur={field.onBlur}
-                    name={field.name}
-                    ref={field.ref}
-                  />
-                </FormControl>
-                <FormLabel>Ativo</FormLabel>
-              </FormItem>
-            )}
-          />
-        )}
-        {errors.root?.message && (
-          <p role="alert" className="text-sm text-error">
-            {errors.root.message}
-          </p>
-        )}
-        {shown && <CommandAlert error={save.error} pending={save.isPending} onRetry={() => save.variables && send(save.variables)} />}
+        {!method && <CreateFields form={form} />}
+        <TextField form={form} name="name" label="Nome" maxLength={120} />
+        <TextField form={form} name="providerCode" label="Fornecedor (opcional)" maxLength={60} />
+        {method && <ActiveField form={form} />}
+        <FormProblem message={errors.root?.message} />
+        {save.failure && !onField && <CommandAlert {...save.failure} />}
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onDone}>
             Cancelar
           </Button>
-          <ConfirmButton type="submit" pending={save.isPending}>
+          <ConfirmButton type="submit" pending={save.pending}>
             Guardar
           </ConfirmButton>
         </DialogFooter>
       </form>
-      {stepUp.dialog}
+      {save.dialog}
     </Form>
+  );
+}
+
+function TextField({ form, name, label, maxLength }: { form: MethodFormApi; name: 'code' | 'name' | 'providerCode'; label: string; maxLength: number }) {
+  return (
+    <FormField
+      control={form.control}
+      name={name}
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>{label}</FormLabel>
+          <FormControl>
+            <Input {...field} autoComplete="off" maxLength={maxLength} />
+          </FormControl>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}
+
+/** Code and kind are chosen once, when the method is created. */
+function CreateFields({ form }: { form: MethodFormApi }) {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2">
+      <TextField form={form} name="code" label="Código" maxLength={30} />
+      <FormField
+        control={form.control}
+        name="kind"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Tipo</FormLabel>
+            <FormControl>
+              <select {...field} className={selectClass}>
+                {METHOD_KINDS.map((kind) => (
+                  <option key={kind} value={kind}>
+                    {KIND_LABELS[kind]}
+                  </option>
+                ))}
+              </select>
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    </div>
+  );
+}
+
+function ActiveField({ form }: { form: MethodFormApi }) {
+  return (
+    <FormField
+      control={form.control}
+      name="active"
+      render={({ field }) => (
+        <FormItem className="flex flex-row items-center gap-2">
+          <FormControl>
+            <input
+              type="checkbox"
+              className="size-5 accent-primary"
+              checked={field.value}
+              onChange={(event) => field.onChange(event.target.checked)}
+              onBlur={field.onBlur}
+              name={field.name}
+              ref={field.ref}
+            />
+          </FormControl>
+          <FormLabel>Ativo</FormLabel>
+        </FormItem>
+      )}
+    />
   );
 }

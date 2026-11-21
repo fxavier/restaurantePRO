@@ -39,9 +39,8 @@ describe('reconciliation', () => {
     renderApp(tab('reconciliacao'));
 
     const table = await screen.findByRole('table', { name: 'Reconciliação de caixa' });
-    const row = within(table).getByRole('row', { name: /CARD/ });
+    const row = await within(table).findByRole('row', { name: /CARD.*Caixa principal|Caixa principal.*CARD/ });
     expect(row).toHaveTextContent('19/11/2026');
-    expect(row).toHaveTextContent('Caixa principal');
     expect(row).toHaveTextContent(money('-40.80'));
     expect(requests).toContain(`/api/v1/backoffice/cash/reconciliation?storeId=${baixa.id}&from=2026-11-14&to=2026-11-20`);
   });

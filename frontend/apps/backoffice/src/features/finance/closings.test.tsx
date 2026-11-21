@@ -51,7 +51,7 @@ describe('closings', () => {
     renderApp(FECHOS);
 
     const table = await screen.findByRole('table', { name: 'Fechos de caixa' });
-    const row = within(table).getByRole('row', { name: /Caixa principal/ });
+    const row = await within(table).findByRole('row', { name: /Caixa principal/ });
     expect(row).toHaveTextContent('Submetido');
     const lines = await screen.findByRole('table', { name: 'Fecho Caixa principal, ronda 1' });
     expect(within(lines).getByRole('row', { name: /CARD/ })).toHaveTextContent(money('-40.80'));

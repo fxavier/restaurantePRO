@@ -29,7 +29,6 @@ export function ResumeFinanceCommand({ storeId }: { storeId: string }) {
     clearPendingCommand();
     setCommand(undefined);
   };
-  // Sent once, the command is gone from storage: another step-up would lose it, so only closing is left.
   const expired = isStepUpRequired(send.error);
   return (
     <Card role="region" aria-labelledby={titleId} className="border-primary">
@@ -40,23 +39,42 @@ export function ResumeFinanceCommand({ storeId }: { storeId: string }) {
       <CardContent className="flex flex-col gap-4">
         <p>{commandLabel(command)}.</p>
         {command.type === 'rejectClosing' && <p className="text-sm text-muted-foreground">Motivo: {command.reason}</p>}
-        {send.error && !expired && <CommandAlert error={send.error} pending={send.isPending} onRetry={resend} />}
-        {expired && (
-          <p role="alert" className="text-sm text-error">
-            A confirmação de identidade expirou. Repita a operação.
-          </p>
-        )}
-        <div className="flex flex-wrap justify-end gap-2">
-          <Button type="button" variant="outline" onClick={cancel}>
-            {expired ? 'Fechar' : 'Cancelar'}
-          </Button>
-          {!expired && (
-            <ConfirmButton pending={send.isPending} onClick={resend}>
-              Continuar
-            </ConfirmButton>
-          )}
-        </div>
+        {expired ? <Expired onClose={cancel} /> : <Continue error={send.error} pending={send.isPending} onCancel={cancel} onSend={resend} />}
       </CardContent>
     </Card>
+  );
+}
+
+/** The step-up again: the command was cleared when sent, so only closing is left. */
+function Expired({ onClose }: { onClose: () => void }) {
+  return (
+    <>
+      <p role="alert" className="text-sm text-error">
+        A confirmação de identidade expirou. Repita a operação.
+      </p>
+      <div className="flex justify-end">
+        <Button type="button" variant="outline" onClick={onClose}>
+          Fechar
+        </Button>
+      </div>
+    </>
+  );
+}
+
+type ContinueProps = { error: Error | null; pending: boolean; onCancel: () => void; onSend: () => void };
+
+function Continue({ error, pending, onCancel, onSend }: ContinueProps) {
+  return (
+    <>
+      {error && <CommandAlert error={error} pending={pending} onRetry={onSend} />}
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Cancelar
+        </Button>
+        <ConfirmButton pending={pending} onClick={onSend}>
+          Continuar
+        </ConfirmButton>
+      </div>
+    </>
   );
 }
