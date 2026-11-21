@@ -156,14 +156,17 @@ type JobItemProps = { job: PrintJob; timeZone: string | undefined; printerName: 
 
 function JobItem({ job, timeZone, printerName, children }: JobItemProps) {
   const title = jobTitle(job.sourceType, job.destination);
-  const resolution = job.resolution ? resolutions[job.resolution] : undefined;
   return (
     <li aria-label={title} className="flex flex-col gap-1.5 rounded-md border bg-muted p-3 text-sm">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium">{title}</span>
         {job.kind === 'COPY' && <Badge variant="outline">Cópia</Badge>}
         <span className="ml-auto">
-          <StatusBadge status={job.status} statuses={jobStatuses} />
+          {job.resolution ? (
+            <StatusBadge status={job.resolution} statuses={resolutions} />
+          ) : (
+            <StatusBadge status={job.status} statuses={jobStatuses} />
+          )}
         </span>
       </div>
       <div className="flex flex-wrap gap-x-3 text-muted-foreground">
@@ -171,8 +174,7 @@ function JobItem({ job, timeZone, printerName, children }: JobItemProps) {
         {timeZone && <JobTime iso={job.createdAt} timeZone={timeZone} />}
         {job.attempts > 1 && <span>{job.attempts} tentativas</span>}
       </div>
-      {job.lastError && !resolution && <p className="font-mono text-xs text-error">{job.lastError}</p>}
-      {resolution && <p className="text-muted-foreground">{resolution}</p>}
+      {job.lastError && !job.resolution && <p className="font-mono text-xs text-error">{job.lastError}</p>}
       <div className="flex flex-wrap justify-end gap-2 empty:hidden">{children}</div>
     </li>
   );

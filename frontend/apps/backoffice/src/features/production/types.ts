@@ -15,4 +15,5 @@ export type TerminalPrinterView = Dto<'TerminalPrinterView'>;
 
 export type PrinterMode = PrinterModeRequest['mode'];
 export type PrintJobStatus = NonNullable<PrintJobView['status']>;
+export type JobResolution = NonNullable<PrintJobView['resolution']>;
 export type CodePage = PrinterCreateRequest['codePage'];

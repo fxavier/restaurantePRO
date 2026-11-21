@@ -353,7 +353,9 @@ describe('the print queue', () => {
     await user.click(within(item).getByRole('button', { name: 'Reenviar' }));
 
     expect(await within(queue).findByText('Em fila')).toBeInTheDocument();
+    // The original keeps status FAILED on the server; once resolved it shows how, never "Falhou" again.
     expect(within(queue).getByText('Reenviado')).toBeInTheDocument();
+    expect(within(queue).queryByText('Falhou')).not.toBeInTheDocument();
     const retry = state.requests.find((request) => request.method === 'POST');
     expect(retry).toMatchObject({ url: `/api/v1/backoffice/print-jobs/${failed.id}/retry`, idempotencyKey: A_KEY });
   });
@@ -367,6 +369,8 @@ describe('the print queue', () => {
     await user.click(within(item).getByRole('button', { name: 'Confirmar impresso' }));
 
     expect(await within(queue).findByText('Confirmado como impresso')).toBeInTheDocument();
+    // Still UNKNOWN on the server, but resolved: no "Por confirmar" beside it.
+    expect(within(queue).queryByText('Por confirmar')).not.toBeInTheDocument();
     expect(within(queue).queryByRole('button', { name: 'Reenviar' })).not.toBeInTheDocument();
     expect(state.requests.filter((request) => request.method === 'POST')).toEqual([
       expect.objectContaining({ url: `/api/v1/backoffice/print-jobs/${unknown.id}/acknowledge`, idempotencyKey: A_KEY }),
@@ -488,7 +492,7 @@ describe('printers of the terminals', () => {
 const unrouted = ticket('eeee0000-0000-4000-8000-000000000009', { destination: 'SOBREMESAS', lines: ['1x Pudim', '2x Mousse'] });
 
 describe('the summary', () => {
-  it('counts the active printers and, from the server, the jobs and tickets that need someone', async () => {
+  it('counts the active printers and, from the server, every failed and unknown job (resolved ones included) and the unrouted tickets', async () => {
     productionServer({
       printers: [kitchen, bar, { ...copa, active: false }],
       jobs: [sent, failed, unknown],
@@ -503,10 +507,11 @@ describe('the summary', () => {
     );
     expect(within(summary).getAllByRole('term').map((term) => term.textContent)).toEqual([
       'Impressoras ativas',
-      'Trabalhos falhados',
-      'Por confirmar',
+      'Falhados (total)',
+      'Desfecho desconhecido (total)',
       'Talões por encaminhar',
     ]);
+    expect(within(summary).getByText('Os totais incluem os trabalhos já reenviados ou confirmados.')).toBeInTheDocument();
   });
 });
 

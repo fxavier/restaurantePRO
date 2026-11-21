@@ -18,8 +18,9 @@ export function ProductionSummary({ activePrinters, printers, failed, unknown, u
       icon: Printer,
       tint: 'bg-primary/15 text-primary',
     },
-    { label: 'Trabalhos falhados', value: count(failed), icon: CircleX, tint: 'bg-destructive/15 text-error' },
-    { label: 'Por confirmar', value: count(unknown), icon: CircleHelp, tint: 'bg-info/15 text-foreground' },
+    // The server keeps a resolved job's status and the list has no "unresolved" filter: these count every one.
+    { label: 'Falhados (total)', value: count(failed), icon: CircleX, tint: 'bg-destructive/15 text-error' },
+    { label: 'Desfecho desconhecido (total)', value: count(unknown), icon: CircleHelp, tint: 'bg-info/15 text-foreground' },
     { label: 'Talões por encaminhar', value: count(unrouted), icon: Unplug, tint: 'bg-warning/15 text-warning' },
   ];
   return (
@@ -37,6 +38,7 @@ export function ProductionSummary({ activePrinters, printers, failed, unknown, u
           </div>
         ))}
       </dl>
+      <p className="mt-2 text-xs text-muted-foreground">Os totais incluem os trabalhos já reenviados ou confirmados.</p>
     </section>
   );
 }

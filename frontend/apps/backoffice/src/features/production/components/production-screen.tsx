@@ -62,7 +62,10 @@ export function ProductionScreen({ storeId }: { storeId: string }) {
 
 type SummaryProps = { storeId: string; printers: UseQueryResult<Printer[]>; tickets: UseQueryResult<TicketPage> };
 
-/** The counts are the server's totals of a one-row page, never a count of what a list page happens to hold. */
+/**
+ * The counts are the server's totals of a one-row page, never a count of what a list page happens to hold. A resolved
+ * job keeps its FAILED or UNKNOWN status, so these totals include resolved jobs (no "unresolved" filter yet).
+ */
 function Summary({ storeId, printers, tickets }: SummaryProps) {
   const failed = usePrintJobs(storeId, 'FAILED', 0, 1);
   const unknown = usePrintJobs(storeId, 'UNKNOWN', 0, 1);

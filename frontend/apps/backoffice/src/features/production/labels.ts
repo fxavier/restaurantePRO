@@ -1,6 +1,6 @@
 import type { StatusMap } from '@restaurantpro/ui';
-import { CircleCheck, CircleHelp, CircleX, Clock, EyeOff, Forward, Loader, Pause, Printer, RotateCw } from 'lucide-react';
-import type { PrinterMode, PrintJobStatus } from './types';
+import { CircleCheck, CircleHelp, CircleX, Clock, EyeOff, Forward, Loader, Pause, Printer, RotateCcw, RotateCw } from 'lucide-react';
+import type { JobResolution, PrinterMode, PrintJobStatus } from './types';
 
 /** `PrinterMode` (CONTEXT: Normal / Espera / Ignorar / Redirecionar), by label, icon and colour together. */
 export const printerModes: StatusMap<PrinterMode> = {
@@ -50,8 +50,11 @@ export function jobTitle(sourceType: string, destination: string | null | undefi
   return destination ? `${source} · ${destination}` : source;
 }
 
-/** How a FAILED or UNKNOWN job was resolved. */
-export const resolutions: Record<string, string> = {
-  RETRIED: 'Reenviado',
-  CONFIRMED_PRINTED: 'Confirmado como impresso',
+/**
+ * How a FAILED or UNKNOWN job was resolved. The job keeps its status on the server, so once resolved the queue shows
+ * this in place of the status: a resolved job no longer needs anyone.
+ */
+export const resolutions: StatusMap<JobResolution> = {
+  RETRIED: { label: 'Reenviado', icon: RotateCcw, tone: 'neutral' },
+  CONFIRMED_PRINTED: { label: 'Confirmado como impresso', icon: CircleCheck, tone: 'success' },
 };
