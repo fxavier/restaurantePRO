@@ -31,14 +31,14 @@ export function SplitPanel({ settlement, guests, disabled }: Props) {
         Divisão da conta
       </h3>
       <Tabs defaultValue="whole">
-        <TabsList className="grid h-auto w-full grid-cols-3 gap-1">
-          <TabsTrigger value="whole" className="h-14 text-base">
+        <TabsList className="grid h-auto! w-full grid-cols-3 gap-1">
+          <TabsTrigger value="whole" className="h-14 text-base whitespace-normal">
             Conta total
           </TabsTrigger>
-          <TabsTrigger value="equal" className="h-14 text-base">
+          <TabsTrigger value="equal" className="h-14 text-base whitespace-normal">
             Partes iguais
           </TabsTrigger>
-          <TabsTrigger value="items" className="h-14 text-base">
+          <TabsTrigger value="items" className="h-14 text-base whitespace-normal">
             Por artigos
           </TabsTrigger>
         </TabsList>
