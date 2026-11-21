@@ -13,7 +13,7 @@ import {
 } from '@restaurantpro/ui';
 import { type FormEvent, useId, useState } from 'react';
 import { useCommandsBlocked } from '../../../lib/live/use-connection';
-import { MOVEMENTS, type MovementType, parseAmount } from '../cash';
+import { MOVEMENTS, type MovementType, movementRequest, type TypedMovement } from '../cash';
 import { type MovementView, useRecordMovement } from '../hooks/use-cash-commands';
 import { cashRefusal } from '../messages';
 import { AmountField } from './amount-field';
@@ -39,27 +39,24 @@ const DESCRIPTIONS: Record<MovementType, string> = {
  * closes once the server has recorded it.
  */
 export function MovementDialog({ type, sessionId, currency, onClose, onRecorded }: Props) {
-  const [amount, setAmount] = useState('');
-  const [reason, setReason] = useState('');
-  const [approverCode, setApproverCode] = useState('');
-  const [approverPin, setApproverPin] = useState('');
+  const [typed, setTyped] = useState<TypedMovement>({ type, amount: '', reason: '', approverCode: '', approverPin: '' });
+  const set = (field: Exclude<keyof TypedMovement, 'type'>) => (text: string) =>
+    setTyped((current) => ({ ...current, [field]: text }));
   const expense = type === 'EXPENSE';
   const record = useRecordMovement(
-    () => (expense ? { code: approverCode, pin: approverPin } : undefined),
+    () => (expense ? { code: typed.approverCode, pin: typed.approverPin } : undefined),
     onRecorded,
   );
   const blocked = useCommandsBlocked();
-  const value = parseAmount(amount);
-  const approved = !expense || (approverCode.trim() !== '' && approverPin !== '');
-  const valid = value !== undefined && reason.trim() !== '' && approved;
+  const request = movementRequest(sessionId, typed);
   const awaitingRetry = !record.pending && record.intent !== undefined;
   const locked = record.pending || awaitingRetry;
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (blocked || !valid || value === undefined) return;
+    if (blocked || !request) return;
     if (awaitingRetry) record.retry();
-    else record.start({ sessionId, type, amount: value, reason: reason.trim() }, undefined);
+    else record.start(request, undefined);
   }
 
   return (
@@ -70,12 +67,12 @@ export function MovementDialog({ type, sessionId, currency, onClose, onRecorded 
             <DialogTitle>{MOVEMENTS[type].action}</DialogTitle>
             <DialogDescription>{DESCRIPTIONS[type]}</DialogDescription>
           </DialogHeader>
-          <AmountField label="Valor" currency={currency} value={amount} onChange={setAmount} readOnly={locked} />
-          <TextField label="Motivo" value={reason} onChange={setReason} readOnly={locked} maxLength={500} />
+          <AmountField label="Valor" currency={currency} value={typed.amount} onChange={set('amount')} readOnly={locked} />
+          <TextField label="Motivo" value={typed.reason} onChange={set('reason')} readOnly={locked} maxLength={500} />
           {expense && (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <TextField label="Código do aprovador" value={approverCode} onChange={setApproverCode} readOnly={locked} numeric />
-              <TextField label="PIN do aprovador" value={approverPin} onChange={setApproverPin} readOnly={locked} numeric secret />
+              <TextField label="Código do aprovador" value={typed.approverCode} onChange={set('approverCode')} readOnly={locked} numeric />
+              <TextField label="PIN do aprovador" value={typed.approverPin} onChange={set('approverPin')} readOnly={locked} numeric secret />
             </div>
           )}
           <CommandFeedback blocked={blocked} error={record.error && refusal(record.error, expense)} />
@@ -83,7 +80,7 @@ export function MovementDialog({ type, sessionId, currency, onClose, onRecorded 
             <Button type="button" variant="outline" size="touch" onClick={onClose} disabled={record.pending}>
               Cancelar
             </Button>
-            <ConfirmButton type="submit" size="touch-primary" pending={record.pending} disabled={blocked || !valid}>
+            <ConfirmButton type="submit" size="touch-primary" pending={record.pending} disabled={blocked || !request}>
               {awaitingRetry ? 'Tentar novamente' : 'Registar'}
             </ConfirmButton>
           </DialogFooter>

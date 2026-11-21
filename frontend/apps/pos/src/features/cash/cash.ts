@@ -69,3 +69,24 @@ export function parseAmount(typed: string): string | undefined {
   const text = typed.trim().replace(',', '.');
   return /^\d+(\.\d+)?$/.test(text) ? text : undefined;
 }
+
+/** What the operator typed in the movement dialog. */
+export type TypedMovement = {
+  type: MovementType;
+  amount: string;
+  reason: string;
+  approverCode: string;
+  approverPin: string;
+};
+
+/**
+ * The movement's request body (`ManualMovementRequest`), or `undefined` while it cannot be sent: an amount, a reason
+ * and, for an expense, the approver's code and PIN (P24). The approver goes in headers, never in the body.
+ */
+export function movementRequest(sessionId: string, typed: TypedMovement) {
+  const amount = parseAmount(typed.amount);
+  const reason = typed.reason.trim();
+  const approved = typed.type !== 'EXPENSE' || (typed.approverCode.trim() !== '' && typed.approverPin !== '');
+  if (amount === undefined || reason === '' || !approved) return undefined;
+  return { sessionId, type: typed.type, amount, reason };
+}

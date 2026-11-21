@@ -7,6 +7,7 @@ import {
   linesWithDifference,
   methodLabel,
   methodsToCount,
+  movementRequest,
   parseAmount,
 } from './cash';
 import { businessDay, clockTime } from './format';
@@ -99,5 +100,31 @@ describe('format', () => {
 
   it("shows an instant's clock time in the given zone", () => {
     expect(clockTime('2026-11-19T22:30:00Z', 'Africa/Maputo')).toBe('00:30');
+  });
+});
+
+describe('movementRequest', () => {
+  const typed = { type: 'CASH_IN' as const, amount: '50,00', reason: ' Trocos ', approverCode: '', approverPin: '' };
+
+  it('is the request body once the amount and the reason are typed, the reason trimmed', () => {
+    expect(movementRequest('s-1', typed)).toEqual({ sessionId: 's-1', type: 'CASH_IN', amount: '50.00', reason: 'Trocos' });
+  });
+
+  it.each([
+    ['no amount', { amount: 'abc' }],
+    ['a blank reason', { reason: '  ' }],
+    ['an expense without its approver code', { type: 'EXPENSE' as const, approverPin: '1234' }],
+    ['an expense without its approver PIN', { type: 'EXPENSE' as const, approverCode: '7' }],
+  ])('is undefined with %s', (_, change) => {
+    expect(movementRequest('s-1', { ...typed, ...change })).toBeUndefined();
+  });
+
+  it('is an expense once its approver code and PIN are typed (they never go in the body)', () => {
+    expect(movementRequest('s-1', { ...typed, type: 'EXPENSE', approverCode: ' 7 ', approverPin: '1234' })).toEqual({
+      sessionId: 's-1',
+      type: 'EXPENSE',
+      amount: '50.00',
+      reason: 'Trocos',
+    });
   });
 });
