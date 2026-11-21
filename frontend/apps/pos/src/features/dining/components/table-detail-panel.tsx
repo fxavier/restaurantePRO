@@ -1,6 +1,7 @@
 import { Badge, Button, DataState, Money } from '@restaurantpro/ui';
-import { ClipboardPlus, DoorOpen, X } from 'lucide-react';
+import { ClipboardPlus, DoorOpen, ReceiptText, X } from 'lucide-react';
 import { useEffect, useRef } from 'react';
+import { Link } from 'react-router';
 import { useStoreTimeZone } from '../../../lib/auth/use-employee';
 import { ScrollRegion } from '../../../lib/scroll-region';
 import { SentRounds } from '../../orders/components/order-panel';
@@ -104,12 +105,22 @@ export function TableDetailPanel({ table, areaName, onOpenTable, onGoToOrder, on
         )}
         {occupied && table.openOrderId && <OrderSummary orderId={table.openOrderId} />}
       </ScrollRegion>
-      <footer className="border-t p-4">
+      <footer className="flex flex-col gap-2 border-t p-4">
         {occupied ? (
-          <Button size="touch-primary" className="w-full" onClick={() => onGoToOrder(table)}>
-            <ClipboardPlus aria-hidden="true" />
-            Registar artigos
-          </Button>
+          <>
+            <Button size="touch-primary" className="w-full" onClick={() => onGoToOrder(table)}>
+              <ClipboardPlus aria-hidden="true" />
+              Registar artigos
+            </Button>
+            {table.openOrderId && (
+              <Button asChild variant="outline" size="touch" className="w-full">
+                <Link to={`/orders/${table.openOrderId}/payment`}>
+                  <ReceiptText aria-hidden="true" />
+                  Cobrar
+                </Link>
+              </Button>
+            )}
+          </>
         ) : (
           <Button size="touch-primary" className="w-full" onClick={() => onOpenTable(table)}>
             <DoorOpen aria-hidden="true" />
