@@ -80,8 +80,8 @@ type ActionsProps = {
 /** A booked reservation's four commands (§8.3): seat it, change it, or close it as a no-show or a cancellation. */
 export function BookedActions({ onSeat, onEdit, onNoShow, onCancel }: ActionsProps) {
   return (
-    <div className="grid grid-cols-2 gap-2">
-      <Button size="touch-primary" className="col-span-2" onClick={onSeat}>
+    <div className="flex flex-col gap-2">
+      <Button size="touch-primary" onClick={onSeat}>
         <Armchair aria-hidden="true" />
         Sentar
       </Button>
@@ -93,7 +93,7 @@ export function BookedActions({ onSeat, onEdit, onNoShow, onCancel }: ActionsPro
         <UserX aria-hidden="true" />
         Registar não comparência
       </Button>
-      <Button variant="destructive" size="touch" className="col-span-2" onClick={onCancel}>
+      <Button variant="destructive" size="touch" onClick={onCancel}>
         <Ban aria-hidden="true" />
         Cancelar reserva
       </Button>

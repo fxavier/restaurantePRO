@@ -20,13 +20,8 @@ export function DaySummary({ summary }: { summary: Summary }) {
             <span aria-hidden="true" className={cn('size-2 rounded-full', dot)} />
             {label}
           </p>
-          <p className="flex flex-wrap items-baseline gap-x-2">
-            <span className="text-2xl font-semibold tabular-nums">{reservationsLabel(summary[status].count)}</span>
-            <span aria-hidden="true" className="text-muted-foreground">
-              ·
-            </span>
-            <span className="text-sm text-muted-foreground tabular-nums">{guestsLabel(summary[status].people)}</span>
-          </p>
+          <p className="text-2xl font-semibold tabular-nums">{reservationsLabel(summary[status].count)}</p>
+          <p className="text-sm text-muted-foreground tabular-nums">{guestsLabel(summary[status].people)}</p>
         </div>
       ))}
     </section>

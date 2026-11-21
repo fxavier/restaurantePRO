@@ -79,9 +79,9 @@ describe('the reservations of a day', () => {
     await row('Ana Ferreira');
 
     const summary = screen.getByRole('region', { name: 'Resumo do dia' });
-    expect(within(summary).getByRole('group', { name: 'Total' })).toHaveTextContent(/4\s*reservas\s*·\s*14 pessoas/);
-    expect(within(summary).getByRole('group', { name: 'Por chegar' })).toHaveTextContent(/1\s*reserva\s*·\s*4 pessoas/);
-    expect(within(summary).getByRole('group', { name: 'Em sala' })).toHaveTextContent(/1\s*reserva\s*·\s*3 pessoas/);
+    expect(within(summary).getByRole('group', { name: 'Total' })).toHaveTextContent(/4\s*reservas\s*14 pessoas/);
+    expect(within(summary).getByRole('group', { name: 'Por chegar' })).toHaveTextContent(/1\s*reserva\s*4 pessoas/);
+    expect(within(summary).getByRole('group', { name: 'Em sala' })).toHaveTextContent(/1\s*reserva\s*3 pessoas/);
     expect(within(summary).getByRole('group', { name: 'Não compareceram' })).toHaveTextContent(/1\s*reserva/);
     expect(within(summary).getByRole('group', { name: 'Canceladas' })).toHaveTextContent(/1\s*reserva/);
   });

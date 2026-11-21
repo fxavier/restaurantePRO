@@ -15,16 +15,18 @@ export function DayBar({ date, today, onDate }: Props) {
   const tomorrow = addDays(today, 1);
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Button variant="ghost" size="touch" aria-label="Dia anterior" onClick={() => onDate(addDays(date, -1))}>
-        <ChevronLeft aria-hidden="true" />
-      </Button>
-      <h3 className="flex min-w-0 items-center gap-2 text-2xl font-semibold">
-        <CalendarDays aria-hidden="true" className="size-6 shrink-0 text-primary" />
-        {dayTitle(date)}
-      </h3>
-      <Button variant="ghost" size="touch" aria-label="Dia seguinte" onClick={() => onDate(addDays(date, 1))}>
-        <ChevronRight aria-hidden="true" />
-      </Button>
+      <div className="flex min-w-0 items-center gap-1">
+        <Button variant="ghost" size="touch" aria-label="Dia anterior" onClick={() => onDate(addDays(date, -1))}>
+          <ChevronLeft aria-hidden="true" />
+        </Button>
+        <h3 className="flex min-w-0 items-center gap-2 text-xl font-semibold sm:text-2xl">
+          <CalendarDays aria-hidden="true" className="size-6 shrink-0 text-primary" />
+          {dayTitle(date)}
+        </h3>
+        <Button variant="ghost" size="touch" aria-label="Dia seguinte" onClick={() => onDate(addDays(date, 1))}>
+          <ChevronRight aria-hidden="true" />
+        </Button>
+      </div>
       <div className="flex gap-2">
         {[
           { label: 'Hoje', day: today },
