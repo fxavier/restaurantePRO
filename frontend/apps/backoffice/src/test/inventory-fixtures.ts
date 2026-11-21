@@ -1,3 +1,4 @@
+import { within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import type {
   PurchaseOrderView,
@@ -237,6 +238,19 @@ export function inventoryServer({ session = inventoryManager, ...initial }: Part
     http.get(api(`${BASE}/transfers`), () => HttpResponse.json(page(state.transfers))),
   );
   return state;
+}
+
+/** The cell texts of a table's body rows, the first `columns` of each. */
+export function rowsOf(table: HTMLElement, columns: number) {
+  return within(table)
+    .getAllByRole('row')
+    .slice(1)
+    .map((row) =>
+      within(row)
+        .getAllByRole('cell')
+        .slice(0, columns)
+        .map((cell) => cell.textContent.replace(/\s+/g, ' ')),
+    );
 }
 
 /** The commands the area sent (anything but a read). */
