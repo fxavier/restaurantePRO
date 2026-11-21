@@ -2,6 +2,7 @@ package com.xavier.backend.orders.delivery.controller;
 
 import com.xavier.backend.access.IdempotentRequests;
 import com.xavier.backend.orders.DeliveryStatus;
+import com.xavier.backend.orders.delivery.model.dto.CourierView;
 import com.xavier.backend.orders.delivery.model.dto.DeliveredRequest;
 import com.xavier.backend.orders.delivery.model.dto.DeliveryUpdateRequest;
 import com.xavier.backend.orders.delivery.model.dto.DeliveryView;
@@ -52,6 +53,11 @@ class PosDeliveryController {
     @GetMapping("/api/v1/pos/delivery-zones")
     List<ZoneView> zones() {
         return zones.active();
+    }
+
+    @GetMapping("/api/v1/pos/couriers")
+    List<CourierView> couriers() {
+        return queries.couriers();
     }
 
     @PutMapping(DELIVERIES + "/{orderId}")

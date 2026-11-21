@@ -2,6 +2,7 @@ package com.xavier.backend.identity.repository;
 
 import com.xavier.backend.identity.model.Employee;
 import jakarta.persistence.LockModeType;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
@@ -23,4 +24,9 @@ public interface EmployeeRepository extends JpaRepository<Employee, UUID> {
             select e from Employee e where exists (select 1 from EmployeeStoreAssignment a
                 where a.employeeId = e.id and a.storeId = :storeId)""")
     Page<Employee> findAssignedTo(UUID storeId, Pageable pageable);
+
+    @Query("""
+            select e from Employee e where e.active = true and exists (select 1 from EmployeeStoreAssignment a
+                where a.employeeId = e.id and a.storeId = :storeId) order by e.name, e.code""")
+    List<Employee> findActiveAssignedTo(UUID storeId);
 }
