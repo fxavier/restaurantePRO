@@ -25,9 +25,10 @@ export function useCustomerSearch(q: string) {
 }
 
 /** `GET /api/v1/pos/customers/{id}`: the linked customer's name. */
-export function useCustomer(id: string) {
+export function useCustomer(id: string, { enabled }: { enabled: boolean }) {
   const { api } = useServices();
   return useQuery({
+    enabled,
     queryKey: [...CUSTOMERS_KEY, id],
     queryFn: async ({ signal }) => (await api.GET('/api/v1/pos/customers/{id}', { params: { path: { id } }, signal })).data,
   });

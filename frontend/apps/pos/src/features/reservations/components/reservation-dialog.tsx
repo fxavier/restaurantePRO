@@ -7,7 +7,7 @@ import { type Draft, draftOf, emptyDraft, isComplete, toRequest } from '../draft
 import { useBookReservation, useUpdateReservation } from '../hooks/use-reservation-commands';
 import { refusal } from '../messages';
 import type { ReservableArea, Reservation } from '../reservation';
-import { CommandDialog, CommandFooter } from './command-footer';
+import { CommandDialog, CommandFooter, giveUp } from './command-footer';
 import { CustomerPicker } from './customer-picker';
 import { ReservationForm } from './reservation-form';
 
@@ -22,6 +22,7 @@ export function NewReservationDialog({ date, ...shared }: Shared & { date: strin
   return (
     <ReservationDialog
       {...shared}
+      onClose={giveUp(book, shared.onClose)}
       icon={<CalendarPlus className="size-6" />}
       title="Nova reserva"
       initial={emptyDraft(date)}
@@ -34,12 +35,20 @@ export function NewReservationDialog({ date, ...shared }: Shared & { date: strin
   );
 }
 
-/** The same form over a booked reservation; "Guardar alterações" replaces it with the version read. */
+/**
+ * The same form over a booked reservation; "Guardar alterações" replaces it with the version the form was filled
+ * from, so an edit of a stale reservation is refused, never applied over another terminal's change.
+ */
 export function EditReservationDialog({ reservation, ...shared }: Shared & { reservation: Reservation }) {
   const timeZone = useStoreTimeZone();
   const update = useUpdateReservation(reservation.id, { onDone: shared.onClose });
+  const [basedOn, setBasedOn] = useState(reservation.version);
+  // Refused, and the list read again shows a newer version: the form restarts from it, and the host re-applies the
+  // edit over what changed. The draft typed over the old version is dropped, never resent with the new one.
+  if (update.isError && reservation.version !== basedOn) setBasedOn(reservation.version);
   return (
     <ReservationDialog
+      key={basedOn}
       {...shared}
       icon={<Pencil className="size-6" />}
       title={`Editar a reserva de ${reservation.contactName}`}
@@ -52,8 +61,7 @@ export function EditReservationDialog({ reservation, ...shared }: Shared & { res
           ? refusal(update.error, 'Sem ligação — não se sabe se a alteração ficou guardada. Confirme na lista antes de repetir.')
           : undefined
       }
-      // The version as the list has it now: after a conflict the list is read again, and the next save sends that one.
-      onSave={(request) => update.mutate({ ...request, version: reservation.version })}
+      onSave={(request) => update.mutate({ ...request, version: basedOn })}
     />
   );
 }

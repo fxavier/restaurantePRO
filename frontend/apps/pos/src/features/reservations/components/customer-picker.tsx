@@ -24,7 +24,9 @@ type Props = {
 export function CustomerPicker({ customerId, contact, onLink, onUnlink, locked }: Props) {
   const canView = useCan('CUSTOMER_VIEW');
   const canCreate = useCan('CUSTOMER_MANAGE');
-  if (customerId) return <LinkedCustomer customerId={customerId} onUnlink={onUnlink} locked={locked} />;
+  if (customerId) {
+    return <LinkedCustomer customerId={customerId} canView={canView} onUnlink={onUnlink} locked={locked} />;
+  }
   return (
     <div className="flex flex-col gap-3">
       {canView && <CustomerSearch onLink={onLink} locked={locked} />}
@@ -33,15 +35,26 @@ export function CustomerPicker({ customerId, contact, onLink, onUnlink, locked }
   );
 }
 
-function LinkedCustomer({ customerId, onUnlink, locked }: { customerId: string; onUnlink: () => void; locked: boolean }) {
-  const customer = useCustomer(customerId);
+type LinkedProps = { customerId: string; canView: boolean; onUnlink: () => void; locked: boolean };
+
+/** The record linked; its name read only by who may view customers, and the link shown whatever that read says. */
+function LinkedCustomer({ customerId, canView, onUnlink, locked }: LinkedProps) {
+  const customer = useCustomer(customerId, { enabled: canView });
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-lg border border-primary bg-muted p-3">
       <BadgeCheck aria-hidden="true" className="size-5 text-primary" />
-      <p>
-        <span className="text-muted-foreground">Cliente associado:</span>{' '}
-        <span className="font-semibold">{customer.data?.name ?? '…'}</span>
-      </p>
+      {canView ? (
+        <p>
+          <span className="text-muted-foreground">Cliente associado:</span>{' '}
+          {customer.isError ? (
+            <span className="text-muted-foreground">Ficha de cliente indisponível</span>
+          ) : (
+            <span className="font-semibold">{customer.data?.name ?? '…'}</span>
+          )}
+        </p>
+      ) : (
+        <p className="text-muted-foreground">Cliente associado</p>
+      )}
       <Button type="button" variant="ghost" size="touch" className="ml-auto" disabled={locked} onClick={onUnlink}>
         <X aria-hidden="true" />
         Desassociar cliente
