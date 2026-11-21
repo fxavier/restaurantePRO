@@ -1,8 +1,7 @@
-import { AreaPlaceholder } from './area-placeholder';
+import { DeliveryPageLayout, ZONES_PAGE } from '../features/delivery';
+import { useStoreSelection } from '../features/organization';
 
-/** `/delivery/zones` (§5, Stitch "Zonas & Tarifários de Delivery"): delivery zones and their fees. Not built yet. */
+/** `/delivery/zones?storeId=…` (§4 delivery, D128, Stitch "Zonas & Tarifários de Delivery"): the store's zones and fees. */
 export function DeliveryZonesPage() {
-  return (
-    <AreaPlaceholder eyebrow="Delivery" title="Zonas" description="As zonas de entrega da loja e as suas taxas." />
-  );
+  return <DeliveryPageLayout page={ZONES_PAGE} storeId={useStoreSelection().storeId} />;
 }

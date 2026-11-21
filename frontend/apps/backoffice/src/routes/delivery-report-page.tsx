@@ -1,8 +1,7 @@
-import { AreaPlaceholder } from './area-placeholder';
+import { DeliveryPageLayout, REPORT_PAGE } from '../features/delivery';
+import { useStoreSelection } from '../features/organization';
 
-/** `/delivery/report` (§5, Stitch "Relatório & Conferência de Entregas"): the store's delivery history. Not built yet. */
+/** `/delivery/report?storeId=…` (§4 "histórico de entregas", Stitch "Relatório & Conferência de Entregas"). */
 export function DeliveryReportPage() {
-  return (
-    <AreaPlaceholder eyebrow="Delivery" title="Entregas" description="O histórico de entregas da loja, por estafeta." />
-  );
+  return <DeliveryPageLayout page={REPORT_PAGE} storeId={useStoreSelection().storeId} />;
 }
