@@ -7,6 +7,8 @@ export type ReceiptsRow = Schemas['com.xavier.backend.reporting.model.dto.Receip
 export type SalesReport = Schemas['com.xavier.backend.reporting.model.dto.ReportViewCom.xavier.backend.reporting.model.dto.SalesRow'];
 export type ReceiptsReport =
   Schemas['com.xavier.backend.reporting.model.dto.ReportViewCom.xavier.backend.reporting.model.dto.ReceiptsRow'];
+/** The closing states the list filters on (spec §8.3). */
+export type ClosingStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED';
 export type ClosingView = Schemas['com.xavier.backend.cash.model.dto.ClosingView'];
 export type ClosingLineView = Schemas['com.xavier.backend.cash.model.dto.ClosingLineView'];
 export type DayView = Schemas['com.xavier.backend.cash.DayView'];
@@ -18,3 +20,6 @@ export type DocumentSummary = Schemas['com.xavier.backend.fiscal.model.dto.Docum
 export type PaymentMethodView = Schemas['com.xavier.backend.settlement.model.dto.PaymentMethodView'];
 export type AuditEventView = Schemas['com.xavier.backend.audit.model.dto.AuditEventView'];
 export type StoreSummary = Schemas['com.xavier.backend.organization.model.dto.StoreSummary'];
+export type SeriesCreateRequest = Schemas['com.xavier.backend.fiscal.model.dto.SeriesCreateRequest'];
+export type PaymentMethodCreateRequest = Schemas['com.xavier.backend.settlement.model.dto.PaymentMethodCreateRequest'];
+export type PaymentMethodUpdateRequest = Schemas['com.xavier.backend.settlement.model.dto.PaymentMethodUpdateRequest'];
