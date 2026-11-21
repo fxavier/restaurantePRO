@@ -1,1 +1,1 @@
-export { StoreFloor } from './components/store-floor';
+export { StoreDining } from './components/store-dining';

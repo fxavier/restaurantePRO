@@ -16,3 +16,4 @@ export { CheckboxField, TextField } from './components/form-fields';
 export { StepUpButton } from './components/step-up-button';
 export { useCommandForm } from './hooks/use-command-form';
 export { useEditBase } from './hooks/use-edit-base';
+export { isVersionConflict } from './server-errors';

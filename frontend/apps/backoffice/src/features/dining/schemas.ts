@@ -32,3 +32,11 @@ export const tableSchema = z.object({
 });
 
 export type TableValues = z.infer<typeof tableSchema>;
+
+/** "Reservas: definições" (`DiningSettingsRequest`): window 1–1440 min, grace 0–1440 min. */
+export const settingsSchema = z.object({
+  reservationWindowMinutes: wholeNumber(1, 1440, 'Indique um número inteiro de minutos, de 1 a 1440.'),
+  noShowGraceMinutes: wholeNumber(0, 1440, 'Indique um número inteiro de minutos, de 0 a 1440.'),
+});
+
+export type SettingsValues = z.infer<typeof settingsSchema>;
