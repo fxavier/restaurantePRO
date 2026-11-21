@@ -19,7 +19,7 @@ import {
 import { Plus } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { showOnFields } from '../form-errors';
+import { isMaybeCreated, MAYBE_CREATED, showOnFields } from '../form-errors';
 import { useSensitiveCommand } from '../hooks/use-sensitive-command';
 import { seriesSchema, type SeriesValues } from '../schemas';
 import { CommandAlert } from './command-alert';
@@ -53,7 +53,13 @@ function SeriesForm({ storeId, onDone }: { storeId: string; onDone: () => void }
   const onSubmit = form.handleSubmit(({ code, firstNumber }) =>
     create.send(
       { type: 'createSeries', body: { storeId, code, ...(firstNumber ? { firstNumber: Number(firstNumber) } : {}) } },
-      { onSuccess: onDone, onError: (error) => showOnFields(form.setError, FIELDS, error) },
+      {
+        onSuccess: onDone,
+        onError: (error, afterUnknown) => {
+          if (isMaybeCreated(error, afterUnknown)) form.setError('root', { message: MAYBE_CREATED });
+          else showOnFields(form.setError, FIELDS, error);
+        },
+      },
     ),
   );
   const onField = FIELDS.some((field) => form.formState.errors[field]) || form.formState.errors.root;

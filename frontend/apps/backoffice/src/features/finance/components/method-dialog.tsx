@@ -20,7 +20,7 @@ import {
 import { useForm, type UseFormReturn } from 'react-hook-form';
 import type { FinanceCommand } from '../finance-commands';
 import { FINANCE_MESSAGES } from '../finance-messages';
-import { showOnFields } from '../form-errors';
+import { isMaybeCreated, MAYBE_CREATED, showOnFields } from '../form-errors';
 import { useSensitiveCommand } from '../hooks/use-sensitive-command';
 import { METHOD_KINDS, methodSchema, type MethodValues } from '../schemas';
 import type { PaymentMethodView } from '../types';
@@ -72,8 +72,12 @@ function toCommand(values: MethodValues, method: PaymentMethodView | undefined):
   return { type: 'updateMethod', methodId: method.id!, body: { name, active, ...provider, version: method.version ?? 0 } };
 }
 
-/** A taken code goes on the code field; a 400's violations on theirs. */
-function showError(form: MethodFormApi, error: Error) {
+/** A taken code goes on the code field; a 400's violations on theirs; a create's conflict after a lost answer is explained. */
+function showError(form: MethodFormApi, error: Error, maybeCreated: boolean) {
+  if (maybeCreated) {
+    form.setError('root', { message: MAYBE_CREATED });
+    return;
+  }
   if (error instanceof ApiError && error.code === 'PAYMENT_METHOD_CODE_TAKEN') {
     form.setError('code', { message: FINANCE_MESSAGES.PAYMENT_METHOD_CODE_TAKEN });
     return;
@@ -85,7 +89,10 @@ function MethodForm({ storeId, method, onDone }: { storeId: string; method?: Pay
   const form = useForm<MethodValues>({ resolver: zodResolver(methodSchema), defaultValues: defaults(method) });
   const save = useSensitiveCommand(storeId);
   const onSubmit = form.handleSubmit((values) =>
-    save.send(toCommand(values, method), { onSuccess: onDone, onError: (error) => showError(form, error) }),
+    save.send(toCommand(values, method), {
+      onSuccess: onDone,
+      onError: (error, afterUnknown) => showError(form, error, !method && isMaybeCreated(error, afterUnknown)),
+    }),
   );
   const errors = form.formState.errors;
   const onField = FIELDS.some((field) => errors[field]) || errors.root;

@@ -33,12 +33,15 @@ const DOCUMENT = {
 };
 const TYPES: Record<string, string> = { SALE: 'Venda' };
 
-/** "Fiscal" (§5): the store's document series (managed with a step-up) and the documents issued in the period. */
-export function FiscalTab({ storeId, period }: { storeId: string; period: Period }) {
+/**
+ * "Fiscal" (§5): the store's document series (managed with a step-up) and the documents issued in the period. The
+ * documents start again at their first page when `periodKey` changes; the series, which have no period, stay as they are.
+ */
+export function FiscalTab({ storeId, period, periodKey }: { storeId: string; period: Period; periodKey: string }) {
   return (
     <div className="flex flex-col gap-6">
       <SeriesSection storeId={storeId} />
-      <DocumentsSection storeId={storeId} period={period} />
+      <DocumentsSection key={periodKey} storeId={storeId} period={period} />
     </div>
   );
 }

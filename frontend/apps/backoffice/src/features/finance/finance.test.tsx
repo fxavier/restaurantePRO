@@ -3,7 +3,7 @@ import { screen, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api, baixa, problem } from '../../test/fixtures';
-import { financeServer, mzn, receiptsRow, salesRow } from '../../test/finance-fixtures';
+import { financeServer, mzn, page, receiptsRow, salesRow } from '../../test/finance-fixtures';
 import { renderApp } from '../../test/render-app';
 import { server } from '../../test/server';
 
@@ -108,6 +108,30 @@ describe('finance tabs', () => {
     for (const name of ['Resumo', 'Fechos', 'Reconciliação', 'Fiscal', 'Meios de pagamento']) {
       expect(screen.getByRole('tab', { name })).toBeInTheDocument();
     }
+  });
+
+  it("offers a retry when the store list is unreachable, instead of a blank area", async () => {
+    financeServer();
+    let unreachable = true;
+    server.use(
+      http.get(api('/api/v1/backoffice/stores'), () =>
+        unreachable ? problem(503, undefined) : HttpResponse.json(page([baixa], 0, 100)),
+      ),
+    );
+    const { user } = renderApp(FINANCE);
+
+    const area = await screen.findByRole('region', { name: 'Financeiro da loja' });
+    expect(await within(area).findByText('Sem ligação ao serviço.')).toBeInTheDocument();
+    unreachable = false;
+    await user.click(within(area).getByRole('button', { name: 'Tentar novamente' }));
+
+    expect(await screen.findByRole('tab', { name: 'Resumo' })).toBeInTheDocument();
+  });
+
+  it('says when the selected store is not in the company', async () => {
+    financeServer();
+    renderApp('/finance?storeId=99990000-0000-4000-8000-000000000099');
+    expect(await screen.findByText('Loja não encontrada. Escolha outra na barra superior.')).toBeInTheDocument();
   });
 
   it('asks for a store first', async () => {

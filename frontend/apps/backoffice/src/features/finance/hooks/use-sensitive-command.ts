@@ -4,7 +4,8 @@ import type { FinanceCommand } from '../finance-commands';
 import { useFinanceCommand } from './use-finance-commands';
 import { useFinanceStepUp } from './use-finance-step-up';
 
-type Handlers = { onSuccess?: () => void; onError?: (error: Error) => void };
+/** `afterUnknown`: the answer is to "Tentar novamente" after a lost one, so the first send may have been committed. */
+type Handlers = { onSuccess?: () => void; onError?: (error: Error, afterUnknown: boolean) => void };
 
 /**
  * A finance command with its step-up (FC §6): `send` runs it, a step-up challenge opens `dialog`, and `failure` is
@@ -16,17 +17,17 @@ export function useSensitiveCommand(storeId: string) {
   // The retry resends under the handlers of the intent it repeats (a form still closes on success).
   const last = useRef<Handlers>({});
 
-  const send = (next: FinanceCommand, handlers: Handlers = last.current) => {
+  const send = (next: FinanceCommand, handlers: Handlers = last.current, afterUnknown = false) => {
     last.current = handlers;
     command.mutate(next, {
       onSuccess: handlers.onSuccess,
       onError: (error) => {
         if (isStepUpRequired(error)) stepUp.prompt(error, next);
-        else handlers.onError?.(error);
+        else handlers.onError?.(error, afterUnknown);
       },
     });
   };
-  const retry = () => command.variables && send(command.variables);
+  const retry = () => command.variables && send(command.variables, last.current, true);
   const error = command.error && !isStepUpRequired(command.error) ? command.error : null;
 
   return {

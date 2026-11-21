@@ -3,7 +3,7 @@ import { screen, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api, baixa, problem, stepUpRequired } from '../../test/fixtures';
-import { financeServer, mzn, reconciliationLine, type AuditEventView, type DocumentSummary, type InDoubtAttemptView, type PaymentMethodView, type SeriesView } from '../../test/finance-fixtures';
+import { financeServer, mzn, page, reconciliationLine, type AuditEventView, type DocumentSummary, type InDoubtAttemptView, type PaymentMethodView, type SeriesView } from '../../test/finance-fixtures';
 import { renderApp } from '../../test/render-app';
 import { server } from '../../test/server';
 
@@ -29,6 +29,19 @@ function writes(method: 'post' | 'put', path: string, answer: () => Response) {
     }),
   );
   return sent;
+}
+
+/**
+ * Two pages over the last seven days (`first` then `second`), one page over "Hoje" (`first` alone): a page past the
+ * period's last page answers nothing, as the server would.
+ */
+function pagedByPeriod<Row>(request: Request, first: Row, second: Row) {
+  const query = new URL(request.url).searchParams;
+  const pageNumber = Number(query.get('page'));
+  const today = query.get('from') === '2026-11-20T00:00:00+02:00';
+  const total = today ? 1 : 21;
+  const content = pageNumber === 0 ? [first] : pageNumber === 1 && !today ? [second] : [];
+  return HttpResponse.json(page(content, pageNumber, 20, total));
 }
 
 describe('reconciliation', () => {
@@ -96,6 +109,20 @@ describe('fiscal', () => {
     );
   });
 
+  it('goes back to the first page of documents when the period changes', async () => {
+    financeServer({ series: [series] });
+    const second = { ...document, id: 'd0c00000-0000-4000-8000-000000000002', number: 107 };
+    server.use(http.get(api('/api/v1/backoffice/fiscal/documents'), ({ request }) => pagedByPeriod(request, document, second)));
+    const { user } = renderApp(tab('fiscal'));
+
+    const table = await screen.findByRole('table', { name: 'Documentos fiscais' });
+    await user.click(await screen.findByRole('button', { name: 'Seguinte' }));
+    expect(await within(table).findByRole('row', { name: /FR2026\/107/ })).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('Período'), '1');
+
+    expect(await within(await screen.findByRole('table', { name: 'Documentos fiscais' })).findByRole('row', { name: /FR2026\/128/ })).toBeInTheDocument();
+  });
+
   it('asks for a step-up to read the series, and comes back to this tab', async () => {
     financeServer();
     server.use(http.get(api('/api/v1/backoffice/fiscal/series'), () => stepUpRequired()));
@@ -135,6 +162,22 @@ describe('fiscal', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Criar série' }));
 
     expect(await within(dialog).findByText('A loja já tem uma série de venda ativa. Desative-a primeiro.')).toBeInTheDocument();
+  });
+
+  it("does not call a retried series a conflict, as the lost first answer may have created it", async () => {
+    financeServer();
+    const answers = [() => problem(503, undefined), () => problem(409, 'ACTIVE_SERIES_EXISTS')];
+    const sent = writes('post', '/api/v1/backoffice/fiscal/series', () => answers[sent.length - 1]!());
+    const { user } = renderApp(tab('fiscal'));
+
+    await user.click(await screen.findByRole('button', { name: 'Nova série' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Nova série' });
+    await user.type(within(dialog).getByLabelText('Código'), 'FR2027');
+    await user.click(within(dialog).getByRole('button', { name: 'Criar série' }));
+    await user.click(await within(dialog).findByRole('button', { name: 'Tentar novamente' }));
+
+    expect(await within(dialog).findByText('O primeiro envio pode já ter sido registado. Confira a lista antes de criar outro.')).toBeInTheDocument();
+    expect(within(dialog).queryByText('A loja já tem uma série de venda ativa. Desative-a primeiro.')).not.toBeInTheDocument();
   });
 
   it('deactivates a series after confirmation', async () => {
@@ -180,6 +223,24 @@ describe('payment methods', () => {
     expect(sent[0]!.body).toEqual({ code: 'MPESA', name: 'M-Pesa', kind: 'EXTERNAL_TERMINAL' });
   });
 
+  it("does not call a retried create's own code taken, as the lost first answer may have created it", async () => {
+    financeServer();
+    const answers = [() => problem(503, undefined), () => problem(409, 'PAYMENT_METHOD_CODE_TAKEN')];
+    const sent = writes('post', '/api/v1/backoffice/payment-methods', () => answers[sent.length - 1]!());
+    const { user } = renderApp(tab('meios'));
+
+    await user.click(await screen.findByRole('button', { name: 'Novo meio de pagamento' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Novo meio de pagamento' });
+    await user.type(within(dialog).getByLabelText('Código'), 'MPESA');
+    await user.type(within(dialog).getByLabelText('Nome'), 'M-Pesa');
+    await user.click(within(dialog).getByRole('button', { name: 'Guardar' }));
+    await user.click(await within(dialog).findByRole('button', { name: 'Tentar novamente' }));
+
+    expect(await within(dialog).findByText('O primeiro envio pode já ter sido registado. Confira a lista antes de criar outro.')).toBeInTheDocument();
+    expect(within(dialog).queryByText('Já existe um meio de pagamento com este código.')).not.toBeInTheDocument();
+    expect(sent).toHaveLength(2);
+  });
+
   it('edits a payment method with the version it read', async () => {
     financeServer({ methods: [cash] });
     const sent = writes('put', `/api/v1/backoffice/payment-methods/${cash.id}`, () => HttpResponse.json({ ...cash, active: false, version: 3 }));
@@ -218,6 +279,20 @@ describe('audit', () => {
     expect(requests).toContain(
       `/api/v1/backoffice/audit/events?storeId=${baixa.id}&from=2026-11-14T00%3A00%3A00%2B02%3A00&to=2026-11-21T00%3A00%3A00%2B02%3A00&page=0&size=20`,
     );
+  });
+
+  it('goes back to the first page when the period changes', async () => {
+    financeServer();
+    const second = { ...event, id: 'a0d10000-0000-4000-8000-000000000002', action: 'SERIES_DEACTIVATED' };
+    server.use(http.get(api('/api/v1/backoffice/audit/events'), ({ request }) => pagedByPeriod(request, event, second)));
+    const { user } = renderApp(tab('auditoria'));
+
+    const table = await screen.findByRole('table', { name: 'Eventos de auditoria' });
+    await user.click(await screen.findByRole('button', { name: 'Seguinte' }));
+    expect(await within(table).findByRole('row', { name: /SERIES_DEACTIVATED/ })).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('Período'), '1');
+
+    expect(await within(await screen.findByRole('table', { name: 'Eventos de auditoria' })).findByRole('row', { name: /CASH_DAY_REOPENED/ })).toBeInTheDocument();
   });
 
   it('says when nothing was recorded in the period', async () => {
