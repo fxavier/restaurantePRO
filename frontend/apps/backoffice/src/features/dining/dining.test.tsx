@@ -115,7 +115,7 @@ describe('rooms and tables', () => {
     );
     const { user } = renderApp(DINING);
 
-    await user.click(await screen.findByRole('button', { name: 'Editar mesa M01' }));
+    await user.click(await screen.findByRole('button', { name: /^Editar mesa M01/ }));
     const dialog = screen.getByRole('dialog', { name: 'Editar mesa' });
     await user.clear(within(dialog).getByLabelText('Código'));
     await user.type(within(dialog).getByLabelText('Código'), 'M02');

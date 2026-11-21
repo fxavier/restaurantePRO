@@ -2,7 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Button, ConfirmButton, Form } from '@restaurantpro/ui';
 import { Pencil } from 'lucide-react';
 import { useForm } from 'react-hook-form';
-import { companyProfileSchema, type CompanyProfileValues } from '../company-schemas';
+import { companyProfileFormValues, companyProfileSchema, type CompanyProfileValues } from '../company-schemas';
 import { useCommandForm } from '../hooks/use-command-form';
 import { useReadCompanyProfile, useUpdateCompanyProfile } from '../hooks/use-company-profile';
 import { useEditBase } from '../hooks/use-edit-base';
@@ -46,12 +46,7 @@ function EditCompanyProfile({ profile, onDone }: { profile: CompanyProfileView; 
       />
       <CompanyProfileForm
         key={base.version}
-        defaultValues={{
-          name: base.name ?? '',
-          taxId: base.taxId ?? '',
-          country: base.country ?? '',
-          currency: base.currency ?? '',
-        }}
+        defaultValues={companyProfileFormValues(base)}
         onSubmit={(values) =>
           save(async ({ version }) => {
             await update.mutateAsync({ ...values, version: version ?? 0 });

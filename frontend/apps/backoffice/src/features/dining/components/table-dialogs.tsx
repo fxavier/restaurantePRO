@@ -13,6 +13,7 @@ import {
   useCommandForm,
   useEditBase,
 } from '../../organization';
+import { tableFormValues } from '../form-values';
 import { useCreateTable, useReadFloorItem, useUpdateTable } from '../hooks/use-floor-commands';
 import { tableSchema, type TableValues } from '../schemas';
 import type { RestaurantTableSummary, RoomAreaSummary } from '../types';
@@ -58,8 +59,9 @@ export function EditTableDialog({ table, areas, children }: { table: RestaurantT
       title="Editar mesa"
       description={`Mesa ${table.code}`}
       trigger={
-        <Button variant="outline" aria-label={`Editar mesa ${table.code}`} className="h-auto min-w-20 justify-start px-3 py-2">
-          {children}
+        // The name starts with the action and keeps the visible text (WCAG 2.5.3 label in name): "Editar mesa M01 4 lugares".
+        <Button variant="outline" className="h-auto min-w-20 justify-start px-3 py-2">
+          <span className="sr-only">Editar mesa</span> {children}
         </Button>
       }
     >
@@ -82,12 +84,7 @@ function EditTable({ table, areas, onDone }: { table: RestaurantTableSummary; ar
         key={base.version}
         areas={areas}
         submitLabel="Guardar"
-        defaultValues={{
-          code: base.code ?? '',
-          seats: String(base.seats ?? ''),
-          areaId: base.areaId ?? '',
-          active: base.active ?? true,
-        }}
+        defaultValues={tableFormValues(base)}
         onCancel={onDone}
         onSubmit={({ seats, ...values }) =>
           save(

@@ -125,7 +125,7 @@ test('dining: areas with their tables, settings and reservations, and the edit-t
   await expectNoAxeViolations(page);
   await screens(page, 'bo-dining');
 
-  await page.getByRole('button', { name: 'Editar mesa M01' }).click();
+  await page.getByRole('button', { name: /^Editar mesa M01/ }).click();
   const dialog = page.getByRole('dialog', { name: 'Editar mesa' });
   await expect(dialog.getByLabel('Lugares')).toHaveValue('4');
   await expect(dialog.getByLabel('Área')).toHaveValue(SALA);

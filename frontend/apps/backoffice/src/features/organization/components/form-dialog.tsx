@@ -1,4 +1,5 @@
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@restaurantpro/ui';
+import { Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@restaurantpro/ui';
+import { Pencil } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 
 type FormDialogProps = {
@@ -24,5 +25,25 @@ export function FormDialog({ trigger, title, description, children }: FormDialog
         {children(() => setOpen(false))}
       </DialogContent>
     </Dialog>
+  );
+}
+
+type EditFormDialogProps = Omit<FormDialogProps, 'trigger'> & {
+  /** The trigger's accessible name, which names what is edited (its visible text is "Editar"). */
+  label: string;
+};
+
+/** An edit of one configured item, opened by a small "Editar" button (Stitch's card action). */
+export function EditFormDialog({ label, ...props }: EditFormDialogProps) {
+  return (
+    <FormDialog
+      {...props}
+      trigger={
+        <Button variant="outline" size="sm" aria-label={label}>
+          <Pencil aria-hidden="true" />
+          Editar
+        </Button>
+      }
+    />
   );
 }

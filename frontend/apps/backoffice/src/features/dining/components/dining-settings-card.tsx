@@ -2,8 +2,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, ConfirmButton, DataState, Form } from '@restaurantpro/ui';
 import { useId, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { isUnavailable } from '../../../lib/errors';
-import { ConflictNotice, FormError, RootError, TextField, useCommandForm, isVersionConflict } from '../../organization';
+import { ConflictNotice, FormError, RootError, TextField, useCommandForm, isVersionConflict, queryState } from '../../organization';
+import { settingsFormValues } from '../form-values';
 import { useDiningSettings, useSaveDiningSettings } from '../hooks/use-dining-settings';
 import { settingsSchema, type SettingsValues } from '../schemas';
 
@@ -46,7 +46,7 @@ export function DiningSettingsCard({ storeId }: { storeId: string }) {
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <DataState
-          state={data ? 'ready' : settings.isError ? (isUnavailable(settings.error) ? 'unavailable' : 'error') : 'loading'}
+          state={queryState(settings.error, data)}
           onRetry={() => void settings.refetch()}
         >
           <ConflictNotice
@@ -56,10 +56,7 @@ export function DiningSettingsCard({ storeId }: { storeId: string }) {
           {data && (
             <SettingsForm
               key={data.version ?? 'default'}
-              defaultValues={{
-                reservationWindowMinutes: String(data.reservationWindowMinutes ?? ''),
-                noShowGraceMinutes: String(data.noShowGraceMinutes ?? ''),
-              }}
+              defaultValues={settingsFormValues(data)}
               saved={outcome === 'saved'}
               onSubmit={submit}
             />

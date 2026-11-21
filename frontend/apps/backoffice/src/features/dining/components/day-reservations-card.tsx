@@ -20,8 +20,7 @@ import {
 } from '@restaurantpro/ui';
 import { Ban, CalendarClock, CircleHelp, Lock, UserCheck, UserX } from 'lucide-react';
 import { useId, useState } from 'react';
-import { isUnavailable } from '../../../lib/errors';
-import { useStoreTimeZone } from '../../organization';
+import { queryState, useStoreTimeZone } from '../../organization';
 import { dateIn, timeIn } from '../dates';
 import { useDayReservations } from '../hooks/use-dining-settings';
 import { useTables } from '../hooks/use-floor';
@@ -75,11 +74,7 @@ export function DayReservationsCard({ storeId }: { storeId: string }) {
           </p>
         ) : (
           <DataState
-            state={
-              reservations.isError
-                ? isUnavailable(reservations.error) ? 'unavailable' : 'error'
-                : !reservations.data ? 'loading' : reservations.data.length ? 'ready' : 'empty'
-            }
+            state={queryState(reservations.error, reservations.data)}
             onRetry={() => void reservations.refetch()}
             emptyMessage="Sem reservas neste dia."
           >

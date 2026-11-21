@@ -1,3 +1,4 @@
+import type { ApiClient } from '@restaurantpro/api-client';
 import { useQuery } from '@tanstack/react-query';
 import { useApi } from '../../../lib/api';
 import type { RestaurantTableSummary, RoomAreaSummary } from '../types';
@@ -13,24 +14,29 @@ export const FLOOR_PAGE = { page: 0, size: 200 };
 
 export type Listed<T> = { items: T[]; totalElements: number };
 
-export function useAreas(storeId: string) {
+type FloorQuery = typeof FLOOR_PAGE & { storeId: string };
+type FloorPage<T> = { data?: { content?: T[]; totalElements?: number } };
+
+/** One store's areas or tables, first page of 200. */
+function useFloorList<T>(key: readonly string[], storeId: string, read: (api: ApiClient, query: FloorQuery) => Promise<FloorPage<T>>) {
   const api = useApi();
   return useQuery({
-    queryKey: [...AREAS_KEY, storeId],
-    queryFn: async (): Promise<Listed<RoomAreaSummary>> => {
-      const { data } = await api.GET('/api/v1/backoffice/areas', { params: { query: { storeId, ...FLOOR_PAGE } } });
+    queryKey: [...key, storeId],
+    queryFn: async (): Promise<Listed<T>> => {
+      const { data } = await read(api, { storeId, ...FLOOR_PAGE });
       return { items: data?.content ?? [], totalElements: data?.totalElements ?? 0 };
     },
   });
 }
 
+export function useAreas(storeId: string) {
+  return useFloorList<RoomAreaSummary>(AREAS_KEY, storeId, (api, query) =>
+    api.GET('/api/v1/backoffice/areas', { params: { query } }),
+  );
+}
+
 export function useTables(storeId: string) {
-  const api = useApi();
-  return useQuery({
-    queryKey: [...TABLES_KEY, storeId],
-    queryFn: async (): Promise<Listed<RestaurantTableSummary>> => {
-      const { data } = await api.GET('/api/v1/backoffice/tables', { params: { query: { storeId, ...FLOOR_PAGE } } });
-      return { items: data?.content ?? [], totalElements: data?.totalElements ?? 0 };
-    },
-  });
+  return useFloorList<RestaurantTableSummary>(TABLES_KEY, storeId, (api, query) =>
+    api.GET('/api/v1/backoffice/tables', { params: { query } }),
+  );
 }

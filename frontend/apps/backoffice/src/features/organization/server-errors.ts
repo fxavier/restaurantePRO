@@ -1,4 +1,4 @@
-import { ApiError } from '@restaurantpro/api-client';
+import { ApiError, type FieldError } from '@restaurantpro/api-client';
 
 /** A 409 code that names one field, e.g. a taken code: the field and the Portuguese text it shows. */
 export type TakenCodes<Field extends string> = Readonly<Record<string, { field: Field; message: string }>>;
@@ -15,11 +15,18 @@ export function fieldErrors<Field extends string>(
   taken: TakenCodes<Field> = {},
 ): FieldErrors<Field> | undefined {
   if (!(error instanceof ApiError)) return undefined;
-  const named = taken[error.code];
-  if (error.status === 409 && named) return { fields: { [named.field]: named.message } as Partial<Record<Field, string>>, rest: [] };
-  if (error.status !== 400 || !error.errors?.length) return undefined;
+  if (error.status === 409) return takenField(taken[error.code]);
+  if (error.status === 400 && error.errors?.length) return violations(error.errors, fields);
+  return undefined;
+}
+
+function takenField<Field extends string>(named: TakenCodes<Field>[string] | undefined): FieldErrors<Field> | undefined {
+  return named && { fields: { [named.field]: named.message } as Partial<Record<Field, string>>, rest: [] };
+}
+
+function violations<Field extends string>(errors: readonly FieldError[], fields: readonly Field[]): FieldErrors<Field> {
   const result: FieldErrors<Field> = { fields: {}, rest: [] };
-  for (const { field, message } of error.errors) {
+  for (const { field, message } of errors) {
     if (isField(fields, field) && result.fields[field] === undefined) result.fields[field] = message;
     else result.rest.push(message);
   }

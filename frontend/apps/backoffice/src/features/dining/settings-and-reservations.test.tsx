@@ -1,8 +1,9 @@
 import { screen, waitFor, within } from '@testing-library/react';
-import { http } from 'msw';
+import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { api, baixa, problem } from '../../test/fixtures';
-import { diningServer, m1, m2, reservation } from '../../test/dining-fixtures';
+import { diningServer, m1, m2, reservation, settings } from '../../test/dining-fixtures';
+import { sent } from '../../test/organization-fixtures';
 import { renderApp } from '../../test/render-app';
 import { server } from '../../test/server';
 import { dateIn } from './dates';
@@ -45,6 +46,58 @@ describe('dining settings', () => {
 
     expect(await within(card).findByText('Indique um número inteiro de minutos, de 1 a 1440.')).toBeInTheDocument();
     expect(state.writes).toEqual([]);
+  });
+
+  it('loads the current values when someone saved in between, and saves them at the new version', async () => {
+    const state = diningServer();
+    let puts = 0;
+    server.use(
+      http.put(api(`/api/v1/backoffice/dining/settings/${baixa.id}`), async ({ request }) => {
+        puts += 1;
+        const write = await sent(request);
+        state.writes.push(write);
+        if (puts > 1) return HttpResponse.json({ ...state.settings, ...(write.body as object), version: 4 });
+        state.settings = { ...state.settings, reservationWindowMinutes: 150, version: 3 };
+        return problem(409, 'VERSION_CONFLICT');
+      }),
+    );
+    const { user } = renderApp(DINING);
+
+    const card = await screen.findByRole('region', { name: 'Reservas: definições' });
+    const window = await within(card).findByLabelText('Janela de reserva (minutos)');
+    await waitFor(() => expect(window).toHaveValue(120));
+    await user.clear(window);
+    await user.type(window, '90');
+    await user.click(within(card).getByRole('button', { name: 'Guardar definições' }));
+
+    expect(await within(card).findByText(/alteradas por outra pessoa entretanto/)).toBeInTheDocument();
+    await waitFor(() => expect(within(card).getByLabelText('Janela de reserva (minutos)')).toHaveValue(150));
+    await user.click(within(card).getByRole('button', { name: 'Guardar definições' }));
+
+    expect(await within(card).findByText('Definições guardadas.')).toBeInTheDocument();
+    expect(state.writes.map(({ body }) => body)).toEqual([
+      { reservationWindowMinutes: 90, noShowGraceMinutes: 30, version: 2 },
+      { reservationWindowMinutes: 150, noShowGraceMinutes: 30, version: 3 },
+    ]);
+  });
+
+  it('says there is no connection when the settings cannot be read, and reads them again on retry', async () => {
+    diningServer();
+    let gets = 0;
+    server.use(
+      http.get(api(`/api/v1/backoffice/dining/settings/${baixa.id}`), () => {
+        gets += 1;
+        return gets <= 3 ? problem(503, 'BACKEND_UNAVAILABLE') : HttpResponse.json(settings);
+      }),
+    );
+    const { user } = renderApp(DINING);
+
+    const card = await screen.findByRole('region', { name: 'Reservas: definições' });
+    expect(await within(card).findByText('Sem ligação ao serviço.')).toBeInTheDocument();
+    expect(within(card).queryByRole('button', { name: 'Guardar definições' })).not.toBeInTheDocument();
+    await user.click(within(card).getByRole('button', { name: /Tentar/ }));
+
+    await waitFor(() => expect(within(card).getByLabelText('Janela de reserva (minutos)')).toHaveValue(120));
   });
 });
 

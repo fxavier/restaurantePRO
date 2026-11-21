@@ -1,28 +1,18 @@
 import { Button } from '@restaurantpro/ui';
-import { Pencil } from 'lucide-react';
 import { useEditBase } from '../hooks/use-edit-base';
 import { useReadStore, useUpdateStore } from '../hooks/use-store-commands';
 import { cutoffLabel, toCutoff } from '../store-values';
 import type { StoreSummary } from '../types';
 import { ConflictNotice } from './conflict-notice';
-import { FormDialog } from './form-dialog';
+import { EditFormDialog } from './form-dialog';
 import { StoreForm } from './store-form';
 
 /** "Editar loja" (§5): the store's settings at the version it was read. */
 export function EditStoreDialog({ store }: { store: StoreSummary }) {
   return (
-    <FormDialog
-      title="Editar loja"
-      description={store.name}
-      trigger={
-        <Button variant="outline" size="sm" aria-label={`Editar ${store.name}`}>
-          <Pencil aria-hidden="true" />
-          Editar
-        </Button>
-      }
-    >
+    <EditFormDialog title="Editar loja" description={store.name} label={`Editar ${store.name}`}>
       {(close) => <EditStore store={store} onDone={close} />}
-    </FormDialog>
+    </EditFormDialog>
   );
 }
 

@@ -1,7 +1,7 @@
 import { Button, DataState } from '@restaurantpro/ui';
 import { Armchair, MonitorSmartphone } from 'lucide-react';
 import { Link } from 'react-router';
-import { isUnavailable } from '../../../lib/errors';
+import { queryState } from '../query-state';
 import { storeSearch } from '../hooks/use-store-selection';
 import { useStores } from '../hooks/use-stores';
 import { EditStoreDialog } from './edit-store-dialog';
@@ -11,9 +11,7 @@ import { StoreCard } from './store-card';
 /** The company's stores as cards (Stitch "Unidades Operacionais & Lojas"), and "Nova loja". */
 export function CompanyStores() {
   const stores = useStores();
-  const state = stores.isError
-    ? isUnavailable(stores.error) ? 'unavailable' : 'error'
-    : stores.isPending ? 'loading' : stores.data.length ? 'ready' : 'empty';
+  const state = queryState(stores.error, stores.data);
   // A new store most likely shares the others' timezone; the first store has the browser's.
   const defaultTimeZone = stores.data?.[0]?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   return (

@@ -2,9 +2,9 @@ import { Badge, Card, CardContent, CardHeader, CardTitle, DataState } from '@res
 import { Building2, ShieldCheck } from 'lucide-react';
 import { useId } from 'react';
 import { useSession } from '../../identity';
-import { isUnavailable } from '../../../lib/errors';
 import { isStepUpRequired } from '../../../lib/step-up';
 import { useCompanyProfile } from '../hooks/use-company-profile';
+import { queryState } from '../query-state';
 import { EditCompanyProfileDialog } from './edit-company-profile-dialog';
 import { Facts } from './facts';
 import { StepUpButton } from './step-up-button';
@@ -39,7 +39,7 @@ export function CompanyProfileCard() {
       <Card className="mt-6">
         <CardContent>
           <DataState
-            state={profile.isError ? (isUnavailable(profile.error) ? 'unavailable' : 'error') : 'loading'}
+            state={queryState(profile.error, profile.data)}
             onRetry={() => void profile.refetch()}
           >
             {null}

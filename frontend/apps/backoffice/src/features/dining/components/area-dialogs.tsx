@@ -1,10 +1,11 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Button, ConfirmButton, Form } from '@restaurantpro/ui';
-import { Pencil, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import {
   CheckboxField,
   ConflictNotice,
+  EditFormDialog,
   FormDialog,
   FormError,
   RootError,
@@ -53,18 +54,9 @@ export function NewAreaDialog({ storeId }: { storeId: string }) {
 /** "Editar área": its code, name and whether it is active, at the version read. */
 export function EditAreaDialog({ area }: { area: RoomAreaSummary }) {
   return (
-    <FormDialog
-      title="Editar área"
-      description={area.name}
-      trigger={
-        <Button variant="outline" size="sm" aria-label={`Editar área ${area.name}`}>
-          <Pencil aria-hidden="true" />
-          Editar
-        </Button>
-      }
-    >
+    <EditFormDialog title="Editar área" description={area.name} label={`Editar área ${area.name}`}>
       {(close) => <EditArea area={area} onDone={close} />}
-    </FormDialog>
+    </EditFormDialog>
   );
 }
 

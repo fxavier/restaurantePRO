@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { CompanyProfileView } from './store-types';
 
 /** "Editar perfil da empresa": the contract's limits (`CompanyProfileUpdateRequest`), in Portuguese. */
 export const companyProfileSchema = z.object({
@@ -17,3 +18,8 @@ export const companyProfileSchema = z.object({
 });
 
 export type CompanyProfileValues = z.infer<typeof companyProfileSchema>;
+
+/** "Editar perfil da empresa" starts from the profile as read. */
+export function companyProfileFormValues({ name, taxId, country, currency }: CompanyProfileView): CompanyProfileValues {
+  return { name: name ?? '', taxId: taxId ?? '', country: country ?? '', currency: currency ?? '' };
+}

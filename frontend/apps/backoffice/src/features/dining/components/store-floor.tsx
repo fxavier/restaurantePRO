@@ -1,5 +1,5 @@
-import { DataState, type DataStateValue } from '@restaurantpro/ui';
-import { isUnavailable } from '../../../lib/errors';
+import { DataState } from '@restaurantpro/ui';
+import { queryState } from '../../organization';
 import { floorByArea } from '../floor';
 import { useAreas, useTables } from '../hooks/use-floor';
 import { EditAreaDialog, NewAreaDialog } from './area-dialogs';
@@ -10,10 +10,7 @@ import { EditTableDialog, NewTableDialog } from './table-dialogs';
 export function StoreFloor({ storeId }: { storeId: string }) {
   const areas = useAreas(storeId);
   const tables = useTables(storeId);
-  const error = areas.error ?? tables.error;
-  const state: DataStateValue = error
-    ? isUnavailable(error) ? 'unavailable' : 'error'
-    : !areas.data || !tables.data ? 'loading' : areas.data.items.length ? 'ready' : 'empty';
+  const state = queryState(areas.error ?? tables.error, tables.data && areas.data?.items);
   const allAreas = areas.data?.items ?? [];
   const floors = tables.data ? floorByArea(allAreas, tables.data.items) : [];
 
