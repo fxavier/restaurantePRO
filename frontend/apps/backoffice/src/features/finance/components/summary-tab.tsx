@@ -48,7 +48,7 @@ export function SummaryTab({ storeId, period }: { storeId: string; period: Perio
         </p>
       )}
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="gap-4">
+        <Card className="min-w-0 gap-4">
           <CardHeader>
             <CardTitle className="text-lg">Vendas por dia</CardTitle>
           </CardHeader>
@@ -78,7 +78,7 @@ export function SummaryTab({ storeId, period }: { storeId: string; period: Perio
             </QueryState>
           </CardContent>
         </Card>
-        <Card className="gap-4">
+        <Card className="min-w-0 gap-4">
           <CardHeader>
             <CardTitle className="text-lg">Recebimentos por meio de pagamento</CardTitle>
           </CardHeader>
