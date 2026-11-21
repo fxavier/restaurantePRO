@@ -20,7 +20,9 @@ const MAX_PEOPLE = 50;
 /** Stitch's "Modo de repartição": the whole bill, equal parts, or by items (§4 "divisão por artigos ou partes"). */
 export function SplitPanel({ settlement, guests, disabled }: Props) {
   const split = useSplitEqually(settlement.orderId);
-  const byItems = useSplitByItems(settlement.orderId);
+  // Each split by items the server made starts the quantities again; a refused one keeps them.
+  const [itemsSplits, setItemsSplits] = useState(0);
+  const byItems = useSplitByItems(settlement.orderId, () => setItemsSplits((count) => count + 1));
   // Until the user picks a number, the order's guests (which may arrive after the bill).
   const [chosen, setPeople] = useState<number>();
   const people = chosen ?? Math.min(Math.max(guests ?? MIN_PEOPLE, MIN_PEOPLE), MAX_PEOPLE);
@@ -80,6 +82,7 @@ export function SplitPanel({ settlement, guests, disabled }: Props) {
         </TabsContent>
         <TabsContent value="items" className="pt-2">
           <ItemsSplit
+            key={itemsSplits}
             settlement={settlement}
             disabled={disabled || byItems.intent !== undefined}
             onSplit={(lines) => byItems.start({ orderVersion: settlement.orderVersion, lines }, undefined)}

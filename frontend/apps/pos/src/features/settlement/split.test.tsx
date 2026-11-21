@@ -83,6 +83,32 @@ describe('splitting the bill', () => {
     expect(requests[0]!.body).toEqual({ orderVersion: 4, kind: 'ITEMS', lines: [{ lineId: LINE_IDS.steak, quantity: '2' }] });
   });
 
+  it('by items: a refused split keeps the quantities chosen; a split made starts them again', async () => {
+    const server = serverSettlement();
+    partitionEndpoint(
+      () => problem(422, 'QUANTITY_ALREADY_PARTITIONED'),
+      () => {
+        server.set({ ...SETTLEMENT, orderVersion: 5, partitions: [ITEMS_PARTITION] });
+        return HttpResponse.json(ITEMS_PARTITION, { status: 201 });
+      },
+    );
+    const { user } = await atPayment();
+    await billShown();
+    await user.click(within(splitPanel()).getByRole('tab', { name: 'Por artigos' }));
+    const lines = () => within(splitPanel()).getByRole('list', { name: 'Artigos por dividir' });
+    const steak = () => within(lines()).getAllByRole('listitem')[0];
+    await user.click(within(lines()).getByRole('button', { name: 'Mais Bitoque' }));
+    await user.click(within(lines()).getByRole('button', { name: 'Mais Bitoque' }));
+
+    await user.click(within(splitPanel()).getByRole('button', { name: 'Criar divisão' }));
+    expect(await within(splitPanel()).findByRole('alert')).toHaveTextContent('A divisão não foi feita.');
+    expect(steak()).toHaveTextContent('Bitoque2 de 3');
+
+    await user.click(within(splitPanel()).getByRole('button', { name: 'Criar divisão' }));
+    await waitFor(() => expect(within(parts()).getAllByRole('listitem')).toHaveLength(1));
+    expect(steak()).toHaveTextContent('Bitoque0 de 3');
+  });
+
   it('without an answer, keeps the split unconfirmed and resends it with the same key', async () => {
     const server = serverSettlement();
     const requests = equalPartsEndpoint(

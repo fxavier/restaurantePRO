@@ -168,7 +168,7 @@ export function useCancelPartition(orderId: string) {
 }
 
 /** `POST /api/v1/pos/orders/{id}/partitions` with kind `ITEMS`: quantities of lines as one part (D67). */
-export function useSplitByItems(orderId: string) {
+export function useSplitByItems(orderId: string, onSplit: () => void) {
   const { api } = useServices();
   return useSettlementIntent(
     orderId,
@@ -179,6 +179,7 @@ export function useSplitByItems(orderId: string) {
           body: { orderVersion: body.orderVersion, kind: 'ITEMS', lines: body.lines },
         })
       ).data,
+    onSplit,
   );
 }
 
