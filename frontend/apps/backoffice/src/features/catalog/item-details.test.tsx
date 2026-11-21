@@ -1,7 +1,7 @@
 import { screen, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
-import { bife, catalogReference, page, type BarcodeSummary, type ItemVariantSummary } from '../../test/catalog-fixtures';
+import { bife, catalogReference, page, type BarcodeSummary, type ItemVariantSummary } from './test-fixtures';
 import { api, signedIn } from '../../test/fixtures';
 import { renderApp } from '../../test/render-app';
 import { server } from '../../test/server';

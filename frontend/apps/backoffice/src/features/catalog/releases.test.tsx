@@ -2,7 +2,7 @@ import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { resetLoginGuard } from '../../lib/browser';
-import { catalogReference, page, release, type ReleaseSummary } from '../../test/catalog-fixtures';
+import { catalogReference, page, release, type ReleaseSummary } from './test-fixtures';
 import { admin, api, baixa, problem, signedIn, stepUpRequired } from '../../test/fixtures';
 import { renderApp } from '../../test/render-app';
 import { server } from '../../test/server';

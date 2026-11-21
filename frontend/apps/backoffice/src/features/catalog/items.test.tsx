@@ -1,7 +1,7 @@
 import { screen, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
-import { bebidas, bife, carnes, catalogReference, ivaNormal, page, sangria, unidade, type ItemSummary } from '../../test/catalog-fixtures';
+import { bebidas, bife, carnes, catalogReference, ivaNormal, page, sangria, unidade, type ItemSummary } from './test-fixtures';
 import { api, problem, signedIn } from '../../test/fixtures';
 import { renderApp } from '../../test/render-app';
 import { server } from '../../test/server';

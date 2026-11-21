@@ -1,6 +1,6 @@
 import type { components } from '@restaurantpro/api-client';
 import { http, HttpResponse } from 'msw';
-import { api, baixa } from './fixtures';
+import { api, baixa } from '../../test/fixtures';
 
 type Schemas = components['schemas'];
 type Dto<Name extends string> = Schemas[`com.xavier.backend.catalog.model.dto.${Name}` & keyof Schemas];

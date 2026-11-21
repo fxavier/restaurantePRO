@@ -10,7 +10,7 @@ import {
   sangria,
   type ItemPriceSummary,
   type PriceListSummary,
-} from '../../test/catalog-fixtures';
+} from './test-fixtures';
 import { api, baixa, signedIn } from '../../test/fixtures';
 import { renderApp } from '../../test/render-app';
 import { server } from '../../test/server';
