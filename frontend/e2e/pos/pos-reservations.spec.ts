@@ -51,8 +51,10 @@ const reservation = (n: number, fields: object) => ({
   tableIds: [],
   ...fields,
 });
+// In the backend's order (ORDER BY starts_at): the screen shows the list as the server sends it.
 const DAY = [
-  reservation(301, { status: 'SEATED', startsAt: '2026-11-20T09:30:00Z', partySize: 3, contactName: 'Família Costa', tableIds: [id(2)] }),
+  reservation(303, { status: 'NO_SHOW', startsAt: '2026-11-20T08:00:00Z', partySize: 2, contactName: 'Pedro Miranda' }),
+  reservation(301,{ status: 'SEATED', startsAt: '2026-11-20T09:30:00Z', partySize: 3, contactName: 'Família Costa', tableIds: [id(2)] }),
   reservation(302, {
     startsAt: '2026-11-20T17:30:00Z',
     partySize: 4,
@@ -61,7 +63,6 @@ const DAY = [
     notes: 'Cadeira de bebé',
     tableIds: [id(1), id(10)],
   }),
-  reservation(303, { status: 'NO_SHOW', startsAt: '2026-11-20T08:00:00Z', partySize: 2, contactName: 'Pedro Miranda' }),
   reservation(304, {
     status: 'CANCELLED',
     startsAt: '2026-11-20T18:00:00Z',

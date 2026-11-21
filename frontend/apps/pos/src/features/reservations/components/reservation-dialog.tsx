@@ -48,8 +48,9 @@ export function EditReservationDialog({ reservation, ...shared }: Shared & { res
       pending={update.isPending}
       awaitingRetry={false}
       error={
-        update.error &&
-        refusal(update.error, 'Sem ligação — não se sabe se a alteração ficou guardada. Confirme na lista antes de repetir.')
+        update.error
+          ? refusal(update.error, 'Sem ligação — não se sabe se a alteração ficou guardada. Confirme na lista antes de repetir.')
+          : undefined
       }
       // The version as the list has it now: after a conflict the list is read again, and the next save sends that one.
       onSave={(request) => update.mutate({ ...request, version: reservation.version })}
