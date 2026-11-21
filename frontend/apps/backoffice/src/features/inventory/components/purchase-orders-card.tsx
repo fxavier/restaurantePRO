@@ -98,59 +98,14 @@ export function PurchaseOrdersCard({ storeId, supplierName }: { storeId: string;
                       {progress && <span className="text-sm text-muted-foreground"> · {progress}</span>}
                     </TableCell>
                     <TableCell>
-                      <div className="flex flex-wrap justify-end gap-2">
-                        {canManage && order.status === 'DRAFT' && (
-                          <>
-                            <Button
-                              size="sm"
-                              aria-label={`Submeter ${order.number}`}
-                              disabled={action.pending}
-                              onClick={() => action.run({ id: order.id!, action: 'submit', label: order.number! })}
-                            >
-                              <Send aria-hidden="true" />
-                              Submeter
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              aria-label={`Cancelar ${order.number}`}
-                              disabled={action.pending}
-                              onClick={() => confirmCancel(order)}
-                            >
-                              <Ban aria-hidden="true" />
-                              Cancelar
-                            </Button>
-                          </>
-                        )}
-                        {canReceive && order.status === 'SUBMITTED' && (
-                          <FormDialog
-                            trigger={
-                              <>
-                                <PackageOpen aria-hidden="true" />
-                                Receber
-                              </>
-                            }
-                            triggerLabel={`Receber ${order.number}`}
-                            triggerSize="sm"
-                            title={`Receber a encomenda ${order.number}`}
-                            description="O que chegou, por artigo, na unidade base. A receção fica em rascunho até ser confirmada."
-                          >
-                            {(close) => <ReceiveOrderForm order={order} onDone={close} />}
-                          </FormDialog>
-                        )}
-                        {canManage && order.status === 'SUBMITTED' && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            aria-label={`Fechar ${order.number}`}
-                            disabled={action.pending}
-                            onClick={() => confirmClose(order)}
-                          >
-                            <Lock aria-hidden="true" />
-                            Fechar
-                          </Button>
-                        )}
-                      </div>
+                      <OrderActions
+                        order={order}
+                        may={{ manage: canManage, receive: canReceive }}
+                        pending={action.pending}
+                        onSubmit={() => action.run({ id: order.id!, action: 'submit', label: order.number! })}
+                        onCancel={() => confirmCancel(order)}
+                        onClose={() => confirmClose(order)}
+                      />
                     </TableCell>
                   </TableRow>
                 );
@@ -162,5 +117,58 @@ export function PurchaseOrdersCard({ storeId, supplierName }: { storeId: string;
       </CardContent>
       <ConfirmDialog confirmation={confirmation} onClose={() => setConfirmation(null)} />
     </Card>
+  );
+}
+
+type OrderActionsProps = {
+  order: PurchaseOrderView;
+  may: { manage: boolean; receive: boolean };
+  pending: boolean;
+  onSubmit: () => void;
+  onCancel: () => void;
+  onClose: () => void;
+};
+
+/** What an order's state allows (§8.3): a draft is submitted or cancelled; a submitted one received or closed. */
+function OrderActions({ order, may, pending, onSubmit, onCancel, onClose }: OrderActionsProps) {
+  const draft = order.status === 'DRAFT';
+  const submitted = order.status === 'SUBMITTED';
+  return (
+    <div className="flex flex-wrap justify-end gap-2">
+      {may.manage && draft && (
+        <>
+          <Button size="sm" aria-label={`Submeter ${order.number}`} disabled={pending} onClick={onSubmit}>
+            <Send aria-hidden="true" />
+            Submeter
+          </Button>
+          <Button size="sm" variant="outline" aria-label={`Cancelar ${order.number}`} disabled={pending} onClick={onCancel}>
+            <Ban aria-hidden="true" />
+            Cancelar
+          </Button>
+        </>
+      )}
+      {may.receive && submitted && (
+        <FormDialog
+          trigger={
+            <>
+              <PackageOpen aria-hidden="true" />
+              Receber
+            </>
+          }
+          triggerLabel={`Receber ${order.number}`}
+          triggerSize="sm"
+          title={`Receber a encomenda ${order.number}`}
+          description="O que chegou, por artigo, na unidade base. A receção fica em rascunho até ser confirmada."
+        >
+          {(close) => <ReceiveOrderForm order={order} onDone={close} />}
+        </FormDialog>
+      )}
+      {may.manage && submitted && (
+        <Button size="sm" variant="outline" aria-label={`Fechar ${order.number}`} disabled={pending} onClick={onClose}>
+          <Lock aria-hidden="true" />
+          Fechar
+        </Button>
+      )}
+    </div>
   );
 }

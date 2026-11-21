@@ -16,13 +16,14 @@ import type {
 import { INVENTORY_KEY } from './use-inventory-reads';
 
 const BASE = '/api/v1/backoffice/inventory';
-const key = (idempotencyKey: string) => ({ 'Idempotency-Key': idempotencyKey });
+type Header = { 'Idempotency-Key': string };
 
 /**
- * One inventory command: never retried by the client (FC §8; "Tentar novamente" resends `variables`, same key), and
- * whatever its answer, the area is read again, so a 409 shows what changed and a success shows the server's values.
+ * One inventory command: never retried by the client (FC §8; "Tentar novamente" resends `variables`, same key; a
+ * 409 IDEMPOTENCY_IN_PROGRESS waits and resends), and whatever its answer, the area is read again, so a 409 shows
+ * what changed and a success shows the server's values.
  */
-function useCommand<Variables>(send: (api: ApiClient, variables: Variables) => Promise<unknown>) {
+function useCommand<Variables, Result>(send: (api: ApiClient, variables: Variables) => Promise<Result>) {
   const api = useApi();
   const queryClient = useQueryClient();
   return useMutation({
@@ -31,107 +32,91 @@ function useCommand<Variables>(send: (api: ApiClient, variables: Variables) => P
   });
 }
 
-export type MovementKind = 'waste' | 'manual-adjustments';
-
-export function useRecordMovement() {
-  return useCommand((api, { kind, body, idempotencyKey }: Intent<ManualMovementRequest> & { kind: MovementKind }) =>
-    api.POST(`${BASE}/movements/${kind}`, { body, params: { header: key(idempotencyKey) } }),
+/** A command carrying a body, under the intent's Idempotency-Key. */
+function useIntentCommand<Body, Extra = object>(send: (api: ApiClient, body: Body, header: Header, extra: Extra) => Promise<unknown>) {
+  return useCommand((api, { body, idempotencyKey, ...extra }: Intent<Body> & Extra) =>
+    send(api, body, { 'Idempotency-Key': idempotencyKey }, extra as Extra),
   );
 }
 
-export function useCreateSupplier() {
-  return useCommand((api, { body, idempotencyKey }: Intent<SupplierRequest>) =>
-    api.POST(`${BASE}/suppliers`, { body, params: { header: key(idempotencyKey) } }),
-  );
-}
-
-export function useCreatePurchaseOrder() {
-  return useCommand((api, { body, idempotencyKey }: Intent<PurchaseOrderRequest>) =>
-    api.POST(`${BASE}/purchase-orders`, { body, params: { header: key(idempotencyKey) } }),
-  );
-}
-
-export type OrderAction = 'submit' | 'close' | 'cancel';
 export type RowCommand<Action extends string> = { id: string; action: Action; label: string; idempotencyKey: string };
 
-export function usePurchaseOrderAction() {
-  return useCommand((api, { id, action, idempotencyKey }: RowCommand<OrderAction>) =>
-    api.POST(`${BASE}/purchase-orders/{id}/${action}`, { params: { path: { id }, header: key(idempotencyKey) } }),
+/** A bodiless state change of one document (`POST …/{id}/<action>`), under its own key. */
+function useRowAction<Action extends string, Extra = object>(
+  send: (api: ApiClient, id: string, action: Action, header: Header, extra: Extra) => Promise<unknown>,
+) {
+  return useCommand((api, { id, action, idempotencyKey, ...extra }: RowCommand<Action> & Extra) =>
+    send(api, id, action, { 'Idempotency-Key': idempotencyKey }, extra as Extra),
   );
 }
 
-export function useCreateReceipt() {
-  return useCommand((api, { body, idempotencyKey }: Intent<ReceiptRequest>) =>
-    api.POST(`${BASE}/receipts`, { body, params: { header: key(idempotencyKey) } }),
+export type MovementKind = 'waste' | 'manual-adjustments';
+
+export const useRecordMovement = () =>
+  useIntentCommand<ManualMovementRequest, { kind: MovementKind }>((api, body, header, { kind }) =>
+    api.POST(`${BASE}/movements/${kind}`, { body, params: { header } }),
   );
-}
 
-export type ReceiptAction = 'confirm' | 'cancel';
+export const useCreateSupplier = () =>
+  useIntentCommand<SupplierRequest>((api, body, header) => api.POST(`${BASE}/suppliers`, { body, params: { header } }));
 
-export function useReceiptAction() {
-  return useCommand((api, { id, action, idempotencyKey }: RowCommand<ReceiptAction>) =>
-    api.POST(`${BASE}/receipts/{id}/${action}`, { params: { path: { id }, header: key(idempotencyKey) } }),
+export const useCreatePurchaseOrder = () =>
+  useIntentCommand<PurchaseOrderRequest>((api, body, header) => api.POST(`${BASE}/purchase-orders`, { body, params: { header } }));
+
+export const useCreateReceipt = () =>
+  useIntentCommand<ReceiptRequest>((api, body, header) => api.POST(`${BASE}/receipts`, { body, params: { header } }));
+
+export const useCreateRecipe = () =>
+  useIntentCommand<RecipeRequest>((api, body, header) => api.POST(`${BASE}/recipes`, { body, params: { header } }));
+
+export const useCreateRecipeVersion = () =>
+  useIntentCommand<RecipeVersionRequest, { recipeId: string }>((api, body, header, { recipeId }) =>
+    api.POST(`${BASE}/recipes/{id}/versions`, { body, params: { path: { id: recipeId }, header } }),
   );
-}
 
-export function useCreateRecipe() {
-  return useCommand((api, { body, idempotencyKey }: Intent<RecipeRequest>) =>
-    api.POST(`${BASE}/recipes`, { body, params: { header: key(idempotencyKey) } }),
+export type OrderAction = 'submit' | 'close' | 'cancel';
+
+export const usePurchaseOrderAction = () =>
+  useRowAction<OrderAction>((api, id, action, header) => api.POST(`${BASE}/purchase-orders/{id}/${action}`, { params: { path: { id }, header } }));
+
+export const useReceiptAction = () =>
+  useRowAction<'confirm' | 'cancel'>((api, id, action, header) => api.POST(`${BASE}/receipts/{id}/${action}`, { params: { path: { id }, header } }));
+
+export const useCountAction = () =>
+  useRowAction<'start' | 'submit' | 'approve' | 'cancel'>((api, id, action, header) =>
+    api.POST(`${BASE}/counts/{id}/${action}`, { params: { path: { id }, header } }),
   );
-}
 
-export function useCreateRecipeVersion() {
-  return useCommand((api, { recipeId, body, idempotencyKey }: Intent<RecipeVersionRequest> & { recipeId: string }) =>
-    api.POST(`${BASE}/recipes/{id}/versions`, { body, params: { path: { id: recipeId }, header: key(idempotencyKey) } }),
+/** Receiving takes what was shipped, line by line, as the server reported it (the shortfall stays a server concern). */
+export const useTransferAction = () =>
+  useRowAction<'ship' | 'receive' | 'cancel', { transfer: TransferView }>((api, id, action, header, { transfer }) => {
+    const params = { path: { id }, header };
+    if (action !== 'receive') return api.POST(`${BASE}/transfers/{id}/${action}`, { params });
+    const lines = (transfer.lines ?? []).map((line) => ({ stockItemId: line.stockItemId!, quantityReceived: line.quantityShipped! }));
+    return api.POST(`${BASE}/transfers/{id}/receive`, { params, body: { lines } });
+  });
+
+export const useActivateRecipeVersion = () =>
+  useCommand((api, { recipeId, versionNo, idempotencyKey }: { recipeId: string; versionNo: number; idempotencyKey: string }) =>
+    api.POST(`${BASE}/recipes/{id}/versions/{versionNo}/activate`, {
+      body: {},
+      params: { path: { id: recipeId, versionNo }, header: { 'Idempotency-Key': idempotencyKey } },
+    }),
   );
-}
 
-export function useActivateRecipeVersion() {
-  return useCommand(
-    (api, { recipeId, versionNo, idempotencyKey }: { recipeId: string; versionNo: number; idempotencyKey: string }) =>
-      api.POST(`${BASE}/recipes/{id}/versions/{versionNo}/activate`, {
-        body: {},
-        params: { path: { id: recipeId, versionNo }, header: key(idempotencyKey) },
-      }),
-  );
-}
-
+/** Creating a count answers the count, whose id the screen opens; nothing else to reread yet. */
 export function useCreateCount() {
   const api = useApi();
   return useMutation({
     mutationFn: ({ body, idempotencyKey }: Intent<CountRequest>) =>
-      sendWaitingWhileInProgress(() => api.POST(`${BASE}/counts`, { body, params: { header: key(idempotencyKey) } })).then(
+      sendWaitingWhileInProgress(() => api.POST(`${BASE}/counts`, { body, params: { header: { 'Idempotency-Key': idempotencyKey } } })).then(
         ({ data }) => data!,
       ),
   });
 }
 
-export type CountAction = 'start' | 'submit' | 'approve' | 'cancel';
-
-export function useCountAction() {
-  return useCommand((api, { id, action, idempotencyKey }: RowCommand<CountAction>) =>
-    api.POST(`${BASE}/counts/{id}/${action}`, { params: { path: { id }, header: key(idempotencyKey) } }),
-  );
-}
-
 /** What was counted of one item; repeating it records the same quantity again (a PUT, no key). */
-export function useRecordCountLine() {
-  return useCommand((api, { countId, stockItemId, countedQuantity }: { countId: string; stockItemId: string; countedQuantity: string }) =>
-    api.PUT(`${BASE}/counts/{id}/lines/{stockItemId}`, {
-      body: { countedQuantity },
-      params: { path: { id: countId, stockItemId } },
-    }),
+export const useRecordCountLine = () =>
+  useCommand((api, { countId, stockItemId, countedQuantity }: { countId: string; stockItemId: string; countedQuantity: string }) =>
+    api.PUT(`${BASE}/counts/{id}/lines/{stockItemId}`, { body: { countedQuantity }, params: { path: { id: countId, stockItemId } } }),
   );
-}
-
-export type TransferAction = 'ship' | 'receive' | 'cancel';
-
-/** Receiving takes what was shipped, line by line, as the server reported it (the shortfall stays a server concern). */
-export function useTransferAction() {
-  return useCommand((api, { id, action, idempotencyKey, transfer }: RowCommand<TransferAction> & { transfer: TransferView }) => {
-    const params = { path: { id }, header: key(idempotencyKey) };
-    if (action !== 'receive') return api.POST(`${BASE}/transfers/{id}/${action}`, { params });
-    const lines = (transfer.lines ?? []).map((line) => ({ stockItemId: line.stockItemId!, quantityReceived: line.quantityShipped! }));
-    return api.POST(`${BASE}/transfers/{id}/receive`, { params, body: { lines } });
-  });
-}

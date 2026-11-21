@@ -13,13 +13,13 @@ import {
   TableHeader,
   TableRow,
 } from '@restaurantpro/ui';
-import { ClipboardCheck, ClipboardList, Play, Send } from 'lucide-react';
+import { ClipboardCheck, ClipboardList, Play, Send, type LucideIcon } from 'lucide-react';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { toDecimal } from '../decimal';
 import { formatQuantity } from '../format';
 import { useCountAction, useCreateCount, useRecordCountLine } from '../hooks/use-inventory-commands';
-import { useCount, useStockItems, useWarehouses } from '../hooks/use-inventory-reads';
+import { useCount, useNames, useWarehouses } from '../hooks/use-inventory-reads';
 import { usePermission } from '../hooks/use-permission';
 import { useRowCommand } from '../hooks/use-row-command';
 import { nextIntent, type Intent } from '../intent';
@@ -106,84 +106,95 @@ function NewCount({ storeId, onCreated }: { storeId: string; onCreated: (id: str
   );
 }
 
+/** The one command each live state offers, and who may give it (§8.3: DRAFT → IN_PROGRESS → SUBMITTED → APPROVED). */
+const NEXT_STEP: Record<string, { action: 'start' | 'submit' | 'approve'; label: string; icon: LucideIcon; permission: string }> = {
+  DRAFT: { action: 'start', label: 'Iniciar contagem', icon: Play, permission: 'INVENTORY_COUNT' },
+  IN_PROGRESS: { action: 'submit', label: 'Submeter contagem', icon: Send, permission: 'INVENTORY_COUNT' },
+  SUBMITTED: { action: 'approve', label: 'Aprovar contagem', icon: ClipboardCheck, permission: 'INVENTORY_COUNT_APPROVE' },
+};
+
 function CountCard({ countId, storeId }: { countId: string; storeId: string }) {
   const count = useCount(countId);
-  const items = useStockItems();
+  if (count.data) return <OpenCount count={count.data} storeId={storeId} />;
+  return (
+    <Card>
+      <CardContent>
+        <QueryState query={count} pending={count.isPending} empty={false} emptyMessage="">
+          {null}
+        </QueryState>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** A loaded count: its state, the one command it offers next, and its lines. */
+function OpenCount({ count, storeId }: { count: CountView; storeId: string }) {
+  const names = useNames(storeId);
   const action = useRowCommand(useCountAction());
-  const canCount = usePermission('INVENTORY_COUNT', storeId);
-  const canApprove = usePermission('INVENTORY_COUNT_APPROVE', storeId);
-  const view = count.data;
-  const warehouses = useWarehouses(storeId);
-  const warehouse = warehouses.data?.find((candidate) => candidate.id === view?.warehouseId)?.name ?? '—';
-  const item = (id?: string) => items.data?.find((candidate) => candidate.id === id)?.name ?? '—';
-  const run = (name: 'start' | 'submit' | 'approve') => action.run({ id: countId, action: name, label: warehouse });
-  const submitted = view?.status !== 'DRAFT' && view?.status !== 'IN_PROGRESS';
+  const status = count.status ?? '';
+  const next = NEXT_STEP[status];
+  const allowed = usePermission(next?.permission ?? 'INVENTORY_COUNT', storeId);
+  const editable = usePermission('INVENTORY_COUNT', storeId) && status === 'IN_PROGRESS';
+  const warehouse = names.warehouseName(count.warehouseId);
 
   return (
     <Card className="gap-4">
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
         <CardTitle className="flex flex-wrap items-center gap-2 text-lg">
           Contagem de {warehouse}
-          {view && <StateBadge status={view.status} states={countStates} />}
+          <StateBadge status={status} states={countStates} />
         </CardTitle>
-        <div className="flex flex-wrap gap-2">
-          {canCount && view?.status === 'DRAFT' && (
-            <ConfirmButton pending={action.pending} onClick={() => run('start')}>
-              <Play aria-hidden="true" />
-              Iniciar contagem
-            </ConfirmButton>
-          )}
-          {canCount && view?.status === 'IN_PROGRESS' && (
-            <ConfirmButton pending={action.pending} onClick={() => run('submit')}>
-              <Send aria-hidden="true" />
-              Submeter contagem
-            </ConfirmButton>
-          )}
-          {canApprove && view?.status === 'SUBMITTED' && (
-            <ConfirmButton pending={action.pending} onClick={() => run('approve')}>
-              <ClipboardCheck aria-hidden="true" />
-              Aprovar contagem
-            </ConfirmButton>
-          )}
-        </div>
+        {next && allowed && (
+          <ConfirmButton pending={action.pending} onClick={() => action.run({ id: count.id!, action: next.action, label: warehouse })}>
+            <next.icon aria-hidden="true" />
+            {next.label}
+          </ConfirmButton>
+        )}
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <CommandError error={action.error} pending={action.pending} onRetry={action.retry} />
-        <QueryState
-          query={count}
-          pending={count.isPending}
-          empty={!view?.lines?.length}
-          emptyMessage={view?.status === 'DRAFT' ? 'Inicie a contagem para ver os artigos do armazém.' : 'Sem artigos nesta contagem.'}
-        >
-          <ScrollTable label="Linhas da contagem">
-            <TableHeader>
-              <TableRow>
-                <TableHead>Artigo</TableHead>
-                <TableHead>Contado</TableHead>
-                {submitted && <TableHead className="text-right">Esperado</TableHead>}
-                {submitted && <TableHead className="text-right">Diferença</TableHead>}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {view?.lines?.map((line) => (
-                <TableRow key={line.stockItemId}>
-                  <TableCell className="font-medium">{item(line.stockItemId)}</TableCell>
-                  <TableCell>
-                    {view.status === 'IN_PROGRESS' && canCount ? (
-                      <CountLineInput countId={countId} line={line} name={item(line.stockItemId)} />
-                    ) : (
-                      <span className="tabular-nums">{formatQuantity(line.countedQuantity, line.unit)}</span>
-                    )}
-                  </TableCell>
-                  {submitted && <TableCell className="text-right tabular-nums">{formatQuantity(line.expectedQuantity, line.unit)}</TableCell>}
-                  {submitted && <TableCell className="text-right tabular-nums">{formatQuantity(line.difference, line.unit)}</TableCell>}
-                </TableRow>
-              ))}
-            </TableBody>
-          </ScrollTable>
-        </QueryState>
+        {count.lines?.length ? (
+          <CountLines count={count} editable={editable} itemName={names.itemName} />
+        ) : (
+          <p className="py-6 text-center text-muted-foreground">
+            {status === 'DRAFT' ? 'Inicie a contagem para ver os artigos do armazém.' : 'Sem artigos nesta contagem.'}
+          </p>
+        )}
       </CardContent>
     </Card>
+  );
+}
+
+/** The count's lines: what was counted (editable while in progress); expected and difference once submitted (blind). */
+function CountLines({ count, editable, itemName }: { count: CountView; editable: boolean; itemName: (id?: string) => string }) {
+  const revealed = !NEXT_STEP[count.status ?? ''] || count.status === 'SUBMITTED';
+  return (
+    <ScrollTable label="Linhas da contagem">
+      <TableHeader>
+        <TableRow>
+          <TableHead>Artigo</TableHead>
+          <TableHead>Contado</TableHead>
+          {revealed && <TableHead className="text-right">Esperado</TableHead>}
+          {revealed && <TableHead className="text-right">Diferença</TableHead>}
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {count.lines?.map((line) => (
+          <TableRow key={line.stockItemId}>
+            <TableCell className="font-medium">{itemName(line.stockItemId)}</TableCell>
+            <TableCell>
+              {editable ? (
+                <CountLineInput countId={count.id!} line={line} name={itemName(line.stockItemId)} />
+              ) : (
+                <span className="tabular-nums">{formatQuantity(line.countedQuantity, line.unit)}</span>
+              )}
+            </TableCell>
+            {revealed && <TableCell className="text-right tabular-nums">{formatQuantity(line.expectedQuantity, line.unit)}</TableCell>}
+            {revealed && <TableCell className="text-right tabular-nums">{formatQuantity(line.difference, line.unit)}</TableCell>}
+          </TableRow>
+        ))}
+      </TableBody>
+    </ScrollTable>
   );
 }
 

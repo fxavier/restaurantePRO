@@ -1,23 +1,34 @@
+import type { ApiClient } from '@restaurantpro/api-client';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useApi } from '../../../lib/api';
-import type {
-  BelowMinimumReport,
-  CountView,
-  PurchaseOrderView,
-  ReceiptView,
-  RecipeView,
-  StockItemView,
-  StockRow,
-  StoreSummary,
-  SupplierView,
-  TransferView,
-  ValuationReport,
-  WarehouseView,
-} from '../types';
+import type { StockRow, StoreSummary } from '../types';
 
 /** Every inventory read starts with this key, so a command refreshes the whole area at once (FC §5). */
 export const INVENTORY_KEY = ['backoffice', 'inventory'] as const;
 export const STOCK_PAGE_SIZE = 50;
+export const LIST_PAGE_SIZE = 50;
+const BASE = '/api/v1/backoffice/inventory';
+
+export type ListPage<Row> = { rows: Row[]; totalElements: number };
+type Paged<Row> = { content?: Row[]; totalElements?: number } | undefined;
+const listPage = <Row>(data: Paged<Row>): ListPage<Row> => ({ rows: data?.content ?? [], totalElements: data?.totalElements ?? 0 });
+
+/** One inventory read under the area's key; a list keeps its previous page on screen while the next one loads. */
+function useInventoryRead<Data>(key: readonly unknown[], read: (api: ApiClient) => Promise<Data>, paged = false) {
+  const api = useApi();
+  return useQuery({
+    queryKey: [...INVENTORY_KEY, ...key],
+    queryFn: () => read(api),
+    ...(paged ? { placeholderData: keepPreviousData } : {}),
+  });
+}
+
+/** One page of a server-paginated list (§9). */
+function useInventoryList<Row>(key: readonly unknown[], read: (api: ApiClient) => Promise<{ data?: Paged<Row> }>) {
+  return useInventoryRead(key, async (api) => listPage((await read(api)).data), true);
+}
+
+const pageOf = (page: number) => ({ page, size: LIST_PAGE_SIZE });
 
 /**
  * The selected store from the company's store list, for its currency and timezone (FC §12). The same key and answer
@@ -33,112 +44,46 @@ export function useStore(storeId: string) {
   });
 }
 
-export function useWarehouses(storeId: string) {
-  const api = useApi();
-  return useQuery({
-    queryKey: [...INVENTORY_KEY, 'warehouses', storeId],
-    queryFn: async (): Promise<WarehouseView[]> =>
-      (await api.GET('/api/v1/backoffice/inventory/warehouses', { params: { query: { storeId } } })).data ?? [],
-  });
-}
+export const useWarehouses = (storeId: string) =>
+  useInventoryRead(['warehouses', storeId], async (api) => (await api.GET(`${BASE}/warehouses`, { params: { query: { storeId } } })).data ?? []);
 
 /** The company's stock items (one page of up to 200, enough to pick from; a search is a follow-up). */
-export function useStockItems() {
-  const api = useApi();
-  return useQuery({
-    queryKey: [...INVENTORY_KEY, 'stock-items'],
-    queryFn: async (): Promise<StockItemView[]> =>
-      (await api.GET('/api/v1/backoffice/inventory/stock-items', { params: { query: { page: 0, size: 200 } } })).data
-        ?.content ?? [],
-  });
-}
+export const useStockItems = () =>
+  useInventoryRead(
+    ['stock-items'],
+    async (api) => (await api.GET(`${BASE}/stock-items`, { params: { query: { page: 0, size: 200 } } })).data?.content ?? [],
+  );
 
-export function useValuation(storeId: string) {
-  const api = useApi();
-  return useQuery({
-    queryKey: [...INVENTORY_KEY, 'valuation', storeId],
-    queryFn: async (): Promise<ValuationReport> =>
-      (await api.GET('/api/v1/backoffice/inventory/reports/valuation', { params: { query: { storeId } } })).data ?? {},
-  });
-}
+export const useValuation = (storeId: string) =>
+  useInventoryRead(['valuation', storeId], async (api) => (await api.GET(`${BASE}/reports/valuation`, { params: { query: { storeId } } })).data ?? {});
 
-export function useBelowMinimum(storeId: string) {
-  const api = useApi();
-  return useQuery({
-    queryKey: [...INVENTORY_KEY, 'below-minimum', storeId],
-    queryFn: async (): Promise<BelowMinimumReport> =>
-      (await api.GET('/api/v1/backoffice/inventory/reports/below-minimum', { params: { query: { storeId } } })).data ?? {},
-  });
-}
+export const useBelowMinimum = (storeId: string) =>
+  useInventoryRead(
+    ['below-minimum', storeId],
+    async (api) => (await api.GET(`${BASE}/reports/below-minimum`, { params: { query: { storeId } } })).data ?? {},
+  );
 
-export const LIST_PAGE_SIZE = 50;
-export type ListPage<Row> = { rows: Row[]; totalElements: number };
-type Paged<Row> = { content?: Row[]; totalElements?: number } | undefined;
-const listPage = <Row,>(data: Paged<Row>): ListPage<Row> => ({ rows: data?.content ?? [], totalElements: data?.totalElements ?? 0 });
-
-export function useSuppliers(page = 0) {
-  const api = useApi();
-  return useQuery({
-    queryKey: [...INVENTORY_KEY, 'suppliers', page],
-    queryFn: async (): Promise<ListPage<SupplierView>> =>
-      listPage((await api.GET('/api/v1/backoffice/inventory/suppliers', { params: { query: { page, size: LIST_PAGE_SIZE } } })).data),
-    placeholderData: keepPreviousData,
-  });
-}
+export const useSuppliers = (page = 0) =>
+  useInventoryList(['suppliers', page], (api) => api.GET(`${BASE}/suppliers`, { params: { query: pageOf(page) } }));
 
 /** The store's purchase orders in the server's order, one page at a time. */
-export function usePurchaseOrders(storeId: string, page = 0) {
-  const api = useApi();
-  return useQuery({
-    queryKey: [...INVENTORY_KEY, 'purchase-orders', storeId, page],
-    queryFn: async (): Promise<ListPage<PurchaseOrderView>> =>
-      listPage(
-        (await api.GET('/api/v1/backoffice/inventory/purchase-orders', { params: { query: { storeId, page, size: LIST_PAGE_SIZE } } }))
-          .data,
-      ),
-    placeholderData: keepPreviousData,
-  });
-}
+export const usePurchaseOrders = (storeId: string, page = 0) =>
+  useInventoryList(['purchase-orders', storeId, page], (api) =>
+    api.GET(`${BASE}/purchase-orders`, { params: { query: { storeId, ...pageOf(page) } } }),
+  );
 
-export function useReceipts(storeId: string, page = 0) {
-  const api = useApi();
-  return useQuery({
-    queryKey: [...INVENTORY_KEY, 'receipts', storeId, page],
-    queryFn: async (): Promise<ListPage<ReceiptView>> =>
-      listPage((await api.GET('/api/v1/backoffice/inventory/receipts', { params: { query: { storeId, page, size: LIST_PAGE_SIZE } } })).data),
-    placeholderData: keepPreviousData,
-  });
-}
+export const useReceipts = (storeId: string, page = 0) =>
+  useInventoryList(['receipts', storeId, page], (api) => api.GET(`${BASE}/receipts`, { params: { query: { storeId, ...pageOf(page) } } }));
 
-export function useRecipes(page = 0) {
-  const api = useApi();
-  return useQuery({
-    queryKey: [...INVENTORY_KEY, 'recipes', page],
-    queryFn: async (): Promise<ListPage<RecipeView>> =>
-      listPage((await api.GET('/api/v1/backoffice/inventory/recipes', { params: { query: { page, size: LIST_PAGE_SIZE } } })).data),
-    placeholderData: keepPreviousData,
-  });
-}
+export const useRecipes = (page = 0) =>
+  useInventoryList(['recipes', page], (api) => api.GET(`${BASE}/recipes`, { params: { query: pageOf(page) } }));
 
-export function useTransfers(storeId: string, page = 0) {
-  const api = useApi();
-  return useQuery({
-    queryKey: [...INVENTORY_KEY, 'transfers', storeId, page],
-    queryFn: async (): Promise<ListPage<TransferView>> =>
-      listPage((await api.GET('/api/v1/backoffice/inventory/transfers', { params: { query: { storeId, page, size: LIST_PAGE_SIZE } } })).data),
-    placeholderData: keepPreviousData,
-  });
-}
+export const useTransfers = (storeId: string, page = 0) =>
+  useInventoryList(['transfers', storeId, page], (api) => api.GET(`${BASE}/transfers`, { params: { query: { storeId, ...pageOf(page) } } }));
 
 /** One stock count; there is no list of counts in the API, so the screen keeps the open one in `?count=`. */
-export function useCount(countId: string) {
-  const api = useApi();
-  return useQuery({
-    queryKey: [...INVENTORY_KEY, 'count', countId],
-    queryFn: async (): Promise<CountView> =>
-      (await api.GET('/api/v1/backoffice/inventory/counts/{id}', { params: { path: { id: countId } } })).data!,
-  });
-}
+export const useCount = (countId: string) =>
+  useInventoryRead(['count', countId], async (api) => (await api.GET(`${BASE}/counts/{id}`, { params: { path: { id: countId } } })).data!);
 
 export type StockPage = { rows: StockRow[]; page: number; totalElements: number };
 
@@ -149,11 +94,27 @@ export function useStock(warehouseId: string | undefined, belowMinimum: boolean,
     queryKey: [...INVENTORY_KEY, 'stock', warehouseId, belowMinimum, page],
     enabled: warehouseId !== undefined,
     queryFn: async (): Promise<StockPage> => {
-      const { data } = await api.GET('/api/v1/backoffice/inventory/stock', {
+      const { data } = await api.GET(`${BASE}/stock`, {
         params: { query: { warehouseId: warehouseId!, ...(belowMinimum ? { belowMinimum } : {}), page, size: STOCK_PAGE_SIZE } },
       });
       return { rows: data?.content ?? [], page, totalElements: data?.totalElements ?? 0 };
     },
     placeholderData: keepPreviousData,
   });
+}
+
+/** The stock item of an id and its name (a dash while unknown), for the documents that carry only ids. */
+export function useItemLookup() {
+  const items = useStockItems();
+  const item = (id?: string) => items.data?.find((candidate) => candidate.id === id);
+  return { item, itemName: (id?: string) => item(id)?.name ?? '—' };
+}
+
+/** Names for the ids the store's documents carry: its warehouses and the stock items. */
+export function useNames(storeId: string) {
+  const warehouses = useWarehouses(storeId);
+  return {
+    ...useItemLookup(),
+    warehouseName: (id?: string, fallback = '—') => warehouses.data?.find((warehouse) => warehouse.id === id)?.name ?? fallback,
+  };
 }

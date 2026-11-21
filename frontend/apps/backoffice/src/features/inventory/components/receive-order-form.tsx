@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { formatQuantity } from '../format';
 import { useFormCommand } from '../hooks/use-form-command';
 import { useCreateReceipt } from '../hooks/use-inventory-commands';
-import { useStockItems } from '../hooks/use-inventory-reads';
+import { useItemLookup } from '../hooks/use-inventory-reads';
 import { receiptSchema, type ReceiptInput, type ReceiptValues } from '../schemas';
 import type { PurchaseOrderView, ReceiptRequest } from '../types';
 import { CommandForm, TextField } from './command-form';
@@ -13,7 +13,7 @@ import { CommandForm, TextField } from './command-form';
  * starting at what the server says is still outstanding (base unit), changed by the user to what actually arrived.
  */
 export function ReceiveOrderForm({ order, onDone }: { order: PurchaseOrderView; onDone: () => void }) {
-  const items = useStockItems();
+  const { item } = useItemLookup();
   const open = (order.lines ?? []).filter((line) => line.progress !== 'FULL');
   const form = useForm<ReceiptInput, unknown, ReceiptValues>({
     resolver: zodResolver(receiptSchema),
@@ -38,7 +38,6 @@ export function ReceiveOrderForm({ order, onDone }: { order: PurchaseOrderView; 
       ...(supplierDocumentRef ? { supplierDocumentRef } : {}),
       lines,
     });
-  const item = (id: string) => items.data?.find((candidate) => candidate.id === id);
 
   return (
     <CommandForm form={form} onSubmit={submit} command={command} pending={mutation.isPending} submitLabel="Registar receção" onCancel={onDone}>

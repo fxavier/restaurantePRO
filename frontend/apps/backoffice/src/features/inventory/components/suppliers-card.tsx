@@ -18,7 +18,7 @@ import { useCreateSupplier } from '../hooks/use-inventory-commands';
 import { LIST_PAGE_SIZE, useSuppliers } from '../hooks/use-inventory-reads';
 import { usePermission } from '../hooks/use-permission';
 import { supplierSchema, type SupplierInput, type SupplierValues } from '../schemas';
-import type { SupplierRequest } from '../types';
+import type { SupplierRequest, SupplierView } from '../types';
 import { CommandForm, TextField } from './command-form';
 import { FormDialog } from './form-dialog';
 import { Pages, QueryState } from './query-state';
@@ -53,30 +53,36 @@ export function SuppliersCard({ storeId }: { storeId: string }) {
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <QueryState query={suppliers} pending={suppliers.isPending} empty={!rows?.length} emptyMessage="Ainda não há fornecedores.">
-          <ScrollTable label="Fornecedores">
-            <TableHeader>
-              <TableRow>
-                <TableHead>Código</TableHead>
-                <TableHead>Nome</TableHead>
-                <TableHead>N.º contribuinte</TableHead>
-                <TableHead>Contacto</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows?.map((supplier) => (
-                <TableRow key={supplier.id}>
-                  <TableCell className="font-mono">{supplier.code}</TableCell>
-                  <TableCell className="font-medium">{supplier.name}</TableCell>
-                  <TableCell className="tabular-nums">{supplier.taxId ?? '—'}</TableCell>
-                  <TableCell className="text-muted-foreground">{supplier.phone ?? supplier.email ?? '—'}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </ScrollTable>
+          <SuppliersTable suppliers={rows ?? []} />
           <Pages page={page} total={suppliers.data?.totalElements ?? 0} size={LIST_PAGE_SIZE} onPage={setPage} />
         </QueryState>
       </CardContent>
     </Card>
+  );
+}
+
+function SuppliersTable({ suppliers }: { suppliers: SupplierView[] }) {
+  return (
+    <ScrollTable label="Fornecedores">
+      <TableHeader>
+        <TableRow>
+          <TableHead>Código</TableHead>
+          <TableHead>Nome</TableHead>
+          <TableHead>N.º contribuinte</TableHead>
+          <TableHead>Contacto</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {suppliers.map((supplier) => (
+          <TableRow key={supplier.id}>
+            <TableCell className="font-mono">{supplier.code}</TableCell>
+            <TableCell className="font-medium">{supplier.name}</TableCell>
+            <TableCell className="tabular-nums">{supplier.taxId ?? '—'}</TableCell>
+            <TableCell className="text-muted-foreground">{supplier.phone ?? supplier.email ?? '—'}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </ScrollTable>
   );
 }
 
