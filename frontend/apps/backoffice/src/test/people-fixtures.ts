@@ -3,12 +3,12 @@ import { http, HttpResponse } from 'msw';
 import { admin, api, baixa, problem, signedIn, sommerschield, type SessionView } from './fixtures';
 
 type Schemas = components['schemas'];
-const DTO = 'com.xavier.backend.identity.model.dto';
-export type EmployeeSummary = Schemas[`${typeof DTO}.EmployeeSummary`];
-export type RoleSummary = Schemas[`${typeof DTO}.RoleSummary`];
-export type UserSummary = Schemas[`${typeof DTO}.UserSummary`];
-export type AssignmentSummary = Schemas[`${typeof DTO}.AssignmentSummary`];
-export type SupportGrantSummary = Schemas[`${typeof DTO}.SupportGrantSummary`];
+type DTO = 'com.xavier.backend.identity.model.dto';
+export type EmployeeSummary = Schemas[`${DTO}.EmployeeSummary`];
+export type RoleSummary = Schemas[`${DTO}.RoleSummary`];
+export type UserSummary = Schemas[`${DTO}.UserSummary`];
+export type AssignmentSummary = Schemas[`${DTO}.AssignmentSummary`];
+export type SupportGrantSummary = Schemas[`${DTO}.SupportGrantSummary`];
 
 export function employee(id: string, code: string, name: string, extra: Partial<EmployeeSummary> = {}): EmployeeSummary {
   return { id, code, name, active: true, locked: false, version: 0, ...extra };

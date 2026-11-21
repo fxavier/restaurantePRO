@@ -25,12 +25,6 @@ import { ListCard } from './list-card';
 import { NewEmployeeForm } from './new-employee-form';
 import { ResetPinForm } from './reset-pin-form';
 
-type Open =
-  | { kind: 'new' }
-  | { kind: 'reset-pin'; employee: EmployeeSummary }
-  | { kind: 'assignments'; employee: EmployeeSummary }
-  | null;
-
 /** "Empregados" (§5): who works in the company, or in the store chosen in the top bar, and what can be done to each. */
 export function EmployeesTab() {
   const { storeId } = useStoreSelection();
@@ -38,9 +32,10 @@ export function EmployeesTab() {
   const employees = useEmployees(storeId, page);
   const unlock = useUnlockEmployee();
   const stepUp = usePeopleStepUp();
-  const [open, setOpen] = useState<Open>(null);
+  const [creating, setCreating] = useState(false);
+  const [resetting, setResetting] = useState<EmployeeSummary | null>(null);
+  const [assigning, setAssigning] = useState<EmployeeSummary | null>(null);
   const [done, setDone] = useState('');
-  const close = () => setOpen(null);
 
   const unlockOne = (employee: EmployeeSummary) =>
     unlock.mutate(employee, {
@@ -58,7 +53,7 @@ export function EmployeesTab() {
         title="Empregados"
         description="Quem abre sessão nos terminais POS com o seu código e PIN."
         actions={
-          <Button onClick={() => setOpen({ kind: 'new' })}>
+          <Button onClick={() => setCreating(true)}>
             <UserPlus aria-hidden="true" />
             Novo empregado
           </Button>
@@ -83,47 +78,14 @@ export function EmployeesTab() {
             </TableHeader>
             <TableBody>
               {rows.map((employee) => (
-                <TableRow key={employee.id}>
-                  <TableCell className="font-medium">{employee.name}</TableCell>
-                  <TableCell className="font-mono text-muted-foreground">{employee.code}</TableCell>
-                  <TableCell>
-                    <StatusBadge status={employeeState(employee)} statuses={employeeStatuses} />
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex justify-end gap-2">
-                      {employee.locked && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          aria-label={`Desbloquear ${employee.name}`}
-                          disabled={unlock.isPending}
-                          onClick={() => unlockOne(employee)}
-                        >
-                          <LockOpen aria-hidden="true" />
-                          Desbloquear
-                        </Button>
-                      )}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        aria-label={`Lojas e funções de ${employee.name}`}
-                        onClick={() => setOpen({ kind: 'assignments', employee })}
-                      >
-                        <Store aria-hidden="true" />
-                        Lojas
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        aria-label={`Repor PIN de ${employee.name}`}
-                        onClick={() => setOpen({ kind: 'reset-pin', employee })}
-                      >
-                        <KeyRound aria-hidden="true" />
-                        Repor PIN
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
+                <EmployeeRow
+                  key={employee.id}
+                  employee={employee}
+                  unlocking={unlock.isPending}
+                  onUnlock={() => unlockOne(employee)}
+                  onAssignments={() => setAssigning(employee)}
+                  onResetPin={() => setResetting(employee)}
+                />
               ))}
             </TableBody>
           </Table>
@@ -132,37 +94,74 @@ export function EmployeesTab() {
       <FormDialog
         title="Novo empregado"
         description="O empregado abre sessão no POS com o código e o PIN, nas lojas onde tem uma função."
-        open={open?.kind === 'new'}
-        onClose={close}
+        open={creating}
+        onClose={() => setCreating(false)}
       >
-        <NewEmployeeForm onClose={close} />
+        <NewEmployeeForm onClose={() => setCreating(false)} />
       </FormDialog>
       <FormDialog
-        title={open?.kind === 'reset-pin' ? `Repor o PIN de ${open.employee.name}` : ''}
+        title={`Repor o PIN de ${resetting?.name}`}
         description="No próximo início de sessão no POS, o empregado escolhe um PIN só seu."
-        open={open?.kind === 'reset-pin'}
-        onClose={close}
+        open={resetting !== null}
+        onClose={() => setResetting(null)}
       >
-        {open?.kind === 'reset-pin' && (
-          <ResetPinForm
-            employee={open.employee}
-            onClose={close}
-            onDone={() => {
-              setDone(`PIN de ${open.employee.name} reposto.`);
-              close();
-            }}
-          />
-        )}
+        <ResetPinForm
+          employee={resetting ?? {}}
+          onClose={() => setResetting(null)}
+          onDone={() => {
+            setDone(`PIN de ${resetting?.name} reposto.`);
+            setResetting(null);
+          }}
+        />
       </FormDialog>
       <FormDialog
-        title={open?.kind === 'assignments' ? `Lojas e funções de ${open.employee.name}` : ''}
+        title={`Lojas e funções de ${assigning?.name}`}
         description="O empregado abre sessão no POS das lojas onde tem uma função, com as permissões dessa função."
-        open={open?.kind === 'assignments'}
-        onClose={close}
+        open={assigning !== null}
+        onClose={() => setAssigning(null)}
       >
-        {open?.kind === 'assignments' && <AssignmentsPanel employee={open.employee} onClose={close} />}
+        <AssignmentsPanel employee={assigning ?? {}} onClose={() => setAssigning(null)} />
       </FormDialog>
       {stepUp.dialog}
     </div>
+  );
+}
+
+type EmployeeRowProps = {
+  employee: EmployeeSummary;
+  unlocking: boolean;
+  onUnlock: () => void;
+  onAssignments: () => void;
+  onResetPin: () => void;
+};
+
+/** One employee: name, code, state, and the commands; "Desbloquear" only while the PIN is locked. */
+function EmployeeRow({ employee, unlocking, onUnlock, onAssignments, onResetPin }: EmployeeRowProps) {
+  return (
+    <TableRow>
+      <TableCell className="font-medium">{employee.name}</TableCell>
+      <TableCell className="font-mono text-muted-foreground">{employee.code}</TableCell>
+      <TableCell>
+        <StatusBadge status={employeeState(employee)} statuses={employeeStatuses} />
+      </TableCell>
+      <TableCell>
+        <div className="flex justify-end gap-2">
+          {employee.locked && (
+            <Button variant="outline" size="sm" aria-label={`Desbloquear ${employee.name}`} disabled={unlocking} onClick={onUnlock}>
+              <LockOpen aria-hidden="true" />
+              Desbloquear
+            </Button>
+          )}
+          <Button variant="outline" size="sm" aria-label={`Lojas e funções de ${employee.name}`} onClick={onAssignments}>
+            <Store aria-hidden="true" />
+            Lojas
+          </Button>
+          <Button variant="outline" size="sm" aria-label={`Repor PIN de ${employee.name}`} onClick={onResetPin}>
+            <KeyRound aria-hidden="true" />
+            Repor PIN
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
   );
 }
