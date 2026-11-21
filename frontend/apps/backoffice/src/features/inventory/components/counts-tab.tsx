@@ -7,9 +7,7 @@ import {
   CardTitle,
   ConfirmButton,
   Input,
-  Table,
   TableBody,
-  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -29,6 +27,7 @@ import type { CountRequest, CountView } from '../types';
 import { CommandError } from './command-error';
 import { SELECT } from './command-form';
 import { QueryState } from './query-state';
+import { ScrollTable } from './scroll-table';
 import { countStates, StateBadge } from './state-badge';
 
 const PARAM = 'count';
@@ -156,8 +155,7 @@ function CountCard({ countId, storeId }: { countId: string; storeId: string }) {
           empty={!view?.lines?.length}
           emptyMessage={view?.status === 'DRAFT' ? 'Inicie a contagem para ver os artigos do armazém.' : 'Sem artigos nesta contagem.'}
         >
-          <Table>
-            <TableCaption className="sr-only">Linhas da contagem</TableCaption>
+          <ScrollTable label="Linhas da contagem">
             <TableHeader>
               <TableRow>
                 <TableHead>Artigo</TableHead>
@@ -182,7 +180,7 @@ function CountCard({ countId, storeId }: { countId: string; storeId: string }) {
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </ScrollTable>
         </QueryState>
       </CardContent>
     </Card>

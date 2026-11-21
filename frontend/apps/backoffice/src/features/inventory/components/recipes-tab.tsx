@@ -4,9 +4,7 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-  Table,
   TableBody,
-  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -23,6 +21,7 @@ import type { RecipeView } from '../types';
 import { CommandError } from './command-error';
 import { ConfirmDialog, FormDialog, type Confirmation } from './form-dialog';
 import { QueryState } from './query-state';
+import { ScrollTable } from './scroll-table';
 import { RecipeForm, RecipeVersionForm } from './recipe-forms';
 import { StateBadge, versionStates } from './state-badge';
 
@@ -35,8 +34,8 @@ export function RecipesTab({ storeId }: { storeId: string }) {
   const recipe = rows?.find((candidate) => candidate.id === chosen) ?? rows?.[0];
 
   return (
-    <div className="grid gap-6 lg:grid-cols-3">
-      <Card className="gap-4">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <Card className="min-w-0 gap-4">
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
           <CardTitle className="text-lg">Fichas técnicas</CardTitle>
           {canManage && (
@@ -89,7 +88,7 @@ function RecipeDetail({ recipe, canManage }: { recipe: RecipeView; canManage: bo
   const item = (id?: string) => items.data?.find((candidate) => candidate.id === id);
 
   return (
-    <Card className="gap-4 lg:col-span-2">
+    <Card className="min-w-0 gap-4 lg:col-span-2">
       <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
         <CardTitle>
           <h2 className="text-xl font-semibold">Ficha técnica: {recipe.name}</h2>
@@ -111,8 +110,7 @@ function RecipeDetail({ recipe, canManage }: { recipe: RecipeView; canManage: bo
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
         <CommandError error={activate.error} pending={activate.pending} onRetry={activate.retry} />
-        <Table>
-          <TableCaption className="sr-only">Versões da ficha técnica</TableCaption>
+        <ScrollTable label="Versões da ficha técnica">
           <TableHeader>
             <TableRow>
               <TableHead>Versão</TableHead>
@@ -156,14 +154,13 @@ function RecipeDetail({ recipe, canManage }: { recipe: RecipeView; canManage: bo
               </TableRow>
             ))}
           </TableBody>
-        </Table>
+        </ScrollTable>
         <section aria-labelledby="active-ingredients" className="flex flex-col gap-2">
           <h3 id="active-ingredients" className="text-lg font-semibold">
             Composição da versão ativa
           </h3>
           {active?.ingredients?.length ? (
-            <Table>
-              <TableCaption className="sr-only">Ingredientes da versão ativa</TableCaption>
+            <ScrollTable label="Ingredientes da versão ativa">
               <TableHeader>
                 <TableRow>
                   <TableHead>Artigo de stock</TableHead>
@@ -178,7 +175,7 @@ function RecipeDetail({ recipe, canManage }: { recipe: RecipeView; canManage: bo
                   </TableRow>
                 ))}
               </TableBody>
-            </Table>
+            </ScrollTable>
           ) : (
             <p className="text-muted-foreground">Esta ficha técnica ainda não tem uma versão ativa.</p>
           )}

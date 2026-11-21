@@ -4,9 +4,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  Table,
   TableBody,
-  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -16,6 +14,7 @@ import { formatQuantity } from '../format';
 import { useBelowMinimum, useValuation } from '../hooks/use-inventory-reads';
 import { Amount } from './amount';
 import { QueryState } from './query-state';
+import { ScrollTable } from './scroll-table';
 
 /** "Relatórios" (§5 inventory reports): the store's valuation and what is below its minimum, as the server computes them. */
 export function ReportsTab({ storeId, currency }: { storeId: string; currency: string | undefined }) {
@@ -25,8 +24,8 @@ export function ReportsTab({ storeId, currency }: { storeId: string; currency: s
   const lowRows = low.data?.rows;
 
   return (
-    <div className="grid gap-6 xl:grid-cols-2">
-      <Card className="gap-4">
+    <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+      <Card className="min-w-0 gap-4">
         <CardHeader>
           <CardTitle className="text-lg">Valorização do stock</CardTitle>
           <CardDescription>
@@ -35,8 +34,7 @@ export function ReportsTab({ storeId, currency }: { storeId: string; currency: s
         </CardHeader>
         <CardContent>
           <QueryState query={valuation} pending={valuation.isPending} empty={!valuationRows?.length} emptyMessage="Sem stock valorizado.">
-            <Table>
-              <TableCaption className="sr-only">Valorização do stock</TableCaption>
+            <ScrollTable label="Valorização do stock">
               <TableHeader>
                 <TableRow>
                   <TableHead>Armazém</TableHead>
@@ -57,19 +55,18 @@ export function ReportsTab({ storeId, currency }: { storeId: string; currency: s
                   </TableRow>
                 ))}
               </TableBody>
-            </Table>
+            </ScrollTable>
           </QueryState>
         </CardContent>
       </Card>
-      <Card className="gap-4">
+      <Card className="min-w-0 gap-4">
         <CardHeader>
           <CardTitle className="text-lg">Abaixo do mínimo</CardTitle>
           <CardDescription>O que falta para chegar ao mínimo de cada armazém.</CardDescription>
         </CardHeader>
         <CardContent>
           <QueryState query={low} pending={low.isPending} empty={!lowRows?.length} emptyMessage="Nenhum artigo abaixo do mínimo.">
-            <Table>
-              <TableCaption className="sr-only">Artigos abaixo do mínimo</TableCaption>
+            <ScrollTable label="Artigos abaixo do mínimo">
               <TableHeader>
                 <TableRow>
                   <TableHead>Armazém</TableHead>
@@ -90,7 +87,7 @@ export function ReportsTab({ storeId, currency }: { storeId: string; currency: s
                   </TableRow>
                 ))}
               </TableBody>
-            </Table>
+            </ScrollTable>
           </QueryState>
         </CardContent>
       </Card>

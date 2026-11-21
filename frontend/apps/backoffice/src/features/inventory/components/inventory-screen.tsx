@@ -60,16 +60,16 @@ export function InventoryScreen({ storeId }: { storeId: string }) {
     <div className="mt-6 flex flex-col gap-6">
       <StockSummary storeId={storeId} currency={context.currency} />
       <Tabs value={tab} onValueChange={select} className="gap-4">
-        <TabsList className="h-auto flex-wrap">
+        <TabsList className="w-full max-w-full justify-start overflow-x-auto">
           {TABS.map(({ value, label, icon: Icon }) => (
-            <TabsTrigger key={value} value={value} className="min-h-9">
+            <TabsTrigger key={value} value={value} className="flex-none">
               <Icon aria-hidden="true" />
               {label}
             </TabsTrigger>
           ))}
         </TabsList>
         {TABS.map(({ value, render }) => (
-          <TabsContent key={value} value={value}>
+          <TabsContent key={value} value={value} className="min-w-0">
             {render(context)}
           </TabsContent>
         ))}

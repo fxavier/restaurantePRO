@@ -4,9 +4,7 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-  Table,
   TableBody,
-  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -21,6 +19,7 @@ import { usePermission } from '../hooks/use-permission';
 import { useRowCommand } from '../hooks/use-row-command';
 import { CommandError } from './command-error';
 import { Pages, QueryState } from './query-state';
+import { ScrollTable } from './scroll-table';
 import { documentStates, StateBadge } from './state-badge';
 
 type ReceiptsCardProps = { storeId: string; timeZone: string | undefined; supplierName: (id?: string) => string };
@@ -41,8 +40,7 @@ export function ReceiptsCard({ storeId, timeZone, supplierName }: ReceiptsCardPr
       <CardContent className="flex flex-col gap-4">
         <CommandError error={action.error} pending={action.pending} onRetry={action.retry} />
         <QueryState query={receipts} pending={receipts.isPending} empty={!rows?.length} emptyMessage="Ainda não há receções.">
-          <Table>
-            <TableCaption className="sr-only">Receções de mercadoria</TableCaption>
+          <ScrollTable label="Receções de mercadoria">
             <TableHeader>
               <TableRow>
                 <TableHead>Guia</TableHead>
@@ -84,7 +82,7 @@ export function ReceiptsCard({ storeId, timeZone, supplierName }: ReceiptsCardPr
                 );
               })}
             </TableBody>
-          </Table>
+          </ScrollTable>
           <Pages page={page} total={receipts.data?.totalElements ?? 0} size={LIST_PAGE_SIZE} onPage={setPage} />
         </QueryState>
       </CardContent>

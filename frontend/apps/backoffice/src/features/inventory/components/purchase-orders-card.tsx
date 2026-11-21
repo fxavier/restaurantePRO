@@ -4,9 +4,7 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-  Table,
   TableBody,
-  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -24,6 +22,7 @@ import { CommandError } from './command-error';
 import { ConfirmDialog, FormDialog, type Confirmation } from './form-dialog';
 import { PurchaseOrderForm } from './purchase-order-form';
 import { Pages, QueryState } from './query-state';
+import { ScrollTable } from './scroll-table';
 import { ReceiveOrderForm } from './receive-order-form';
 import { orderStates, progressLabel, StateBadge } from './state-badge';
 
@@ -74,8 +73,7 @@ export function PurchaseOrdersCard({ storeId, supplierName }: { storeId: string;
       <CardContent className="flex flex-col gap-4">
         <CommandError error={action.error} pending={action.pending} onRetry={action.retry} />
         <QueryState query={orders} pending={orders.isPending} empty={!rows?.length} emptyMessage="Ainda não há encomendas.">
-          <Table>
-            <TableCaption className="sr-only">Encomendas a fornecedores</TableCaption>
+          <ScrollTable label="Encomendas a fornecedores">
             <TableHeader>
               <TableRow>
                 <TableHead>Número</TableHead>
@@ -158,7 +156,7 @@ export function PurchaseOrdersCard({ storeId, supplierName }: { storeId: string;
                 );
               })}
             </TableBody>
-          </Table>
+          </ScrollTable>
           <Pages page={page} total={orders.data?.totalElements ?? 0} size={LIST_PAGE_SIZE} onPage={setPage} />
         </QueryState>
       </CardContent>
