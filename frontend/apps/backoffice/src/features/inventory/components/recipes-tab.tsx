@@ -14,10 +14,10 @@ import { CheckCircle2, CookingPot, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { formatQuantity } from '../format';
 import { useActivateRecipeVersion } from '../hooks/use-inventory-commands';
-import { useRecipes, useStockItems } from '../hooks/use-inventory-reads';
+import { useItemLookup, useRecipes } from '../hooks/use-inventory-reads';
 import { usePermission } from '../hooks/use-permission';
 import { useRowCommand } from '../hooks/use-row-command';
-import type { RecipeView } from '../types';
+import type { RecipeVersionView, RecipeView } from '../types';
 import { CommandError } from './command-error';
 import { ConfirmDialog, FormDialog, type Confirmation } from './form-dialog';
 import { QueryState } from './query-state';
@@ -38,39 +38,11 @@ export function RecipesTab({ storeId }: { storeId: string }) {
       <Card className="min-w-0 gap-4">
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
           <CardTitle className="text-lg">Fichas técnicas</CardTitle>
-          {canManage && (
-            <FormDialog
-              trigger={
-                <>
-                  <Plus aria-hidden="true" />
-                  Nova ficha técnica
-                </>
-              }
-              triggerVariant="outline"
-              title="Nova ficha técnica"
-              description="Dê-lhe um nome; os ingredientes entram numa versão."
-            >
-              {(close) => <RecipeForm onDone={close} />}
-            </FormDialog>
-          )}
+          {canManage && <NewRecipeButton />}
         </CardHeader>
         <CardContent>
           <QueryState query={recipes} pending={recipes.isPending} empty={!rows?.length} emptyMessage="Ainda não há fichas técnicas.">
-            <ul aria-label="Fichas técnicas" className="flex flex-col gap-1">
-              {rows?.map((candidate) => (
-                <li key={candidate.id}>
-                  <Button
-                    variant={candidate.id === recipe?.id ? 'secondary' : 'ghost'}
-                    aria-current={candidate.id === recipe?.id}
-                    className="h-auto min-h-12 w-full justify-start text-left whitespace-normal"
-                    onClick={() => setChosen(candidate.id)}
-                  >
-                    <CookingPot aria-hidden="true" />
-                    {candidate.name}
-                  </Button>
-                </li>
-              ))}
-            </ul>
+            <RecipeList recipes={rows ?? []} current={recipe?.id} onChoose={setChosen} />
           </QueryState>
         </CardContent>
       </Card>
@@ -79,13 +51,50 @@ export function RecipesTab({ storeId }: { storeId: string }) {
   );
 }
 
+function NewRecipeButton() {
+  return (
+    <FormDialog
+      trigger={
+        <>
+          <Plus aria-hidden="true" />
+          Nova ficha técnica
+        </>
+      }
+      triggerVariant="outline"
+      title="Nova ficha técnica"
+      description="Dê-lhe um nome; os ingredientes entram numa versão."
+    >
+      {(close) => <RecipeForm onDone={close} />}
+    </FormDialog>
+  );
+}
+
+function RecipeList({ recipes, current, onChoose }: { recipes: RecipeView[]; current?: string; onChoose: (id?: string) => void }) {
+  return (
+    <ul aria-label="Fichas técnicas" className="flex flex-col gap-1">
+      {recipes.map((candidate) => (
+        <li key={candidate.id}>
+          <Button
+            variant={candidate.id === current ? 'secondary' : 'ghost'}
+            aria-current={candidate.id === current}
+            className="h-auto min-h-12 w-full justify-start text-left whitespace-normal"
+            onClick={() => onChoose(candidate.id)}
+          >
+            <CookingPot aria-hidden="true" />
+            {candidate.name}
+          </Button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function RecipeDetail({ recipe, canManage }: { recipe: RecipeView; canManage: boolean }) {
-  const items = useStockItems();
+  const { itemName } = useItemLookup();
   const activate = useRowCommand(useActivateRecipeVersion());
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const versions = recipe.versions ?? [];
   const active = versions.find((version) => version.status === 'ACTIVE');
-  const item = (id?: string) => items.data?.find((candidate) => candidate.id === id);
 
   return (
     <Card className="min-w-0 gap-4 lg:col-span-2">
@@ -110,78 +119,95 @@ function RecipeDetail({ recipe, canManage }: { recipe: RecipeView; canManage: bo
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
         <CommandError error={activate.error} pending={activate.pending} onRetry={activate.retry} />
-        <ScrollTable label="Versões da ficha técnica">
+        <VersionsTable
+          versions={versions}
+          canManage={canManage}
+          pending={activate.pending}
+          onActivate={(versionNo) =>
+            setConfirmation({
+              title: `Ativar a versão ${versionNo} de ${recipe.name}?`,
+              description: 'Passa a ser a versão que as vendas consomem; a versão ativa atual fica substituída.',
+              action: 'Ativar versão',
+              onConfirm: () => activate.run({ recipeId: recipe.id!, versionNo }),
+            })
+          }
+        />
+        <ActiveIngredients ingredients={active?.ingredients} itemName={itemName} />
+      </CardContent>
+      <ConfirmDialog confirmation={confirmation} onClose={() => setConfirmation(null)} />
+    </Card>
+  );
+}
+
+type VersionsTableProps = { versions: RecipeVersionView[]; canManage: boolean; pending: boolean; onActivate: (versionNo: number) => void };
+
+function VersionsTable({ versions, canManage, pending, onActivate }: VersionsTableProps) {
+  return (
+    <ScrollTable label="Versões da ficha técnica">
+      <TableHeader>
+        <TableRow>
+          <TableHead>Versão</TableHead>
+          <TableHead>Rendimento</TableHead>
+          <TableHead>Estado</TableHead>
+          <TableHead>
+            <span className="sr-only">Ações</span>
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {versions.map((version) => (
+          <TableRow key={version.id}>
+            <TableCell className="font-mono">v{version.versionNo}</TableCell>
+            <TableCell className="tabular-nums">{formatQuantity(version.yieldQuantity, version.yieldUnit)}</TableCell>
+            <TableCell>
+              <StateBadge status={version.status} states={versionStates} />
+            </TableCell>
+            <TableCell>
+              {canManage && version.status === 'DRAFT' && (
+                <div className="flex justify-end">
+                  <Button size="sm" aria-label={`Ativar v${version.versionNo}`} disabled={pending} onClick={() => onActivate(version.versionNo!)}>
+                    <CheckCircle2 aria-hidden="true" />
+                    Ativar
+                  </Button>
+                </div>
+              )}
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </ScrollTable>
+  );
+}
+
+type Ingredient = NonNullable<RecipeVersionView['ingredients']>[number];
+
+/** What the active version consumes per yield, by stock item name; no cost (the API exposes none). */
+function ActiveIngredients({ ingredients, itemName }: { ingredients: Ingredient[] | undefined; itemName: (id?: string) => string }) {
+  return (
+    <section aria-labelledby="active-ingredients" className="flex flex-col gap-2">
+      <h3 id="active-ingredients" className="text-lg font-semibold">
+        Composição da versão ativa
+      </h3>
+      {ingredients?.length ? (
+        <ScrollTable label="Ingredientes da versão ativa">
           <TableHeader>
             <TableRow>
-              <TableHead>Versão</TableHead>
-              <TableHead>Rendimento</TableHead>
-              <TableHead>Estado</TableHead>
-              <TableHead>
-                <span className="sr-only">Ações</span>
-              </TableHead>
+              <TableHead>Artigo de stock</TableHead>
+              <TableHead className="text-right">Quantidade</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {versions.map((version) => (
-              <TableRow key={version.id}>
-                <TableCell className="font-mono">v{version.versionNo}</TableCell>
-                <TableCell className="tabular-nums">{formatQuantity(version.yieldQuantity, version.yieldUnit)}</TableCell>
-                <TableCell>
-                  <StateBadge status={version.status} states={versionStates} />
-                </TableCell>
-                <TableCell>
-                  {canManage && version.status === 'DRAFT' && (
-                    <div className="flex justify-end">
-                      <Button
-                        size="sm"
-                        aria-label={`Ativar v${version.versionNo}`}
-                        disabled={activate.pending}
-                        onClick={() =>
-                          setConfirmation({
-                            title: `Ativar a versão ${version.versionNo} de ${recipe.name}?`,
-                            description: 'Passa a ser a versão que as vendas consomem; a versão ativa atual fica substituída.',
-                            action: 'Ativar versão',
-                            onConfirm: () => activate.run({ recipeId: recipe.id!, versionNo: version.versionNo! }),
-                          })
-                        }
-                      >
-                        <CheckCircle2 aria-hidden="true" />
-                        Ativar
-                      </Button>
-                    </div>
-                  )}
-                </TableCell>
+            {ingredients.map((ingredient) => (
+              <TableRow key={ingredient.stockItemId}>
+                <TableCell>{itemName(ingredient.stockItemId)}</TableCell>
+                <TableCell className="text-right tabular-nums">{formatQuantity(ingredient.quantity, ingredient.unit)}</TableCell>
               </TableRow>
             ))}
           </TableBody>
         </ScrollTable>
-        <section aria-labelledby="active-ingredients" className="flex flex-col gap-2">
-          <h3 id="active-ingredients" className="text-lg font-semibold">
-            Composição da versão ativa
-          </h3>
-          {active?.ingredients?.length ? (
-            <ScrollTable label="Ingredientes da versão ativa">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Artigo de stock</TableHead>
-                  <TableHead className="text-right">Quantidade</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {active.ingredients.map((ingredient) => (
-                  <TableRow key={ingredient.stockItemId}>
-                    <TableCell>{item(ingredient.stockItemId)?.name ?? '—'}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatQuantity(ingredient.quantity, ingredient.unit)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </ScrollTable>
-          ) : (
-            <p className="text-muted-foreground">Esta ficha técnica ainda não tem uma versão ativa.</p>
-          )}
-        </section>
-      </CardContent>
-      <ConfirmDialog confirmation={confirmation} onClose={() => setConfirmation(null)} />
-    </Card>
+      ) : (
+        <p className="text-muted-foreground">Esta ficha técnica ainda não tem uma versão ativa.</p>
+      )}
+    </section>
   );
 }

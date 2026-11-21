@@ -10,11 +10,11 @@ import {
   TableHeader,
   TableRow,
 } from '@restaurantpro/ui';
-import { PackageCheck, Truck } from 'lucide-react';
+import { PackageCheck, Truck, type LucideIcon } from 'lucide-react';
 import { useState } from 'react';
 import { formatDateTime } from '../format';
 import { useTransferAction } from '../hooks/use-inventory-commands';
-import { LIST_PAGE_SIZE, useTransfers, useWarehouses } from '../hooks/use-inventory-reads';
+import { LIST_PAGE_SIZE, useNames, useTransfers } from '../hooks/use-inventory-reads';
 import { usePermission } from '../hooks/use-permission';
 import { useRowCommand } from '../hooks/use-row-command';
 import type { TransferView } from '../types';
@@ -23,6 +23,14 @@ import { Pages, QueryState } from './query-state';
 import { ScrollTable } from './scroll-table';
 import { StateBadge, transferStates } from './state-badge';
 
+type Step = { action: 'ship' | 'receive'; label: string; icon: LucideIcon };
+
+/** The one command each live state offers (D120: DRAFT → SHIPPED → RECEIVED). */
+const NEXT_STEP: Record<string, Step | undefined> = {
+  DRAFT: { action: 'ship', label: 'Enviar', icon: Truck },
+  SHIPPED: { action: 'receive', label: 'Receber', icon: PackageCheck },
+};
+
 /**
  * "Transferências" (§5 inventory, D120): the store's transfers between warehouses; ship a draft, receive a shipped
  * one as shipped. Creating a transfer and a partial receipt are follow-ups.
@@ -30,11 +38,11 @@ import { StateBadge, transferStates } from './state-badge';
 export function TransfersTab({ storeId, timeZone }: { storeId: string; timeZone: string | undefined }) {
   const [page, setPage] = useState(0);
   const transfers = useTransfers(storeId, page);
-  const warehouses = useWarehouses(storeId);
+  const names = useNames(storeId);
   const action = useRowCommand(useTransferAction());
   const canTransfer = usePermission('INVENTORY_TRANSFER', storeId);
   const rows = transfers.data?.rows;
-  const warehouse = (id?: string) => warehouses.data?.find((candidate) => candidate.id === id)?.name ?? 'Outra loja';
+  const warehouse = (id?: string) => names.warehouseName(id, 'Outra loja');
   const route = (transfer: TransferView) => `${warehouse(transfer.fromWarehouseId)} → ${warehouse(transfer.toWarehouseId)}`;
 
   return (
@@ -68,30 +76,12 @@ export function TransfersTab({ storeId, timeZone }: { storeId: string; timeZone:
                   <TableCell className="tabular-nums">{formatDateTime(transfer.createdAt, timeZone)}</TableCell>
                   <TableCell>
                     {canTransfer && (
-                      <div className="flex justify-end">
-                        {transfer.status === 'DRAFT' && (
-                          <Button
-                            size="sm"
-                            aria-label={`Enviar transferência ${route(transfer)}`}
-                            disabled={action.pending}
-                            onClick={() => action.run({ id: transfer.id!, action: 'ship', label: route(transfer), transfer })}
-                          >
-                            <Truck aria-hidden="true" />
-                            Enviar
-                          </Button>
-                        )}
-                        {transfer.status === 'SHIPPED' && (
-                          <Button
-                            size="sm"
-                            aria-label={`Receber transferência ${route(transfer)}`}
-                            disabled={action.pending}
-                            onClick={() => action.run({ id: transfer.id!, action: 'receive', label: route(transfer), transfer })}
-                          >
-                            <PackageCheck aria-hidden="true" />
-                            Receber
-                          </Button>
-                        )}
-                      </div>
+                      <TransferAction
+                        status={transfer.status}
+                        route={route(transfer)}
+                        pending={action.pending}
+                        onRun={(name) => action.run({ id: transfer.id!, action: name, label: route(transfer), transfer })}
+                      />
                     )}
                   </TableCell>
                 </TableRow>
@@ -102,5 +92,20 @@ export function TransfersTab({ storeId, timeZone }: { storeId: string; timeZone:
         </QueryState>
       </CardContent>
     </Card>
+  );
+}
+
+type TransferActionProps = { status?: string; route: string; pending: boolean; onRun: (action: Step['action']) => void };
+
+function TransferAction({ status, route, pending, onRun }: TransferActionProps) {
+  const step = NEXT_STEP[status ?? ''];
+  if (!step) return null;
+  return (
+    <div className="flex justify-end">
+      <Button size="sm" aria-label={`${step.label} transferência ${route}`} disabled={pending} onClick={() => onRun(step.action)}>
+        <step.icon aria-hidden="true" />
+        {step.label}
+      </Button>
+    </div>
   );
 }
