@@ -158,7 +158,7 @@ function OrderActions({ order, may, pending, onSubmit, onCancel, onClose }: Orde
           triggerLabel={`Receber ${order.number}`}
           triggerSize="sm"
           title={`Receber a encomenda ${order.number}`}
-          description="O que chegou, por artigo, na unidade base. A receção fica em rascunho até ser confirmada."
+          description="O que chegou, por artigo, na unidade base; deixe vazio ou a zero o que não chegou. A receção fica em rascunho até ser confirmada."
         >
           {(close) => <ReceiveOrderForm order={order} onDone={close} />}
         </FormDialog>

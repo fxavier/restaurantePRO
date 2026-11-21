@@ -20,12 +20,15 @@ export function useFormCommand<Values extends FieldValues, Body, Variables>({
   mutation,
   toVariables,
   onDone,
+  toFormField,
 }: {
   form: { setError: UseFormSetError<Values> };
   fields: readonly Path<Values>[];
   mutation: Mutation<Variables>;
   toVariables: (intent: Intent<Body>) => Variables;
   onDone: () => void;
+  /** A request field as the form's field, when the request leaves some of the form's lines out. */
+  toFormField?: (field: string) => string;
 }) {
   const [intent, setIntent] = useState<Intent<Body>>();
 
@@ -35,7 +38,7 @@ export function useFormCommand<Values extends FieldValues, Body, Variables>({
     mutation.mutate(toVariables(current), {
       onSuccess: onDone,
       onError: (error) => {
-        const found = fieldErrors(error, fields);
+        const found = fieldErrors(error, fields, toFormField);
         if (!found) return;
         for (const [field, message] of found.fields) form.setError(field as Path<Values>, { message });
         if (found.others.length) form.setError('root' as Path<Values>, { message: found.others.join(' ') });

@@ -61,7 +61,7 @@ function MovementForm({ kind, warehouseId, onDone }: { kind: MovementKind; wareh
   const submit = ({ stockItemId, quantity, unitCost, reason }: MovementValues) =>
     command.send({
       warehouseId,
-      ...(reason ? { reason } : {}),
+      reason,
       lines: [{ stockItemId, quantity, ...(unitCost ? { unitCost } : {}) }],
     });
 

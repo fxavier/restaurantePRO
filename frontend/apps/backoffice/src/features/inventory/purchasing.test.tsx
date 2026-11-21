@@ -1,8 +1,9 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
-import { admin, api, baixa } from '../../test/fixtures';
+import { admin, api, baixa, problem } from '../../test/fixtures';
 import {
+  azeite,
   commands,
   cozinha,
   INVENTORY,
@@ -127,7 +128,76 @@ describe('purchasing', () => {
     });
   });
 
-  it('lists the receipts and confirms a draft one', async () => {
+  describe('a partial delivery', () => {
+    const azeiteLine = {
+      id: 'f1000000-0000-4000-8000-000000000002',
+      stockItemId: azeite.id,
+      quantity: '10',
+      ordered: '10',
+      received: '0',
+      outstanding: '10',
+      unitCost: '7.50',
+      progress: 'NONE' as const,
+    };
+    const twoLines = { ...orderSubmitted, lines: [...orderSubmitted.lines!, azeiteLine] };
+
+    async function openReceive() {
+      const state = inventoryServer({ orders: [twoLines] });
+      acceptCommands();
+      const { user } = renderApp(COMPRAS);
+      await user.click(await screen.findByRole('button', { name: 'Receber OC-904' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Receber a encomenda OC-904' });
+      const field = (name: string) => within(dialog).getByRole('textbox', { name: `Recebido de ${name}` });
+      await within(dialog).findByRole('textbox', { name: `Recebido de ${azeite.name}` });
+      return { state, user, dialog, field };
+    }
+
+    it('leaves out a line received as zero or left empty', async () => {
+      const { state, user, dialog, field } = await openReceive();
+
+      await user.clear(field(azeite.name));
+      await user.type(field(azeite.name), '0');
+      await user.click(within(dialog).getByRole('button', { name: 'Registar receção' }));
+
+      await waitFor(() => expect(commands(state)).toHaveLength(1));
+      expect(commands(state)[0]!.body).toMatchObject({
+        lines: [{ purchaseOrderLineId: orderSubmitted.lines![0]!.id, stockItemId: polvo.id, packQuantity: '20' }],
+      });
+      expect((commands(state)[0]!.body as { lines: unknown[] }).lines).toHaveLength(1);
+    });
+
+    it('refuses a negative quantity and a receipt with nothing received, before sending anything', async () => {
+      const { state, user, dialog, field } = await openReceive();
+
+      await user.clear(field(azeite.name));
+      await user.type(field(azeite.name), '-1');
+      await user.click(within(dialog).getByRole('button', { name: 'Registar receção' }));
+      expect(await within(dialog).findByText('Indique uma quantidade maior que zero.')).toBeInTheDocument();
+
+      await user.clear(field(azeite.name));
+      await user.clear(field(polvo.name));
+      await user.click(within(dialog).getByRole('button', { name: 'Registar receção' }));
+      expect(await within(dialog).findByText('Indique pelo menos um artigo recebido.')).toBeInTheDocument();
+      expect(commands(state)).toEqual([]);
+    });
+
+    it("puts the server's error on the line it belongs to when an earlier line was left out", async () => {
+      const { user, dialog, field } = await openReceive();
+      server.use(
+        http.post(api(`${BASE}/receipts`), () =>
+          problem(400, 'VALIDATION_FAILED', 'Invalid', { errors: [{ field: 'lines[0].packQuantity', message: 'Demasiado.' }] }),
+        ),
+      );
+
+      await user.clear(field(polvo.name));
+      await user.click(within(dialog).getByRole('button', { name: 'Registar receção' }));
+
+      await waitFor(() => expect(field(azeite.name)).toHaveAccessibleDescription('Demasiado.'));
+      expect(field(polvo.name)).not.toHaveAccessibleDescription('Demasiado.');
+    });
+  });
+
+  it('lists the receipts and confirms a draft one only after confirming it', async () => {
     const state = inventoryServer();
     acceptCommands();
     const { user } = renderApp(COMPRAS);
@@ -135,6 +205,9 @@ describe('purchasing', () => {
     const table = await screen.findByRole('table', { name: 'Receções de mercadoria' });
     await waitFor(() => expect(rowsOf(table, 3)).toEqual([['GR-882', 'Lusitânia Pescados', 'Rascunho']]));
     await user.click(within(table).getByRole('button', { name: 'Confirmar receção GR-882' }));
+    const confirm = await screen.findByRole('alertdialog', { name: 'Confirmar a receção GR-882?' });
+    expect(commands(state)).toEqual([]);
+    await user.click(within(confirm).getByRole('button', { name: 'Confirmar receção' }));
 
     await waitFor(() => expect(commands(state)).toHaveLength(1));
     expect(commands(state)[0]).toMatchObject({ path: `${BASE}/receipts/${receiptDraft.id}/confirm` });

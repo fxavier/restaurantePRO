@@ -91,13 +91,50 @@ describe('stock', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Ajustar stock' });
     await user.selectOptions(within(dialog).getByRole('combobox', { name: 'Artigo' }), azeite.name);
     await user.type(within(dialog).getByRole('textbox', { name: 'Quantidade' }), '-2');
+    await user.type(within(dialog).getByRole('textbox', { name: 'Motivo' }), 'Contagem');
     await user.click(within(dialog).getByRole('button', { name: 'Registar' }));
 
     expect(await within(dialog).findByText('Indique o custo.')).toBeInTheDocument();
     expect(commands(state)[0]).toMatchObject({
       path: '/api/v1/backoffice/inventory/movements/manual-adjustments',
-      body: { warehouseId: cozinha.id, lines: [{ stockItemId: azeite.id, quantity: '-2' }] },
+      body: { warehouseId: cozinha.id, reason: 'Contagem', lines: [{ stockItemId: azeite.id, quantity: '-2' }] },
     });
+  });
+
+  it('asks for the reason on its field before sending anything', async () => {
+    const state = inventoryServer();
+    const { user } = renderApp(INVENTORY);
+    await screen.findByRole('table', { name: 'Stock do armazém' });
+
+    await user.click(screen.getByRole('button', { name: 'Ajustar stock' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Ajustar stock' });
+    await user.selectOptions(within(dialog).getByRole('combobox', { name: 'Artigo' }), azeite.name);
+    await user.type(within(dialog).getByRole('textbox', { name: 'Quantidade' }), '-2');
+    await user.type(within(dialog).getByRole('textbox', { name: 'Motivo' }), '   ');
+    await user.click(within(dialog).getByRole('button', { name: 'Registar' }));
+
+    await waitFor(() => expect(within(dialog).getByRole('textbox', { name: 'Motivo' })).toHaveAccessibleDescription('Indique o motivo.'));
+    expect(commands(state)).toEqual([]);
+  });
+
+  it('says when the summary cannot be read, apart from a value still loading, and reads it again on retry', async () => {
+    inventoryServer();
+    let fail = true;
+    server.use(
+      http.get(api('/api/v1/backoffice/inventory/reports/valuation'), () => (fail ? problem(503, 'UPSTREAM_UNAVAILABLE') : undefined)),
+      http.get(api('/api/v1/backoffice/inventory/reports/below-minimum'), () => (fail ? problem(500, 'INTERNAL') : undefined)),
+    );
+    const { user } = renderApp(INVENTORY);
+
+    const value = await screen.findByRole('group', { name: 'Valor total em stock' });
+    expect(within(value).getByRole('status', { name: 'A carregar…' })).toBeInTheDocument();
+    await waitFor(() => expect(value).toHaveTextContent('Sem ligação'));
+    const low = screen.getByRole('group', { name: 'Abaixo do mínimo' });
+    await waitFor(() => expect(low).toHaveTextContent('Não foi possível carregar'));
+
+    fail = false;
+    await user.click(within(value).getByRole('button', { name: 'Tentar novamente: Valor total em stock' }));
+    await waitFor(() => expect(value).toHaveTextContent(/14\s820,50\sMTn/));
   });
 
   it('refuses a quantity that is not a number before sending anything', async () => {
