@@ -4,9 +4,7 @@ import {
   CardHeader,
   CardTitle,
   StatusBadge,
-  Table,
   TableBody,
-  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -22,6 +20,7 @@ import { Amount } from './amount';
 import { SELECT } from './command-form';
 import { MovementDialog } from './movement-dialog';
 import { Pages, QueryState } from './query-state';
+import { ScrollTable } from './scroll-table';
 
 const levels: StatusMap<'LOW' | 'OK'> = {
   LOW: { label: 'Abaixo do mínimo', icon: TriangleAlert, tone: 'warning' },
@@ -88,8 +87,7 @@ export function StockTab({ storeId, currency }: { storeId: string; currency: str
           empty={!rows?.length}
           emptyMessage={warehouseId ? 'Sem stock neste armazém.' : 'Esta loja ainda não tem armazéns.'}
         >
-          <Table>
-            <TableCaption className="sr-only">Stock do armazém</TableCaption>
+          <ScrollTable label="Stock do armazém">
             <TableHeader>
               <TableRow>
                 <TableHead>Artigo</TableHead>
@@ -121,7 +119,7 @@ export function StockTab({ storeId, currency }: { storeId: string; currency: str
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </ScrollTable>
           <Pages page={page} total={stock.data?.totalElements ?? 0} size={STOCK_PAGE_SIZE} onPage={setPage} />
         </QueryState>
       </CardContent>

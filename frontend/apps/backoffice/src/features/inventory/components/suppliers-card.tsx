@@ -4,9 +4,7 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-  Table,
   TableBody,
-  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -24,6 +22,7 @@ import type { SupplierRequest } from '../types';
 import { CommandForm, TextField } from './command-form';
 import { FormDialog } from './form-dialog';
 import { Pages, QueryState } from './query-state';
+import { ScrollTable } from './scroll-table';
 
 /** "Fornecedores" (§5 purchasing): the company's suppliers, and a new one. */
 export function SuppliersCard({ storeId }: { storeId: string }) {
@@ -33,7 +32,7 @@ export function SuppliersCard({ storeId }: { storeId: string }) {
   const rows = suppliers.data?.rows;
 
   return (
-    <Card className="gap-4">
+    <Card className="min-w-0 gap-4">
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
         <CardTitle className="text-lg">Fornecedores</CardTitle>
         {canManage && (
@@ -54,8 +53,7 @@ export function SuppliersCard({ storeId }: { storeId: string }) {
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <QueryState query={suppliers} pending={suppliers.isPending} empty={!rows?.length} emptyMessage="Ainda não há fornecedores.">
-          <Table>
-            <TableCaption className="sr-only">Fornecedores</TableCaption>
+          <ScrollTable label="Fornecedores">
             <TableHeader>
               <TableRow>
                 <TableHead>Código</TableHead>
@@ -74,7 +72,7 @@ export function SuppliersCard({ storeId }: { storeId: string }) {
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </ScrollTable>
           <Pages page={page} total={suppliers.data?.totalElements ?? 0} size={LIST_PAGE_SIZE} onPage={setPage} />
         </QueryState>
       </CardContent>

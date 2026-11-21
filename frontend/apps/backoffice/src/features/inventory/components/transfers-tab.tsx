@@ -4,9 +4,7 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-  Table,
   TableBody,
-  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -22,6 +20,7 @@ import { useRowCommand } from '../hooks/use-row-command';
 import type { TransferView } from '../types';
 import { CommandError } from './command-error';
 import { Pages, QueryState } from './query-state';
+import { ScrollTable } from './scroll-table';
 import { StateBadge, transferStates } from './state-badge';
 
 /**
@@ -46,8 +45,7 @@ export function TransfersTab({ storeId, timeZone }: { storeId: string; timeZone:
       <CardContent className="flex flex-col gap-4">
         <CommandError error={action.error} pending={action.pending} onRetry={action.retry} />
         <QueryState query={transfers} pending={transfers.isPending} empty={!rows?.length} emptyMessage="Ainda não há transferências.">
-          <Table>
-            <TableCaption className="sr-only">Transferências</TableCaption>
+          <ScrollTable label="Transferências">
             <TableHeader>
               <TableRow>
                 <TableHead>De</TableHead>
@@ -99,7 +97,7 @@ export function TransfersTab({ storeId, timeZone }: { storeId: string; timeZone:
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </ScrollTable>
           <Pages page={page} total={transfers.data?.totalElements ?? 0} size={LIST_PAGE_SIZE} onPage={setPage} />
         </QueryState>
       </CardContent>
