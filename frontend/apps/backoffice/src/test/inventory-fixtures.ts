@@ -16,6 +16,9 @@ import { server } from './server';
 /** The inventory area of Loja Baixa as the backend answers it (MZN, Africa/Maputo), for the inventory tests. */
 export const INVENTORY = `/inventory?storeId=${baixa.id}`;
 
+/** A fixture whose identifying fields are known, so a test can use them without a non-null assertion. */
+type Known<T, K extends keyof T> = T & { [P in K]-?: NonNullable<T[P]> };
+
 /** A manager holding every inventory permission (backend `access.Permission`). */
 export const inventoryManager: SessionView = {
   ...admin,
@@ -32,7 +35,7 @@ export const inventoryManager: SessionView = {
   ],
 };
 
-export const cozinha: WarehouseView = {
+export const cozinha: Known<WarehouseView, 'id' | 'name'> = {
   id: 'c0000000-0000-4000-8000-000000000001',
   storeId: baixa.id,
   code: 'COZ',
@@ -41,9 +44,9 @@ export const cozinha: WarehouseView = {
   negativePolicy: 'ALLOW',
   version: 0,
 };
-export const bar: WarehouseView = { ...cozinha, id: 'c0000000-0000-4000-8000-000000000002', code: 'BAR', name: 'Bar' };
+export const bar: Known<WarehouseView, 'id' | 'name'> = { ...cozinha, id: 'c0000000-0000-4000-8000-000000000002', code: 'BAR', name: 'Bar' };
 
-function item(n: number, code: string, name: string, baseUnit: string): StockItemView {
+function item(n: number, code: string, name: string, baseUnit: string): Known<StockItemView, 'id' | 'name' | 'code'> {
   return { id: `d0000000-0000-4000-8000-00000000000${n}`, code, name, baseUnit, kind: 'PURCHASED', active: true, version: 0 };
 }
 export const polvo = item(1, 'STK-POL-001', 'Polvo fresco', 'kg');
@@ -66,7 +69,7 @@ export function stockRow(of: StockItemView, quantity: string, minQuantity: strin
   };
 }
 
-export const lusitania: SupplierView = {
+export const lusitania: Known<SupplierView, 'id' | 'name'> = {
   id: 'e0000000-0000-4000-8000-000000000001',
   code: 'SUP-01',
   name: 'Lusitânia Pescados',
