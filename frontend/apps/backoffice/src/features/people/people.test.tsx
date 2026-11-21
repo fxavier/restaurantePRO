@@ -2,7 +2,18 @@ import { screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { admin, api, baixa, problem, sommerschield, stepUpRequired } from '../../test/fixtures';
-import { ana, empregadoSala, gerente, grant, joao, maria, peopleHandlers, suporte } from '../../test/people-fixtures';
+import {
+  account,
+  ana,
+  empregadoSala,
+  gerente,
+  grant,
+  joao,
+  maria,
+  page,
+  peopleHandlers,
+  suporte,
+} from '../../test/people-fixtures';
 import { renderApp } from '../../test/render-app';
 import { server } from '../../test/server';
 
@@ -433,6 +444,93 @@ describe('support access tab', () => {
     expect(state.requests.filter((r) => r.method === 'POST')).toEqual([
       { method: 'POST', url: `/api/v1/backoffice/support-grants/${open.id}/revoke`, body: undefined, idempotencyKey: A_KEY },
     ]);
+  });
+});
+
+describe('pickers', () => {
+  /** A store manager: employees of one store, no company-wide role or account reads. */
+  const storeManager = { ...admin, permissions: [`PERM_EMPLOYEE_MANAGE@${baixa.id}`] };
+
+  it("says the roles cannot be read, instead of an empty 'Função' picker", async () => {
+    peopleServer({ session: storeManager });
+    server.use(http.get(api('/api/v1/backoffice/roles'), () => problem(403, 'HTTP_403', 'Forbidden')));
+    const { user } = renderApp(`/people?storeId=${baixa.id}`);
+
+    await user.click(await screen.findByRole('button', { name: 'Novo empregado' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Novo empregado' });
+
+    expect(await within(dialog).findByText('Sem permissão para ver as funções.')).toBeInTheDocument();
+  });
+
+  it("offers to load the stores again when they cannot be reached, then picks one", async () => {
+    peopleServer();
+    let failing = true;
+    server.use(
+      http.get(api('/api/v1/backoffice/stores'), ({ request }) =>
+        failing && new URL(request.url).searchParams.get('size') === '100' ? problem(503, 'BACKEND_UNAVAILABLE') : undefined,
+      ),
+    );
+    const { user } = renderApp('/people');
+
+    await user.click(await screen.findByRole('button', { name: 'Novo empregado' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Novo empregado' });
+    expect(await within(dialog).findByText('Sem ligação: não foi possível carregar as lojas.')).toBeInTheDocument();
+    failing = false;
+    await user.click(within(dialog).getByRole('button', { name: 'Tentar novamente' }));
+
+    await user.selectOptions(within(dialog).getByLabelText('Loja'), 'Loja Baixa');
+    expect(within(dialog).queryByText(/não foi possível carregar as lojas/)).not.toBeInTheDocument();
+  });
+
+  it("says the employees cannot be read when linking an account to one", async () => {
+    peopleServer();
+    server.use(
+      http.get(api('/api/v1/backoffice/employees'), ({ request }) =>
+        new URL(request.url).searchParams.get('size') === '100' ? problem(500, 'INTERNAL', 'Internal') : undefined,
+      ),
+    );
+    const { user } = renderApp('/people?tab=utilizadores');
+
+    await user.click(await screen.findByRole('button', { name: 'Nova conta' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Nova conta' });
+
+    expect(await within(dialog).findByText('Não foi possível carregar os empregados.')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Tentar novamente' })).toBeEnabled();
+  });
+
+  it('says the support accounts cannot be read, on the tab and in the grant form', async () => {
+    peopleServer({ session: { ...admin, permissions: ['PERM_SUPPORT_ACCESS_MANAGE'] } });
+    server.use(http.get(api('/api/v1/backoffice/users'), () => problem(403, 'HTTP_403', 'Forbidden')));
+    const { user } = renderApp('/people?tab=suporte');
+
+    expect(await screen.findByText('Sem permissão para ver as contas de suporte.')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: 'Conceder acesso' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Conceder acesso de suporte' });
+
+    expect(await within(dialog).findByText('Sem permissão para ver as contas de suporte.')).toBeInTheDocument();
+  });
+
+  it('offers a support account that sorts after the first page of accounts', async () => {
+    const others = Array.from({ length: 24 }, (_, i) =>
+      account(`a3000000-0000-4000-8000-0000000000${String(i).padStart(2, '0')}`, `conta.${String(i).padStart(2, '0')}`),
+    );
+    const late = account('a3000000-0000-4000-8000-000000000099', 'zz.suporte', { support: true });
+    peopleServer();
+    server.use(
+      http.get(api('/api/v1/backoffice/users'), ({ request }) => {
+        const query = new URL(request.url).searchParams;
+        const size = Number(query.get('size'));
+        const all = [...others, late];
+        return HttpResponse.json(page(all.slice(0, size), 0, size, all.length));
+      }),
+    );
+    const { user } = renderApp('/people?tab=suporte');
+
+    await user.click(await screen.findByRole('button', { name: 'Conceder acesso' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Conceder acesso de suporte' });
+
+    await user.selectOptions(await within(dialog).findByLabelText('Conta de suporte'), 'zz.suporte');
+    expect(within(dialog).getByLabelText('Conta de suporte')).toHaveValue(late.id);
   });
 });
 

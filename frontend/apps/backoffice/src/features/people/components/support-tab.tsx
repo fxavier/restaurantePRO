@@ -22,6 +22,7 @@ import { useSupportAccounts } from '../hooks/use-choices';
 import { useSupportGrants } from '../hooks/use-people-queries';
 import { useDisplayTimeZone } from '../hooks/use-time-zone';
 import type { SupportGrantSummary } from '../types';
+import { ChoicesError } from './choices-error';
 import { CommandError } from './command-error';
 import { FormDialog } from './form-dialog';
 import { GrantForm } from './grant-form';
@@ -38,7 +39,8 @@ type Revocation = { grantId: string; idempotencyKey: string };
 export function SupportTab() {
   const [page, setPage] = useState(0);
   const grants = useSupportGrants(page);
-  const { supportAccounts, usernameOf } = useSupportAccounts();
+  const supportAccounts = useSupportAccounts();
+  const usernameOf = supportAccounts.nameOf;
   const timeZone = useDisplayTimeZone();
   const revoke = useRevokeSupport();
   const stepUp = usePeopleStepUp();
@@ -51,6 +53,7 @@ export function SupportTab() {
   return (
     <div className="flex flex-col gap-4">
       <CommandError error={revoke.error} pending={revoke.isPending} onRetry={() => revoke.variables && revokeOne(revoke.variables)} />
+      <ChoicesError list={supportAccounts} />
       <ListCard
         title="Acessos de suporte"
         description="O suporte só entra na empresa durante um acesso concedido aqui, por no máximo 24 horas."

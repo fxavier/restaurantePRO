@@ -57,6 +57,9 @@ export const useStoreChoices = () =>
   useWholeList<StoreSummary>(['store-choices'], async (api) => (await api.GET('/api/v1/backoffice/stores', { params: { query: CHOICES } })).data?.content);
 export const useEmployeeChoices = () =>
   useWholeList<EmployeeSummary>(['employee-choices'], async (api) => (await api.GET('/api/v1/backoffice/employees', { params: { query: CHOICES } })).data?.content);
+/** All the accounts, not the tab's page: the support accounts among them, and the usernames grants name by id. */
+export const useAccountChoices = () =>
+  useWholeList<UserSummary>(['account-choices'], async (api) => (await api.GET('/api/v1/backoffice/users', { params: { query: CHOICES } })).data?.content);
 
 /** The stores where an employee holds a role, each with that role (`EmployeeStoreAssignment`). */
 export const useAssignments = (employeeId: string) =>
