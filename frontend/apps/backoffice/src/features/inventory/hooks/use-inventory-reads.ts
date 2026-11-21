@@ -2,6 +2,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useApi } from '../../../lib/api';
 import type {
   BelowMinimumReport,
+  CountView,
   PurchaseOrderView,
   ReceiptView,
   RecipeView,
@@ -9,6 +10,7 @@ import type {
   StockRow,
   StoreSummary,
   SupplierView,
+  TransferView,
   ValuationReport,
   WarehouseView,
 } from '../types';
@@ -118,7 +120,27 @@ export function useRecipes(page = 0) {
   });
 }
 
-export type StockPage ={ rows: StockRow[]; page: number; totalElements: number };
+export function useTransfers(storeId: string, page = 0) {
+  const api = useApi();
+  return useQuery({
+    queryKey: [...INVENTORY_KEY, 'transfers', storeId, page],
+    queryFn: async (): Promise<ListPage<TransferView>> =>
+      listPage((await api.GET('/api/v1/backoffice/inventory/transfers', { params: { query: { storeId, page, size: LIST_PAGE_SIZE } } })).data),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** One stock count; there is no list of counts in the API, so the screen keeps the open one in `?count=`. */
+export function useCount(countId: string) {
+  const api = useApi();
+  return useQuery({
+    queryKey: [...INVENTORY_KEY, 'count', countId],
+    queryFn: async (): Promise<CountView> =>
+      (await api.GET('/api/v1/backoffice/inventory/counts/{id}', { params: { path: { id: countId } } })).data!,
+  });
+}
+
+export type StockPage = { rows: StockRow[]; page: number; totalElements: number };
 
 /** One page of a warehouse's stock, optionally only what is below its minimum. */
 export function useStock(warehouseId: string | undefined, belowMinimum: boolean, page: number) {
