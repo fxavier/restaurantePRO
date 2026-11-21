@@ -36,7 +36,11 @@ export function useFormCommand<Values extends FieldValues, Body, Variables>({
     const current = nextIntent(intent, body, () => crypto.randomUUID());
     setIntent(current);
     mutation.mutate(toVariables(current), {
-      onSuccess: onDone,
+      onSuccess: () => {
+        // A success ends the intent: a later submit, even of the same body, is a new one.
+        setIntent(undefined);
+        onDone();
+      },
       onError: (error) => {
         const found = fieldErrors(error, fields, toFormField);
         if (!found) return;

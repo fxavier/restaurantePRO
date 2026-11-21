@@ -67,10 +67,16 @@ function NewCount({ storeId, onCreated }: { storeId: string; onCreated: (id: str
   const create = useCreateCount();
   const [warehouseId, setWarehouseId] = useState('');
   const [intent, setIntent] = useState<Intent<CountRequest>>();
+  // The intent outlives a failure (so "Tentar novamente" resends its key) but not a success: the next click is a new count.
   const send = (body: CountRequest) => {
     const current = nextIntent(intent, body, () => crypto.randomUUID());
     setIntent(current);
-    create.mutate(current, { onSuccess: (count) => count.id && onCreated(count.id) });
+    create.mutate(current, {
+      onSuccess: (count) => {
+        setIntent(undefined);
+        if (count.id) onCreated(count.id);
+      },
+    });
   };
   return (
     <Card className="gap-4">

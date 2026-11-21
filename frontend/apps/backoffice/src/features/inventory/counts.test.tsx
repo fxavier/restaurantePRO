@@ -91,6 +91,24 @@ describe('stock counts', () => {
     expect(new Set(commands(state).filter((c) => c.method === 'POST').map((c) => c.idempotencyKey)).size).toBe(4);
   });
 
+  it('sends a new Idempotency-Key for a second count of the same warehouse', async () => {
+    const state = inventoryServer();
+    countServer();
+    const { user, currentUrl } = renderApp(`${INVENTORY}&tab=contagens`);
+
+    const warehouse = await screen.findByRole('combobox', { name: 'Armazém a contar' });
+    await within(warehouse).findByRole('option', { name: cozinha.name });
+    await user.selectOptions(warehouse, cozinha.name);
+    await user.click(screen.getByRole('button', { name: 'Nova contagem' }));
+    await waitFor(() => expect(currentUrl()).toContain(`count=${COUNT_ID}`));
+    await user.click(screen.getByRole('button', { name: 'Nova contagem' }));
+
+    await waitFor(() => expect(commands(state).filter((c) => c.path === `${BASE}/counts`)).toHaveLength(2));
+    const [first, second] = commands(state).filter((c) => c.path === `${BASE}/counts`);
+    expect(first!.body).toEqual(second!.body);
+    expect(second!.idempotencyKey).not.toBe(first!.idempotencyKey);
+  });
+
   it('explains that a warehouse already has a live count', async () => {
     inventoryServer();
     server.use(
