@@ -12,6 +12,7 @@ import { type FormEvent, useState } from 'react';
 import { useEmployee } from '../../../lib/auth/use-employee';
 import { useCommandsBlocked } from '../../../lib/live/use-connection';
 import { deliveryOrder, type DeliveryDraft, intentState, mayRunDeliveries } from '../delivery';
+import { useCreateCustomer } from '../hooks/use-customers';
 import { useOpenOrder } from '../hooks/use-open-order';
 import { ORDER_UNSETTLED } from '../messages';
 import { type Choice, ChoiceGroup } from './choice-group';
@@ -38,10 +39,14 @@ type Props = { onClose: () => void; onOpened: (orderId: string) => void };
 export function NewOrderDialog({ onClose, onOpened }: Props) {
   const offered = useOfferedChannels();
   const { channel, setChannel, draft, setDraft, blocked, open, awaitingRetry, locked, ready, submit } = useNewOrder(onOpened);
-  const [customerUnsettled, setCustomerUnsettled] = useState(false);
+  // Owned here, not by the picker: whether its "Criar cliente" is unsettled decides what this dialog allows, in the
+  // same render that offers its "Tentar novamente".
+  const createCustomer = useCreateCustomer({
+    onCreated: (customerId) => setDraft((current) => ({ ...current, customerId, address: undefined })),
+  });
   const delivery = channel === 'DELIVERY';
   // An intent without an answer may already have happened: closing, or leaving the delivery, would lose its key (FC §8).
-  const held = locked || customerUnsettled;
+  const held = locked || intentState(createCustomer).awaitingRetry;
 
   return (
     <Dialog open onOpenChange={(next) => !next && !held && onClose()}>
@@ -57,7 +62,7 @@ export function NewOrderDialog({ onClose, onOpened }: Props) {
               {delivery && <PromiseField draft={draft} onChange={setDraft} disabled={locked} />}
             </div>
             {delivery ? (
-              <DeliveryFields draft={draft} onChange={setDraft} disabled={locked} onCustomerUnsettledChange={setCustomerUnsettled} />
+              <DeliveryFields draft={draft} onChange={setDraft} disabled={locked} createCustomer={createCustomer} />
             ) : (
               <TakeawayNote />
             )}
