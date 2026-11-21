@@ -88,4 +88,42 @@ describe('cash movements', () => {
     expect(recorded[1]!.idempotencyKey).toBe(recorded[0]!.idempotencyKey);
     await waitFor(() => expect(lastMovement()).toHaveTextContent(/Entrada de numerário registada: 10,00\sMTn/));
   });
+
+  it('with no answer, the movement cannot be dropped: Cancelar and Escape keep it, so a retry reuses its key', async () => {
+    const recorded = movementEndpoint(
+      () => HttpResponse.error(),
+      json(movement({ type: 'CASH_OUT', amount: { amount: '200.00', currency: 'MZN' } }), 201),
+    );
+    const { user } = await atCash();
+
+    const dialog = await startMovement(user, 'Saída de numerário');
+    await user.type(within(dialog).getByLabelText('Valor (MZN)'), '200');
+    await user.type(within(dialog).getByLabelText('Motivo'), 'Cofre');
+    await user.click(within(dialog).getByRole('button', { name: 'Registar' }));
+    await within(dialog).findByRole('alert');
+
+    // The server may already hold it: dropping the intent would make the next "Registar" a second withdrawal.
+    expect(within(dialog).getByRole('button', { name: 'Cancelar' })).toBeDisabled();
+    await user.keyboard('{Escape}');
+    expect(screen.getByRole('dialog', { name: 'Saída de numerário' })).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Tentar novamente' }));
+    await waitFor(() => expect(lastMovement()).toHaveTextContent(/Saída de numerário registada: 200,00\sMTn/));
+    expect(recorded).toHaveLength(2);
+    expect(recorded[1]!.idempotencyKey).toBe(recorded[0]!.idempotencyKey);
+  });
+
+  it('after a definitive refusal, Cancelar closes the dialog', async () => {
+    movementEndpoint(() => problem(422, 'INVALID_AMOUNT'));
+    const { user } = await atCash();
+
+    const dialog = await startMovement(user, 'Entrada de numerário');
+    await user.type(within(dialog).getByLabelText('Valor (MZN)'), '10');
+    await user.type(within(dialog).getByLabelText('Motivo'), 'Fundo');
+    await user.click(within(dialog).getByRole('button', { name: 'Registar' }));
+    await within(dialog).findByRole('alert');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
 });
