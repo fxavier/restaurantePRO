@@ -16,6 +16,7 @@ export type UserCreateRequest = Dto<'UserCreateRequest'>;
 export type UserUpdateRequest = Dto<'UserUpdateRequest'>;
 export type SupportGrantSummary = Dto<'SupportGrantSummary'>;
 export type SupportGrantRequest = Dto<'SupportGrantRequest'>;
+export type PermissionView = Dto<'PermissionView'>;
 export type StoreSummary = Schemas['com.xavier.backend.organization.model.dto.StoreSummary'];
 
 /** One of the backend's `access.Permission` names, as the role contract lists them. */

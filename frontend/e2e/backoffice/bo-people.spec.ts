@@ -2,7 +2,8 @@ import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { expectNoAxeViolations } from '../axe';
 
 // The people screen of the built BackOffice, its API stood in by page.route (the preview has no BFF): the employees
-// tab, the new-employee dialog, the PIN reset's step-up hop back to this tab, and the roles tab, with axe on each.
+// tab, the new-employee dialog, the PIN reset's step-up hop back to this tab, the roles tab and a role's permission
+// matrix, with axe on each.
 // With E2E_SCREENS set, screenshots at 1440 and 390 wide go to SCREENSHOT_DIR (or the test's output folder).
 
 const TENANT = 'aaaaaaaa-0000-4000-8000-000000000001';
@@ -26,6 +27,15 @@ const employees = [
   { id: 'e1000000-0000-4000-8000-000000000003', code: 'EMP-11', name: 'Rui Bila', active: false, locked: false, version: 0 },
 ];
 const PIN = '908172';
+/** `GET /backoffice/permissions` (`PermissionView`): a few areas, one permission sensitive. */
+const catalogue = [
+  { name: 'ORDER_VIEW', sensitive: false, area: 'ORDER' },
+  { name: 'ORDER_EDIT', sensitive: false, area: 'ORDER' },
+  { name: 'ORDER_VOID_APPROVE', sensitive: true, area: 'ORDER' },
+  { name: 'CASH_VIEW', sensitive: false, area: 'CASH' },
+  { name: 'CASH_DAY_REOPEN', sensitive: true, area: 'CASH' },
+  { name: 'PRODUCTION_VIEW', sensitive: false, area: 'PRODUCTION' },
+];
 
 const page0 = <T>(content: T[]) => ({ json: { content, page: 0, size: 20, totalElements: content.length } });
 
@@ -39,6 +49,7 @@ async function standIn(page: Page) {
   await page.route('**/api/v1/backoffice/employees?**', (route) => route.fulfill(page0(employees)));
   await page.route('**/api/v1/backoffice/roles?**', (route) => route.fulfill(page0(roles)));
   await page.route('**/api/v1/backoffice/users?**', (route) => route.fulfill(page0([])));
+  await page.route('**/api/v1/backoffice/permissions', (route) => route.fulfill({ json: catalogue }));
   // The PIN reset meets a stale second factor.
   await page.route('**/api/v1/backoffice/employees/*/reset-pin', (route) => {
     pinBodies.push(route.request().postData() ?? '');
@@ -90,6 +101,35 @@ test('people: employees, the new-employee dialog and the roles tab pass axe', as
   await expect(page.getByRole('table', { name: 'Funções' }).getByRole('row')).toHaveCount(3);
   await expectNoAxeViolations(page);
   await screens(page, testInfo, 'people-roles');
+});
+
+test("people: a role's permission matrix, grouped by area with the sensitive ones marked, passes axe and saves", async ({
+  page,
+}, testInfo) => {
+  await standIn(page);
+  const puts: unknown[] = [];
+  await page.route('**/api/v1/backoffice/roles/*', (route) => {
+    puts.push(route.request().postDataJSON());
+    return route.fulfill({ json: { ...roles[0], permissions: ['ORDER_VOID_APPROVE', 'CASH_VIEW', 'PRODUCTION_VIEW'], version: 4 } });
+  });
+
+  await page.goto('/people?tab=funcoes');
+  await page.getByRole('button', { name: 'Editar Gerente' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Editar a função Gerente' });
+  const orders = dialog.getByRole('group', { name: 'Pedidos' });
+  await expect(orders.getByRole('switch', { name: 'ORDER_VOID_APPROVE' })).toBeChecked();
+  await expect(orders.getByRole('switch', { name: 'ORDER_VOID_APPROVE' })).toHaveAccessibleDescription(
+    'Sensível Usá-la exige confirmar a identidade com o segundo fator.',
+  );
+  await expect(orders.getByText('1 / 3')).toBeVisible();
+  await expectNoAxeViolations(page);
+  await screens(page, testInfo, 'people-role-matrix');
+
+  await dialog.getByRole('group', { name: 'Produção' }).getByRole('switch', { name: 'PRODUCTION_VIEW' }).click();
+  await expect(dialog.getByRole('switch', { name: 'PRODUCTION_VIEW' })).toBeChecked();
+  await dialog.getByRole('button', { name: 'Guardar' }).click();
+  await expect(dialog).toBeHidden();
+  expect(puts).toEqual([{ name: 'Gerente', permissions: ['ORDER_VOID_APPROVE', 'CASH_VIEW', 'PRODUCTION_VIEW'], version: 3 }]);
 });
 
 test('people: a PIN reset that needs a fresh second factor hops to the step-up and back to this tab, keeping no PIN', async ({

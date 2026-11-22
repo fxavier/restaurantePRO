@@ -1,16 +1,8 @@
 import { z } from 'zod';
 import type { Permission, SupportGrantRequest } from './types';
 
+/** A permission name as the contract lists them ("PRODUCTION_VIEW"); the catalogue the matrix offers holds only these. */
 const PERMISSION_NAME = /^[A-Z][A-Z_]*$/;
-
-/**
- * A permission name as typed ("production_view") in the form the contract lists them ("PRODUCTION_VIEW"); undefined
- * when it cannot be one. Whether the name exists is the server's answer: there is no permission catalogue endpoint.
- */
-export function permissionName(input: string): string | undefined {
-  const name = input.trim().toUpperCase();
-  return PERMISSION_NAME.test(name) ? name : undefined;
-}
 
 const permission = z.custom<Permission>((value) => typeof value === 'string' && PERMISSION_NAME.test(value));
 
