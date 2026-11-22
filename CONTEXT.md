@@ -67,6 +67,7 @@ Canonical terms from spec §8.1. Code uses the English name; the Portuguese term
 | TerminalPrinter | Impressora do terminal | production | Terminal → printer for subtotals and documents. Insert-only: reassigning a terminal elsewhere is refused. |
 | ProductionTicket | Talão de produção | production | A fact: the logical ticket per source (BATCH, VOID, SUBTOTAL, DOCUMENT, TEST) × destination. Unique on that key, so a redelivered event makes no second ticket. |
 | PrintJob | Trabalho de impressão | production | One physical delivery attempt: QUEUED → PROCESSING → SENT, RETRY_WAIT, FAILED or UNKNOWN. A retry is a new job. SENT means the bytes were written, not that paper came out. |
+| Kitchen progress | Estado na cozinha (KDS) | production | A round's state on the kitchen display, beside its append-only ticket: QUEUED → IN_PREPARATION → READY → BUMPED (taken off the screen), recall one step back; each step keeps its time and employee (ADR 0044). Not inventory's Preparation. |
 | Suppression | Supressão | production | A ticket created with `suppressed = true` and no job, because its printer is IGNORE. Visible, not a failure. |
 | Copy | Cópia | production, fiscal | A reprint of a ticket or document: a new job of kind COPY, printed with "CÓPIA". Never a new document, payment or movement. |
 | CashRegister | Caixa (registadora) | cash | A store's cash drawer. At most one OPEN session per register. |

@@ -133,9 +133,10 @@ public class ProductionTicket {
         return jobKind == JobKind.COPY && sourceType != TicketSource.DOCUMENT;
     }
 
-    public TicketView toView() {
+    /** @param kitchen the round's kitchen progress (ADR 0044), or {@code null} when the ticket has none */
+    public TicketView toView(KitchenProgress kitchen) {
         return new TicketView(id, storeId, sourceType, sourceId, destination, kind, orderId, terminalId, routing,
-                printerId, suppressed, lines(), createdAt);
+                printerId, suppressed, lines(), createdAt, kitchen == null ? null : kitchen.toView());
     }
 
     public UUID getId() {

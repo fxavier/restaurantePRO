@@ -175,7 +175,7 @@ class ProductionTenantIsolationTest {
     void anUnboundReadFailsClosed() {
         try (AppRoleSession app = AppRoleSession.open().noTenant().allStores()) {
             for (String table : List.of("printer", "destination_route", "terminal_printer", "production_ticket",
-                    "print_job")) {
+                    "print_job", "kitchen_progress")) {
                 AppRoleSession.assertRefused(() -> app.jdbc().sql("SELECT count(*) FROM production." + table)
                         .query(Long.class).single(), StoreScopeViolations.Kind.TENANT_MISSING);
             }

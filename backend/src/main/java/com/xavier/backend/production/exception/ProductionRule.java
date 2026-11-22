@@ -25,5 +25,7 @@ public enum ProductionRule {
     /** The terminal's receipt printer has no cash drawer ({@code drawer_pin} unset, D158). */
     NO_CASH_DRAWER,
     /** A drawer kick is never retried or reprinted; the manual open command is the only repeat (D158). */
-    KICK_NOT_REPEATABLE
+    KICK_NOT_REPEATABLE,
+    /** Only a round (a BATCH ticket) is prepared on the kitchen display (ADR 0044). */
+    NOT_KITCHEN_WORK
 }

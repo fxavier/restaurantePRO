@@ -11,5 +11,7 @@ public enum ChangeTopic {
     /** Print jobs of the store (failures, retries). */
     PRINT_JOBS,
     /** One payment attempt; the notice id is the attempt id. */
-    PAYMENT_ATTEMPT
+    PAYMENT_ATTEMPT,
+    /** One production ticket on the kitchen display (queued or moved, ADR 0044); the notice id is the ticket id. */
+    PRODUCTION_TICKETS
 }

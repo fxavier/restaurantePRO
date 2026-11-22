@@ -34,6 +34,12 @@ public class ProductionConflictException extends ConflictException {
                 "Production ticket " + ticketId + " is already routed");
     }
 
+    /** A kitchen display command its round's status does not allow (ADR 0044). */
+    public static ProductionConflictException illegalKitchenState(UUID ticketId, Object status, String command) {
+        return new ProductionConflictException("ILLEGAL_KITCHEN_STATE",
+                "Production ticket " + ticketId + " cannot " + command + " while " + status);
+    }
+
     /** {@code production_ticket_source_uk} lost to a concurrent delivery of the same source. */
     public static ProductionConflictException ticketExists(Object sourceType, Object sourceId) {
         return new ProductionConflictException("TICKET_EXISTS",

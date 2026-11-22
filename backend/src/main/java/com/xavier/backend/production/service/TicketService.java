@@ -63,11 +63,13 @@ public class TicketService {
     private final ProductionMetrics metrics;
     private final AuditLog auditLog;
     private final ChangeNotifier notifier;
+    private final KitchenDisplayService kitchen;
     private final Clock clock;
 
     TicketService(ProductionTicketRepository tickets, PrintJobRepository jobs, PrinterRepository printers,
                   RoutingService routing, OrganizationApi organization, OrdersProductionApi orders,
-                  ProductionMetrics metrics, AuditLog auditLog, ChangeNotifier notifier, Clock clock) {
+                  ProductionMetrics metrics, AuditLog auditLog, ChangeNotifier notifier,
+                  KitchenDisplayService kitchen, Clock clock) {
         this.tickets = tickets;
         this.jobs = jobs;
         this.printers = printers;
@@ -77,6 +79,7 @@ public class TicketService {
         this.metrics = metrics;
         this.auditLog = auditLog;
         this.notifier = notifier;
+        this.kitchen = kitchen;
         this.clock = clock;
     }
 
@@ -285,10 +288,13 @@ public class TicketService {
         return job;
     }
 
+    /** A round also joins its station's kitchen display queue, printed or not (ADR 0044). */
     private ProductionTicket save(ProductionTicket ticket) {
-        return UniqueConstraints.saveAndFlush(tickets, ticket,
+        ProductionTicket saved = UniqueConstraints.saveAndFlush(tickets, ticket,
                 () -> ProductionConflictException.ticketExists(ticket.getSourceType(), ticket.getSourceId()),
                 "production_ticket_source_uk");
+        kitchen.queue(saved);
+        return saved;
     }
 
     private java.time.ZoneId zone(UUID storeId) {
