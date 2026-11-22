@@ -12,32 +12,34 @@ type OrdersCardProps = {
 } & Omit<ComponentProps<typeof OrdersTable>, 'orders'>;
 
 /** The orders found, a page at a time, with the count the server gives and the list's loading, empty and failure states. */
-export function OrdersCard({ orders, page, onPage, ...table }: OrdersCardProps) {
-  const data = orders.data;
+export function OrdersCard(props: OrdersCardProps) {
+  const total = props.orders.data?.totalElements;
   return (
     <Card className="gap-4">
       <CardHeader className="flex items-center justify-between gap-2">
         <CardTitle className="text-lg">Pedidos encontrados</CardTitle>
-        {data && <span className="text-sm text-muted-foreground tabular-nums">{data.totalElements} pedidos</span>}
+        {total !== undefined && <span className="text-sm text-muted-foreground tabular-nums">{total} pedidos</span>}
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        {orders.isError ? (
-          <ReadFailure
-            error={orders.error}
-            forbidden="Sem permissão para ver os pedidos desta loja."
-            onRetry={() => void orders.refetch()}
-          />
-        ) : (
-          <DataState
-            state={orders.isPending ? 'loading' : data?.orders.length ? 'ready' : 'empty'}
-            emptyMessage="Nenhum pedido corresponde à pesquisa."
-          >
-            <OrdersTable orders={data?.orders ?? []} {...table} />
-            <Pager page={page} pages={Math.ceil((data?.totalElements ?? 0) / ORDERS_PAGE_SIZE)} onPage={onPage} />
-          </DataState>
-        )}
+        <OrdersList {...props} />
       </CardContent>
     </Card>
+  );
+}
+
+function OrdersList({ orders, page, onPage, ...table }: OrdersCardProps) {
+  if (orders.isError) {
+    return (
+      <ReadFailure error={orders.error} forbidden="Sem permissão para ver os pedidos desta loja." onRetry={() => void orders.refetch()} />
+    );
+  }
+  const data = orders.data ?? { orders: [], totalElements: 0 };
+  const state = orders.isPending ? 'loading' : data.orders.length ? 'ready' : 'empty';
+  return (
+    <DataState state={state} emptyMessage="Nenhum pedido corresponde à pesquisa.">
+      <OrdersTable orders={data.orders} {...table} />
+      <Pager page={page} pages={Math.ceil(data.totalElements / ORDERS_PAGE_SIZE)} onPage={onPage} />
+    </DataState>
   );
 }
 
