@@ -23,6 +23,7 @@ const session = {
     'PERM_FISCAL_MANAGE',
     'PERM_PAYMENT_METHOD_MANAGE',
     'PERM_AUDIT_VIEW',
+    'PERM_EMPLOYEE_MANAGE',
   ],
   tenantId: TENANT,
   tenantName: 'Restaurante A, Lda',
@@ -57,6 +58,18 @@ const reconciliation = [
   { cashDayId: DAY, businessDate: '2026-11-19', dayStatus: 'OPERATIONALLY_CLOSED', dayRound: 1, registerId: REGISTER, closingId: CLOSING,
     closingStatus: 'SUBMITTED', methodCode: 'CASH', expected: mzn('590.50'), counted: mzn('590.50'), adjustments: mzn('0.00'), difference: mzn('0.00') },
 ];
+const OPERATOR = '0e0e0000-0000-4000-8000-000000000001';
+const cashSession = (id: string, extra: { status: string } & Record<string, unknown>) => ({
+  id, storeId: STORE, registerId: REGISTER, registerCode: 'CX1', cashDayId: DAY, businessDate: '2026-11-19',
+  operatorEmployeeId: OPERATOR, openingFloat: mzn('150.00'), openedAt: '2026-11-19T09:30:00Z', ...extra,
+});
+const cashSessions = [
+  cashSession('5e550000-0000-4000-8000-000000000002', { status: 'OPEN', closedAt: null, closedByEmployeeId: null, closeKind: null, counted: [] }),
+  cashSession('5e550000-0000-4000-8000-000000000001', {
+    status: 'CLOSED', closedAt: '2026-11-19T12:38:00Z', closedByEmployeeId: OPERATOR, closeKind: 'FORCED',
+    counted: [{ methodCode: 'CASH', amount: mzn('590.50') }, { methodCode: 'CARD', amount: mzn('1200.00') }],
+  }),
+];
 const FINANCE = `/finance?storeId=${STORE}`;
 
 async function standIn(page: Page) {
@@ -82,6 +95,13 @@ async function standIn(page: Page) {
     route.fulfill({ json: page1([{ id: REGISTER, storeId: STORE, code: 'CX1', name: 'Caixa principal', active: true, version: 0 }]) }),
   );
   await page.route('**/api/v1/backoffice/cash/reconciliation?**', (route) => route.fulfill({ json: reconciliation }));
+  await page.route('**/api/v1/backoffice/cash/sessions?**', (route) => {
+    const status = new URL(route.request().url()).searchParams.get('status');
+    return route.fulfill({ json: page1(cashSessions.filter((row) => !status || row.status === status)) });
+  });
+  await page.route('**/api/v1/backoffice/employees?**', (route) =>
+    route.fulfill({ json: page1([{ id: OPERATOR, code: 'E01', name: 'Carlos Silva', active: true, locked: false, version: 0 }]) }),
+  );
   // Approving meets a stale second factor: the hop to the BFF's step-up keeps the command.
   await page.route('**/api/v1/backoffice/cash/closings/*/approve', (route) => {
     approvals.push(route.request().headers()['idempotency-key'] ?? null);
@@ -117,6 +137,25 @@ test('finance summary: KPIs and the per-day table from the server, axe clean', a
   await expect(page.getByRole('table', { name: 'Vendas por dia' }).getByRole('row')).toHaveCount(3);
   await expectNoAxeViolations(page);
   await screens(page, testInfo, 'finance-summary');
+});
+
+test('cash sessions: the operator, the float and the blind count, filtered by state, axe clean', async ({ page }, testInfo) => {
+  await standIn(page);
+  await page.goto(`${FINANCE}&tab=sessoes`);
+
+  const table = page.getByRole('table', { name: 'Sessões de caixa' });
+  await expect(table.getByRole('row')).toHaveCount(3);
+  const closed = table.getByRole('row', { name: /Fechada/ });
+  await expect(closed).toContainText('Carlos Silva');
+  await expect(closed).toContainText('Forçado pela gerência');
+  await expect(closed).toContainText('CARD');
+  await expectNoAxeViolations(page);
+  await screens(page, testInfo, 'finance-sessions');
+
+  await page.getByLabel('Estado das sessões').selectOption('OPEN');
+  await expect(table.getByRole('row')).toHaveCount(2);
+  await expect(table.getByRole('row', { name: /Aberta/ })).toBeVisible();
+  await expectNoAxeViolations(page);
 });
 
 test('closings: the lines, the reject and reopen dialogs, and an approval that steps up, axe clean', async ({ page }, testInfo) => {

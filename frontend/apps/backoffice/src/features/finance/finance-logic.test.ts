@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PendingCommand } from '../../lib/step-up';
 import { commandLabel, financePath, fromPendingCommand, holds, toPendingCommand, type FinanceCommand } from './finance-commands';
-import { cashDays, closingStatuses, dayStatuses, registerName } from './finance-labels';
+import { cashDays, closeKindLabel, closingStatuses, dayStatuses, nameById } from './finance-labels';
 import { formatBusinessDate, formatInstant } from './format';
 import { dates, instants, lastDays, offsetOn, storeToday } from './period';
 
@@ -98,10 +98,16 @@ describe('cash days', () => {
 
   it("names a register by the store's registers, or by its id until they are read", () => {
     const registers = [{ id: 'r1', name: 'Caixa principal' }, { id: 'r2', name: 'Bar' }];
-    expect(registerName(registers, 'r2')).toBe('Bar');
-    expect(registerName(registers, 'r3')).toBe('r3');
-    expect(registerName(undefined, 'r1')).toBe('r1');
-    expect(registerName(registers, undefined)).toBe('');
+    expect(nameById(registers, 'r2')).toBe('Bar');
+    expect(nameById(registers, 'r3')).toBe('r3');
+    expect(nameById(undefined, 'r1')).toBe('r1');
+    expect(nameById(registers, undefined)).toBe('');
+  });
+
+  it('says how a session was closed, nothing while it is open, and an unknown kind as the server named it', () => {
+    expect(closeKindLabel('FORCED')).toBe('Forçado pela gerência');
+    expect(closeKindLabel(null)).toBe('—');
+    expect(closeKindLabel('AUTO')).toBe('AUTO');
   });
 
   it('labels known states and shows an unknown one as the server named it', () => {
