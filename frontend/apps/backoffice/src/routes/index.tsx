@@ -8,6 +8,7 @@ import { DiningPage } from './dining-page';
 import { FinancePage } from './finance-page';
 import { InventoryPage } from './inventory-page';
 import { NotFoundPage } from './not-found-page';
+import { OrdersPage } from './orders-page';
 import { OverviewPage } from './overview-page';
 import { PeoplePage } from './people-page';
 import { ProductionPage } from './production-page';
@@ -31,6 +32,7 @@ export const routes: RouteObject[] = [
       { path: 'production', element: <ProductionPage /> },
       { path: 'inventory', element: <InventoryPage /> },
       { path: 'customers', element: <CustomersPage /> },
+      { path: 'orders', element: <OrdersPage /> },
       { path: 'finance', element: <FinancePage /> },
       { path: 'people', element: <PeoplePage /> },
       { path: 'delivery/zones', element: <DeliveryZonesPage /> },
