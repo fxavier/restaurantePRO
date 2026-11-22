@@ -9,9 +9,10 @@ import java.util.UUID;
 
 /**
  * A production ticket and its printout; {@code suppressed} when its printer was in IGNORE (no job). An UNROUTED
- * ticket has no {@code printerId} and no job yet (D89 (1)).
+ * ticket has no {@code printerId} and no job yet (D89 (1)). {@code kitchen} is a round's progress on the kitchen
+ * display (ADR 0044), {@code null} for any other ticket.
  */
 public record TicketView(UUID id, UUID storeId, TicketSource sourceType, UUID sourceId, String destination,
                          JobKind kind, UUID orderId, UUID terminalId, TicketRouting routing, UUID printerId,
-                         boolean suppressed, List<String> lines, Instant createdAt) {
+                         boolean suppressed, List<String> lines, Instant createdAt, KitchenProgressView kitchen) {
 }

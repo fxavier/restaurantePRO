@@ -5,16 +5,20 @@ import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.PosContext;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.production.exception.ProductionNotFoundException;
+import com.xavier.backend.production.model.KitchenProgress;
 import com.xavier.backend.production.model.PrintJob;
 import com.xavier.backend.production.model.ProductionTicket;
 import com.xavier.backend.production.model.TicketRouting;
 import com.xavier.backend.production.model.dto.PrintJobView;
 import com.xavier.backend.production.model.dto.TicketView;
+import com.xavier.backend.production.repository.KitchenProgressRepository;
 import com.xavier.backend.production.repository.ProductionTicketRepository;
 import com.xavier.backend.shared.persistence.StoreProbe;
 import com.xavier.backend.shared.web.PageResponse;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -30,14 +34,17 @@ import org.springframework.transaction.annotation.Transactional;
 public class ProductionTicketService {
 
     private final ProductionTicketRepository tickets;
+    private final KitchenProgressRepository progresses;
     private final TicketService ticketService;
     private final AccessPolicy accessPolicy;
     private final StoreProbe probe;
     private final AuditLog auditLog;
 
-    ProductionTicketService(ProductionTicketRepository tickets, TicketService ticketService,
-                            AccessPolicy accessPolicy, StoreProbe probe, AuditLog auditLog) {
+    ProductionTicketService(ProductionTicketRepository tickets, KitchenProgressRepository progresses,
+                            TicketService ticketService, AccessPolicy accessPolicy, StoreProbe probe,
+                            AuditLog auditLog) {
         this.tickets = tickets;
+        this.progresses = progresses;
         this.ticketService = ticketService;
         this.accessPolicy = accessPolicy;
         this.probe = probe;
@@ -81,7 +88,9 @@ public class ProductionTicketService {
     private PageResponse<TicketView> list(UUID storeId, TicketRouting routing, Pageable pageable) {
         Page<ProductionTicket> page = routing == null ? tickets.findByStoreId(storeId, pageable)
                 : tickets.findByStoreIdAndRouting(storeId, routing, pageable);
-        return PageResponse.from(page.map(ProductionTicket::toView));
+        Map<UUID, KitchenProgress> kitchen = progresses.findAllById(page.map(ProductionTicket::getId).toList())
+                .stream().collect(Collectors.toMap(KitchenProgress::getTicketId, Function.identity()));
+        return PageResponse.from(page.map(ticket -> ticket.toView(kitchen.get(ticket.getId()))));
     }
 
     private UUID ticketStore(UUID ticketId) {

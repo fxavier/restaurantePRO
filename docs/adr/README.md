@@ -47,6 +47,7 @@ Each ADR records a decision as built, with its context and consequences. The ful
 | [0041](0041-frontend-origins-and-pos-delivery.md) | Frontend origins and POS delivery: one origin per app, the POS as a kiosk SPA without a service worker | frontend R1 | Accepted 2026-11-18 |
 | [0042](0042-typed-api-client-from-openapi-snapshot.md) | Typed API client: openapi-typescript and openapi-fetch over a committed OpenAPI snapshot | frontend R1 | Accepted 2026-11-18 |
 | [0043](0043-frontend-ci-and-real-stack-e2e.md) | Frontend CI on GitHub Actions; Playwright end-to-end tests against the real stack | frontend R1 | Accepted 2026-11-18 |
+| [0044](0044-kds-kitchen-progress-of-a-round.md) | Kitchen display: a round's kitchen progress beside its append-only ticket | W3 KDS | Proposed 2026-11-22 |
 
 ## Where the code deviates from a decision text
 

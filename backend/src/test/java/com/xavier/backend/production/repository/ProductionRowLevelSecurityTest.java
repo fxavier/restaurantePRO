@@ -28,8 +28,8 @@ import org.springframework.jdbc.core.simple.JdbcClient;
  */
 class ProductionRowLevelSecurityTest {
 
-    static final List<String> STORE_TABLES = List.of("destination_route", "print_job", "printer",
-            "production_ticket", "terminal_printer");
+    static final List<String> STORE_TABLES = List.of("destination_route", "kitchen_progress", "print_job",
+            "printer", "production_ticket", "terminal_printer");
 
     final UUID storeA = UUID.randomUUID();
     final UUID storeB = UUID.randomUUID();
@@ -82,6 +82,25 @@ class ProductionRowLevelSecurityTest {
         assertThat(jobsSeen(app.stores(storeA, storeB))).containsExactlyInAnyOrder(jobA, jobB);
         assertThat(printersSeen(app.allStores())).containsExactlyInAnyOrder(printerA, printerB);
         assertThat(jobsSeen(app.stores())).as("an explicit empty scope sees nothing, without an error").isEmpty();
+    }
+
+    /** ADR 0044: a KDS of store A neither sees nor queues store B's rounds. */
+    @Test
+    void aStoreScopeSeesAndWritesOnlyItsStoresKitchenProgress() {
+        UUID ticketA = ticket(storeA, printerA);
+        String queue = """
+                INSERT INTO production.kitchen_progress (ticket_id, store_id, destination, status, version, queued_at)
+                VALUES (?, ?, 'BAR', 'QUEUED', 0, now())""";
+        owner.sql(queue).param(ticketA).param(storeA).update();
+        owner.sql(queue).param(ticketB).param(storeB).update();
+        JdbcClient jdbc = app.stores(storeA).jdbc();
+
+        assertThat(jdbc.sql("SELECT ticket_id FROM production.kitchen_progress WHERE ticket_id IN (?, ?)")
+                .param(ticketA).param(ticketB).query(UUID.class).list()).containsExactly(ticketA);
+        assertThat(jdbc.sql("UPDATE production.kitchen_progress SET version = version + 1 WHERE ticket_id = ?")
+                .param(ticketB).update()).as("another store's round is not there to move").isZero();
+        assertRefused(() -> jdbc.sql(queue).param(ticket(storeB, printerB)).param(storeB).update(),
+                Kind.WRITE_REFUSED);
     }
 
     @Test
