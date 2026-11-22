@@ -1,0 +1,137 @@
+import { ApiError, type components } from '@restaurantpro/api-client';
+import type { Employee } from '../../lib/auth/pos-session';
+import { isVersionConflict } from '../../lib/error-messages';
+
+type Schemas = components['schemas'];
+type TicketView = Schemas['com.xavier.backend.production.model.dto.TicketView'];
+export type KitchenStatus = NonNullable<NonNullable<TicketView['kitchen']>['status']>;
+
+/** A line of a round as the kitchen reads it: "2 × Bife", with its note and its menu components under it. */
+export type KitchenItem = { quantity: string; name: string; notes: string[]; components: string[] };
+
+/** A round on its station (ADR 0044), parsed once where the answer comes in. */
+export type KitchenTicket = {
+  id: string;
+  destination: string;
+  status: KitchenStatus;
+  /** Sent back with every command: a stale one is refused with 409. */
+  version: number;
+  queuedAt: string;
+  /** "Mesa 04 - Pedido #4092", "TAKEAWAY #12": the printed header, the only place the contract names the table. */
+  title: string;
+  /** "Ronda 2". */
+  round: string;
+  items: KitchenItem[];
+};
+
+/** What the display works on (ADR 0044); BUMPED is history, read only on demand. */
+export const ACTIVE = ['QUEUED', 'IN_PREPARATION', 'READY'] as const satisfies readonly KitchenStatus[];
+
+/** The board's columns, oldest round first in each. */
+export const COLUMNS = [
+  { status: 'QUEUED', title: 'Na fila' },
+  { status: 'IN_PREPARATION', title: 'Em preparação' },
+  { status: 'READY', title: 'Pronto' },
+] as const satisfies readonly { status: KitchenStatus; title: string }[];
+
+export type KitchenCommand = 'start' | 'ready' | 'bump' | 'recall';
+
+/**
+ * What a round in each state may do next (ADR 0044: recall steps back once), the first being the card's main action;
+ * any other command is refused by the backend, so the card never offers it.
+ */
+export const NEXT = {
+  QUEUED: [{ command: 'start', label: 'Iniciar' }],
+  IN_PREPARATION: [{ command: 'ready', label: 'Marcar pronto' }],
+  READY: [
+    { command: 'bump', label: 'Retirar' },
+    { command: 'recall', label: 'Voltar à preparação' },
+  ],
+  BUMPED: [{ command: 'recall', label: 'Repor' }],
+} as const satisfies Record<KitchenStatus, readonly { command: KitchenCommand; label: string }[]>;
+
+/** A view without its identity, kitchen progress or station is not a round the display can move: it is dropped. */
+export function toKitchenTickets(views: TicketView[] | undefined): KitchenTicket[] {
+  return (views ?? []).flatMap((view) => {
+    const { id, destination, kitchen } = view;
+    if (!id || !destination || !kitchen?.status || kitchen.version === undefined || !kitchen.queuedAt) return [];
+    return [
+      { id, destination, status: kitchen.status, version: kitchen.version, queuedAt: kitchen.queuedAt, ...readLines(view.lines ?? []) },
+    ];
+  });
+}
+
+const RULE = /^-{3,}$/;
+const ITEM = /^(\S+) x (.+)$/;
+const NOTE = /^\s+> (.*)$/;
+const COMPONENT = /^\s+\+ (.*)$/;
+
+/**
+ * A round's printed lines (TicketLayouts.batch): the station, the header, "Ronda n" and the time, a rule, then each
+ * item "q x name", its note "   > …" and its components "   + q x …". A line that reads as none of these is kept as an
+ * item without a quantity, so nothing printed is ever hidden from the cook.
+ */
+export function readLines(lines: string[]): Pick<KitchenTicket, 'title' | 'round' | 'items'> {
+  const rule = lines.findIndex((line) => RULE.test(line));
+  const header = rule < 0 ? lines.slice(0, 1) : lines.slice(0, rule);
+  return {
+    title: header[1] ?? header[0] ?? '',
+    round: header.find((line) => line.startsWith('Ronda ')) ?? '',
+    items: readItems(lines.slice(rule < 0 ? 1 : rule + 1)),
+  };
+}
+
+function readItems(lines: string[]): KitchenItem[] {
+  const items: KitchenItem[] = [];
+  for (const line of lines) {
+    const last = items.at(-1);
+    if (last && attachTo(last, line)) continue;
+    if (line.trim()) items.push(itemOf(line.trim()));
+  }
+  return items;
+}
+
+/** An indented note or component line goes under the item above it. */
+function attachTo(item: KitchenItem, line: string): boolean {
+  const note = NOTE.exec(line);
+  if (note) item.notes.push(note[1]!);
+  const component = COMPONENT.exec(line);
+  if (component) item.components.push(component[1]!);
+  return !!(note ?? component);
+}
+
+function itemOf(line: string): KitchenItem {
+  const item = ITEM.exec(line);
+  return item ? { quantity: item[1]!, name: item[2]!, notes: [], components: [] } : { quantity: '', name: line, notes: [], components: [] };
+}
+
+/**
+ * The stations the rounds name, each with its count, in the order the rounds first name them. The contract has no POS
+ * list of stations, so the display offers the ones with work; `chosen` stays offered when its last round leaves.
+ */
+export function stationsOf(tickets: KitchenTicket[], chosen?: string): { code: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const { destination } of tickets) counts.set(destination, (counts.get(destination) ?? 0) + 1);
+  if (chosen && !counts.has(chosen)) counts.set(chosen, 0);
+  return [...counts].map(([code, count]) => ({ code, count }));
+}
+
+/** Whole minutes a round has waited since it was queued; a terminal clock behind the server's shows 0, not less. */
+export function waitingMinutes(queuedAt: string, now: Date): number {
+  return Math.max(0, Math.floor((now.getTime() - Date.parse(queuedAt)) / 60_000));
+}
+
+/** Whether the session may watch the kitchen display; for showing it only, the backend enforces. */
+export function mayWatchKitchen(employee: Pick<Employee, 'permissions' | 'storeId'> | undefined): boolean {
+  return !!employee?.permissions.includes(`PERM_PRODUCTION_VIEW@${employee.storeId}`);
+}
+
+/** Whether the session may move rounds (start, ready, bump, recall); for showing commands only. */
+export function mayOperateKitchen(employee: Pick<Employee, 'permissions' | 'storeId'> | undefined): boolean {
+  return !!employee?.permissions.includes(`PERM_PRODUCTION_OPERATE@${employee.storeId}`);
+}
+
+/** Refused because the round moved meanwhile: 409 `ILLEGAL_KITCHEN_STATE`, or a stale version. */
+export function isChangedElsewhere(error: unknown): boolean {
+  return isVersionConflict(error) || (error instanceof ApiError && error.code === 'ILLEGAL_KITCHEN_STATE');
+}
