@@ -4,6 +4,7 @@ import { useFinanceTab, type FinanceTab } from '../hooks/use-finance-tab';
 import { useStore } from '../hooks/use-store';
 import { lastDays } from '../period';
 import { AuditTab } from './audit-tab';
+import { CashSessionsTab } from './cash-sessions-tab';
 import { ClosingsTab } from './closings-tab';
 import { FiscalTab } from './fiscal-tab';
 import { PaymentMethodsTab } from './payment-methods-tab';
@@ -16,6 +17,7 @@ import { selectClass } from './styles';
 const TAB_LABELS: Record<FinanceTab, string> = {
   resumo: 'Resumo',
   fechos: 'Fechos',
+  sessoes: 'Sessões de caixa',
   reconciliacao: 'Reconciliação',
   fiscal: 'Fiscal',
   meios: 'Meios de pagamento',
@@ -86,6 +88,9 @@ function FinanceArea({ storeId, timeZone }: { storeId: string; timeZone: string 
         </TabsContent>
         <TabsContent value="fechos">
           <ClosingsTab storeId={storeId} period={period} />
+        </TabsContent>
+        <TabsContent value="sessoes">
+          <CashSessionsTab key={periodKey} storeId={storeId} period={period} />
         </TabsContent>
         <TabsContent value="reconciliacao">
           <ReconciliationTab storeId={storeId} period={period} />

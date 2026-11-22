@@ -11,7 +11,11 @@ export type ReceiptsReport =
 export type ClosingStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED';
 export type ClosingView = Schemas['com.xavier.backend.cash.model.dto.ClosingView'];
 export type ClosingLineView = Schemas['com.xavier.backend.cash.model.dto.ClosingLineView'];
-export type DayView = Schemas['com.xavier.backend.cash.DayView'];
+/** The cash session states the list filters on (spec §8.3). */
+export type CashSessionStatus = 'OPEN' | 'CLOSED';
+export type SessionRow = Schemas['com.xavier.backend.cash.model.dto.SessionRow'];
+export type EmployeeSummary = Schemas['com.xavier.backend.identity.model.dto.EmployeeSummary'];
+export type DayView =Schemas['com.xavier.backend.cash.DayView'];
 export type RegisterSummary = Schemas['com.xavier.backend.cash.model.dto.RegisterSummary'];
 export type ReconciliationLine = Schemas['com.xavier.backend.cash.model.dto.ReconciliationLine'];
 export type InDoubtAttemptView = Schemas['com.xavier.backend.settlement.reconciliation.model.dto.InDoubtAttemptView'];
