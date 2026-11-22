@@ -48,6 +48,11 @@ const MARTA = {
   ],
 };
 
+const COURIERS = [
+  { id: id(1401), code: 'E02', name: 'João Pereira' },
+  { id: id(1402), code: 'E05', name: 'Rita Mabunda' },
+];
+
 async function standIn(page: Page) {
   await standInDevice(page);
   // Ana may run deliveries here (the shared stand-in's session may not).
@@ -62,6 +67,7 @@ async function standIn(page: Page) {
     route.fulfill({ json: [{ id: MARTA.id, name: MARTA.name, active: true, phones: ['841234567'] }] }),
   );
   await page.route(`**/api/v1/pos/customers/${MARTA.id}`, (route) => route.fulfill({ json: MARTA }));
+  await page.route('**/api/v1/pos/couriers', (route) => route.fulfill({ json: COURIERS }));
 }
 
 async function atDelivery(page: Page) {
@@ -90,6 +96,31 @@ test('the dispatch board is accessible, and its commands are touch-sized', async
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024);
   await expectNoAxeViolations(page);
   await screens(page, 'delivery-board');
+});
+
+test('the dispatch dialog is accessible, its couriers touch-sized, and sends the courier picked', async ({ page }) => {
+  await atDelivery(page);
+  const sent: unknown[] = [];
+  await page.route(`**/api/v1/pos/deliveries/${id(1082)}/dispatch`, (route) => {
+    sent.push(route.request().postDataJSON());
+    return route.fulfill({ json: { ...BOARD[0], status: 'OUT_FOR_DELIVERY', version: 1 } });
+  });
+  await page.getByRole('article', { name: 'Entrega n.º 82' }).getByRole('button', { name: 'Expedir' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Expedir a entrega n.º 82' });
+  const rita = dialog.getByRole('radio', { name: /^Rita Mabunda/ });
+  await expect(rita).toBeAttached();
+
+  for (const control of [rita, dialog.getByRole('button', { name: 'Expedir' })]) {
+    const { height } = (await control.boundingBox())!;
+    expect(height).toBeGreaterThanOrEqual(48);
+  }
+  await rita.check();
+  await expectNoAxeViolations(page);
+  await screens(page, 'delivery-dispatch');
+
+  await dialog.getByRole('button', { name: 'Expedir' }).click();
+  await expect(dialog).toBeHidden();
+  expect(sent).toEqual([{ courierEmployeeId: id(1402), version: 0 }]);
 });
 
 test('the new delivery dialog is accessible once filled in', async ({ page }) => {
