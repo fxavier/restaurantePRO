@@ -2,9 +2,7 @@ import {
   Button,
   Money,
   StatusBadge,
-  Table,
   TableBody,
-  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -13,6 +11,7 @@ import {
 import { businessDate, storeTime } from '../format';
 import { lifecycles, modes } from '../labels';
 import type { OrderRow } from '../types';
+import { ScrollTable } from './scroll-table';
 
 type OrdersTableProps = {
   orders: OrderRow[];
@@ -24,8 +23,7 @@ type OrdersTableProps = {
 /** One row per order: number, mode, table, guests, state and day, and what is due, all as the server sends them. */
 export function OrdersTable({ orders, timeZone, selectedId, onSelect }: OrdersTableProps) {
   return (
-    <Table>
-      <TableCaption className="sr-only">Pedidos</TableCaption>
+    <ScrollTable label="Pedidos">
       <TableHeader>
         <TableRow>
           <TableHead>Pedido</TableHead>
@@ -67,6 +65,6 @@ export function OrdersTable({ orders, timeZone, selectedId, onSelect }: OrdersTa
           </TableRow>
         ))}
       </TableBody>
-    </Table>
+    </ScrollTable>
   );
 }

@@ -1,15 +1,15 @@
-import { StatusBadge, Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@restaurantpro/ui';
+import { StatusBadge, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@restaurantpro/ui';
 import { storeTime } from '../format';
 import { roundStatuses } from '../labels';
 import type { BatchView } from '../types';
 import { DetailSection } from './detail-section';
+import { ScrollTable } from './scroll-table';
 
 /** The rounds confirmed with "Pedir": when, whether production has them, and how many lines each carried. */
 export function OrderRounds({ batches, timeZone }: { batches: BatchView[]; timeZone: string | undefined }) {
   return (
     <DetailSection title="Rondas" empty={batches.length ? undefined : 'Nenhuma ronda confirmada.'}>
-      <Table>
-        <TableCaption className="sr-only">Rondas</TableCaption>
+      <ScrollTable label="Rondas">
         <TableHeader>
           <TableRow>
             <TableHead>Ronda</TableHead>
@@ -30,7 +30,7 @@ export function OrderRounds({ batches, timeZone }: { batches: BatchView[]; timeZ
             </TableRow>
           ))}
         </TableBody>
-      </Table>
+      </ScrollTable>
     </DetailSection>
   );
 }

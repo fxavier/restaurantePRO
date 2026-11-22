@@ -1,16 +1,16 @@
-import { Money, Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@restaurantpro/ui';
+import { Money, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@restaurantpro/ui';
 import { lineName, storeTime } from '../format';
 import { adjustmentKind } from '../labels';
 import type { LineView } from '../types';
 import { DetailSection } from './detail-section';
+import { ScrollTable } from './scroll-table';
 
 /** Every discount, offer or reward applied to a line, with its reason, in the order the server recorded them. */
 export function OrderAdjustments({ lines, timeZone }: { lines: LineView[]; timeZone: string | undefined }) {
   const adjustments = lines.flatMap((line) => line.adjustments.map((adjustment) => ({ line, adjustment })));
   return (
     <DetailSection title="Descontos e ofertas" empty={adjustments.length ? undefined : 'Sem descontos nem ofertas.'}>
-      <Table>
-        <TableCaption className="sr-only">Descontos e ofertas</TableCaption>
+      <ScrollTable label="Descontos e ofertas">
         <TableHeader>
           <TableRow>
             <TableHead>Artigo</TableHead>
@@ -38,7 +38,7 @@ export function OrderAdjustments({ lines, timeZone }: { lines: LineView[]; timeZ
             </TableRow>
           ))}
         </TableBody>
-      </Table>
+      </ScrollTable>
     </DetailSection>
   );
 }

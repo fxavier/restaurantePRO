@@ -1,9 +1,7 @@
 import {
   Money,
   StatusBadge,
-  Table,
   TableBody,
-  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -14,14 +12,14 @@ import { lineName } from '../format';
 import { lineStatuses } from '../labels';
 import type { BatchView, LineView } from '../types';
 import { DetailSection } from './detail-section';
+import { ScrollTable } from './scroll-table';
 
 /** Every line of the order, drafts too, with its round and the amounts the server priced it at. */
 export function OrderLines({ lines, batches }: { lines: LineView[]; batches: BatchView[] }) {
   const roundOf = (batchId: string | null) => batches.find((batch) => batch.id === batchId)?.batchNo;
   return (
     <DetailSection title="Linhas" empty={lines.length ? undefined : 'O pedido não tem linhas.'}>
-      <Table>
-        <TableCaption className="sr-only">Linhas</TableCaption>
+      <ScrollTable label="Linhas">
         <TableHeader>
           <TableRow>
             <TableHead>Artigo</TableHead>
@@ -67,7 +65,7 @@ export function OrderLines({ lines, batches }: { lines: LineView[]; batches: Bat
             );
           })}
         </TableBody>
-      </Table>
+      </ScrollTable>
     </DetailSection>
   );
 }
