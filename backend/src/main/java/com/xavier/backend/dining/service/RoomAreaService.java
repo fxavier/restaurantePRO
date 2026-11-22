@@ -58,7 +58,7 @@ public class RoomAreaService {
     public RoomAreaSummary create(RoomAreaCreateRequest request) {
         accessPolicy.require(Permission.DINING_MANAGE, request.storeId());
         StoreChecks.requireExisting(organization, request.storeId());
-        if (areas.existsByStoreIdAndCode(request.storeId(), request.code().strip())) {
+        if (areas.existsByStoreIdAndCodeIgnoreCase(request.storeId(), request.code().strip())) {
             throw new DiningCodeTakenException(ENTITY, request.code());
         }
         RoomArea area = saveWithUniqueCode(
@@ -75,7 +75,7 @@ public class RoomAreaService {
             throw new StillOccupiedException(ENTITY, id);
         }
         OptimisticLocking.requireVersion(RoomArea.class, id, area.getVersion(), request.version());
-        if (areas.existsByStoreIdAndCodeAndIdNot(area.getStoreId(), request.code().strip(), id)) {
+        if (areas.existsByStoreIdAndCodeIgnoreCaseAndIdNot(area.getStoreId(), request.code().strip(), id)) {
             throw new DiningCodeTakenException(ENTITY, request.code());
         }
         area.update(request.code(), request.name(), request.active(), clock.instant());

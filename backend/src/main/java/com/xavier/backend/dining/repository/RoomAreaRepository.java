@@ -13,9 +13,9 @@ public interface RoomAreaRepository extends JpaRepository<RoomArea, UUID> {
 
     List<RoomArea> findByStoreIdAndActiveTrueOrderByCode(UUID storeId);
 
-    boolean existsByStoreIdAndCode(UUID storeId, String code);
+    boolean existsByStoreIdAndCodeIgnoreCase(UUID storeId, String code);
 
-    boolean existsByStoreIdAndCodeAndIdNot(UUID storeId, String code, UUID id);
+    boolean existsByStoreIdAndCodeIgnoreCaseAndIdNot(UUID storeId, String code, UUID id);
 
 
 

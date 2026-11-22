@@ -174,6 +174,24 @@ class RestaurantTableHttpTest {
                 .andExpect(jsonPath("$.code").value("DINING_CODE_TAKEN"));
     }
 
+    /** FE-F35: a table code is unique in its store whatever its case, and keeps the case it was entered with. */
+    @Test
+    void aCaseVariantOfATableCodeIsTakenAndTheEnteredCaseIsKept() throws Exception {
+        mvc.perform(post(TABLES).with(inStore(store, Permission.DINING_MANAGE)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(DiningFixtures.newTable(store, area, "m1", 4)))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.code").value("m1"));
+        UUID second = fixtures.createTable(store, area, "M2");
+
+        mvc.perform(post(TABLES).with(inStore(store, Permission.DINING_MANAGE)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(DiningFixtures.newTable(store, area, "M1", 2)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DINING_CODE_TAKEN"));
+        mvc.perform(put(TABLES + "/" + second).with(inStore(store, Permission.DINING_MANAGE)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(update(area, "M1", 4, true, 0)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DINING_CODE_TAKEN"));
+    }
+
     @Test
     void renamingATableToACodeInUseIsAConflict() throws Exception {
         fixtures.createTable(store, area, "M1");
