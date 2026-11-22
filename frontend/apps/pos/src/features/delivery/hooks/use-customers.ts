@@ -34,6 +34,9 @@ export function useCustomer(customerId: string | undefined) {
   });
 }
 
+/** A "Criar cliente" intent, owned by the dialog it may hold open. */
+export type CustomerCreation = ReturnType<typeof useCreateCustomer>;
+
 /** `POST /api/v1/pos/customers`: one intent per "Criar cliente", resolving with the new customer's id. */
 export function useCreateCustomer({ onCreated }: { onCreated: (customerId: string) => void }) {
   const { api } = useServices();

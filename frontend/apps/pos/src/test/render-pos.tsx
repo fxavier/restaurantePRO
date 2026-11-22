@@ -19,7 +19,8 @@ type Options = {
   user?: Parameters<typeof userEvent.setup>[0];
   /**
    * Ana's POS session, as her PIN login answers it once the terminal has its token (the PIN pad itself is tested in
-   * identity); the test sets up the token endpoint.
+   * identity); the test sets up the token endpoint. The helper then always ends on `/tables`, where the login sends
+   * the terminal, whatever `path` was: a test navigates on from there.
    */
   loggedIn?: boolean;
 };
@@ -39,8 +40,16 @@ export async function renderPos({ path = '/', device = 'none', user: userOptions
   const queryClient = createQueryClient();
   render(<PosApp services={services} router={router} queryClient={queryClient} />);
   if (loggedIn) {
-    await waitFor(() => expect(services.tokens.status()).toBe('ready'));
+    // As a PIN login goes: the session guard has sent the terminal to the PIN pad, and the terminal has its token.
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe('/login');
+      expect(services.tokens.status()).toBe('ready');
+    });
     act(() => services.session.start(SESSION));
+    // The PIN pad answers the login with its own redirect to the tables, which React may run only after this act
+    // (its session subscription is a passive effect of a commit made outside act). Until it has, a test's first
+    // navigation would be undone by it; the only way off `/login` is that redirect, so it has run once this holds.
+    await waitFor(() => expect(router.state.location.pathname).toBe('/tables'));
   }
   return { devices, services, router, user, queryClient };
 }

@@ -1,9 +1,9 @@
 import { Button, Skeleton } from '@restaurantpro/ui';
 import { Search, UserPlus, UserRound } from 'lucide-react';
-import { type KeyboardEvent, useEffect, useState } from 'react';
+import { type KeyboardEvent, useState } from 'react';
 import { useCommandsBlocked } from '../../../lib/live/use-connection';
 import { intentState, newCustomer } from '../delivery';
-import { MIN_SEARCH, useCreateCustomer, useCustomer, useCustomerSearch } from '../hooks/use-customers';
+import { type CustomerCreation, MIN_SEARCH, useCustomer, useCustomerSearch } from '../hooks/use-customers';
 import { CUSTOMER_UNSETTLED, loadFailure } from '../messages';
 import { CommandMessage } from './command-message';
 import { TextField } from './text-field';
@@ -12,16 +12,22 @@ type Props = {
   customerId: string | undefined;
   onChange: (customerId: string | undefined) => void;
   disabled: boolean;
-  /** A "Criar cliente" without an answer, or settled: while it waits, nothing may unmount it and lose its key. */
-  onUnsettledChange: (unsettled: boolean) => void;
+  /** "Criar cliente", owned by the dialog (whose draft it fills in): an unsettled one holds the dialog open. */
+  create: CustomerCreation;
 };
 
 /** Who the delivery is for (D127): a customer found by name or phone, or one created here with a name and phone. */
-export function CustomerPicker({ customerId, onChange, disabled, onUnsettledChange }: Props) {
+export function CustomerPicker({ customerId, onChange, disabled, create }: Props) {
   const [creating, setCreating] = useState(false);
   if (customerId) return <ChosenCustomer customerId={customerId} onChange={() => onChange(undefined)} disabled={disabled} />;
-  if (creating) return <NewCustomer onCreated={onChange} onCancel={() => setCreating(false)} onUnsettledChange={onUnsettledChange} />;
-  return <CustomerSearch onChoose={onChange} onCreate={() => setCreating(true)} disabled={disabled} />;
+  if (creating) return <NewCustomer create={create} onCancel={() => setCreating(false)} />;
+  // Each new customer starts clean: a refusal of an earlier attempt is not this one's (one in flight or unsettled
+  // holds the dialog on this form, so it never reaches here).
+  const startCreating = () => {
+    create.discard();
+    setCreating(true);
+  };
+  return <CustomerSearch onChoose={onChange} onCreate={startCreating} disabled={disabled} />;
 }
 
 function ChosenCustomer({ customerId, onChange, disabled }: { customerId: string; onChange: () => void; disabled: boolean }) {
@@ -125,28 +131,16 @@ function CustomerSearch({ onChoose, onCreate, disabled }: { onChoose: (id: strin
   );
 }
 
-type NewCustomerProps = {
-  onCreated: (id: string) => void;
-  onCancel: () => void;
-  onUnsettledChange: (unsettled: boolean) => void;
-};
-
 /**
  * A customer created here. A "Criar cliente" without an answer may have created them: it holds its intent, so the
  * only way on is "Tentar novamente" with the same key (FC §8); going back would make the next tap a second customer.
  */
-function NewCustomer({ onCreated, onCancel, onUnsettledChange }: NewCustomerProps) {
+function NewCustomer({ create, onCancel }: { create: CustomerCreation; onCancel: () => void }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const blocked = useCommandsBlocked();
-  const create = useCreateCustomer({ onCreated });
   const { awaitingRetry, locked } = intentState(create);
   const request = newCustomer(name, phone);
-
-  useEffect(() => {
-    onUnsettledChange(awaitingRetry);
-    return () => onUnsettledChange(false);
-  }, [awaitingRetry, onUnsettledChange]);
 
   function submit() {
     if (blocked || !request) return;
