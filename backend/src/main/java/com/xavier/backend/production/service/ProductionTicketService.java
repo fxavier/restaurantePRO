@@ -94,6 +94,11 @@ public class ProductionTicketService {
     }
 
     private UUID ticketStore(UUID ticketId) {
+        return ticketStore(probe, ticketId);
+    }
+
+    /** D42: a ticket's store, read past row-level security; 404 when the ticket does not exist. */
+    static UUID ticketStore(StoreProbe probe, UUID ticketId) {
         return probe.storeOf(ProductionTicketRepository.TABLE, ticketId)
                 .orElseThrow(() -> new ProductionNotFoundException(PrintJobService.TICKET, ticketId));
     }

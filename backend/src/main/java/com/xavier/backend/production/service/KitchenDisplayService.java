@@ -4,9 +4,9 @@ import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.PosContext;
 import com.xavier.backend.audit.AuditLog;
-import com.xavier.backend.production.exception.ProductionNotFoundException;
 import com.xavier.backend.production.exception.ProductionRule;
 import com.xavier.backend.production.exception.ProductionRuleViolationException;
+import com.xavier.backend.production.model.KitchenCommand;
 import com.xavier.backend.production.model.KitchenProgress;
 import com.xavier.backend.production.model.KitchenStatus;
 import com.xavier.backend.production.model.ProductionTicket;
@@ -20,7 +20,6 @@ import com.xavier.backend.shared.persistence.OptimisticLocking;
 import com.xavier.backend.shared.persistence.StoreProbe;
 import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
-import java.time.Instant;
 import java.util.EnumSet;
 import java.util.Map;
 import java.util.Set;
@@ -41,12 +40,6 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class KitchenDisplayService {
-
-    /** What one kitchen command does to a round: the employee and the time of the step. */
-    @FunctionalInterface
-    interface Step {
-        void apply(KitchenProgress progress, UUID employee, Instant now);
-    }
 
     private final KitchenProgressRepository progresses;
     private final ProductionTicketRepository tickets;
@@ -98,46 +91,28 @@ public class KitchenDisplayService {
         return PageResponse.from(page.map(progress -> byId.get(progress.getTicketId()).toView(progress)));
     }
 
+    /**
+     * Moves the round of {@code ticketId} by {@code command} as the session's employee.
+     *
+     * @param version the round's kitchen version the screen shows (stale → 409)
+     */
     @Transactional
-    public TicketView start(UUID ticketId, long version) {
-        return move(ticketId, version, "STARTED", KitchenProgress::start);
-    }
-
-    @Transactional
-    public TicketView ready(UUID ticketId, long version) {
-        return move(ticketId, version, "READY", KitchenProgress::ready);
-    }
-
-    @Transactional
-    public TicketView bump(UUID ticketId, long version) {
-        return move(ticketId, version, "BUMPED", KitchenProgress::bump);
-    }
-
-    @Transactional
-    public TicketView recall(UUID ticketId, long version) {
-        return move(ticketId, version, "RECALLED", KitchenProgress::recall);
-    }
-
-    private TicketView move(UUID ticketId, long version, String step, Step command) {
+    public TicketView move(UUID ticketId, long version, KitchenCommand command) {
         PosContext pos = accessPolicy.requirePos(Permission.PRODUCTION_OPERATE);
-        accessPolicy.requireSessionStore(pos, ticketStore(ticketId), PrintJobService.TICKET, ticketId);
+        accessPolicy.requireSessionStore(pos, ProductionTicketService.ticketStore(probe, ticketId),
+                PrintJobService.TICKET, ticketId);
         KitchenProgress progress = progresses.findById(ticketId).orElseThrow(() ->
                 new ProductionRuleViolationException(ProductionRule.NOT_KITCHEN_WORK,
                         "Production ticket " + ticketId + " is not a round: only rounds are prepared on the kitchen "
                                 + "display"));
         OptimisticLocking.requireVersion(KitchenProgress.class, ticketId, progress.getVersion(), version);
         KitchenStatus from = progress.getStatus();
-        command.apply(progress, pos.employeeId(), clock.instant());
+        command.applyTo(progress, pos.employeeId(), clock.instant());
         progresses.saveAndFlush(progress);
-        auditLog.recordAsCurrentActor("PRODUCTION_TICKET_" + step, PrintJobService.TICKET, ticketId.toString(),
+        auditLog.recordAsCurrentActor(command.auditAction(), PrintJobService.TICKET, ticketId.toString(),
                 progress.getStoreId(), null, null, Map.of("from", from.name(), "to", progress.getStatus().name(),
                         "destination", progress.getDestination()));
         notifier.notifyAfterCommit(progress.getStoreId(), ChangeTopic.PRODUCTION_TICKETS, ticketId);
         return tickets.findById(ticketId).orElseThrow().toView(progress);
-    }
-
-    private UUID ticketStore(UUID ticketId) {
-        return probe.storeOf(ProductionTicketRepository.TABLE, ticketId)
-                .orElseThrow(() -> new ProductionNotFoundException(PrintJobService.TICKET, ticketId));
     }
 }

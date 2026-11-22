@@ -85,7 +85,7 @@ class KitchenDisplayTest {
                 .andExpect(jsonPath("$.content[0].kitchen.status").value("QUEUED"))
                 .andExpect(jsonPath("$.content[0].kitchen.version").value(0))
                 .andExpect(jsonPath("$.content[0].kitchen.queuedAt").isNotEmpty())
-                .andExpect(jsonPath("$.content[0].kitchen.startedAt").doesNotExist());
+                .andExpect(jsonPath("$.content[0].kitchen.started").doesNotExist());
         verify(notifier, timeout(5000)).notifyAfterCommit(eq(shop.store()), eq(ChangeTopic.PRODUCTION_TICKETS),
                 eq(ticket));
     }
@@ -98,21 +98,21 @@ class KitchenDisplayTest {
                 .andExpect(jsonPath("$.id").value(ticket.toString()))
                 .andExpect(jsonPath("$.kitchen.status").value("IN_PREPARATION"))
                 .andExpect(jsonPath("$.kitchen.version").value(1))
-                .andExpect(jsonPath("$.kitchen.startedBy").value(cook.toString()))
-                .andExpect(jsonPath("$.kitchen.startedAt").isNotEmpty());
+                .andExpect(jsonPath("$.kitchen.started.by").value(cook.toString()))
+                .andExpect(jsonPath("$.kitchen.started.at").isNotEmpty());
         command(ticket, "ready", 1, key()).andExpect(status().isOk())
                 .andExpect(jsonPath("$.kitchen.status").value("READY"))
-                .andExpect(jsonPath("$.kitchen.readyBy").value(cook.toString()));
+                .andExpect(jsonPath("$.kitchen.ready.by").value(cook.toString()));
         command(ticket, "bump", 2, key()).andExpect(status().isOk())
                 .andExpect(jsonPath("$.kitchen.status").value("BUMPED"))
-                .andExpect(jsonPath("$.kitchen.bumpedAt").isNotEmpty());
+                .andExpect(jsonPath("$.kitchen.bumped.at").isNotEmpty());
         command(ticket, "recall", 3, key()).andExpect(status().isOk())
                 .andExpect(jsonPath("$.kitchen.status").value("READY"))
-                .andExpect(jsonPath("$.kitchen.bumpedAt").doesNotExist())
-                .andExpect(jsonPath("$.kitchen.recalledBy").value(cook.toString()));
+                .andExpect(jsonPath("$.kitchen.bumped").doesNotExist())
+                .andExpect(jsonPath("$.kitchen.recalled.by").value(cook.toString()));
         command(ticket, "recall", 4, key()).andExpect(status().isOk())
                 .andExpect(jsonPath("$.kitchen.status").value("IN_PREPARATION"))
-                .andExpect(jsonPath("$.kitchen.readyAt").doesNotExist());
+                .andExpect(jsonPath("$.kitchen.ready").doesNotExist());
 
         assertThat(fixtures.audits("PRODUCTION_TICKET_STARTED", ticket)).isOne();
         assertThat(fixtures.audits("PRODUCTION_TICKET_READY", ticket)).isOne();

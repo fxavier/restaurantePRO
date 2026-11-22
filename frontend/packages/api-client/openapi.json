@@ -9977,41 +9977,21 @@
       },
       "com.xavier.backend.production.model.dto.KitchenProgressView": {
         "properties": {
-          "bumpedAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "bumpedBy": {
-            "format": "uuid",
-            "type": "string"
+          "bumped": {
+            "$ref": "#/components/schemas/com.xavier.backend.production.model.dto.KitchenStepView"
           },
           "queuedAt": {
             "format": "date-time",
             "type": "string"
           },
-          "readyAt": {
-            "format": "date-time",
-            "type": "string"
+          "ready": {
+            "$ref": "#/components/schemas/com.xavier.backend.production.model.dto.KitchenStepView"
           },
-          "readyBy": {
-            "format": "uuid",
-            "type": "string"
+          "recalled": {
+            "$ref": "#/components/schemas/com.xavier.backend.production.model.dto.KitchenStepView"
           },
-          "recalledAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "recalledBy": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "startedAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "startedBy": {
-            "format": "uuid",
-            "type": "string"
+          "started": {
+            "$ref": "#/components/schemas/com.xavier.backend.production.model.dto.KitchenStepView"
           },
           "status": {
             "enum": [
@@ -10025,6 +10005,19 @@
           "version": {
             "format": "int64",
             "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "com.xavier.backend.production.model.dto.KitchenStepView": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "by": {
+            "format": "uuid",
+            "type": "string"
           }
         },
         "type": "object"

@@ -2,7 +2,9 @@ package com.xavier.backend.production.model;
 
 import com.xavier.backend.production.exception.ProductionConflictException;
 import com.xavier.backend.production.model.dto.KitchenProgressView;
+import jakarta.persistence.AttributeOverride;
 import jakarta.persistence.Column;
+import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -42,14 +44,25 @@ public class KitchenProgress {
     @Column(nullable = false)
     private Instant queuedAt;
 
-    private Instant startedAt;
-    private UUID startedBy;
-    private Instant readyAt;
-    private UUID readyBy;
-    private Instant bumpedAt;
-    private UUID bumpedBy;
-    private Instant recalledAt;
-    private UUID recalledBy;
+    @Embedded
+    @AttributeOverride(name = "at", column = @Column(name = "started_at"))
+    @AttributeOverride(name = "by", column = @Column(name = "started_by"))
+    private KitchenStep started;
+
+    @Embedded
+    @AttributeOverride(name = "at", column = @Column(name = "ready_at"))
+    @AttributeOverride(name = "by", column = @Column(name = "ready_by"))
+    private KitchenStep ready;
+
+    @Embedded
+    @AttributeOverride(name = "at", column = @Column(name = "bumped_at"))
+    @AttributeOverride(name = "by", column = @Column(name = "bumped_by"))
+    private KitchenStep bumped;
+
+    @Embedded
+    @AttributeOverride(name = "at", column = @Column(name = "recalled_at"))
+    @AttributeOverride(name = "by", column = @Column(name = "recalled_by"))
+    private KitchenStep recalled;
 
     protected KitchenProgress() {
         // JPA
@@ -67,24 +80,15 @@ public class KitchenProgress {
     }
 
     public void start(UUID employee, Instant now) {
-        require(KitchenStatus.QUEUED, "start");
-        status = KitchenStatus.IN_PREPARATION;
-        startedAt = now;
-        startedBy = employee;
+        started = advance(KitchenStatus.QUEUED, KitchenStatus.IN_PREPARATION, "start", employee, now);
     }
 
     public void ready(UUID employee, Instant now) {
-        require(KitchenStatus.IN_PREPARATION, "ready");
-        status = KitchenStatus.READY;
-        readyAt = now;
-        readyBy = employee;
+        ready = advance(KitchenStatus.IN_PREPARATION, KitchenStatus.READY, "ready", employee, now);
     }
 
     public void bump(UUID employee, Instant now) {
-        require(KitchenStatus.READY, "bump");
-        status = KitchenStatus.BUMPED;
-        bumpedAt = now;
-        bumpedBy = employee;
+        bumped = advance(KitchenStatus.READY, KitchenStatus.BUMPED, "bump", employee, now);
     }
 
     /** One step back: a READY round goes back to preparation, a BUMPED one back on the screen as READY. */
@@ -92,29 +96,28 @@ public class KitchenProgress {
         switch (status) {
             case READY -> {
                 status = KitchenStatus.IN_PREPARATION;
-                readyAt = null;
-                readyBy = null;
+                ready = null;
             }
             case BUMPED -> {
                 status = KitchenStatus.READY;
-                bumpedAt = null;
-                bumpedBy = null;
+                bumped = null;
             }
             default -> throw ProductionConflictException.illegalKitchenState(ticketId, status, "recall");
         }
-        recalledAt = now;
-        recalledBy = employee;
+        recalled = new KitchenStep(now, employee);
     }
 
-    private void require(KitchenStatus expected, String command) {
-        if (status != expected) {
+    private KitchenStep advance(KitchenStatus from, KitchenStatus to, String command, UUID employee, Instant now) {
+        if (status != from) {
             throw ProductionConflictException.illegalKitchenState(ticketId, status, command);
         }
+        status = to;
+        return new KitchenStep(now, employee);
     }
 
     public KitchenProgressView toView() {
-        return new KitchenProgressView(status, version == null ? 0 : version, queuedAt, startedAt, startedBy,
-                readyAt, readyBy, bumpedAt, bumpedBy, recalledAt, recalledBy);
+        return new KitchenProgressView(status, getVersion(), queuedAt, KitchenStep.view(started),
+                KitchenStep.view(ready), KitchenStep.view(bumped), KitchenStep.view(recalled));
     }
 
     public UUID getTicketId() {

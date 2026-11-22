@@ -1,6 +1,7 @@
 package com.xavier.backend.production.controller;
 
 import com.xavier.backend.access.IdempotentRequests;
+import com.xavier.backend.production.model.KitchenCommand;
 import com.xavier.backend.production.model.KitchenStatus;
 import com.xavier.backend.production.model.dto.KitchenCommandRequest;
 import com.xavier.backend.production.model.dto.TicketView;
@@ -8,9 +9,9 @@ import com.xavier.backend.production.service.KitchenDisplayService;
 import com.xavier.backend.shared.web.PageResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.Supplier;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -55,33 +56,33 @@ class KitchenDisplayController {
     ResponseEntity<TicketView> kitchenStart(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
                                             @Valid @RequestBody KitchenCommandRequest body,
                                             HttpServletRequest request) {
-        return command("start", key, request, body, () -> kitchen.start(id, body.version()));
+        return command(KitchenCommand.START, id, key, request, body);
     }
 
     @PostMapping(TICKET + "/ready")
     ResponseEntity<TicketView> kitchenReady(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
                                             @Valid @RequestBody KitchenCommandRequest body,
                                             HttpServletRequest request) {
-        return command("ready", key, request, body, () -> kitchen.ready(id, body.version()));
+        return command(KitchenCommand.READY, id, key, request, body);
     }
 
     @PostMapping(TICKET + "/bump")
     ResponseEntity<TicketView> kitchenBump(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
                                            @Valid @RequestBody KitchenCommandRequest body,
                                            HttpServletRequest request) {
-        return command("bump", key, request, body, () -> kitchen.bump(id, body.version()));
+        return command(KitchenCommand.BUMP, id, key, request, body);
     }
 
     @PostMapping(TICKET + "/recall")
     ResponseEntity<TicketView> kitchenRecall(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
                                              @Valid @RequestBody KitchenCommandRequest body,
                                              HttpServletRequest request) {
-        return command("recall", key, request, body, () -> kitchen.recall(id, body.version()));
+        return command(KitchenCommand.RECALL, id, key, request, body);
     }
 
-    private ResponseEntity<TicketView> command(String name, String key, HttpServletRequest request,
-                                               KitchenCommandRequest body, Supplier<TicketView> action) {
-        return idempotent.execute("production.ticket.kitchen." + name, key, request, body, TicketView.class,
-                () -> ResponseEntity.ok(action.get()));
+    private ResponseEntity<TicketView> command(KitchenCommand command, UUID id, String key, HttpServletRequest request,
+                                               KitchenCommandRequest body) {
+        return idempotent.execute("production.ticket.kitchen." + command.name().toLowerCase(Locale.ROOT), key,
+                request, body, TicketView.class, () -> ResponseEntity.ok(kitchen.move(id, body.version(), command)));
     }
 }

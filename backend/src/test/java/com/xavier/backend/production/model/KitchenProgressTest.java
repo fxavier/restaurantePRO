@@ -29,7 +29,7 @@ class KitchenProgressTest {
         assertThat(progress.getStatus()).isEqualTo(KitchenStatus.QUEUED);
         assertThat(progress.getDestination()).isEqualTo("GRILL");
         assertThat(progress.toView().queuedAt()).isEqualTo(T0);
-        assertThat(progress.toView().startedAt()).isNull();
+        assertThat(progress.toView().started()).isNull();
     }
 
     @Test
@@ -39,8 +39,8 @@ class KitchenProgressTest {
         progress.start(COOK, T0.plusSeconds(60));
 
         assertThat(progress.getStatus()).isEqualTo(KitchenStatus.IN_PREPARATION);
-        assertThat(progress.toView().startedAt()).isEqualTo(T0.plusSeconds(60));
-        assertThat(progress.toView().startedBy()).isEqualTo(COOK);
+        assertThat(progress.toView().started().at()).isEqualTo(T0.plusSeconds(60));
+        assertThat(progress.toView().started().by()).isEqualTo(COOK);
     }
 
     @Test
@@ -50,8 +50,8 @@ class KitchenProgressTest {
         progress.ready(COOK, T0.plusSeconds(600));
 
         assertThat(progress.getStatus()).isEqualTo(KitchenStatus.READY);
-        assertThat(progress.toView().readyAt()).isEqualTo(T0.plusSeconds(600));
-        assertThat(progress.toView().readyBy()).isEqualTo(COOK);
+        assertThat(progress.toView().ready().at()).isEqualTo(T0.plusSeconds(600));
+        assertThat(progress.toView().ready().by()).isEqualTo(COOK);
     }
 
     @Test
@@ -61,8 +61,8 @@ class KitchenProgressTest {
         progress.bump(RUNNER, T0.plusSeconds(700));
 
         assertThat(progress.getStatus()).isEqualTo(KitchenStatus.BUMPED);
-        assertThat(progress.toView().bumpedAt()).isEqualTo(T0.plusSeconds(700));
-        assertThat(progress.toView().bumpedBy()).isEqualTo(RUNNER);
+        assertThat(progress.toView().bumped().at()).isEqualTo(T0.plusSeconds(700));
+        assertThat(progress.toView().bumped().by()).isEqualTo(RUNNER);
     }
 
     @Test
@@ -72,11 +72,10 @@ class KitchenProgressTest {
         progress.recall(COOK, T0.plusSeconds(650));
 
         assertThat(progress.getStatus()).isEqualTo(KitchenStatus.IN_PREPARATION);
-        assertThat(progress.toView().readyAt()).isNull();
-        assertThat(progress.toView().readyBy()).isNull();
-        assertThat(progress.toView().startedBy()).isEqualTo(COOK);
-        assertThat(progress.toView().recalledAt()).isEqualTo(T0.plusSeconds(650));
-        assertThat(progress.toView().recalledBy()).isEqualTo(COOK);
+        assertThat(progress.toView().ready()).isNull();
+        assertThat(progress.toView().started().by()).isEqualTo(COOK);
+        assertThat(progress.toView().recalled().at()).isEqualTo(T0.plusSeconds(650));
+        assertThat(progress.toView().recalled().by()).isEqualTo(COOK);
     }
 
     @Test
@@ -87,10 +86,9 @@ class KitchenProgressTest {
         progress.recall(RUNNER, T0.plusSeconds(720));
 
         assertThat(progress.getStatus()).isEqualTo(KitchenStatus.READY);
-        assertThat(progress.toView().bumpedAt()).isNull();
-        assertThat(progress.toView().bumpedBy()).isNull();
-        assertThat(progress.toView().readyAt()).isEqualTo(T0.plusSeconds(600));
-        assertThat(progress.toView().recalledBy()).isEqualTo(RUNNER);
+        assertThat(progress.toView().bumped()).isNull();
+        assertThat(progress.toView().ready().at()).isEqualTo(T0.plusSeconds(600));
+        assertThat(progress.toView().recalled().by()).isEqualTo(RUNNER);
     }
 
     @Test
