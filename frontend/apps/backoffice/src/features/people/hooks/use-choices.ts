@@ -1,5 +1,12 @@
 import type { UseQueryResult } from '@tanstack/react-query';
-import { useAccountChoices, useEmployeeChoices, useRoleChoices, useStoreChoices } from './use-people-queries';
+import { permissionAreas, type PermissionArea } from '../permission-areas';
+import {
+  useAccountChoices,
+  useEmployeeChoices,
+  usePermissionCatalogue,
+  useRoleChoices,
+  useStoreChoices,
+} from './use-people-queries';
 
 export type Choice = { value: string; label: string };
 
@@ -52,4 +59,19 @@ export function useEmployeeChoiceList(): ChoiceList {
 /** The stores and the roles, the pair an employee is hired or assigned with. */
 export function useStoreAndRoleChoices(): { stores: ChoiceList; roles: ChoiceList } {
   return { stores: choiceList('as lojas', useStoreChoices(), named), roles: choiceList('as funções', useRoleChoices(), named) };
+}
+
+/** A read's state as a picker shows it: what it lists, whether it is still loading, and its failure with a retry. */
+export type ReadState = Pick<ChoiceList, 'what' | 'pending' | 'error' | 'retry'>;
+
+/** The permissions a role can grant, by area, for the role editor's matrix. */
+export function usePermissionMatrix(): ReadState & { areas: PermissionArea[] } {
+  const query = usePermissionCatalogue();
+  return {
+    what: 'as permissões',
+    areas: permissionAreas(query.data ?? []),
+    pending: query.isPending,
+    error: query.error,
+    retry: () => void query.refetch(),
+  };
 }

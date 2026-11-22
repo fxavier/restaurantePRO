@@ -1,4 +1,3 @@
-import { cn } from '@restaurantpro/ui';
 import type { ReactNode } from 'react';
 import type { Choice } from '../hooks/use-choices';
 
@@ -8,14 +7,12 @@ type CheckboxGroupProps = {
   value: readonly string[];
   onChange: (value: string[]) => void;
   emptyMessage: string;
-  /** Monospace labels, for names that are codes (permissions). */
-  mono?: boolean;
   /** More controls inside the fieldset, after the boxes. */
   children?: ReactNode;
 };
 
 /** A fieldset of checkboxes over a list of ids; the value keeps the order the boxes were ticked in. */
-export function CheckboxGroup({ legend, choices, value, onChange, emptyMessage, mono = false, children }: CheckboxGroupProps) {
+export function CheckboxGroup({ legend, choices, value, onChange, emptyMessage, children }: CheckboxGroupProps) {
   return (
     <fieldset className="flex flex-col gap-2">
       <legend className="mb-2 text-sm font-medium">{legend}</legend>
@@ -32,7 +29,7 @@ export function CheckboxGroup({ legend, choices, value, onChange, emptyMessage, 
                   onChange(event.target.checked ? [...value, choice.value] : value.filter((id) => id !== choice.value))
                 }
               />
-              <span className={cn(mono && 'font-mono')}>{choice.label}</span>
+              <span>{choice.label}</span>
             </label>
           </li>
         ))}
