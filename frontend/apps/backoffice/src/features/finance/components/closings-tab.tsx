@@ -1,9 +1,9 @@
 import { Button, StatusBadge, Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@restaurantpro/ui';
 import { Check, X } from 'lucide-react';
-import { useId, useState } from 'react';
+import { useState } from 'react';
 import { useSession } from '../../identity';
 import { holds } from '../finance-commands';
-import { CLOSING_FILTERS, closingStatuses, registerName } from '../finance-labels';
+import { CLOSING_FILTERS, closingStatuses, nameById } from '../finance-labels';
 import { PAGE_SIZE, useClosings, useRegisters } from '../hooks/use-reports';
 import { useSensitiveCommand } from '../hooks/use-sensitive-command';
 import type { Period } from '../period';
@@ -14,7 +14,7 @@ import { Pager } from './pager';
 import { QueryState } from './query-state';
 import { RejectClosingDialog } from './reject-closing-dialog';
 import { Amount, SectionCard } from './section-card';
-import { selectClass } from './styles';
+import { StatusFilter } from './status-filter';
 
 /**
  * "Fechos" (§8.3, §8.5): the closings the registers submitted, approved or rejected here, and the cash days of the
@@ -28,6 +28,8 @@ export function ClosingsTab({ storeId, period }: { storeId: string; period: Peri
   const rows = closings.data?.rows ?? [];
   const filter = (
     <StatusFilter
+      label="Estado dos fechos"
+      options={CLOSING_FILTERS}
       value={status}
       onChange={(next) => {
         setStatus(next);
@@ -57,31 +59,13 @@ export function ClosingsTab({ storeId, period }: { storeId: string; period: Peri
   );
 }
 
-function StatusFilter({ value, onChange }: { value: ClosingStatus | ''; onChange: (value: ClosingStatus | '') => void }) {
-  const id = useId();
-  return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-        Estado dos fechos
-      </label>
-      <select id={id} className={selectClass} value={value} onChange={(event) => onChange(event.target.value as ClosingStatus | '')}>
-        {CLOSING_FILTERS.map((filter) => (
-          <option key={filter.value} value={filter.value}>
-            {filter.label}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
 function ClosingsTable({ storeId, rows }: { storeId: string; rows: ClosingView[] }) {
   const session = useSession();
   const canApprove = holds(session.data?.permissions, 'CASH_CLOSING_APPROVE', storeId);
   const registers = useRegisters(storeId);
   const command = useSensitiveCommand(storeId);
   const [toReject, setToReject] = useState<ClosingView | null>(null);
-  const nameOf = (closing: ClosingView | null) => registerName(registers.data, closing?.registerId);
+  const nameOf = (closing: ClosingView | null) => nameById(registers.data, closing?.registerId);
 
   const approve = (closing: ClosingView) =>
     command.send({ type: 'approveClosing', closingId: closing.id!, label: nameOf(closing), idempotencyKey: crypto.randomUUID() });

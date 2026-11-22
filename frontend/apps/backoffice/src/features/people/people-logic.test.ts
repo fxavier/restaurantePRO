@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { toCreateRequest, toUpdateRequest, type AccountValues } from './account-requests';
 import { fieldErrors } from './field-errors';
 import { nextIntent } from './intent';
-import { permissionName } from './schemas';
+import { permissionAreas } from './permission-areas';
 import { selectedTab, visibleTabs } from './tabs';
 
 describe('visibleTabs', () => {
@@ -86,6 +86,24 @@ describe('nextIntent', () => {
   });
 });
 
+describe('permissionAreas', () => {
+  it('groups the catalogue by area in the order the server lists them, each named in Portuguese', () => {
+    const areas = permissionAreas([
+      { name: 'CASH_VIEW', sensitive: false, area: 'CASH' },
+      { name: 'ORDER_VIEW', sensitive: false, area: 'ORDER' },
+      { name: 'CASH_DAY_REOPEN', sensitive: true, area: 'CASH' },
+    ]);
+    expect(areas.map(({ label, permissions }) => [label, permissions.map((p) => p.name)])).toEqual([
+      ['Caixa', ['CASH_VIEW', 'CASH_DAY_REOPEN']],
+      ['Pedidos', ['ORDER_VIEW']],
+    ]);
+  });
+
+  it('names an area it does not know by its code', () => {
+    expect(permissionAreas([{ name: 'KIOSK_OPERATE', sensitive: false, area: 'KIOSK' }])[0]?.label).toBe('KIOSK');
+  });
+});
+
 describe('account requests', () => {
   const values: AccountValues = { username: 'carla', active: false, support: false, roleIds: ['r1'], employeeId: 'e1' };
 
@@ -98,19 +116,5 @@ describe('account requests', () => {
   it('replaces state, roles and link with the loaded version', () => {
     expect(toUpdateRequest(values, 7)).toEqual({ active: false, roleIds: ['r1'], employeeId: 'e1', version: 7 });
     expect(toUpdateRequest({ ...values, employeeId: '' }, 0)).toEqual({ active: false, roleIds: ['r1'], version: 0 });
-  });
-});
-
-describe('permissionName', () => {
-  it('is the typed name in capitals without surrounding spaces', () => {
-    expect(permissionName('  order_view ')).toBe('ORDER_VIEW');
-  });
-
-  it('is undefined when the text cannot be a permission name', () => {
-    expect(permissionName('')).toBeUndefined();
-    expect(permissionName('_ORDER')).toBeUndefined();
-    expect(permissionName('ORDER VIEW')).toBeUndefined();
-    expect(permissionName('ORDER-VIEW')).toBeUndefined();
-    expect(permissionName('X1')).toBeUndefined();
   });
 });

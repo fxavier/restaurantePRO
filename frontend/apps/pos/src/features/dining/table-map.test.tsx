@@ -1,5 +1,5 @@
 import { formatMoney } from '@restaurantpro/ui';
-import { screen, within } from '@testing-library/react';
+import { act, screen, within } from '@testing-library/react';
 import { delay, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { problem, SESSION, tableMap, tablesEndpoint, token, tokenEndpoint } from '../../test/server';
@@ -169,7 +169,9 @@ describe('table map', () => {
   it('an unknown area in the URL falls back to the first area', async () => {
     tokenEndpoint(token('jwt-1'));
     tablesEndpoint(tableMap(MAP));
-    await renderPos({ device: 'enrolled', loggedIn: true, path: '/tables?area=gone' });
+    const { router } = await renderPos({ device: 'enrolled', loggedIn: true, path: '/tables' });
+    // The login lands on the plain map; the unknown area comes after, as from an old link.
+    await act(() => router.navigate('/tables?area=gone'));
 
     expect(await screen.findByRole('tab', { name: 'Sala' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('button', { name: /^Mesa M1 / })).toBeInTheDocument();

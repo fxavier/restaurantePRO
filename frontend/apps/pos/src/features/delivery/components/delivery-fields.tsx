@@ -2,7 +2,7 @@ import { Button, Skeleton } from '@restaurantpro/ui';
 import { Clock, MapPin, MapPinned, UserRound } from 'lucide-react';
 import { type ReactNode, useId } from 'react';
 import type { DeliveryDraft } from '../delivery';
-import { useCustomer } from '../hooks/use-customers';
+import { type CustomerCreation, useCustomer } from '../hooks/use-customers';
 import { useDeliveryZones } from '../hooks/use-delivery-zones';
 import { loadFailure } from '../messages';
 import { AddressPicker } from './address-picker';
@@ -49,8 +49,8 @@ export function DeliveryFields({
   draft,
   onChange,
   disabled,
-  onCustomerUnsettledChange,
-}: Props & { onCustomerUnsettledChange: (unsettled: boolean) => void }) {
+  createCustomer,
+}: Props & { createCustomer: CustomerCreation }) {
   const customer = useCustomer(draft.customerId);
   const set = (change: Partial<DeliveryDraft>) => onChange({ ...draft, ...change });
   const notesId = useId();
@@ -62,7 +62,7 @@ export function DeliveryFields({
             customerId={draft.customerId}
             onChange={(customerId) => set({ customerId, address: undefined })}
             disabled={disabled}
-            onUnsettledChange={onCustomerUnsettledChange}
+            create={createCustomer}
           />
         </Section>
         {customer.data && (

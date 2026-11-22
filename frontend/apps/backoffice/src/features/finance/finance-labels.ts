@@ -1,6 +1,6 @@
 import type { StatusMap } from '@restaurantpro/ui';
 import { CheckCircle2, CircleDashed, Clock, HelpCircle, Lock, LockOpen, XCircle, type LucideIcon } from 'lucide-react';
-import type { ClosingStatus, ReconciliationLine, RegisterSummary } from './types';
+import type { CashSessionStatus, ClosingStatus, ReconciliationLine } from './types';
 
 type Status = { label: string; icon: LucideIcon; tone: StatusMap<string>[string]['tone'] };
 
@@ -23,8 +23,28 @@ function statuses(known: Record<string, Status>, status: string | undefined): St
   return { [key]: known[key] ?? { label: status ?? '—', icon: HelpCircle, tone: 'neutral' } };
 }
 
+const SESSION: Record<string, Status> = {
+  OPEN: { label: 'Aberta', icon: LockOpen, tone: 'info' },
+  CLOSED: { label: 'Fechada', icon: Lock, tone: 'neutral' },
+};
+
 export const closingStatuses = (status: string | undefined) => statuses(CLOSING, status);
 export const dayStatuses = (status: string | undefined) => statuses(DAY, status);
+export const sessionStatuses = (status: string | undefined) => statuses(SESSION, status);
+
+export const SESSION_FILTERS: { value: CashSessionStatus | ''; label: string }[] = [
+  { value: '', label: 'Todas' },
+  { value: 'OPEN', label: 'Abertas' },
+  { value: 'CLOSED', label: 'Fechadas' },
+];
+
+const CLOSE_KINDS: Record<string, string> = { OPERATOR: 'Pelo operador', FORCED: 'Forçado pela gerência' };
+
+/** How a session was closed (P22): by its operator, or forced by a manager; nothing while it is open. */
+export function closeKindLabel(kind: string | null): string {
+  if (!kind) return '—';
+  return CLOSE_KINDS[kind] ?? kind;
+}
 
 export const CLOSING_FILTERS: { value: ClosingStatus | ''; label: string }[] = [
   { value: 'SUBMITTED', label: 'Por aprovar' },
@@ -49,7 +69,12 @@ export function cashDays(lines: readonly ReconciliationLine[]): CashDay[] {
   return [...days.values()].sort((a, b) => b.businessDate.localeCompare(a.businessDate));
 }
 
-/** A register's name from the store's registers, or its id until they are read (or for one no longer listed). */
-export function registerName(registers: readonly RegisterSummary[] | undefined, id: string | undefined): string {
-  return registers?.find((register) => register.id === id)?.name ?? id ?? '';
+type Named = { id?: string; name?: string };
+
+/**
+ * A register's or an employee's name from the store's list, or its id until the list is read (or for one no longer
+ * listed, or a list the user may not read).
+ */
+export function nameById(list: readonly Named[] | undefined, id: string | undefined): string {
+  return list?.find((item) => item.id === id)?.name ?? id ?? '';
 }

@@ -4,9 +4,11 @@ import { useApi } from '../../../lib/api';
 import { dates, instants, type Period } from '../period';
 import type {
   AuditEventView,
+  CashSessionStatus,
   ClosingStatus,
   ClosingView,
   DocumentSummary,
+  EmployeeSummary,
   InDoubtAttemptView,
   PaymentMethodView,
   ReceiptsReport,
@@ -14,6 +16,7 @@ import type {
   RegisterSummary,
   SalesReport,
   SeriesView,
+  SessionRow,
 } from '../types';
 
 export const FINANCE_KEY = ['backoffice', 'finance'] as const;
@@ -64,6 +67,33 @@ export function useClosings(storeId: string, status: ClosingStatus | undefined, 
       api.GET('/api/v1/backoffice/cash/closings', { params: { query } }).then(({ data }) => paged(data)),
     true,
   );
+}
+
+/** The store's cash sessions opened in the period's business dates, newest first; `status` narrows them. */
+export function useCashSessions(storeId: string, period: Period, status: CashSessionStatus | undefined, page: number) {
+  const query = { storeId, ...dates(period), ...(status ? { status } : {}), page, size: PAGE_SIZE };
+  return useFinanceQuery(
+    [...CASH_KEY, 'sessions', storeId, period, status, page],
+    (api): Promise<Paged<SessionRow>> =>
+      api.GET('/api/v1/backoffice/cash/sessions', { params: { query } }).then(({ data }) => paged(data)),
+    true,
+  );
+}
+
+/**
+ * The store's employees, to name a session's operator. The list needs EMPLOYEE_MANAGE: without it (`enabled` false)
+ * nothing is asked and the sessions still show, each operator by its id.
+ */
+export function useEmployees(storeId: string, enabled: boolean) {
+  const api = useApi();
+  return useQuery({
+    queryKey: [...FINANCE_KEY, 'employees', storeId],
+    queryFn: (): Promise<EmployeeSummary[]> =>
+      api
+        .GET('/api/v1/backoffice/employees', { params: { query: { storeId, page: 0, size: 200 } } })
+        .then(({ data }) => data?.content ?? []),
+    enabled,
+  });
 }
 
 /** A store's short list in one page (a store has a handful of registers and series): no paging UI. */

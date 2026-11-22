@@ -1,6 +1,6 @@
 import { StatusBadge, Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@restaurantpro/ui';
 import { Hourglass } from 'lucide-react';
-import { closingStatuses, registerName } from '../finance-labels';
+import { closingStatuses, nameById } from '../finance-labels';
 import { formatBusinessDate, formatInstant } from '../format';
 import { useCashReconciliation, useInDoubtAttempts, useRegisters } from '../hooks/use-reports';
 import type { Period } from '../period';
@@ -58,7 +58,7 @@ function LinesTable({ storeId, lines }: { storeId: string; lines: Reconciliation
         {lines.map((line) => (
           <TableRow key={`${line.cashDayId}-${line.dayRound}-${line.registerId}-${line.methodCode}`}>
             <TableCell className="tabular-nums">{formatBusinessDate(line.businessDate)}</TableCell>
-            <TableCell>{registerName(registers.data, line.registerId)}</TableCell>
+            <TableCell>{nameById(registers.data, line.registerId)}</TableCell>
             <TableCell className="font-mono">{line.methodCode}</TableCell>
             <TableCell>
               <StatusBadge status={line.closingStatus ?? ''} statuses={closingStatuses(line.closingStatus)} />

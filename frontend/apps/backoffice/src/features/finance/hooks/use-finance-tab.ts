@@ -1,6 +1,6 @@
 import { useSearchParams } from 'react-router';
 
-export const FINANCE_TABS = ['resumo', 'fechos', 'reconciliacao', 'fiscal', 'meios', 'auditoria'] as const;
+export const FINANCE_TABS = ['resumo', 'fechos', 'sessoes', 'reconciliacao', 'fiscal', 'meios', 'auditoria'] as const;
 export type FinanceTab = (typeof FINANCE_TABS)[number];
 
 const PARAM = 'tab';

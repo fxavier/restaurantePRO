@@ -1,0 +1,128 @@
+import { Badge } from '@restaurantpro/ui';
+import { ShieldAlert } from 'lucide-react';
+import { useId } from 'react';
+import type { ReadState } from '../hooks/use-choices';
+import type { PermissionArea } from '../permission-areas';
+import type { PermissionView } from '../types';
+import { ChoicesError } from './choices-error';
+
+type PermissionMatrixProps = {
+  /** The permission catalogue by area, as the server answered it. */
+  catalogue: ReadState & { areas: PermissionArea[] };
+  value: readonly string[];
+  onChange: (value: string[]) => void;
+};
+
+/**
+ * "Matriz granular de privilégios" (Stitch): every permission a role can grant, grouped by area, each a switch. The
+ * value keeps the names it holds that the catalogue does not list, so saving never drops them unseen.
+ */
+export function PermissionMatrix({ catalogue, value, onChange }: PermissionMatrixProps) {
+  const titleId = useId();
+  const toggle = (name: string, on: boolean) => onChange(on ? [...value, name] : value.filter((held) => held !== name));
+
+  return (
+    <section aria-labelledby={titleId} className="flex flex-col gap-3">
+      <div className="flex items-baseline justify-between gap-2">
+        <h3 id={titleId} className="text-sm font-semibold tracking-wide uppercase">
+          Matriz de permissões
+        </h3>
+        <span className="text-xs font-semibold text-primary">{value.length} ativas</span>
+      </div>
+      <CatalogueNotice catalogue={catalogue} />
+      <div className="flex max-h-96 flex-col gap-4 overflow-y-auto pr-1">
+        {catalogue.areas.map((area) => (
+          <AreaGroup key={area.area} area={area} granted={value} onToggle={toggle} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/** Why the matrix has no switches: the catalogue is still loading, its read failed, or it lists nothing. */
+function CatalogueNotice({ catalogue }: Pick<PermissionMatrixProps, 'catalogue'>) {
+  if (catalogue.pending) return <p className="text-sm text-muted-foreground">A carregar as permissões…</p>;
+  if (catalogue.error) return <ChoicesError list={catalogue} />;
+  if (catalogue.areas.length > 0) return null;
+  return <p className="text-sm text-muted-foreground">Não há permissões para conceder.</p>;
+}
+
+type AreaGroupProps = { area: PermissionArea; granted: readonly string[]; onToggle: (name: string, on: boolean) => void };
+
+/** One area's permissions, under its name and how many of them are on. */
+function AreaGroup({ area, granted, onToggle }: AreaGroupProps) {
+  const id = useId();
+  const on = area.permissions.filter((permission) => granted.includes(permission.name)).length;
+  const total = area.permissions.length;
+  return (
+    <div role="group" aria-labelledby={id} className="flex flex-col gap-1">
+      <div className="flex items-baseline justify-between gap-2 border-b pb-1">
+        <h4 id={id} className="text-sm font-semibold">
+          {area.label}
+        </h4>
+        <span className="text-xs text-muted-foreground">
+          <span aria-hidden="true">{`${on} / ${total}`}</span>
+          <span className="sr-only">{`${on} de ${total} ativas`}</span>
+        </span>
+      </div>
+      <ul className="flex flex-col">
+        {area.permissions.map((permission) => (
+          <li key={permission.name}>
+            <PermissionSwitch
+              permission={permission}
+              checked={granted.includes(permission.name)}
+              onChange={(on) => onToggle(permission.name, on)}
+            />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+type PermissionSwitchProps = { permission: PermissionView; checked: boolean; onChange: (on: boolean) => void };
+
+/**
+ * A permission's switch, named by the permission; the knob's position says on or off besides its colour. A sensitive
+ * permission (D142: a BackOffice account needs a fresh second factor to use it) carries a badge and says why.
+ */
+function PermissionSwitch({ permission, checked, onChange }: PermissionSwitchProps) {
+  const id = useId();
+  return (
+    <label className="flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-md px-2 py-1 hover:bg-muted">
+      <span className="flex flex-col gap-0.5">
+        <span className="flex flex-wrap items-center gap-2">
+          <span id={`${id}-name`} className="font-mono text-sm">
+            {permission.name}
+          </span>
+          {permission.sensitive && (
+            <Badge id={`${id}-badge`} variant="warning">
+              <ShieldAlert aria-hidden="true" />
+              Sensível
+            </Badge>
+          )}
+        </span>
+        {permission.sensitive && (
+          <span id={`${id}-why`} className="text-xs text-muted-foreground">
+            Usá-la exige confirmar a identidade com o segundo fator.
+          </span>
+        )}
+      </span>
+      <span className="relative inline-flex shrink-0 items-center">
+        <input
+          type="checkbox"
+          role="switch"
+          aria-labelledby={`${id}-name`}
+          aria-describedby={permission.sensitive ? `${id}-badge ${id}-why` : undefined}
+          checked={checked}
+          onChange={(event) => onChange(event.target.checked)}
+          className="peer h-6 w-11 cursor-pointer appearance-none rounded-full border border-input bg-muted transition-colors checked:border-primary checked:bg-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card focus-visible:outline-none"
+        />
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute left-1 size-4 rounded-full bg-muted-foreground transition-transform peer-checked:translate-x-5 peer-checked:bg-primary-foreground"
+        />
+      </span>
+    </label>
+  );
+}
