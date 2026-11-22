@@ -73,6 +73,20 @@ class StockItemHttpTest {
         create(" ", "un", manager()).andExpect(status().isBadRequest());
     }
 
+    /** FE-F35: stock item and pack codes are unique in their scope whatever their case; the entered case is kept. */
+    @Test
+    void aCaseVariantOfAStockItemOrPackCodeIsTakenAndTheEnteredCaseIsKept() throws Exception {
+        String code = code("dup");
+        create(code, "un", manager()).andExpect(status().isCreated()).andExpect(jsonPath("$.code").value(code));
+        create(code.toUpperCase(), "un", manager()).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("STOCK_ITEM_CODE_TAKEN"));
+
+        UUID item = fixtures.newStockItem("g");
+        pack(item, "sack", "25", "kg").andExpect(status().isCreated()).andExpect(jsonPath("$.code").value("sack"));
+        pack(item, "SACK", "10", "kg").andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PACK_CODE_TAKEN"));
+    }
+
     @Test
     void writingNeedsInventoryManageAndReadingInventoryView() throws Exception {
         create(code("NO"), "un", account(null, Permission.INVENTORY_VIEW)).andExpect(status().isForbidden());
