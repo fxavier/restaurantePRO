@@ -74,7 +74,7 @@ public class EmployeeService {
     @Transactional
     public EmployeeSummary hire(EmployeeCreateRequest request) {
         Role role = requireCanAssign(request.storeId(), request.roleId());
-        if (employees.existsByCode(request.code().strip())) {
+        if (employees.existsByCodeIgnoreCase(request.code().strip())) {
             throw new EmployeeCodeTakenException(request.code());
         }
         Employee employee = save(Employee.hire(request.code(), request.name(), encoder.encode(request.pin()),

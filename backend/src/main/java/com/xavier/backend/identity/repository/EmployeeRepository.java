@@ -13,7 +13,7 @@ import org.springframework.data.jpa.repository.Query;
 
 public interface EmployeeRepository extends JpaRepository<Employee, UUID> {
 
-    boolean existsByCode(String code);
+    boolean existsByCodeIgnoreCase(String code);
 
     /** Row-locked so concurrent wrong PINs are all counted (the 5th locks). */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
