@@ -61,7 +61,7 @@ public class StoreService {
     public StoreSummary create(StoreCreateRequest request) {
         accessPolicy.require(Permission.STORE_MANAGE);
         Currency currency = companyCurrency();
-        if (stores.existsByCode(request.code().strip())) {
+        if (stores.existsByCodeIgnoreCase(request.code().strip())) {
             throw new StoreCodeTakenException(request.code());
         }
         Store store = saveWithUniqueCode(Store.create(request.code(), request.name(), request.timezone(),
@@ -75,7 +75,7 @@ public class StoreService {
         accessPolicy.require(Permission.STORE_MANAGE);
         Store store = store(id);
         OptimisticLocking.requireVersion(Store.class, id, store.getVersion(), request.version());
-        if (stores.existsByCodeAndIdNot(request.code().strip(), id)) {
+        if (stores.existsByCodeIgnoreCaseAndIdNot(request.code().strip(), id)) {
             throw new StoreCodeTakenException(request.code());
         }
         boolean wasActive = store.isActive();

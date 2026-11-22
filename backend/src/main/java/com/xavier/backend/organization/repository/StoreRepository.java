@@ -9,9 +9,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface StoreRepository extends JpaRepository<Store, UUID> {
 
-    boolean existsByCode(String code);
+    boolean existsByCodeIgnoreCase(String code);
 
-    boolean existsByCodeAndIdNot(String code, UUID id);
+    boolean existsByCodeIgnoreCaseAndIdNot(String code, UUID id);
 
     Page<Store> findByIdIn(Collection<UUID> ids, Pageable pageable);
 }
