@@ -4,6 +4,7 @@ import { useStoreTimeZone } from '../../organization';
 import { rangeError } from '../filters';
 import { useOrderSelection } from '../hooks/use-order-selection';
 import { useOrders, type OrderFilter } from '../hooks/use-orders';
+import { OrderDetail } from './order-detail';
 import { OrderFilters } from './order-filters';
 import { OrdersCard } from './orders-card';
 
@@ -33,6 +34,11 @@ export function OrdersScreen({ storeId }: { storeId: string }) {
         </Card>
         <OrdersCard orders={orders} page={page} onPage={setPage} timeZone={timeZone} selectedId={orderId} onSelect={selectOrder} />
       </div>
+      {orderId && (
+        <div className="xl:col-span-2">
+          <OrderDetail key={orderId} orderId={orderId} timeZone={timeZone} onClose={() => selectOrder(undefined)} />
+        </div>
+      )}
     </div>
   );
 }

@@ -1,4 +1,11 @@
 import { LOCALE } from '@restaurantpro/ui';
+import type { LineView } from './types';
+
+/** What a line sold, as the server describes it: the item, then its variant; the item code when it has no name. */
+export function lineName({ description, variantName, itemCode }: Pick<LineView, 'description' | 'variantName' | 'itemCode'>): string {
+  const name = description ?? itemCode ?? 'Artigo';
+  return variantName ? `${name} · ${variantName}` : name;
+}
 
 /** A business date (`YYYY-MM-DD`) as dd/mm/yyyy: a date has no time, so no timezone may shift it. */
 export function businessDate(date: string): string {
