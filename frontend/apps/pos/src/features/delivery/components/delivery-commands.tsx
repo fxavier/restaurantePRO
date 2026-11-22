@@ -1,35 +1,38 @@
 import { Button } from '@restaurantpro/ui';
-import { useId, useState } from 'react';
+import { useState } from 'react';
 import { useEmployee } from '../../../lib/auth/use-employee';
 import { useCommandsBlocked } from '../../../lib/live/use-connection';
-import { type Delivery, intentState, isChangedElsewhere, mayRunDeliveries, type Transition } from '../delivery';
+import { type Delivery, intentState, isChangedElsewhere, mayRunDeliveries } from '../delivery';
 import { useDeliveryTransition } from '../hooks/use-delivery-transition';
 import { refusal } from '../messages';
+import { DispatchDialog } from './dispatch-dialog';
 import { ReturnDialog } from './return-dialog';
 
 type Props = { delivery: Delivery; onChangedElsewhere: () => void };
 
+/** Which of a card's dialogs is open: the courier to dispatch with, or the reason it came back. */
+type Asking = 'dispatch' | 'return' | undefined;
+
 /**
- * A card's commands (D127): a waiting or returned delivery goes out with the logged-in employee as its courier; one on
- * the road is delivered or returned. Hidden without the permission, disabled without a connection (FC §11).
+ * A card's commands (D127): a waiting or returned delivery goes out with the courier picked in a dialog; one on the
+ * road is delivered, or returned with a reason. Hidden without the permission, disabled without a connection (FC §11).
  */
 export function DeliveryCommands({ delivery, onChangedElsewhere }: Props) {
   const employee = useEmployee();
   const blocked = useCommandsBlocked();
-  const [returning, setReturning] = useState(false);
-  const transition = useDeliveryTransition(delivery.orderId, { onChangedElsewhere });
+  const [asking, setAsking] = useState<Asking>();
+  const delivered = useDeliveryTransition(delivery.orderId, { onChangedElsewhere });
   if (!employee || !mayRunDeliveries(employee)) return null;
 
-  const { awaitingRetry } = intentState(transition);
-  const disabled = blocked || transition.pending;
-  const { version } = delivery;
-  const start = (request: Transition) => transition.start(request, undefined);
+  const { awaitingRetry } = intentState(delivered);
+  const disabled = blocked || delivered.pending;
+  const close = () => setAsking(undefined);
 
   return (
     <div className="flex flex-col gap-2">
-      <Failure error={transition.error} kind={transition.last?.request.kind} />
+      <Failure error={delivered.error} />
       {awaitingRetry ? (
-        <Button size="touch" className="w-full" disabled={blocked} onClick={transition.retry}>
+        <Button size="touch" className="w-full" disabled={blocked} onClick={delivered.retry}>
           Tentar novamente
         </Button>
       ) : delivery.status === 'OUT_FOR_DELIVERY' ? (
@@ -37,62 +40,34 @@ export function DeliveryCommands({ delivery, onChangedElsewhere }: Props) {
           <Button
             size="touch"
             disabled={disabled}
-            aria-busy={transition.pending}
-            onClick={() => start({ kind: 'delivered', version })}
+            aria-busy={delivered.pending}
+            onClick={() => delivered.start({ kind: 'delivered', version: delivery.version }, undefined)}
           >
             Entregue
           </Button>
-          <Button variant="outline" size="touch" disabled={disabled} onClick={() => setReturning(true)}>
+          <Button variant="outline" size="touch" disabled={disabled} onClick={() => setAsking('return')}>
             Devolvida
           </Button>
         </div>
       ) : (
-        <Dispatch
-          courier={employee}
-          disabled={disabled}
-          pending={transition.pending}
-          onDispatch={() => start({ kind: 'dispatch', courierEmployeeId: employee.employeeId, version })}
-        />
+        <Button size="touch" className="w-full" disabled={blocked} onClick={() => setAsking('dispatch')}>
+          Expedir
+        </Button>
       )}
-      {returning && (
-        <ReturnDialog delivery={delivery} onClose={() => setReturning(false)} onChangedElsewhere={onChangedElsewhere} />
+      {asking === 'dispatch' && (
+        <DispatchDialog delivery={delivery} onClose={close} onChangedElsewhere={onChangedElsewhere} />
       )}
+      {asking === 'return' && <ReturnDialog delivery={delivery} onClose={close} onChangedElsewhere={onChangedElsewhere} />}
     </div>
   );
 }
 
-/** A refusal; one because the delivery moved is said by the board, as this card may have moved to another column. */
-function Failure({ error, kind }: { error: Error | null | undefined; kind: Transition['kind'] | undefined }) {
+/** A refused "Entregue"; one because the delivery moved is said by the board, as this card may have moved column. */
+function Failure({ error }: { error: Error | null | undefined }) {
   if (!error || isChangedElsewhere(error)) return null;
   return (
     <p role="alert" className="text-sm font-medium text-error">
-      {refusal(error, WHAT[kind ?? 'dispatch'])}
+      {refusal(error, 'a entrega')}
     </p>
   );
 }
-
-type DispatchProps = { courier: { name: string }; disabled: boolean; pending: boolean; onDispatch: () => void };
-
-/** "Expedir", with the logged-in employee named as the courier. */
-function Dispatch({ courier, disabled, pending, onDispatch }: DispatchProps) {
-  const courierId = useId();
-  return (
-    <>
-      <Button
-        size="touch"
-        className="w-full"
-        disabled={disabled}
-        aria-busy={pending}
-        aria-describedby={courierId}
-        onClick={onDispatch}
-      >
-        Expedir
-      </Button>
-      <p id={courierId} className="text-sm text-muted-foreground">
-        Estafeta: {courier.name}
-      </p>
-    </>
-  );
-}
-
-const WHAT = { dispatch: 'a expedição', delivered: 'a entrega', returned: 'a devolução' } as const;

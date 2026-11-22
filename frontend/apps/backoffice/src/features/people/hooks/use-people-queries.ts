@@ -5,6 +5,7 @@ import type {
   AssignmentSummary,
   EmployeeSummary,
   ListPage,
+  PermissionView,
   RoleSummary,
   StoreSummary,
   SupportGrantSummary,
@@ -60,6 +61,10 @@ export const useEmployeeChoices = () =>
 /** All the accounts, not the tab's page: the support accounts among them, and the usernames grants name by id. */
 export const useAccountChoices = () =>
   useWholeList<UserSummary>(['account-choices'], async (api) => (await api.GET('/api/v1/backoffice/users', { params: { query: CHOICES } })).data?.content);
+
+/** Every permission a role can grant (`PermissionView`): code-defined, each with its area and whether it is sensitive. */
+export const usePermissionCatalogue = () =>
+  useWholeList<PermissionView>(['permissions'], async (api) => (await api.GET('/api/v1/backoffice/permissions')).data);
 
 /** The stores where an employee holds a role, each with that role (`EmployeeStoreAssignment`). */
 export const useAssignments = (employeeId: string) =>

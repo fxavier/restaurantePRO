@@ -1,5 +1,5 @@
 import { screen, waitFor, within } from '@testing-library/react';
-import { http, HttpResponse } from 'msw';
+import { delay, http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { admin, api, baixa, problem, sommerschield, stepUpRequired } from '../../test/fixtures';
 import {
@@ -42,6 +42,18 @@ function storedText() {
 
 function bodyRows(table: HTMLElement) {
   return within(table).getAllByRole('row').slice(1);
+}
+
+/** `GET /backoffice/permissions` (`PermissionView`), in the server's order: two areas of orders, cash and production. */
+const catalogue = [
+  { name: 'ORDER_VIEW', sensitive: false, area: 'ORDER' },
+  { name: 'ORDER_VOID_APPROVE', sensitive: true, area: 'ORDER' },
+  { name: 'CASH_VIEW', sensitive: false, area: 'CASH' },
+  { name: 'PRODUCTION_VIEW', sensitive: false, area: 'PRODUCTION' },
+];
+
+function withCatalogue() {
+  server.use(http.get(api('/api/v1/backoffice/permissions'), () => HttpResponse.json(catalogue)));
 }
 
 describe('people tabs', () => {
@@ -365,16 +377,17 @@ describe('roles tab', () => {
     expect(within(second!).getAllByRole('cell')[0]).toHaveTextContent('Empregado de sala');
   });
 
-  it('creates a role with the permissions added to it by name', async () => {
+  it('creates a role with the permissions switched on in the matrix, grouped by area', async () => {
     const state = peopleServer();
+    withCatalogue();
     const { user } = renderApp('/people?tab=funcoes');
 
     await user.click(await screen.findByRole('button', { name: 'Nova função' }));
     const dialog = await screen.findByRole('dialog', { name: 'Nova função' });
     await user.type(within(dialog).getByLabelText('Nome'), 'Chefe de cozinha');
-    await user.type(within(dialog).getByLabelText('Adicionar permissão'), ' production_view ');
-    await user.click(within(dialog).getByRole('button', { name: 'Adicionar' }));
-    expect(within(dialog).getByRole('checkbox', { name: 'PRODUCTION_VIEW' })).toBeChecked();
+    const production = await within(dialog).findByRole('group', { name: 'Produção' });
+    await user.click(within(production).getByRole('switch', { name: 'PRODUCTION_VIEW' }));
+    expect(within(production).getByRole('switch', { name: 'PRODUCTION_VIEW' })).toBeChecked();
     await user.click(within(dialog).getByRole('button', { name: 'Criar função' }));
 
     expect(await screen.findByRole('cell', { name: 'Chefe de cozinha' })).toBeInTheDocument();
@@ -383,22 +396,122 @@ describe('roles tab', () => {
     ]);
   });
 
+  it("opens a role's matrix with what it grants switched on, each area's count, and the sensitive permissions marked", async () => {
+    peopleServer();
+    withCatalogue();
+    const { user } = renderApp('/people?tab=funcoes');
+
+    await user.click(await screen.findByRole('button', { name: 'Editar Gerente' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Editar a função Gerente' });
+    const orders = await within(dialog).findByRole('group', { name: 'Pedidos' });
+
+    expect(within(dialog).getAllByRole('heading', { level: 4 }).map((heading) => heading.textContent)).toEqual([
+      'Pedidos',
+      'Caixa',
+      'Produção',
+    ]);
+    expect(within(orders).getByText('1 / 2')).toBeInTheDocument();
+    expect(within(orders).getByRole('switch', { name: 'ORDER_VIEW' })).not.toBeChecked();
+    const approve = within(orders).getByRole('switch', { name: 'ORDER_VOID_APPROVE' });
+    expect(approve).toBeChecked();
+    expect(approve).toHaveAccessibleDescription('Sensível Usá-la exige confirmar a identidade com o segundo fator.');
+    expect(within(orders).getByRole('switch', { name: 'ORDER_VIEW' })).not.toHaveAccessibleDescription();
+    expect(within(dialog).getByText('2 ativas')).toBeInTheDocument();
+  });
+
+  it('says in the matrix that the permissions cannot be reached, keeps what the role grants, and reads them again', async () => {
+    const state = peopleServer();
+    let down = true;
+    server.use(
+      http.get(api('/api/v1/backoffice/permissions'), () =>
+        down ? problem(503, 'BACKEND_UNAVAILABLE') : HttpResponse.json(catalogue),
+      ),
+    );
+    const { user } = renderApp('/people?tab=funcoes');
+
+    await user.click(await screen.findByRole('button', { name: 'Editar Gerente' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Editar a função Gerente' });
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert).toHaveTextContent('Sem ligação: não foi possível carregar as permissões.');
+    expect(within(dialog).queryByRole('switch')).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Guardar' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(state.requests.filter((r) => r.method === 'PUT').map((r) => r.body)).toEqual([
+      { name: 'Gerente', permissions: ['ORDER_VOID_APPROVE', 'CASH_VIEW'], version: 3 },
+    ]);
+
+    await user.click(screen.getByRole('button', { name: 'Editar Gerente' }));
+    const again = await screen.findByRole('dialog', { name: 'Editar a função Gerente' });
+    const retry = await within(again).findByRole('button', { name: 'Tentar novamente' });
+    down = false;
+    await user.click(retry);
+    expect(await within(again).findByRole('switch', { name: 'CASH_VIEW' })).toBeChecked();
+  });
+
+  it('says so while the permissions load', async () => {
+    peopleServer();
+    server.use(http.get(api('/api/v1/backoffice/permissions'), () => delay('infinite')));
+    const { user } = renderApp('/people?tab=funcoes');
+
+    await user.click(await screen.findByRole('button', { name: 'Nova função' }));
+
+    expect(await screen.findByText('A carregar as permissões…')).toBeInTheDocument();
+  });
+
+  it('says so when there are no permissions to grant', async () => {
+    peopleServer();
+    server.use(http.get(api('/api/v1/backoffice/permissions'), () => HttpResponse.json([])));
+    const { user } = renderApp('/people?tab=funcoes');
+
+    await user.click(await screen.findByRole('button', { name: 'Nova função' }));
+
+    expect(await screen.findByText('Não há permissões para conceder.')).toBeInTheDocument();
+  });
+
+  it("says the user may not read the permissions, with nothing to retry, when the API refuses", async () => {
+    peopleServer();
+    server.use(http.get(api('/api/v1/backoffice/permissions'), () => problem(403, 'HTTP_403', 'Forbidden')));
+    const { user } = renderApp('/people?tab=funcoes');
+
+    await user.click(await screen.findByRole('button', { name: 'Nova função' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Nova função' });
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Sem permissão para ver as permissões.');
+    expect(within(dialog).queryByRole('button', { name: 'Tentar novamente' })).not.toBeInTheDocument();
+  });
+
+  it('asks for a fresh second factor when saving the role needs it', async () => {
+    peopleServer();
+    withCatalogue();
+    server.use(http.put(api('/api/v1/backoffice/roles/:id'), () => stepUpRequired(300)));
+    const { user, leave } = renderApp('/people?tab=funcoes');
+
+    await user.click(await screen.findByRole('button', { name: 'Editar Gerente' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Editar a função Gerente' });
+    await user.click(await within(dialog).findByRole('switch', { name: 'ORDER_VIEW' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Guardar' }));
+    const stepUp = await screen.findByRole('alertdialog', { name: 'Confirme a sua identidade' });
+    await user.click(within(stepUp).getByRole('button', { name: 'Confirmar identidade' }));
+
+    expect(leave).toHaveBeenCalledWith('/bff/step-up?acr_values=2&max_age=300&return=%2Fpeople%3Ftab%3Dfuncoes');
+  });
+
   it('after a conflicting edit, loads the current version and saves against it', async () => {
     const state = peopleServer();
+    withCatalogue();
     const { user } = renderApp('/people?tab=funcoes');
 
     await user.click(await screen.findByRole('button', { name: 'Editar Gerente' }));
     const dialog = await screen.findByRole('dialog', { name: 'Editar a função Gerente' });
     // Someone else removes CASH_VIEW meanwhile.
     state.roles[0] = { ...gerente, permissions: ['ORDER_VOID_APPROVE'], version: 4 };
-    await user.click(within(dialog).getByRole('checkbox', { name: 'ORDER_VOID_APPROVE' }));
+    await user.click(await within(dialog).findByRole('switch', { name: 'ORDER_VOID_APPROVE' }));
     await user.click(within(dialog).getByRole('button', { name: 'Guardar' }));
 
     expect(await within(dialog).findByText('Foi alterado por outra pessoa. Recarregue e tente de novo.')).toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: 'Carregar a versão atual' }));
-    expect(within(dialog).queryByRole('checkbox', { name: 'CASH_VIEW' })).not.toBeInTheDocument();
-    expect(within(dialog).getByRole('checkbox', { name: 'ORDER_VOID_APPROVE' })).toBeChecked();
-    await user.click(within(dialog).getByRole('checkbox', { name: 'ORDER_VOID_APPROVE' }));
+    expect(within(dialog).getByRole('switch', { name: 'CASH_VIEW' })).not.toBeChecked();
+    expect(within(dialog).getByRole('switch', { name: 'ORDER_VOID_APPROVE' })).toBeChecked();
+    await user.click(within(dialog).getByRole('switch', { name: 'ORDER_VOID_APPROVE' }));
     await user.click(within(dialog).getByRole('button', { name: 'Guardar' }));
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());

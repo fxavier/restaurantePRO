@@ -8,6 +8,7 @@ import {
   MapPinned,
   MonitorSmartphone,
   Printer,
+  ReceiptText,
   Store,
   Truck,
   UserCog,
@@ -44,6 +45,8 @@ export const areaGroups: AreaGroup[] = [
       { label: 'Stocks', to: '/inventory', icon: Boxes, permission: 'INVENTORY_VIEW' },
       // CUSTOMER_VIEW: "search and view customers, their statement and aging" (company-wide).
       { label: 'Clientes', to: '/customers', icon: Contact, permission: 'CUSTOMER_VIEW' },
+      // ORDER_VIEW: BackOfficeOrderQueryService's search and detail (GET /api/v1/backoffice/orders).
+      { label: 'Pedidos', to: '/orders', icon: ReceiptText, permission: 'ORDER_VIEW' },
       // CASH_VIEW: "sessions, days and closings (read)" (CashClosingService, CashDayService).
       { label: 'Financeiro', to: '/finance', icon: Landmark, permission: 'CASH_VIEW' },
       // EMPLOYEE_MANAGE: EmployeeService's list and edits.

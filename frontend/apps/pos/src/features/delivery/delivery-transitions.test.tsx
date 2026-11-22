@@ -6,33 +6,14 @@ import {
   DELIVERY,
   deliveredEndpoint,
   deliveriesEndpoint,
-  dispatchEndpoint,
   returnedEndpoint,
 } from '../../test/delivery';
 import { json } from '../../test/order';
 import { notificationsEndpoint, problem, SESSION } from '../../test/server';
 
 const card = (orderNumber: number) => screen.findByRole('article', { name: `Entrega n.º ${orderNumber}` });
-const OUT_NOW = { ...DELIVERY.pending, status: 'OUT_FOR_DELIVERY' as const, version: 1 };
 
 describe('moving a delivery along', () => {
-  it('"Expedir" sends a waiting delivery out with the logged-in employee as its courier, then reads the board again', async () => {
-    deliveriesEndpoint(json([DELIVERY.pending]), json([OUT_NOW]));
-    const sent = dispatchEndpoint(DELIVERY.pending.orderId!, json(OUT_NOW));
-    const { user } = await atDelivery();
-
-    const expedir = within(await card(82)).getByRole('button', { name: 'Expedir' });
-    expect(expedir).toHaveAccessibleDescription('Estafeta: Ana Silva');
-    await user.click(expedir);
-
-    const onTheRoad = await screen.findByRole('region', { name: /^Em entrega/ });
-    expect(await within(onTheRoad).findByRole('article', { name: 'Entrega n.º 82' })).toBeInTheDocument();
-    expect(sent).toHaveLength(1);
-    expect(sent[0]!.body).toEqual({ courierEmployeeId: SESSION.employeeId, version: 0 });
-    expect(sent[0]!.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
-    expect(sent[0]!.posSession).toBe('pos-session-ana');
-  });
-
   it('"Entregue" closes the trip of a delivery on the road, at its version', async () => {
     deliveriesEndpoint(json([DELIVERY.out]), json([]));
     const sent = deliveredEndpoint(DELIVERY.out.orderId!, json({ ...DELIVERY.out, status: 'DELIVERED', version: 2 }));
@@ -71,11 +52,11 @@ describe('moving a delivery along', () => {
   });
 
   it('a delivery changed on another terminal (409) is refused, said so, and the board read again', async () => {
-    const reads = deliveriesEndpoint(json([DELIVERY.pending]), json([OUT_NOW]));
-    dispatchEndpoint(DELIVERY.pending.orderId!, () => problem(409, 'DELIVERY_STATE'));
+    const reads = deliveriesEndpoint(json([DELIVERY.out]), json([]));
+    deliveredEndpoint(DELIVERY.out.orderId!, () => problem(409, 'DELIVERY_STATE'));
     const { user } = await atDelivery();
 
-    await user.click(within(await card(82)).getByRole('button', { name: 'Expedir' }));
+    await user.click(within(await card(85)).getByRole('button', { name: 'Entregue' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'A entrega foi alterada noutro terminal. O quadro foi atualizado; reveja e tente de novo.',
@@ -83,26 +64,14 @@ describe('moving a delivery along', () => {
     await waitFor(() => expect(reads.length).toBeGreaterThanOrEqual(2));
   });
 
-  it('a refused dispatch names the reason (drafts still to send)', async () => {
-    deliveriesEndpoint(json([DELIVERY.pending]));
-    dispatchEndpoint(DELIVERY.pending.orderId!, () => problem(422, 'DELIVERY_HAS_DRAFTS'));
+  it('a lost answer to "Entregue" offers "Tentar novamente", which resends the same Idempotency-Key', async () => {
+    deliveriesEndpoint(json([DELIVERY.out]));
+    const sent = deliveredEndpoint(DELIVERY.out.orderId!, () => HttpResponse.error(), json({ ...DELIVERY.out, version: 2 }));
     const { user } = await atDelivery();
 
-    await user.click(within(await card(82)).getByRole('button', { name: 'Expedir' }));
-
-    expect(await within(await card(82)).findByRole('alert')).toHaveTextContent(
-      'O pedido tem artigos por enviar. Envie-os ou apague-os antes de expedir.',
-    );
-  });
-
-  it('a lost answer offers "Tentar novamente", which resends the same Idempotency-Key', async () => {
-    deliveriesEndpoint(json([DELIVERY.pending]));
-    const sent = dispatchEndpoint(DELIVERY.pending.orderId!, () => HttpResponse.error(), json(OUT_NOW));
-    const { user } = await atDelivery();
-
-    await user.click(within(await card(82)).getByRole('button', { name: 'Expedir' }));
-    const retry = await within(await card(82)).findByRole('button', { name: 'Tentar novamente' });
-    expect(within(await card(82)).getByRole('alert')).toHaveTextContent('Sem ligação — a expedição não foi confirmada.');
+    await user.click(within(await card(85)).getByRole('button', { name: 'Entregue' }));
+    const retry = await within(await card(85)).findByRole('button', { name: 'Tentar novamente' });
+    expect(within(await card(85)).getByRole('alert')).toHaveTextContent('Sem ligação — a entrega não foi confirmada.');
     await user.click(retry);
 
     await waitFor(() => expect(sent).toHaveLength(2));

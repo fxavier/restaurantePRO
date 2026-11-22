@@ -129,6 +129,67 @@ describe('a new delivery', () => {
     expect(within(dialog).getByRole('button', { name: 'Cancelar' })).toBeEnabled();
   });
 
+  it('a "Criar cliente" in flight holds the delivery: its answer lost, "Tentar novamente" is still on screen', async () => {
+    let answer!: () => void;
+    const answered = new Promise<void>((resolve) => (answer = resolve));
+    const createdCustomers = createCustomerEndpoint(async () => {
+      await answered;
+      return HttpResponse.error();
+    });
+    const { user, dialog } = await newDelivery();
+    await user.click(within(dialog).getByRole('button', { name: 'Novo cliente' }));
+    await user.type(within(dialog).getByLabelText('Nome'), 'Joana Nova');
+    await user.click(within(dialog).getByRole('button', { name: 'Criar cliente' }));
+    await waitFor(() => expect(createdCustomers).toHaveLength(1));
+
+    const takeaway = within(dialog).getByRole('radio', { name: /^Takeaway/ });
+    expect(takeaway).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'Cancelar' })).toBeDisabled();
+    await user.click(takeaway);
+    await user.keyboard('{Escape}');
+    expect(screen.getByRole('dialog', { name: 'Novo pedido fora de sala' })).toBeInTheDocument();
+
+    answer();
+    expect(await within(dialog).findByRole('button', { name: 'Tentar novamente' })).toBeEnabled();
+    expect(within(dialog).getByRole('radio', { name: /^Delivery/ })).toBeChecked();
+  });
+
+  it('never offers "Tentar novamente" for a customer while the dialog can still be cancelled, not even for a moment', async () => {
+    createCustomerEndpoint(() => HttpResponse.error());
+    const { user, dialog } = await newDelivery();
+    await user.click(within(dialog).getByRole('button', { name: 'Novo cliente' }));
+    await user.type(within(dialog).getByLabelText('Nome'), 'Joana Nova');
+    // Every screen the waiter could tap on, as each one is committed, before anything React runs after it.
+    const cancellable: boolean[] = [];
+    const watch = new MutationObserver(() => {
+      if (!within(dialog).queryByRole('button', { name: 'Tentar novamente' })) return;
+      cancellable.push(within(dialog).getByRole('button', { name: 'Cancelar' }).hasAttribute('disabled') === false);
+    });
+    watch.observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
+
+    await user.click(within(dialog).getByRole('button', { name: 'Criar cliente' }));
+    await within(dialog).findByRole('button', { name: 'Tentar novamente' });
+    watch.disconnect();
+
+    expect(cancellable).not.toHaveLength(0);
+    expect(cancellable).not.toContain(true);
+  });
+
+  it('a refused "Criar cliente" is not the next new customer\'s: back at the search, a new one starts clean', async () => {
+    createCustomerEndpoint(() => problem(422, 'VALIDATION_FAILED'));
+    const { user, dialog } = await newDelivery();
+    await user.click(within(dialog).getByRole('button', { name: 'Novo cliente' }));
+    await user.type(within(dialog).getByLabelText('Nome'), 'Joana Nova');
+    await user.click(within(dialog).getByRole('button', { name: 'Criar cliente' }));
+    expect(await within(dialog).findByRole('alert')).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Voltar à pesquisa' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Novo cliente' }));
+
+    expect(within(dialog).getByLabelText('Nome')).toHaveValue('');
+    expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('a search without a match says so', async () => {
     customerSearchEndpoint(json([]));
     const { user, dialog } = await newDelivery();
