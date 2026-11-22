@@ -43,34 +43,39 @@ class KitchenDisplayController {
     }
 
     @GetMapping(ProductionTicketController.POS + "/kds")
-    PageResponse<TicketView> list(@RequestParam(required = false) String destination,
-                                  @RequestParam(required = false) Set<KitchenStatus> status,
-                                  @PageableDefault(size = 50, sort = "queuedAt", direction = Sort.Direction.ASC)
-                                  @ParameterObject Pageable pageable) {
+    PageResponse<TicketView> listForKds(@RequestParam(required = false) String destination,
+                                        @RequestParam(required = false) Set<KitchenStatus> status,
+                                        @PageableDefault(size = 50, sort = "queuedAt",
+                                                direction = Sort.Direction.ASC)
+                                        @ParameterObject Pageable pageable) {
         return kitchen.listForPos(destination, status, pageable);
     }
 
     @PostMapping(TICKET + "/start")
-    ResponseEntity<TicketView> start(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
-                                     @Valid @RequestBody KitchenCommandRequest body, HttpServletRequest request) {
+    ResponseEntity<TicketView> kitchenStart(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
+                                            @Valid @RequestBody KitchenCommandRequest body,
+                                            HttpServletRequest request) {
         return command("start", key, request, body, () -> kitchen.start(id, body.version()));
     }
 
     @PostMapping(TICKET + "/ready")
-    ResponseEntity<TicketView> ready(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
-                                     @Valid @RequestBody KitchenCommandRequest body, HttpServletRequest request) {
+    ResponseEntity<TicketView> kitchenReady(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
+                                            @Valid @RequestBody KitchenCommandRequest body,
+                                            HttpServletRequest request) {
         return command("ready", key, request, body, () -> kitchen.ready(id, body.version()));
     }
 
     @PostMapping(TICKET + "/bump")
-    ResponseEntity<TicketView> bump(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
-                                    @Valid @RequestBody KitchenCommandRequest body, HttpServletRequest request) {
+    ResponseEntity<TicketView> kitchenBump(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
+                                           @Valid @RequestBody KitchenCommandRequest body,
+                                           HttpServletRequest request) {
         return command("bump", key, request, body, () -> kitchen.bump(id, body.version()));
     }
 
     @PostMapping(TICKET + "/recall")
-    ResponseEntity<TicketView> recall(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
-                                      @Valid @RequestBody KitchenCommandRequest body, HttpServletRequest request) {
+    ResponseEntity<TicketView> kitchenRecall(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String key,
+                                             @Valid @RequestBody KitchenCommandRequest body,
+                                             HttpServletRequest request) {
         return command("recall", key, request, body, () -> kitchen.recall(id, body.version()));
     }
 

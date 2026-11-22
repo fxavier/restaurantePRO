@@ -9963,6 +9963,72 @@
         },
         "type": "object"
       },
+      "com.xavier.backend.production.model.dto.KitchenCommandRequest": {
+        "properties": {
+          "version": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "type": "object"
+      },
+      "com.xavier.backend.production.model.dto.KitchenProgressView": {
+        "properties": {
+          "bumpedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "bumpedBy": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "queuedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "readyAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "readyBy": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "recalledAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "recalledBy": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "startedBy": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "QUEUED",
+              "IN_PREPARATION",
+              "READY",
+              "BUMPED"
+            ],
+            "type": "string"
+          },
+          "version": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "com.xavier.backend.production.model.dto.PrintJobView": {
         "properties": {
           "attempts": {
@@ -10482,6 +10548,9 @@
               "COPY"
             ],
             "type": "string"
+          },
+          "kitchen": {
+            "$ref": "#/components/schemas/com.xavier.backend.production.model.dto.KitchenProgressView"
           },
           "lines": {
             "items": {
@@ -32167,6 +32236,258 @@
         ]
       }
     },
+    "/api/v1/pos/production-tickets/kds": {
+      "get": {
+        "operationId": "listForKds",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "destination",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "items": {
+                "enum": [
+                  "QUEUED",
+                  "IN_PREPARATION",
+                  "READY",
+                  "BUMPED"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            }
+          },
+          {
+            "description": "Zero-based page index (0..N)",
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The size of the page to be returned",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": [
+                "queuedAt,ASC"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/com.xavier.backend.shared.web.PageResponseCom.xavier.backend.production.model.dto.TicketView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
+        "tags": [
+          "kitchen-display-controller"
+        ]
+      }
+    },
+    "/api/v1/pos/production-tickets/{id}/bump": {
+      "post": {
+        "operationId": "kitchenBump",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/com.xavier.backend.production.model.dto.KitchenCommandRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/com.xavier.backend.production.model.dto.TicketView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
+        "tags": [
+          "kitchen-display-controller"
+        ]
+      }
+    },
+    "/api/v1/pos/production-tickets/{id}/ready": {
+      "post": {
+        "operationId": "kitchenReady",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/com.xavier.backend.production.model.dto.KitchenCommandRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/com.xavier.backend.production.model.dto.TicketView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
+        "tags": [
+          "kitchen-display-controller"
+        ]
+      }
+    },
+    "/api/v1/pos/production-tickets/{id}/recall": {
+      "post": {
+        "operationId": "kitchenRecall",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/com.xavier.backend.production.model.dto.KitchenCommandRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/com.xavier.backend.production.model.dto.TicketView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
+        "tags": [
+          "kitchen-display-controller"
+        ]
+      }
+    },
     "/api/v1/pos/production-tickets/{id}/reprints": {
       "post": {
         "operationId": "reprint",
@@ -32252,6 +32573,60 @@
         ],
         "tags": [
           "production-ticket-controller"
+        ]
+      }
+    },
+    "/api/v1/pos/production-tickets/{id}/start": {
+      "post": {
+        "operationId": "kitchenStart",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/com.xavier.backend.production.model.dto.KitchenCommandRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/com.xavier.backend.production.model.dto.TicketView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
+        "tags": [
+          "kitchen-display-controller"
         ]
       }
     },
