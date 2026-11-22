@@ -19,7 +19,8 @@ type Options = {
   user?: Parameters<typeof userEvent.setup>[0];
   /**
    * Ana's POS session, as her PIN login answers it once the terminal has its token (the PIN pad itself is tested in
-   * identity); the test sets up the token endpoint.
+   * identity); the test sets up the token endpoint. The helper then always ends on `/tables`, where the login sends
+   * the terminal, whatever `path` was: a test navigates on from there.
    */
   loggedIn?: boolean;
 };

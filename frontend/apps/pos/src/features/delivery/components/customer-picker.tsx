@@ -21,7 +21,8 @@ export function CustomerPicker({ customerId, onChange, disabled, create }: Props
   const [creating, setCreating] = useState(false);
   if (customerId) return <ChosenCustomer customerId={customerId} onChange={() => onChange(undefined)} disabled={disabled} />;
   if (creating) return <NewCustomer create={create} onCancel={() => setCreating(false)} />;
-  // Each new customer starts clean: a refusal of an earlier attempt is not this one's (an unsettled one never left).
+  // Each new customer starts clean: a refusal of an earlier attempt is not this one's (one in flight or unsettled
+  // holds the dialog on this form, so it never reaches here).
   const startCreating = () => {
     create.discard();
     setCreating(true);

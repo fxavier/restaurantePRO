@@ -45,8 +45,9 @@ export function NewOrderDialog({ onClose, onOpened }: Props) {
     onCreated: (customerId) => setDraft((current) => ({ ...current, customerId, address: undefined })),
   });
   const delivery = channel === 'DELIVERY';
-  // An intent without an answer may already have happened: closing, or leaving the delivery, would lose its key (FC §8).
-  const held = locked || intentState(createCustomer).awaitingRetry;
+  // An intent in flight, or without an answer, may already have happened: closing, or leaving the delivery, would lose
+  // its key and its "Tentar novamente" (FC §8).
+  const held = locked || intentState(createCustomer).locked;
 
   return (
     <Dialog open onOpenChange={(next) => !next && !held && onClose()}>
