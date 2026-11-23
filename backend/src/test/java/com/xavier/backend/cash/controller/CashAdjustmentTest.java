@@ -6,6 +6,8 @@ import static com.xavier.backend.cash.CashFixtures.idem;
 import static com.xavier.backend.cash.CashFixtures.pos;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.hamcrest.Matchers.contains;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -171,6 +173,45 @@ class CashAdjustmentTest {
         assertThat(CashFixtures.id(replay)).isEqualTo(CashFixtures.id(first));
         assertThat(fixtures.count("SELECT count(*) FROM cash.cash_movement WHERE session_id = ? AND type = 'ADJUSTMENT'",
                 session)).isOne();
+    }
+
+    /** The session detail lists its corrections; the opening float and other movements are not adjustments. */
+    @Test
+    void aSessionsAdjustmentsAreListedNewestFirstWithDirectionMethodAmountAndReason() throws Exception {
+        mvc.perform(adjust(session, "OUT", "CASH", "5.00", "unrecorded bread expense")
+                        .with(account(store, Permission.CASH_ADJUST)))
+                .andExpect(status().isCreated());
+        mvc.perform(adjust(session, "IN", "CASH", "2.50", "coin found")
+                        .with(account(store, Permission.CASH_ADJUST)))
+                .andExpect(status().isCreated());
+
+        mvc.perform(get(ADJUSTMENTS.formatted(session)).with(account(store, Permission.CASH_VIEW)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[*].reason", contains("coin found", "unrecorded bread expense")))
+                .andExpect(jsonPath("$[*].direction", contains("IN", "OUT")))
+                .andExpect(jsonPath("$[0].sessionId").value(session.toString()))
+                .andExpect(jsonPath("$[0].methodCode").value("CASH"))
+                .andExpect(jsonPath("$[0].amount.amount").value("2.50"))
+                .andExpect(jsonPath("$[0].amount.currency").value("MZN"))
+                .andExpect(jsonPath("$[0].occurredAt").isString());
+    }
+
+    @Test
+    void aSessionWithoutAdjustmentsListsNone() throws Exception {
+        mvc.perform(get(ADJUSTMENTS.formatted(session)).with(account(store, Permission.CASH_VIEW)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void readingAdjustmentsNeedsCashViewInTheSessionsStore() throws Exception {
+        mvc.perform(get(ADJUSTMENTS.formatted(session)).with(account(fixtures.newStore(), Permission.CASH_VIEW)))
+                .andExpect(status().isForbidden());
+        mvc.perform(get(ADJUSTMENTS.formatted(session)).with(account(store, Permission.CASH_OPERATE)))
+                .andExpect(status().isForbidden());
+        mvc.perform(get(ADJUSTMENTS.formatted(UUID.randomUUID())).with(account(store, Permission.CASH_VIEW)))
+                .andExpect(status().isNotFound());
     }
 
     @Test
