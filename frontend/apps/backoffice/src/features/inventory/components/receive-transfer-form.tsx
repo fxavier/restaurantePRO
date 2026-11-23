@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, useWatch } from 'react-hook-form';
-import { toDecimal } from '../decimal';
+import { toDecimal, toInputDecimal } from '../decimal';
 import { formatQuantity } from '../format';
 import { useFormCommand } from '../hooks/use-form-command';
 import { useReceiveTransfer } from '../hooks/use-inventory-commands';
@@ -24,7 +24,7 @@ export function ReceiveTransferForm({ transfer, onDone }: { transfer: TransferVi
       lines: shipped.map((line) => ({
         stockItemId: line.stockItemId!,
         quantityShipped: line.quantityShipped!,
-        quantityReceived: line.quantityShipped!,
+        quantityReceived: toInputDecimal(line.quantityShipped!),
       })),
     },
   });

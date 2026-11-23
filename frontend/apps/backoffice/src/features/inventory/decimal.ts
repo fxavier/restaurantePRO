@@ -30,3 +30,14 @@ export function compareDecimals(a: string, b: string): -1 | 0 | 1 {
   if (x.length !== y.length) return x.length < y.length ? -1 : 1;
   return x === y ? 0 : x < y ? -1 : 1;
 }
+
+/**
+ * A decimal string from the contract (`2.500000`) as the user would type it in pt (`2,5`): trailing fractional zeros
+ * dropped, comma separator, no grouping and no rounding, so `toDecimal` reads back exactly the same number. Not
+ * `formatQuantity`, which rounds to three decimals and groups thousands for display.
+ */
+export function toInputDecimal(decimal: string): string {
+  const [whole = '', fraction = ''] = decimal.trim().split('.');
+  const kept = fraction.replace(/0+$/, '');
+  return kept ? `${whole},${kept}` : whole;
+}

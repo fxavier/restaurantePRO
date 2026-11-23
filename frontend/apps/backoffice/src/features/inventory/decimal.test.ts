@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compareDecimals, isPositive, toDecimal } from './decimal';
+import { compareDecimals, isPositive, toDecimal, toInputDecimal } from './decimal';
 
 describe('toDecimal', () => {
   it.each([
@@ -42,5 +42,18 @@ describe('compareDecimals', () => {
     ['0.1', '0.09', 1],
   ])('compares %j with %j by its digits: %j', (a, b, expected) => {
     expect(compareDecimals(a, b)).toBe(expected);
+  });
+});
+
+describe('toInputDecimal', () => {
+  it.each([
+    ['5.000000', '5'],
+    ['2.500000', '2,5'],
+    ['1234.000001', '1234,000001'],
+    ['0.000000', '0'],
+    ['12', '12'],
+  ])('writes the decimal string %j as the pt input %j, exactly', (decimal, expected) => {
+    expect(toInputDecimal(decimal)).toBe(expected);
+    expect(compareDecimals(toDecimal(expected)!, decimal)).toBe(0);
   });
 });

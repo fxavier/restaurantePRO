@@ -71,6 +71,19 @@ describe('transfers', () => {
     });
   });
 
+  it('starts each received quantity at the shipped one as typed in pt, without the server’s trailing zeros', async () => {
+    inventoryServer({
+      transfers: [{ ...transferDraft, status: 'SHIPPED', lines: [{ stockItemId: azeite.id, quantityShipped: '2.500000', unitCost: '7.50' }] }],
+    });
+    const { user } = renderApp(`${INVENTORY}&tab=transferencias`);
+
+    await user.click(await screen.findByRole('button', { name: 'Receber transferência Cozinha → Bar' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Receber a transferência Cozinha → Bar' });
+
+    await waitFor(() => expect(within(dialog).getByRole('textbox', { name: `Recebido de ${azeite.name}` })).toHaveValue('2,5'));
+    expect(within(dialog).queryByRole('textbox', { name: 'Motivo da diferença' })).not.toBeInTheDocument();
+  });
+
   it('refuses on the form a received quantity above what was shipped or below zero', async () => {
     const state = inventoryServer({ transfers: [{ ...transferDraft, status: 'SHIPPED' }] });
     const { user } = renderApp(`${INVENTORY}&tab=transferencias`);
