@@ -69,4 +69,26 @@ describe('BackOffice areas', () => {
     expect(within(areas).queryByRole('list', { name: 'Delivery' })).not.toBeInTheDocument();
     expect(within(areas).queryByRole('link', { name: 'Zonas' })).not.toBeInTheDocument();
   });
+
+  // CashClosingService.list accepts CASH_VIEW or CASH_CLOSING_APPROVE: an approver reaches the closings to approve.
+  it('shows Financeiro to a role that may only approve closings, in one store', async () => {
+    server.use(...signedIn({ session: { ...admin, permissions: [`PERM_CASH_CLOSING_APPROVE@${baixa.id}`] } }));
+
+    renderApp();
+
+    const areas = await screen.findByRole('navigation', { name: 'Áreas' });
+    expect(within(areas).getByRole('link', { name: 'Financeiro' })).toBeInTheDocument();
+    expect(within(areas).queryByRole('link', { name: 'Stocks' })).not.toBeInTheDocument();
+  });
+
+  // GoodsReceiptService and SupplierReturnService list with GOODS_RECEIVE or INVENTORY_VIEW.
+  it('shows Stocks to a role that may only receive goods', async () => {
+    server.use(...signedIn({ session: { ...admin, permissions: ['PERM_GOODS_RECEIVE'] } }));
+
+    renderApp();
+
+    const areas = await screen.findByRole('navigation', { name: 'Áreas' });
+    expect(within(areas).getByRole('link', { name: 'Stocks' })).toBeInTheDocument();
+    expect(within(areas).queryByRole('link', { name: 'Financeiro' })).not.toBeInTheDocument();
+  });
 });
