@@ -115,6 +115,17 @@ class BackOfficeOrderHttpTest {
     }
 
     @Test
+    void aSearchTextLongerThanATableCodeIsRejected() throws Exception {
+        mvc.perform(get(ORDERS).param("storeId", shop.store().toString()).param("q", "x".repeat(21))
+                        .with(viewer(shop.store())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].field").value("q"));
+        mvc.perform(get(ORDERS).param("storeId", shop.store().toString()).param("q", "x".repeat(20))
+                        .with(viewer(shop.store())))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void anOrderIsReadWithItsLinesAndDue() throws Exception {
         mvc.perform(get(ORDERS + "/" + dineIn.get("id").asString()).with(viewer(shop.store())))
                 .andExpect(status().isOk())
