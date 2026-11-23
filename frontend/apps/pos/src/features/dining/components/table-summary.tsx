@@ -1,25 +1,23 @@
 import type { DiningArea } from '../table-map';
 import { countStates, type TableState } from '../table-state';
 
-const CARDS: { state: TableState; label: string; dot: string }[] = [
-  { state: 'free', label: 'Livres', dot: 'bg-success' },
-  { state: 'occupied', label: 'Ocupadas', dot: 'bg-warning' },
-  { state: 'bill', label: 'Conta pedida', dot: 'bg-info' },
-  { state: 'locked', label: 'Bloqueadas', dot: 'bg-destructive' },
+/** The state's tint and text, as on its tiles (DESIGN.md "Light reference"). */
+const CHIPS: { state: TableState; label: string; style: string }[] = [
+  { state: 'free', label: 'Livres', style: 'bg-success-tint text-success-text' },
+  { state: 'occupied', label: 'Ocupadas', style: 'bg-warning-tint text-warning-text' },
+  { state: 'bill', label: 'Conta pedida', style: 'bg-info-tint text-info-text' },
+  { state: 'locked', label: 'Bloqueadas', style: 'bg-destructive-tint text-destructive-text' },
 ];
 
-/** The store's tables by state (Stitch's summary cards), each table once; the dot repeats the tile's colour. */
+/** The store's tables by state, each table once, as chips under the map (the light reference's footer row). */
 export function TableSummary({ areas }: { areas: DiningArea[] }) {
   const counts = countStates(areas);
   return (
-    <ul aria-label="Resumo das mesas" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-      {CARDS.map(({ state, label, dot }) => (
-        <li key={state} className="flex items-center gap-3 rounded-xl border bg-card px-4 py-3">
-          <span aria-hidden="true" className={`size-3 shrink-0 rounded-full ${dot}`} />
-          <span className="flex flex-col">
-            <span className="text-sm text-muted-foreground">{label}</span>{' '}
-            <span className="text-xl font-bold tabular-nums">{counts[state]}</span>
-          </span>
+    <ul aria-label="Resumo das mesas" className="flex flex-wrap gap-2">
+      {CHIPS.map(({ state, label, style }) => (
+        <li key={state} className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium ${style}`}>
+          <span>{label}</span>{' '}
+          <span className="font-bold tabular-nums">{counts[state]}</span>
         </li>
       ))}
     </ul>

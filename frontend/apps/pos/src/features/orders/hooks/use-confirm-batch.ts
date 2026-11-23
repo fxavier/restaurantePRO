@@ -3,6 +3,7 @@ import type { MoneyValue } from '@restaurantpro/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { useServices } from '../../../lib/services';
 import { isUnknownOutcome, useIntent } from '../../../lib/use-intent';
+import type { Order } from '../order';
 import { orderKey } from './use-order';
 
 type Schemas = components['schemas'];
@@ -60,7 +61,28 @@ export function useConfirmBatch(
   );
 }
 
-const PRICE_CONFLICTS = new Set(['PRICES_CHANGED', 'CATALOG_CHANGED', 'PROMOTIONS_CHANGED']);
+/**
+ * The round request for the drafts the screen shows ("Pedir" on the order screen, "Enviar ronda N" on the table map),
+ * with what was shown; none while the order has no catalog version (no draft to send).
+ */
+export function roundRequest(order: Order): [ConfirmBatch, Shown] | undefined {
+  if (order.catalogVersion === null) return undefined;
+  return [
+    {
+      orderVersion: order.version,
+      catalogVersion: order.catalogVersion,
+      promotionVersion: order.promotionVersion ?? undefined,
+      lineIds: order.drafts.map((line) => line.id),
+      // D104: the server's draftGross echoed as given (its decimal string, verbatim), so a round that would now cost
+      // anything else is refused with PRICES_CHANGED (a draft changed on another terminal, a promotion window
+      // closed). String() only matters for a number replayed from before decimals became strings (FE-F33).
+      expectedGross: order.draftGross ? String(order.draftGross.amount) : undefined,
+    },
+    { gross: new Map(order.drafts.map((line) => [line.id, line.gross])) },
+  ];
+}
+
+const PRICE_CONFLICTS =new Set(['PRICES_CHANGED', 'CATALOG_CHANGED', 'PROMOTIONS_CHANGED']);
 
 /** The prices the screen showed are no longer the ones a round would get (spec §8.4, D104). */
 export function isCatalogConflict(error: unknown): boolean {

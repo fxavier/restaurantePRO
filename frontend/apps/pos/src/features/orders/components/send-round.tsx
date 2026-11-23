@@ -14,6 +14,8 @@ type Props = {
   /** The round the server confirmed last, as it answered. */
   sentBatchNo?: number | null;
   onSend: () => void;
+  /** The button's name, which a refusal also names: "Pedir" on the order screen, "Enviar ronda N" on the table map. */
+  label?: string;
 };
 
 /**
@@ -21,7 +23,7 @@ type Props = {
  * did. An unknown outcome (no answer, or the key still running) keeps its intent: "Tentar novamente" resends the same
  * key, "Descartar" gives it up. Nothing here says a round was sent before the server has.
  */
-export function SendRound({ send, disabled, blocked, sentBatchNo, onSend }: Props) {
+export function SendRound({ send, disabled, blocked, sentBatchNo, onSend, label = 'Pedir' }: Props) {
   const awaitingRetry = send.intent !== undefined && send.error !== undefined && !send.pending;
   return (
     <div className="flex flex-col gap-1">
@@ -38,18 +40,18 @@ export function SendRound({ send, disabled, blocked, sentBatchNo, onSend }: Prop
         </div>
       ) : (
         <Button size="touch-primary" className="w-full" disabled={disabled || send.intent !== undefined} onClick={onSend}>
-          Pedir
+          {label}
         </Button>
       )}
       {/* Two lines high whatever it says, so nothing above moves when it changes. */}
       <div className="min-h-10 text-sm">
-        <SendStatus send={send} sentBatchNo={sentBatchNo} />
+        <SendStatus send={send} sentBatchNo={sentBatchNo} label={label} />
       </div>
     </div>
   );
 }
 
-function SendStatus({ send, sentBatchNo }: Pick<Props, 'send' | 'sentBatchNo'>) {
+function SendStatus({ send, sentBatchNo, label }: Pick<Props, 'send' | 'sentBatchNo'> & { label: string }) {
   if (send.pending) {
     return (
       <p role="status" aria-label="A enviar" className="text-muted-foreground">
@@ -62,7 +64,7 @@ function SendStatus({ send, sentBatchNo }: Pick<Props, 'send' | 'sentBatchNo'>) 
       ? isInProgress(send.error)
         ? 'A ronda ainda está a ser processada pelo servidor.'
         : 'Sem ligação — a ronda não foi confirmada.'
-      : refusal(send.error);
+      : refusal(send.error, label);
     return (
       <p role="alert" className="font-medium text-error">
         {text}
@@ -80,12 +82,12 @@ function SendStatus({ send, sentBatchNo }: Pick<Props, 'send' | 'sentBatchNo'>) 
 }
 
 /** A definitive answer: the round was not sent, and the order (and catalog) is read again to show why. */
-function refusal(error: Error): string {
-  if (isVersionConflict(error)) return 'O pedido foi alterado noutro terminal. Reveja-o e carregue em Pedir de novo.';
+function refusal(error: Error, label: string): string {
+  if (isVersionConflict(error)) return `O pedido foi alterado noutro terminal. Reveja-o e carregue em ${label} de novo.`;
   if (!(error instanceof ApiError)) return 'A ronda não foi enviada. A resposta do servidor está incompleta.';
-  if (error.code === 'CATALOG_CHANGED') return 'O catálogo foi atualizado. Reveja os novos valores e carregue em Pedir de novo.';
+  if (error.code === 'CATALOG_CHANGED') return `O catálogo foi atualizado. Reveja os novos valores e carregue em ${label} de novo.`;
   if (error.code === 'PRICES_CHANGED' || error.code === 'PROMOTIONS_CHANGED') {
-    return 'Os preços mudaram. Reveja os novos valores e carregue em Pedir de novo.';
+    return `Os preços mudaram. Reveja os novos valores e carregue em ${label} de novo.`;
   }
   return `A ronda não foi enviada. ${errorMessage(error)}`;
 }
