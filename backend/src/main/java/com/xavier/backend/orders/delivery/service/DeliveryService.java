@@ -124,10 +124,11 @@ public class DeliveryService {
 
     /**
      * PENDING or RETURNED → OUT_FOR_DELIVERY: no drafts left, at least one confirmed round, and a courier who is an
-     * active employee of the store. Publishes {@link DeliveryDispatched}, so production prints the slip.
+     * active employee of the store holding DELIVERY_COURIER there. Publishes {@link DeliveryDispatched}, so
+     * production prints the slip.
      *
      * @throws DeliveryRuleException 422 {@code DELIVERY_HAS_DRAFTS}, {@code DELIVERY_NOTHING_CONFIRMED},
-     *         {@code COURIER_NOT_IN_STORE}
+     *         {@code COURIER_NOT_IN_STORE}, {@code NOT_A_COURIER}
      */
     @Transactional
     public DeliveryView dispatch(UUID orderId, DispatchRequest request) {
@@ -147,9 +148,7 @@ public class DeliveryService {
         if (batches.findByOrderIdOrderByBatchNo(orderId).isEmpty()) {
             throw DeliveryRuleException.nothingConfirmed(orderId);
         }
-        if (!employees.isActiveInStore(request.courierEmployeeId(), delivery.getStoreId())) {
-            throw DeliveryRuleException.courierNotInStore(request.courierEmployeeId());
-        }
+        requireCourier(request.courierEmployeeId(), delivery.getStoreId());
         DeliveryStatus from = delivery.dispatch(request.courierEmployeeId(), clock.instant());
         DeliveryEvent event = transitioned(delivery, from, pos, null);
         publisher.publishEvent(new DeliveryDispatched(tenants.requireTenant(),
@@ -176,6 +175,23 @@ public class DeliveryService {
         DeliveryStatus from = delivery.markReturned();
         transitioned(delivery, from, pos, request.reason().strip());
         return views.of(delivery);
+    }
+
+    /**
+     * Q4: the courier is an active employee of the store whose role there holds DELIVERY_COURIER, the logged-in
+     * employee dispatching themselves included. The cheap check first; the second read only names the refusal.
+     *
+     * @throws DeliveryRuleException 422 {@code COURIER_NOT_IN_STORE} (unknown, inactive or not assigned here, e.g.
+     *         deactivated since the list was read), {@code NOT_A_COURIER} (assigned here without the permission)
+     */
+    private void requireCourier(UUID employeeId, UUID storeId) {
+        if (employees.holdsInStore(employeeId, storeId, Permission.DELIVERY_COURIER)) {
+            return;
+        }
+        if (!employees.isActiveInStore(employeeId, storeId)) {
+            throw DeliveryRuleException.courierNotInStore(employeeId);
+        }
+        throw DeliveryRuleException.notACourier(employeeId);
     }
 
     /**

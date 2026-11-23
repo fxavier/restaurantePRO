@@ -496,6 +496,7 @@ class CodedErrorContractTest {
             Map.entry("delivery-has-drafts", () -> DeliveryRuleException.hasDrafts(ID)),
             Map.entry("delivery-nothing-confirmed", () -> DeliveryRuleException.nothingConfirmed(ID)),
             Map.entry("courier-not-in-store", () -> DeliveryRuleException.courierNotInStore(ID)),
+            Map.entry("not-a-courier", () -> DeliveryRuleException.notACourier(ID)),
             Map.entry("delivery-not-delivered", () -> DeliveryRuleException.notDelivered(ID)),
             Map.entry("delivery-in-progress", () -> DeliveryRuleException.inProgress(ID)),
             Map.entry("address-frozen", () -> DeliveryRuleException.addressFrozen(ID)),
@@ -1219,6 +1220,8 @@ class CodedErrorContractTest {
                 "Order " + ID + " has no confirmed round to deliver.", "");
         expect("courier-not-in-store", 422, "COURIER_NOT_IN_STORE",
                 "Employee " + ID + " is not an active employee of this store.", "");
+        expect("not-a-courier", 422, "NOT_A_COURIER",
+                "Employee " + ID + " may not carry deliveries in this store.", "");
         expect("delivery-not-delivered", 422, "DELIVERY_NOT_DELIVERED",
                 "Order " + ID + " is closed only once its delivery is DELIVERED.", "");
         expect("delivery-in-progress", 422, "DELIVERY_IN_PROGRESS",

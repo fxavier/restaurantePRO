@@ -145,6 +145,14 @@ public final class IdentityFixtures {
         return user(globalRoles, null);
     }
 
+    /** A new role of the bootstrap tenant holding {@code permissions}, e.g. a driver's {@code DELIVERY_COURIER}. */
+    public UUID role(Permission... permissions) throws Exception {
+        return id(mvc.perform(post("/api/v1/backoffice/roles").with(admin()).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json("name", unique("Role "), "permissions", Set.of(permissions))))
+                .andExpect(status().isCreated()).andReturn().getResponse());
+    }
+
     /** A new employee assigned to {@code store} with {@code role}. */
     public Employee employee(String pin, UUID store, UUID role) throws Exception {
         String code = unique("E");

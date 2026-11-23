@@ -86,6 +86,21 @@ class RoleSeedTest {
     }
 
     @Test
+    void theRolesThatDispatchMayAlsoCarryTheDelivery() {
+        // V3018: whoever could dispatch themselves before the courier permission still can
+        assertThat(jdbc.sql("""
+                        SELECT r.name FROM identity.role_permission rp JOIN identity.role r ON r.id = rp.role_id
+                        WHERE rp.permission = 'DELIVERY_COURIER'
+                          AND r.id::text LIKE '01900000-0000-7000-8000-0000000003%'""")
+                .query(String.class).list()).containsExactlyInAnyOrder("Administrador", "Gerente", "Caixa");
+        assertThat(jdbc.sql("""
+                        SELECT t.name FROM identity.role_template_permission tp
+                        JOIN identity.role_template t ON t.id = tp.template_id
+                        WHERE tp.permission = 'DELIVERY_COURIER'""")
+                .query(String.class).list()).containsExactlyInAnyOrder("Administrador", "Gerente", "Caixa");
+    }
+
+    @Test
     void administratorOnlyPermissionsStayWithTheAdministrator() {
         // D62, D92, D134: an empty column means administrator only. Seeded roles only: tests of the shared database
         // create roles of their own (e.g. one per sensitive permission in StepUpTest).
@@ -98,10 +113,14 @@ class RoleSeedTest {
                 .query(String.class).list()).containsOnly("Administrador");
     }
 
-    /** The role's permissions before R4 (D134 is checked on its own). */
+    /** The role's permissions before R4 (D134 and the later grants are checked on their own). */
     private List<String> preR4PermissionsOf(String role) {
-        return permissionsOf(role).stream().filter(permission -> !R4.contains(permission)).toList();
+        return permissionsOf(role).stream()
+                .filter(permission -> !R4.contains(permission) && !AFTER_R4.contains(permission)).toList();
     }
+
+    /** Permissions granted after R4, by their own migration (V3018). */
+    private static final Set<String> AFTER_R4 = Set.of("DELIVERY_COURIER");
 
     /** The role's permissions among the D134 (R4) constants. */
     private List<String> r4PermissionsOf(String role) {

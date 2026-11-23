@@ -1,5 +1,6 @@
 package com.xavier.backend.identity.repository;
 
+import com.xavier.backend.access.Permission;
 import com.xavier.backend.identity.model.Employee;
 import jakarta.persistence.LockModeType;
 import java.util.List;
@@ -25,8 +26,17 @@ public interface EmployeeRepository extends JpaRepository<Employee, UUID> {
                 where a.employeeId = e.id and a.storeId = :storeId)""")
     Page<Employee> findAssignedTo(UUID storeId, Pageable pageable);
 
+    /** The active employees whose role in {@code storeId} holds {@code permission}, by name. */
     @Query("""
-            select e from Employee e where e.active = true and exists (select 1 from EmployeeStoreAssignment a
-                where a.employeeId = e.id and a.storeId = :storeId) order by e.name, e.code""")
-    List<Employee> findActiveAssignedTo(UUID storeId);
+            select e from Employee e where e.active = true and exists (select 1 from EmployeeStoreAssignment a, Role r
+                where a.employeeId = e.id and a.storeId = :storeId and r.id = a.roleId
+                  and :permission member of r.permissions) order by e.name, e.code""")
+    List<Employee> findActiveHolding(UUID storeId, Permission permission);
+
+    @Query("""
+            select count(e) > 0 from Employee e where e.id = :employeeId and e.active = true
+              and exists (select 1 from EmployeeStoreAssignment a, Role r
+                where a.employeeId = e.id and a.storeId = :storeId and r.id = a.roleId
+                  and :permission member of r.permissions)""")
+    boolean isActiveHolding(UUID employeeId, UUID storeId, Permission permission);
 }

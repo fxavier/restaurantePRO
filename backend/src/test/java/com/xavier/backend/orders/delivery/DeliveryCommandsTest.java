@@ -78,6 +78,10 @@ class DeliveryCommandsTest {
                 .andExpect(jsonPath("$.code").value("COURIER_NOT_IN_STORE"));
         deliveries.dispatch(d, confirmed, 0, otherStoreEmployee).andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("COURIER_NOT_IN_STORE"));
+        UUID waiterOfTheStore = new IdentityFixtures(mvc).employee(OrdersFixtures.PIN, d.shop().store(),
+                IdentityFixtures.WAITER).id();
+        deliveries.dispatch(d, confirmed, 0, waiterOfTheStore).andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("NOT_A_COURIER"));
         assertThat(deliveries.deliveryStatus(confirmed)).isEqualTo("PENDING");
 
         deliveries.dispatch(d, confirmed, 0, d.courier()).andExpect(status().isOk())

@@ -47,6 +47,12 @@ public class DeliveryRuleException extends BusinessRuleException {
                 "Employee " + employeeId + " is not an active employee of this store.");
     }
 
+    /** Q4: an active employee of the store whose role there does not hold DELIVERY_COURIER. */
+    public static DeliveryRuleException notACourier(UUID employeeId) {
+        return new DeliveryRuleException("NOT_A_COURIER",
+                "Employee " + employeeId + " may not carry deliveries in this store.");
+    }
+
     public static DeliveryRuleException notDelivered(UUID orderId) {
         return new DeliveryRuleException("DELIVERY_NOT_DELIVERED",
                 "Order " + orderId + " is closed only once its delivery is DELIVERED.");

@@ -1,5 +1,6 @@
 package com.xavier.backend.identity;
 
+import com.xavier.backend.access.Permission;
 import com.xavier.backend.identity.model.Employee;
 import com.xavier.backend.identity.repository.EmployeeRepository;
 import com.xavier.backend.identity.repository.EmployeeStoreAssignmentRepository;
@@ -44,12 +45,21 @@ public class EmployeeDirectory {
     }
 
     /**
-     * The active employees with at least one assignment in {@code storeId}, by name: exactly those
-     * {@link #isActiveInStore} accepts (S50: who may be a delivery's courier).
+     * Whether {@code employeeId} is active and a role of their assignment in {@code storeId} holds {@code permission}
+     * (Q4: a delivery's courier holds {@code DELIVERY_COURIER}). {@code false} for null arguments; never throws.
      */
     @Transactional(readOnly = true)
-    public List<EmployeeSummary> activeInStore(UUID storeId) {
-        return employees.findActiveAssignedTo(storeId).stream().map(EmployeeDirectory::summary).toList();
+    public boolean holdsInStore(UUID employeeId, UUID storeId, Permission permission) {
+        if (employeeId == null || storeId == null) {
+            return false;
+        }
+        return employees.isActiveHolding(employeeId, storeId, permission);
+    }
+
+    /** The active employees {@link #holdsInStore} accepts for {@code storeId} and {@code permission}, by name. */
+    @Transactional(readOnly = true)
+    public List<EmployeeSummary> activeInStoreHolding(UUID storeId, Permission permission) {
+        return employees.findActiveHolding(storeId, permission).stream().map(EmployeeDirectory::summary).toList();
     }
 
     /** The summary of every known id in {@code ids}; unknown ids are absent from the map. */

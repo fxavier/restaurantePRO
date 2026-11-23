@@ -25,7 +25,8 @@ import tools.jackson.databind.JsonNode;
 
 /**
  * A delivery-ready shop for the S50 tests, built through the HTTP APIs: a published FEE item (5% tax, 3.00), a zone
- * for it, a customer with a phone and a delivery address, a courier assigned to the store, and the POS requests.
+ * for it, a customer with a phone and a delivery address, a courier assigned to the store (a role holding
+ * DELIVERY_COURIER), and the POS requests.
  */
 public class DeliveryFixtures {
 
@@ -56,8 +57,9 @@ public class DeliveryFixtures {
         UUID customer = customers.newCustomer(CustomersFixtures.pos(shop.store()),
                 "Ana " + CustomersFixtures.token(), phone, null);
         UUID address = address(customer, "Rua da Entrega 7");
-        UUID courier = new IdentityFixtures(mvc).employee(OrdersFixtures.PIN, shop.store(), IdentityFixtures.WAITER)
-                .id();
+        IdentityFixtures identity = new IdentityFixtures(mvc);
+        UUID courier = identity.employee(OrdersFixtures.PIN, shop.store(),
+                identity.role(Permission.DELIVERY_COURIER)).id();
         return new DeliveryShop(shop, fee, zone, customer, phone, address, courier, version);
     }
 
