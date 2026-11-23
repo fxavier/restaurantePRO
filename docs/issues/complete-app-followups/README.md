@@ -57,6 +57,15 @@ The POS courier choice is already recorded in [../w1-followups/pos-delivery-cour
 - Docker on the dev machine holds about 120 GB of Testcontainers images and volumes from this run; prune it
   (`docker system prune` after checking nothing needed is stopped).
 
+## Permission scope in the BackOffice landing tabs (review of #195)
+
+- Financeiro: Fiscal (`FISCAL_MANAGE`) and Meios (`PAYMENT_METHOD_MANAGE`) are read with a company-wide check on the
+  server; the landing tab also counts a store-scoped grant, so such a user lands on a tab that answers 403.
+- Stocks: Receitas (`RECIPE_MANAGE`) and Compras (`PURCHASE_MANAGE`) are read with `requireInAnyStore`; a grant held
+  in another store is not counted, so the user lands on a denied Stock tab.
+- Direction: model the server's three checks (`require(p)`, `require(p, store)`, `requireInAnyStore(p)`) in the
+  frontend `holds` helpers.
+
 ## Deferred features (out of this run's scope)
 
 - Fiscal adapter and the SAF-T / AT exports.
