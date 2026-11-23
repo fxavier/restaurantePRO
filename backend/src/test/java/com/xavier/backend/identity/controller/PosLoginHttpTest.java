@@ -92,6 +92,21 @@ class PosLoginHttpTest {
         mvc.perform(posLoginRequest(terminalA, employee.code(), PIN)).andExpect(status().isForbidden());
     }
 
+    /** Q1: the code matches as {@code upper(code)}, as its unique index does; the stored case is kept. */
+    @Test
+    void theEmployeeCodeIgnoresCaseAtLogin() throws Exception {
+        Employee employee = fixtures.employee(PIN, storeA, IdentityFixtures.WAITER); // mixed case, e.g. "Eab12…"
+
+        mvc.perform(posLoginRequest(terminalA, employee.code().toUpperCase(), PIN)).andExpect(status().isOk());
+        mvc.perform(posLoginRequest(terminalA, employee.code().toLowerCase(), PIN)).andExpect(status().isOk());
+        mvc.perform(posLoginRequest(terminalA, employee.code().toLowerCase(), WRONG_PIN))
+                .andExpect(status().isUnauthorized());
+
+        assertThat(failedAttempts(employee)).isEqualTo(1);
+        assertThat(jdbc.sql("SELECT code FROM identity.employee WHERE id = :id").param("id", employee.id())
+                .query(String.class).single()).isEqualTo(employee.code());
+    }
+
     @Test
     void anEmployeeNotAssignedToTheTerminalsStoreIsRefused() throws Exception {
         Employee elsewhere = fixtures.employee(PIN, fixtures.store(), IdentityFixtures.WAITER);
