@@ -70,6 +70,29 @@ class ProductionTenantIsolationTest {
         seed(A, A_STORE, A_PRINTER, A_TICKET, A_JOB);
         seed(B, B_STORE, B_PRINTER, B_TICKET, B_JOB);
         seed(A, A_OTHER_STORE, A_OTHER_PRINTER, A_OTHER_TICKET, A_OTHER_JOB);
+        alerting(B, B_STORE, B_PRINTER);
+    }
+
+    /** A failed job and a late round of {@code store}: one alert of each kind on its POS. */
+    private static void alerting(UUID tenant, UUID store, UUID printer) {
+        try (AppRoleSession app = AppRoleSession.open().tenant(tenant).allStores()) {
+            UUID ticket = UUID.randomUUID();
+            app.jdbc().sql("""
+                    INSERT INTO production.production_ticket (id, store_id, source_type, source_id, destination,
+                        kind, printer_id, suppressed, content, created_at, routing, content_format)
+                    VALUES (?, ?, 'BATCH', gen_random_uuid(), 'BAR', 'ORIGINAL', ?, false, 'late', now(), 'ROUTED',
+                        'PLAIN')""").param(ticket).param(store).param(printer).update();
+            app.jdbc().sql("""
+                    INSERT INTO production.print_job (id, store_id, ticket_id, printer_id, kind, status, attempts,
+                        next_attempt_at, started_at, dedupe_key, created_at, version)
+                    VALUES (gen_random_uuid(), ?, ?, ?, 'ORIGINAL', 'FAILED', 1, now(), now(), ?, now(), 0)""")
+                    .param(store).param(ticket).param(printer).param("failed:" + ticket).update();
+            app.jdbc().sql("""
+                    INSERT INTO production.kitchen_progress (ticket_id, store_id, destination, status, version,
+                        queued_at)
+                    VALUES (?, ?, 'BAR', 'QUEUED', 0, now() - interval '1 hour')""").param(ticket).param(store)
+                    .update();
+        }
     }
 
     /** As the application role in {@code tenant}: no tenant_id is written, the column default takes the bound one. */
@@ -139,6 +162,19 @@ class ProductionTenantIsolationTest {
                 .andExpect(jsonPath("$.content[0].id").value(A_JOB.toString()));
     }
 
+    /** The POS alerts count the bound tenant's store only; another tenant's store is no store of this one (403). */
+    @Test
+    void thePosAlertsCountOnlyTheTenantsOwnStore() throws Exception {
+        mvc.perform(get("/api/v1/pos/production/alerts").with(viewer(B, B_STORE))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.pendingPrintJobs").value(1))
+                .andExpect(jsonPath("$.delayedKitchenRounds").value(1));
+        mvc.perform(get("/api/v1/pos/production/alerts").with(viewer(A, A_STORE))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.pendingPrintJobs").value(0))
+                .andExpect(jsonPath("$.delayedKitchenRounds").value(0));
+        mvc.perform(get("/api/v1/pos/production/alerts").with(viewer(A, B_STORE)))
+                .andExpect(status().isForbidden());
+    }
+
     @Test
     void aRowWithAnotherTenantsIdIsRefused() {
         try (AppRoleSession app = AppRoleSession.open().tenant(A).allStores()) {
@@ -186,6 +222,16 @@ class ProductionTenantIsolationTest {
     void theModuleIsTenantProtected() {
         RowLevelSecurityCoverageTest.assertModuleTenantProtected("production");
         CompositeForeignKeyCoverageTest.assertModuleKeysIncludeTheTenant("production");
+    }
+
+    /** A POS session of {@code tenant} in {@code store} with PRODUCTION_VIEW (its membership as the details). */
+    private static RequestPostProcessor viewer(UUID tenant, UUID store) {
+        Set<String> authorities = Set.of(Permission.PRODUCTION_VIEW.authority(store));
+        Actor actor = Actor.employee(UUID.randomUUID(), UUID.randomUUID(), store, authorities);
+        UsernamePasswordAuthenticationToken token = UsernamePasswordAuthenticationToken.authenticated(actor, null,
+                authorities.stream().map(SimpleGrantedAuthority::new).toList());
+        token.setDetails(new TenantContext(tenant, MembershipKind.TERMINAL, actor.userId(), "test:isolation"));
+        return authentication(token);
     }
 
     /** A BackOffice account of {@code tenant} operating and viewing production in {@code store}, or everywhere. */

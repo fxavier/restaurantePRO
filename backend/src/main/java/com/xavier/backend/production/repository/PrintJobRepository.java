@@ -118,6 +118,23 @@ public interface PrintJobRepository extends JpaRepository<PrintJob, UUID>, JpaSp
             group by j.storeId""")
     List<StoreJobCount> countWaitingOnNormalPrinters(@Param("lateBefore") Instant lateBefore);
 
+    /**
+     * The POS's pending prints of {@code storeId}: the jobs still waiting (QUEUED, PROCESSING, RETRY_WAIT) and the
+     * FAILED or UNKNOWN ones nobody retried or acknowledged since {@code since} (the D150 window). Drawer kicks are not
+     * counted (D158). Index {@code print_job_store_status_created_ix}.
+     */
+    @Query("""
+            select count(j) from PrintJob j, ProductionTicket t
+            where t.id = j.ticketId and j.storeId = :storeId
+              and t.sourceType <> com.xavier.backend.production.model.TicketSource.DRAWER_KICK
+              and (j.status in (com.xavier.backend.production.model.PrintJobStatus.QUEUED,
+                                com.xavier.backend.production.model.PrintJobStatus.PROCESSING,
+                                com.xavier.backend.production.model.PrintJobStatus.RETRY_WAIT)
+                   or (j.status in (com.xavier.backend.production.model.PrintJobStatus.FAILED,
+                                    com.xavier.backend.production.model.PrintJobStatus.UNKNOWN)
+                       and j.resolution is null and j.createdAt >= :since))""")
+    long countPendingInStore(@Param("storeId") UUID storeId, @Param("since") Instant since);
+
     interface StatusCount {
 
         PrintJobStatus getStatus();

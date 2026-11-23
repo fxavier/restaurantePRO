@@ -23,6 +23,13 @@ public interface PaymentAttemptRepository extends JpaRepository<PaymentAttempt, 
 
     List<PaymentAttempt> findByStoreIdAndStatusInOrderByCreatedAt(UUID storeId, Collection<AttemptStatus> statuses);
 
+    /** The POS's payments to confirm in a store: index {@code payment_attempt_store_unknown_ix}. */
+    long countByStoreIdAndStatus(UUID storeId, AttemptStatus status);
+
+    /** The oldest attempt of a store in {@code status} that belongs to an order (a debt payment has none). */
+    Optional<PaymentAttempt> findFirstByStoreIdAndStatusAndOrderIdNotNullOrderByCreatedAt(UUID storeId,
+                                                                                          AttemptStatus status);
+
     boolean existsByOrderIdAndStatusIn(UUID orderId, Collection<AttemptStatus> statuses);
 
     Optional<PaymentAttempt> findFirstByCreditAccountIdAndStatusIn(UUID creditAccountId,

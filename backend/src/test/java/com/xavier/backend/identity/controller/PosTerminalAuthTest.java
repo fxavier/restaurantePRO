@@ -106,6 +106,25 @@ class PosTerminalAuthTest {
                 .andExpect(jsonPath("$.currency").value(currency));
     }
 
+    /** The status bar names the terminal (light reference: "Loja Baixa · POS-02 · Ana M."). */
+    @Test
+    void aPosSessionNamesItsTerminal() throws Exception {
+        String code = OwnerDatabase.shared().jdbc().sql("SELECT code FROM organization.terminal WHERE id = ?")
+                .param(terminal.id()).query(String.class).single();
+
+        String login = mvc.perform(loginRequest().with(terminal.bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.terminalCode").value(code))
+                .andExpect(jsonPath("$.terminalName").value("Device"))
+                .andReturn().getResponse().getContentAsString();
+        String session = IdentityFixtures.JSON.readTree(login).get("posSession").asString();
+
+        mvc.perform(get(POS_SESSION).with(terminal.bearer()).with(posSession(session)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.terminalCode").value(code))
+                .andExpect(jsonPath("$.terminalName").value("Device"));
+    }
+
     @Test
     void aPosSessionIgnoresATenantHeaderNamingAnotherTenant() throws Exception {
         String session = login(terminal);
