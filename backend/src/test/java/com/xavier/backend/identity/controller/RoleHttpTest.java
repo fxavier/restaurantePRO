@@ -16,6 +16,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.identity.IdentityFixtures;
 import com.xavier.backend.identity.IdentityTest;
+import com.xavier.backend.shared.web.PageResponse;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -24,6 +26,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
+import tools.jackson.databind.JsonNode;
 
 @IdentityTest
 class RoleHttpTest {
@@ -54,12 +57,33 @@ class RoleHttpTest {
 
     @Test
     void theSeededRolesAreListed() throws Exception {
-        mvc.perform(get(ROLES).param("size", "200").with(admin()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.name == 'Empregado de sala')].permissions[*]",
-                        containsInAnyOrder("DINING_VIEW", "CATALOG_VIEW", "ORDER_VIEW", "ORDER_EDIT", "ORDER_VOID",
-                                "ORDER_TRANSFER", "BILL_SPLIT", "ORDER_DISCOUNT", "ORDER_OFFER", "LOYALTY_VIEW",
-                                "LOYALTY_REDEEM", "RESERVATION_VIEW", "RESERVATION_MANAGE"))); // R1 + D62 + D92 + D134
+        JsonNode waiter = everyListedRole().stream()
+                .filter(role -> role.get("name").asString().equals("Empregado de sala")).findFirst().orElseThrow();
+
+        List<String> permissions = new ArrayList<>();
+        waiter.get("permissions").forEach(permission -> permissions.add(permission.asString()));
+
+        assertThat(permissions).containsExactlyInAnyOrder("DINING_VIEW", "CATALOG_VIEW", "ORDER_VIEW", "ORDER_EDIT", "ORDER_VOID",
+                        "ORDER_TRANSFER", "BILL_SPLIT", "ORDER_DISCOUNT", "ORDER_OFFER", "LOYALTY_VIEW",
+                        "LOYALTY_REDEEM", "RESERVATION_VIEW", "RESERVATION_MANAGE"); // R1 + D62 + D92 + D134
+    }
+
+    /**
+     * Every page of the list: the shared bootstrap tenant holds every role the suite created, which may outgrow the
+     * 200-row page cap, so a seeded role may be on any page.
+     */
+    private List<JsonNode> everyListedRole() throws Exception {
+        List<JsonNode> roles = new ArrayList<>();
+        long total = 1;
+        for (int page = 0; (long) page * PageResponse.MAX_PAGE_SIZE < total; page++) {
+            JsonNode body = IdentityFixtures.JSON.readTree(mvc.perform(get(ROLES)
+                            .param("size", String.valueOf(PageResponse.MAX_PAGE_SIZE))
+                            .param("page", String.valueOf(page)).with(admin()))
+                    .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+            total = body.get("totalElements").asLong();
+            body.get("content").forEach(roles::add);
+        }
+        return roles;
     }
 
     @Test

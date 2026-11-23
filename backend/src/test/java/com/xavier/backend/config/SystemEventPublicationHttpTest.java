@@ -10,9 +10,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.xavier.backend.TestcontainersConfiguration;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.WithActor;
+import com.xavier.backend.shared.web.PageResponse;
 import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,6 +26,8 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * D88: the BackOffice view of incomplete event publications and a person's resubmission, both SYSTEM_MONITOR
@@ -36,6 +41,7 @@ class SystemEventPublicationHttpTest {
 
     static final String PATH = "/api/v1/backoffice/system/event-publications";
     static final String LISTENER = "com.xavier.backend.config.SystemEventPublicationHttpTest$Gone.on(x)";
+    static final JsonMapper JSON = JsonMapper.builder().build();
 
     @Autowired
     MockMvc mvc;
@@ -52,14 +58,33 @@ class SystemEventPublicationHttpTest {
         UUID failed = publication(10, Duration.ofMinutes(1));
         UUID retrying = publication(2, Duration.ofMinutes(1));
 
-        list("FAILED").andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.id == '%s')].state".formatted(failed)).value("FAILED"))
-                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(retrying)).isEmpty())
-                .andExpect(jsonPath("$.content[?(@.id == '%s')].completionAttempts".formatted(failed)).value(10))
-                .andExpect(jsonPath("$.content[0].serializedEvent").doesNotExist());
-        list("INCOMPLETE").andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.id == '%s')].listenerId".formatted(retrying)).value(LISTENER))
-                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(failed)).isEmpty());
+        Map<UUID, JsonNode> failedList = everyListed("FAILED");
+        Map<UUID, JsonNode> incompleteList = everyListed("INCOMPLETE");
+
+        assertThat(failedList).containsKey(failed).doesNotContainKey(retrying);
+        assertThat(failedList.get(failed).get("state").asString()).isEqualTo("FAILED");
+        assertThat(failedList.get(failed).get("completionAttempts").asInt()).isEqualTo(10);
+        assertThat(failedList.values()).noneMatch(row -> row.has("serializedEvent"));
+        assertThat(incompleteList).containsKey(retrying).doesNotContainKey(failed);
+        assertThat(incompleteList.get(retrying).get("listenerId").asString()).isEqualTo(LISTENER);
+    }
+
+    /**
+     * Every page of the list, by id: the shared test database holds every publication the suite left behind, which may
+     * outgrow the 200-row page cap, so a row written here may be on any page.
+     */
+    private Map<UUID, JsonNode> everyListed(String state) throws Exception {
+        Map<UUID, JsonNode> rows = new HashMap<>();
+        long total = 1;
+        for (int page = 0; (long) page * PageResponse.MAX_PAGE_SIZE < total; page++) {
+            JsonNode body = JSON.readTree(mvc.perform(get(PATH).param("state", state)
+                            .param("size", String.valueOf(PageResponse.MAX_PAGE_SIZE))
+                            .param("page", String.valueOf(page)))
+                    .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+            total = body.get("totalElements").asLong();
+            body.get("content").forEach(row -> rows.put(UUID.fromString(row.get("id").asString()), row));
+        }
+        return rows;
     }
 
     @Test
