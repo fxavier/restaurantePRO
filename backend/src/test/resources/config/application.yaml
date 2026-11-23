@@ -1,5 +1,14 @@
 # Test-only settings, layered over src/main/resources/application.yaml (classpath:/config/ wins over classpath:/).
 restaurantpro:
+  bootstrap:
+    # Every test context bootstraps the bootstrap tenant's company, as a configured installation does at startup. Only
+    # some module suites set these, so a plain @SpringBootTest that creates a store through the API (IdentityFixtures)
+    # got 404 "company not bootstrapped" whenever it ran before any of them (surefire's order differs per machine).
+    company:
+      name: Test Company
+      tax-id: TEST-TAX-ID
+      country: MZ
+      currency: MZN
   security:
     # R6: no IdP in the module and HTTP suites (S72 brings the test JwtDecoder; the Keycloak container is only for the
     # identity and end-to-end suites, D189)

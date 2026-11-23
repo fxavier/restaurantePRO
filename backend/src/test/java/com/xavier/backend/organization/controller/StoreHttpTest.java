@@ -18,6 +18,7 @@ import com.xavier.backend.access.Actor;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.TestAuthentications;
 import com.xavier.backend.organization.OrganizationModuleTest;
+import com.xavier.backend.shared.web.PageResponse;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -104,11 +105,25 @@ class StoreHttpTest {
         UUID first = createStore();
         UUID second = createStore();
 
-        mvc.perform(get(STORES).param("size", "200").with(admin(Permission.CATALOG_VIEW)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(first)).exists())
-                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(second)).exists())
-                .andExpect(jsonPath("$.totalElements").isNumber());
+        assertThat(everyListedStore()).contains(first.toString(), second.toString());
+    }
+
+    /**
+     * Every page of the tenant-wide list: the shared bootstrap tenant holds every store the suite created (CI saw
+     * nearly 2000), more than the 200-row page cap, and the list is sorted by code, so a new store may be on any page.
+     */
+    private List<String> everyListedStore() throws Exception {
+        List<String> ids = new java.util.ArrayList<>();
+        JsonMapper json = JsonMapper.builder().build();
+        long total = 1;
+        for (int page = 0; (long) page * PageResponse.MAX_PAGE_SIZE < total; page++) {
+            var body = json.readTree(mvc.perform(get(STORES).param("size", String.valueOf(PageResponse.MAX_PAGE_SIZE))
+                            .param("page", String.valueOf(page)).with(admin(Permission.CATALOG_VIEW)))
+                    .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+            total = body.get("totalElements").asLong();
+            body.get("content").forEach(store -> ids.add(store.get("id").asString()));
+        }
+        return ids;
     }
 
     @Test
