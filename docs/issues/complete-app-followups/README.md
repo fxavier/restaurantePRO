@@ -11,7 +11,7 @@ The POS courier choice is already recorded in [../w1-followups/pos-delivery-cour
 
 | # | Question | Recommended default |
 | --- | --- | --- |
-| Q1 | Should the POS employee code ignore case at login (`ab12` = `AB12`)? | Yes: look the code up by `upper(code)`, as `TerminalRepository` and the FE-F35 unique indexes do; keep the stored case (upper-casing the input would lock out employees saved in lower case). |
+| ~~Q1~~ | ~~Should the POS employee code ignore case at login (`ab12` = `AB12`)?~~ | ~~Yes: look the code up by `upper(code)`, as `TerminalRepository` and the FE-F35 unique indexes do; keep the stored case (upper-casing the input would lock out employees saved in lower case).~~ Done in fu/backend-hardening. |
 | Q2 | Financeiro and Stocks land on their first tab; should the landing tab follow the user's permissions (the first tab they may open)? | Yes: the first permitted tab; today a user without the first tab's permission sees its denial first. |
 | Q3 | An inventory transfer received short: should the receiver record the shortfall (quantity and reason) instead of only accepting the transfer? | Yes: a received quantity per line, the difference posted as a transfer loss movement with a reason. |
 | Q4 | Who may be a courier: every active employee of the store, or only employees with a courier role? | A courier permission (`DELIVERY_COURIER`), so the dispatch list stays short. |
@@ -23,10 +23,12 @@ The POS courier choice is already recorded in [../w1-followups/pos-delivery-cour
   item, quantity, modifiers and notes as fields.~~ Done in fu/production-reads: `TicketView.items` (quantity, item,
   note, menu components) read from the round's stored printout, the only record the ticket keeps (empty for any other
   ticket); `lines` stays (the KDS still reads its header from it). The POS KDS cards use the items.
-- **SessionRow operatorName**: the cash-session list shows the operator's id to users without `EMPLOYEE_MANAGE` (the
-  name comes from a separate employees read); add the display name to the row.
-- **Session adjustments GET**: cash adjustments of a session can be posted but not listed; add a read for the session
-  detail.
+- ~~**SessionRow operatorName**: the cash-session list shows the operator's id to users without `EMPLOYEE_MANAGE` (the
+  name comes from a separate employees read); add the display name to the row.~~ Done in fu/cash-session-reads:
+  `SessionRow.operatorName` (through identity's `EmployeeDirectory`); the tab no longer reads the employees.
+- ~~**Session adjustments GET**: cash adjustments of a session can be posted but not listed; add a read for the session
+  detail.~~ Done in fu/cash-session-reads: `GET /api/v1/backoffice/cash/sessions/{id}/adjustments` (CASH_VIEW in the
+  session's store, newest first), shown under a closed session's "Ajustes" toggle in Financeiro › Sessões de caixa.
 - ~~**POS production destinations list**: the KDS builds its station filter from the tickets it shows, so a station with
   no active rounds never appears as a filter; a read of the store's active destinations would list them all.~~ Done in
   fu/production-reads: `GET /api/v1/pos/production-destinations` (`PRODUCTION_VIEW`, the session's store) lists the
@@ -43,15 +45,20 @@ The POS courier choice is already recorded in [../w1-followups/pos-delivery-cour
 - Add `@vitest/coverage-v8` so crapper can read frontend coverage (UB tools ran advisory on the frontend this run).
 - The e2e stack ports are set per run through `E2E_PROJECT` and `E2E_*_PORT` (FE-F20); deriving them per worktree
   automatically would stop two worktrees colliding on the defaults.
-- `RoleHttpTest.theSeededRolesAreListed` and `SystemEventPublicationHttpTest` assert on the first page (200 rows) of
-  the shared test tenant; read every page, as `StoreHttpTest` now does, before those tables outgrow it.
-- `StockBalanceReconciliationJob.reconcile()` seems to return only the last tenant's result when it runs for every
-  tenant; check whether the return value should cover all of them (found while fixing test-order failures, #191).
-- `LoyaltyProgramService.publish` retires the version in force at `clock.instant()` against the CHECK
+- ~~`RoleHttpTest.theSeededRolesAreListed` and `SystemEventPublicationHttpTest` assert on the first page (200 rows) of
+  the shared test tenant; read every page, as `StoreHttpTest` now does, before those tables outgrow it.~~ Done in
+  fu/backend-hardening.
+- ~~`StockBalanceReconciliationJob.reconcile()` seems to return only the last tenant's result when it runs for every
+  tenant; check whether the return value should cover all of them (found while fixing test-order failures, #191).~~
+  Done in fu/backend-hardening: the return value is one tenant's by contract (`StoreScopeAdvisor` hands back the last
+  run's result; the scheduler ignores it), now said in its javadoc; `InventoryActorlessScopeTest` no longer reads it
+  across tenants.
+- ~~`LoyaltyProgramService.publish` retires the version in force at `clock.instant()` against the CHECK
   `retired_at >= published_at` (V12020); a wall clock stepping back (NTP, skew between instances) turns a publish into
-  a 500. Clamp `now` to the in-force version's `published_at`, or map the violation to a 409 (review of #191).
-- `MutableClock.advance`/`advanceTo` (test code) are check-then-set on a volatile; make them `synchronized` if a test
-  ever advances it from two threads.
+  a 500. Clamp `now` to the in-force version's `published_at`, or map the violation to a 409 (review of #191).~~ Done
+  in fu/backend-hardening (clamped in `LoyaltyProgramVersion.retire`).
+- ~~`MutableClock.advance`/`advanceTo` (test code) are check-then-set on a volatile; make them `synchronized` if a test
+  ever advances it from two threads.~~ Done in fu/backend-hardening (`AtomicReference.updateAndGet`, both copies).
 - Docker on the dev machine holds about 120 GB of Testcontainers images and volumes from this run; prune it
   (`docker system prune` after checking nothing needed is stopped).
 
