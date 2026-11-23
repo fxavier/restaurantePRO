@@ -36,7 +36,7 @@ export function OrdersScreen({ storeId }: { storeId: string }) {
       </div>
       {orderId && (
         <div className="xl:col-span-2">
-          <OrderDetail key={orderId} orderId={orderId} timeZone={timeZone} onClose={() => selectOrder(undefined)} />
+          <OrderDetail key={orderId} storeId={storeId} orderId={orderId} timeZone={timeZone} onClose={() => selectOrder(undefined)} />
         </div>
       )}
     </div>
