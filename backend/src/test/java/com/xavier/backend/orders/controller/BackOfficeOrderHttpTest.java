@@ -126,6 +126,21 @@ class BackOfficeOrderHttpTest {
     }
 
     @Test
+    void underscoreAndPercentInTheSearchTextMatchOnlyThatCharacter() throws Exception {
+        UUID underscore = fixtures.openedAt(shop, fixtures.newTable(shop, "A_1"), employee, terminal);
+        UUID percent = fixtures.openedAt(shop, fixtures.newTable(shop, "B%1"), employee, terminal);
+        fixtures.openedAt(shop, fixtures.newTable(shop, "AX1"), employee, terminal);
+        fixtures.openedAt(shop, fixtures.newTable(shop, "B91"), employee, terminal);
+
+        mvc.perform(get(ORDERS).param("storeId", shop.store().toString()).param("q", "_")
+                        .with(viewer(shop.store())))
+                .andExpect(jsonPath("$.content[*].id", contains(underscore.toString())));
+        mvc.perform(get(ORDERS).param("storeId", shop.store().toString()).param("q", "%")
+                        .with(viewer(shop.store())))
+                .andExpect(jsonPath("$.content[*].id", contains(percent.toString())));
+    }
+
+    @Test
     void anOrderIsReadWithItsLinesAndDue() throws Exception {
         mvc.perform(get(ORDERS + "/" + dineIn.get("id").asString()).with(viewer(shop.store())))
                 .andExpect(status().isOk())
