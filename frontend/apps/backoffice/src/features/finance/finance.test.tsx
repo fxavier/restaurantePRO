@@ -2,7 +2,7 @@ import { formatMoney } from '@restaurantpro/ui';
 import { screen, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { api, baixa, problem } from '../../test/fixtures';
+import { admin, api, baixa, problem } from '../../test/fixtures';
 import { financeServer, mzn, page, receiptsRow, salesRow } from '../../test/finance-fixtures';
 import { renderApp } from '../../test/render-app';
 import { server } from '../../test/server';
@@ -108,6 +108,35 @@ describe('finance tabs', () => {
     for (const name of ['Resumo', 'Fechos', 'Reconciliação', 'Fiscal', 'Meios de pagamento']) {
       expect(screen.getByRole('tab', { name })).toBeInTheDocument();
     }
+  });
+
+  it('lands on the first tab the user may open when the address names none', async () => {
+    // CASH_CLOSING_APPROVE alone reads the closings (requireAny(CASH_VIEW, CASH_CLOSING_APPROVE)), not the reports.
+    const { requests } = financeServer({}, { ...admin, permissions: [`PERM_CASH_CLOSING_APPROVE@${baixa.id}`] });
+
+    renderApp(FINANCE);
+
+    expect(await screen.findByRole('tab', { name: 'Fechos' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Resumo' })).toHaveAttribute('aria-selected', 'false');
+    expect(requests.some((path) => path.startsWith('/api/v1/backoffice/reports/'))).toBe(false);
+  });
+
+  it('opens the tab the address names, even one the user may not open', async () => {
+    financeServer({}, { ...admin, permissions: ['PERM_CASH_CLOSING_APPROVE'] });
+
+    renderApp(`${FINANCE}&tab=resumo`);
+
+    expect(await screen.findByRole('tab', { name: 'Resumo' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('keeps the first tab, and its denial, for a user who may open none', async () => {
+    financeServer({}, { ...admin, permissions: [] });
+    server.use(http.get(api('/api/v1/backoffice/reports/sales'), () => problem(403, 'ACCESS_DENIED')));
+
+    renderApp(FINANCE);
+
+    expect(await screen.findByRole('tab', { name: 'Resumo' })).toHaveAttribute('aria-selected', 'true');
+    expect(await screen.findByText('Sem permissão para ver os relatórios desta loja.')).toBeInTheDocument();
   });
 
   it("offers a retry when the store list is unreachable, instead of a blank area", async () => {

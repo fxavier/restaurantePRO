@@ -2,5 +2,7 @@ dist/
 test-results*/
 playwright-report*/
 *.tsbuildinfo
+# `vitest run --coverage` reports (advisory, not a gate).
+coverage/
 # Generated from openapi.json by `pnpm --filter api-client generate` (runs on install and before typecheck).
 packages/api-client/src/schema.d.ts

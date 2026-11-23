@@ -28,5 +28,12 @@ export default defineConfig({
     testTimeout: 30_000, // FE-F30: see src/test-setup.ts
     setupFiles: ['./src/test-setup.ts'],
     env: { TZ: TEST_TIME_ZONE },
+    // Only with `vitest run --coverage`: advisory, no thresholds (not a gate).
+    coverage: {
+      provider: 'v8',
+      include: ['src/**'],
+      reporter: ['text-summary', 'lcov', 'json-summary'],
+      reportOnFailure: true, // a test slowed by the instrumentation must not cost the report
+    },
   },
 });

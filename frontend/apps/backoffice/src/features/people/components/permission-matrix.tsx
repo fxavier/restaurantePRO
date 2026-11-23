@@ -3,6 +3,7 @@ import { ShieldAlert } from 'lucide-react';
 import { useId } from 'react';
 import type { ReadState } from '../hooks/use-choices';
 import type { PermissionArea } from '../permission-areas';
+import { permissionLabel } from '../permission-labels';
 import type { PermissionView } from '../types';
 import { ChoicesError } from './choices-error';
 
@@ -83,18 +84,32 @@ function AreaGroup({ area, granted, onToggle }: AreaGroupProps) {
 type PermissionSwitchProps = { permission: PermissionView; checked: boolean; onChange: (on: boolean) => void };
 
 /**
- * A permission's switch, named by the permission; the knob's position says on or off besides its colour. A sensitive
+ * A permission's switch, named by its Portuguese label with the stored code as secondary text (a code this BackOffice
+ * has no label for is named by the code alone); the knob's position says on or off besides its colour. A sensitive
  * permission (D142: a BackOffice account needs a fresh second factor to use it) carries a badge and says why.
  */
 function PermissionSwitch({ permission, checked, onChange }: PermissionSwitchProps) {
   const id = useId();
+  const label = permissionLabel(permission.name);
+  const described = [label && `${id}-code`, permission.sensitive && `${id}-badge ${id}-why`].filter(Boolean).join(' ');
   return (
     <label className="flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-md px-2 py-1 hover:bg-muted">
       <span className="flex flex-col gap-0.5">
         <span className="flex flex-wrap items-center gap-2">
-          <span id={`${id}-name`} className="font-mono text-sm">
-            {permission.name}
-          </span>
+          {label ? (
+            <span className="flex flex-col">
+              <span id={`${id}-name`} className="text-sm">
+                {label}
+              </span>
+              <span id={`${id}-code`} className="font-mono text-xs text-muted-foreground">
+                {permission.name}
+              </span>
+            </span>
+          ) : (
+            <span id={`${id}-name`} className="font-mono text-sm">
+              {permission.name}
+            </span>
+          )}
           {permission.sensitive && (
             <Badge id={`${id}-badge`} variant="warning">
               <ShieldAlert aria-hidden="true" />
@@ -113,7 +128,7 @@ function PermissionSwitch({ permission, checked, onChange }: PermissionSwitchPro
           type="checkbox"
           role="switch"
           aria-labelledby={`${id}-name`}
-          aria-describedby={permission.sensitive ? `${id}-badge ${id}-why` : undefined}
+          aria-describedby={described || undefined}
           checked={checked}
           onChange={(event) => onChange(event.target.checked)}
           className="peer h-6 w-11 cursor-pointer appearance-none rounded-full border border-input bg-muted transition-colors checked:border-primary checked:bg-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card focus-visible:outline-none"
