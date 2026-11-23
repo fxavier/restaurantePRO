@@ -42,13 +42,15 @@ Decided by Xavier Francisco on 2026-11-23: the visual reference is now the light
 | --- | --- | --- |
 | free (`status FREE`) | `bg-success-tint`, `border-success-border` | "Livre" in `success-text`; the seats |
 | reserved (`reserved`, `nextReservationAt`) | the state's own tile | "Reservada 20:30" with a clock icon |
-| occupied (`status OCCUPIED`) | `bg-warning-tint`, `border-warning-border` | guests · minutes open (from `openedAt`); "Ocupada" for assistive technology |
+| occupied (`status OCCUPIED`) | `bg-warning-tint`, `border-warning-border` | guests · minutes open (from `openedAt`); "Ocupada" for assistive technology; the order's total |
 | bill requested (`subtotalPrinted`) | `bg-info-tint`, `border-info-border` | "Conta pedida" with a receipt icon |
 | locked (`locked`) | `bg-destructive-tint`, `border-destructive-border` | "Bloqueada" with a lock icon |
-| overdue ("58 min sem ronda") | `destructive` tint | **not built**: the table map has no last-round time |
+| overdue (occupied, neither locked nor bill requested, `overdueAfterMinutes` or more since the last round, or since the opening while none was sent) | `bg-destructive-tint`, `border-destructive-border` | "58 min sem ronda" with a timer icon, first of the indicator lines |
 | selected | the state's tile + a 2px `ring` outside it | `aria-pressed` |
 
-The image's per-table amount, the terminal name, the "impressão pendente" / "pagamento por confirmar" / kitchen-delay chips and the keyboard hints are not shown: no current POS query gives them (or no shortcut exists).
+**Per-table amount and overdue (2026-11-23):** the map (dining) cannot read orders, since orders depends on dining (D35). Orders answers `GET /api/v1/pos/orders/table-activity` (ORDER_VIEW, the session's store): each seated OPEN order's `total` (its `due`, the panel's total) and `lastRoundAt`, plus `overdueAfterMinutes` (a backend constant, 30, until a store setting exists). The POS merges it with the map by `openOrderId`; the minutes come from server timestamps and the threshold from the response. In the selected table's order, each sent round shows its kitchen state from production's `GET /api/v1/pos/production-tickets/rounds?orderId=` (ADR 0044; ORDER_VIEW): "pronta" when READY, "em preparação" when IN_PREPARATION, nothing when QUEUED or BUMPED; a round on several stations is as far along as its least advanced one. The summary chips count an overdue table as occupied.
+
+The terminal name, the "impressão pendente" / "pagamento por confirmar" / kitchen-delay chips and the keyboard hints are not shown: no current POS query gives them (or no shortcut exists).
 
 ## Screens used
 
