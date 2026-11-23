@@ -108,6 +108,14 @@ function toLine(line: LineView): OrderLine {
   };
 }
 
+/**
+ * The number the drafts' round is expected to get ("Ronda 3 · rascunho", "Enviar ronda 3"): one past the last round
+ * the server returned. A label only: the server numbers the round, and the round shown once sent is the server's.
+ */
+export function nextRoundNo(order: Pick<Order, 'rounds'>): number {
+  return order.rounds.reduce((last, round) => Math.max(last, round.batchNo), 0) + 1;
+}
+
 /** "2", "0,5": a quantity as the server sent it (a decimal string, formatted as one), in the store's locale. */
 export function quantityLabel(quantity: string): string {
   return new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 3 }).format(quantity as Intl.StringNumericLiteral);

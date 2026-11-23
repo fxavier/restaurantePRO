@@ -1,7 +1,7 @@
 import { formatMoney } from '@restaurantpro/ui';
 import { act, screen, within } from '@testing-library/react';
 import { delay, HttpResponse } from 'msw';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { problem, SESSION, tableMap, tablesEndpoint, token, tokenEndpoint } from '../../test/server';
 import { id, MAP, openFromMap } from '../../test/table-map';
 import { catalogEndpoint, json, ORDER, ORDER_ID, orderEndpoint } from '../../test/order';
@@ -25,7 +25,17 @@ const E1_OCCUPIED = {
 
 const tile = (name: RegExp) => screen.getByRole('button', { name });
 
+/** The terminal's clock at 14:00 in the store (12:00Z): M2 opened 1 h 55 min ago, M3 20 min ago. */
+function at14h() {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-11-18T12:00:00Z'));
+}
+
 describe('table map', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('shows a labelled loading state while the map is read, with the terminal token and the POS session', async () => {
     const { requests } = await atTables(async () => {
       await delay('infinite');
@@ -40,14 +50,13 @@ describe('table map', () => {
   it('shows one tab per area, the first selected, with its tables', async () => {
     await atTables();
 
-    // Each pill shows its occupied/total count too, hidden from assistive technology (the summary says it).
+    // Each tab shows its table count; a screen reader hears it as words.
     const tabs = await screen.findAllByRole('tab');
     expect(tabs).toHaveLength(2);
-    expect(tabs[0]).toHaveAccessibleName('Sala');
-    expect(tabs[0]).toHaveTextContent('Sala2/4');
-    expect(tabs[1]).toHaveAccessibleName('Esplanada');
-    expect(screen.getByRole('tab', { name: 'Sala' })).toHaveAttribute('aria-selected', 'true');
-    const panel = screen.getByRole('tabpanel', { name: 'Sala' });
+    expect(tabs[0]).toHaveAccessibleName('Sala, 4 mesas');
+    expect(tabs[1]).toHaveAccessibleName('Esplanada, 1 mesa');
+    expect(screen.getByRole('tab', { name: /^Sala,/ })).toHaveAttribute('aria-selected', 'true');
+    const panel = screen.getByRole('tabpanel', { name: /^Sala,/ });
     expect(within(panel).getAllByRole('button').map((button) => button.textContent)).toEqual([
       expect.stringContaining('M1'),
       expect.stringContaining('M2'),
@@ -59,9 +68,9 @@ describe('table map', () => {
   it('another area shows its own tables', async () => {
     const { user } = await atTables();
 
-    await user.click(await screen.findByRole('tab', { name: 'Esplanada' }));
+    await user.click(await screen.findByRole('tab', { name: /^Esplanada,/ }));
 
-    const panel = screen.getByRole('tabpanel', { name: 'Esplanada' });
+    const panel = screen.getByRole('tabpanel', { name: /^Esplanada,/ });
     expect(within(panel).getByRole('button', { name: /E1/ })).toHaveAccessibleName('Mesa E1 Livre 2 lugares');
     expect(screen.queryByRole('button', { name: /M1/ })).not.toBeInTheDocument();
   });
@@ -72,19 +81,21 @@ describe('table map', () => {
     expect(await screen.findByRole('button', { name: /^Mesa M1 / })).toHaveAccessibleName('Mesa M1 Livre 4 lugares');
   });
 
-  it('labels an occupied table "Ocupada" with its guests and the time it opened, in the store time', async () => {
+  it('labels an occupied table "Ocupada" with its guests and the minutes since it opened', async () => {
+    at14h();
     await atTables();
 
     expect(await screen.findByRole('button', { name: /^Mesa M2 / })).toHaveAccessibleName(
-      'Mesa M2 Ocupada 3 pessoas desde 12:05',
+      'Mesa M2 Ocupada 3 pessoas · 1 h 55 min',
     );
   });
 
-  it('marks locked, subtotal printed and reserved with a label each, in that order', async () => {
+  it('marks locked, bill requested (subtotal printed) and reserved with a label each, in that order', async () => {
+    at14h();
     await atTables();
 
     const m3 = await screen.findByRole('button', { name: /^Mesa M3 / });
-    expect(m3).toHaveAccessibleName('Mesa M3 Ocupada 1 pessoa desde 13:40 Bloqueada Subtotal Reservada 20:30');
+    expect(m3).toHaveAccessibleName('Mesa M3 Ocupada 1 pessoa · 20 min Bloqueada Conta pedida Reservada 20:30');
     expect(tile(/^Mesa M4 /)).toHaveAccessibleName('Mesa M4 Livre 1 lugar Reservada 21:00');
   });
 
@@ -128,8 +139,22 @@ describe('table map', () => {
     expect(within(panel).getByRole('group', { name: 'Total' })).toHaveTextContent(
       formatMoney({ amount: '1350.00', currency: 'MZN' }).replace(/\s/g, ' '),
     );
-    await user.click(within(panel).getByRole('button', { name: 'Registar artigos' }));
+    await user.click(within(panel).getByRole('button', { name: 'Adicionar artigos' }));
     expect(router.state.location.pathname).toBe(`/orders/${ORDER_ID}`);
+  });
+
+  it('"Mesa ou nº" shows only the area\'s tables whose code has the typed text, and says when none has', async () => {
+    const { user } = await atTables();
+
+    await user.type(await screen.findByRole('searchbox', { name: 'Procurar mesa' }), 'm3');
+
+    const panel = screen.getByRole('tabpanel', { name: /^Sala,/ });
+    expect(within(panel).getAllByRole('button').map((button) => button.textContent)).toEqual([expect.stringContaining('M3')]);
+    await user.clear(screen.getByRole('searchbox', { name: 'Procurar mesa' }));
+    await user.type(screen.getByRole('searchbox', { name: 'Procurar mesa' }), 'X9');
+    expect(within(panel).getByText('Nenhuma mesa com «X9» nesta área.')).toBeInTheDocument();
+    await user.clear(screen.getByRole('searchbox', { name: 'Procurar mesa' }));
+    expect(within(panel).getAllByRole('button')).toHaveLength(4);
   });
 
   it('names the store in the status bar', async () => {
@@ -157,12 +182,12 @@ describe('table map', () => {
     orderEndpoint(ORDER_ID, json(e1));
     const { user } = await atTables(tableMap(E1_OCCUPIED));
 
-    await user.click(await screen.findByRole('tab', { name: 'Esplanada' }));
+    await user.click(await screen.findByRole('tab', { name: /^Esplanada,/ }));
     await openFromMap(user, /^Mesa E1 /);
     await screen.findByRole('heading', { name: 'Mesa E1' });
     await user.click(screen.getByRole('link', { name: 'Voltar às mesas' }));
 
-    expect(await screen.findByRole('tab', { name: 'Esplanada' })).toHaveAttribute('aria-selected', 'true');
+    expect(await screen.findByRole('tab', { name: /^Esplanada,/ })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('button', { name: /^Mesa E1 / })).toBeInTheDocument();
   });
 
@@ -173,7 +198,7 @@ describe('table map', () => {
     // The login lands on the plain map; the unknown area comes after, as from an old link.
     await act(() => router.navigate('/tables?area=gone'));
 
-    expect(await screen.findByRole('tab', { name: 'Sala' })).toHaveAttribute('aria-selected', 'true');
+    expect(await screen.findByRole('tab', { name: /^Sala,/ })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('button', { name: /^Mesa M1 / })).toBeInTheDocument();
   });
 

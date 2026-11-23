@@ -287,6 +287,16 @@ export const deleteLineEndpoint = (orderId: string, lineId: string, ...answers: 
 export const batchEndpoint = (orderId: string, ...answers: Answer<ConfirmBatchRequest>[]) =>
   recording<ConfirmBatchRequest>('post', `/api/v1/pos/orders/${orderId}/batches`, queue(...answers));
 
+/** `POST /api/v1/pos/orders/{id}/subtotal/print` (202, the subtotal as printed). */
+export const subtotalEndpoint = (orderId: string, ...answers: Answer[]) =>
+  recording<undefined>('post', `/api/v1/pos/orders/${orderId}/subtotal/print`, queue(...answers));
+
+export const subtotalPrinted = (order: OrderView = ORDER) => () =>
+  HttpResponse.json(
+    { orderId: order.id, orderNumber: order.orderNumber, tableCode: order.tableCode, lines: [], due: order.due },
+    { status: 202 },
+  );
+
 export const json = (body: object) => () => HttpResponse.json(body);
 export const created = (body: object) => () => HttpResponse.json(body, { status: 201 });
 export const noContent = () => () => new HttpResponse(null, { status: 204 });

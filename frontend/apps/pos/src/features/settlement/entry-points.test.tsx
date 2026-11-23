@@ -6,7 +6,7 @@ import { renderPos } from '../../test/render-pos';
 import { tableMap, tablesEndpoint, token, tokenEndpoint } from '../../test/server';
 import { serverSettlement } from '../../test/settlement';
 import { MAP } from '../../test/table-map';
-import { json, ORDER, orderEndpoint } from '../../test/order';
+import { catalogEndpoint, json, ORDER, orderEndpoint } from '../../test/order';
 
 describe('reaching the bill', () => {
   it('from the order screen, beside "Pedir"', async () => {
@@ -20,18 +20,19 @@ describe('reaching the bill', () => {
     expect(await screen.findByRole('heading', { name: 'Conta da mesa M2' })).toBeInTheDocument();
   });
 
-  it('from an occupied table on the map, "Cobrar"; a free table has none', async () => {
+  it('from an occupied table on the map, "Dividir" (the bill on its split); a free table has none', async () => {
     serverSettlement();
     tokenEndpoint(token('jwt-1'));
     tablesEndpoint(tableMap(MAP));
+    catalogEndpoint();
     orderEndpoint(ORDER_ID, json(ORDER));
     const { user, router } = await renderPos({ device: 'enrolled', loggedIn: true, path: '/tables' });
     const panel = () => screen.getByRole('complementary', { name: 'Detalhe da mesa' });
 
     await user.click(await screen.findByRole('button', { name: /^Mesa M1 / }));
-    expect(within(panel()).queryByRole('link', { name: 'Cobrar' })).not.toBeInTheDocument();
+    expect(within(panel()).queryByRole('link', { name: 'Dividir' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /^Mesa M2 / }));
-    await user.click(within(panel()).getByRole('link', { name: 'Cobrar' }));
+    await user.click(await within(panel()).findByRole('link', { name: 'Dividir' }));
 
     await waitFor(() => expect(router.state.location.pathname).toBe(`/orders/${ORDER_ID}/payment`));
   });

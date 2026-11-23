@@ -289,6 +289,69 @@ test('screens for the PR, at 1024 × 768 and 1366 × 768', async ({ page }) => {
   }
 });
 
+// The table map with M2 selected (light reference, 2026-11-23): its order in the right card, at the smallest POS viewport.
+async function atM2OnMap(page: Page) {
+  await standIn(page);
+  await logIn(page);
+  await page.getByRole('button', { name: /^Mesa M2 / }).click();
+  await expect(page.getByRole('complementary', { name: 'Detalhe da mesa' }).getByRole('list', { name: 'Por enviar' })).toContainText(
+    'Água Pequena',
+  );
+}
+
+test('the selected table\'s order: on screen at 1024 × 768, touch-sized, and accessible', async ({ page }) => {
+  await atM2OnMap(page);
+  const panel = page.getByRole('complementary', { name: 'Detalhe da mesa' });
+
+  const send = await box(panel.getByRole('button', { name: 'Enviar ronda 2' }));
+  expect(send.height).toBeGreaterThanOrEqual(56);
+  expect(send.y + send.height).toBeLessThanOrEqual(768);
+  await expect(panel.getByRole('group', { name: 'Total' })).toBeInViewport();
+  for (const target of [
+    ...(await panel.getByRole('list', { name: 'Por enviar' }).getByRole('button').all()),
+    panel.getByRole('button', { name: 'Subtotal' }),
+    panel.getByRole('link', { name: 'Dividir' }),
+  ]) {
+    const { width, height } = (await target.boundingBox())!;
+    expect(Math.min(width, height)).toBeGreaterThanOrEqual(48);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024);
+
+  await expectNoAxeViolations(page);
+});
+
+test('"Subtotal" on the map prints with an Idempotency-Key and says so on the server\'s 202', async ({ page }) => {
+  const keys: (string | undefined)[] = [];
+  await page.route(`**/api/v1/pos/orders/${ORDER_ID}/subtotal/print`, (route) => {
+    keys.push(route.request().headers()['idempotency-key']);
+    return route.fulfill({
+      status: 202,
+      json: { orderId: ORDER_ID, orderNumber: 12, tableCode: 'M2', lines: [], due: { amount: 1530, currency: 'MZN' } },
+    });
+  });
+  await atM2OnMap(page);
+  const panel = page.getByRole('complementary', { name: 'Detalhe da mesa' });
+
+  await panel.getByRole('button', { name: 'Subtotal' }).click();
+
+  await expect(panel.getByRole('status', { name: 'Subtotal' })).toHaveText('Subtotal impresso.');
+  expect(keys).toHaveLength(1);
+  expect(keys[0]).toMatch(/^[0-9a-f-]{36}$/);
+});
+
+test('screens of the table map, M2 selected, at 1024 × 768 and 1440 × 900', async ({ page }) => {
+  const dir = process.env.E2E_SCREENS;
+  test.skip(!dir, 'E2E_SCREENS not set');
+  await atM2OnMap(page);
+  for (const [width, height] of [
+    [1024, 768],
+    [1440, 900],
+  ] as const) {
+    await page.setViewportSize({ width, height });
+    await page.screenshot({ path: `${dir}/tables-${width}x${height}.png`, animations: 'disabled' });
+  }
+});
+
 // "Pedir" (ticket 12): its answers in the built app, where jsdom cannot check the 56 px targets or the layout.
 const REPRICED = {
   ...ORDER,

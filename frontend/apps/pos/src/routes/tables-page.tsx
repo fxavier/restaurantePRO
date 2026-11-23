@@ -8,12 +8,14 @@ import { TableSummary } from '../features/dining/components/table-summary';
 import { useTableMap } from '../features/dining/hooks/use-table-map';
 import type { DiningTable } from '../features/dining/table-map';
 import { OpenTableDialog } from '../features/orders/components/open-table-dialog';
+import { TableOrder } from '../features/orders/components/table-order';
 import { errorMessage, isOffline } from '../lib/error-messages';
 import { StatusBar } from './status-bar';
 
 /**
- * `/tables`, the POS home (§4, FC §4): the store's table map, kept current by the change stream. A tap selects a table
- * for the detail panel; from there a free table opens with its guests and an occupied one goes to its order.
+ * `/tables`, the POS home (§4, FC §4; light reference 2026-11-23): the store's table map, kept current by the change
+ * stream, and the selected table on the right. A free table opens with its guests; an occupied one shows its open
+ * order (the orders feature's `TableOrder`, composed here), sends its next round, and goes to its order to add items.
  */
 export function TablesPage() {
   const map = useTableMap();
@@ -40,53 +42,68 @@ export function TablesPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    // The screen's height, so the map and the order panel each scroll inside their own card.
+    <div className="flex h-screen flex-col bg-background">
       <StatusBar />
-      <main className="flex flex-1 flex-col gap-4 p-4 lg:p-6">
+      <main className="flex min-h-0 flex-1 flex-col gap-3 p-4">
         {map.data ? (
           map.data.length === 0 ? (
-            <>
+            <section className="rounded-2xl border bg-card p-4">
               <h2 className="text-2xl font-semibold">Mesas</h2>
               <p className="py-6 text-center text-muted-foreground">
                 Esta loja ainda não tem mesas. Um gestor cria as mesas no BackOffice.
               </p>
-            </>
+            </section>
           ) : (
-            <div className="flex flex-1 gap-6">
-              <div className="flex min-w-0 flex-1 flex-col gap-4">
-                <TableSummary areas={map.data} />
-                <h2 className="text-2xl font-semibold">Mesas</h2>
-                <TableMapView
-                  areas={map.data}
-                  area={params.get('area') ?? undefined}
-                  // The area is in the URL, so returning from a table opens the same one; switching adds no history.
-                  onArea={(area) => setParams({ area }, { replace: true })}
-                  selected={selected?.id}
-                  onSelect={setSelectedId}
-                />
+            <>
+              <div className="flex min-h-0 flex-1 gap-4">
+                <section
+                  aria-labelledby="tables-title"
+                  className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto rounded-2xl border bg-card p-4"
+                >
+                  <h2 id="tables-title" className="sr-only">
+                    Mesas
+                  </h2>
+                  <TableMapView
+                    areas={map.data}
+                    area={params.get('area') ?? undefined}
+                    // The area is in the URL, so returning from a table opens the same one; switching adds no history.
+                    onArea={(area) => setParams({ area }, { replace: true })}
+                    selected={selected?.id}
+                    onSelect={setSelectedId}
+                  />
+                </section>
+                <TableDetailPanel
+                  table={selected}
+                  areaName={selectedArea?.name}
+                  onOpenTable={setOpening}
+                  onGoToOrder={goToOrder}
+                  onClose={() => setSelectedId(undefined)}
+                >
+                  {selected?.openOrderId && (
+                    // Keyed by the order, so another table's panel never shows this one's last send.
+                    <TableOrder key={selected.openOrderId} orderId={selected.openOrderId} onAddItems={() => goToOrder(selected)} />
+                  )}
+                </TableDetailPanel>
               </div>
-              <TableDetailPanel
-                table={selected}
-                areaName={selectedArea?.name}
-                onOpenTable={setOpening}
-                onGoToOrder={goToOrder}
-                onClose={() => setSelectedId(undefined)}
-              />
-            </div>
+              <footer>
+                <TableSummary areas={map.data} />
+              </footer>
+            </>
           )
         ) : map.isError ? (
-          <div className="flex flex-col items-center gap-3 py-6 text-center">
+          <div className="flex flex-col items-center gap-3 rounded-2xl border bg-card p-6 text-center">
             <p role="alert">{loadError(map.error)}</p>
             <Button variant="outline" size="touch" onClick={() => void map.refetch()}>
               Tentar novamente
             </Button>
           </div>
         ) : (
-          <div role="status" aria-label="A carregar as mesas…" className="flex flex-col gap-4">
-            <Skeleton className="h-14 w-72" />
+          <div role="status" aria-label="A carregar as mesas…" className="flex flex-col gap-4 rounded-2xl border bg-card p-4">
+            <Skeleton className="h-12 w-72" />
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
               {Array.from({ length: 8 }, (_, index) => (
-                <Skeleton key={index} className="h-48 rounded-xl" />
+                <Skeleton key={index} className="h-44 rounded-xl" />
               ))}
             </div>
           </div>

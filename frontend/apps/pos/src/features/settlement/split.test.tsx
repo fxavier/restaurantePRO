@@ -22,6 +22,23 @@ const splitPanel = () => screen.getByRole('region', { name: 'Divisão da conta' 
 const parts = () => screen.getByRole('list', { name: 'Divisões' });
 
 describe('splitting the bill', () => {
+  it('opened from the table map\'s "Dividir" (`?dividir`), the split starts on equal parts; otherwise on the whole bill', async () => {
+    serverSettlement();
+    await atPayment({ search: '?dividir' });
+    await billShown();
+
+    expect(await within(splitPanel()).findByRole('tab', { name: /Partes iguais/ })).toHaveAttribute('aria-selected', 'true');
+    expect(within(splitPanel()).getByRole('button', { name: 'Dividir em 3 partes' })).toBeInTheDocument();
+  });
+
+  it('without `?dividir`, the whole bill is selected', async () => {
+    serverSettlement();
+    await atPayment();
+    await billShown();
+
+    expect(await within(splitPanel()).findByRole('tab', { name: /Conta total/ })).toHaveAttribute('aria-selected', 'true');
+  });
+
   it('in equal parts: one intent for the number of people chosen, then the parts as the server cut them', async () => {
     const server = serverSettlement();
     const requests = equalPartsEndpoint(() => {

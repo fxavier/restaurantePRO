@@ -72,9 +72,12 @@ export const M1_OCCUPIED: TableMap = {
   })),
 };
 
-/** A tile tapped, then the detail panel's action: "Abrir mesa" for a free table, "Registar artigos" for an occupied one. */
+/**
+ * A tile tapped, then the detail panel's action: "Abrir mesa" for a free table, "Adicionar artigos" for an occupied
+ * one (under its order, once read).
+ */
 export async function openFromMap(user: UserEvent, tile: RegExp) {
   await user.click(await screen.findByRole('button', { name: tile }));
   const panel = screen.getByRole('complementary', { name: 'Detalhe da mesa' });
-  await user.click(within(panel).getByRole('button', { name: /^(Abrir mesa|Registar artigos)$/ }));
+  await user.click(await within(panel).findByRole('button', { name: /^(Abrir mesa|Adicionar artigos)$/ }));
 }

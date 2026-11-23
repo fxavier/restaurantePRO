@@ -1,41 +1,60 @@
 /*
  * Design tokens (docs/design/frontend-design-system.md), in the variable names shadcn/ui expects.
- * `:root` is the R1 light theme; `.dark` is the Google Stitch theme (docs/design/DESIGN.md) over the same names,
- * which both apps turn on with `<html class="dark">`.
- * tokens.test.ts asserts these values against the DS tables and checks the contrast pairs.
+ * `:root` is the light reference theme (docs/design/DESIGN.md "Light reference", 2026-11-23), which the POS uses;
+ * `.dark` is the Google Stitch theme over the same names, which the BackOffice still turns on with `<html class="dark">`.
+ * A name `.dark` does not set (radius, route-*, the state tints) is shared, so its value here must suit both.
+ * tokens.test.ts asserts these values and checks the contrast pairs.
  */
 :root {
-  --background: #FFFFFF;
-  --foreground: #0F172A;
-  --muted: #F1F5F9;
-  --muted-foreground: #475569;
-  --border: #E2E8F0;
-  --input: #64748B;
-  --primary: #166FE5;
-  --primary-hover: #1259C3;
+  /* light grey page, white cards */
+  --background: #F0F0ED;
+  --foreground: #1C1C1A;
+  --card: #FFFFFF;
+  --popover: #FFFFFF;
+  --muted: #EAEAE6;
+  --muted-foreground: #575752;
+  --border: #D6D6D1;
+  --input: #7A7A74;
+  /* the reference's green, darkened to 5.5:1 with white text */
+  --primary: #0B7A0B;
+  --primary-hover: #086208;
   --primary-foreground: #FFFFFF;
-  --brand: #1877F2;
-  --ring: #1877F2;
-  --success: #15803D;
+  --brand: var(--primary);
+  /* blue, apart from the green, so focus and the selected tile show on every state's tint */
+  --ring: #1C64C4;
+  /* status fills (white text) and AA text on white */
+  --success: var(--primary);
   --success-foreground: #FFFFFF;
-  --warning: #FEF3C7;
-  --warning-foreground: #92400E;
-  --destructive: #B91C1C;
+  --warning: #9A5700;
+  --warning-foreground: #FFFFFF;
+  --info: #1D5FB0;
+  --info-foreground: #FFFFFF;
+  --destructive: #B3261E;
   --destructive-foreground: #FFFFFF;
-  --info: var(--primary);
-  --info-foreground: var(--primary-foreground);
   /* error text; `--destructive` is the fill, border and tint */
   --error: var(--destructive);
+  /* the table states' tinted surfaces (DESIGN.md "Light reference"): a tint, a border, and AA text on the tint */
+  --success-tint: #D4EDD2;
+  --success-border: #6CC46C;
+  --success-text: #145A14;
+  --warning-tint: #F9DEA9;
+  --warning-border: #E9A21B;
+  --warning-text: #6B3E00;
+  --info-tint: #D3E3F8;
+  --info-border: #82AFEB;
+  --info-text: #1A4A8A;
+  --destructive-tint: #F8D6D6;
+  --destructive-border: #E58C8C;
+  --destructive-text: #8E1B1B;
   /* production-route chips, the same in both themes */
   --route-kitchen: #F97316;
   --route-bar: #8B5CF6;
   --route-copa: #06B6D4;
+  /* shared with `.dark`: cards take `rounded-2xl` (16 px) and tiles `rounded-xl` (12 px) from this scale */
   --radius: 0.5rem;
 
   /* shadcn names the DS does not list, mapped onto the DS surfaces */
-  --card: var(--background);
   --card-foreground: var(--foreground);
-  --popover: var(--background);
   --popover-foreground: var(--foreground);
   --secondary: var(--muted);
   --secondary-foreground: var(--foreground);

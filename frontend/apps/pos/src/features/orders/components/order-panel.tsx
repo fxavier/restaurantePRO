@@ -148,16 +148,31 @@ export function OrderPanel({ order, catalog, commands, message, action, back, sh
   );
 }
 
-/** The confirmed lines, per round, then those outside any round; the order screen's "Enviado" and the table panel's. */
-export function SentRounds({ order, catalog }: { order: Order; catalog?: PosCatalog }) {
+/**
+ * The confirmed lines, per round, then those outside any round; the order screen's "Enviado" and the table map's
+ * order. Each round's list is named "Ronda N, HH:MM"; `heading` gives its visible heading another form, and
+ * `headingLevel` its level under the caller's own headings.
+ */
+export function SentRounds({
+  order,
+  catalog,
+  heading = (batchNo, time) => `Ronda ${batchNo}, ${time}`,
+  headingLevel: Heading = 'h4',
+}: {
+  order: Order;
+  catalog?: PosCatalog;
+  heading?: (batchNo: number, time: string) => string;
+  headingLevel?: 'h3' | 'h4';
+}) {
   const timeZone = useStoreTimeZone();
   return (
     <>
       {order.rounds.map((round) => {
-        const title = `Ronda ${round.batchNo}, ${clockTime(round.confirmedAt, timeZone)}`;
+        const time = clockTime(round.confirmedAt, timeZone);
+        const title = `Ronda ${round.batchNo}, ${time}`;
         return (
           <div key={round.id} className="flex flex-col rounded-lg border bg-background p-3">
-            <h4 className="text-sm font-semibold">{title}</h4>
+            <Heading className="text-sm font-semibold">{heading(round.batchNo, time)}</Heading>
             <ul aria-label={title} className="flex flex-col">
               {round.lines.map((line) => (
                 <SentRow key={line.id} line={line} name={lineName(line, catalog)} catalog={catalog} />
@@ -168,7 +183,7 @@ export function SentRounds({ order, catalog }: { order: Order; catalog?: PosCata
       })}
       {order.unbatched.length > 0 && (
         <div className="flex flex-col rounded-lg border bg-background p-3">
-          <h4 className="text-sm font-semibold">Sem ronda (transferidas)</h4>
+          <Heading className="text-sm font-semibold">Sem ronda (transferidas)</Heading>
           <ul aria-label="Sem ronda" className="flex flex-col">
             {order.unbatched.map((line) => (
               <SentRow key={line.id} line={line} name={lineName(line, catalog)} catalog={catalog} />

@@ -9,7 +9,7 @@ import { byCode, type CatalogItem, itemLabel, needsChoices, search } from '../..
 import { FamilyRail } from '../../catalog/components/family-rail';
 import { ProductGrid } from '../../catalog/components/product-grid';
 import { useCatalog } from '../../catalog/hooks/use-catalog';
-import { isCatalogConflict, type Shown, useConfirmBatch } from '../hooks/use-confirm-batch';
+import { isCatalogConflict, roundRequest, type Shown, useConfirmBatch } from '../hooks/use-confirm-batch';
 import { useAddLine, useDraftLineCommands } from '../hooks/use-order-commands';
 import type { Order, OrderLine } from '../order';
 import { ChoiceSheet, type Choices } from './choice-sheet';
@@ -96,20 +96,8 @@ export function OrderScreen({ order, blocked, back }: Props) {
 
   function pedir() {
     forgetLastSend();
-    if (order.catalogVersion === null) return;
-    send.start(
-      {
-        orderVersion: order.version,
-        catalogVersion: order.catalogVersion,
-        promotionVersion: order.promotionVersion ?? undefined,
-        lineIds: order.drafts.map((line) => line.id),
-        // D104: the server's draftGross echoed as given (its decimal string, verbatim), so a round that would now cost
-        // anything else is refused with PRICES_CHANGED (a draft changed on another terminal, a promotion window
-        // closed). String() only matters for a number replayed from before decimals became strings (FE-F33).
-        expectedGross: order.draftGross ? String(order.draftGross.amount) : undefined,
-      },
-      { gross: new Map(order.drafts.map((line) => [line.id, line.gross])) },
-    );
+    const request = roundRequest(order);
+    if (request) send.start(...request);
   }
 
   const draftCommands = {
@@ -290,7 +278,7 @@ function catalogError(error: Error): string {
 }
 
 /** A draft's change refused: a stale version means another terminal changed it first. */
-function draftMessage(error: Error): string {
+export function draftMessage(error: Error): string {
   if (isVersionConflict(error)) {
     return 'A linha foi alterada noutro terminal. O pedido foi atualizado; reveja-o e tente de novo.';
   }
