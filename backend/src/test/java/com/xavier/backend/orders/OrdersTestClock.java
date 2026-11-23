@@ -19,7 +19,7 @@ public final class OrdersTestClock extends Clock {
     private volatile Instant pinned;
 
     public void pin(Instant instant) {
-        pinned = instant;
+        pinned = instant == null ? null : instant.truncatedTo(ChronoUnit.MICROS);
     }
 
     public void release() {
