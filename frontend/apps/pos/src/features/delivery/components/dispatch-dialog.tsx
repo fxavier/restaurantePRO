@@ -87,7 +87,11 @@ type CouriersProps = {
 function Couriers({ couriers, courierId, onChange, disabled }: CouriersProps) {
   if (couriers.data) {
     if (couriers.data.length === 0) {
-      return <p className="text-muted-foreground">Esta loja não tem estafetas ativos. Um gestor atribui-os no BackOffice.</p>;
+      return (
+        <p className="text-muted-foreground">
+          Esta loja não tem estafetas ativos. Um gestor atribui no BackOffice uma função com a permissão de estafeta.
+        </p>
+      );
     }
     const choices = couriers.data.map(({ id, code, name }) => ({ value: id, label: name, hint: code, icon: Bike }));
     return <ChoiceGroup legend="Estafeta" name="courier" choices={choices} value={courierId} onChange={onChange} disabled={disabled} />;

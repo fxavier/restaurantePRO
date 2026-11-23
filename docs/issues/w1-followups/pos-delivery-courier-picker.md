@@ -26,7 +26,9 @@ the driver has to log in on the terminal and tap "Expedir" themselves.
 - New permission `DELIVERY_COURIER` (Q4 of `../complete-app-followups/README.md`), seeded by
   `V3018__identity_delivery_courier_permission.sql` to every role (template and tenant role) that holds
   `DELIVERY_OPERATE`, i.e. Administrador, Gerente and Caixa as seeded: no seeded profile is a driver, and whoever
-  dispatched themselves before still can. A dedicated driver gets a tenant role holding `DELIVERY_COURIER`.
+  dispatched themselves before still can. `V6033__orders_grant_courier_to_past_couriers.sql` also grants it to every
+  tenant role an existing delivery's courier holds in that delivery's store, so no current driver loses courier
+  status. A new dedicated driver gets a tenant role holding `DELIVERY_COURIER`.
 - The courier list and the dispatch both require it: an active employee of the store without it is refused with
   `422 NOT_A_COURIER`; `COURIER_NOT_IN_STORE` stays for an unknown, inactive or unassigned one.
 - The dialog picks the logged-in employee when they are in the list; the request is unchanged.

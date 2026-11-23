@@ -108,7 +108,11 @@ describe('dispatching a delivery with a courier', () => {
     couriersEndpoint(json([]));
     const { dialog } = await dispatching();
 
-    expect(await within(dialog).findByText(/Esta loja não tem estafetas ativos/)).toBeInTheDocument();
+    expect(
+      await within(dialog).findByText(
+        'Esta loja não tem estafetas ativos. Um gestor atribui no BackOffice uma função com a permissão de estafeta.',
+      ),
+    ).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Expedir' })).toBeDisabled();
   });
 
