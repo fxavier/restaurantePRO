@@ -2,6 +2,7 @@ package com.xavier.backend.production.service;
 
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
+import com.xavier.backend.access.PosContext;
 import com.xavier.backend.audit.AuditLog;
 import com.xavier.backend.organization.OrganizationApi;
 import com.xavier.backend.production.exception.ProductionConflictException;
@@ -12,6 +13,7 @@ import com.xavier.backend.production.model.DestinationRoute;
 import com.xavier.backend.production.model.Printer;
 import com.xavier.backend.production.model.TerminalPrinter;
 import com.xavier.backend.production.model.dto.DestinationRouteView;
+import com.xavier.backend.production.model.dto.ProductionDestinationView;
 import com.xavier.backend.production.model.dto.RoutesRequest;
 import com.xavier.backend.production.model.dto.RoutesView;
 import com.xavier.backend.production.model.dto.TerminalPrinterView;
@@ -62,6 +64,16 @@ public class RoutingService {
     public RoutesView routes(UUID storeId) {
         accessPolicy.require(Permission.PRODUCTION_MANAGE, storeId);
         return new RoutesView(storeId, routes.findByStore(storeId).stream().map(DestinationRoute::toView).toList());
+    }
+
+    /**
+     * The production destinations of the POS session's store (its routing table, by code), the kitchen display's
+     * stations; read with the kitchen display's permission.
+     */
+    @Transactional(readOnly = true)
+    public List<ProductionDestinationView> destinationsForPos() {
+        PosContext pos = accessPolicy.requirePos(Permission.PRODUCTION_VIEW);
+        return routes.findByStore(pos.storeId()).stream().map(DestinationRoute::toDestination).toList();
     }
 
     @Transactional

@@ -10491,6 +10491,14 @@
         },
         "type": "object"
       },
+      "com.xavier.backend.production.model.dto.ProductionDestinationView": {
+        "properties": {
+          "code": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "com.xavier.backend.production.model.dto.RoutesRequest": {
         "properties": {
           "routes": {
@@ -10576,6 +10584,39 @@
         },
         "type": "object"
       },
+      "com.xavier.backend.production.model.dto.TicketComponentView": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "quantity": {
+            "format": "decimal",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "com.xavier.backend.production.model.dto.TicketItemView": {
+        "properties": {
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/com.xavier.backend.production.model.dto.TicketComponentView"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "quantity": {
+            "format": "decimal",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "com.xavier.backend.production.model.dto.TicketView": {
         "properties": {
           "createdAt": {
@@ -10588,6 +10629,12 @@
           "id": {
             "format": "uuid",
             "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/com.xavier.backend.production.model.dto.TicketItemView"
+            },
+            "type": "array"
           },
           "kind": {
             "enum": [
@@ -32238,6 +32285,34 @@
         ],
         "tags": [
           "print-job-controller"
+        ]
+      }
+    },
+    "/api/v1/pos/production-destinations": {
+      "get": {
+        "operationId": "destinationsForPos",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/com.xavier.backend.production.model.dto.ProductionDestinationView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
+        "tags": [
+          "routing-controller"
         ]
       }
     },

@@ -2,6 +2,7 @@ import { Button, Skeleton } from '@restaurantpro/ui';
 import { History, TriangleAlert } from 'lucide-react';
 import { useState } from 'react';
 import { useKitchenTickets } from '../hooks/use-kitchen-tickets';
+import { useProductionDestinations } from '../hooks/use-production-destinations';
 import { ACTIVE, stationsOf } from '../kitchen';
 import { CHANGED_ELSEWHERE, loadFailure } from '../messages';
 import { BumpedRounds } from './bumped-rounds';
@@ -35,13 +36,23 @@ export function KitchenScreen() {
 }
 
 /**
- * The station pills, from every station's active rounds (the same query as the board's when no station is chosen):
- * "Todas" is the server's total; a station's count is what the page holds, exact unless the board says rounds are left out.
+ * The station pills: the store's stations, then any other the active rounds name (the same query as the board's when no
+ * station is chosen). "Todas" is the server's total; a station's count is what the page holds, exact unless the board
+ * says rounds are left out. The pills wait for the store's stations, so they never reorder under a tap; if that read is
+ * refused, the rounds' stations are offered.
  */
 function Stations({ chosen, onChoose }: { chosen?: string; onChoose: (station: string | undefined) => void }) {
   const all = useKitchenTickets({ statuses: ACTIVE });
-  if (!all.data) return <div />;
-  return <StationFilter stations={stationsOf(all.data.tickets, chosen)} total={all.data.total} chosen={chosen} onChoose={onChoose} />;
+  const destinations = useProductionDestinations();
+  if (!all.data || destinations.isPending) return <div />;
+  return (
+    <StationFilter
+      stations={stationsOf(all.data.tickets, chosen, destinations.data)}
+      total={all.data.total}
+      chosen={chosen}
+      onChoose={onChoose}
+    />
+  );
 }
 
 function ActiveRounds({ destination, onChangedElsewhere }: { destination?: string; onChangedElsewhere: () => void }) {

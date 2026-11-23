@@ -27,8 +27,33 @@ describe('readLines', () => {
 });
 
 describe('toKitchenTickets', () => {
+  const kitchen = { status: 'QUEUED' as const, version: 0, queuedAt: '2026-11-22T09:00:00Z' };
+  const lines = ['KITCHEN', 'Mesa 2 - Pedido #7', 'Ronda 1', '22/11/2026 12:00', '-----', '1 x Sopa (Grande)', '   + 2 x Pão'];
+
   it('drops a ticket without kitchen progress (not a round)', () => {
     expect(toKitchenTickets([{ id: 'a', destination: 'KITCHEN', lines: [] }])).toEqual([]);
+  });
+
+  it("takes the round's items as the server reads them, and the header from its lines", () => {
+    const [round] = toKitchenTickets([
+      {
+        id: 'a',
+        destination: 'KITCHEN',
+        kitchen,
+        lines,
+        items: [{ quantity: '1.5', name: 'Sopa (Grande)', notes: 'sem sal', components: [{ quantity: '2', name: 'Pão' }] }],
+      },
+    ]);
+    expect(round).toMatchObject({
+      title: 'Mesa 2 - Pedido #7',
+      round: 'Ronda 1',
+      items: [{ quantity: '1.5', name: 'Sopa (Grande)', notes: ['sem sal'], components: [{ quantity: '2', name: 'Pão' }] }],
+    });
+  });
+
+  it('reads the printed lines when the server has no items for the round', () => {
+    const [round] = toKitchenTickets([{ id: 'a', destination: 'KITCHEN', kitchen, lines, items: [] }]);
+    expect(round?.items).toEqual([{ quantity: '1', name: 'Sopa (Grande)', notes: [], components: [{ quantity: '2', name: 'Pão' }] }]);
   });
 });
 
@@ -56,6 +81,14 @@ describe('stationsOf', () => {
       { code: 'KITCHEN', count: 2 },
       { code: 'BAR', count: 1 },
       { code: 'COPA', count: 0 },
+    ]);
+  });
+
+  it("offers the store's stations first, those without rounds too, then any other a round names", () => {
+    expect(stationsOf([at('GRILL'), at('BAR')], undefined, ['BAR', 'KITCHEN'])).toEqual([
+      { code: 'BAR', count: 1 },
+      { code: 'KITCHEN', count: 0 },
+      { code: 'GRILL', count: 1 },
     ]);
   });
 });

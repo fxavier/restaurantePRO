@@ -1,7 +1,7 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { HttpResponse } from 'msw';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
-import { atKitchen, byStation, firstPageOf, kdsEndpoint, page, TICKET } from '../../test/kitchen';
+import { atKitchen, byStation, firstPageOf, kdsEndpoint, page, stations, TICKET } from '../../test/kitchen';
 import { renderPos } from '../../test/render-pos';
 import { notificationsEndpoint, problem, token, tokenEndpoint } from '../../test/server';
 
@@ -16,7 +16,7 @@ describe('the kitchen display', () => {
     const card = within(queued).getByRole('article', { name: 'Mesa 04 - Pedido #4092, Ronda 2' });
     const [bife, polvo] = within(card).getAllByRole('listitem');
     expect(bife).toHaveTextContent(/^2×Bife da VaziaNota: mal passado$/);
-    expect(polvo).toHaveTextContent(/^1×Polvo à Lagareiro1 x Batata a murro$/);
+    expect(polvo).toHaveTextContent(/^1×Polvo à Lagareiro1× Batata a murro$/);
     expect(within(card).getByText('Cozinha')).toBeInTheDocument();
     expect(within(await column('Em preparação')).getByRole('article', { name: 'Mesa 08 - Pedido #4105, Ronda 1' })).toBeInTheDocument();
     expect(within(await column('Pronto')).getByRole('article', { name: 'Mesa 03 - Pedido #4112, Ronda 1' })).toBeInTheDocument();
@@ -50,6 +50,28 @@ describe('the kitchen display', () => {
     const query = new URL(reads.at(-1)!.url).searchParams;
     expect(query.get('destination')).toBe('BAR');
     expect(query.getAll('status')).toEqual(['QUEUED', 'IN_PREPARATION', 'READY']);
+  });
+
+  it("offers every station of the store, one without rounds too, and a station only a round names", async () => {
+    const reads = kdsEndpoint(byStation({ COPA: [] }, [TICKET.queued, { ...TICKET.ready, destination: 'GRILL' }]));
+    const { user } = await atKitchen({ destinations: stations('KITCHEN', 'COPA') });
+    const pills = await screen.findByRole('group', { name: 'Estação' });
+    await waitFor(() => expect(within(pills).getByRole('button', { name: 'Copa 0' })).toBeInTheDocument());
+    expect(within(pills).getAllByRole('button').map((pill) => pill.textContent)).toEqual(['Todas 2', 'Cozinha 1', 'Copa 0', 'GRILL 1']);
+
+    await user.click(within(pills).getByRole('button', { name: 'Copa 0' }));
+
+    expect(await screen.findByText('Nenhuma ronda em curso.')).toBeInTheDocument();
+    expect(new URL(reads.at(-1)!.url).searchParams.get('destination')).toBe('COPA');
+  });
+
+  it("still offers the stations its rounds name when the store's stations cannot be read", async () => {
+    kdsEndpoint(page(TICKET.queued, TICKET.ready));
+    await atKitchen({ destinations: () => problem(500, 'INTERNAL') });
+
+    const pills = await screen.findByRole('group', { name: 'Estação' });
+    expect(within(pills).getByRole('button', { name: 'Cozinha 1' })).toBeInTheDocument();
+    expect(within(pills).getByRole('button', { name: 'Bar 1' })).toBeInTheDocument();
   });
 
   it('reads the largest page the server serves, and says how many active rounds it could not show', async () => {

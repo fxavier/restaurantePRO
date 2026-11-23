@@ -10,9 +10,12 @@ import java.util.UUID;
 /**
  * A production ticket and its printout; {@code suppressed} when its printer was in IGNORE (no job). An UNROUTED
  * ticket has no {@code printerId} and no job yet (D89 (1)). {@code kitchen} is a round's progress on the kitchen
- * display (ADR 0044), {@code null} for any other ticket.
+ * display (ADR 0044), {@code null} for any other ticket. {@code lines} is the printout as text; {@code items} are a
+ * round's items read from it (quantity, item, note, components), empty for any other ticket and for a round whose
+ * printout does not read as the round layout.
  */
 public record TicketView(UUID id, UUID storeId, TicketSource sourceType, UUID sourceId, String destination,
                          JobKind kind, UUID orderId, UUID terminalId, TicketRouting routing, UUID printerId,
-                         boolean suppressed, List<String> lines, Instant createdAt, KitchenProgressView kitchen) {
+                         boolean suppressed, List<String> lines, List<TicketItemView> items, Instant createdAt,
+                         KitchenProgressView kitchen) {
 }

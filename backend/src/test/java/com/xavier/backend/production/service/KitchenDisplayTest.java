@@ -49,6 +49,7 @@ class KitchenDisplayTest {
 
     static final String TICKETS = "/api/v1/pos/production-tickets";
     static final String KDS = TICKETS + "/kds";
+    static final String DESTINATIONS = "/api/v1/pos/production-destinations";
 
     @Autowired
     MockMvc mvc;
@@ -82,6 +83,10 @@ class KitchenDisplayTest {
                 .andExpect(jsonPath("$.content[0].sourceType").value("BATCH"))
                 .andExpect(jsonPath("$.content[0].destination").value(ProductionFixtures.DESTINATION))
                 .andExpect(jsonPath("$.content[0].lines").isNotEmpty())
+                .andExpect(jsonPath("$.content[0].items.length()").value(1))
+                .andExpect(jsonPath("$.content[0].items[0].quantity").value("1"))
+                .andExpect(jsonPath("$.content[0].items[0].name").isNotEmpty())
+                .andExpect(jsonPath("$.content[0].items[0].components").isEmpty())
                 .andExpect(jsonPath("$.content[0].kitchen.status").value("QUEUED"))
                 .andExpect(jsonPath("$.content[0].kitchen.version").value(0))
                 .andExpect(jsonPath("$.content[0].kitchen.queuedAt").isNotEmpty())
@@ -246,6 +251,32 @@ class KitchenDisplayTest {
 
         assertThat(listed(get(KDS))).containsExactly(queued.toString(), ready.toString());
         assertThat(listed(get(KDS).param("status", "BUMPED"))).containsExactly(bumped.toString());
+    }
+
+    @Test
+    void aTicketThatDoesNotReadAsARoundLayoutHasNoItemsAndKeepsItsLines() throws Exception {
+        roundOn("GRILL");
+
+        mvc.perform(get(KDS).param("destination", "GRILL").with(viewer())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].lines[0]").value("grill"))
+                .andExpect(jsonPath("$.content[0].items").isEmpty());
+    }
+
+    @Test
+    void theKdsListsTheSessionStoresProductionDestinations() throws Exception {
+        UUID printer = fixtures.printer(shop.store(), "P" + UUID.randomUUID().toString().substring(0, 6),
+                "127.0.0.1", 9100);
+        fixtures.routes(shop.store(), java.util.Map.of("KITCHEN", printer, "BAR", printer)).andExpect(status().isOk());
+        UUID otherStore = fixtures.shop().store();
+
+        mvc.perform(get(DESTINATIONS).with(viewer())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].code").value("BAR"))
+                .andExpect(jsonPath("$[1].code").value("KITCHEN"));
+        mvc.perform(get(DESTINATIONS).with(pos(otherStore, cook, terminal, Permission.PRODUCTION_VIEW)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+        mvc.perform(get(DESTINATIONS).with(pos(shop.store(), cook, terminal, Permission.PRODUCTION_OPERATE)))
+                .andExpect(status().isForbidden());
     }
 
     @Test

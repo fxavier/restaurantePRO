@@ -8,6 +8,7 @@ import com.xavier.backend.orders.model.event.SubtotalLine;
 import com.xavier.backend.production.model.PrintLine;
 import com.xavier.backend.production.model.PrintLine.Align;
 import com.xavier.backend.production.model.PrintLine.Style;
+import com.xavier.backend.production.model.RoundItems;
 import com.xavier.backend.shared.Money;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -25,7 +26,7 @@ import java.util.stream.Stream;
 /**
  * The printed lines of production's own tickets (documents arrive laid out by fiscal), styled per D155: titles DOUBLE
  * and centred, headers BOLD, item lines TALL, notes and components NORMAL, amounts aligned right. Their plain text is
- * R4's. Pure functions.
+ * R4's. Pure functions. A round's item lines are what {@link RoundItems} reads back for the kitchen display.
  */
 final class TicketLayouts {
 
@@ -61,12 +62,12 @@ final class TicketLayouts {
             if (!destination.equals(destinationOf(line.destination())) && components.isEmpty()) {
                 continue;
             }
-            out.add(tall(plain(line.quantity()) + " x " + item(line)));
+            out.add(tall(plain(line.quantity()) + RoundItems.QUANTITY_SEPARATOR + item(line)));
             if (line.notes() != null && !line.notes().isBlank()) {
-                out.add(text("   > " + line.notes()));
+                out.add(text(RoundItems.NOTE_PREFIX + line.notes()));
             }
-            components.forEach(component -> out.add(text("   + " + plain(component.quantity()) + " x "
-                    + component.description())));
+            components.forEach(component -> out.add(text(RoundItems.COMPONENT_PREFIX + plain(component.quantity())
+                    + RoundItems.QUANTITY_SEPARATOR + component.description())));
         }
         return out;
     }
