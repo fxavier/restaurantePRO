@@ -54,6 +54,16 @@ The POS courier choice is already recorded in [../w1-followups/pos-delivery-cour
 - Docker on the dev machine holds about 120 GB of Testcontainers images and volumes from this run; prune it
   (`docker system prune` after checking nothing needed is stopped).
 
+## Decisions to confirm (from the follow-ups wave)
+
+- ADR 0001 amended with named data-backfill exceptions (V15001, V6033): confirm, or prefer a backfill outside Flyway.
+- Q4 courier backfill grants `DELIVERY_COURIER` per tenant role, so one waiter who once drove makes every holder of that
+  role a listed courier; confirm "no capability loss" over "a short list", or ask for a dedicated Estafeta role per tenant.
+- Default courier roles: V3018 gives `DELIVERY_COURIER` to Administrador, Gerente and Caixa (the roles that already
+  dispatch); confirm, or ask for a seeded Estafeta profile (an eighth beyond the spec's seven).
+- Loyalty publish under a clock step back (#194) clamps to the in-force publication; under skew between instances an
+  earlier close could be earned under the newer version. Confirm, or prefer refusing such a publish with a 409.
+
 ## Deferred features (out of this run's scope)
 
 - Fiscal adapter and the SAF-T / AT exports.
