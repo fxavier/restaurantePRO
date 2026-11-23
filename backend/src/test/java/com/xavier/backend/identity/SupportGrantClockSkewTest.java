@@ -69,7 +69,8 @@ class SupportGrantClockSkewTest {
         @Bean
         @Primary
         Clock aheadOfTheDatabase() {
-            return Clock.offset(Clock.systemUTC(), AHEAD);
+            // microsecond ticks like the application clock (ClockConfiguration): Linux's system clock has nanoseconds
+            return Clock.tick(Clock.offset(Clock.systemUTC(), AHEAD), Duration.ofNanos(1_000));
         }
     }
 }

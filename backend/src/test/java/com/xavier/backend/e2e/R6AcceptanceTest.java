@@ -280,6 +280,12 @@ class R6AcceptanceTest {
                 .as("a platform token reaches no business data").isEqualTo(403);
 
         // ---- A90: B suspended mid-test ----
+        // B's jobs must have run while it was active, or "no run after the suspension" below proves nothing. The
+        // reach-ALL jobs tick every 5 s at best (payment sweeper) and a fast run reaches here sooner, so wait for B's
+        // first lease rather than hope one tick fell inside B's active window (CI's journey took 10 s). A finished
+        // tick only: a lease still held would end after the suspension and fail "no run after it" below.
+        Awaitility.await().atMost(ASYNC).until(() -> count(owner, "SELECT count(*) FROM shared.job_lease "
+                + "WHERE tenant_id = ? AND lease_until <= clock_timestamp()", b.tenant) > 0);
         platform.post(PLATFORM + "/" + b.tenant + "/suspend", Map.of("reason", "R6 acceptance"), 200, "suspend B");
         OffsetDateTime suspended = owner.sql("SELECT clock_timestamp()").query(OffsetDateTime.class).single();
         assertThat(problem(b.manager, BO + "/stores", Map.of(), 403).get("code").asString())

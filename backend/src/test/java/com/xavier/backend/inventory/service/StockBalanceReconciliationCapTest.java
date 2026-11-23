@@ -37,9 +37,21 @@ class StockBalanceReconciliationCapTest {
     @Autowired
     MeterRegistry meters;
 
+    /**
+     * The tenant is closed afterwards: left ACTIVE, every later reach-all job of the shared database would run for it
+     * too (ActorlessTenantScopeTest, InventoryActorlessScopeTest), and its drifts would answer their reconcile.
+     */
     @Test
     void aRunListsAtMostTheBatchOfDriftsButCountsThemAll(CapturedOutput output) {
         TenantTestSupport.ensureTenant(TENANT, "reconcile-cap", "ACTIVE");
+        try {
+            aRunInTheCapTenant(output);
+        } finally {
+            TenantTestSupport.ensureTenant(TENANT, "reconcile-cap", "CLOSED");
+        }
+    }
+
+    private void aRunInTheCapTenant(CapturedOutput output) {
         UUID store = UUID.randomUUID();
         UUID warehouse = UUID.randomUUID();
         try (AppRoleSession app = AppRoleSession.open().tenant(TENANT).allStores()) {

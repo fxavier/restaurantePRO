@@ -4,7 +4,7 @@
 #
 # Then the Playwright end-to-end job against the real stack (deploy/e2e: PostgreSQL, Keycloak, the backend, the BFF and
 # both SPAs behind their origins, ADR 0041), with its own seeded data per run.
-# The backend's own test suite is not run here; a backend CI is a separate decision (ADR 0043).
+# The backend's own test suite runs in backend.yml (ADR 0043, amended 2026-11-23).
 name: frontend
 
 on:

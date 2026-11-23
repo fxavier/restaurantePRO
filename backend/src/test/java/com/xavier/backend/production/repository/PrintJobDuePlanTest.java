@@ -22,7 +22,8 @@ import org.springframework.data.jpa.repository.Query;
  * ({@code PRINT_WORKER}, D166): the due jobs are found through the partial index {@code print_job_due_ix} (only
  * QUEUED and RETRY_WAIT jobs), not the whole job history, and that scan carries print_job's own policy filter.
  * Deterministic seed: 4 000 SENT jobs on a HOLD printer of a fresh store (never due work for another test's worker),
- * then {@code ANALYZE} as the owner and {@code EXPLAIN} in one transaction with {@code enable_seqscan = off}.
+ * then {@code ANALYZE} as the owner and {@code EXPLAIN} in one transaction with {@code enable_seqscan = off} and
+ * {@code enable_nestloop = off}.
  */
 class PrintJobDuePlanTest {
 
@@ -64,6 +65,11 @@ class PrintJobDuePlanTest {
 
         String plan = app.inTransaction(jdbc -> {
             jdbc.sql("SET LOCAL enable_seqscan = off").update();
+            // The other way into the due work is a nested loop from the few printers into print_job_printer_status_ix
+            // (printer_id, status), as cheap as the due index on a near-empty queue; which one wins then rests on the
+            // due jobs and printers other tests left in the shared database (CI took the printer one). Without nested
+            // loops each print_job scan is a whole scan, where the partial index is the smallest one.
+            jdbc.sql("SET LOCAL enable_nestloop = off").update();
             return String.join("\n", jdbc.sql("EXPLAIN " + lockDue).param("now", Timestamp.from(Instant.now()))
                     .param("limit", 10).query(String.class).list());
         });

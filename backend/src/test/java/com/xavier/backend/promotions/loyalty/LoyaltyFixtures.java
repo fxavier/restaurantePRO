@@ -17,7 +17,9 @@ import com.xavier.backend.promotions.LoyaltyApi;
 import com.xavier.backend.promotions.RedeemCommand;
 import com.xavier.backend.promotions.RedemptionResult;
 import com.xavier.backend.shared.Money;
+import com.xavier.backend.organization.MutableClock;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -25,6 +27,7 @@ import java.util.UUID;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.boot.test.context.TestComponent;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
@@ -47,14 +50,16 @@ public class LoyaltyFixtures {
     private final LoyaltyApi loyalty;
     private final TransactionTemplate tx;
     private final Clock clock;
+    private final JdbcClient jdbc;
 
     LoyaltyFixtures(MockMvc mvc, CustomersFixtures customers, LoyaltyApi loyalty, TransactionTemplate tx,
-                    Clock clock) {
+                    Clock clock, JdbcClient jdbc) {
         this.mvc = mvc;
         this.customers = customers;
         this.loyalty = loyalty;
         this.tx = tx;
         this.clock = clock;
+        this.jdbc = jdbc;
     }
 
     /** The order's earning at the clock's instant, one line of {@code gross} MZN, in its own transaction. */
@@ -113,9 +118,25 @@ public class LoyaltyFixtures {
     }
 
     public ResultActions publish(UUID versionId, long version) throws Exception {
+        afterTheLatestPublication();
         return mvc.perform(idem(post(PROGRAMS + "/" + versionId + "/publish")).with(manager())
                 .contentType(MediaType.APPLICATION_JSON).content("""
                         {"version": %d}""".formatted(version)));
+    }
+
+    /**
+     * Publishing retires the version in force at the clock's instant, and the database refuses a retirement before
+     * its publication. The program is company-wide in the shared bootstrap tenant, and other contexts (settlement:
+     * real time; orders: pinned) publish with clocks ahead of this context's {@link MutableClock}, which stays where
+     * the context started. So that clock moves just past the latest publication first; a context with its own test
+     * clock (orders, settlement) pins it itself.
+     */
+    private void afterTheLatestPublication() {
+        if (!(clock instanceof MutableClock mutable)) {
+            return;
+        }
+        jdbc.sql("SELECT max(published_at) FROM promotions.loyalty_program_version").query(Instant.class).optional()
+                .ifPresent(latest -> mutable.advanceTo(latest.plusSeconds(1)));
     }
 
     /** Publishes a new version (spend unit, points per unit, no scope) with {@code rewards}; returns its id. */

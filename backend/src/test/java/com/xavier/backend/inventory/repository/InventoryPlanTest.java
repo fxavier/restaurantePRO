@@ -54,10 +54,11 @@ class InventoryPlanTest {
 
     UUID store;
     UUID warehouse;
+    String run;
 
     @BeforeEach
     void twentyStoresInEachOfTwoTenants() {
-        String run = UUID.randomUUID().toString().substring(0, 8);
+        run = UUID.randomUUID().toString().substring(0, 8);
         seed(TenantTestSupport.B, run);
         seed(TenantTestSupport.A, run);
         var first = OwnerDatabase.shared().jdbc()
@@ -97,6 +98,37 @@ class InventoryPlanTest {
                 WHERE w.code = 'PLAN-' || :run AND i.code LIKE 'PLAN-' || :run || '-%'
                   AND w.tenant_id = :tenant AND i.tenant_id = :tenant""")
                 .param("run", run).param("day", Date.valueOf(DAY)).param("tenant", tenant).update();
+    }
+
+    /** {@code items} more items of the run in {@code tenant}, each with a positive balance in every warehouse of the run. */
+    private static void positiveBalances(UUID tenant, String run, int items) {
+        JdbcClient owner = OwnerDatabase.shared().jdbc();
+        owner.sql("""
+                INSERT INTO inventory.stock_item (tenant_id, id, code, name, base_unit, kind, active, version,
+                    created_at, updated_at)
+                SELECT :tenant, uuidv7(), 'PLAN-' || :run || '-P' || i, 'Item P' || i, 'g', 'PURCHASED', true, 0, now(),
+                    now()
+                FROM generate_series(1, :items) i""").param("run", run).param("tenant", tenant).param("items", items)
+                .update();
+        owner.sql("""
+                INSERT INTO inventory.stock_balance (tenant_id, warehouse_id, store_id, stock_item_id, quantity,
+                    value, average_cost, last_posting_seq, updated_at)
+                SELECT :tenant, w.id, w.store_id, i.id, 1, 1, 1, 0, now()
+                FROM inventory.warehouse w CROSS JOIN inventory.stock_item i
+                WHERE w.code = 'PLAN-' || :run AND i.code LIKE 'PLAN-' || :run || '-P%'
+                  AND w.tenant_id = :tenant AND i.tenant_id = :tenant""")
+                .param("run", run).param("tenant", tenant).update();
+    }
+
+    private static void removePositiveBalances(String run) {
+        JdbcClient owner = OwnerDatabase.shared().jdbc();
+        owner.sql("""
+                DELETE FROM inventory.stock_balance b USING inventory.stock_item i
+                WHERE i.id = b.stock_item_id AND i.tenant_id = b.tenant_id AND i.code LIKE 'PLAN-' || :run || '-P%'""")
+                .param("run", run).update();
+        owner.sql("DELETE FROM inventory.stock_item WHERE code LIKE 'PLAN-' || :run || '-P%'").param("run", run).update();
+        owner.sql("ANALYZE inventory.stock_balance").update();
+        owner.sql("ANALYZE inventory.stock_item").update();
     }
 
     /** The tenant policy's InitPlan as {@code EXPLAIN} prints it: an index condition that leads the key. */
@@ -140,7 +172,20 @@ class InventoryPlanTest {
      */
     @Test
     void theNegativeBalancesOfAStoreUseThePartialIndex() {
-        String plan = explain(InventoryQueries.NEGATIVE_BALANCES, sql -> sql.param(store).query(String.class));
+        // Both stock_balance_pk and the partial index answer "warehouse_id = w.id" on the inner side of the nested
+        // loop; with 25 balances a warehouse the two cost the same (~1 row each), and which one wins then depends on
+        // the other tests' rows in the shared database (CI picked the pk). A warehouse with many balances of which
+        // few are negative is the case the partial index exists for, and it makes the pk path clearly dearer. Removed
+        // afterwards so the other plans in the shared database keep the statistics they were written against.
+        String plan;
+        try {
+            for (UUID tenant : List.of(TenantTestSupport.B, TenantTestSupport.A)) {
+                positiveBalances(tenant, run, 500);
+            }
+            plan = explain(InventoryQueries.NEGATIVE_BALANCES, sql -> sql.param(store).query(String.class));
+        } finally {
+            removePositiveBalances(run);
+        }
 
         assertThat(plan).contains("Index Scan using stock_balance_negative_ix on stock_balance b")
                 .contains("Index Cond: (warehouse_id = w.id)")

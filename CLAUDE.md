@@ -77,7 +77,7 @@ Stitch screen → route:
 | POS — Modal Novo Pedido Takeaway & Delivery (F3) | `5f9e2ce74f7446638b80784c115639f9` | POS `/delivery` (a dialog of it): `features/delivery/*` |
 | POS — Despacho de Takeaway & Delivery | `89da103fa7cf4862bf796c0a322a0310` | POS `/delivery`: `routes/delivery-page.tsx`, `features/delivery/*` |
 | POS — Guia de Transporte & Conferência (F8) | `2115493c9fef47659a64933b32a49005` | not built: outside the spec, no backend |
-| KDS — Kitchen Display System & Controlo de Produção | `306764cb38734a80b69d62d00055a2c6` | POS `/kds` (a POS section on a terminal session; ADR 0044, status Proposed): `routes/kds-page.tsx`, `features/kitchen/*` |
+| KDS — Kitchen Display System & Controlo de Produção | `306764cb38734a80b69d62d00055a2c6` | POS `/kds` (a POS section on a terminal session; ADR 0044): `routes/kds-page.tsx`, `features/kitchen/*` |
 | BackOffice — Catálogo & Versões | `f1207b54e1394391bec6f36576f5db94` | BackOffice `/catalog`: `routes/catalog-page.tsx`, `features/catalog/*` |
 | BackOffice — Produção, Encaminhamento & Impressoras | `0d63d74ec522441585ba71fae5c16a83` | BackOffice `/production`: `routes/production-page.tsx`, `features/production/*` |
 | BackOffice — Stocks, Receitas & Compras | `cb5e3c5de1ab40929f2150dc1a8f91d3` | BackOffice `/inventory`: `routes/inventory-page.tsx`, `features/inventory/*` |

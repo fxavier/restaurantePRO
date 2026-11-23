@@ -22,6 +22,13 @@ public final class MutableClock extends Clock {
         now = now.plus(duration);
     }
 
+    /** Moves the clock to {@code instant} if that is later; never back. */
+    public void advanceTo(Instant instant) {
+        if (instant.isAfter(now)) {
+            now = instant;
+        }
+    }
+
     @Override
     public Instant instant() {
         return now;

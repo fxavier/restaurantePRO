@@ -73,12 +73,17 @@ class OrganizationTenantIsolationTest {
         }
     }
 
-    /** As the application role in {@code tenant}: no tenant_id is written, the column default takes the bound one. */
+    /**
+     * As the application role in {@code tenant}: no tenant_id is written, the column default takes the bound one. The
+     * company name is upserted: other isolation suites seed tenants A and B's company too (as "Company"), and the one
+     * that runs first would otherwise win.
+     */
     private static void seed(UUID tenant, String company, UUID store, UUID terminal) {
         try (AppRoleSession app = AppRoleSession.open().tenant(tenant).allStores()) {
             app.jdbc().sql("INSERT INTO organization.company_profile (id, name, tax_id, country, currency, version, "
                     + "created_at, updated_at) VALUES (?, ?, 'TAX-ISO', 'MZ', 'MZN', 0, now(), now()) "
-                    + "ON CONFLICT (tenant_id) DO NOTHING").param(UUID.randomUUID()).param(company).update();
+                    + "ON CONFLICT (tenant_id) DO UPDATE SET name = excluded.name").param(UUID.randomUUID())
+                    .param(company).update();
             app.jdbc().sql("INSERT INTO organization.store (id, code, name, timezone, active, version, created_at, "
                     + "updated_at) VALUES (?, 'ISO-1', 'Baixa', 'Africa/Maputo', true, 0, now(), now())")
                     .param(store).update();
