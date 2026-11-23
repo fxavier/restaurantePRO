@@ -159,7 +159,7 @@ Found while aligning (2026-11-18). Each one that R1 needs becomes its own backen
 | G2 | `TableMap` has no position, shape or size, so the map is a grid by area | later (drawn floor plan) |
 | G3 | No product images or upload | later |
 | G4 | No priced modifiers; only variants, menu component groups and a free-text note | later (product decision) |
-| G5 | ~~No kitchen display states (prepared, ready, bump) and no production-ticket SSE topic~~ | done: ADR 0044 (kitchen progress per round), POS `/kds`; `PRODUCTION_TICKETS` invalidates the KDS query |
+| G5 | ~~No kitchen display states (prepared, ready, bump) and no production-ticket SSE topic~~ | built: POS `/kds` on the kitchen progress of ADR 0044 (status Proposed, awaiting approval); `PRODUCTION_TICKETS` invalidates the KDS query |
 | G6 | No permission catalog with labels (role editor) | later (BackOffice access) |
 | G7 | No lock / switch-employee endpoint; R1 uses logout and login (ADR 0041) | accepted for R1 |
 | G8 | No active store in the BFF session; R1 keeps `?storeId` in the URL | accepted for R1 |

@@ -77,7 +77,7 @@ Stitch screen → route:
 | POS — Modal Novo Pedido Takeaway & Delivery (F3) | `5f9e2ce74f7446638b80784c115639f9` | POS `/delivery` (a dialog of it): `features/delivery/*` |
 | POS — Despacho de Takeaway & Delivery | `89da103fa7cf4862bf796c0a322a0310` | POS `/delivery`: `routes/delivery-page.tsx`, `features/delivery/*` |
 | POS — Guia de Transporte & Conferência (F8) | `2115493c9fef47659a64933b32a49005` | not built: outside the spec, no backend |
-| KDS — Kitchen Display System & Controlo de Produção | `306764cb38734a80b69d62d00055a2c6` | POS `/kds` (a POS section on a terminal session, ADR 0044): `routes/kds-page.tsx`, `features/kitchen/*` |
+| KDS — Kitchen Display System & Controlo de Produção | `306764cb38734a80b69d62d00055a2c6` | POS `/kds` (a POS section on a terminal session; ADR 0044, status Proposed): `routes/kds-page.tsx`, `features/kitchen/*` |
 | BackOffice — Catálogo & Versões | `f1207b54e1394391bec6f36576f5db94` | BackOffice `/catalog`: `routes/catalog-page.tsx`, `features/catalog/*` |
 | BackOffice — Produção, Encaminhamento & Impressoras | `0d63d74ec522441585ba71fae5c16a83` | BackOffice `/production`: `routes/production-page.tsx`, `features/production/*` |
 | BackOffice — Stocks, Receitas & Compras | `cb5e3c5de1ab40929f2150dc1a8f91d3` | BackOffice `/inventory`: `routes/inventory-page.tsx`, `features/inventory/*` |
@@ -87,11 +87,9 @@ Stitch screen → route:
 | BackOffice — Zonas & Tarifários de Delivery | `836f7a7c24fd4403b7dd6a9907e2963a` | BackOffice `/delivery/zones`: `routes/delivery-zones-page.tsx`, `features/delivery/*` |
 | BackOffice — Relatório & Conferência de Entregas e Guias AT | `88b0c854343d4a64817fcd880a7e755e` | BackOffice `/delivery/report`: `routes/delivery-report-page.tsx`, `features/delivery/*` (the AT transport guides are not built: outside the spec, no backend) |
 
-Screens with no Stitch screen of their own follow the same theme: BackOffice `/orders` (order search and detail, `features/orders/*`) and the sign-in pages (POS `/enrol`, `/login`; BackOffice sign-in is the Keycloak `restaurantpro` theme, `deploy/keycloak/themes/`).
+A feature's own error texts go in `errorMessage(error, { messages })`, never in `lib/error-messages.ts`.
 
-Each screen's page file and feature folder are its own; shared hotspots (both `routes/index.tsx`, `shell/navigation.ts`, `routes/pos-sections.tsx`, `lib/live/live-updates.tsx`, test fixtures) change in one PR at a time. A feature's own error texts go in `errorMessage(error, { messages })`, never in `lib/error-messages.ts`.
-
-Routes with no Stitch screen take the tokens only: POS `/enrol`, `/login` and `/tables/:tableId` (a redirect), and BackOffice `/`, `/step-up/resume` and not-found.
+Routes with no Stitch screen take the tokens only: POS `/enrol`, `/login` and `/tables/:tableId` (a redirect), and BackOffice `/`, `/orders` (order search and detail, `features/orders/*`), `/step-up/resume` and not-found. The BackOffice sign-in pages are the Keycloak `restaurantpro` login theme (`deploy/keycloak/themes/`).
 
 ## Agent skills
 
