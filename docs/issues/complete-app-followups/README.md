@@ -21,10 +21,12 @@ The POS courier choice is already recorded in [../w1-followups/pos-delivery-cour
 
 - **TicketView structured lines**: the production ticket view carries its lines as text; KDS and reprint would use
   item, quantity, modifiers and notes as fields.
-- **SessionRow operatorName**: the cash-session list shows the operator's id to users without `EMPLOYEE_MANAGE` (the
-  name comes from a separate employees read); add the display name to the row.
-- **Session adjustments GET**: cash adjustments of a session can be posted but not listed; add a read for the session
-  detail.
+- ~~**SessionRow operatorName**: the cash-session list shows the operator's id to users without `EMPLOYEE_MANAGE` (the
+  name comes from a separate employees read); add the display name to the row.~~ Done in fu/cash-session-reads:
+  `SessionRow.operatorName` (through identity's `EmployeeDirectory`); the tab no longer reads the employees.
+- ~~**Session adjustments GET**: cash adjustments of a session can be posted but not listed; add a read for the session
+  detail.~~ Done in fu/cash-session-reads: `GET /api/v1/backoffice/cash/sessions/{id}/adjustments` (CASH_VIEW in the
+  session's store, newest first), shown under a closed session's "Ajustes" toggle in Financeiro › Sessões de caixa.
 - **POS production destinations list**: the KDS builds its station filter from the tickets it shows, so a station with
   no active rounds never appears as a filter; a read of the store's active destinations would list them all.
 - **KDS cut-off for stores without a KDS**: kitchen progress (ADR 0044) stays QUEUED forever in a store that prints

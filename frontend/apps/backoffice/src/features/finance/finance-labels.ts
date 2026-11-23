@@ -46,6 +46,13 @@ export function closeKindLabel(kind: string | null): string {
   return CLOSE_KINDS[kind] ?? kind;
 }
 
+const DIRECTIONS: Record<string, string> = { IN: 'Entrada', OUT: 'Saída' };
+
+/** Which way an adjustment moved what the register should hold (D79). */
+export function directionLabel(direction: string): string {
+  return DIRECTIONS[direction] ?? direction;
+}
+
 export const CLOSING_FILTERS: { value: ClosingStatus | ''; label: string }[] = [
   { value: 'SUBMITTED', label: 'Por aprovar' },
   { value: 'APPROVED', label: 'Aprovados' },
@@ -72,8 +79,8 @@ export function cashDays(lines: readonly ReconciliationLine[]): CashDay[] {
 type Named = { id?: string; name?: string };
 
 /**
- * A register's or an employee's name from the store's list, or its id until the list is read (or for one no longer
- * listed, or a list the user may not read).
+ * A register's name from the store's list, or its id until the list is read (or for one no longer listed, or a list
+ * the user may not read).
  */
 export function nameById(list: readonly Named[] | undefined, id: string | undefined): string {
   return list?.find((item) => item.id === id)?.name ?? id ?? '';

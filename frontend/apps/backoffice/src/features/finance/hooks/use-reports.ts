@@ -3,12 +3,12 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useApi } from '../../../lib/api';
 import { dates, instants, type Period } from '../period';
 import type {
+  AdjustmentRow,
   AuditEventView,
   CashSessionStatus,
   ClosingStatus,
   ClosingView,
   DocumentSummary,
-  EmployeeSummary,
   InDoubtAttemptView,
   PaymentMethodView,
   ReceiptsReport,
@@ -80,20 +80,13 @@ export function useCashSessions(storeId: string, period: Period, status: CashSes
   );
 }
 
-/**
- * The store's employees, to name a session's operator. The list needs EMPLOYEE_MANAGE: without it (`enabled` false)
- * nothing is asked and the sessions still show, each operator by its id.
- */
-export function useEmployees(storeId: string, enabled: boolean) {
-  const api = useApi();
-  return useQuery({
-    queryKey: [...FINANCE_KEY, 'employees', storeId],
-    queryFn: (): Promise<EmployeeSummary[]> =>
-      api
-        .GET('/api/v1/backoffice/employees', { params: { query: { storeId, page: 0, size: 200 } } })
-        .then(({ data }) => data?.content ?? []),
-    enabled,
-  });
+/** A closed session's adjustments (D79), newest first as the server orders them; read when the detail opens. */
+export function useSessionAdjustments(sessionId: string) {
+  return useFinanceQuery([...CASH_KEY, 'session-adjustments', sessionId], (api): Promise<AdjustmentRow[]> =>
+    api
+      .GET('/api/v1/backoffice/cash/sessions/{id}/adjustments', { params: { path: { id: sessionId } } })
+      .then(({ data }) => data ?? []),
+  );
 }
 
 /** A store's short list in one page (a store has a handful of registers and series): no paging UI. */
