@@ -176,3 +176,34 @@ describe('stock', () => {
     expect(await screen.findByRole('table', { name: 'Stock do armazém' })).toBeInTheDocument();
   });
 });
+
+describe('inventory tabs', () => {
+  it('lands on the first tab the user may open when the address names none', async () => {
+    // RECIPE_MANAGE alone reads the recipes, not the stock (INVENTORY_VIEW).
+    const state = inventoryServer({ session: { ...admin, permissions: ['PERM_RECIPE_MANAGE'] } });
+
+    renderApp(INVENTORY);
+
+    expect(await screen.findByRole('tab', { name: 'Fichas técnicas' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Stock' })).toHaveAttribute('aria-selected', 'false');
+    expect(state.requests.some((request) => request.path.endsWith('/inventory/warehouses'))).toBe(false);
+  });
+
+  it('opens the tab the address names, even one the user may not open', async () => {
+    inventoryServer({ session: { ...admin, permissions: ['PERM_RECIPE_MANAGE'] } });
+
+    renderApp(`${INVENTORY}&tab=stock`);
+
+    expect(await screen.findByRole('tab', { name: 'Stock' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('keeps the first tab, and its denial, for a user who may open none', async () => {
+    inventoryServer({ session: { ...admin, permissions: [] } });
+    server.use(http.get(api('/api/v1/backoffice/inventory/warehouses'), () => problem(403, 'ACCESS_DENIED')));
+
+    renderApp(INVENTORY);
+
+    expect(await screen.findByRole('tab', { name: 'Stock' })).toHaveAttribute('aria-selected', 'true');
+    expect((await screen.findAllByText('Sem permissão para ver esta informação.')).length).toBeGreaterThan(0);
+  });
+});
