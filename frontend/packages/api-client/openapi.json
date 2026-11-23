@@ -5963,11 +5963,13 @@
             "maxItems": 200,
             "minItems": 0,
             "type": "array"
+          },
+          "reason": {
+            "maxLength": 500,
+            "minLength": 0,
+            "type": "string"
           }
         },
-        "required": [
-          "lines"
-        ],
         "type": "object"
       },
       "com.xavier.backend.inventory.model.dto.ReceiveRequest.Line": {

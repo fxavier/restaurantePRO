@@ -708,7 +708,8 @@ class R4AcceptanceTest {
         assertBalance(kitchen, "BIFE", "12", "138.0000");
         assertThat(balanceRow(warehouseB, "BIFE")).isNull();
         JsonNode received = office.command(INV + "/transfers/" + transfer + "/receive", Map.of("lines", List.of(Map.of(
-                "stockItemId", stock.get("BIFE"), "quantityReceived", new BigDecimal("4")))), 200, "receive 4 in B");
+                "stockItemId", stock.get("BIFE"), "quantityReceived", new BigDecimal("4"))), "reason",
+                "Um bife estragado no transporte"), 200, "receive 4 in B");
         assertThat(received.get("status").asString()).isEqualTo("RECEIVED");
         assertThat(received.get("lines").get(0).get("shortfall").asDecimal()).isEqualByComparingTo("1");
         // TRANSFER_IN carries the OUT's 57.50 for 5, the shortage takes 1 × 11.50 back out → 4, 46.00

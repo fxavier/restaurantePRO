@@ -15,6 +15,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** The transfer machine (D120): {@code DRAFT → SHIPPED → RECEIVED}, {@code DRAFT → CANCELLED}, every other 409. */
 class StockTransferTest {
@@ -60,7 +62,7 @@ class StockTransferTest {
         transfer.recordShipping(Map.of(item, new TransferLine.Shipped(new BigDecimal("3.500000"),
                 new BigDecimal("35.0000")), other, new TransferLine.Shipped(new BigDecimal("1.000000"),
                 new BigDecimal("2.0000"))));
-        transfer.receive(Map.of(item, new BigDecimal("8"), other, new BigDecimal("2")), null, NOW);
+        transfer.receive(Map.of(item, new BigDecimal("8"), other, new BigDecimal("2")), "broken", null, NOW);
 
         assertThat(transfer.getStatus()).isEqualTo(TransferStatus.RECEIVED);
         assertThat(transfer.getLines()).extracting(TransferLine::shortfall)
@@ -96,7 +98,7 @@ class StockTransferTest {
     void receivingMoreThanShippedIsRefused() {
         StockTransfer transfer = shipped();
 
-        assertThatThrownBy(() -> transfer.receive(Map.of(item, new BigDecimal("10.000001")), null, NOW))
+        assertThatThrownBy(() -> transfer.receive(Map.of(item, new BigDecimal("10.000001")), null, null, NOW))
                 .isInstanceOfSatisfying(InventoryRuleException.class, refused -> {
                     assertThat(refused.code()).isEqualTo("RECEIVED_EXCEEDS_SHIPPED");
                     assertThat(refused.properties()).containsEntry("stockItemId", item);
@@ -105,14 +107,51 @@ class StockTransferTest {
     }
 
     @Test
-    void everyShippedLineNeedsAReceivedQuantity() {
+    void aLineGivenNoReceivedQuantityArrivedAsShipped() {
         StockTransfer transfer = shipped();
 
-        assertThatThrownBy(() -> transfer.receive(Map.of(), null, NOW))
+        transfer.receive(Map.of(), null, null, NOW);
+
+        assertThat(transfer.getStatus()).isEqualTo(TransferStatus.RECEIVED);
+        assertThat(transfer.getLines().getFirst().getQuantityReceived()).isEqualByComparingTo("10");
+        assertThat(transfer.getLines().getFirst().shortfall()).isZero();
+    }
+
+    @Test
+    void aReceivedQuantityIsForAShippedLineAndNeverNegative() {
+        StockTransfer transfer = shipped();
+
+        assertThatThrownBy(() -> transfer.receive(Map.of(item, BigDecimal.ONE, other, BigDecimal.ONE), "lost", null,
+                NOW)).isInstanceOfSatisfying(InventoryRuleException.class,
+                        refused -> assertThat(refused.code()).isEqualTo("INVALID_QUANTITY"));
+        assertThatThrownBy(() -> transfer.receive(Map.of(item, new BigDecimal("-1")), "lost", null, NOW))
                 .isInstanceOfSatisfying(InventoryRuleException.class,
                         refused -> assertThat(refused.code()).isEqualTo("INVALID_QUANTITY"));
-        assertThatThrownBy(() -> transfer.receive(Map.of(item, BigDecimal.ONE, other, BigDecimal.ONE), null, NOW))
-                .isInstanceOf(InventoryRuleException.class);
+        assertThat(transfer.getStatus()).isEqualTo(TransferStatus.SHIPPED);
+    }
+
+    /** Q3 (complete-app follow-ups): what did not arrive is a loss the receiver explains. */
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {"   "})
+    void aShortReceiptNeedsAReason(String reason) {
+        StockTransfer transfer = shipped();
+
+        assertThatThrownBy(() -> transfer.receive(Map.of(item, new BigDecimal("9")), reason, null, NOW))
+                .isInstanceOfSatisfying(InventoryRuleException.class, refused -> {
+                    assertThat(refused.code()).isEqualTo("REASON_REQUIRED");
+                    assertThat(refused.properties()).containsEntry("stockItemId", item);
+                });
+        assertThat(transfer.getStatus()).isEqualTo(TransferStatus.SHIPPED);
+    }
+
+    @Test
+    void aFullReceiptNeedsNoReason() {
+        StockTransfer transfer = shipped();
+
+        transfer.receive(Map.of(item, BigDecimal.TEN), null, null, NOW);
+
+        assertThat(transfer.getStatus()).isEqualTo(TransferStatus.RECEIVED);
     }
 
     @ParameterizedTest
@@ -121,7 +160,7 @@ class StockTransferTest {
         assertAllowed(status, TransferStatus.DRAFT, t -> t.edit(List.of(TransferLine.of(item, BigDecimal.ONE)), "n"));
         assertAllowed(status, TransferStatus.DRAFT, t -> t.ship(null, NOW));
         assertAllowed(status, TransferStatus.DRAFT, t -> t.cancel(NOW));
-        assertAllowed(status, TransferStatus.SHIPPED, t -> t.receive(Map.of(item, BigDecimal.ONE), null, NOW));
+        assertAllowed(status, TransferStatus.SHIPPED, t -> t.receive(Map.of(item, BigDecimal.ONE), "lost", null, NOW));
     }
 
     private void assertAllowed(TransferStatus status, TransferStatus allowedFrom, Consumer<StockTransfer> command) {
@@ -144,7 +183,7 @@ class StockTransferTest {
             case SHIPPED -> transfer.ship(null, NOW);
             case RECEIVED -> {
                 transfer.ship(null, NOW);
-                transfer.receive(Map.of(item, BigDecimal.TEN), null, NOW);
+                transfer.receive(Map.of(item, BigDecimal.TEN), null, null, NOW);
             }
             case CANCELLED -> transfer.cancel(NOW);
         }

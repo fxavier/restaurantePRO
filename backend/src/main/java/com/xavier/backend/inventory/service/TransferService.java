@@ -43,10 +43,11 @@ import org.springframework.transaction.annotation.Transactional;
  * the destination store to receive. Shipping posts a TRANSFER_OUT at the source average (a manual OUT for the
  * negative policy); within one store it also posts the TRANSFER_IN at the same cost and the transfer is RECEIVED at
  * once. Between stores the destination receives later: a TRANSFER_IN of the shipped quantity at the shipping cost,
- * and a TRANSFER_SHORTAGE OUT of what did not arrive, so the destination rises by what arrived and the loss is a
- * movement of its own. Commands lock the transfer row, then the balance rows (in the ledger's order). A same-store
- * ship posts twice (the OUT, then the IN at its cost), so it locks both warehouses' rows up front
- * ({@link StockLedger#lock}): opposite transfers between two warehouses never deadlock.
+ * and a TRANSFER_SHORTAGE OUT of what did not arrive, valued as any OUT and carrying the receiver's reason, so the
+ * destination rises by what arrived and the loss is a movement of its own. Commands lock the transfer row, then the
+ * balance rows (in the ledger's order). A same-store ship posts twice (the OUT, then the IN at its cost), so it
+ * locks both warehouses' rows up front ({@link StockLedger#lock}): opposite transfers between two warehouses never
+ * deadlock.
  */
 @Service
 public class TransferService {
@@ -133,7 +134,7 @@ public class TransferService {
         if (transfer.withinOneStore()) {
             Map<UUID, BigDecimal> everything = new HashMap<>();
             transfer.getLines().forEach(line -> everything.put(line.getStockItemId(), line.getQuantityShipped()));
-            receiveInto(transfer, everything, now, shipDate);
+            receiveInto(transfer, everything, null, now, shipDate);
         }
         return view(transfers.saveAndFlush(transfer));
     }
@@ -150,7 +151,8 @@ public class TransferService {
             }
         });
         Instant now = clock.instant();
-        receiveInto(transfer, received, now, businessDates.of(transfer.getToStoreId(), now));
+        String reason = request.reason() == null || request.reason().isBlank() ? null : request.reason().strip();
+        receiveInto(transfer, received, reason, now, businessDates.of(transfer.getToStoreId(), now));
         return view(transfers.saveAndFlush(transfer));
     }
 
@@ -183,8 +185,9 @@ public class TransferService {
         return PageResponse.from(transfers.findOfStore(storeId, pageable).map(TransferService::view));
     }
 
-    private void receiveInto(StockTransfer transfer, Map<UUID, BigDecimal> received, Instant now, LocalDate day) {
-        transfer.receive(received, actorId(), now);
+    private void receiveInto(StockTransfer transfer, Map<UUID, BigDecimal> received, String reason, Instant now,
+                             LocalDate day) {
+        transfer.receive(received, reason, actorId(), now);
         List<PostMovement> movements = new ArrayList<>();
         for (TransferLine line : transfer.getLines()) {
             // the IN carries exactly the value its OUT took (D113 as amended): a transfer never creates value. It is
@@ -200,11 +203,11 @@ public class TransferService {
             if (line.shortfall().signum() > 0) {
                 movements.add(PostMovement.of(transfer.getToWarehouseId(), line.getStockItemId(),
                         MovementType.TRANSFER_SHORTAGE, line.shortfall().negate(), SOURCE_TYPE, transfer.getId(),
-                        day, now).atCost(line.getUnitCost()).withReason("not received"));
+                        day, now).atCost(line.getUnitCost()).withReason(reason));
             }
         }
         ledger.post(movements);
-        audit("STOCK_TRANSFER_RECEIVED", transfer, transfer.getToStoreId());
+        audit("STOCK_TRANSFER_RECEIVED", transfer, transfer.getToStoreId(), reason);
     }
 
     private List<TransferLine> lines(List<TransferLineRequest> requested) {
@@ -233,6 +236,10 @@ public class TransferService {
     }
 
     private void audit(String action, StockTransfer transfer, UUID storeId) {
+        audit(action, transfer, storeId, null);
+    }
+
+    private void audit(String action, StockTransfer transfer, UUID storeId, String reason) {
         List<Map<String, Object>> lines = transfer.getLines().stream().<Map<String, Object>>map(line -> {
             Map<String, Object> row = new HashMap<>();
             row.put("stockItemId", line.getStockItemId().toString());
@@ -242,7 +249,7 @@ public class TransferService {
             }
             return row;
         }).toList();
-        auditLog.recordAsCurrentActor(action, ENTITY, transfer.getId().toString(), storeId, null, null,
+        auditLog.recordAsCurrentActor(action, ENTITY, transfer.getId().toString(), storeId, null, reason,
                 Map.of("fromWarehouseId", transfer.getFromWarehouseId().toString(),
                         "toWarehouseId", transfer.getToWarehouseId().toString(),
                         "status", transfer.getStatus().name(), "lines", lines));
