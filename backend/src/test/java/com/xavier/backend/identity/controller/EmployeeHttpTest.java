@@ -144,6 +144,18 @@ class EmployeeHttpTest {
                 .andExpect(jsonPath("$.code").value("EMPLOYEE_CODE_TAKEN"));
     }
 
+    /** FE-F35: an employee code is unique in the tenant whatever its case, and keeps the case it was entered with. */
+    @Test
+    void aCaseVariantOfAnEmployeeCodeIsTakenAndTheEnteredCaseIsKept() throws Exception {
+        String code = unique("e");
+        mvc.perform(hire(admin(), code, "4821", storeA, IdentityFixtures.WAITER)).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.code").value(code));
+
+        mvc.perform(hire(admin(), code.toUpperCase(), "4821", storeA, IdentityFixtures.WAITER))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("EMPLOYEE_CODE_TAKEN"));
+    }
+
     @Test
     void aStaleVersionIsAConflict() throws Exception {
         Employee employee = fixtures.employee("4821", storeA, IdentityFixtures.WAITER);

@@ -70,6 +70,16 @@ class PrinterHttpTest {
         fixtures.createPrinter(stores.newStore(), "KIT", "10.0.0.6", 9100).andExpect(status().isCreated());
     }
 
+    /** FE-F35: a printer code is unique in its store whatever its case, and keeps the case it was entered with. */
+    @Test
+    void aCaseVariantOfAPrinterCodeIsTakenAndTheEnteredCaseIsKept() throws Exception {
+        fixtures.createPrinter(store, "kit", "10.0.0.5", 9100).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.code").value("kit"));
+
+        fixtures.createPrinter(store, "KIT", "10.0.0.6", 9100).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PRINTER_CODE_TAKEN"));
+    }
+
     @Test
     void invalidInputIsRefused() throws Exception {
         fixtures.createPrinter(store, "KIT", "10.0.0.5", 70000).andExpect(status().isBadRequest());

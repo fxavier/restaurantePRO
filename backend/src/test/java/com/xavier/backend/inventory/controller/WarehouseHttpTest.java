@@ -92,6 +92,17 @@ class WarehouseHttpTest {
                 .andExpect(status().isCreated());
     }
 
+    /** FE-F35: a warehouse code is unique in its store whatever its case, and keeps the case it was entered with. */
+    @Test
+    void aCaseVariantOfAWarehouseCodeIsTakenAndTheEnteredCaseIsKept() throws Exception {
+        String code = code("dup");
+        createWarehouse(store, code, null, manager()).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.code").value(code));
+
+        createWarehouse(store, code.toUpperCase(), null, manager()).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("WAREHOUSE_CODE_TAKEN"));
+    }
+
     @Test
     void theNegativePolicyIsAVersionedEdit() throws Exception {
         UUID warehouse = fixtures.newWarehouse(store, "ALLOW");

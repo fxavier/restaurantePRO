@@ -62,6 +62,18 @@ class SupplierHttpTest {
         mvc.perform(get(BO + "/suppliers/" + UUID.randomUUID()).with(manager)).andExpect(status().isNotFound());
     }
 
+    /** FE-F35: a supplier code is unique in the tenant whatever its case, and keeps the case it was entered with. */
+    @Test
+    void aCaseVariantOfASupplierCodeIsTakenAndTheEnteredCaseIsKept() throws Exception {
+        String supplierCode = code("sup");
+        RequestPostProcessor manager = account(null, Permission.PURCHASE_MANAGE);
+        create(supplierCode, manager).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.code").value(supplierCode));
+
+        create(supplierCode.toUpperCase(), manager).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SUPPLIER_CODE_TAKEN"));
+    }
+
     /** Suppliers are company-wide: writing them needs the installation-wide grant; a store's buyer reads them. */
     @Test
     void onlyAnInstallationWidePurchasingManagerWritesSuppliersAndAStoresBuyerReadsThem() throws Exception {

@@ -64,7 +64,7 @@ public class RestaurantTableService {
         accessPolicy.require(Permission.DINING_MANAGE, request.storeId());
         StoreChecks.requireExisting(organization, request.storeId());
         RoomArea area = areaOf(request.storeId(), request.areaId());
-        if (tables.existsByStoreIdAndCode(request.storeId(), request.code().strip())) {
+        if (tables.existsByStoreIdAndCodeIgnoreCase(request.storeId(), request.code().strip())) {
             throw new DiningCodeTakenException(ENTITY, request.code());
         }
         RestaurantTable table = saveWithUniqueCode(
@@ -82,7 +82,7 @@ public class RestaurantTableService {
         }
         OptimisticLocking.requireVersion(RestaurantTable.class, id, table.getVersion(), request.version());
         RoomArea area = areaOf(table.getStoreId(), request.areaId());
-        if (tables.existsByStoreIdAndCodeAndIdNot(table.getStoreId(), request.code().strip(), id)) {
+        if (tables.existsByStoreIdAndCodeIgnoreCaseAndIdNot(table.getStoreId(), request.code().strip(), id)) {
             throw new DiningCodeTakenException(ENTITY, request.code());
         }
         table.update(area, request.code(), request.seats(), request.active(), clock.instant());

@@ -115,6 +115,21 @@ class RegisterHttpTest {
                 .andExpect(jsonPath("$.code").value("REGISTER_CODE_TAKEN"));
     }
 
+    /** FE-F35: a register code is unique in its store whatever its case, and keeps the case it was entered with. */
+    @Test
+    void aCaseVariantOfARegisterCodeIsTakenAndTheEnteredCaseIsKept() throws Exception {
+        mvc.perform(idem(post(REGISTERS)).with(account(store, Permission.CASH_REGISTER_MANAGE))
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"storeId": "%s", "code": "main", "name": "Caixa"}""".formatted(store)))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.code").value("main"));
+
+        mvc.perform(idem(post(REGISTERS)).with(account(store, Permission.CASH_REGISTER_MANAGE))
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"storeId": "%s", "code": "MAIN", "name": "Caixa"}""".formatted(store)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("REGISTER_CODE_TAKEN"));
+    }
+
     @Test
     void anotherStoresManagerIsRefusedAndAnUnknownRegisterIsNotFound() throws Exception {
         UUID register = fixtures.newRegister(store);

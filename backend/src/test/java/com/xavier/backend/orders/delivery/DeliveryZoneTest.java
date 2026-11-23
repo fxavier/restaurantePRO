@@ -61,4 +61,17 @@ class DeliveryZoneTest {
         assertThat(fixtures.count("SELECT count(*) FROM audit.audit_event WHERE entity_id = ? AND action IN "
                 + "('DELIVERY_ZONE_CREATED', 'DELIVERY_ZONE_CHANGED')", retired.toString())).isEqualTo(2);
     }
+
+    /** FE-F35: a zone code is unique in its store whatever its case, and keeps the case it was entered with. */
+    @Test
+    void aCaseVariantOfAZoneCodeIsTakenAndTheEnteredCaseIsKept() throws Exception {
+        DeliveryFixtures deliveries = new DeliveryFixtures(mvc, jdbc, fixtures, customers);
+        Shop shop = fixtures.shop();
+        String code = "c" + CustomersFixtures.token().substring(0, 6);
+        deliveries.createZone(shop.store(), code, shop.item()).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.code").value(code));
+
+        deliveries.createZone(shop.store(), code.toUpperCase(), shop.item()).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DELIVERY_ZONE_CODE_TAKEN"));
+    }
 }

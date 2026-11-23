@@ -243,6 +243,25 @@ class StoreHttpTest {
                 .andExpect(jsonPath("$.code").value("STORE_CODE_TAKEN"));
     }
 
+    /** FE-F35: a store code is unique in the tenant whatever its case, and keeps the case it was entered with. */
+    @Test
+    void aCaseVariantOfAStoreCodeIsTakenAndTheEnteredCaseIsKept() throws Exception {
+        String code = newCode().toLowerCase();
+        mvc.perform(post(STORES).with(admin(Permission.STORE_MANAGE)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(create(code, "Africa/Maputo")))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.code").value(code));
+
+        mvc.perform(post(STORES).with(admin(Permission.STORE_MANAGE)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(create(code.toUpperCase(), "Africa/Maputo")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("STORE_CODE_TAKEN"));
+        UUID other = createStore();
+        mvc.perform(put(STORES + "/" + other).with(admin(Permission.STORE_MANAGE)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(update(code.toUpperCase(), "Africa/Maputo", 0)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("STORE_CODE_TAKEN"));
+    }
+
     @Test
     void anUnknownTimezoneBreaksABusinessRule() throws Exception {
         mvc.perform(post(STORES).with(admin(Permission.STORE_MANAGE)).with(csrf())

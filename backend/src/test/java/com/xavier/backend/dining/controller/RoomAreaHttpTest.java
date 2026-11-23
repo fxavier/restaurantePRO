@@ -137,6 +137,24 @@ class RoomAreaHttpTest {
         fixtures.createArea(fixtures.newStore(), "SALA");
     }
 
+    /** FE-F35: an area code is unique in its store whatever its case, and keeps the case it was entered with. */
+    @Test
+    void aCaseVariantOfAnAreaCodeIsTakenAndTheEnteredCaseIsKept() throws Exception {
+        mvc.perform(post(DiningFixtures.AREAS).with(inStore(store, Permission.DINING_MANAGE)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(DiningFixtures.newArea(store, "sala")))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.code").value("sala"));
+        UUID bar = fixtures.createArea(store, "BAR");
+
+        mvc.perform(post(DiningFixtures.AREAS).with(inStore(store, Permission.DINING_MANAGE)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(DiningFixtures.newArea(store, "SALA")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DINING_CODE_TAKEN"));
+        mvc.perform(put(DiningFixtures.AREAS + "/" + bar).with(inStore(store, Permission.DINING_MANAGE)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(update("Sala", true, 0)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DINING_CODE_TAKEN"));
+    }
+
     @Test
     void renamingAnAreaToACodeInUseIsAConflict() throws Exception {
         fixtures.createArea(store, "SALA");
