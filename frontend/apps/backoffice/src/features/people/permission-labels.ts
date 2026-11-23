@@ -72,6 +72,7 @@ const PERMISSION_LABELS: Readonly<Record<Permission, string>> = {
   RESERVATION_VIEW: 'Ver reservas',
   RESERVATION_MANAGE: 'Gerir reservas',
   DELIVERY_OPERATE: 'Operar entregas',
+  DELIVERY_COURIER: 'Fazer entregas como estafeta',
   DELIVERY_ZONE_MANAGE: 'Gerir zonas de entrega',
   INVENTORY_VIEW: 'Ver stocks',
   INVENTORY_MANAGE: 'Gerir artigos e armazéns',
