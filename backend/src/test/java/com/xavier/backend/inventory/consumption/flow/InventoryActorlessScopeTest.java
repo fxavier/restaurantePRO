@@ -15,7 +15,6 @@ import com.xavier.backend.OwnerDatabase;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.identity.ApproverVerifier;
 import com.xavier.backend.inventory.InventoryFixtures;
-import com.xavier.backend.inventory.repository.BalanceDrift;
 import com.xavier.backend.inventory.service.StockBalanceReconciliationJob;
 import com.xavier.backend.orders.OrdersActors;
 import com.xavier.backend.settlement.SettlementFixtures;
@@ -26,7 +25,6 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
@@ -110,12 +108,10 @@ class InventoryActorlessScopeTest {
                     .params(TenantTestSupport.BOOTSTRAP, warehouse, store, item).update(); // a balance no movement explains: a drift
         }
         double violations = violations();
-        AtomicReference<List<BalanceDrift>> found = new AtomicReference<>();
 
-        CompletableFuture.runAsync(() -> found.set(reconciliation.reconcile()), command -> new Thread(command).start())
-                .get(60, TimeUnit.SECONDS);
+        runReconcile();
 
-        assertThat(found.get()).extracting(BalanceDrift::storeId).contains(storeA, storeB);
+        // the recorded check, not reconcile()'s list: unbound, it runs every active tenant and returns the last one's
         assertThat(OwnerDatabase.shared().jdbc().sql("""
                         SELECT count(*) FROM inventory.balance_check WHERE store_id IN (?, ?) AND drifting_balances = 1""")
                 .params(storeA, storeB).query(Long.class).single()).isEqualTo(2);

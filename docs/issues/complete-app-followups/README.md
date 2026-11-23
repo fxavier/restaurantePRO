@@ -11,7 +11,7 @@ The POS courier choice is already recorded in [../w1-followups/pos-delivery-cour
 
 | # | Question | Recommended default |
 | --- | --- | --- |
-| Q1 | Should the POS employee code ignore case at login (`ab12` = `AB12`)? | Yes: look the code up by `upper(code)`, as `TerminalRepository` and the FE-F35 unique indexes do; keep the stored case (upper-casing the input would lock out employees saved in lower case). |
+| ~~Q1~~ | ~~Should the POS employee code ignore case at login (`ab12` = `AB12`)?~~ | ~~Yes: look the code up by `upper(code)`, as `TerminalRepository` and the FE-F35 unique indexes do; keep the stored case (upper-casing the input would lock out employees saved in lower case).~~ Done in fu/backend-hardening. |
 | Q2 | Financeiro and Stocks land on their first tab; should the landing tab follow the user's permissions (the first tab they may open)? | Yes: the first permitted tab; today a user without the first tab's permission sees its denial first. |
 | Q3 | An inventory transfer received short: should the receiver record the shortfall (quantity and reason) instead of only accepting the transfer? | Yes: a received quantity per line, the difference posted as a transfer loss movement with a reason. |
 | Q4 | Who may be a courier: every active employee of the store, or only employees with a courier role? | A courier permission (`DELIVERY_COURIER`), so the dispatch list stays short. **Status: done** (done in fu/courier-picker; V3018 grants it to the roles holding `DELIVERY_OPERATE`). |
@@ -37,15 +37,20 @@ The POS courier choice is already recorded in [../w1-followups/pos-delivery-cour
 - Add `@vitest/coverage-v8` so crapper can read frontend coverage (UB tools ran advisory on the frontend this run).
 - The e2e stack ports are set per run through `E2E_PROJECT` and `E2E_*_PORT` (FE-F20); deriving them per worktree
   automatically would stop two worktrees colliding on the defaults.
-- `RoleHttpTest.theSeededRolesAreListed` and `SystemEventPublicationHttpTest` assert on the first page (200 rows) of
-  the shared test tenant; read every page, as `StoreHttpTest` now does, before those tables outgrow it.
-- `StockBalanceReconciliationJob.reconcile()` seems to return only the last tenant's result when it runs for every
-  tenant; check whether the return value should cover all of them (found while fixing test-order failures, #191).
-- `LoyaltyProgramService.publish` retires the version in force at `clock.instant()` against the CHECK
+- ~~`RoleHttpTest.theSeededRolesAreListed` and `SystemEventPublicationHttpTest` assert on the first page (200 rows) of
+  the shared test tenant; read every page, as `StoreHttpTest` now does, before those tables outgrow it.~~ Done in
+  fu/backend-hardening.
+- ~~`StockBalanceReconciliationJob.reconcile()` seems to return only the last tenant's result when it runs for every
+  tenant; check whether the return value should cover all of them (found while fixing test-order failures, #191).~~
+  Done in fu/backend-hardening: the return value is one tenant's by contract (`StoreScopeAdvisor` hands back the last
+  run's result; the scheduler ignores it), now said in its javadoc; `InventoryActorlessScopeTest` no longer reads it
+  across tenants.
+- ~~`LoyaltyProgramService.publish` retires the version in force at `clock.instant()` against the CHECK
   `retired_at >= published_at` (V12020); a wall clock stepping back (NTP, skew between instances) turns a publish into
-  a 500. Clamp `now` to the in-force version's `published_at`, or map the violation to a 409 (review of #191).
-- `MutableClock.advance`/`advanceTo` (test code) are check-then-set on a volatile; make them `synchronized` if a test
-  ever advances it from two threads.
+  a 500. Clamp `now` to the in-force version's `published_at`, or map the violation to a 409 (review of #191).~~ Done
+  in fu/backend-hardening (clamped in `LoyaltyProgramVersion.retire`).
+- ~~`MutableClock.advance`/`advanceTo` (test code) are check-then-set on a volatile; make them `synchronized` if a test
+  ever advances it from two threads.~~ Done in fu/backend-hardening (`AtomicReference.updateAndGet`, both copies).
 - Docker on the dev machine holds about 120 GB of Testcontainers images and volumes from this run; prune it
   (`docker system prune` after checking nothing needed is stopped).
 

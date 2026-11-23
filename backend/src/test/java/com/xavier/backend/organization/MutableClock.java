@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
@@ -16,22 +17,22 @@ import org.springframework.context.annotation.Primary;
  */
 public final class MutableClock extends Clock {
 
-    private volatile Instant now = Instant.now(Clock.systemUTC()).truncatedTo(ChronoUnit.MICROS);
+    /** Atomic updates: two threads advancing at once must not lose a step or move the clock back. */
+    private final AtomicReference<Instant> now =
+            new AtomicReference<>(Instant.now(Clock.systemUTC()).truncatedTo(ChronoUnit.MICROS));
 
     public void advance(Duration duration) {
-        now = now.plus(duration);
+        now.updateAndGet(current -> current.plus(duration));
     }
 
     /** Moves the clock to {@code instant} if that is later; never back. */
     public void advanceTo(Instant instant) {
-        if (instant.isAfter(now)) {
-            now = instant;
-        }
+        now.updateAndGet(current -> instant.isAfter(current) ? instant : current);
     }
 
     @Override
     public Instant instant() {
-        return now;
+        return now.get();
     }
 
     @Override

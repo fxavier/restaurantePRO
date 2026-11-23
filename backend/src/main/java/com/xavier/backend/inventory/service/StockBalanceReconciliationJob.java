@@ -63,7 +63,14 @@ public class StockBalanceReconciliationJob {
                 .description("Stock balances below zero, by store").register(meters);
     }
 
-    /** @return the drifting rows found (also logged and counted in the gauge) */
+    /**
+     * One tenant's check. Called from a thread bound to a tenant (a request, a test), it runs in that tenant only.
+     * Called unbound (the scheduler), {@code StoreScopeAdvisor} runs it once per active tenant, starting at a rotating
+     * tenant, and hands back only the last run's list; the scheduler ignores it. Read every tenant's outcome from the
+     * gauges or from {@code balance_check}, never from this list.
+     *
+     * @return the drifting rows of the tenant this run checked (also logged and counted in the gauge)
+     */
     @SystemScoped(SystemScope.STOCK_RECONCILE)
     @Scheduled(cron = "${restaurantpro.inventory.reconcile-cron:0 20 4 * * *}")
     @Transactional

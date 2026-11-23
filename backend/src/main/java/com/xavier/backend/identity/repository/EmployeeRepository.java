@@ -16,9 +16,12 @@ public interface EmployeeRepository extends JpaRepository<Employee, UUID> {
 
     boolean existsByCodeIgnoreCase(String code);
 
-    /** Row-locked so concurrent wrong PINs are all counted (the 5th locks). */
+    /**
+     * Row-locked so concurrent wrong PINs are all counted (the 5th locks). Matches {@code upper(code)}, as the unique
+     * index does (V3017): {@code ab12} and {@code AB12} are the same employee, whatever case was stored.
+     */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select e from Employee e where e.code = :code")
+    @Query("select e from Employee e where upper(e.code) = upper(:code)")
     Optional<Employee> findByCodeForPinCheck(String code);
 
     @Query("""
