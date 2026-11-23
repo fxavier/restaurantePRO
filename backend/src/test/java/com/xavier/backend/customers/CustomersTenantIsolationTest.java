@@ -98,7 +98,8 @@ class CustomersTenantIsolationTest {
                     + "ON CONFLICT (tenant_id) DO NOTHING").param(UUID.randomUUID()).update();
             app.jdbc().sql("INSERT INTO organization.store (id, code, name, timezone, active, version, created_at, "
                     + "updated_at) VALUES (?, 'CUS-1', 'Baixa', 'Africa/Maputo', true, 0, now(), now()) "
-                    + "ON CONFLICT (tenant_id, code) DO NOTHING").param(store).update();
+                    // FE-F35 (V2008): the store code is unique ignoring case, an index on (tenant_id, upper(code))
+                    + "ON CONFLICT (tenant_id, upper(code)) DO NOTHING").param(store).update();
             app.jdbc().sql("INSERT INTO customers.customer (id, name, tax_id, active, created_at, updated_at, version) "
                     + "VALUES (?, 'Ana Costa', ?, true, now(), now(), 0)").param(customer).param(TAX_ID).update();
             app.jdbc().sql("INSERT INTO customers.customer_phone (id, customer_id, digits, is_primary) "
