@@ -34,18 +34,27 @@ export function KitchenScreen() {
   );
 }
 
-/** The station pills, from every station's active rounds (the same query as the board's when no station is chosen). */
+/**
+ * The station pills, from every station's active rounds (the same query as the board's when no station is chosen):
+ * "Todas" is the server's total; a station's count is what the page holds, exact unless the board says rounds are left out.
+ */
 function Stations({ chosen, onChoose }: { chosen?: string; onChoose: (station: string | undefined) => void }) {
   const all = useKitchenTickets({ statuses: ACTIVE });
   if (!all.data) return <div />;
-  return <StationFilter stations={stationsOf(all.data, chosen)} total={all.data.length} chosen={chosen} onChoose={onChoose} />;
+  return <StationFilter stations={stationsOf(all.data.tickets, chosen)} total={all.data.total} chosen={chosen} onChoose={onChoose} />;
 }
 
 function ActiveRounds({ destination, onChangedElsewhere }: { destination?: string; onChangedElsewhere: () => void }) {
   const tickets = useKitchenTickets({ destination, statuses: ACTIVE });
   if (tickets.data) {
-    if (tickets.data.length === 0) return <p className="py-6 text-center text-muted-foreground">Nenhuma ronda em curso.</p>;
-    return <KitchenBoard tickets={tickets.data} onChangedElsewhere={onChangedElsewhere} />;
+    const { tickets: shown, notShown } = tickets.data;
+    if (shown.length === 0 && notShown === 0) return <p className="py-6 text-center text-muted-foreground">Nenhuma ronda em curso.</p>;
+    return (
+      <>
+        {notShown > 0 && <NotShown count={notShown} />}
+        <KitchenBoard tickets={shown} onChangedElsewhere={onChangedElsewhere} />
+      </>
+    );
   }
   if (tickets.isError) {
     return (
@@ -62,6 +71,18 @@ function ActiveRounds({ destination, onChangedElsewhere }: { destination?: strin
       {Array.from({ length: 3 }, (_, index) => (
         <Skeleton key={index} className="h-64 rounded-xl" />
       ))}
+    </div>
+  );
+}
+
+/** More active rounds than one page holds (spec §7: confirmed work is never hidden without a word). */
+function NotShown({ count }: { count: number }) {
+  return (
+    <div role="status" aria-label="Rondas por mostrar" className="flex items-center gap-3 rounded-lg border border-warning bg-warning/15 px-4 py-2">
+      <TriangleAlert aria-hidden="true" className="size-5 shrink-0 text-warning" />
+      <p className="flex-1 font-medium">
+        Mais {count} {count === 1 ? 'ronda' : 'rondas'} em curso não {count === 1 ? 'cabe' : 'cabem'} no ecrã. Escolha uma estação ou retire as prontas.
+      </p>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { HttpResponse } from 'msw';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
-import { atKitchen, byStation, kdsEndpoint, page, TICKET } from '../../test/kitchen';
+import { atKitchen, byStation, firstPageOf, kdsEndpoint, page, TICKET } from '../../test/kitchen';
 import { renderPos } from '../../test/render-pos';
 import { notificationsEndpoint, problem, token, tokenEndpoint } from '../../test/server';
 
@@ -50,6 +50,26 @@ describe('the kitchen display', () => {
     const query = new URL(reads.at(-1)!.url).searchParams;
     expect(query.get('destination')).toBe('BAR');
     expect(query.getAll('status')).toEqual(['QUEUED', 'IN_PREPARATION', 'READY']);
+  });
+
+  it('reads the largest page the server serves, and says how many active rounds it could not show', async () => {
+    const reads = kdsEndpoint(firstPageOf(205, TICKET.queued, TICKET.cooking, TICKET.ready));
+    await atKitchen();
+
+    const stations = await screen.findByRole('group', { name: 'Estação' });
+    expect(within(stations).getByRole('button', { name: 'Todas 205' })).toBeInTheDocument();
+    expect(await screen.findByRole('status', { name: 'Rondas por mostrar' })).toHaveTextContent(
+      'Mais 202 rondas em curso não cabem no ecrã. Escolha uma estação ou retire as prontas.',
+    );
+    expect(reads.every((read) => new URL(read.url).searchParams.get('size') === '200')).toBe(true);
+  });
+
+  it('says nothing more when every active round is shown', async () => {
+    kdsEndpoint(page(TICKET.queued));
+    await atKitchen();
+
+    await screen.findByRole('article', { name: 'Mesa 04 - Pedido #4092, Ronda 2' });
+    expect(screen.queryByRole('status', { name: 'Rondas por mostrar' })).not.toBeInTheDocument();
   });
 
   it('says so while it loads, then when no round is under way', async () => {

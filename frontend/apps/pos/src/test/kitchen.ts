@@ -66,9 +66,14 @@ export const TICKET = {
   }),
 };
 
-/** The page `GET /kds` answers. */
-export const page = (...tickets: TicketView[]) => () =>
-  HttpResponse.json({ content: tickets, page: 0, size: 50, totalElements: tickets.length });
+/** The first page `GET /kds` answers of `totalElements` rounds: fewer than that when the store has more. */
+export const firstPageOf =
+  (totalElements: number, ...tickets: TicketView[]) =>
+  () =>
+    HttpResponse.json({ content: tickets, page: 0, size: 200, totalElements });
+
+/** The page `GET /kds` answers: every round there is. */
+export const page = (...tickets: TicketView[]) => firstPageOf(tickets.length, ...tickets);
 
 type Answer<Body = undefined> = (body: Body, seen: Seen<Body>) => Response | Promise<Response>;
 

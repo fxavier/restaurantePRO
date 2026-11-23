@@ -1,7 +1,7 @@
 import { Badge } from '@restaurantpro/ui';
 import { Clock } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { DestinationBadge } from '../../catalog/components/destination-badge';
+import { StationChip } from './station-chip';
 import { useNow } from '../hooks/use-now';
 import { type KitchenItem, type KitchenTicket, waitingMinutes } from '../kitchen';
 
@@ -13,7 +13,7 @@ export function KitchenCard({ ticket, children }: { ticket: KitchenTicket; child
         <h4 className="text-xl font-semibold tabular-nums">{ticket.title}</h4>
         <div className="flex items-center gap-2">
           <Badge variant="outline">{ticket.round}</Badge>
-          <DestinationBadge code={ticket.destination} />
+          <StationChip code={ticket.destination} />
         </div>
       </header>
       <Waiting queuedAt={ticket.queuedAt} />

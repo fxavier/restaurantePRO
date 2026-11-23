@@ -50,6 +50,18 @@ export const NEXT = {
   BUMPED: [{ command: 'recall', label: 'Repor' }],
 } as const satisfies Record<KitchenStatus, readonly { command: KitchenCommand; label: string }[]>;
 
+type TicketPage = Schemas['com.xavier.backend.shared.web.PageResponseCom.xavier.backend.production.model.dto.TicketView'];
+
+/** One read of the display: the rounds it holds, how many there are in all, and how many of those it does not hold. */
+export type KitchenPage = { tickets: KitchenTicket[]; total: number; notShown: number };
+
+/** The server's count is the total (spec §7): a first page shorter than it leaves rounds the screen must own up to. */
+export function toKitchenPage(page: TicketPage | undefined): KitchenPage {
+  const content = page?.content ?? [];
+  const total = Math.max(page?.totalElements ?? 0, content.length);
+  return { tickets: toKitchenTickets(content), total, notShown: total - content.length };
+}
+
 /** A view without its identity, kitchen progress or station is not a round the display can move: it is dropped. */
 export function toKitchenTickets(views: TicketView[] | undefined): KitchenTicket[] {
   return (views ?? []).flatMap((view) => {

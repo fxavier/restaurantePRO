@@ -1,6 +1,6 @@
 import { Badge, Button } from '@restaurantpro/ui';
 import type { ReactNode } from 'react';
-import { DestinationBadge } from '../../catalog/components/destination-badge';
+import { StationChip } from './station-chip';
 
 type Props = {
   stations: { code: string; count: number }[];
@@ -20,7 +20,7 @@ export function StationFilter({ stations, total, chosen, onChoose }: Props) {
       </Pill>
       {stations.map(({ code, count }) => (
         <Pill key={code} pressed={chosen === code} count={count} onPress={() => onChoose(code)}>
-          <DestinationBadge code={code} />
+          <StationChip code={code} />
         </Pill>
       ))}
     </div>

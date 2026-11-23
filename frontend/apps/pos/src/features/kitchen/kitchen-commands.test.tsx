@@ -47,17 +47,25 @@ describe('moving a round on the kitchen display', () => {
   });
 
   it('a double tap sends one command', async () => {
-    kdsEndpoint(page(TICKET.queued));
+    const started = moved(TICKET.queued, 'IN_PREPARATION');
+    kdsEndpoint(page(TICKET.queued), page(started));
+    let answer!: () => void;
+    const answered = new Promise<void>((resolve) => (answer = resolve));
     const sent = kitchenCommandEndpoint(TICKET.queued.id!, 'start', async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      return HttpResponse.json(moved(TICKET.queued, 'IN_PREPARATION'));
+      await answered;
+      return HttpResponse.json(started);
     });
     const { user } = await atKitchen();
+    const start = within(await card(QUEUED)).getByRole('button', { name: 'Iniciar' });
 
-    await user.dblClick(within(await card(QUEUED)).getByRole('button', { name: 'Iniciar' }));
+    await user.dblClick(start);
 
+    // Still in flight: the second tap found the button disabled.
     await expect.poll(() => sent.length).toBe(1);
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(start).toBeDisabled();
+    answer();
+    const cooking = await screen.findByRole('region', { name: /^Em preparação/ });
+    expect(await within(cooking).findByRole('article', { name: QUEUED })).toBeInTheDocument();
     expect(sent).toHaveLength(1);
   });
 
@@ -109,7 +117,9 @@ describe('moving a round on the kitchen display', () => {
     const bumped = await screen.findByRole('region', { name: 'Retirados' });
     const history = new URL(reads.at(-1)!.url).searchParams;
     expect(history.getAll('status')).toEqual(['BUMPED']);
-    expect(history.getAll('sort')).toEqual(['queuedAt,DESC']);
+    // The latest taken off, not the latest queued: a slow table's round bumped by mistake must still be there.
+    expect(history.getAll('sort')).toEqual(['bumped.at,DESC']);
+    expect(history.get('size')).toBe('10');
     await user.click(within(within(bumped).getByRole('article', { name: 'Mesa 05 - Pedido #4098, Ronda 3' })).getByRole('button', { name: 'Repor' }));
 
     await expect.poll(() => sent.length).toBe(1);

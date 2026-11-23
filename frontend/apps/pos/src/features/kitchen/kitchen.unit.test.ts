@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readLines, stationsOf, toKitchenTickets, waitingMinutes } from './kitchen';
+import { readLines, stationsOf, toKitchenPage, toKitchenTickets, waitingMinutes } from './kitchen';
 
 describe('readLines', () => {
   it('reads a takeaway header, a decimal quantity, and keeps a line it cannot read as an item', () => {
@@ -29,6 +29,22 @@ describe('readLines', () => {
 describe('toKitchenTickets', () => {
   it('drops a ticket without kitchen progress (not a round)', () => {
     expect(toKitchenTickets([{ id: 'a', destination: 'KITCHEN', lines: [] }])).toEqual([]);
+  });
+});
+
+describe('toKitchenPage', () => {
+  const round = { id: 'a', destination: 'KITCHEN', lines: [], kitchen: { status: 'QUEUED', version: 0, queuedAt: '2026-11-22T09:00:00Z' } } as const;
+
+  it("takes the server's total, and counts the rounds beyond the page it holds", () => {
+    const read = toKitchenPage({ content: [round], page: 0, size: 200, totalElements: 201 });
+    expect(read.total).toBe(201);
+    expect(read.notShown).toBe(200);
+    expect(read.tickets).toHaveLength(1);
+  });
+
+  it('a page holding every round leaves none out; no answer is an empty page', () => {
+    expect(toKitchenPage({ content: [round], page: 0, size: 200, totalElements: 1 }).notShown).toBe(0);
+    expect(toKitchenPage(undefined)).toEqual({ tickets: [], total: 0, notShown: 0 });
   });
 });
 
