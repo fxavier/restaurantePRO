@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { areaGroups } from '../../apps/backoffice/src/shell/navigation';
 import { expectNoAxeViolations } from '../axe';
 
 // The built BackOffice against API answers stubbed in the browser (page.route): the shell's states, keyboard and axe
@@ -28,20 +29,10 @@ const selectedStore = stores[1]!.id;
 const session = {
   kind: 'ACCOUNT',
   name: 'Ana Admin',
-  // One per sidebar area (apps/backoffice/src/shell/navigation.ts): axe checks the whole sidebar.
+  // Every permission a sidebar area accepts (the app's own list): axe checks the whole sidebar.
   permissions: [
-    'PERM_TERMINAL_MANAGE',
-    'PERM_STORE_MANAGE',
-    'PERM_DINING_MANAGE',
-    'PERM_CATALOG_MANAGE',
-    'PERM_PRODUCTION_MANAGE',
-    'PERM_INVENTORY_VIEW',
-    'PERM_CUSTOMER_VIEW',
-    'PERM_CASH_VIEW',
-    'PERM_EMPLOYEE_MANAGE',
-    'PERM_DELIVERY_ZONE_MANAGE',
-    'PERM_ORDER_VIEW',
-  ],
+    ...new Set(areaGroups.flatMap((group) => group.areas).flatMap((area) => area.permissions ?? [])),
+  ].map((name) => `PERM_${name}`),
   tenantId: tenants[0]!.tenantId,
   tenantName: tenants[0]!.legalName,
 };
