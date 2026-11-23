@@ -41,6 +41,11 @@ The POS courier choice is already recorded in [../w1-followups/pos-delivery-cour
   the shared test tenant; read every page, as `StoreHttpTest` now does, before those tables outgrow it.
 - `StockBalanceReconciliationJob.reconcile()` seems to return only the last tenant's result when it runs for every
   tenant; check whether the return value should cover all of them (found while fixing test-order failures, #191).
+- `LoyaltyProgramService.publish` retires the version in force at `clock.instant()` against the CHECK
+  `retired_at >= published_at` (V12020); a wall clock stepping back (NTP, skew between instances) turns a publish into
+  a 500. Clamp `now` to the in-force version's `published_at`, or map the violation to a 409 (review of #191).
+- `MutableClock.advance`/`advanceTo` (test code) are check-then-set on a volatile; make them `synchronized` if a test
+  ever advances it from two threads.
 - Docker on the dev machine holds about 120 GB of Testcontainers images and volumes from this run; prune it
   (`docker system prune` after checking nothing needed is stopped).
 
