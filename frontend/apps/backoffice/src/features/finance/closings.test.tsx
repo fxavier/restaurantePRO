@@ -156,7 +156,9 @@ describe('closings', () => {
   });
 
   it('hides approve and reject from a user without CASH_CLOSING_APPROVE', async () => {
-    financeServer({ closings: [closing(CLOSING)] }, { ...admin, permissions: [...admin.permissions, 'PERM_REPORT_VIEW'] });
+    // The administrator fixture holds CASH_CLOSING_APPROVE (the Financeiro area accepts it); this user only reads.
+    const viewer = admin.permissions.filter((p) => p !== 'PERM_CASH_CLOSING_APPROVE');
+    financeServer({ closings: [closing(CLOSING)] }, { ...admin, permissions: [...viewer, 'PERM_REPORT_VIEW'] });
     renderApp(FECHOS);
 
     await screen.findByRole('table', { name: 'Fechos de caixa' });

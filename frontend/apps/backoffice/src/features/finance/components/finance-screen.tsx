@@ -90,7 +90,7 @@ function FinanceArea({ storeId, timeZone }: { storeId: string; timeZone: string 
           <ClosingsTab storeId={storeId} period={period} />
         </TabsContent>
         <TabsContent value="sessoes">
-          <CashSessionsTab key={periodKey} storeId={storeId} period={period} />
+          <CashSessionsTab storeId={storeId} period={period} periodKey={periodKey} />
         </TabsContent>
         <TabsContent value="reconciliacao">
           <ReconciliationTab storeId={storeId} period={period} />

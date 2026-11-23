@@ -1,5 +1,6 @@
 import type { components } from '@restaurantpro/api-client';
 import { http, HttpResponse } from 'msw';
+import { areaGroups } from '../shell/navigation';
 
 type Schemas = components['schemas'];
 export type SessionView = Schemas['com.xavier.backend.identity.model.dto.SessionView'];
@@ -37,6 +38,12 @@ export const companyC = {
   status: 'ACTIVE',
 } satisfies TenantChoice;
 
+/** `PERM_<NAME>` company-wide for each permission any sidebar area accepts, once each. */
+function areaPermissions(): string[] {
+  const names = areaGroups.flatMap((group) => group.areas).flatMap((area) => area.permissions ?? []);
+  return [...new Set(names)].map((name) => `PERM_${name}`);
+}
+
 /** The session names the company the request was resolved in (FE-F08). */
 export function sessionIn(company: TenantChoice, session: Partial<SessionView> = {}): SessionView {
   return { ...admin, tenantId: company.tenantId, tenantName: company.legalName, ...session };
@@ -50,21 +57,9 @@ export const admin: SessionView = {
   terminalId: null,
   storeId: null,
   mustChangePin: false,
-  // As the backend sends them (SessionView): PERM_<NAME> company-wide, PERM_<NAME>@<storeId> in one store. One per
-  // sidebar area (shell/navigation.ts), so the administrator sees them all.
-  permissions: [
-    'PERM_TERMINAL_MANAGE',
-    'PERM_STORE_MANAGE',
-    'PERM_DINING_MANAGE',
-    'PERM_CATALOG_MANAGE',
-    'PERM_PRODUCTION_MANAGE',
-    'PERM_INVENTORY_VIEW',
-    'PERM_CUSTOMER_VIEW',
-    'PERM_CASH_VIEW',
-    'PERM_EMPLOYEE_MANAGE',
-    'PERM_DELIVERY_ZONE_MANAGE',
-    'PERM_ORDER_VIEW',
-  ],
+  // As the backend sends them (SessionView): PERM_<NAME> company-wide, PERM_<NAME>@<storeId> in one store. Every
+  // permission a sidebar area accepts (shell/navigation.ts), so the administrator sees them all.
+  permissions: areaPermissions(),
   tenantId: companyA.tenantId,
   tenantName: companyA.legalName,
   storeName: null,

@@ -1,6 +1,6 @@
 import { Button, Card, CardContent, CardHeader, DataState, Money, StatusBadge } from '@restaurantpro/ui';
 import { X } from 'lucide-react';
-import { useId, type ReactNode } from 'react';
+import { useEffect, useEffectEvent, useId, type ReactNode } from 'react';
 import { useOrder } from '../hooks/use-orders';
 import { businessDate, storeTime } from '../format';
 import { lifecycles, modes } from '../labels';
@@ -10,13 +10,23 @@ import { OrderLines } from './order-lines';
 import { OrderRounds } from './order-rounds';
 import { ReadFailure } from './read-failure';
 
-type OrderDetailProps = { orderId: string; timeZone: string | undefined; onClose: () => void };
+type OrderDetailProps = { storeId: string; orderId: string; timeZone: string | undefined; onClose: () => void };
 
-/** The open order (GET /backoffice/orders/{id}), read only: its facts, what is due, lines, rounds and discounts. */
-export function OrderDetail({ orderId, timeZone, onClose }: OrderDetailProps) {
+/**
+ * The open order (GET /backoffice/orders/{id}), read only: its facts, what is due, lines, rounds and discounts. The
+ * screen is one store's: an order the server says is another store's (the store changed while it was open, or a
+ * link mixes two stores) is closed, not shown.
+ */
+export function OrderDetail({ storeId, orderId, timeZone, onClose }: OrderDetailProps) {
   const titleId = useId();
   const order = useOrder(orderId);
   const data = order.data;
+  const elsewhere = data !== undefined && data.storeId !== storeId;
+  const close = useEffectEvent(onClose);
+  useEffect(() => {
+    if (elsewhere) close();
+  }, [elsewhere]);
+  if (elsewhere) return null;
   return (
     <Card role="region" aria-labelledby={titleId} className="gap-4">
       <CardHeader className="flex items-center justify-between gap-2">

@@ -1,7 +1,7 @@
 import { formatMoney } from '@restaurantpro/ui';
 import { screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { baixa } from '../../test/fixtures';
+import { baixa, sommerschield } from '../../test/fixtures';
 import { mzn, orderRow, ordersServer, orderView } from '../../test/orders-fixtures';
 import { renderApp } from '../../test/render-app';
 
@@ -49,6 +49,19 @@ describe('order detail', () => {
 
     expect(screen.queryByRole('region', { name: 'Pedido #1043' })).not.toBeInTheDocument();
     expect(currentUrl()).not.toContain('orderId');
+  });
+
+  it("closes the open order when the user changes store: the other store's screen does not show it", async () => {
+    const order = orderView(1043);
+    ordersServer({ rows: [orderRow(1043)], detail: order });
+    const { user, currentUrl } = renderApp(`${ORDERS}&orderId=${order.id}`);
+    await screen.findByRole('region', { name: 'Pedido #1043' });
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Loja' }), sommerschield.id);
+
+    await waitFor(() => expect(currentUrl()).toContain(`storeId=${sommerschield.id}`));
+    await waitFor(() => expect(currentUrl()).not.toContain('orderId'));
+    expect(screen.queryByRole('region', { name: /^Pedido/ })).not.toBeInTheDocument();
   });
 
   it('says so when an order has no discount and no round yet', async () => {

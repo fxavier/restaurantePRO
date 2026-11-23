@@ -1,4 +1,4 @@
-import type { components } from '@restaurantpro/api-client';
+import type { components, paths } from '@restaurantpro/api-client';
 
 type Schemas = components['schemas'];
 export type Money = Schemas['com.xavier.backend.shared.Money'];
@@ -11,8 +11,10 @@ export type ReceiptsReport =
 export type ClosingStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED';
 export type ClosingView = Schemas['com.xavier.backend.cash.model.dto.ClosingView'];
 export type ClosingLineView = Schemas['com.xavier.backend.cash.model.dto.ClosingLineView'];
-/** The cash session states the list filters on (spec §8.3). */
-export type CashSessionStatus = 'OPEN' | 'CLOSED';
+/** The cash session states the list filters on (spec §8.3), as the contract's `status` query parameter names them. */
+export type CashSessionStatus = NonNullable<
+  paths['/api/v1/backoffice/cash/sessions']['get']['parameters']['query']['status']
+>;
 export type SessionRow = Schemas['com.xavier.backend.cash.model.dto.SessionRow'];
 export type EmployeeSummary = Schemas['com.xavier.backend.identity.model.dto.EmployeeSummary'];
 export type DayView =Schemas['com.xavier.backend.cash.DayView'];

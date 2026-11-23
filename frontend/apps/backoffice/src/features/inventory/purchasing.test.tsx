@@ -231,7 +231,8 @@ describe('purchasing', () => {
   });
 
   it('hides the purchasing commands from a user without purchasing or receiving permissions', async () => {
-    inventoryServer({ session: admin });
+    // The administrator fixture holds GOODS_RECEIVE (the Stocks area accepts it); this user only reads the stock.
+    inventoryServer({ session: { ...admin, permissions: admin.permissions.filter((p) => p !== 'PERM_GOODS_RECEIVE') } });
 
     renderApp(COMPRAS);
 
