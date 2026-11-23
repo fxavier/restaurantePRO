@@ -1,17 +1,27 @@
 # Backend CI (ADR 0043, amended 2026-11-23): the backend's full test suite, `./mvnw verify` (unit, Spring Modulith,
 # Testcontainers PostgreSQL and Keycloak integration tests), on every pull request and push to main that touches the
-# backend. The frontend workflow runs only the OpenAPI snapshot test of this suite.
+# backend or the deploy files and OpenAPI snapshot its tests read. The frontend workflow runs only the OpenAPI snapshot test of this suite.
 name: backend
 
 on:
   pull_request:
     paths:
       - "backend/**"
+      # files the suite reads from outside backend/ (pom.xml test resources and the tests' own file reads)
+      - "deploy/keycloak/**"
+      - "deploy/postgres/**"
+      - "deploy/monitoring/**"
+      - "frontend/packages/api-client/openapi.json"
       - ".github/workflows/backend.yml"
   push:
     branches: [main]
     paths:
       - "backend/**"
+      # files the suite reads from outside backend/ (pom.xml test resources and the tests' own file reads)
+      - "deploy/keycloak/**"
+      - "deploy/postgres/**"
+      - "deploy/monitoring/**"
+      - "frontend/packages/api-client/openapi.json"
       - ".github/workflows/backend.yml"
 
 concurrency:

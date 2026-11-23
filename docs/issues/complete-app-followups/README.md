@@ -11,7 +11,7 @@ The POS courier choice is already recorded in [../w1-followups/pos-delivery-cour
 
 | # | Question | Recommended default |
 | --- | --- | --- |
-| Q1 | Should the POS employee code ignore case at login (`ab12` = `AB12`)? | Yes: normalise to upper case at the API boundary, as FE-F35 already does for store codes. |
+| Q1 | Should the POS employee code ignore case at login (`ab12` = `AB12`)? | Yes: look the code up by `upper(code)`, as `TerminalRepository` and the FE-F35 unique indexes do; keep the stored case (upper-casing the input would lock out employees saved in lower case). |
 | Q2 | Financeiro and Stocks land on their first tab; should the landing tab follow the user's permissions (the first tab they may open)? | Yes: the first permitted tab; today a user without the first tab's permission sees its denial first. |
 | Q3 | An inventory transfer received short: should the receiver record the shortfall (quantity and reason) instead of only accepting the transfer? | Yes: a received quantity per line, the difference posted as a transfer loss movement with a reason. |
 | Q4 | Who may be a courier: every active employee of the store, or only employees with a courier role? | A courier permission (`DELIVERY_COURIER`), so the dispatch list stays short. |
@@ -21,11 +21,12 @@ The POS courier choice is already recorded in [../w1-followups/pos-delivery-cour
 
 - **TicketView structured lines**: the production ticket view carries its lines as text; KDS and reprint would use
   item, quantity, modifiers and notes as fields.
-- **SessionRow operatorName**: the cash-session list shows the operator's id; add the display name to the row.
+- **SessionRow operatorName**: the cash-session list shows the operator's id to users without `EMPLOYEE_MANAGE` (the
+  name comes from a separate employees read); add the display name to the row.
 - **Session adjustments GET**: cash adjustments of a session can be posted but not listed; add a read for the session
   detail.
-- **POS production destinations list**: the POS hard-codes the route chips (KITCHEN, BAR, COPA, PANTRY); a read of the
-  store's active destinations would let the KDS filter by what the store has.
+- **POS production destinations list**: the KDS builds its station filter from the tickets it shows, so a station with
+  no active rounds never appears as a filter; a read of the store's active destinations would list them all.
 - **KDS cut-off for stores without a KDS**: kitchen progress (ADR 0044) stays QUEUED forever in a store that prints
   tickets only; decide whether such a store skips the progress or closes it on print.
 
@@ -34,8 +35,8 @@ The POS courier choice is already recorded in [../w1-followups/pos-delivery-cour
 - `frontend/apps/backoffice/src/routes/area-placeholder.tsx` and `frontend/apps/pos/src/routes/section-placeholder.tsx`
   are no longer referenced (every area and section is built); delete them.
 - Add `@vitest/coverage-v8` so crapper can read frontend coverage (UB tools ran advisory on the frontend this run).
-- Playwright preview ports are fixed; two worktrees running e2e at once collide. Derive the ports from an env variable
-  per worktree.
+- The e2e stack ports are set per run through `E2E_PROJECT` and `E2E_*_PORT` (FE-F20); deriving them per worktree
+  automatically would stop two worktrees colliding on the defaults.
 - Docker on the dev machine holds about 120 GB of Testcontainers images and volumes from this run; prune it
   (`docker system prune` after checking nothing needed is stopped).
 
