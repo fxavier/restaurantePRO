@@ -38,12 +38,13 @@ export function KitchenScreen() {
 /**
  * The station pills: the store's stations, then any other the active rounds name (the same query as the board's when no
  * station is chosen). "Todas" is the server's total; a station's count is what the page holds, exact unless the board
- * says rounds are left out. Without the store's stations (still reading, or refused) the rounds' stations are offered.
+ * says rounds are left out. The pills wait for the store's stations, so they never reorder under a tap; if that read is
+ * refused, the rounds' stations are offered.
  */
 function Stations({ chosen, onChoose }: { chosen?: string; onChoose: (station: string | undefined) => void }) {
   const all = useKitchenTickets({ statuses: ACTIVE });
   const destinations = useProductionDestinations();
-  if (!all.data) return <div />;
+  if (!all.data || destinations.isPending) return <div />;
   return (
     <StationFilter
       stations={stationsOf(all.data.tickets, chosen, destinations.data)}
