@@ -24773,6 +24773,8 @@
             "name": "q",
             "required": false,
             "schema": {
+              "maxLength": 20,
+              "minLength": 0,
               "type": "string"
             }
           },
