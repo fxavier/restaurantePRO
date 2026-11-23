@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { isPositive, toDecimal } from './decimal';
+import { compareDecimals, isPositive, toDecimal } from './decimal';
 
 const QUANTITY = 'Indique uma quantidade, por exemplo 2,5.';
 const POSITIVE = 'Indique uma quantidade maior que zero.';
@@ -86,6 +86,32 @@ export const receiptSchema = z
   });
 export type ReceiptInput = z.input<typeof receiptSchema>;
 export type ReceiptValues = z.output<typeof receiptSchema>;
+
+/** Whether a received quantity (a decimal string of zero or more) is below what was shipped: a loss to explain. */
+export const arrivedShort = (received: string, shipped: string) =>
+  received !== '' && !received.startsWith('-') && compareDecimals(received, shipped) < 0;
+
+/**
+ * Receiving a transfer (D120, Q3): what arrived of each shipped line, zero up to what was shipped
+ * (RECEIVED_EXCEEDS_SHIPPED); when a line arrived short, the reason for the loss (REASON_REQUIRED).
+ */
+export const transferReceiptSchema = z
+  .object({
+    lines: z.array(z.object({ stockItemId: z.string(), quantityShipped: z.string(), quantityReceived: decimal(QUANTITY) })),
+    reason: z.string().trim().max(500, 'O motivo tem no máximo 500 caracteres.'),
+  })
+  .superRefine(({ lines, reason }, context) => {
+    lines.forEach(({ quantityReceived, quantityShipped }, index) => {
+      const path = ['lines', index, 'quantityReceived'];
+      if (quantityReceived.startsWith('-')) context.addIssue({ code: 'custom', path, message: 'Indique uma quantidade de zero ou mais.' });
+      else if (quantityReceived !== '' && compareDecimals(quantityReceived, quantityShipped) > 0)
+        context.addIssue({ code: 'custom', path, message: 'Não pode receber mais do que o enviado.' });
+    });
+    if (!reason && lines.some((line) => arrivedShort(line.quantityReceived, line.quantityShipped)))
+      context.addIssue({ code: 'custom', path: ['reason'], message: 'Indique o motivo da diferença.' });
+  });
+export type TransferReceiptInput = z.input<typeof transferReceiptSchema>;
+export type TransferReceiptValues = z.output<typeof transferReceiptSchema>;
 
 export const recipeSchema = z.object({
   name: z.string().trim().min(1, 'Indique o nome.').max(160, 'O nome tem no máximo 160 caracteres.'),

@@ -37,6 +37,11 @@ public class InventoryRuleException extends BusinessRuleException {
         return new InventoryRuleException(InventoryRule.REASON_REQUIRED, "A manual stock movement needs a reason.");
     }
 
+    public static InventoryRuleException shortfallReasonRequired(UUID stockItemId) {
+        return new InventoryRuleException(InventoryRule.REASON_REQUIRED, "Stock item " + stockItemId
+                + " arrived short: a transfer received short needs a reason.", Map.of("stockItemId", stockItemId));
+    }
+
     /** {@code available} is what the warehouse holds before the movement. */
     public static InventoryRuleException negativeStockRefused(UUID warehouseId, UUID stockItemId,
                                                               BigDecimal available) {

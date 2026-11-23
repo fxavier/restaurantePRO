@@ -16,3 +16,28 @@ export function toDecimal(input: string): string | undefined {
 export function isPositive(decimal: string): boolean {
   return !decimal.startsWith('-') && /[1-9]/.test(decimal);
 }
+
+/**
+ * The order of two decimal strings of zero or more (as `toDecimal` or the contract writes them: `4.5`, `5.000000`),
+ * by their digits alone, never through a float: -1, 0 or 1.
+ */
+export function compareDecimals(a: string, b: string): -1 | 0 | 1 {
+  const [aWhole = '', aFraction = ''] = a.split('.');
+  const [bWhole = '', bFraction = ''] = b.split('.');
+  const width = Math.max(aFraction.length, bFraction.length);
+  const digits = (whole: string, fraction: string) => `${whole.replace(/^0+/, '')}.${fraction.padEnd(width, '0')}`;
+  const [x, y] = [digits(aWhole, aFraction), digits(bWhole, bFraction)];
+  if (x.length !== y.length) return x.length < y.length ? -1 : 1;
+  return x === y ? 0 : x < y ? -1 : 1;
+}
+
+/**
+ * A decimal string from the contract (`2.500000`) as the user would type it in pt (`2,5`): trailing fractional zeros
+ * dropped, comma separator, no grouping and no rounding, so `toDecimal` reads back exactly the same number. Not
+ * `formatQuantity`, which rounds to three decimals and groups thousands for display.
+ */
+export function toInputDecimal(decimal: string): string {
+  const [whole = '', fraction = ''] = decimal.trim().split('.');
+  const kept = fraction.replace(/0+$/, '');
+  return kept ? `${whole},${kept}` : whole;
+}

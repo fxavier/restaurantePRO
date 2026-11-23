@@ -134,12 +134,13 @@ public class StockTransfer {
     }
 
     /**
-     * SHIPPED → RECEIVED with the quantity that arrived of every line (D120). A shortfall is what did not arrive.
+     * SHIPPED → RECEIVED with the quantity that arrived of every line (D120). A shortfall is what did not arrive, a
+     * loss the receiver explains with {@code reason} (Q3 of the complete-app follow-ups); a full receipt needs none.
      *
-     * @throws InventoryRuleException RECEIVED_EXCEEDS_SHIPPED, or INVALID_QUANTITY when a line is missing, unknown
-     *                                or negative
+     * @throws InventoryRuleException RECEIVED_EXCEEDS_SHIPPED; INVALID_QUANTITY when a line is missing, unknown or
+     *                                negative; REASON_REQUIRED when a line is short and the reason is blank
      */
-    public void receive(Map<UUID, BigDecimal> received, UUID actorId, Instant now) {
+    public void receive(Map<UUID, BigDecimal> received, String reason, UUID actorId, Instant now) {
         requireStatus(TransferStatus.SHIPPED, "be received");
         for (UUID item : received.keySet()) {
             if (lines.stream().noneMatch(line -> line.getStockItemId().equals(item))) {
@@ -155,6 +156,9 @@ public class StockTransfer {
             }
             if (quantity.compareTo(line.getQuantityShipped()) > 0) {
                 throw InventoryRuleException.receivedExceedsShipped(line.getStockItemId(), line.getQuantityShipped());
+            }
+            if (quantity.compareTo(line.getQuantityShipped()) < 0 && (reason == null || reason.isBlank())) {
+                throw InventoryRuleException.shortfallReasonRequired(line.getStockItemId());
             }
         }
         lines.forEach(line -> line.received(received.get(line.getStockItemId())));
