@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { COURIER, couriersEndpoint } from '../../test/couriers';
 import { atDelivery, DELIVERY, deliveriesEndpoint, dispatchEndpoint } from '../../test/delivery';
 import { json } from '../../test/order';
-import { problem } from '../../test/server';
+import { problem, SESSION } from '../../test/server';
 
 const card = (orderNumber: number) => screen.findByRole('article', { name: `Entrega n.º ${orderNumber}` });
 const OUT_NOW = { ...DELIVERY.pending, status: 'OUT_FOR_DELIVERY' as const, version: 1 };
@@ -45,6 +45,47 @@ describe('dispatching a delivery with a courier', () => {
     expect(sent[0]!.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
     // The terminal's POS session rides on the command (D182).
     expect(sent[0]!.posSession).toBe('pos-session-ana');
+  });
+
+  it('the logged-in employee, when a courier of the store, is picked already and can be sent at once', async () => {
+    const ana = { id: SESSION.employeeId, code: 'E01', name: 'Ana Silva' };
+    deliveriesEndpoint(json([DELIVERY.pending]), json([OUT_NOW]));
+    couriersEndpoint(json([COURIER.joao, ana, COURIER.rita]));
+    const sent = dispatchEndpoint(DELIVERY.pending.orderId!, json(OUT_NOW));
+    const { user, dialog } = await dispatching();
+
+    expect(await within(dialog).findByRole('radio', { name: 'Ana Silva' })).toBeChecked();
+    expect(within(dialog).getByRole('radio', { name: 'Rita Mabunda' })).not.toBeChecked();
+    await user.click(within(dialog).getByRole('button', { name: 'Expedir' }));
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]!.body).toEqual({ courierEmployeeId: SESSION.employeeId, version: 0 });
+  });
+
+  it('another courier picked over the default is the one sent', async () => {
+    const ana = { id: SESSION.employeeId, code: 'E01', name: 'Ana Silva' };
+    deliveriesEndpoint(json([DELIVERY.pending]), json([OUT_NOW]));
+    couriersEndpoint(json([ana, COURIER.rita]));
+    const sent = dispatchEndpoint(DELIVERY.pending.orderId!, json(OUT_NOW));
+    const rendered = await dispatching();
+
+    await sendRita(rendered);
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]!.body).toEqual({ courierEmployeeId: COURIER.rita.id, version: 0 });
+  });
+
+  it('a courier who may no longer carry deliveries (NOT_A_COURIER) is refused in Portuguese', async () => {
+    deliveriesEndpoint(json([DELIVERY.pending]));
+    couriersEndpoint();
+    dispatchEndpoint(DELIVERY.pending.orderId!, () => problem(422, 'NOT_A_COURIER'));
+    const rendered = await dispatching();
+
+    await sendRita(rendered);
+
+    expect(await within(rendered.dialog).findByRole('alert')).toHaveTextContent(
+      'Este empregado não é estafeta nesta loja. Escolha outro estafeta.',
+    );
   });
 
   it('names each courier with their code, and sends nothing when cancelled', async () => {

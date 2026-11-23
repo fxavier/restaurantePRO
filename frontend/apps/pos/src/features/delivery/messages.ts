@@ -6,6 +6,7 @@ export const DELIVERY_MESSAGES: FeatureMessages = {
   DELIVERY_HAS_DRAFTS: 'O pedido tem artigos por enviar. Envie-os ou apague-os antes de expedir.',
   DELIVERY_NOTHING_CONFIRMED: 'O pedido ainda não tem artigos enviados. Envie pelo menos uma ronda antes de expedir.',
   COURIER_NOT_IN_STORE: 'O estafeta não é um empregado ativo desta loja.',
+  NOT_A_COURIER: 'Este empregado não é estafeta nesta loja. Escolha outro estafeta.',
   CUSTOMER_REQUIRED: 'Uma entrega precisa de cliente, morada e zona.',
   CUSTOMER_INACTIVE: 'O cliente está inativo.',
   ZONE_INACTIVE: 'A zona de entrega está inativa. Escolha outra.',

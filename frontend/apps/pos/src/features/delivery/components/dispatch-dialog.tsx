@@ -10,6 +10,7 @@ import {
 } from '@restaurantpro/ui';
 import { Bike } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
+import { useEmployee } from '../../../lib/auth/use-employee';
 import { useCommandsBlocked } from '../../../lib/live/use-connection';
 import { type Delivery, intentState } from '../delivery';
 import { useCouriers } from '../hooks/use-couriers';
@@ -20,9 +21,15 @@ import { CommandMessage } from './command-message';
 
 type Props = { delivery: Delivery; onClose: () => void; onChangedElsewhere: () => void };
 
-/** A delivery taken out (PENDING or RETURNED → OUT_FOR_DELIVERY) by the courier the operator picks (D127). */
+/**
+ * A delivery taken out (PENDING or RETURNED → OUT_FOR_DELIVERY) by the courier the operator picks (D127). The
+ * logged-in employee comes picked when they are one of the store's couriers: the driver dispatching their own trip.
+ */
 export function DispatchDialog({ delivery, onClose, onChangedElsewhere }: Props) {
-  const [courierId, setCourierId] = useState<string>();
+  const [picked, setPicked] = useState<string>();
+  const couriers = useCouriers();
+  const self = useEmployee()?.employeeId;
+  const courierId = picked ?? couriers.data?.find(({ id }) => id === self)?.id;
   const blocked = useCommandsBlocked();
   const dispatch = useDeliveryTransition(delivery.orderId, {
     onDone: onClose,
@@ -48,7 +55,7 @@ export function DispatchDialog({ delivery, onClose, onChangedElsewhere }: Props)
             <DialogTitle>Expedir a entrega n.º {delivery.orderNumber}</DialogTitle>
             <DialogDescription>Escolha o estafeta que leva a entrega.</DialogDescription>
           </DialogHeader>
-          <Couriers courierId={courierId} onChange={setCourierId} disabled={locked} />
+          <Couriers couriers={couriers} courierId={courierId} onChange={setPicked} disabled={locked} />
           {/* A refusal because the delivery moved closes this dialog: the board says why. */}
           <CommandMessage blocked={blocked} error={dispatch.error} what="a expedição" />
           <DialogFooter>
@@ -70,10 +77,14 @@ export function DispatchDialog({ delivery, onClose, onChangedElsewhere }: Props)
   );
 }
 
-type CouriersProps = { courierId: string | undefined; onChange: (courierId: string) => void; disabled: boolean };
+type CouriersProps = {
+  couriers: ReturnType<typeof useCouriers>;
+  courierId: string | undefined;
+  onChange: (courierId: string) => void;
+  disabled: boolean;
+};
 
-function Couriers({ courierId, onChange, disabled }: CouriersProps) {
-  const couriers = useCouriers();
+function Couriers({ couriers, courierId, onChange, disabled }: CouriersProps) {
   if (couriers.data) {
     if (couriers.data.length === 0) {
       return <p className="text-muted-foreground">Esta loja não tem estafetas ativos. Um gestor atribui-os no BackOffice.</p>;
