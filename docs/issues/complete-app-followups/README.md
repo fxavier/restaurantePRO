@@ -84,6 +84,33 @@ The POS courier choice is already recorded in [../w1-followups/pos-delivery-cour
 - Direction: model the server's three checks (`require(p)`, `require(p, store)`, `requireInAnyStore(p)`) in the
   frontend `holds` helpers.
 
+## Left from the follow-ups wave (PRs #193–#198)
+
+Flaky backend tests (seen in CI; a re-run passed):
+- `RestartMatrixTest` (f) `listenerFailingTwiceIsCompletedByTheJob`: attempt 3 itself failed once (run 45230932307).
+  Lead from review: a projection that instance B left incomplete is resubmitted with (f)'s and shares the spy's
+  `projectDocument(any())` call sequence; stub only (f)'s document id. (#199 was closed: its race diagnosis was wrong.)
+- `InventoryPlanTest.theNegativeBalancesOfAStoreUseThePartialIndex` still flips plans on CI now and then, after the
+  #191 seeding; pin the plan more firmly (or assert the partial index is usable, not chosen).
+
+Small review notes not yet done:
+- `RoleHttpTest.everyListedRole` pages without a sort (`RoleService.list` has no ORDER BY); add `sort=id`.
+- `StockBalanceReconciliationJob.reconcile()` javadoc: "the last successful run's list, or null if none ran".
+- A service-level loyalty publish test with the clock behind the in-force publication (only the entity is tested).
+- `docs/issues/frontend-r1-followups/README.md` FE-F35 note and the applied V3017 comment still say the PIN check
+  uses the exact code; Q1 changed that (the migration comment stays, applied migrations are never edited).
+- KDS cards show decimal quantities with a dot ("1.5×"); format them pt-PT.
+
+Open questions from the PRs:
+- Cash adjustments do not say who recorded them (needs a public account-label read in identity); the adjustments
+  open under Sessões de caixa as there is no session detail page — confirm, or ask for a detail page.
+- Transfer shortfall: the reason is on the shortage movement and audit event, not on the transfer (its detail cannot
+  show it); one reason per receipt, not per line.
+- KDS items are read back from the round's printout; storing a structured snapshot with the ticket is the sturdier
+  design if the printout layout is ever changed.
+- Production destinations carry a code only (no name entity); KDS-only stations without a printer route appear only
+  through their rounds.
+
 ## Deferred features (out of this run's scope)
 
 - Fiscal adapter and the SAF-T / AT exports.
