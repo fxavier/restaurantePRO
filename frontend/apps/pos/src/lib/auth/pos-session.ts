@@ -15,6 +15,9 @@ export type Employee = {
   storeName: string;
   /** The store's IANA zone: every time is shown in it, not in the terminal's (FC §12). */
   storeTimeZone: string;
+  /** The session's terminal ("POS-02") and its name, which the status bar names; absent from an older backend. */
+  terminalCode?: string;
+  terminalName?: string;
 };
 
 /** Why the last session ended, shown once on the PIN pad; a switch says nothing. */
@@ -93,5 +96,7 @@ function toEmployee(view: SessionView): Employee {
     permissions: view.permissions,
     storeName: view.storeName,
     storeTimeZone: view.storeTimezone,
+    terminalCode: view.terminalCode ?? undefined,
+    terminalName: view.terminalName ?? undefined,
   };
 }

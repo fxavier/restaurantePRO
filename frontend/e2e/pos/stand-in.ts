@@ -15,6 +15,8 @@ export const SESSION = {
   storeName: 'Loja Baixa',
   storeTimezone: 'Africa/Maputo',
   currency: 'MZN',
+  terminalCode: 'POS-02',
+  terminalName: 'Caixa da sala',
   posSession: 'pos-session-e2e',
 };
 
