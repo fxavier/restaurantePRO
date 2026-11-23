@@ -112,13 +112,20 @@ public class LoyaltyProgramVersion {
         publishedByAccountId = Objects.requireNonNull(accountId, "accountId");
     }
 
-    /** PUBLISHED → RETIRED, when the next version is published. */
-    public void retire(Instant now) {
+    /**
+     * PUBLISHED → RETIRED, when the next version is published. Never before its publication (CHECK
+     * {@code retired_at >= published_at}, V12020): a wall clock that stepped back (NTP, skew between instances)
+     * retires it at its {@code publishedAt}.
+     *
+     * @return the retirement instant, at which the next version is published
+     */
+    public Instant retire(Instant now) {
         if (status != ProgramStatus.PUBLISHED) {
             throw LoyaltyConflictException.programNotDraft(id, status, "be retired");
         }
         status = ProgramStatus.RETIRED;
-        retiredAt = now;
+        retiredAt = now.isBefore(publishedAt) ? publishedAt : now;
+        return retiredAt;
     }
 
     public void requireDraft(String action) {
