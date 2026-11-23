@@ -1,17 +1,19 @@
-import { Clock, Lock, Receipt } from 'lucide-react';
+import { Money } from '@restaurantpro/ui';
+import { Clock, Lock, Receipt, TimerOff } from 'lucide-react';
 import { Fragment, type ReactNode } from 'react';
 import { useStoreTimeZone } from '../../../lib/auth/use-employee';
 import { clockTime, elapsedLabel, guestsLabel, minutesSince, seatsLabel } from '../format';
+import { type TileActivity, type TileState, tileState } from '../table-activity';
 import type { DiningTable } from '../table-map';
-import { type TableState, tableState } from '../table-state';
 
 /** One fixed height for every tile, whatever its state: a table that changes never moves the map (DS: ≥ 120 × 96). */
 const TILE_SIZE = 'h-44 w-full';
 
 /** DESIGN.md "Light reference": the state's tint, its 2px border, and its text colour for everything but the code. */
-const STATE_STYLE: Record<TableState, string> = {
+const STATE_STYLE: Record<TileState, string> = {
   free: 'border-success-border bg-success-tint text-success-text',
   occupied: 'border-warning-border bg-warning-tint text-warning-text',
+  overdue: 'border-destructive-border bg-destructive-tint text-destructive-text',
   bill: 'border-info-border bg-info-tint text-info-text',
   locked: 'border-destructive-border bg-destructive-tint text-destructive-text',
 };
@@ -20,44 +22,54 @@ type Indicator = { label: string; icon: ReactNode; variant: 'destructive' | 'inf
 
 /**
  * A table on the map (DESIGN.md "Light reference"): the state by tint and border, and always in words too: "Livre"
- * shown, "Ocupada" read out (guests and minutes open say it on screen); locked, bill requested and reserved as icon
- * and label lines, in that order, in a space kept for all three. A tap selects it for the detail panel (`selected` is
- * announced as pressed). The visible text is the name read out; the spaces between flex items separate its words for
- * assistive technology and take no room on screen.
+ * shown, "Ocupada" read out (guests and minutes open say it on screen); an occupied table's total as the server
+ * computed it; "N min sem ronda" when it has gone longer than the server's threshold without a round (red); locked,
+ * bill requested and reserved as icon and label lines, in that order. A tap selects it for the detail panel
+ * (`selected` is announced as pressed). The visible text is the name read out; the spaces between flex items separate
+ * its words for assistive technology and take no room on screen.
  */
 export function TableTile({
   table,
   now,
+  activity,
   selected,
   onSelect,
 }: {
   table: DiningTable;
   /** The map's clock, for the minutes a table has been open. */
   now: Date;
+  /** The open order's total and minutes without a round; none for a free table or before the read answers. */
+  activity?: TileActivity;
   selected: boolean;
   onSelect: () => void;
 }) {
   const timeZone = useStoreTimeZone();
   const occupied = table.status === 'OCCUPIED';
+  const state = tileState(table, activity?.overdue ?? false);
   const lines = indicators(table, timeZone);
+  if (state === 'overdue' && activity?.minutesWithoutRound != null) lines.unshift(overdueIndicator(activity.minutesWithoutRound));
 
   return (
     <button
       type="button"
       aria-pressed={selected}
       onClick={onSelect}
-      className={`${TILE_SIZE} flex flex-col rounded-xl border-2 p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card ${
-        STATE_STYLE[tableState(table)]
+      className={`${TILE_SIZE} flex flex-col overflow-hidden rounded-xl border-2 p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card ${
+        STATE_STYLE[state]
       } ${selected ? 'ring-2 ring-ring ring-offset-2 ring-offset-card' : ''}`}
     >
       <span className="min-w-0 truncate text-3xl font-bold text-foreground tabular-nums">
         <span className="sr-only">Mesa</span> {table.code}
       </span>{' '}
       <span className={`text-sm font-semibold ${occupied ? 'sr-only' : ''}`}>{occupied ? 'Ocupada' : 'Livre'}</span>{' '}
-      {/* Kept two lines high whatever the state: guests · minutes open, or a free table's seats. */}
-      <span className="h-10 text-sm tabular-nums">
+      <span className="text-sm leading-5 tabular-nums">
         {occupied ? occupiedDetails(table, now) : seatsLabel(table.seats)}
       </span>{' '}
+      {activity && (
+        <>
+          <Money value={activity.total} className="text-base font-semibold text-foreground" />{' '}
+        </>
+      )}
       <span className="mt-auto flex flex-col gap-0.5 text-sm font-medium">
         {lines.map((line) => (
           <Fragment key={line.label}>
@@ -78,6 +90,11 @@ function occupiedDetails(table: DiningTable, now: Date): string {
   if (table.guests !== null) details.push(guestsLabel(table.guests));
   if (table.openedAt) details.push(elapsedLabel(minutesSince(table.openedAt, now)));
   return details.join(' · ');
+}
+
+/** "58 min sem ronda": how long an overdue table has gone without a round. */
+function overdueIndicator(minutes: number): Indicator {
+  return { label: `${elapsedLabel(minutes)} sem ronda`, icon: <TimerOff aria-hidden="true" />, variant: 'destructive' };
 }
 
 /** DS priority: locked, bill requested (subtotal printed), reserved; the tile's lines and the detail panel's. */

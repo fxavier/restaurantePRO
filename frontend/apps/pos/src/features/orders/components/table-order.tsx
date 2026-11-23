@@ -1,6 +1,6 @@
 import { ApiError } from '@restaurantpro/api-client';
 import { Button, DataState, Money } from '@restaurantpro/ui';
-import { Clock, ListPlus, Minus, Plus } from 'lucide-react';
+import { CircleCheck, Clock, CookingPot, ListPlus, Minus, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { useStoreTimeZone } from '../../../lib/auth/use-employee';
@@ -11,6 +11,7 @@ import { useCatalog } from '../../catalog/hooks/use-catalog';
 import { clockTime } from '../../dining/format';
 import { roundRequest, useConfirmBatch } from '../hooks/use-confirm-batch';
 import { useOrder } from '../hooks/use-order';
+import { type KitchenState, useRoundKitchen } from '../hooks/use-round-kitchen';
 import { useDraftLineCommands } from '../hooks/use-order-commands';
 import { nextRoundNo, type Order, type OrderLine, quantityLabel, stepQuantity } from '../order';
 import { draftMessage } from './order-screen';
@@ -50,6 +51,8 @@ function OrderBody({ order, onAddItems }: { order: Order; onAddItems: () => void
   const blocked = useCommandsBlocked();
   const timeZone = useStoreTimeZone();
   const { update } = useDraftLineCommands(order.id);
+  // Supplementary: until it answers, or if it fails, the rounds show no kitchen state.
+  const kitchen = useRoundKitchen(order.id);
   // The round number the last "Enviar" got from the server (null: an answer without it).
   const [sentBatchNo, setSentBatchNo] = useState<number | null>();
   const send = useConfirmBatch(order.id, { onSent: (batch) => setSentBatchNo(batch?.batchNo ?? null) });
@@ -85,7 +88,8 @@ function OrderBody({ order, onAddItems }: { order: Order; onAddItems: () => void
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <ScrollRegion label="Linhas do pedido" className="flex min-h-0 flex-1 flex-col gap-4 px-4 py-3">
+      {/* Compact (light reference): at 1024 × 768 the sent round and three drafts show without scrolling. */}
+      <ScrollRegion label="Linhas do pedido" className="flex min-h-0 flex-1 flex-col gap-2 px-4 py-2">
         {update.error && (
           <p role="alert" className="rounded-lg border border-destructive px-3 py-2 font-medium text-error">
             {draftMessage(update.error)}
@@ -99,10 +103,13 @@ function OrderBody({ order, onAddItems }: { order: Order; onAddItems: () => void
               const time = clockTime(round.confirmedAt, timeZone);
               return (
                 <section key={round.id} className="flex flex-col gap-1">
-                  {/* Every round the server confirmed has been sent to production; its kitchen state is not on the order. */}
-                  <h3 className="text-sm font-medium text-muted-foreground">
-                    Ronda {round.batchNo} · enviada · {time}
-                  </h3>
+                  {/* Every round the server confirmed has been sent to production; the kitchen says how far along it is. */}
+                  <div className="flex flex-wrap items-center gap-x-2">
+                    <h3 className="text-sm font-medium text-muted-foreground">
+                      Ronda {round.batchNo} · enviada · {time}
+                    </h3>{' '}
+                    <KitchenChip state={kitchen.data?.get(round.id)} />
+                  </div>
                   <ul aria-label={`Ronda ${round.batchNo}, ${time}`} className="flex flex-col">
                     {round.lines.map((line) => (
                       <SentLine key={line.id} line={line} name={nameOf(line)} />
@@ -123,14 +130,14 @@ function OrderBody({ order, onAddItems }: { order: Order; onAddItems: () => void
             )}
           </>
         )}
-        <section aria-labelledby="table-draft-title" className="flex flex-col gap-2">
+        <section aria-labelledby="table-draft-title" className="flex flex-col gap-1">
           <h3 id="table-draft-title" className="text-sm font-medium text-muted-foreground">
             Ronda {next} · rascunho
           </h3>
           {order.drafts.length === 0 ? (
             <p className="text-muted-foreground">Sem linhas por enviar.</p>
           ) : (
-            <ul aria-label="Por enviar" className="flex flex-col gap-1">
+            <ul aria-label="Por enviar" className="flex flex-col gap-0.5">
               {order.drafts.map((line) => (
                 <DraftLine
                   key={line.id}
@@ -149,17 +156,17 @@ function OrderBody({ order, onAddItems }: { order: Order; onAddItems: () => void
           </Button>
         </section>
       </ScrollRegion>
-      <footer className="flex flex-col gap-2 border-t px-4 pt-3">
+      <footer className="flex flex-col gap-2 border-t px-4 pt-2">
         {blocked && <p className="text-sm font-medium text-error">Sem ligação — nenhuma ronda é enviada.</p>}
-        <div>
-          <div role="group" aria-label="Total" className="flex items-baseline justify-between gap-2">
-            <span className="text-muted-foreground">Total</span>
-            <Money value={order.due} className="text-3xl font-bold" />
-          </div>
-          {/* Always one line high, so the buttons below never move. */}
-          <p className="min-h-5 text-sm text-muted-foreground">
-            {order.drafts.length > 0 ? 'Não inclui as linhas por enviar' : ''}
-          </p>
+        <div role="group" aria-label="Total" className="flex items-end justify-between gap-3">
+          <div className="flex min-w-0 flex-col">
+            <span className="text-sm text-muted-foreground">Total</span>{' '}
+            {/* Always one line high, so the buttons below never move. */}
+            <span className="min-h-4 text-xs text-muted-foreground">
+              {order.drafts.length > 0 ? 'Não inclui as linhas por enviar' : ''}
+            </span>
+          </div>{' '}
+          <Money value={order.due} className="shrink-0 text-2xl font-bold" />
         </div>
         <div className="grid grid-cols-2 gap-2">
           <Button asChild variant="outline" size="touch" className="rounded-xl bg-card">
@@ -182,9 +189,30 @@ function OrderBody({ order, onAddItems }: { order: Order; onAddItems: () => void
   );
 }
 
+/** "pronta" (every station has it ready) or "em preparação"; a round still queued, or already served, has no chip. */
+function KitchenChip({ state }: { state: KitchenState | undefined }) {
+  if (state === 'READY') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-success-tint px-2 text-sm font-medium text-success-text">
+        <CircleCheck aria-hidden="true" className="size-4" />
+        pronta
+      </span>
+    );
+  }
+  if (state === 'IN_PREPARATION') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-warning-tint px-2 text-sm font-medium text-warning-text">
+        <CookingPot aria-hidden="true" className="size-4" />
+        em preparação
+      </span>
+    );
+  }
+  return null;
+}
+
 function SentLine({ line, name }: { line: OrderLine; name: string }) {
   return (
-    <li className="flex items-baseline justify-between gap-2 py-1">
+    <li className="flex items-baseline justify-between gap-2">
       <span>
         {quantityLabel(line.quantity)}× {name}
       </span>{' '}
@@ -193,7 +221,10 @@ function SentLine({ line, name }: { line: OrderLine; name: string }) {
   );
 }
 
-/** A draft: its name and provisional price, and − / quantity / +; "−" stops at one (removing is on the order screen). */
+/**
+ * A draft: its name and provisional price, and − / quantity / +; "−" stops at one (removing is on the order screen).
+ * The row is as high as its 48 px steppers, no more.
+ */
 function DraftLine({
   line,
   name,
@@ -210,9 +241,9 @@ function DraftLine({
   const less = stepQuantity(line.quantity, -1);
   const more = stepQuantity(line.quantity, 1);
   return (
-    <li className={`flex items-center gap-2 rounded-lg px-2 py-1 ${pending ? 'bg-warning-tint text-warning-text' : ''}`}>
+    <li className={`flex items-center gap-2 rounded-lg px-2 ${pending ? 'bg-warning-tint text-warning-text' : ''}`}>
       <div className="min-w-0 flex-1">
-        <p className="font-medium">
+        <p className="leading-5 font-medium">
           {quantityLabel(line.quantity)}× {name}
         </p>{' '}
         <p className={`flex flex-wrap items-center gap-1 text-sm ${pending ? '' : 'text-muted-foreground'}`}>

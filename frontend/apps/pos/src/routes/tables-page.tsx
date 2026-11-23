@@ -5,6 +5,7 @@ import { useNavigate, useSearchParams } from 'react-router';
 import { TableDetailPanel } from '../features/dining/components/table-detail-panel';
 import { TableMapView } from '../features/dining/components/table-map-view';
 import { TableSummary } from '../features/dining/components/table-summary';
+import { useTableActivity } from '../features/dining/hooks/use-table-activity';
 import { useTableMap } from '../features/dining/hooks/use-table-map';
 import type { DiningTable } from '../features/dining/table-map';
 import { OpenTableDialog } from '../features/orders/components/open-table-dialog';
@@ -19,6 +20,8 @@ import { StatusBar } from './status-bar';
  */
 export function TablesPage() {
   const map = useTableMap();
+  // The tiles' totals and overdue state; the map works without them (a failed read shows tiles without amounts).
+  const activity = useTableActivity();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [opening, setOpening] = useState<DiningTable>();
@@ -71,6 +74,7 @@ export function TablesPage() {
                     onArea={(area) => setParams({ area }, { replace: true })}
                     selected={selected?.id}
                     onSelect={setSelectedId}
+                    activity={activity.data}
                   />
                 </section>
                 <TableDetailPanel

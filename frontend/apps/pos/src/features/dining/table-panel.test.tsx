@@ -3,6 +3,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import { delay, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import {
+  BATCH_ID,
   batchEndpoint,
   type BatchView,
   catalogEndpoint,
@@ -17,7 +18,16 @@ import {
   withLines,
 } from '../../test/order';
 import { renderPos } from '../../test/render-pos';
-import { problem, tableMap, tablesEndpoint, token, tokenEndpoint } from '../../test/server';
+import {
+  notificationsEndpoint,
+  problem,
+  recording,
+  roundsEndpoint,
+  tableMap,
+  tablesEndpoint,
+  token,
+  tokenEndpoint,
+} from '../../test/server';
 import { id, MAP } from '../../test/table-map';
 
 // The table map's right panel for an occupied table (light reference, 2026-11-23): the open order's rounds, the draft
@@ -87,6 +97,40 @@ describe('the selected table\'s order', () => {
       formatMoney({ amount: '1350.00', currency: 'MZN' }).replace(/\s/g, ' '),
     );
     expect(within(panel()).getByText('Não inclui as linhas por enviar')).toBeInTheDocument();
+  });
+
+  it('a round the kitchen has ready says "pronta"; the kitchen is read once for the whole order', async () => {
+    const rounds = roundsEndpoint([{ batchId: BATCH_ID, status: 'READY' }]);
+    await atM2();
+
+    const sent = await within(panel()).findByRole('list', { name: 'Ronda 1, 12:10' });
+    const kitchen = await within(sent.parentElement!).findByText('pronta');
+    expect(kitchen).toHaveClass('text-success-text');
+    expect(rounds).toHaveLength(1);
+    expect(rounds[0]!.url).toMatch(new RegExp(`/api/v1/pos/production-tickets/rounds\\?orderId=${ORDER_ID}$`));
+  });
+
+  it('a round being cooked says "em preparação"; a queued or served one has no chip', async () => {
+    roundsEndpoint([{ batchId: BATCH_ID, status: 'IN_PREPARATION' }]);
+    await atM2();
+
+    const sent = await within(panel()).findByRole('list', { name: 'Ronda 1, 12:10' });
+    expect(await within(sent.parentElement!).findByText('em preparação')).toBeInTheDocument();
+    expect(within(sent.parentElement!).queryByText('pronta')).not.toBeInTheDocument();
+  });
+
+  it('the kitchen read again on a production change shows the round ready', async () => {
+    const answers = [[{ batchId: BATCH_ID, status: 'QUEUED' as const }], [{ batchId: BATCH_ID, status: 'READY' as const }]];
+    recording<undefined>('get', '/api/v1/pos/production-tickets/rounds', () => HttpResponse.json(answers.length > 1 ? answers.shift() : answers[0]));
+    const stream = notificationsEndpoint();
+    await atM2();
+    const sent = await within(panel()).findByRole('list', { name: 'Ronda 1, 12:10' });
+    expect(within(sent.parentElement!).queryByText('pronta')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('status', { name: 'Ligação' })).toHaveTextContent('Ligado'));
+
+    stream.streams[0]!.change('PRODUCTION_TICKETS', id(9001));
+
+    expect(await within(sent.parentElement!).findByText('pronta')).toBeInTheDocument();
   });
 
   it('a loading order is announced; a failed read offers "Tentar novamente"', async () => {
