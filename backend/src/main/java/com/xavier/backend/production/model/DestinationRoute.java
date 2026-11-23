@@ -1,6 +1,7 @@
 package com.xavier.backend.production.model;
 
 import com.xavier.backend.production.model.dto.DestinationRouteView;
+import com.xavier.backend.production.model.dto.ProductionDestinationView;
 import jakarta.persistence.Column;
 import jakarta.persistence.Embeddable;
 import jakarta.persistence.EmbeddedId;
@@ -36,6 +37,10 @@ public class DestinationRoute {
 
     public DestinationRouteView toView() {
         return new DestinationRouteView(key.destinationCode, printerId);
+    }
+
+    public ProductionDestinationView toDestination() {
+        return new ProductionDestinationView(key.destinationCode);
     }
 
     @Embeddable

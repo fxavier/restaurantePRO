@@ -1,5 +1,6 @@
 package com.xavier.backend.production.model;
 
+import com.xavier.backend.production.model.dto.TicketItemView;
 import com.xavier.backend.production.model.dto.TicketView;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -135,8 +136,16 @@ public class ProductionTicket {
 
     /** @param kitchen the round's kitchen progress (ADR 0044), or {@code null} when the ticket has none */
     public TicketView toView(KitchenProgress kitchen) {
+        Printout printout = printout();
         return new TicketView(id, storeId, sourceType, sourceId, destination, kind, orderId, terminalId, routing,
-                printerId, suppressed, lines(), createdAt, kitchen == null ? null : kitchen.toView());
+                printerId, suppressed, printout.plainText(), items(printout), createdAt,
+                kitchen == null ? null : kitchen.toView());
+    }
+
+    /** Only a round has items; its stored printout is all it records of them. */
+    private List<TicketItemView> items(Printout printout) {
+        return sourceType == TicketSource.BATCH && printout.format() == ContentFormat.STYLED_V1
+                ? RoundItems.read(printout.lines()) : List.of();
     }
 
     public UUID getId() {
