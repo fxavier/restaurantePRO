@@ -188,6 +188,8 @@ public class TransferService {
     private void receiveInto(StockTransfer transfer, Map<UUID, BigDecimal> received, String reason, Instant now,
                              LocalDate day) {
         transfer.receive(received, reason, actorId(), now);
+        // the reason explains a loss: a full receipt has none to explain, so a reason sent with one is not kept
+        String loss = transfer.getLines().stream().anyMatch(line -> line.shortfall().signum() > 0) ? reason : null;
         List<PostMovement> movements = new ArrayList<>();
         for (TransferLine line : transfer.getLines()) {
             // the IN carries exactly the value its OUT took (D113 as amended): a transfer never creates value. It is
@@ -203,11 +205,11 @@ public class TransferService {
             if (line.shortfall().signum() > 0) {
                 movements.add(PostMovement.of(transfer.getToWarehouseId(), line.getStockItemId(),
                         MovementType.TRANSFER_SHORTAGE, line.shortfall().negate(), SOURCE_TYPE, transfer.getId(),
-                        day, now).atCost(line.getUnitCost()).withReason(reason));
+                        day, now).atCost(line.getUnitCost()).withReason(loss));
             }
         }
         ledger.post(movements);
-        audit("STOCK_TRANSFER_RECEIVED", transfer, transfer.getToStoreId(), reason);
+        audit("STOCK_TRANSFER_RECEIVED", transfer, transfer.getToStoreId(), loss);
     }
 
     private List<TransferLine> lines(List<TransferLineRequest> requested) {

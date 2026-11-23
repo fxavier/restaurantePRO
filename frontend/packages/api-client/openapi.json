@@ -6019,6 +6019,9 @@
             "type": "string"
           }
         },
+        "required": [
+          "lines"
+        ],
         "type": "object"
       },
       "com.xavier.backend.inventory.model.dto.ReceiveRequest.Line": {

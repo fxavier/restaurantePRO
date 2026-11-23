@@ -107,14 +107,13 @@ class StockTransferTest {
     }
 
     @Test
-    void aLineGivenNoReceivedQuantityArrivedAsShipped() {
+    void everyShippedLineNeedsAReceivedQuantity() {
         StockTransfer transfer = shipped();
 
-        transfer.receive(Map.of(), null, null, NOW);
-
-        assertThat(transfer.getStatus()).isEqualTo(TransferStatus.RECEIVED);
-        assertThat(transfer.getLines().getFirst().getQuantityReceived()).isEqualByComparingTo("10");
-        assertThat(transfer.getLines().getFirst().shortfall()).isZero();
+        assertThatThrownBy(() -> transfer.receive(Map.of(), null, null, NOW))
+                .isInstanceOfSatisfying(InventoryRuleException.class,
+                        refused -> assertThat(refused.code()).isEqualTo("INVALID_QUANTITY"));
+        assertThat(transfer.getStatus()).isEqualTo(TransferStatus.SHIPPED);
     }
 
     @Test

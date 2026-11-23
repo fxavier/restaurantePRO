@@ -102,18 +102,44 @@ class TransferBetweenStoresTest {
     }
 
     @Test
-    void aReceiptWithoutLinesReceivesEverythingAsShipped() throws Exception {
+    void aReceiptNamesEveryShippedLineOnce() throws Exception {
+        UUID other = fixtures.newStockItem("un");
+        UUID transfer = id(mvc.perform(idem(post(BO + "/transfers")).with(managerOf(storeA))
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"fromWarehouseId": "%s", "toWarehouseId": "%s",
+                                 "lines": [{"stockItemId": "%s", "quantity": 4}, {"stockItemId": "%s", "quantity": 1}]}"""
+                                .formatted(warehouseA, warehouseB, item, other)))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        command(transfer, "ship", managerOf(storeA)).andExpect(status().isOk());
+
+        receiveBody(transfer, "{}").andExpect(status().isBadRequest());
+        receiveBody(transfer, """
+                {"lines": [{"stockItemId": "%s", "quantityReceived": 4}]}""".formatted(item))
+                .andExpect(status().isUnprocessableContent()).andExpect(jsonPath("$.code").value("INVALID_QUANTITY"));
+        receiveBody(transfer, """
+                {"lines": [{"stockItemId": "%1$s", "quantityReceived": 4},
+                           {"stockItemId": "%1$s", "quantityReceived": 3}], "reason": "twice"}""".formatted(item))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("DUPLICATE_STOCK_ITEM"));
+
+        assertThat(balance(warehouseB)).isNull();
+        mvc.perform(get(BO + "/transfers/" + transfer).with(managerOf(storeB)))
+                .andExpect(jsonPath("$.status").value("SHIPPED"));
+    }
+
+    @Test
+    void aReasonGivenWithAFullReceiptIsIgnored() throws Exception {
         UUID transfer = create(warehouseA, warehouseB, "4", managerOf(storeA));
         command(transfer, "ship", managerOf(storeA)).andExpect(status().isOk());
 
-        mvc.perform(idem(post(BO + "/transfers/" + transfer + "/receive")).with(managerOf(storeB))
-                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.lines[0].quantityReceived").value(4.0))
+        receive(transfer, "4", "nada a declarar", managerOf(storeB)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.lines[0].shortfall").value(0.0));
 
-        assertThat(balance(warehouseB)).isEqualTo("4.000000|12.0000");
         assertThat(movements(transfer)).hasSize(2);
+        assertThat(jdbc.sql("""
+                        SELECT count(*) FROM audit.audit_event WHERE action = 'STOCK_TRANSFER_RECEIVED'
+                        AND entity_id = ? AND reason IS NULL""")
+                .param(transfer.toString()).query(Long.class).single()).isEqualTo(1L);
     }
 
     @Test
@@ -230,6 +256,11 @@ class TransferBetweenStoresTest {
                 .contentType(MediaType.APPLICATION_JSON).content("""
                         {"lines": [{"stockItemId": "%s", "quantityReceived": %s}], "reason": "%s"}"""
                         .formatted(item, quantity, reason)));
+    }
+
+    private ResultActions receiveBody(UUID transfer, String body) throws Exception {
+        return mvc.perform(idem(post(BO + "/transfers/" + transfer + "/receive")).with(managerOf(storeB))
+                .contentType(MediaType.APPLICATION_JSON).content(body));
     }
 
     private String shortageReason(UUID transfer) {
