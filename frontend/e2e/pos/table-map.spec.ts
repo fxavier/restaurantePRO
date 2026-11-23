@@ -65,7 +65,7 @@ test('a live change re-reads the map, and no tile moves or resizes when its stat
   const m1 = page.getByRole('button', { name: /^Mesa M1 / });
   await expect(m1).toHaveAccessibleName('Mesa M1 Livre 4 lugares');
   await expect(page.getByRole('button', { name: /^Mesa M2 / })).toHaveAccessibleName(
-    /^Mesa M2 Ocupada 2 pessoas desde \d\d:\d\d Bloqueada Subtotal Reservada \d\d:\d\d$/,
+    /^Mesa M2 Ocupada 2 pessoas · (\d+ h )?\d+ min Bloqueada Conta pedida Reservada \d\d:\d\d$/,
   );
   const before = await boxes(page);
   const tile = await m1.boundingBox();

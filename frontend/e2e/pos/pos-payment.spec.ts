@@ -159,7 +159,7 @@ async function atBill(page: Page, bill: object = BILL) {
   await standIn(page, bill);
   await logIn(page);
   await tile(page, 'M2').click();
-  await page.getByRole('complementary', { name: 'Detalhe da mesa' }).getByRole('link', { name: 'Cobrar' }).click();
+  await page.getByRole('complementary', { name: 'Detalhe da mesa' }).getByRole('link', { name: 'Subtotal' }).click();
   await expect(page.getByRole('heading', { name: 'Conta da mesa M2' })).toBeVisible();
   await expect(page.getByRole('group', { name: 'Resumo da conta' })).toBeVisible();
 }
