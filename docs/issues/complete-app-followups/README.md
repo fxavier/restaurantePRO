@@ -37,6 +37,10 @@ The POS courier choice is already recorded in [../w1-followups/pos-delivery-cour
 - Add `@vitest/coverage-v8` so crapper can read frontend coverage (UB tools ran advisory on the frontend this run).
 - The e2e stack ports are set per run through `E2E_PROJECT` and `E2E_*_PORT` (FE-F20); deriving them per worktree
   automatically would stop two worktrees colliding on the defaults.
+- `RoleHttpTest.theSeededRolesAreListed` and `SystemEventPublicationHttpTest` assert on the first page (200 rows) of
+  the shared test tenant; read every page, as `StoreHttpTest` now does, before those tables outgrow it.
+- `StockBalanceReconciliationJob.reconcile()` seems to return only the last tenant's result when it runs for every
+  tenant; check whether the return value should cover all of them (found while fixing test-order failures, #191).
 - Docker on the dev machine holds about 120 GB of Testcontainers images and volumes from this run; prune it
   (`docker system prune` after checking nothing needed is stopped).
 
