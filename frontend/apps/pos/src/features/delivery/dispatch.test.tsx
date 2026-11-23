@@ -43,6 +43,8 @@ describe('dispatching a delivery with a courier', () => {
     expect(sent).toHaveLength(1);
     expect(sent[0]!.body).toEqual({ courierEmployeeId: COURIER.rita.id, version: 0 });
     expect(sent[0]!.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
+    // The terminal's POS session rides on the command (D182).
+    expect(sent[0]!.posSession).toBe('pos-session-ana');
   });
 
   it('names each courier with their code, and sends nothing when cancelled', async () => {
