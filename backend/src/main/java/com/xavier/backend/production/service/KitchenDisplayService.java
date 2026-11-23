@@ -72,17 +72,20 @@ public class KitchenDisplayService {
         notifier.notifyAfterCommit(ticket.getStoreId(), ChangeTopic.PRODUCTION_TICKETS, ticket.getId());
     }
 
+    /** The rounds still on the screen; BUMPED ones are history, listed only when asked for. */
+    static final Set<KitchenStatus> ON_SCREEN = EnumSet.of(KitchenStatus.QUEUED, KitchenStatus.IN_PREPARATION,
+            KitchenStatus.READY);
+
     /**
      * The session store's rounds, oldest first.
      *
      * @param destination the station (a production destination code), or {@code null} for all
-     * @param statuses    the statuses to show; empty for all
+     * @param statuses    the statuses to show; empty for those still on the screen ({@link #ON_SCREEN})
      */
     @Transactional(readOnly = true)
     public PageResponse<TicketView> listForPos(String destination, Set<KitchenStatus> statuses, Pageable pageable) {
         PosContext pos = accessPolicy.requirePos(Permission.PRODUCTION_VIEW);
-        Set<KitchenStatus> shown = statuses == null || statuses.isEmpty() ? EnumSet.allOf(KitchenStatus.class)
-                : statuses;
+        Set<KitchenStatus> shown = statuses == null || statuses.isEmpty() ? ON_SCREEN : statuses;
         Page<KitchenProgress> page = destination == null
                 ? progresses.findByStoreIdAndStatusIn(pos.storeId(), shown, pageable)
                 : progresses.findByStoreIdAndDestinationAndStatusIn(pos.storeId(), destination, shown, pageable);

@@ -27,7 +27,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * The kitchen display on the POS (ADR 0044): a station's rounds ({@code destination}, the production destination
- * code) by {@code status} (repeatable; none = all), oldest first, and the idempotent commands start, ready, bump and
+ * code) by {@code status} (repeatable; none = QUEUED, IN_PREPARATION and READY, the rounds still on the screen),
+ * oldest first, and the idempotent commands start, ready, bump and
  * recall, each with the version the screen shows.
  */
 @RestController
