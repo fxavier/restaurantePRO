@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
@@ -25,10 +26,14 @@ public final class OrdersTestClock extends Clock {
         pinned = null;
     }
 
+    /**
+     * Microsecond-precise like the application clock ({@code ClockConfiguration}): PostgreSQL keeps microseconds, and on
+     * Linux the system clock has nanoseconds, so an instant returned in memory would differ from the one read back.
+     */
     @Override
     public Instant instant() {
         Instant now = pinned;
-        return now != null ? now : Instant.now();
+        return now != null ? now : Instant.now(Clock.systemUTC()).truncatedTo(ChronoUnit.MICROS);
     }
 
     @Override
