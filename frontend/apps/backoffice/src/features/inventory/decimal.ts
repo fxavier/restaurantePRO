@@ -16,3 +16,17 @@ export function toDecimal(input: string): string | undefined {
 export function isPositive(decimal: string): boolean {
   return !decimal.startsWith('-') && /[1-9]/.test(decimal);
 }
+
+/**
+ * The order of two decimal strings of zero or more (as `toDecimal` or the contract writes them: `4.5`, `5.000000`),
+ * by their digits alone, never through a float: -1, 0 or 1.
+ */
+export function compareDecimals(a: string, b: string): -1 | 0 | 1 {
+  const [aWhole = '', aFraction = ''] = a.split('.');
+  const [bWhole = '', bFraction = ''] = b.split('.');
+  const width = Math.max(aFraction.length, bFraction.length);
+  const digits = (whole: string, fraction: string) => `${whole.replace(/^0+/, '')}.${fraction.padEnd(width, '0')}`;
+  const [x, y] = [digits(aWhole, aFraction), digits(bWhole, bFraction)];
+  if (x.length !== y.length) return x.length < y.length ? -1 : 1;
+  return x === y ? 0 : x < y ? -1 : 1;
+}

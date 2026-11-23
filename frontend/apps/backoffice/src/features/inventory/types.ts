@@ -16,6 +16,7 @@ export type BelowMinimumReport = Report<'model.dto.BelowMinimumRow'>;
 export type CountView = Dto<'count.model.dto.CountView'>;
 export type CountRequest = Dto<'count.model.dto.CountRequest'>;
 export type TransferView = Dto<'model.dto.TransferView'>;
+export type ReceiveTransferRequest = Dto<'model.dto.ReceiveRequest'>;
 export type SupplierView = Dto<'purchasing.model.dto.SupplierView'>;
 export type SupplierRequest = Dto<'purchasing.model.dto.SupplierRequest'>;
 export type PurchaseOrderView = Dto<'purchasing.model.dto.PurchaseOrderView'>;

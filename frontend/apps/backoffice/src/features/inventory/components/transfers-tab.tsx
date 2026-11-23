@@ -12,15 +12,16 @@ import {
 } from '@restaurantpro/ui';
 import { PackageCheck, Truck, type LucideIcon } from 'lucide-react';
 import { useState } from 'react';
-import { formatDateTime, formatQuantity } from '../format';
+import { formatDateTime } from '../format';
 import { useTransferAction } from '../hooks/use-inventory-commands';
-import { LIST_PAGE_SIZE, useItemLookup, useNames, useTransfers } from '../hooks/use-inventory-reads';
+import { LIST_PAGE_SIZE, useNames, useTransfers } from '../hooks/use-inventory-reads';
 import { usePermission } from '../hooks/use-permission';
 import { useRowCommand } from '../hooks/use-row-command';
 import type { TransferView } from '../types';
 import { CommandError } from './command-error';
-import { ConfirmDialog, type Confirmation } from './form-dialog';
+import { FormDialog } from './form-dialog';
 import { Pages, QueryState } from './query-state';
+import { ReceiveTransferForm } from './receive-transfer-form';
 import { ScrollTable } from './scroll-table';
 import { StateBadge, transferStates } from './state-badge';
 
@@ -37,7 +38,7 @@ const NEXT_STEP: Record<string, Step | undefined> = {
 
 /**
  * "Transferências" (§5 inventory, D120): the store's transfers between warehouses; ship a draft, receive a shipped
- * one as shipped. Creating a transfer and a partial receipt are follow-ups.
+ * one with what arrived of each line and, when short, why (Q3). Creating a transfer is a follow-up.
  */
 export function TransfersTab({ storeId, timeZone }: { storeId: string; timeZone: string | undefined }) {
   const [page, setPage] = useState(0);
@@ -45,28 +46,10 @@ export function TransfersTab({ storeId, timeZone }: { storeId: string; timeZone:
   const names = useNames(storeId);
   const action = useRowCommand(useTransferAction());
   const canTransfer = usePermission('INVENTORY_TRANSFER', storeId);
-  const { item } = useItemLookup();
-  const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const rows = transfers.data?.rows;
   const warehouse = (id?: string) => names.warehouseName(id, 'Outra loja');
   const route = (transfer: TransferView) => `${warehouse(transfer.fromWarehouseId)} → ${warehouse(transfer.toWarehouseId)}`;
-  const shipped = (transfer: TransferView) =>
-    (transfer.lines ?? [])
-      .map((line) => {
-        const stockItem = item(line.stockItemId);
-        return `${formatQuantity(line.quantityShipped, stockItem?.baseUnit)} de ${stockItem?.name ?? '—'}`;
-      })
-      .join(', ');
-  const run = (transfer: TransferView, name: Step['action']) =>
-    action.run({ id: transfer.id!, action: name, label: route(transfer), transfer });
-  /** Receiving credits the destination with what was shipped and cannot be undone: the user reads it first. */
-  const confirmReceive = (transfer: TransferView) =>
-    setConfirmation({
-      title: `Receber a transferência ${route(transfer)}?`,
-      description: `Fica registado como recebido o que foi enviado: ${shipped(transfer)}. Não pode ser desfeito: uma diferença exige um ajuste de stock.`,
-      action: 'Receber transferência',
-      onConfirm: () => run(transfer, 'receive'),
-    });
+  const ship = (transfer: TransferView) => action.run({ id: transfer.id!, action: 'ship', label: route(transfer) });
 
   return (
     <Card className="gap-4">
@@ -104,7 +87,7 @@ export function TransfersTab({ storeId, timeZone }: { storeId: string; timeZone:
                         storeId={storeId}
                         route={route(transfer)}
                         pending={action.pending}
-                        onRun={(name) => (name === 'receive' ? confirmReceive(transfer) : run(transfer, name))}
+                        onShip={() => ship(transfer)}
                       />
                     )}
                   </TableCell>
@@ -115,7 +98,6 @@ export function TransfersTab({ storeId, timeZone }: { storeId: string; timeZone:
           <Pages page={page} total={transfers.data?.totalElements ?? 0} size={LIST_PAGE_SIZE} onPage={setPage} />
         </QueryState>
       </CardContent>
-      <ConfirmDialog confirmation={confirmation} onClose={() => setConfirmation(null)} />
     </Card>
   );
 }
@@ -125,18 +107,37 @@ type TransferActionProps = {
   storeId: string;
   route: string;
   pending: boolean;
-  onRun: (action: Step['action']) => void;
+  onShip: () => void;
 };
 
-function TransferAction({ transfer, storeId, route, pending, onRun }: TransferActionProps) {
+/** Shipping is one tap; receiving opens what arrived, which cannot be undone once registered. */
+function TransferAction({ transfer, storeId, route, pending, onShip }: TransferActionProps) {
   const step = NEXT_STEP[transfer.status ?? ''];
   if (!step || transfer[step.side] !== storeId) return null;
+  const label = `${step.label} transferência ${route}`;
   return (
     <div className="flex justify-end">
-      <Button size="sm" aria-label={`${step.label} transferência ${route}`} disabled={pending} onClick={() => onRun(step.action)}>
-        <step.icon aria-hidden="true" />
-        {step.label}
-      </Button>
+      {step.action === 'ship' ? (
+        <Button size="sm" aria-label={label} disabled={pending} onClick={onShip}>
+          <step.icon aria-hidden="true" />
+          {step.label}
+        </Button>
+      ) : (
+        <FormDialog
+          trigger={
+            <>
+              <step.icon aria-hidden="true" />
+              {step.label}
+            </>
+          }
+          triggerLabel={label}
+          triggerSize="sm"
+          title={`Receber a transferência ${route}`}
+          description="O que chegou, por artigo, na unidade base. O que não chegou fica registado como perda da transferência, com o motivo. Não pode ser desfeito."
+        >
+          {(close) => <ReceiveTransferForm transfer={transfer} onDone={close} />}
+        </FormDialog>
+      )}
     </div>
   );
 }
