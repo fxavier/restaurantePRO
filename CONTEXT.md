@@ -139,7 +139,7 @@ Canonical terms from spec §8.1. Code uses the English name; the Portuguese term
 | Delivery | Entrega | orders | The lifecycle of a DELIVERY order: PENDING → OUT_FOR_DELIVERY → DELIVERED, or RETURNED → re-dispatch or cancel. Separate from the order's lifecycle, financial and fiscal states; the order closes only once DELIVERED. |
 | DeliveryZone | Zona de entrega | orders | A store's delivery area with its fee item, added as an automatic FEE line when a delivery order opens. |
 | DeliveryEvent | Evento de entrega | orders | A fact: one delivery transition (dispatch, delivered, returned, cancel), with who and when. The delivery history. |
-| Courier | Estafeta | orders, identity | The employee, assigned to the store, a delivery is dispatched to. Their cash is recorded by a cashier in the cashier's own session. |
+| Courier | Estafeta | orders, identity | The active employee, whose role in the store holds `DELIVERY_COURIER`, a delivery is dispatched to. Their cash is recorded by a cashier in the cashier's own session. |
 | Delivery slip | Guia de entrega | production | A non-fiscal ticket (`DELIVERY_SLIP`) printed at dispatch: customer, phone, address, items, amount due. A re-dispatch prints a new one. |
 | Printer profile | Perfil de impressora | production | A printer's stored ESC/POS settings: paper width and columns, code page (and table override), cut mode, feed lines, status probe, drawer pin and pulse. Presets only fill the form. |
 | Drawer kick | Abertura de gaveta | production | An `ESC p` job on the terminal's receipt printer after a cash payment or refund, or a manual open with a reason: one attempt, never held, retried or redirected; a late kick is FAILED `KICK_EXPIRED` at issue, or at claim if its 30 s pass while it is queued. |

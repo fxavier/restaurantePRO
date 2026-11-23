@@ -34,13 +34,17 @@ public final class DevSeed {
 
     // ---- the fixed dev credentials, printed by design ----
 
+    /** {@code role} null: the seed's own courier role, created first (no seeded profile holds DELIVERY_COURIER). */
     record Person(String code, String name, String pin, UUID role, String job) {
     }
+
+    /** The courier's role: DELIVERY_COURIER only (complete-app Q4), so ESTAFETA is listed and accepted at dispatch. */
+    static final String COURIER_ROLE_NAME = "Estafeta";
 
     static final Person GERENTE = new Person("GERENTE", "Gerente", "1111", MANAGER_ROLE, "approver");
     static final Person CAIXA = new Person("CAIXA", "Caixa", "2222", CASHIER_ROLE, "cashier");
     static final Person EMPREGADO = new Person("EMPREGADO", "Empregado", "3333", WAITER_ROLE, "waiter");
-    static final Person ESTAFETA = new Person("ESTAFETA", "Estafeta", "4444", WAITER_ROLE, "courier");
+    static final Person ESTAFETA = new Person("ESTAFETA", "Estafeta", "4444", null, "courier");
     static final List<Person> PEOPLE = List.of(GERENTE, CAIXA, EMPREGADO, ESTAFETA);
 
     /** A BackOffice account; the policy needs at least 12 characters (PasswordPolicy), so "Stock-2026!" has two "!". */
@@ -315,9 +319,12 @@ public final class DevSeed {
     // ---- 2. employees (PINs) and BackOffice accounts ----
 
     private void seedPeople() throws Exception {
+        UUID courierRole = id(post(admin, BO + "/roles", obj("name", COURIER_ROLE_NAME,
+                "permissions", List.of("DELIVERY_COURIER"))));
         for (Person person : PEOPLE) {
+            UUID role = person.role() == null ? courierRole : person.role();
             employees.put(person.code(), id(post(admin, BO + "/employees", obj("code", person.code(), "name",
-                    person.name(), "pin", person.pin(), "storeId", store, "roleId", person.role()))));
+                    person.name(), "pin", person.pin(), "storeId", store, "roleId", role))));
         }
         for (Account account : ACCOUNTS) {
             // a throwaway initial password, then the first-login change to the fixed one (D30), so it works at once
@@ -728,6 +735,7 @@ public final class DevSeed {
         Map<String, List<String>> wanted = new LinkedHashMap<>();
         wanted.put(BO + "/users|username", ACCOUNTS.stream().map(Account::username).toList());
         wanted.put(BO + "/employees|code", PEOPLE.stream().map(Person::code).toList());
+        wanted.put(BO + "/roles|name", List.of(COURIER_ROLE_NAME));
         List<String> itemCodes = new ArrayList<>(DISHES.stream().map(Dish::code).toList());
         itemCodes.addAll(List.of(MENU, FEE));
         wanted.put(CATALOG + "/items|code", itemCodes);

@@ -14,7 +14,7 @@ The POS courier choice is already recorded in [../w1-followups/pos-delivery-cour
 | ~~Q1~~ | ~~Should the POS employee code ignore case at login (`ab12` = `AB12`)?~~ | ~~Yes: look the code up by `upper(code)`, as `TerminalRepository` and the FE-F35 unique indexes do; keep the stored case (upper-casing the input would lock out employees saved in lower case).~~ Done in fu/backend-hardening. |
 | Q2 | Financeiro and Stocks land on their first tab; should the landing tab follow the user's permissions (the first tab they may open)? | Yes: the first permitted tab; today a user without the first tab's permission sees its denial first. **Done in fu/backoffice-tabs-labels**: without `?tab`, each area opens the first tab whose read permission the user holds in the store; an explicit `?tab` still wins, and a user with none keeps the first tab and its denial. |
 | Q3 | An inventory transfer received short: should the receiver record the shortfall (quantity and reason) instead of only accepting the transfer? | Yes: a received quantity per line, the difference posted as a transfer loss movement with a reason. **Done in fu/transfer-shortfall:** the receive request takes an optional `reason` (required, 422 `REASON_REQUIRED`, when a line is short); every shipped line still needs its received quantity; the reason goes on each `TRANSFER_SHORTAGE` (valued as any OUT, D113/D120) and on the audit event, and is ignored on a full receipt; the BackOffice receive dialog has a received quantity per line and asks the reason when one is short. No migration. |
-| Q4 | Who may be a courier: every active employee of the store, or only employees with a courier role? | A courier permission (`DELIVERY_COURIER`), so the dispatch list stays short. |
+| Q4 | Who may be a courier: every active employee of the store, or only employees with a courier role? | A courier permission (`DELIVERY_COURIER`), so the dispatch list stays short. **Status: done** (done in fu/courier-picker). Migration rule: identity V3018 grants it to every role (template and tenant role) holding `DELIVERY_OPERATE`; orders V6033 also grants it to every tenant role an existing delivery's courier holds in that delivery's store, so no current driver loses courier status. |
 | Q5 | The BackOffice shows permission codes (`PERM_…`) in the role editor; should it show Portuguese labels? | Yes: a pt-PT label map in the BackOffice, codes kept as the stored value and shown as secondary text. **Done in fu/backoffice-tabs-labels**: `features/people/permission-labels.ts`, typed over the contract's permission enum; an unknown code shows as itself. The roles list still shows codes. |
 
 ## Contract gaps (the API lacks what the screen would use)
@@ -64,6 +64,16 @@ The POS courier choice is already recorded in [../w1-followups/pos-delivery-cour
   ever advances it from two threads.~~ Done in fu/backend-hardening (`AtomicReference.updateAndGet`, both copies).
 - Docker on the dev machine holds about 120 GB of Testcontainers images and volumes from this run; prune it
   (`docker system prune` after checking nothing needed is stopped).
+
+## Decisions to confirm (from the follow-ups wave)
+
+- ADR 0001 amended with named data-backfill exceptions (V15001, V6033): confirm, or prefer a backfill outside Flyway.
+- Q4 courier backfill grants `DELIVERY_COURIER` per tenant role, so one waiter who once drove makes every holder of that
+  role a listed courier; confirm "no capability loss" over "a short list", or ask for a dedicated Estafeta role per tenant.
+- Default courier roles: V3018 gives `DELIVERY_COURIER` to Administrador, Gerente and Caixa (the roles that already
+  dispatch); confirm, or ask for a seeded Estafeta profile (an eighth beyond the spec's seven).
+- Loyalty publish under a clock step back (#194) clamps to the in-force publication; under skew between instances an
+  earlier close could be earned under the newer version. Confirm, or prefer refusing such a publish with a 409.
 
 ## Permission scope in the BackOffice landing tabs (review of #195)
 

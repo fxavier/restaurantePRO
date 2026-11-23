@@ -44,11 +44,14 @@ public class DeliveryQueryService {
         this.accessPolicy = accessPolicy;
     }
 
-    /** Who the session store may dispatch with: the store's active employees, as the dispatch checks (S50). */
+    /**
+     * Who the session store may dispatch with: its active employees holding DELIVERY_COURIER there, as the dispatch
+     * checks (S50, Q4).
+     */
     @Transactional(readOnly = true)
     public List<CourierView> couriers() {
         PosContext pos = accessPolicy.requirePos(Permission.DELIVERY_OPERATE);
-        return employees.activeInStore(pos.storeId()).stream()
+        return employees.activeInStoreHolding(pos.storeId(), Permission.DELIVERY_COURIER).stream()
                 .map(employee -> new CourierView(employee.id(), employee.code(), employee.displayName())).toList();
     }
 

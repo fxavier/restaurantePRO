@@ -159,7 +159,10 @@ public enum Permission {
     /** Goods receipts, returns and cost corrections. */
     GOODS_RECEIVE,
     /** Rebuild stock balances, reprocess consumption exceptions. */
-    INVENTORY_REBUILD;
+    INVENTORY_REBUILD,
+    // Courier picker (complete-app Q4). Granted by V3018__identity_delivery_courier_permission.sql.
+    /** Be a delivery's courier: listed on the POS dispatch, accepted as its courierEmployeeId. */
+    DELIVERY_COURIER;
 
     private static final String PREFIX = "PERM_";
 

@@ -4528,7 +4528,8 @@
                 "RECIPE_MANAGE",
                 "PURCHASE_MANAGE",
                 "GOODS_RECEIVE",
-                "INVENTORY_REBUILD"
+                "INVENTORY_REBUILD",
+                "DELIVERY_COURIER"
               ],
               "type": "string"
             },
@@ -4631,7 +4632,8 @@
                 "RECIPE_MANAGE",
                 "PURCHASE_MANAGE",
                 "GOODS_RECEIVE",
-                "INVENTORY_REBUILD"
+                "INVENTORY_REBUILD",
+                "DELIVERY_COURIER"
               ],
               "type": "string"
             },
@@ -4732,7 +4734,8 @@
                 "RECIPE_MANAGE",
                 "PURCHASE_MANAGE",
                 "GOODS_RECEIVE",
-                "INVENTORY_REBUILD"
+                "INVENTORY_REBUILD",
+                "DELIVERY_COURIER"
               ],
               "type": "string"
             },

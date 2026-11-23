@@ -11,7 +11,8 @@
 #
 # Creates store DEV "Restaurante Dev" (Africa/Maputo): terminals POS-1 and POS-2 enrolled (device tokens written to
 # .dev-seed/terminals.txt, git-ignored), 8 tables, kitchen/bar/counter printers on HOLD (nothing is printed), series FR,
-# register CX1; BackOffice accounts gerente and stock; POS employees GERENTE, CAIXA, EMPREGADO, ESTAFETA; a published
+# register CX1; BackOffice accounts gerente and stock; POS employees GERENTE, CAIXA, EMPREGADO, ESTAFETA (role
+# "Estafeta", holding DELIVERY_COURIER); a published
 # catalog of 20 items (Bebidas, Pratos, Sobremesas, Cafés), a menu of the day and a delivery fee; a happy hour on
 # Bebidas 17:00-19:00; discount limits 10 % free / 50 % max; a loyalty program with a free-coffee reward; 3 customers
 # and a delivery zone; kitchen and bar warehouses live through approved opening counts, 13 stock items, recipes, a

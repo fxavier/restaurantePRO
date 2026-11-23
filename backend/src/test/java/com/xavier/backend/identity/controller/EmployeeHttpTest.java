@@ -65,7 +65,9 @@ class EmployeeHttpTest {
             Permission.DELIVERY_ZONE_MANAGE, Permission.INVENTORY_VIEW, Permission.INVENTORY_MANAGE,
             Permission.INVENTORY_MOVE, Permission.INVENTORY_TRANSFER, Permission.INVENTORY_COUNT,
             Permission.INVENTORY_COUNT_APPROVE, Permission.RECIPE_MANAGE, Permission.PURCHASE_MANAGE,
-            Permission.GOODS_RECEIVE);
+            Permission.GOODS_RECEIVE,
+            // V3018
+            Permission.DELIVERY_COURIER);
 
     @Autowired
     MockMvc mvc;

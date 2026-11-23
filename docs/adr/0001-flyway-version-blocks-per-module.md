@@ -1,6 +1,6 @@
 # 0001. Flyway with one version block per module
 
-Status: Accepted, 2026-11-04 (D5; extended by D61 for R2); amended 2026-11-13 (out-of-order application and its safety rule). Source: [backend-decisions.md](../design/backend-decisions.md) D5, [r2-decisions.md](../design/r2-decisions.md) D61.
+Status: Accepted, 2026-11-04 (D5; extended by D61 for R2); amended 2026-11-13 (out-of-order application and its safety rule); amended 2026-11-23 (named data-backfill exceptions; proposed with PR #196, pending user confirmation). Source: [backend-decisions.md](../design/backend-decisions.md) D5, [r2-decisions.md](../design/r2-decisions.md) D61.
 
 ## Context
 
@@ -17,5 +17,9 @@ Rejected: timestamps. They still collide in order when branches merge.
 - Slices that touch different modules never collide on a version. Flyway compares versions numerically, so `V10001` sorts after `V9999`.
 - Out-of-order application is required (amendment 2026-11-13; the original text said it was not needed): a release adds versions to low blocks below the head of an installed database, so `spring.flyway.out-of-order: true` (proven by `FlywayUpgradeTest`).
 - Safety rule for out-of-order (amended 2026-11-13): a migration touches only its own module's schema (no cross-schema DDL, no reference to another module's objects, D6), and a lower block never depends on a higher block. Then the order in which an installation receives the blocks does not matter. A release's migrations are listed in `src/test/resources/db/released-migrations.txt` when it ships. `MigrationNumberingTest` checks that every migration sits in its module's block, names its module, and, if not yet released, is above its block's highest released version. `FlywayUpgradeTest` upgrades a database of the last release to the current set.
+- Named exceptions to the safety rule (amendment 2026-11-23): a one-off **data backfill** may read, and insert rows into, the tables of a **lower** block when the data it needs only exists once that lower block's tables and its own block's tables both exist. It adds no DDL to the other schema and never deletes or updates there. Each exception is listed here:
+  - `V15001` (tenancy) reads `organization` to bootstrap the first tenant (multitenancy-decisions.md).
+  - `V6033` (orders) inserts `DELIVERY_COURIER` into `identity.role_permission` for the roles held by past couriers in their delivery's store (`identity.employee_store_assignment`), so no driver loses courier status when V3018 introduces the permission.
+  The cost: while an exception is listed, a later migration of the lower block must keep the columns it uses (`identity.employee_store_assignment (tenant_id, employee_id, store_id, role_id)` and the key of `identity.role_permission`) or ship a compatible replacement; `FlywayUpgradeTest` and the exception's own test (`PastCourierGrantMigrationTest`) fail otherwise.
 - As built, identity used `V3005`–`V3009` in R2 (permissions, terminal-session store, `must_change_pin`, login throttle), all inside its block.
 - `spring.jpa.hibernate.ddl-auto=validate` checks on every context start that the entities match the migrations.

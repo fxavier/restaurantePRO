@@ -92,7 +92,6 @@ class R4AcceptanceTest {
     static final String NEW_PASSWORD = "changed " + UUID.randomUUID();
     static final String CASHIER_PIN = "5172";
     static final String MANAGER_PIN = "6283";
-    static final UUID WAITER_ROLE = UUID.fromString("01900000-0000-7000-8000-000000000303");
     static final Charset CP860 = Charset.forName("IBM860");
     static final Charset WPC1252 = Charset.forName("windows-1252");
     static final Duration PRINTED = Duration.ofSeconds(20);
@@ -191,8 +190,11 @@ class R4AcceptanceTest {
         managerId = id(office.post(BO + "/employees", Map.of("code", managerCode, "name", "Gil", "pin", MANAGER_PIN,
                 "storeId", storeA, "roleId", MANAGER_ROLE), 201));
         manager = backOfficeUser("gil", managerId);
+        // no seeded profile is a driver: the store's courier gets a role holding DELIVERY_COURIER (Q4)
+        UUID courierRole = id(office.post(BO + "/roles", Map.of("name", "Estafeta",
+                "permissions", List.of("DELIVERY_COURIER")), 201));
         courier = id(office.post(BO + "/employees", Map.of("code", "ES1", "name", "Edson", "pin", "7391",
-                "storeId", storeA, "roleId", WAITER_ROLE), 201));
+                "storeId", storeA, "roleId", courierRole), 201));
         area = id(office.post(BO + "/areas", Map.of("storeId", storeA, "code", "SALA", "name", "Sala"), 201));
         tableM1 = table("M1");
         tableM2 = table("M2");

@@ -22,7 +22,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
-/** The POS dispatch screen's courier choice: what a dispatch accepts, the store's active employees (S50). */
+/**
+ * The POS dispatch screen's courier choice: what a dispatch accepts, the store's active employees holding
+ * DELIVERY_COURIER there (S50, Q4).
+ */
 @OrdersModuleTest
 class CourierListHttpTest {
 
@@ -41,13 +44,14 @@ class CourierListHttpTest {
     }
 
     @Test
-    void theCouriersAreTheStoresActiveEmployeesByName() throws Exception {
+    void theCouriersAreTheStoresActiveEmployeesHoldingTheCourierPermissionByName() throws Exception {
+        UUID driver = identity.role(Permission.DELIVERY_COURIER);
         // created first but named last, so creation order and name order disagree
-        IdentityFixtures.Employee zita = identity.employee(OrdersFixtures.PIN, store, IdentityFixtures.WAITER);
-        IdentityFixtures.Employee bruno = identity.employee(OrdersFixtures.PIN, store, IdentityFixtures.WAITER);
-        IdentityFixtures.Employee gone = identity.employee(OrdersFixtures.PIN, store, IdentityFixtures.WAITER);
-        IdentityFixtures.Employee elsewhere = identity.employee(OrdersFixtures.PIN, identity.store(),
-                IdentityFixtures.WAITER);
+        IdentityFixtures.Employee zita = identity.employee(OrdersFixtures.PIN, store, driver);
+        IdentityFixtures.Employee bruno = identity.employee(OrdersFixtures.PIN, store, driver);
+        IdentityFixtures.Employee gone = identity.employee(OrdersFixtures.PIN, store, driver);
+        IdentityFixtures.Employee waiter = identity.employee(OrdersFixtures.PIN, store, IdentityFixtures.WAITER);
+        IdentityFixtures.Employee elsewhere = identity.employee(OrdersFixtures.PIN, identity.store(), driver);
         edit(zita, "Zita", true);
         edit(bruno, "Bruno", true);
         edit(gone, "Ana", false);
@@ -58,8 +62,10 @@ class CourierListHttpTest {
                 .andExpect(jsonPath("$[*].id", contains(bruno.id().toString(), zita.id().toString())))
                 .andExpect(jsonPath("$[*].name", contains("Bruno", "Zita")))
                 .andExpect(jsonPath("$[*].id", not(hasItem(gone.id().toString()))))
+                .andExpect(jsonPath("$[*].id", not(hasItem(waiter.id().toString()))))
                 .andExpect(jsonPath("$[*].id", not(hasItem(elsewhere.id().toString()))))
-                .andExpect(jsonPath("$[0].code").isString());
+                .andExpect(jsonPath("$[0].code").isString())
+                .andExpect(jsonPath("$[0].pin").doesNotExist());
     }
 
     private void edit(IdentityFixtures.Employee employee, String name, boolean active) throws Exception {
