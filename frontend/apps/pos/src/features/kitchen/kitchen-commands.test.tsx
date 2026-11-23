@@ -9,7 +9,7 @@ const QUEUED = 'Mesa 04 - Pedido #4092, Ronda 2';
 const COOKING = 'Mesa 08 - Pedido #4105, Ronda 1';
 const READY = 'Mesa 03 - Pedido #4112, Ronda 1';
 
-const moved = (ticket: typeof TICKET.queued, status: typeof TICKET.queued.kitchen.status) => ({
+const moved = (ticket: typeof TICKET.queued, status: NonNullable<typeof TICKET.queued.kitchen>['status']) => ({
   ...ticket,
   kitchen: { ...ticket.kitchen!, status, version: ticket.kitchen!.version! + 1 },
 });
@@ -82,7 +82,7 @@ describe('moving a round on the kitchen display', () => {
     await user.click(within(await card(QUEUED)).getByRole('button', { name: 'Iniciar' }));
 
     const queued = await card(QUEUED);
-    expect(await within(queued).findByRole('alert')).toHaveTextContent('Sem ligação — a ronda não foi atualizada.');
+    expect(await within(queued).findByRole('alert')).toHaveTextContent('Sem ligação — não foi possível confirmar a ronda.');
     expect(within(queued).queryByRole('button', { name: 'Iniciar' })).not.toBeInTheDocument();
     await user.click(within(queued).getByRole('button', { name: 'Tentar novamente' }));
 

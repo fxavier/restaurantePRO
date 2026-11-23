@@ -33,7 +33,7 @@ describe('toKitchenTickets', () => {
 });
 
 describe('toKitchenPage', () => {
-  const round = { id: 'a', destination: 'KITCHEN', lines: [], kitchen: { status: 'QUEUED', version: 0, queuedAt: '2026-11-22T09:00:00Z' } } as const;
+  const round = { id: 'a', destination: 'KITCHEN', lines: [], kitchen: { status: 'QUEUED' as const, version: 0, queuedAt: '2026-11-22T09:00:00Z' } };
 
   it("takes the server's total, and counts the rounds beyond the page it holds", () => {
     const read = toKitchenPage({ content: [round], page: 0, size: 200, totalElements: 201 });

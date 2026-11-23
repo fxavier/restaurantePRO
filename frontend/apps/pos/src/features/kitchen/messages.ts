@@ -19,7 +19,7 @@ export const loadFailure = (error: Error) =>
 
 /** Why a command on a round failed, in Portuguese; no answer means it was not confirmed. */
 export const refusal = (error: Error) =>
-  say(error, { failed: 'Não foi possível confirmar a ronda.', offline: 'Sem ligação — a ronda não foi atualizada.', bare: true });
+  say(error, { failed: 'Não foi possível confirmar a ronda.', offline: 'Sem ligação — não foi possível confirmar a ronda.', bare: true });
 
 /**
  * @param failed what did not happen, said first (unless `bare`) and before an incomplete answer
