@@ -43,6 +43,8 @@ describe('dispatching a delivery with a courier', () => {
     expect(sent).toHaveLength(1);
     expect(sent[0]!.body).toEqual({ courierEmployeeId: COURIER.rita.id, version: 0 });
     expect(sent[0]!.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
+    // The terminal's POS session rides on the command (D182).
+    expect(sent[0]!.posSession).toBe('pos-session-ana');
   });
 
   it('names each courier with their code, and sends nothing when cancelled', async () => {
@@ -51,10 +53,9 @@ describe('dispatching a delivery with a courier', () => {
     const sent = dispatchEndpoint(DELIVERY.pending.orderId!, json(OUT_NOW));
     const { user, dialog } = await dispatching();
 
-    expect(await within(dialog).findByRole('radio', { name: /^João Pereira/ })).toBeInTheDocument();
-    expect(within(dialog).getByRole('radio', { name: /^Rita Mabunda/ })).toBeInTheDocument();
-    expect(within(dialog).getByText('E02')).toBeInTheDocument();
-    expect(within(dialog).getByText('E05')).toBeInTheDocument();
+    // The name is the courier's, the code its description: never glued into one word ("Rita MabundaE05").
+    expect(await within(dialog).findByRole('radio', { name: 'João Pereira' })).toHaveAccessibleDescription('E02');
+    expect(within(dialog).getByRole('radio', { name: 'Rita Mabunda' })).toHaveAccessibleDescription('E05');
     await user.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());

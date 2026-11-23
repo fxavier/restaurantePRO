@@ -102,6 +102,9 @@ function Bill({
   const disabled = blocked || !open;
   const documentBuyer = buyerOf(buyer);
   const can = useSettlementPermissions();
+  // What is charged, resolved against the live parts: a chosen part cancelled here or elsewhere gives way to the
+  // residual, and the list shows the same choice the payment panel charges.
+  const target = targetOf(settlement, selected);
 
   return (
     <>
@@ -119,7 +122,7 @@ function Bill({
           <PartitionList
             orderId={settlement.orderId}
             partitions={settlement.partitions}
-            selected={selected}
+            selected={target.partitionId}
             residual={settlement.residualBalance}
             onSelect={setSelected}
             buyer={documentBuyer}
@@ -129,7 +132,7 @@ function Bill({
           />
         </div>
         <div className="flex flex-col gap-4">
-          {can.collect && <PaymentPanel settlement={settlement} target={targetOf(settlement, selected)} disabled={disabled} />}
+          {can.collect && <PaymentPanel settlement={settlement} target={target} disabled={disabled} />}
           <OpenAttempts
             orderId={settlement.orderId}
             attempts={settlement.openAttempts}

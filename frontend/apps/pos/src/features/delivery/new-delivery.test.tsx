@@ -42,7 +42,9 @@ describe('a new delivery', () => {
     await user.type(within(dialog).getByLabelText('Nome ou telefone do cliente'), 'Marta{Enter}');
     await user.click(await within(dialog).findByRole('button', { name: /^Marta Fontes/ }));
     await user.click(await within(dialog).findByRole('radio', { name: 'Av. Julius Nyerere 1200, 3.º andar, Maputo' }));
-    await user.click(within(dialog).getByRole('radio', { name: /^Polana/ }));
+    const zone = within(dialog).getByRole('radio', { name: 'Polana' });
+    expect(zone).toHaveAccessibleDescription('Zona Z1');
+    await user.click(zone);
     await user.click(within(dialog).getByRole('radio', { name: '30 min' }));
     await user.type(within(dialog).getByLabelText('Notas para o estafeta'), 'Tocar à campainha');
     const before = Date.now();
