@@ -782,8 +782,9 @@ class RestartMatrixTest {
                 clock.advance(Duration.ofMinutes(6)); // past resubmit-older-than (PT5M)
                 resubmitDue();
                 int expected = attempt;
+                // the third attempt succeeds: wait for its completion, not for the failure the second one left behind
                 Awaitility.await().atMost(RECOVERED).until(() -> attempts(document) == expected
-                        && (failed(document) || completed(document)));
+                        && (expected == 3 ? completed(document) : failed(document) || completed(document)));
             }
         } finally {
             reset(spy);
