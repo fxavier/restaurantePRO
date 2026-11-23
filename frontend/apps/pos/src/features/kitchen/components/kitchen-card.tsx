@@ -55,7 +55,8 @@ function Item({ item }: { item: KitchenItem }) {
         ))}
         {item.components.map((component, index) => (
           <span key={index} className="text-muted-foreground">
-            {component}
+            {component.quantity && <span className="font-semibold tabular-nums">{component.quantity}× </span>}
+            {component.name}
           </span>
         ))}
       </div>

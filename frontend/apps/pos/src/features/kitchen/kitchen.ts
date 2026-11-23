@@ -6,8 +6,13 @@ type Schemas = components['schemas'];
 type TicketView = Schemas['com.xavier.backend.production.model.dto.TicketView'];
 export type KitchenStatus = NonNullable<NonNullable<TicketView['kitchen']>['status']>;
 
+type TicketItemView = Schemas['com.xavier.backend.production.model.dto.TicketItemView'];
+
+/** A menu component under its item: "1 × Batata a murro". */
+export type KitchenComponent = { quantity: string; name: string };
+
 /** A line of a round as the kitchen reads it: "2 × Bife", with its note and its menu components under it. */
-export type KitchenItem = { quantity: string; name: string; notes: string[]; components: string[] };
+export type KitchenItem = { quantity: string; name: string; notes: string[]; components: KitchenComponent[] };
 
 /** A round on its station (ADR 0044), parsed once where the answer comes in. */
 export type KitchenTicket = {
@@ -62,15 +67,27 @@ export function toKitchenPage(page: TicketPage | undefined): KitchenPage {
   return { tickets: toKitchenTickets(content), total, notShown: total - content.length };
 }
 
-/** A view without its identity, kitchen progress or station is not a round the display can move: it is dropped. */
+/**
+ * A view without its identity, kitchen progress or station is not a round the display can move: it is dropped. The
+ * items are the server's (`items`); a round it could not read them from keeps the ones its printed lines show.
+ */
 export function toKitchenTickets(views: TicketView[] | undefined): KitchenTicket[] {
   return (views ?? []).flatMap((view) => {
     const { id, destination, kitchen } = view;
     if (!id || !destination || !kitchen?.status || kitchen.version === undefined || !kitchen.queuedAt) return [];
-    return [
-      { id, destination, status: kitchen.status, version: kitchen.version, queuedAt: kitchen.queuedAt, ...readLines(view.lines ?? []) },
-    ];
+    const printed = readLines(view.lines ?? []);
+    const items = view.items?.length ? view.items.map(toKitchenItem) : printed.items;
+    return [{ id, destination, status: kitchen.status, version: kitchen.version, queuedAt: kitchen.queuedAt, ...printed, items }];
   });
+}
+
+function toKitchenItem({ quantity = '', name = '', notes, components = [] }: TicketItemView): KitchenItem {
+  return {
+    quantity,
+    name,
+    notes: notes ? [notes] : [],
+    components: components.map((component) => ({ quantity: component.quantity ?? '', name: component.name ?? '' })),
+  };
 }
 
 const RULE = /^-{3,}$/;
@@ -108,21 +125,26 @@ function attachTo(item: KitchenItem, line: string): boolean {
   const note = NOTE.exec(line);
   if (note) item.notes.push(note[1]!);
   const component = COMPONENT.exec(line);
-  if (component) item.components.push(component[1]!);
+  if (component) item.components.push(counted(component[1]!));
   return !!(note ?? component);
 }
 
 function itemOf(line: string): KitchenItem {
-  const item = ITEM.exec(line);
-  return item ? { quantity: item[1]!, name: item[2]!, notes: [], components: [] } : { quantity: '', name: line, notes: [], components: [] };
+  return { ...counted(line), notes: [], components: [] };
+}
+
+/** "2 x Bife": its quantity and name; a text without a quantity is all name. */
+function counted(text: string): KitchenComponent {
+  const item = ITEM.exec(text);
+  return item ? { quantity: item[1]!, name: item[2]! } : { quantity: '', name: text };
 }
 
 /**
- * The stations the rounds name, each with its count, in the order the rounds first name them. The contract has no POS
- * list of stations, so the display offers the ones with work; `chosen` stays offered when its last round leaves.
+ * The stations offered, each with its count of rounds: the store's (`destinations`, in its order, those without rounds
+ * too), then any other a round names, in the order first named; `chosen` stays offered when its last round leaves.
  */
-export function stationsOf(tickets: KitchenTicket[], chosen?: string): { code: string; count: number }[] {
-  const counts = new Map<string, number>();
+export function stationsOf(tickets: KitchenTicket[], chosen?: string, destinations: string[] = []): { code: string; count: number }[] {
+  const counts = new Map<string, number>(destinations.map((code) => [code, 0]));
   for (const { destination } of tickets) counts.set(destination, (counts.get(destination) ?? 0) + 1);
   if (chosen && !counts.has(chosen)) counts.set(chosen, 0);
   return [...counts].map(([code, count]) => ({ code, count }));

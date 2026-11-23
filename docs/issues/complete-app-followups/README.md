@@ -19,14 +19,20 @@ The POS courier choice is already recorded in [../w1-followups/pos-delivery-cour
 
 ## Contract gaps (the API lacks what the screen would use)
 
-- **TicketView structured lines**: the production ticket view carries its lines as text; KDS and reprint would use
-  item, quantity, modifiers and notes as fields.
+- ~~**TicketView structured lines**: the production ticket view carries its lines as text; KDS and reprint would use
+  item, quantity, modifiers and notes as fields.~~ Done in fu/production-reads: `TicketView.items` (quantity, item,
+  note, menu components) read from the round's stored printout, the only record the ticket keeps (empty for any other
+  ticket); `lines` stays (the KDS still reads its header from it). The POS KDS cards use the items.
 - **SessionRow operatorName**: the cash-session list shows the operator's id to users without `EMPLOYEE_MANAGE` (the
   name comes from a separate employees read); add the display name to the row.
 - **Session adjustments GET**: cash adjustments of a session can be posted but not listed; add a read for the session
   detail.
-- **POS production destinations list**: the KDS builds its station filter from the tickets it shows, so a station with
-  no active rounds never appears as a filter; a read of the store's active destinations would list them all.
+- ~~**POS production destinations list**: the KDS builds its station filter from the tickets it shows, so a station with
+  no active rounds never appears as a filter; a read of the store's active destinations would list them all.~~ Done in
+  fu/production-reads: `GET /api/v1/pos/production-destinations` (`PRODUCTION_VIEW`, the session's store) lists the
+  store's routing-table codes; the KDS offers them first, then any other code a round names. Production records no
+  destination name (the codes come from catalog items), so the view has the code only; a KDS-only station with no
+  route still appears only through its rounds.
 - **KDS cut-off for stores without a KDS**: kitchen progress (ADR 0044) stays QUEUED forever in a store that prints
   tickets only; decide whether such a store skips the progress or closes it on print.
 

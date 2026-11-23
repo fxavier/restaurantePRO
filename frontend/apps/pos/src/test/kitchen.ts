@@ -49,6 +49,10 @@ const progress = (status: NonNullable<TicketView['kitchen']>['status'], queuedAt
 export const TICKET = {
   queued: ticket(2001, {
     lines: printed('KITCHEN', 'Mesa 04 - Pedido #4092', 2, '2 x Bife da Vazia', '   > mal passado', '1 x Polvo à Lagareiro', '   + 1 x Batata a murro'),
+    items: [
+      { quantity: '2', name: 'Bife da Vazia', notes: 'mal passado', components: [] },
+      { quantity: '1', name: 'Polvo à Lagareiro', components: [{ quantity: '1', name: 'Batata a murro' }] },
+    ],
     kitchen: progress('QUEUED', '2026-11-22T09:36:00Z'),
   }),
   cooking: ticket(2002, {
@@ -96,8 +100,25 @@ export const kitchenCommandEndpoint = (
   ...answers: Answer<KitchenCommandRequest>[]
 ) => recording<KitchenCommandRequest>('post', `/api/v1/pos/production-tickets/${ticketId}/${command}`, queue(...answers));
 
-/** The POS at `/kds`, Ana logged in with `permissions` (by default she may watch and move rounds). */
-export async function atKitchen({ permissions = [...SESSION.permissions, VIEWER, OPERATOR] }: { permissions?: string[] } = {}) {
+/** `GET /api/v1/pos/production-destinations`: the store's stations, by code. */
+export const destinationsEndpoint = (...answers: Answer[]) =>
+  recording<undefined>('get', '/api/v1/pos/production-destinations', queue(...answers));
+
+/** The store's stations `GET /production-destinations` answers. */
+export const stations =
+  (...codes: string[]) =>
+  () =>
+    HttpResponse.json(codes.map((code) => ({ code })));
+
+/**
+ * The POS at `/kds`, Ana logged in with `permissions` (by default she may watch and move rounds); the store's stations
+ * are `destinations` (none by default).
+ */
+export async function atKitchen({
+  permissions = [...SESSION.permissions, VIEWER, OPERATOR],
+  destinations = stations(),
+}: { permissions?: string[]; destinations?: Answer } = {}) {
+  destinationsEndpoint(destinations);
   tokenEndpoint(token('jwt-1'));
   const rendered = await renderPos({ device: 'enrolled', loggedIn: true, path: '/tables' });
   act(() => rendered.services.session.start({ ...SESSION, permissions }));
