@@ -222,6 +222,48 @@
         ],
         "type": "object"
       },
+      "com.xavier.backend.cash.model.dto.AdjustmentRow": {
+        "properties": {
+          "amount": {
+            "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
+          },
+          "direction": {
+            "enum": [
+              "IN",
+              "OUT"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "methodCode": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "sessionId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "direction",
+          "id",
+          "methodCode",
+          "occurredAt",
+          "reason",
+          "sessionId"
+        ],
+        "type": "object"
+      },
       "com.xavier.backend.cash.model.dto.ClosingLineView": {
         "properties": {
           "counted": {
@@ -713,6 +755,12 @@
             "format": "uuid",
             "type": "string"
           },
+          "operatorName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "registerCode": {
             "type": "string"
           },
@@ -739,6 +787,7 @@
           "openedAt",
           "openingFloat",
           "operatorEmployeeId",
+          "operatorName",
           "registerCode",
           "registerId",
           "status",
@@ -16225,6 +16274,38 @@
       }
     },
     "/api/v1/backoffice/cash/sessions/{id}/adjustments": {
+      "get": {
+        "operationId": "adjustments",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/com.xavier.backend.cash.model.dto.AdjustmentRow"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "cash-session-list-controller"
+        ]
+      },
       "post": {
         "operationId": "adjust_2",
         "parameters": [

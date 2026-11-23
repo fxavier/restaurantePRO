@@ -28,6 +28,7 @@ import java.time.Instant;
 import java.util.Currency;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
@@ -86,7 +87,10 @@ public class LoyaltyProgramService {
         return view(draft);
     }
 
-    /** DRAFT → PUBLISHED; the version in force is RETIRED at the same instant. */
+    /**
+     * DRAFT → PUBLISHED; the version in force is RETIRED at the same instant, the clock's or, if the clock is behind
+     * the in-force publication, that publication's.
+     */
     @Transactional
     public ProgramVersionView publish(UUID versionId, PublishRequest request) {
         accessPolicy.require(Permission.LOYALTY_PROGRAM_MANAGE);
@@ -95,10 +99,11 @@ public class LoyaltyProgramService {
         OptimisticLocking.requireVersion(LoyaltyProgramVersion.class, versionId, draft.getVersion(),
                 request.version());
         Instant now = clock.instant();
-        versions.findByStatus(ProgramStatus.PUBLISHED).ifPresent(inForce -> {
-            inForce.retire(now);
-            versions.saveAndFlush(inForce);
-        });
+        Optional<LoyaltyProgramVersion> inForce = versions.findByStatus(ProgramStatus.PUBLISHED);
+        if (inForce.isPresent()) {
+            now = inForce.get().retire(now); // not before its publication, even if the clock stepped back
+            versions.saveAndFlush(inForce.get());
+        }
         draft.publish(accessPolicy.current().userId(), now);
         draft = UniqueConstraints.saveAndFlush(versions, draft, LoyaltyConflictException::programConcurrent,
                 LoyaltyProgramVersion.PUBLISHED_UK);

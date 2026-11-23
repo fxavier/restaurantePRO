@@ -9,6 +9,7 @@ import { renderApp } from '../../test/render-app';
 import { server } from '../../test/server';
 
 type SessionRow = components['schemas']['com.xavier.backend.cash.model.dto.SessionRow'];
+type AdjustmentRow = components['schemas']['com.xavier.backend.cash.model.dto.AdjustmentRow'];
 
 const SESSIONS = '/api/v1/backoffice/cash/sessions';
 const OPERATOR = '0e0e0000-0000-4000-8000-000000000001';
@@ -24,6 +25,7 @@ function session(id: string, extra: Partial<SessionRow> = {}): SessionRow {
     cashDayId: DAY_1,
     businessDate: '2026-11-19',
     operatorEmployeeId: OPERATOR,
+    operatorName: 'Carlos Silva',
     status: 'CLOSED',
     openingFloat: mzn('150.00'),
     openedAt: '2026-11-19T09:30:00Z',
@@ -40,7 +42,7 @@ function session(id: string, extra: Partial<SessionRow> = {}): SessionRow {
 
 const closed = session('5e550000-0000-4000-8000-000000000001');
 
-/** The finance server, the store's employees and `answer` for every sessions read; each read's URL is recorded. */
+/** The finance server and `answer` for every sessions read; each read's URL is recorded, the employees read too. */
 function sessionsServer(answer: (query: URLSearchParams) => Response = () => HttpResponse.json(page([closed], 0, 20))) {
   const { requests } = financeServer();
   server.use(
@@ -49,9 +51,10 @@ function sessionsServer(answer: (query: URLSearchParams) => Response = () => Htt
       requests.push(url.pathname + url.search);
       return answer(url.searchParams);
     }),
-    http.get(api('/api/v1/backoffice/employees'), () =>
-      HttpResponse.json(page([{ id: OPERATOR, code: 'E01', name: 'Carlos Silva', active: true, locked: false, version: 0 }])),
-    ),
+    http.get(api('/api/v1/backoffice/employees'), ({ request }) => {
+      requests.push(new URL(request.url).pathname);
+      return HttpResponse.json(page([]));
+    }),
   );
   return requests;
 }
@@ -126,21 +129,24 @@ describe('cash sessions', () => {
     expect(screen.getByLabelText('Estado das sessões')).toHaveValue('CLOSED');
   });
 
-  it('names the operator by id, without asking for the employees, to a user who may not read them', async () => {
+  it('names the operator from the row, without reading the employees, to a user who may not read them', async () => {
     const requests = sessionsServer();
     server.use(
       http.get(api('/api/v1/auth/session'), () =>
         HttpResponse.json({ ...financeAdmin, permissions: financeAdmin.permissions.filter((p) => p !== 'PERM_EMPLOYEE_MANAGE') }),
       ),
-      http.get(api('/api/v1/backoffice/employees'), ({ request }) => {
-        requests.push(new URL(request.url).pathname);
-        return HttpResponse.json(page([]));
-      }),
     );
     renderApp(tab);
 
-    expect(await screen.findByRole('row', { name: /CX1/ })).toHaveTextContent(OPERATOR);
+    expect(await screen.findByRole('row', { name: /CX1/ })).toHaveTextContent('Carlos Silva');
     expect(requests).not.toContain('/api/v1/backoffice/employees');
+  });
+
+  it('names the operator by id when the server knows no name for them', async () => {
+    sessionsServer(() => HttpResponse.json(page([session('5e550000-0000-4000-8000-000000000004', { operatorName: null })], 0, 20)));
+    renderApp(tab);
+
+    expect(await screen.findByRole('row', { name: /CX1/ })).toHaveTextContent(OPERATOR);
   });
 
   it('says the sessions are unavailable without a connection, and reads them again on retry', async () => {
@@ -159,5 +165,108 @@ describe('cash sessions', () => {
     sessionsServer(() => HttpResponse.json(page([], 0, 20)));
     renderApp(tab);
     expect(await screen.findByText('Sem sessões de caixa neste período.')).toBeInTheDocument();
+  });
+
+  describe('adjustments', () => {
+    const ADJUSTMENTS = `${SESSIONS}/${closed.id}/adjustments`;
+    const adjustment = (id: string, extra: Partial<AdjustmentRow>): AdjustmentRow => ({
+      id,
+      sessionId: closed.id,
+      direction: 'IN',
+      methodCode: 'CASH',
+      amount: mzn('2.50'),
+      reason: 'Moeda encontrada',
+      occurredAt: '2026-11-19T15:00:00Z',
+      ...extra,
+    });
+
+    function adjustmentsServer(answer: () => Response) {
+      const requests = sessionsServer();
+      server.use(
+        http.get(api(ADJUSTMENTS), ({ request }) => {
+          requests.push(new URL(request.url).pathname);
+          return answer();
+        }),
+      );
+      return requests;
+    }
+
+    it("shows a closed session's adjustments in the order the server sent them, with direction, amount and reason", async () => {
+      const requests = adjustmentsServer(() =>
+        HttpResponse.json([
+          adjustment('ad000000-0000-4000-8000-000000000002', {}),
+          adjustment('ad000000-0000-4000-8000-000000000001', {
+            direction: 'OUT',
+            methodCode: 'CARD',
+            amount: mzn('5.00'),
+            reason: 'Despesa de pão por registar',
+            occurredAt: '2026-11-19T14:00:00Z',
+          }),
+        ]),
+      );
+      const { user } = renderApp(tab);
+
+      const toggle = await screen.findByRole('button', { name: 'Ver ajustes da sessão CX1' });
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      await user.click(toggle);
+
+      const table = await screen.findByRole('table', { name: /Ajustes da sessão CX1/ });
+      const rows = within(table).getAllByRole('row').slice(1);
+      expect(rows).toHaveLength(2);
+      expect(rows[0]).toHaveTextContent('19/11/26, 17:00');
+      expect(rows[0]).toHaveTextContent('Entrada');
+      expect(rows[0]).toHaveTextContent(`CASH`);
+      expect(rows[0]).toHaveTextContent(money('2.50'));
+      expect(rows[0]).toHaveTextContent('Moeda encontrada');
+      expect(rows[1]).toHaveTextContent('Saída');
+      expect(rows[1]).toHaveTextContent('CARD');
+      expect(rows[1]).toHaveTextContent(money('5.00'));
+      expect(rows[1]).toHaveTextContent('Despesa de pão por registar');
+      expect(screen.getByRole('button', { name: 'Ocultar ajustes da sessão CX1' })).toHaveAttribute('aria-expanded', 'true');
+      expect(requests).toContain(ADJUSTMENTS);
+    });
+
+    it('says when a session has no adjustments', async () => {
+      adjustmentsServer(() => HttpResponse.json([]));
+      const { user } = renderApp(tab);
+
+      await user.click(await screen.findByRole('button', { name: 'Ver ajustes da sessão CX1' }));
+
+      expect(await screen.findByText('Sem ajustes nesta sessão.')).toBeInTheDocument();
+    });
+
+    it('says the adjustments are unavailable without a connection, never "no adjustments", and reads them again on retry', async () => {
+      let fail = true;
+      adjustmentsServer(() => (fail ? HttpResponse.error() : HttpResponse.json([adjustment('ad000000-0000-4000-8000-000000000004', {})])));
+      const { user } = renderApp(tab);
+
+      await user.click(await screen.findByRole('button', { name: 'Ver ajustes da sessão CX1' }));
+      const retry = await screen.findByRole('button', { name: /tentar novamente/i });
+      expect(screen.queryByText('Sem ajustes nesta sessão.')).not.toBeInTheDocument();
+      fail = false;
+      await user.click(retry);
+
+      expect(await screen.findByRole('table', { name: /Ajustes da sessão CX1/ })).toBeInTheDocument();
+    });
+
+    it('offers no adjustments for an open session, which takes none', async () => {
+      const open = session('5e550000-0000-4000-8000-000000000002', { registerCode: 'CX9', status: 'OPEN', closedAt: null, closedByEmployeeId: null, closeKind: null, counted: [] });
+      sessionsServer(() => HttpResponse.json(page([open], 0, 20)));
+      renderApp(tab);
+
+      await screen.findByRole('row', { name: /CX9/ });
+      expect(screen.queryByRole('button', { name: /ajustes da sessão/ })).not.toBeInTheDocument();
+    });
+
+    it('hides the adjustments again', async () => {
+      adjustmentsServer(() => HttpResponse.json([adjustment('ad000000-0000-4000-8000-000000000003', {})]));
+      const { user } = renderApp(tab);
+
+      await user.click(await screen.findByRole('button', { name: 'Ver ajustes da sessão CX1' }));
+      await screen.findByRole('table', { name: /Ajustes da sessão CX1/ });
+      await user.click(screen.getByRole('button', { name: 'Ocultar ajustes da sessão CX1' }));
+
+      expect(screen.queryByRole('table', { name: /Ajustes da sessão CX1/ })).not.toBeInTheDocument();
+    });
   });
 });

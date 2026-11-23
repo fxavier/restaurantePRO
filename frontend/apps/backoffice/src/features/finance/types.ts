@@ -16,7 +16,7 @@ export type CashSessionStatus = NonNullable<
   paths['/api/v1/backoffice/cash/sessions']['get']['parameters']['query']['status']
 >;
 export type SessionRow = Schemas['com.xavier.backend.cash.model.dto.SessionRow'];
-export type EmployeeSummary = Schemas['com.xavier.backend.identity.model.dto.EmployeeSummary'];
+export type AdjustmentRow = Schemas['com.xavier.backend.cash.model.dto.AdjustmentRow'];
 export type DayView =Schemas['com.xavier.backend.cash.DayView'];
 export type RegisterSummary = Schemas['com.xavier.backend.cash.model.dto.RegisterSummary'];
 export type ReconciliationLine = Schemas['com.xavier.backend.cash.model.dto.ReconciliationLine'];

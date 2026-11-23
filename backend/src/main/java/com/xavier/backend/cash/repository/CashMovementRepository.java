@@ -1,6 +1,7 @@
 package com.xavier.backend.cash.repository;
 
 import com.xavier.backend.cash.model.CashMovement;
+import com.xavier.backend.cash.model.MovementType;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -14,6 +15,9 @@ public interface CashMovementRepository extends JpaRepository<CashMovement, UUID
     Optional<CashMovement> findBySourceTypeAndSourceId(String sourceType, UUID sourceId);
 
     boolean existsBySessionIdAndMethodCode(UUID sessionId, String methodCode);
+
+    /** A session's movements of {@code type}, newest first (the time-ordered id breaks a tie). */
+    List<CashMovement> findBySessionIdAndTypeOrderByOccurredAtDescIdDesc(UUID sessionId, MovementType type);
 
     /** Expected amount per method of a session: Σ IN − Σ OUT. */
     @Query("""
