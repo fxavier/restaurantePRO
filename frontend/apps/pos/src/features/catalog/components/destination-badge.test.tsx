@@ -4,10 +4,10 @@ import { DestinationBadge } from './destination-badge';
 
 describe('DestinationBadge', () => {
   it.each([
-    ['KITCHEN', 'Cozinha', 'bg-route-kitchen'],
-    ['BAR', 'Bar', 'bg-route-bar'],
-    ['COPA', 'Copa', 'bg-route-copa'],
-    ['PANTRY', 'Copa', 'bg-route-copa'],
+    ['KITCHEN', 'Cozinha', 'border-route-kitchen'],
+    ['BAR', 'Bar', 'border-route-bar'],
+    ['COPA', 'Copa', 'border-route-copa'],
+    ['PANTRY', 'Copa', 'border-route-copa'],
   ])('names %s "%s" in its fixed colour', (code, label, colour) => {
     render(<DestinationBadge code={code} />);
     expect(screen.getByText(label)).toHaveClass(colour);

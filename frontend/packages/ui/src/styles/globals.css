@@ -36,6 +36,18 @@
   --color-info: var(--info);
   --color-info-foreground: var(--info-foreground);
   --color-error: var(--error);
+  --color-success-tint: var(--success-tint);
+  --color-success-border: var(--success-border);
+  --color-success-text: var(--success-text);
+  --color-warning-tint: var(--warning-tint);
+  --color-warning-border: var(--warning-border);
+  --color-warning-text: var(--warning-text);
+  --color-info-tint: var(--info-tint);
+  --color-info-border: var(--info-border);
+  --color-info-text: var(--info-text);
+  --color-destructive-tint: var(--destructive-tint);
+  --color-destructive-border: var(--destructive-border);
+  --color-destructive-text: var(--destructive-text);
   --color-route-kitchen: var(--route-kitchen);
   --color-route-bar: var(--route-bar);
   --color-route-copa: var(--route-copa);

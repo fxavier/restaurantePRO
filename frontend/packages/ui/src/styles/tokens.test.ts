@@ -10,7 +10,15 @@ function block(selector: string): Record<string, string> {
   return Object.fromEntries([...body.matchAll(/--([\w-]+):\s*([^;]+);/g)].map((m) => [m[1], m[2]!.trim()]));
 }
 
-const tokens = () => block(':root');
+/** `:root`, each `var(--x)` replaced by the value of `x`, so the contrast checks read colours. */
+const tokens = () => {
+  const raw = block(':root');
+  const resolve = (value: string): string => {
+    const name = /^var\(--([\w-]+)\)$/.exec(value)?.[1];
+    return name && raw[name] ? resolve(raw[name]) : value;
+  };
+  return Object.fromEntries(Object.entries(raw).map(([name, value]) => [name, resolve(value)]));
+};
 
 function luminance(hex: string): number {
   const [r, g, b] = [1, 3, 5].map((i) => {
@@ -27,46 +35,89 @@ function contrast(a: string, b: string): number {
 }
 
 describe('design tokens', () => {
-  it('match the design system table', () => {
+  it('match the light reference (DESIGN.md "Light reference")', () => {
     expect(tokens()).toMatchObject({
-      background: '#FFFFFF',
-      foreground: '#0F172A',
-      muted: '#F1F5F9',
-      'muted-foreground': '#475569',
-      border: '#E2E8F0',
-      input: '#64748B',
-      primary: '#166FE5',
-      'primary-hover': '#1259C3',
+      background: '#F0F0ED',
+      foreground: '#1C1C1A',
+      card: '#FFFFFF',
+      popover: '#FFFFFF',
+      muted: '#EAEAE6',
+      'muted-foreground': '#575752',
+      border: '#D6D6D1',
+      input: '#7A7A74',
+      primary: '#0B7A0B',
+      'primary-hover': '#086208',
       'primary-foreground': '#FFFFFF',
-      brand: '#1877F2',
-      ring: '#1877F2',
-      success: '#15803D',
+      brand: '#0B7A0B',
+      ring: '#1C64C4',
+      success: '#0B7A0B',
       'success-foreground': '#FFFFFF',
-      warning: '#FEF3C7',
-      'warning-foreground': '#92400E',
-      destructive: '#B91C1C',
+      warning: '#9A5700',
+      'warning-foreground': '#FFFFFF',
+      info: '#1D5FB0',
+      'info-foreground': '#FFFFFF',
+      destructive: '#B3261E',
       'destructive-foreground': '#FFFFFF',
-      info: 'var(--primary)',
+      error: '#B3261E',
+      'success-tint': '#D4EDD2',
+      'success-border': '#6CC46C',
+      'success-text': '#145A14',
+      'warning-tint': '#F9DEA9',
+      'warning-border': '#E9A21B',
+      'warning-text': '#6B3E00',
+      'info-tint': '#D3E3F8',
+      'info-border': '#82AFEB',
+      'info-text': '#1A4A8A',
+      'destructive-tint': '#F8D6D6',
+      'destructive-border': '#E58C8C',
+      'destructive-text': '#8E1B1B',
+      // shared with `.dark`, which sets neither: the BackOffice keeps them
       radius: '0.5rem',
+      'route-kitchen': '#F97316',
     });
   });
 
   it.each([
-    ['primary-foreground', 'primary'],
+    ['foreground', 'background'],
+    ['foreground', 'card'],
+    ['muted-foreground', 'card'],
     ['muted-foreground', 'background'],
     ['muted-foreground', 'muted'],
-    ['foreground', 'background'],
+    ['primary-foreground', 'primary'],
+    ['primary-foreground', 'primary-hover'],
+    ['primary', 'card'],
+    ['primary', 'background'],
     ['primary-hover', 'muted'],
+    ['error', 'card'],
+    ['error', 'background'],
+    ['warning', 'card'],
+    ['info', 'card'],
     ['success-foreground', 'success'],
     ['warning-foreground', 'warning'],
+    ['info-foreground', 'info'],
     ['destructive-foreground', 'destructive'],
+    // the table states: their text, and the table code and details, on their tint
+    ['success-text', 'success-tint'],
+    ['warning-text', 'warning-tint'],
+    ['info-text', 'info-tint'],
+    ['destructive-text', 'destructive-tint'],
+    ['foreground', 'success-tint'],
+    ['foreground', 'warning-tint'],
+    ['foreground', 'info-tint'],
+    ['foreground', 'destructive-tint'],
+    ['muted-foreground', 'success-tint'],
+    ['muted-foreground', 'warning-tint'],
+    ['muted-foreground', 'info-tint'],
+    ['muted-foreground', 'destructive-tint'],
   ])('give text %s on %s a contrast of at least 4.5:1', (text, surface) => {
     const t = tokens();
     expect(contrast(t[text]!, t[surface]!)).toBeGreaterThanOrEqual(4.5);
   });
 
   it.each([
+    ['input', 'card'],
     ['input', 'background'],
+    ['ring', 'card'],
     ['ring', 'background'],
   ])('give the boundary %s on %s a contrast of at least 3:1', (boundary, surface) => {
     const t = tokens();

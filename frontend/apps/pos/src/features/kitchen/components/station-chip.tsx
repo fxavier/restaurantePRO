@@ -6,11 +6,12 @@ import { Badge } from '@restaurantpro/ui';
  * feature's internal (FC: a feature never imports another's internals); move both to one shared place when a third
  * feature needs it.
  */
+// Light theme: the route colour as border and tint, the text in `foreground` (white on these hues is below AA).
 const KNOWN: Record<string, { label: string; className: string }> = {
-  KITCHEN: { label: 'Cozinha', className: 'bg-route-kitchen text-background' },
-  BAR: { label: 'Bar', className: 'bg-route-bar text-background' },
-  COPA: { label: 'Copa', className: 'bg-route-copa text-background' },
-  PANTRY: { label: 'Copa', className: 'bg-route-copa text-background' },
+  KITCHEN: { label: 'Cozinha', className: 'border-route-kitchen bg-route-kitchen/15 text-foreground' },
+  BAR: { label: 'Bar', className: 'border-route-bar bg-route-bar/15 text-foreground' },
+  COPA: { label: 'Copa', className: 'border-route-copa bg-route-copa/15 text-foreground' },
+  PANTRY: { label: 'Copa', className: 'border-route-copa bg-route-copa/15 text-foreground' },
 };
 
 export function StationChip({ code }: { code: string }) {
