@@ -14,35 +14,33 @@ import { StatusFilter } from './status-filter';
 
 /**
  * "Sessões de caixa" (§5, §8.3): the store's cash sessions opened in the period, newest first, with the opening float
- * and the operator's blind count per method, as the server stored them (the expected amounts are the closing's).
+ * and the operator's blind count per method, as the server stored them (the expected amounts are the closing's). The
+ * status filter stays when the period changes; the list starts again at its first page when either changes (a past
+ * page may not exist in the new search).
  */
-export function CashSessionsTab({ storeId, period }: { storeId: string; period: Period }) {
+export function CashSessionsTab({ storeId, period, periodKey }: { storeId: string; period: Period; periodKey: string }) {
   const [status, setStatus] = useState<CashSessionStatus | ''>('');
-  const [page, setPage] = useState(0);
-  const sessions = useCashSessions(storeId, period, status || undefined, page);
-  const rows = sessions.data?.rows ?? [];
-  const filter = (
-    <StatusFilter
-      label="Estado das sessões"
-      options={SESSION_FILTERS}
-      value={status}
-      onChange={(next) => {
-        setStatus(next);
-        setPage(0);
-      }}
-    />
-  );
   return (
     <SectionCard
       title="Sessões de caixa"
       description="Cada abertura de caixa do período: quem a operou, o fundo inicial e a contagem cega do fecho."
-      action={filter}
+      action={<StatusFilter label="Estado das sessões" options={SESSION_FILTERS} value={status} onChange={setStatus} />}
     >
-      <QueryState query={sessions} empty={rows.length === 0} emptyMessage="Sem sessões de caixa neste período." subject="as sessões de caixa desta loja">
-        <SessionsTable storeId={storeId} rows={rows} timeZone={period.timeZone} />
-        <Pager page={page} totalElements={sessions.data?.totalElements ?? 0} pageSize={PAGE_SIZE} onPage={setPage} />
-      </QueryState>
+      <SessionsList key={`${periodKey}/${status}`} storeId={storeId} period={period} status={status || undefined} />
     </SectionCard>
+  );
+}
+
+/** One search's sessions, page by page. */
+function SessionsList({ storeId, period, status }: { storeId: string; period: Period; status?: CashSessionStatus }) {
+  const [page, setPage] = useState(0);
+  const sessions = useCashSessions(storeId, period, status, page);
+  const rows = sessions.data?.rows ?? [];
+  return (
+    <QueryState query={sessions} empty={rows.length === 0} emptyMessage="Sem sessões de caixa neste período." subject="as sessões de caixa desta loja">
+      <SessionsTable storeId={storeId} rows={rows} timeZone={period.timeZone} />
+      <Pager page={page} totalElements={sessions.data?.totalElements ?? 0} pageSize={PAGE_SIZE} onPage={setPage} />
+    </QueryState>
   );
 }
 

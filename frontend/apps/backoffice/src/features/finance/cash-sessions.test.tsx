@@ -1,6 +1,6 @@
 import type { components } from '@restaurantpro/api-client';
 import { formatMoney } from '@restaurantpro/ui';
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api, baixa } from '../../test/fixtures';
@@ -110,6 +110,20 @@ describe('cash sessions', () => {
 
     expect(await screen.findByRole('row', { name: /CX1/ })).toBeInTheDocument();
     expect(requests).toContain(`${SESSIONS}?storeId=${baixa.id}&from=2026-11-20&to=2026-11-20&page=0&size=20`);
+  });
+
+  it('keeps the status filter when the period changes, going back to the first page only', async () => {
+    const requests = sessionsServer((query) => HttpResponse.json(page([closed], Number(query.get('page')), 20, 21)));
+    const { user } = renderApp(tab);
+
+    await screen.findByRole('row', { name: /CX1/ });
+    await user.selectOptions(screen.getByLabelText('Estado das sessões'), 'CLOSED');
+    await user.click(await screen.findByRole('button', { name: 'Seguinte' }));
+    await waitFor(() => expect(requests).toContain(`${SESSIONS}?storeId=${baixa.id}&from=2026-11-14&to=2026-11-20&status=CLOSED&page=1&size=20`));
+    await user.selectOptions(screen.getByLabelText('Período'), '1');
+
+    await waitFor(() => expect(requests).toContain(`${SESSIONS}?storeId=${baixa.id}&from=2026-11-20&to=2026-11-20&status=CLOSED&page=0&size=20`));
+    expect(screen.getByLabelText('Estado das sessões')).toHaveValue('CLOSED');
   });
 
   it('names the operator by id, without asking for the employees, to a user who may not read them', async () => {
