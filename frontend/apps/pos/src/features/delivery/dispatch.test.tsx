@@ -51,10 +51,9 @@ describe('dispatching a delivery with a courier', () => {
     const sent = dispatchEndpoint(DELIVERY.pending.orderId!, json(OUT_NOW));
     const { user, dialog } = await dispatching();
 
-    expect(await within(dialog).findByRole('radio', { name: /^João Pereira/ })).toBeInTheDocument();
-    expect(within(dialog).getByRole('radio', { name: /^Rita Mabunda/ })).toBeInTheDocument();
-    expect(within(dialog).getByText('E02')).toBeInTheDocument();
-    expect(within(dialog).getByText('E05')).toBeInTheDocument();
+    // The name is the courier's, the code its description: never glued into one word ("Rita MabundaE05").
+    expect(await within(dialog).findByRole('radio', { name: 'João Pereira' })).toHaveAccessibleDescription('E02');
+    expect(within(dialog).getByRole('radio', { name: 'Rita Mabunda' })).toHaveAccessibleDescription('E05');
     await user.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());

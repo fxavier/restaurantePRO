@@ -21,7 +21,9 @@ describe('a new takeaway or delivery order', () => {
     orderEndpoint(NEW_ORDER_ID, json(TAKEAWAY_ORDER));
     const { user, router, dialog } = await openNewOrder();
 
-    await user.click(within(dialog).getByRole('radio', { name: /^Takeaway/ }));
+    const takeaway = within(dialog).getByRole('radio', { name: 'Takeaway' });
+    expect(takeaway).toHaveAccessibleDescription('Levantamento na loja');
+    await user.click(takeaway);
     await user.click(within(dialog).getByRole('button', { name: 'Abrir takeaway' }));
 
     await waitFor(() => expect(router.state.location.pathname).toBe(`/orders/${NEW_ORDER_ID}`));
