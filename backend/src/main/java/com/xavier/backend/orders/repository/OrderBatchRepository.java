@@ -2,6 +2,7 @@ package com.xavier.backend.orders.repository;
 
 import com.xavier.backend.orders.model.OrderBatch;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -12,6 +13,17 @@ import org.springframework.data.repository.query.Param;
 public interface OrderBatchRepository extends JpaRepository<OrderBatch, UUID> {
 
     List<OrderBatch> findByOrderIdOrderByBatchNo(UUID orderId);
+
+    /** When each of {@code orderIds} last confirmed a round; orders without one are absent. One query for a map. */
+    @Query("select b.orderId as orderId, max(b.confirmedAt) as lastRoundAt from OrderBatch b "
+            + "where b.orderId in :orderIds group by b.orderId")
+    List<LastRound> lastRounds(@Param("orderIds") Collection<UUID> orderIds);
+
+    interface LastRound {
+        UUID getOrderId();
+
+        Instant getLastRoundAt();
+    }
 
     /**
      * CONFIRMED → DISPATCHED as one compare-and-set: of two concurrent notices exactly one changes the row.

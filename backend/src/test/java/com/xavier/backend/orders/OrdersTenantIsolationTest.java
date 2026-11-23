@@ -55,6 +55,9 @@ class OrdersTenantIsolationTest {
     static final UUID A_OTHER_ORDER = UUID.fromString("0190b400-0000-7000-8000-0000000002a2");
     static final UUID A_EMPTY_ORDER = UUID.fromString("0190b400-0000-7000-8000-0000000002a3");
     static final UUID B_ORDER = UUID.fromString("0190b400-0000-7000-8000-0000000002b1");
+    static final UUID A_SEATED = UUID.fromString("0190b400-0000-7000-8000-0000000002a4");
+    static final UUID A_OTHER_SEATED = UUID.fromString("0190b400-0000-7000-8000-0000000002a5");
+    static final UUID B_SEATED = UUID.fromString("0190b400-0000-7000-8000-0000000002b2");
     static final UUID A_LINE = UUID.fromString("0190b400-0000-7000-8000-0000000003a1");
     static final UUID B_LINE = UUID.fromString("0190b400-0000-7000-8000-0000000003b1");
     static final UUID A_ZONE = UUID.fromString("0190b400-0000-7000-8000-0000000004a1");
@@ -71,7 +74,23 @@ class OrdersTenantIsolationTest {
         try (AppRoleSession app = AppRoleSession.open().tenant(A).allStores()) {
             insertOrder(app.jdbc(), A_OTHER_ORDER, A_OTHER_STORE);
             insertOrder(app.jdbc(), A_EMPTY_ORDER, A_STORE);
+            insertSeatedOrder(app.jdbc(), A_SEATED, A_STORE);
+            insertSeatedOrder(app.jdbc(), A_OTHER_SEATED, A_OTHER_STORE);
         }
+        try (AppRoleSession app = AppRoleSession.open().tenant(B).allStores()) {
+            insertSeatedOrder(app.jdbc(), B_SEATED, B_STORE);
+        }
+    }
+
+    /** A DINE_IN order at a table of its own (dining is referenced by id only, D6). */
+    private static void insertSeatedOrder(JdbcClient jdbc, UUID order, UUID store) {
+        jdbc.sql("""
+                INSERT INTO orders.order_header (id, store_id, terminal_id, order_number, mode, table_id, table_code,
+                    guests, lifecycle, billing_lock, business_day, currency, opened_at, opened_by_employee_id,
+                    next_batch_no, version)
+                VALUES (?, ?, gen_random_uuid(), nextval('orders.order_number_seq'), 'DINE_IN', gen_random_uuid(),
+                    'ISO', 2, 'OPEN', 'NONE', current_date, 'MZN', now(), gen_random_uuid(), 1, 0)""")
+                .param(order).param(store).update();
     }
 
     /** As the application role in {@code tenant}: no tenant_id is written, the column default takes the bound one. */
@@ -137,6 +156,18 @@ class OrdersTenantIsolationTest {
         mvc.perform(get("/api/v1/pos/orders").with(pos(B, B_STORE))).andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[?(@.id == '" + B_ORDER + "')]").exists())
                 .andExpect(jsonPath("$.content[?(@.id == '" + A_ORDER + "')]").doesNotExist());
+    }
+
+    /** The table map's order side lists the session store's seated orders only: no other tenant, no other store. */
+    @Test
+    void theTableActivityShowsOnlyTheSessionStoresSeatedOrders() throws Exception {
+        mvc.perform(get("/api/v1/pos/orders/table-activity").with(pos(A, A_STORE))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.tables[?(@.orderId == '" + A_SEATED + "')]").exists())
+                .andExpect(jsonPath("$.tables[?(@.orderId == '" + A_OTHER_SEATED + "')]").doesNotExist())
+                .andExpect(jsonPath("$.tables[?(@.orderId == '" + B_SEATED + "')]").doesNotExist());
+        mvc.perform(get("/api/v1/pos/orders/table-activity").with(pos(B, B_STORE))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.tables[?(@.orderId == '" + B_SEATED + "')]").exists())
+                .andExpect(jsonPath("$.tables[?(@.orderId == '" + A_SEATED + "')]").doesNotExist());
     }
 
     @Test

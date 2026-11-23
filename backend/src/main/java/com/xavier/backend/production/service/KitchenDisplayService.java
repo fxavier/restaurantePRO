@@ -4,6 +4,7 @@ import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.PosContext;
 import com.xavier.backend.audit.AuditLog;
+import com.xavier.backend.orders.OrdersProductionApi;
 import com.xavier.backend.production.exception.ProductionRule;
 import com.xavier.backend.production.exception.ProductionRuleViolationException;
 import com.xavier.backend.production.model.KitchenCommand;
@@ -11,6 +12,7 @@ import com.xavier.backend.production.model.KitchenProgress;
 import com.xavier.backend.production.model.KitchenStatus;
 import com.xavier.backend.production.model.ProductionTicket;
 import com.xavier.backend.production.model.TicketSource;
+import com.xavier.backend.production.model.dto.RoundKitchenView;
 import com.xavier.backend.production.model.dto.TicketView;
 import com.xavier.backend.production.repository.KitchenProgressRepository;
 import com.xavier.backend.production.repository.ProductionTicketRepository;
@@ -21,6 +23,8 @@ import com.xavier.backend.shared.persistence.StoreProbe;
 import com.xavier.backend.shared.web.PageResponse;
 import java.time.Clock;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -47,11 +51,13 @@ public class KitchenDisplayService {
     private final StoreProbe probe;
     private final AuditLog auditLog;
     private final ChangeNotifier notifier;
+    private final OrdersProductionApi orders;
     private final Clock clock;
 
     KitchenDisplayService(KitchenProgressRepository progresses, ProductionTicketRepository tickets,
                           AccessPolicy accessPolicy, StoreProbe probe, AuditLog auditLog, ChangeNotifier notifier,
-                          Clock clock) {
+                          OrdersProductionApi orders, Clock clock) {
+        this.orders = orders;
         this.progresses = progresses;
         this.tickets = tickets;
         this.accessPolicy = accessPolicy;
@@ -71,6 +77,8 @@ public class KitchenDisplayService {
                 clock.instant()));
         notifier.notifyAfterCommit(ticket.getStoreId(), ChangeTopic.PRODUCTION_TICKETS, ticket.getId());
     }
+
+    private static final String ORDER = "Order";
 
     /** The rounds still on the screen; BUMPED ones are history, listed only when asked for. */
     static final Set<KitchenStatus> ON_SCREEN = EnumSet.of(KitchenStatus.QUEUED, KitchenStatus.IN_PREPARATION,
@@ -92,6 +100,23 @@ public class KitchenDisplayService {
         Map<UUID, ProductionTicket> byId = tickets.findAllById(page.map(KitchenProgress::getTicketId).toList())
                 .stream().collect(Collectors.toMap(ProductionTicket::getId, Function.identity()));
         return PageResponse.from(page.map(progress -> byId.get(progress.getTicketId()).toView(progress)));
+    }
+
+    /**
+     * Where each round of {@code orderId} is in the kitchen, for the POS order panel: a waiter's read (ORDER_VIEW),
+     * in the session's store (unknown order 404, another store's 403, D42). One query for the whole order.
+     */
+    @Transactional(readOnly = true)
+    public List<RoundKitchenView> roundsOfOrder(UUID orderId) {
+        PosContext pos = accessPolicy.requirePos(Permission.ORDER_VIEW);
+        accessPolicy.requireSessionStore(pos, orders.storeOf(orderId), ORDER, orderId);
+        Map<UUID, List<KitchenStatus>> stations = progresses.stationsOfOrder(orderId).stream()
+                .collect(Collectors.groupingBy(KitchenProgressRepository.StationProgress::getBatchId,
+                        LinkedHashMap::new, Collectors.mapping(KitchenProgressRepository.StationProgress::getStatus,
+                                Collectors.toList())));
+        return stations.entrySet().stream()
+                .map(round -> new RoundKitchenView(round.getKey(), KitchenStatus.leastAdvanced(round.getValue())))
+                .toList();
     }
 
     /**
