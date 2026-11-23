@@ -234,6 +234,21 @@ class KitchenDisplayTest {
     }
 
     @Test
+    void withoutAStatusTheListShowsTheRoundsStillOnTheScreen() throws Exception {
+        UUID queued = queuedRound();
+        UUID bumped = roundOn("GRILL");
+        command(bumped, "start", 0, key()).andExpect(status().isOk());
+        command(bumped, "ready", 1, key()).andExpect(status().isOk());
+        command(bumped, "bump", 2, key()).andExpect(status().isOk());
+        UUID ready = roundOn("GRILL");
+        command(ready, "start", 0, key()).andExpect(status().isOk());
+        command(ready, "ready", 1, key()).andExpect(status().isOk());
+
+        assertThat(listed(get(KDS))).containsExactly(queued.toString(), ready.toString());
+        assertThat(listed(get(KDS).param("status", "BUMPED"))).containsExactly(bumped.toString());
+    }
+
+    @Test
     void theTableRefusesAProgressInconsistentWithItsStatus() throws Exception {
         UUID ticket = queuedRound();
 

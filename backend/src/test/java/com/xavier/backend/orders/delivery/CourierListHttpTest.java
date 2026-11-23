@@ -1,8 +1,8 @@
 package com.xavier.backend.orders.delivery;
 
 import static com.xavier.backend.identity.IdentityFixtures.admin;
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.hasItem;
-import static org.hamcrest.Matchers.hasItems;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -41,25 +41,32 @@ class CourierListHttpTest {
     }
 
     @Test
-    void theCouriersAreTheStoresActiveEmployees() throws Exception {
-        IdentityFixtures.Employee ana = identity.employee(OrdersFixtures.PIN, store, IdentityFixtures.WAITER);
-        IdentityFixtures.Employee rui = identity.employee(OrdersFixtures.PIN, store, IdentityFixtures.WAITER);
+    void theCouriersAreTheStoresActiveEmployeesByName() throws Exception {
+        // created first but named last, so creation order and name order disagree
+        IdentityFixtures.Employee zita = identity.employee(OrdersFixtures.PIN, store, IdentityFixtures.WAITER);
+        IdentityFixtures.Employee bruno = identity.employee(OrdersFixtures.PIN, store, IdentityFixtures.WAITER);
         IdentityFixtures.Employee gone = identity.employee(OrdersFixtures.PIN, store, IdentityFixtures.WAITER);
         IdentityFixtures.Employee elsewhere = identity.employee(OrdersFixtures.PIN, identity.store(),
                 IdentityFixtures.WAITER);
-        mvc.perform(put("/api/v1/backoffice/employees/" + gone.id()).with(admin()).with(csrf())
-                        .contentType(MediaType.APPLICATION_JSON).content("""
-                                {"name": "Ana", "active": false, "version": 0}"""))
-                .andExpect(status().isOk());
+        edit(zita, "Zita", true);
+        edit(bruno, "Bruno", true);
+        edit(gone, "Ana", false);
 
         mvc.perform(get(COURIERS).with(dispatcher(store)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[*].id", hasItems(ana.id().toString(), rui.id().toString())))
+                .andExpect(jsonPath("$[*].id", contains(bruno.id().toString(), zita.id().toString())))
+                .andExpect(jsonPath("$[*].name", contains("Bruno", "Zita")))
                 .andExpect(jsonPath("$[*].id", not(hasItem(gone.id().toString()))))
                 .andExpect(jsonPath("$[*].id", not(hasItem(elsewhere.id().toString()))))
-                .andExpect(jsonPath("$[0].code").isString())
-                .andExpect(jsonPath("$[0].name").value("Ana"));
+                .andExpect(jsonPath("$[0].code").isString());
+    }
+
+    private void edit(IdentityFixtures.Employee employee, String name, boolean active) throws Exception {
+        mvc.perform(put("/api/v1/backoffice/employees/" + employee.id()).with(admin()).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"name": "%s", "active": %s, "version": 0}""".formatted(name, active)))
+                .andExpect(status().isOk());
     }
 
     @Test
