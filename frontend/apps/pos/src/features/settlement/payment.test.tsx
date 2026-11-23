@@ -7,10 +7,12 @@ import { problem } from '../../test/server';
 import {
   attempt,
   attemptEndpoint,
+  cancelPartitionEndpoint,
   ITEMS_PARTITION,
   mzn,
   NULL,
   PAID,
+  part,
   PARTITION_IDS,
   serverSettlement,
   SETTLEMENT,
@@ -144,5 +146,25 @@ describe('charging the bill', () => {
 
     await waitFor(() => expect(requests).toHaveLength(2));
     expect(requests[1]!.body).toEqual({ orderId: ORDER_ID, methodCode: 'CASH', amount: '630.00' });
+  });
+
+  it('a chosen part that is no longer live gives way to the rest of the bill, in the list and in the charge alike', async () => {
+    const server = serverSettlement(SPLIT_IN_THREE);
+    cancelPartitionEndpoint(PARTITION_IDS.third, () => {
+      server.set({ ...SPLIT_IN_THREE, partitions: [part(1), part(2), part(3, { status: 'CANCELLED' })] });
+      return HttpResponse.json(part(3, { status: 'CANCELLED', version: 1 }));
+    });
+    const { user } = await atPayment();
+    await billShown();
+    const list = () => within(screen.getByRole('list', { name: 'Divisões' }));
+
+    await user.click(list().getByRole('button', { name: 'Cobrar Parte 3 de 3' }));
+    expect(within(payPanel()).getByRole('heading', { name: 'Valor a cobrar — Parte 3 de 3' })).toBeInTheDocument();
+    await user.click(list().getByRole('button', { name: 'Cancelar Parte 3 de 3' }));
+    await waitFor(() => expect(list().getAllByRole('listitem')).toHaveLength(2));
+
+    const rest = within(screen.getByRole('region', { name: /^Divisões/ })).getByRole('button', { name: /^Cobrar Restante da conta/ });
+    expect(rest).toHaveAttribute('aria-pressed', 'true');
+    expect(within(payPanel()).getByRole('heading', { name: 'Valor a cobrar — Restante da conta' })).toBeInTheDocument();
   });
 });
