@@ -3,6 +3,7 @@ package com.xavier.backend.cash.controller;
 import static com.xavier.backend.cash.CashFixtures.account;
 import static com.xavier.backend.cash.CashFixtures.pos;
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -12,6 +13,7 @@ import com.xavier.backend.cash.CashFixtures;
 import com.xavier.backend.cash.CashFixtures.Pos;
 import com.xavier.backend.cash.CashModuleTest;
 import com.xavier.backend.cash.CashTestClock;
+import com.xavier.backend.identity.IdentityFixtures;
 import java.time.Instant;
 import java.time.LocalTime;
 import java.util.UUID;
@@ -70,6 +72,22 @@ class SessionListHttpTest {
                 .andExpect(jsonPath("$.content[0].openingFloat.amount").value("50.00"))
                 .andExpect(jsonPath("$.content[0].counted[0].methodCode").value("CASH"))
                 .andExpect(jsonPath("$.content[0].counted[0].amount.amount").value("75.00"));
+    }
+
+    /** The reader needs only CASH_VIEW: the operator's name comes with the row, not from the employees read. */
+    @Test
+    void eachRowNamesItsOperatorForAReaderWithoutEmployeeAccess() throws Exception {
+        IdentityFixtures.Employee ana = new IdentityFixtures(mvc).employee("1234", store, IdentityFixtures.WAITER);
+        UUID named = fixtures.openSession(new Pos(ana.id(), UUID.randomUUID(), store), fixtures.newRegister(store),
+                "0");
+        UUID unknown = fixtures.openSession(pos(store), fixtures.newRegister(store), "0");
+
+        mvc.perform(get(BO_SESSIONS).param("storeId", store.toString())
+                        .with(account(store, Permission.CASH_VIEW)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[?(@.id == '%s')].operatorName".formatted(named)).value("Ana"))
+                .andExpect(jsonPath("$.content[?(@.id == '%s')].operatorName".formatted(unknown))
+                        .value(contains(nullValue())));
     }
 
     @Test

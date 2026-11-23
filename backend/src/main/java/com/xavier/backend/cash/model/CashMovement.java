@@ -211,4 +211,12 @@ public class CashMovement {
     public Money getAmount() {
         return Money.of(amount, Currency.getInstance(currency));
     }
+
+    public String getReason() {
+        return reason;
+    }
+
+    public Instant getOccurredAt() {
+        return occurredAt;
+    }
 }

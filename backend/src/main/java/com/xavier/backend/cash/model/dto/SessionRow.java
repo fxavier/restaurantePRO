@@ -12,10 +12,13 @@ import org.jspecify.annotations.Nullable;
  * A cash session in the BackOffice list (Financeiro), with only what is stored: the opening float and, once
  * CLOSED, the operator's blind count per method ({@code counted}, empty while OPEN). {@code closeKind} is
  * {@code OPERATOR} or {@code FORCED} (P22). Read {@code /pos/cash/sessions/{id}} for the expected amounts.
+ * {@code operatorName} is the operator's display name, so a reader with {@code CASH_VIEW} alone sees who operated;
+ * {@code null} only when the employee is unknown to identity.
  */
 @NullMarked
 public record SessionRow(UUID id, UUID storeId, UUID registerId, String registerCode, UUID cashDayId,
-                         LocalDate businessDate, UUID operatorEmployeeId, String status, Money openingFloat,
+                         LocalDate businessDate, UUID operatorEmployeeId, @Nullable String operatorName,
+                         String status, Money openingFloat,
                          Instant openedAt, @Nullable Instant closedAt, @Nullable UUID closedByEmployeeId,
                          @Nullable String closeKind, List<MethodAmount> counted) {
 }

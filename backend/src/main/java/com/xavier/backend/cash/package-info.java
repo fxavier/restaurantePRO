@@ -7,7 +7,8 @@
  * owns the coordinated closes (D36, D37). Cash never decides that money came in: a {@code PAYMENT_RECEIPT} movement
  * exists only because settlement called {@code recordReceipt} for a confirmed payment (spec §7.5, §7.7).
  * Allowed dependencies follow D35: organization through {@code OrganizationApi}, {@code BusinessDays} and its
- * {@code dto} named interface, identity only for {@code ApproverVerifier}. Never orders or settlement.
+ * {@code dto} named interface, identity only for {@code ApproverVerifier} and {@code EmployeeDirectory} (the
+ * operator's name on the BackOffice session list). Never orders or settlement.
  */
 @ApplicationModule(displayName = "Cash", allowedDependencies = {
         "shared", "audit", "access", "organization", "organization :: dto", "identity"})
