@@ -2,6 +2,7 @@ import { Navigate, type RouteObject } from 'react-router';
 import { CashPage } from './cash-page';
 import { DeliveryPage } from './delivery-page';
 import { EnrolPage } from './enrol-page';
+import { KdsPage } from './kds-page';
 import { LoginPage } from './login-page';
 import { OrderPage } from './order-page';
 import { PaymentPage } from './payment-page';
@@ -28,6 +29,7 @@ export const routes: RouteObject[] = [
           { path: '/delivery', element: <DeliveryPage /> },
           { path: '/reservations', element: <ReservationsPage /> },
           { path: '/cash', element: <CashPage /> },
+          { path: '/kds', element: <KdsPage /> },
           { path: '*', element: <Navigate to="/tables" replace /> },
         ],
       },

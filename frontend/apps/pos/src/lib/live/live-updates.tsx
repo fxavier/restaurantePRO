@@ -15,6 +15,9 @@ function keysOf({ topic, id }: ChangeNotice): QueryKey[] {
       return [['pos', 'catalog']];
     case 'PRINT_JOBS':
       return [['pos', 'print-jobs']];
+    case 'PRODUCTION_TICKETS':
+      // ADR 0044: a round queued or moved on the kitchen display; every station's lists hold it, so all are read.
+      return [['pos', 'production-tickets']];
     case 'PAYMENT_ATTEMPT':
       return id ? [['pos', 'payment-attempts', id]] : [['pos', 'payment-attempts']];
     default:
