@@ -1,6 +1,6 @@
 # 0044. Kitchen display: a round's kitchen progress beside its append-only ticket
 
-Status: **Proposed** 2026-11-22 (W3 KDS backend; awaiting user approval). Source: spec §4 "Produção e impressão" ("Ecrã de cozinha pode ser adicionado como interface do mesmo domínio"), §8.3 (OrderBatch: "preparação e impressão têm estados próprios"), §9 (change stream), §10; ADR 0006 (idempotency), ADR 0039/0040 (row-level security, tenant).
+Status: **Accepted** 2026-11-23 (user approval; proposed 2026-11-22 with the W3 KDS backend, built in PRs #183 and #184). Source: spec §4 "Produção e impressão" ("Ecrã de cozinha pode ser adicionado como interface do mesmo domínio"), §8.3 (OrderBatch: "preparação e impressão têm estados próprios"), §9 (change stream), §10; ADR 0006 (idempotency), ADR 0039/0040 (row-level security, tenant).
 
 ## Context
 
