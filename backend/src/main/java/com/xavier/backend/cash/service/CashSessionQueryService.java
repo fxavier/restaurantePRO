@@ -9,6 +9,7 @@ import com.xavier.backend.cash.model.CashSession;
 import com.xavier.backend.cash.model.CashSessionCount;
 import com.xavier.backend.cash.model.CashSessionStatus;
 import com.xavier.backend.cash.model.MovementType;
+import com.xavier.backend.cash.model.CashMovement;
 import com.xavier.backend.cash.model.dto.AdjustmentRow;
 import com.xavier.backend.cash.model.dto.MethodAmount;
 import com.xavier.backend.cash.model.dto.SessionRow;
@@ -70,7 +71,13 @@ public class CashSessionQueryService {
                 .orElseThrow(() -> new CashNotFoundException(CashSessionService.ENTITY, sessionId));
         accessPolicy.require(Permission.CASH_VIEW, storeId);
         return movements.findBySessionIdAndTypeOrderByOccurredAtDescIdDesc(sessionId, MovementType.ADJUSTMENT)
-                .stream().map(AdjustmentRow::from).toList();
+                .stream().map(CashSessionQueryService::adjustmentRow).toList();
+    }
+
+    private static AdjustmentRow adjustmentRow(CashMovement adjustment) {
+        return new AdjustmentRow(adjustment.getId(), adjustment.getSessionId(), adjustment.getDirection(),
+                adjustment.getMethodCode(), adjustment.getAmount(), adjustment.getReason(),
+                adjustment.getOccurredAt());
     }
 
     /** The store's sessions, optionally in {@code status} and of business dates in {@code [from, to]}. */

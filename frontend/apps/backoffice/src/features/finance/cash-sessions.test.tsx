@@ -235,6 +235,20 @@ describe('cash sessions', () => {
       expect(await screen.findByText('Sem ajustes nesta sessão.')).toBeInTheDocument();
     });
 
+    it('says the adjustments are unavailable without a connection, never "no adjustments", and reads them again on retry', async () => {
+      let fail = true;
+      adjustmentsServer(() => (fail ? HttpResponse.error() : HttpResponse.json([adjustment('ad000000-0000-4000-8000-000000000004', {})])));
+      const { user } = renderApp(tab);
+
+      await user.click(await screen.findByRole('button', { name: 'Ver ajustes da sessão CX1' }));
+      const retry = await screen.findByRole('button', { name: /tentar novamente/i });
+      expect(screen.queryByText('Sem ajustes nesta sessão.')).not.toBeInTheDocument();
+      fail = false;
+      await user.click(retry);
+
+      expect(await screen.findByRole('table', { name: /Ajustes da sessão CX1/ })).toBeInTheDocument();
+    });
+
     it('offers no adjustments for an open session, which takes none', async () => {
       const open = session('5e550000-0000-4000-8000-000000000002', { registerCode: 'CX9', status: 'OPEN', closedAt: null, closedByEmployeeId: null, closeKind: null, counted: [] });
       sessionsServer(() => HttpResponse.json(page([open], 0, 20)));

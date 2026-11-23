@@ -1,6 +1,5 @@
 package com.xavier.backend.cash.model.dto;
 
-import com.xavier.backend.cash.model.CashMovement;
 import com.xavier.backend.cash.model.MovementDirection;
 import com.xavier.backend.shared.Money;
 import java.time.Instant;
@@ -15,10 +14,4 @@ import org.jspecify.annotations.NullMarked;
 @NullMarked
 public record AdjustmentRow(UUID id, UUID sessionId, MovementDirection direction, String methodCode, Money amount,
                             String reason, Instant occurredAt) {
-
-    public static AdjustmentRow from(CashMovement adjustment) {
-        return new AdjustmentRow(adjustment.getId(), adjustment.getSessionId(), adjustment.getDirection(),
-                adjustment.getMethodCode(), adjustment.getAmount(), adjustment.getReason(),
-                adjustment.getOccurredAt());
-    }
 }
