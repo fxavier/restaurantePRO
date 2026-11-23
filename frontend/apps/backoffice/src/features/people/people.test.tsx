@@ -386,8 +386,8 @@ describe('roles tab', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Nova função' });
     await user.type(within(dialog).getByLabelText('Nome'), 'Chefe de cozinha');
     const production = await within(dialog).findByRole('group', { name: 'Produção' });
-    await user.click(within(production).getByRole('switch', { name: 'PRODUCTION_VIEW' }));
-    expect(within(production).getByRole('switch', { name: 'PRODUCTION_VIEW' })).toBeChecked();
+    await user.click(within(production).getByRole('switch', { name: 'Ver a produção' }));
+    expect(within(production).getByRole('switch', { name: 'Ver a produção' })).toBeChecked();
     await user.click(within(dialog).getByRole('button', { name: 'Criar função' }));
 
     expect(await screen.findByRole('cell', { name: 'Chefe de cozinha' })).toBeInTheDocument();
@@ -411,12 +411,32 @@ describe('roles tab', () => {
       'Produção',
     ]);
     expect(within(orders).getByText('1 / 2')).toBeInTheDocument();
-    expect(within(orders).getByRole('switch', { name: 'ORDER_VIEW' })).not.toBeChecked();
-    const approve = within(orders).getByRole('switch', { name: 'ORDER_VOID_APPROVE' });
+    expect(within(orders).getByRole('switch', { name: 'Ver pedidos' })).not.toBeChecked();
+    const approve = within(orders).getByRole('switch', { name: 'Aprovar anulações' });
     expect(approve).toBeChecked();
-    expect(approve).toHaveAccessibleDescription('Sensível Usá-la exige confirmar a identidade com o segundo fator.');
-    expect(within(orders).getByRole('switch', { name: 'ORDER_VIEW' })).not.toHaveAccessibleDescription();
+    expect(approve).toHaveAccessibleDescription('ORDER_VOID_APPROVE Sensível Usá-la exige confirmar a identidade com o segundo fator.');
+    expect(within(orders).getByRole('switch', { name: 'Ver pedidos' })).toHaveAccessibleDescription('ORDER_VIEW');
     expect(within(dialog).getByText('2 ativas')).toBeInTheDocument();
+  });
+
+  it('names each permission in Portuguese with its code beside it, and an unknown one by its code', async () => {
+    peopleServer();
+    server.use(
+      http.get(api('/api/v1/backoffice/permissions'), () =>
+        HttpResponse.json([...catalogue, { name: 'FUTURE_THING', sensitive: false, area: 'FUTURE' }]),
+      ),
+    );
+    const { user } = renderApp('/people?tab=funcoes');
+
+    await user.click(await screen.findByRole('button', { name: 'Nova função' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Nova função' });
+
+    const view = await within(dialog).findByRole('switch', { name: 'Ver pedidos' });
+    expect(view).toHaveAccessibleDescription('ORDER_VIEW');
+    expect(within(dialog).getByText('ORDER_VIEW')).toBeInTheDocument();
+    const unknown = within(dialog).getByRole('switch', { name: 'FUTURE_THING' });
+    expect(unknown).not.toHaveAccessibleDescription();
+    expect(within(dialog).getAllByText('FUTURE_THING')).toHaveLength(1);
   });
 
   it('says in the matrix that the permissions cannot be reached, keeps what the role grants, and reads them again', async () => {
@@ -445,7 +465,7 @@ describe('roles tab', () => {
     const retry = await within(again).findByRole('button', { name: 'Tentar novamente' });
     down = false;
     await user.click(retry);
-    expect(await within(again).findByRole('switch', { name: 'CASH_VIEW' })).toBeChecked();
+    expect(await within(again).findByRole('switch', { name: 'Ver sessões, dias e fechos de caixa' })).toBeChecked();
   });
 
   it('says so while the permissions load', async () => {
@@ -487,7 +507,7 @@ describe('roles tab', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Editar Gerente' }));
     const dialog = await screen.findByRole('dialog', { name: 'Editar a função Gerente' });
-    await user.click(await within(dialog).findByRole('switch', { name: 'ORDER_VIEW' }));
+    await user.click(await within(dialog).findByRole('switch', { name: 'Ver pedidos' }));
     await user.click(within(dialog).getByRole('button', { name: 'Guardar' }));
     const stepUp = await screen.findByRole('alertdialog', { name: 'Confirme a sua identidade' });
     await user.click(within(stepUp).getByRole('button', { name: 'Confirmar identidade' }));
@@ -504,14 +524,14 @@ describe('roles tab', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Editar a função Gerente' });
     // Someone else removes CASH_VIEW meanwhile.
     state.roles[0] = { ...gerente, permissions: ['ORDER_VOID_APPROVE'], version: 4 };
-    await user.click(await within(dialog).findByRole('switch', { name: 'ORDER_VOID_APPROVE' }));
+    await user.click(await within(dialog).findByRole('switch', { name: 'Aprovar anulações' }));
     await user.click(within(dialog).getByRole('button', { name: 'Guardar' }));
 
     expect(await within(dialog).findByText('Foi alterado por outra pessoa. Recarregue e tente de novo.')).toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: 'Carregar a versão atual' }));
-    expect(within(dialog).getByRole('switch', { name: 'CASH_VIEW' })).not.toBeChecked();
-    expect(within(dialog).getByRole('switch', { name: 'ORDER_VOID_APPROVE' })).toBeChecked();
-    await user.click(within(dialog).getByRole('switch', { name: 'ORDER_VOID_APPROVE' }));
+    expect(within(dialog).getByRole('switch', { name: 'Ver sessões, dias e fechos de caixa' })).not.toBeChecked();
+    expect(within(dialog).getByRole('switch', { name: 'Aprovar anulações' })).toBeChecked();
+    await user.click(within(dialog).getByRole('switch', { name: 'Aprovar anulações' }));
     await user.click(within(dialog).getByRole('button', { name: 'Guardar' }));
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());

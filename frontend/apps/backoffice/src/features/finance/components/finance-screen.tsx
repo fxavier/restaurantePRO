@@ -52,7 +52,7 @@ export function FinanceScreen({ storeId }: { storeId: string }) {
 
 /** The store's tabs over one period, in the store's timezone. */
 function FinanceArea({ storeId, timeZone }: { storeId: string; timeZone: string }) {
-  const { tab, selectTab } = useFinanceTab();
+  const { tab, selectTab } = useFinanceTab(storeId);
   const [days, setDays] = useState(7);
   const periodId = useId();
   const period = lastDays(days, new Date(), timeZone);

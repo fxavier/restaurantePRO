@@ -28,7 +28,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 /**
  * Transfers (D120, A48). Between stores: SHIPPED lowers the source at its average; RECEIVED raises the destination
- * by what arrived and records a TRANSFER_SHORTAGE for the rest at the same cost. {@code INVENTORY_TRANSFER} is
+ * by what arrived and records a TRANSFER_SHORTAGE for the rest, valued as any OUT, with the receiver's reason. {@code INVENTORY_TRANSFER} is
  * checked at the source store to ship and at the destination store to receive. Within one store, shipping receives.
  */
 @InventoryModuleTest
@@ -74,7 +74,7 @@ class TransferBetweenStoresTest {
         assertThat(balance(warehouseA)).isEqualTo("6.000000|18.0000");
         assertThat(balance(warehouseB)).isNull();
 
-        receive(transfer, "3", managerOf(storeB)).andExpect(status().isOk())
+        receive(transfer, "3", "Uma caixa partida", managerOf(storeB)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("RECEIVED"))
                 .andExpect(jsonPath("$.lines[0].quantityReceived").value(3.0))
                 .andExpect(jsonPath("$.lines[0].shortfall").value(1.0));
@@ -84,6 +84,62 @@ class TransferBetweenStoresTest {
                 "TRANSFER_OUT|" + warehouseA + "|-4.000000|3.000000|-12.0000",
                 "TRANSFER_IN|" + warehouseB + "|4.000000|3.000000|12.0000",
                 "TRANSFER_SHORTAGE|" + warehouseB + "|-1.000000|3.000000|-3.0000");
+        assertThat(shortageReason(transfer)).isEqualTo("Uma caixa partida");
+    }
+
+    /** Q3 of the complete-app follow-ups: a loss in transit is explained, or the receipt is refused. */
+    @Test
+    void aShortReceiptWithoutAReasonIsRefusedAndNothingArrives() throws Exception {
+        UUID transfer = create(warehouseA, warehouseB, "4", managerOf(storeA));
+        command(transfer, "ship", managerOf(storeA)).andExpect(status().isOk());
+
+        receive(transfer, "3", "  ", managerOf(storeB)).andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("REASON_REQUIRED"));
+
+        assertThat(balance(warehouseB)).isNull();
+        mvc.perform(get(BO + "/transfers/" + transfer).with(managerOf(storeB)))
+                .andExpect(jsonPath("$.status").value("SHIPPED"));
+    }
+
+    @Test
+    void aReceiptNamesEveryShippedLineOnce() throws Exception {
+        UUID other = fixtures.newStockItem("un");
+        UUID transfer = id(mvc.perform(idem(post(BO + "/transfers")).with(managerOf(storeA))
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"fromWarehouseId": "%s", "toWarehouseId": "%s",
+                                 "lines": [{"stockItemId": "%s", "quantity": 4}, {"stockItemId": "%s", "quantity": 1}]}"""
+                                .formatted(warehouseA, warehouseB, item, other)))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        command(transfer, "ship", managerOf(storeA)).andExpect(status().isOk());
+
+        receiveBody(transfer, "{}").andExpect(status().isBadRequest());
+        receiveBody(transfer, """
+                {"lines": [{"stockItemId": "%s", "quantityReceived": 4}]}""".formatted(item))
+                .andExpect(status().isUnprocessableContent()).andExpect(jsonPath("$.code").value("INVALID_QUANTITY"));
+        receiveBody(transfer, """
+                {"lines": [{"stockItemId": "%1$s", "quantityReceived": 4},
+                           {"stockItemId": "%1$s", "quantityReceived": 3}], "reason": "twice"}""".formatted(item))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("DUPLICATE_STOCK_ITEM"));
+
+        assertThat(balance(warehouseB)).isNull();
+        mvc.perform(get(BO + "/transfers/" + transfer).with(managerOf(storeB)))
+                .andExpect(jsonPath("$.status").value("SHIPPED"));
+    }
+
+    @Test
+    void aReasonGivenWithAFullReceiptIsIgnored() throws Exception {
+        UUID transfer = create(warehouseA, warehouseB, "4", managerOf(storeA));
+        command(transfer, "ship", managerOf(storeA)).andExpect(status().isOk());
+
+        receive(transfer, "4", "nada a declarar", managerOf(storeB)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.lines[0].shortfall").value(0.0));
+
+        assertThat(movements(transfer)).hasSize(2);
+        assertThat(jdbc.sql("""
+                        SELECT count(*) FROM audit.audit_event WHERE action = 'STOCK_TRANSFER_RECEIVED'
+                        AND entity_id = ? AND reason IS NULL""")
+                .param(transfer.toString()).query(Long.class).single()).isEqualTo(1L);
     }
 
     @Test
@@ -192,6 +248,26 @@ class TransferBetweenStoresTest {
         return mvc.perform(idem(post(BO + "/transfers/" + transfer + "/receive")).with(actor)
                 .contentType(MediaType.APPLICATION_JSON).content("""
                         {"lines": [{"stockItemId": "%s", "quantityReceived": %s}]}""".formatted(item, quantity)));
+    }
+
+    private ResultActions receive(UUID transfer, String quantity, String reason, RequestPostProcessor actor)
+            throws Exception {
+        return mvc.perform(idem(post(BO + "/transfers/" + transfer + "/receive")).with(actor)
+                .contentType(MediaType.APPLICATION_JSON).content("""
+                        {"lines": [{"stockItemId": "%s", "quantityReceived": %s}], "reason": "%s"}"""
+                        .formatted(item, quantity, reason)));
+    }
+
+    private ResultActions receiveBody(UUID transfer, String body) throws Exception {
+        return mvc.perform(idem(post(BO + "/transfers/" + transfer + "/receive")).with(managerOf(storeB))
+                .contentType(MediaType.APPLICATION_JSON).content(body));
+    }
+
+    private String shortageReason(UUID transfer) {
+        return jdbc.sql("""
+                        SELECT reason FROM inventory.stock_movement
+                        WHERE source_type = 'TRANSFER' AND source_id = ? AND type = 'TRANSFER_SHORTAGE'""")
+                .param(transfer).query(String.class).single();
     }
 
     private static RequestPostProcessor managerOf(UUID store) {

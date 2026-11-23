@@ -12,19 +12,21 @@ The POS courier choice is already recorded in [../w1-followups/pos-delivery-cour
 | # | Question | Recommended default |
 | --- | --- | --- |
 | ~~Q1~~ | ~~Should the POS employee code ignore case at login (`ab12` = `AB12`)?~~ | ~~Yes: look the code up by `upper(code)`, as `TerminalRepository` and the FE-F35 unique indexes do; keep the stored case (upper-casing the input would lock out employees saved in lower case).~~ Done in fu/backend-hardening. |
-| Q2 | Financeiro and Stocks land on their first tab; should the landing tab follow the user's permissions (the first tab they may open)? | Yes: the first permitted tab; today a user without the first tab's permission sees its denial first. |
-| Q3 | An inventory transfer received short: should the receiver record the shortfall (quantity and reason) instead of only accepting the transfer? | Yes: a received quantity per line, the difference posted as a transfer loss movement with a reason. |
+| Q2 | Financeiro and Stocks land on their first tab; should the landing tab follow the user's permissions (the first tab they may open)? | Yes: the first permitted tab; today a user without the first tab's permission sees its denial first. **Done in fu/backoffice-tabs-labels**: without `?tab`, each area opens the first tab whose read permission the user holds in the store; an explicit `?tab` still wins, and a user with none keeps the first tab and its denial. |
+| Q3 | An inventory transfer received short: should the receiver record the shortfall (quantity and reason) instead of only accepting the transfer? | Yes: a received quantity per line, the difference posted as a transfer loss movement with a reason. **Done in fu/transfer-shortfall:** the receive request takes an optional `reason` (required, 422 `REASON_REQUIRED`, when a line is short); every shipped line still needs its received quantity; the reason goes on each `TRANSFER_SHORTAGE` (valued as any OUT, D113/D120) and on the audit event, and is ignored on a full receipt; the BackOffice receive dialog has a received quantity per line and asks the reason when one is short. No migration. |
 | Q4 | Who may be a courier: every active employee of the store, or only employees with a courier role? | A courier permission (`DELIVERY_COURIER`), so the dispatch list stays short. **Status: done** (done in fu/courier-picker). Migration rule: identity V3018 grants it to every role (template and tenant role) holding `DELIVERY_OPERATE`; orders V6033 also grants it to every tenant role an existing delivery's courier holds in that delivery's store, so no current driver loses courier status. |
-| Q5 | The BackOffice shows permission codes (`PERM_…`) in the role editor; should it show Portuguese labels? | Yes: a pt-PT label map in the BackOffice, codes kept as the stored value and shown as secondary text. |
+| Q5 | The BackOffice shows permission codes (`PERM_…`) in the role editor; should it show Portuguese labels? | Yes: a pt-PT label map in the BackOffice, codes kept as the stored value and shown as secondary text. **Done in fu/backoffice-tabs-labels**: `features/people/permission-labels.ts`, typed over the contract's permission enum; an unknown code shows as itself. The roles list still shows codes. |
 
 ## Contract gaps (the API lacks what the screen would use)
 
 - **TicketView structured lines**: the production ticket view carries its lines as text; KDS and reprint would use
   item, quantity, modifiers and notes as fields.
-- **SessionRow operatorName**: the cash-session list shows the operator's id to users without `EMPLOYEE_MANAGE` (the
-  name comes from a separate employees read); add the display name to the row.
-- **Session adjustments GET**: cash adjustments of a session can be posted but not listed; add a read for the session
-  detail.
+- ~~**SessionRow operatorName**: the cash-session list shows the operator's id to users without `EMPLOYEE_MANAGE` (the
+  name comes from a separate employees read); add the display name to the row.~~ Done in fu/cash-session-reads:
+  `SessionRow.operatorName` (through identity's `EmployeeDirectory`); the tab no longer reads the employees.
+- ~~**Session adjustments GET**: cash adjustments of a session can be posted but not listed; add a read for the session
+  detail.~~ Done in fu/cash-session-reads: `GET /api/v1/backoffice/cash/sessions/{id}/adjustments` (CASH_VIEW in the
+  session's store, newest first), shown under a closed session's "Ajustes" toggle in Financeiro › Sessões de caixa.
 - **POS production destinations list**: the KDS builds its station filter from the tickets it shows, so a station with
   no active rounds never appears as a filter; a read of the store's active destinations would list them all.
 - **KDS cut-off for stores without a KDS**: kitchen progress (ADR 0044) stays QUEUED forever in a store that prints
@@ -34,7 +36,10 @@ The POS courier choice is already recorded in [../w1-followups/pos-delivery-cour
 
 - `frontend/apps/backoffice/src/routes/area-placeholder.tsx` and `frontend/apps/pos/src/routes/section-placeholder.tsx`
   are no longer referenced (every area and section is built); delete them.
-- Add `@vitest/coverage-v8` so crapper can read frontend coverage (UB tools ran advisory on the frontend this run).
+- ~~Add `@vitest/coverage-v8` so crapper can read frontend coverage (UB tools ran advisory on the frontend this run).~~
+  **Done in fu/backoffice-tabs-labels**: every Vitest package (pos, backoffice, ui, api-client) has it with a v8
+  `coverage` config (`text-summary`, `lcov`, `json-summary` into `coverage/`, git-ignored, no thresholds); run
+  `pnpm --filter <pkg> exec vitest run --coverage`. Not a gate.
 - The e2e stack ports are set per run through `E2E_PROJECT` and `E2E_*_PORT` (FE-F20); deriving them per worktree
   automatically would stop two worktrees colliding on the defaults.
 - ~~`RoleHttpTest.theSeededRolesAreListed` and `SystemEventPublicationHttpTest` assert on the first page (200 rows) of
@@ -63,6 +68,15 @@ The POS courier choice is already recorded in [../w1-followups/pos-delivery-cour
   dispatch); confirm, or ask for a seeded Estafeta profile (an eighth beyond the spec's seven).
 - Loyalty publish under a clock step back (#194) clamps to the in-force publication; under skew between instances an
   earlier close could be earned under the newer version. Confirm, or prefer refusing such a publish with a 409.
+
+## Permission scope in the BackOffice landing tabs (review of #195)
+
+- Financeiro: Fiscal (`FISCAL_MANAGE`) and Meios (`PAYMENT_METHOD_MANAGE`) are read with a company-wide check on the
+  server; the landing tab also counts a store-scoped grant, so such a user lands on a tab that answers 403.
+- Stocks: Receitas (`RECIPE_MANAGE`) and Compras (`PURCHASE_MANAGE`) are read with `requireInAnyStore`; a grant held
+  in another store is not counted, so the user lands on a denied Stock tab.
+- Direction: model the server's three checks (`require(p)`, `require(p, store)`, `requireInAnyStore(p)`) in the
+  frontend `holds` helpers.
 
 ## Deferred features (out of this run's scope)
 

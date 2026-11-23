@@ -8,10 +8,10 @@ import type {
   ManualMovementRequest,
   PurchaseOrderRequest,
   ReceiptRequest,
+  ReceiveTransferRequest,
   RecipeRequest,
   RecipeVersionRequest,
   SupplierRequest,
-  TransferView,
 } from '../types';
 import { INVENTORY_KEY } from './use-inventory-reads';
 
@@ -87,14 +87,14 @@ export const useCountAction = () =>
     api.POST(`${BASE}/counts/{id}/${action}`, { params: { path: { id }, header } }),
   );
 
-/** Receiving takes what was shipped, line by line, as the server reported it (the shortfall stays a server concern). */
 export const useTransferAction = () =>
-  useRowAction<'ship' | 'receive' | 'cancel', { transfer: TransferView }>((api, id, action, header, { transfer }) => {
-    const params = { path: { id }, header };
-    if (action !== 'receive') return api.POST(`${BASE}/transfers/{id}/${action}`, { params });
-    const lines = (transfer.lines ?? []).map((line) => ({ stockItemId: line.stockItemId!, quantityReceived: line.quantityShipped! }));
-    return api.POST(`${BASE}/transfers/{id}/receive`, { params, body: { lines } });
-  });
+  useRowAction<'ship' | 'cancel'>((api, id, action, header) => api.POST(`${BASE}/transfers/{id}/${action}`, { params: { path: { id }, header } }));
+
+/** What arrived of each line and, when short, why: the shortfall and its valuation stay a server concern (D120). */
+export const useReceiveTransfer = () =>
+  useIntentCommand<ReceiveTransferRequest, { transferId: string }>((api, body, header, { transferId }) =>
+    api.POST(`${BASE}/transfers/{id}/receive`, { body, params: { path: { id: transferId }, header } }),
+  );
 
 export const useActivateRecipeVersion = () =>
   useCommand((api, { recipeId, versionNo, idempotencyKey }: { recipeId: string; versionNo: number; idempotencyKey: string }) =>

@@ -61,7 +61,7 @@ const reconciliation = [
 const OPERATOR = '0e0e0000-0000-4000-8000-000000000001';
 const cashSession = (id: string, extra: { status: string } & Record<string, unknown>) => ({
   id, storeId: STORE, registerId: REGISTER, registerCode: 'CX1', cashDayId: DAY, businessDate: '2026-11-19',
-  operatorEmployeeId: OPERATOR, openingFloat: mzn('150.00'), openedAt: '2026-11-19T09:30:00Z', ...extra,
+  operatorEmployeeId: OPERATOR, operatorName: 'Carlos Silva', openingFloat: mzn('150.00'), openedAt: '2026-11-19T09:30:00Z', ...extra,
 });
 const cashSessions = [
   cashSession('5e550000-0000-4000-8000-000000000002', { status: 'OPEN', closedAt: null, closedByEmployeeId: null, closeKind: null, counted: [] }),
