@@ -117,16 +117,16 @@ test("people: a role's permission matrix, grouped by area with the sensitive one
   await page.getByRole('button', { name: 'Editar Gerente' }).click();
   const dialog = page.getByRole('dialog', { name: 'Editar a função Gerente' });
   const orders = dialog.getByRole('group', { name: 'Pedidos' });
-  await expect(orders.getByRole('switch', { name: 'ORDER_VOID_APPROVE' })).toBeChecked();
-  await expect(orders.getByRole('switch', { name: 'ORDER_VOID_APPROVE' })).toHaveAccessibleDescription(
-    'Sensível Usá-la exige confirmar a identidade com o segundo fator.',
+  await expect(orders.getByRole('switch', { name: 'Aprovar anulações' })).toBeChecked();
+  await expect(orders.getByRole('switch', { name: 'Aprovar anulações' })).toHaveAccessibleDescription(
+    'ORDER_VOID_APPROVE Sensível Usá-la exige confirmar a identidade com o segundo fator.',
   );
   await expect(orders.getByText('1 / 3')).toBeVisible();
   await expectNoAxeViolations(page);
   await screens(page, testInfo, 'people-role-matrix');
 
-  await dialog.getByRole('group', { name: 'Produção' }).getByRole('switch', { name: 'PRODUCTION_VIEW' }).click();
-  await expect(dialog.getByRole('switch', { name: 'PRODUCTION_VIEW' })).toBeChecked();
+  await dialog.getByRole('group', { name: 'Produção' }).getByRole('switch', { name: 'Ver a produção' }).click();
+  await expect(dialog.getByRole('switch', { name: 'Ver a produção' })).toBeChecked();
   await dialog.getByRole('button', { name: 'Guardar' }).click();
   await expect(dialog).toBeHidden();
   expect(puts).toEqual([{ name: 'Gerente', permissions: ['ORDER_VOID_APPROVE', 'CASH_VIEW', 'PRODUCTION_VIEW'], version: 3 }]);
