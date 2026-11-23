@@ -4,6 +4,52 @@ Status: **APPROVED** 2026-11-20 by Xavier Francisco (UI refactor, Phase 2 gate: 
 
 This document amends [frontend-design-system.md](frontend-design-system.md): its colour tokens and table-state sections are replaced by the dark theme below; its principles, density, touch targets, layouts and component inventory stand unless this document says otherwise.
 
+## Light reference (2026-11-23, replaces Stitch)
+
+Decided by Xavier Francisco on 2026-11-23: the visual reference is now the light example image [reference/pos-tables-light.png](reference/pos-tables-light.png), which **replaces the Stitch dark theme**. Stitch screens stay a *structural* reference only for screens the image does not cover. Rollout: the POS first (this phase, starting with `/tables`); the BackOffice keeps `.dark` until the next phase.
+
+**What the image shows:** a light grey page; white rounded cards; a status bar card (store · terminal · operator; connection and pending chips on the right); a left card with area tabs and table counts (the selected tab solid green), a "Mesa ou nº" search and a grid of tinted table tiles; a right card with the selected table's order (rounds, draft lines with −/qty/+ steppers, a large total, "Subtotal" and "Dividir" outline buttons, a full-width green "Enviar ronda N"); footer chips for alerts and keyboard hints.
+
+**Tokens** (`packages/ui/src/styles/tokens.css`, `:root`; checked by `tokens.test.ts`):
+
+| token | light value | use | contrast (WCAG 2.x) |
+| --- | --- | --- | --- |
+| `--background` | `#F0F0ED` | page | — |
+| `--card`, `--popover` | `#FFFFFF` | cards, dialogs | — |
+| `--foreground` | `#1C1C1A` | text | 17.1:1 on card, 15.0:1 on page |
+| `--muted` (= secondary, accent) | `#EAEAE6` | hover, raised | — |
+| `--muted-foreground` | `#575752` | secondary text | 7.3:1 on card, 6.0:1 on muted |
+| `--border` | `#D6D6D1` | 1px borders | decorative |
+| `--input` | `#7A7A74` | field borders | 4.3:1 on card (≥3:1) |
+| `--primary` (= brand, success) | `#0B7A0B` | the reference green, darkened for AA | 5.5:1 with white; 5.5:1 as text on card |
+| `--primary-hover` | `#086208` | pressed / hover | 7.6:1 with white |
+| `--primary-foreground` | `#FFFFFF` | text on green | — |
+| `--ring` | `#1C64C4` | focus and the selected tile | 5.7:1 on card (≥3:1) |
+| `--warning` / `-foreground` | `#9A5700` / `#FFFFFF` | amber fill, amber text | 5.6:1 |
+| `--info` / `-foreground` | `#1D5FB0` / `#FFFFFF` | blue fill, blue text | 6.3:1 |
+| `--destructive` (= error) / `-foreground` | `#B3261E` / `#FFFFFF` | red fill, error text | 6.5:1 |
+| `--success-tint` / `-border` / `-text` | `#D4EDD2` / `#6CC46C` / `#145A14` | free, reserved | text 6.7:1 on tint |
+| `--warning-tint` / `-border` / `-text` | `#F9DEA9` / `#E9A21B` / `#6B3E00` | occupied | text 6.9:1 on tint |
+| `--info-tint` / `-border` / `-text` | `#D3E3F8` / `#82AFEB` / `#1A4A8A` | bill requested | text 6.7:1 on tint |
+| `--destructive-tint` / `-border` / `-text` | `#F8D6D6` / `#E58C8C` / `#8E1B1B` | locked (overdue when the API gives it) | text 6.7:1 on tint |
+| `--radius` | `0.5rem` (unchanged) | shared with `.dark` | cards `rounded-2xl` (16 px), tiles and buttons `rounded-xl` (12 px) |
+
+`foreground` and `muted-foreground` pass AA on every tint (≥ 5.3:1), so a tile's code and details need no special colour. The state borders are decorative: every state also has its word or icon and label. The route chips (kitchen, bar, copa) keep their hues as border + 15 % tint with `foreground` text, since white on them is below AA on a light page. `.dark` is untouched; `--radius` and `--route-*` are not set there, so they keep their old values for the BackOffice.
+
+**Table states (light):**
+
+| State (API) | Tile | Text on the tile |
+| --- | --- | --- |
+| free (`status FREE`) | `bg-success-tint`, `border-success-border` | "Livre" in `success-text`; the seats |
+| reserved (`reserved`, `nextReservationAt`) | the state's own tile | "Reservada 20:30" with a clock icon |
+| occupied (`status OCCUPIED`) | `bg-warning-tint`, `border-warning-border` | guests · minutes open (from `openedAt`); "Ocupada" for assistive technology |
+| bill requested (`subtotalPrinted`) | `bg-info-tint`, `border-info-border` | "Conta pedida" with a receipt icon |
+| locked (`locked`) | `bg-destructive-tint`, `border-destructive-border` | "Bloqueada" with a lock icon |
+| overdue ("58 min sem ronda") | `destructive` tint | **not built**: the table map has no last-round time |
+| selected | the state's tile + a 2px `ring` outside it | `aria-pressed` |
+
+The image's per-table amount, the terminal name, the "impressão pendente" / "pagamento por confirmar" / kitchen-delay chips and the keyboard hints are not shown: no current POS query gives them (or no shortcut exists).
+
 ## Screens used
 
 | Stitch screen | Screen ID | Repo route / files |
@@ -16,7 +62,7 @@ The other 16 Stitch screens have no route yet; they are the spec for those featu
 
 ## Theme decision
 
-Stitch is **dark only**, in both the POS and the BackOffice, and both apps use it. We keep the approved light theme as `:root` (unchanged, still checked by `tokens.test.ts`) and add the Stitch theme as a `.dark` block over the **same token names**, which is how the current design system already planned dark mode. Both apps set `class="dark"` on `<html>`.
+Stitch is **dark only**, in both the POS and the BackOffice, and both apps use it. We keep the approved light theme as `:root` (unchanged, still checked by `tokens.test.ts`) and add the Stitch theme as a `.dark` block over the **same token names**, which is how the current design system already planned dark mode. Both apps set `class="dark"` on `<html>`. **Superseded 2026-11-23** by the light reference above: the POS no longer sets `class="dark"`, and `:root` is now the light reference rather than the R1 light theme; the BackOffice keeps `.dark` until its phase.
 
 ## Implied design system (from the theme and the three screens)
 

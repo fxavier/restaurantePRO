@@ -52,12 +52,12 @@ The enclosing git repository is rooted at `/Users/xavier` (the home directory), 
 
 ## UI refactor (Google Stitch)
 
-The frontends are being restyled to Google Stitch project **15612001253409631373**. The design system it implies, the token diff and the change set are in [docs/design/DESIGN.md](docs/design/DESIGN.md).
+Since 2026-11-23 the **visual reference is the light example image** [docs/design/reference/pos-tables-light.png](docs/design/reference/pos-tables-light.png); it replaces the Stitch dark theme. Its tokens and table-state colours are in [docs/design/DESIGN.md](docs/design/DESIGN.md) ("Light reference"). The POS moves first; the BackOffice keeps the Stitch `.dark` theme until its own phase. Google Stitch project **15612001253409631373** remains a **structural** reference only, for the screens the image does not cover; the earlier Stitch design system and token diff are also in DESIGN.md.
 
 Rules:
 
-- Use only Stitch project ID 15612001253409631373 (`projects/15612001253409631373` where a tool wants that form). Do not list or read other Stitch projects.
-- Stitch output is a visual and structural spec, never source code. Do not paste Stitch HTML or CSS into the codebase.
+- For any Stitch access, use only Stitch project ID 15612001253409631373 (`projects/15612001253409631373` where a tool wants that form). Do not list or read other Stitch projects.
+- Stitch output is a structural spec, never source code, and no longer sets colours. Do not paste Stitch HTML or CSS into the codebase.
 - The refactor is presentation only. Preserve data fetching, state, handlers, routing, validation, i18n keys (pt-PT), analytics events and test IDs. Do not change API clients, stores or backend contracts.
 - Reuse existing components before creating new ones. Use design tokens, not hard-coded colours, px values or arbitrary Tailwind values.
 - Accessibility: semantic HTML, labelled controls, visible focus states and WCAG AA contrast.
