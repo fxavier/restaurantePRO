@@ -309,7 +309,7 @@ test('the selected table\'s order: on screen at 1024 × 768, touch-sized, and ac
   await expect(panel.getByRole('group', { name: 'Total' })).toBeInViewport();
   for (const target of [
     ...(await panel.getByRole('list', { name: 'Por enviar' }).getByRole('button').all()),
-    panel.getByRole('link', { name: 'Subtotal' }),
+    panel.getByRole('button', { name: 'Subtotal' }),
     panel.getByRole('link', { name: 'Dividir' }),
   ]) {
     const { width, height } = (await target.boundingBox())!;
@@ -318,6 +318,25 @@ test('the selected table\'s order: on screen at 1024 × 768, touch-sized, and ac
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024);
 
   await expectNoAxeViolations(page);
+});
+
+test('"Subtotal" on the map prints with an Idempotency-Key and says so on the server\'s 202', async ({ page }) => {
+  const keys: (string | undefined)[] = [];
+  await page.route(`**/api/v1/pos/orders/${ORDER_ID}/subtotal/print`, (route) => {
+    keys.push(route.request().headers()['idempotency-key']);
+    return route.fulfill({
+      status: 202,
+      json: { orderId: ORDER_ID, orderNumber: 12, tableCode: 'M2', lines: [], due: { amount: 1530, currency: 'MZN' } },
+    });
+  });
+  await atM2OnMap(page);
+  const panel = page.getByRole('complementary', { name: 'Detalhe da mesa' });
+
+  await panel.getByRole('button', { name: 'Subtotal' }).click();
+
+  await expect(panel.getByRole('status', { name: 'Subtotal' })).toHaveText('Subtotal impresso.');
+  expect(keys).toHaveLength(1);
+  expect(keys[0]).toMatch(/^[0-9a-f-]{36}$/);
 });
 
 test('screens of the table map, M2 selected, at 1024 × 768 and 1440 × 900', async ({ page }) => {

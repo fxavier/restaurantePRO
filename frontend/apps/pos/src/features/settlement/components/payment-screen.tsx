@@ -19,13 +19,15 @@ type Props = {
   orderId: string;
   /** "Sem ligação": every command is disabled (FC §11). */
   blocked: boolean;
+  /** Opened to split the bill (the table map's "Dividir"): the split starts on equal parts. */
+  splitFirst?: boolean;
 };
 
 /**
  * "Conta & Pagamento" (Stitch; §4, §8.5): one order's bill — its split (left), the charge of the chosen part (centre),
  * and its document and close (right). Every amount and state is the server's, read again after each command.
  */
-export function PaymentScreen({ orderId, blocked }: Props) {
+export function PaymentScreen({ orderId, blocked, splitFirst = false }: Props) {
   const settlement = useSettlement(orderId);
   const heading = useOrderHeading(orderId);
   const navigate = useNavigate();
@@ -49,7 +51,13 @@ export function PaymentScreen({ orderId, blocked }: Props) {
         {settlement.data && <Summary settlement={settlement.data} />}
       </header>
       {settlement.data ? (
-        <Bill settlement={settlement.data} guests={heading.data?.guests} blocked={blocked} onClosed={() => void navigate('/tables')} />
+        <Bill
+          settlement={settlement.data}
+          guests={heading.data?.guests}
+          blocked={blocked}
+          splitFirst={splitFirst}
+          onClosed={() => void navigate('/tables')}
+        />
       ) : settlement.isError ? (
         <div className="flex flex-col items-center gap-3 p-6 text-center">
           <p role="alert">{loadError(settlement.error)}</p>
@@ -88,11 +96,13 @@ function Bill({
   settlement,
   guests,
   blocked,
+  splitFirst,
   onClosed,
 }: {
   settlement: Settlement;
   guests: number | null | undefined;
   blocked: boolean;
+  splitFirst: boolean;
   onClosed: () => void;
 }) {
   const [selected, setSelected] = useState<string>();
@@ -118,7 +128,7 @@ function Bill({
       )}
       <div className="grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div className="flex flex-col gap-4">
-          {can.split && <SplitPanel settlement={settlement} guests={guests} disabled={disabled} />}
+          {can.split && <SplitPanel settlement={settlement} guests={guests} disabled={disabled} mode={splitFirst ? 'equal' : 'whole'} />}
           <PartitionList
             orderId={settlement.orderId}
             partitions={settlement.partitions}

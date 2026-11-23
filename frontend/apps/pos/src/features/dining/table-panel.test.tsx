@@ -13,6 +13,8 @@ import {
   ORDER_ID,
   orderEndpoint,
   type OrderView,
+  subtotalEndpoint,
+  subtotalPrinted,
   updateLineEndpoint,
   withLines,
 } from '../../test/order';
@@ -55,16 +57,39 @@ function serverOrder(initial: OrderView = ORDER) {
   };
 }
 
-/** The map, M2 tapped: its panel. */
-async function atM2(...answers: Parameters<typeof orderEndpoint>[1][]) {
+type Answer = Parameters<typeof orderEndpoint>[1];
+
+/** The map, M2 tapped: its panel. `maps` answer the map's reads in turn, `catalog` the catalog's. */
+async function atM2(...answers: Answer[]) {
+  return atM2With({ orders: answers });
+}
+
+async function atM2With({
+  orders = [],
+  maps = [tableMap(MAP)],
+  catalog = [],
+}: {
+  orders?: Answer[];
+  maps?: Parameters<typeof tablesEndpoint>;
+  catalog?: Answer[];
+}) {
   tokenEndpoint(token('jwt-1'));
-  tablesEndpoint(tableMap(MAP));
-  catalogEndpoint();
-  orderEndpoint(ORDER_ID, ...(answers.length ? answers : [json(ORDER)]));
+  const mapReads = tablesEndpoint(...maps);
+  catalogEndpoint(...catalog);
+  orderEndpoint(ORDER_ID, ...(orders.length ? orders : [json(ORDER)]));
   const rendered = await renderPos({ device: 'enrolled', loggedIn: true, path: '/tables' });
   await rendered.user.click(await screen.findByRole('button', { name: /^Mesa M2 / }));
-  return rendered;
+  return { ...rendered, mapReads };
 }
+
+/** MAP once M2's subtotal is printed: the bill requested. */
+const M2_BILL = {
+  ...MAP,
+  areas: MAP.areas!.map((area) => ({
+    ...area,
+    tables: area.tables!.map((t) => (t.code === 'M2' ? { ...t, subtotalPrinted: true } : t)),
+  })),
+};
 
 const panel = () => screen.getByRole('complementary', { name: 'Detalhe da mesa' });
 const draftList = () => within(panel()).getByRole('list', { name: 'Por enviar' });
@@ -75,7 +100,7 @@ describe('the selected table\'s order', () => {
 
     const round = await within(panel()).findByRole('list', { name: 'Ronda 1, 12:10' });
     expect(within(panel()).getByRole('heading', { name: 'Ronda 1 · enviada · 12:10' })).toBeInTheDocument();
-    expect(round).toHaveTextContent('3× Bitoque');
+    expect(round).toHaveTextContent('3 × Bitoque');
     expect(within(panel()).getByRole('heading', { name: 'Ronda 2 · rascunho' })).toBeInTheDocument();
     // A draft's name comes from the catalog, read beside the order.
     await within(draftList()).findByText('2× Água Pequena');
@@ -131,7 +156,7 @@ describe('the selected table\'s order', () => {
     expect(within(panel()).queryByRole('list', { name: /^Ronda 2,/ })).not.toBeInTheDocument();
     release();
 
-    expect(await within(panel()).findByRole('list', { name: 'Ronda 2, 12:20' })).toHaveTextContent('2× Água Pequena');
+    expect(await within(panel()).findByRole('list', { name: 'Ronda 2, 12:20' })).toHaveTextContent('2 × Água Pequena');
     expect(within(panel()).getByRole('status', { name: 'Envio' })).toHaveTextContent('Ronda 2 enviada.');
     expect(batches).toHaveLength(1);
     expect(batches[0]!.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
@@ -186,13 +211,75 @@ describe('the selected table\'s order', () => {
     expect(within(panel()).getByRole('button', { name: 'Diminuir Água Pequena' })).toBeEnabled();
   });
 
-  it('"Subtotal" and "Dividir" go to the bill, "Adicionar artigos" to the order screen', async () => {
+  it('"Dividir" opens the bill on its split, "Adicionar artigos" the order screen', async () => {
     const { user, router } = await atM2();
 
-    expect(await within(panel()).findByRole('link', { name: 'Subtotal' })).toHaveAttribute('href', `/orders/${ORDER_ID}/payment`);
-    expect(within(panel()).getByRole('link', { name: 'Dividir' })).toHaveAttribute('href', `/orders/${ORDER_ID}/payment`);
+    expect(await within(panel()).findByRole('link', { name: 'Dividir' })).toHaveAttribute(
+      'href',
+      `/orders/${ORDER_ID}/payment?dividir`,
+    );
     await user.click(within(panel()).getByRole('button', { name: 'Adicionar artigos' }));
 
     expect(router.state.location.pathname).toBe(`/orders/${ORDER_ID}`);
+  });
+
+  it('a draft whose catalog could not be read is "Nome indisponível", never "fora do catálogo"', async () => {
+    await atM2With({ catalog: [() => problem(500, 'INTERNAL')] });
+
+    const drafts = await within(panel()).findByRole('list', { name: 'Por enviar' });
+    await waitFor(() => expect(within(drafts).getAllByText(/Nome indisponível/)).toHaveLength(2));
+    expect(drafts).not.toHaveTextContent('Artigo fora do catálogo');
+  });
+});
+
+describe('"Subtotal" on the table map', () => {
+  it('prints the subtotal with a key, says so once the server has, and the tile turns "Conta pedida"', async () => {
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    const prints = subtotalEndpoint(ORDER_ID, async () => {
+      await released;
+      return subtotalPrinted()();
+    });
+    const { user } = await atM2With({ maps: [tableMap(MAP), tableMap(M2_BILL)] });
+    const subtotal = await within(panel()).findByRole('button', { name: 'Subtotal' });
+
+    await user.click(subtotal);
+
+    expect(await within(panel()).findByRole('status', { name: 'Subtotal' })).toHaveTextContent('A imprimir o subtotal…');
+    expect(subtotal).toBeDisabled();
+    release();
+
+    await waitFor(() => expect(within(panel()).getByRole('status', { name: 'Subtotal' })).toHaveTextContent('Subtotal impresso.'));
+    expect(await screen.findByRole('button', { name: /^Mesa M2 .*Conta pedida/ })).toBeInTheDocument();
+    expect(prints).toHaveLength(1);
+    expect(prints[0]!.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it('no answer: nothing said printed, and "Tentar novamente" resends the same key', async () => {
+    const prints = subtotalEndpoint(ORDER_ID, () => HttpResponse.error(), subtotalPrinted());
+    const { user } = await atM2();
+
+    await user.click(await within(panel()).findByRole('button', { name: 'Subtotal' }));
+
+    expect(await within(panel()).findByRole('alert')).toHaveTextContent('Sem ligação — o subtotal não foi confirmado.');
+    expect(prints).toHaveLength(1);
+    await user.click(within(panel()).getByRole('button', { name: 'Tentar novamente' }));
+
+    await waitFor(() => expect(within(panel()).getByRole('status', { name: 'Subtotal' })).toHaveTextContent('Subtotal impresso.'));
+    expect(prints).toHaveLength(2);
+    expect(prints[1]!.idempotencyKey).toBe(prints[0]!.idempotencyKey);
+  });
+
+  it('a refusal says why, and the next press is a new intent', async () => {
+    const prints = subtotalEndpoint(ORDER_ID, () => problem(409, 'ORDER_NOT_BILLABLE'), subtotalPrinted());
+    const { user } = await atM2();
+
+    await user.click(await within(panel()).findByRole('button', { name: 'Subtotal' }));
+
+    expect(await within(panel()).findByRole('alert')).toHaveTextContent(/^O subtotal não foi impresso\./);
+    await user.click(within(panel()).getByRole('button', { name: 'Subtotal' }));
+
+    await waitFor(() => expect(prints).toHaveLength(2));
+    expect(prints[1]!.idempotencyKey).not.toBe(prints[0]!.idempotencyKey);
   });
 });
