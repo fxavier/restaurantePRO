@@ -48,7 +48,7 @@ public class ProductionAlertsService {
         Instant now = clock.instant();
         return new ProductionAlertsView(
                 jobs.countPendingInStore(pos.storeId(), now.minus(ProductionMetrics.ATTENTION_WINDOW)),
-                kitchen.countByStoreIdAndStatusInAndQueuedAtBefore(pos.storeId(), NOT_READY, now.minus(kitchenDelay)),
+                kitchen.countRoundsInStore(pos.storeId(), NOT_READY, now.minus(kitchenDelay)),
                 kitchenDelay.toMinutes());
     }
 }

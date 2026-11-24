@@ -18,9 +18,10 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 /**
  * The POS alerts production owns (light reference: "1 impressão pendente", "Cozinha: 2 rondas > 15 min"), for the
- * session's store and only with PRODUCTION_VIEW: the print jobs still waiting or failed without a resolution (a
- * drawer kick is never one, D158), and the rounds the kitchen has not made ready for longer than the configured delay.
- * Rows are written directly, on a printer on HOLD with a far due time, so no worker of another context moves them.
+ * session's store and only with PRODUCTION_VIEW: the print jobs still waiting on a printer in NORMAL mode (one on
+ * HOLD waits on purpose, §8.6, as PRINT_QUEUE_STALLED has it) or failed without a resolution (a drawer kick is never
+ * one, D158), and the rounds the kitchen has not made ready for longer than the configured delay, each round once
+ * whatever its stations. Rows are written directly, with a far due time, so no worker of another context moves them.
  */
 @ProductionModuleTest
 class ProductionAlertsTest {
@@ -37,11 +38,13 @@ class ProductionAlertsTest {
     final UUID terminal = UUID.randomUUID();
     UUID store;
     UUID printer;
+    UUID held;
 
     @BeforeEach
-    void aStoreWithAHeldPrinter() {
+    void aStoreWithAnActiveAndAHeldPrinter() {
         store = store();
-        printer = printer(store);
+        printer = printer(store, "NORMAL");
+        held = printer(store, "HOLD");
     }
 
     @Test
@@ -70,6 +73,31 @@ class ProductionAlertsTest {
     }
 
     @Test
+    void aJobWaitingOnAHeldPrinterWaitsOnPurposeAndIsNotPending() throws Exception {
+        job(store, held, "QUEUED", null, "BATCH", "now()");
+        job(store, held, "RETRY_WAIT", null, "BATCH", "now()");
+
+        mvc.perform(get(ALERTS).with(viewer(store))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.pendingPrintJobs").value(0));
+
+        job(store, held, "FAILED", null, "BATCH", "now()");
+        job(store, printer, "QUEUED", null, "BATCH", "now()");
+        mvc.perform(get(ALERTS).with(viewer(store))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.pendingPrintJobs").value(2));
+    }
+
+    @Test
+    void aRoundSentToTwoStationsIsOneLateRound() throws Exception {
+        UUID batch = UUID.randomUUID();
+        round(store, batch, "KITCHEN", "QUEUED", "now() - interval '20 minutes'");
+        round(store, batch, "BAR", "IN_PREPARATION", "now() - interval '20 minutes'");
+        round(store, UUID.randomUUID(), "KITCHEN", "QUEUED", "now() - interval '30 minutes'");
+
+        mvc.perform(get(ALERTS).with(viewer(store))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.delayedKitchenRounds").value(2));
+    }
+
+    @Test
     void roundsNotReadyForLongerThanTheDelayAreLate() throws Exception {
         round(store, "QUEUED", "now() - interval '20 minutes'");
         round(store, "IN_PREPARATION", "now() - interval '16 minutes'");
@@ -84,7 +112,7 @@ class ProductionAlertsTest {
     @Test
     void anotherStoresJobsAndRoundsAreNotCounted() throws Exception {
         UUID other = store();
-        UUID otherPrinter = printer(other);
+        UUID otherPrinter = printer(other, "NORMAL");
         job(other, otherPrinter, "FAILED", null, "BATCH", "now()");
         round(other, "QUEUED", "now() - interval '30 minutes'");
 
@@ -118,13 +146,13 @@ class ProductionAlertsTest {
         return id;
     }
 
-    private UUID printer(UUID inStore) {
+    private UUID printer(UUID inStore, String mode) {
         UUID id = UUID.randomUUID();
         jdbc.sql("""
                 INSERT INTO production.printer (id, store_id, code, name, host, port, code_page, active, mode,
                     version, created_at, updated_at)
-                VALUES (?, ?, ?, 'Bar', '127.0.0.1', 9100, 'CP860', true, 'HOLD', 0, now(), now())""")
-                .param(id).param(inStore).param("P" + id.toString().substring(0, 6)).update();
+                VALUES (?, ?, ?, 'Bar', '127.0.0.1', 9100, 'CP860', true, ?, 0, now(), now())""")
+                .param(id).param(inStore).param("P" + id.toString().substring(0, 6)).param(mode).update();
         return id;
     }
 
@@ -135,7 +163,7 @@ class ProductionAlertsTest {
     /** A job of a new ticket of {@code source}, due tomorrow, so no worker claims it. */
     private void job(UUID inStore, UUID onPrinter, String status, String resolution, String source,
                      String createdAt) {
-        UUID ticket = ticket(inStore, source, "ROUTED", onPrinter);
+        UUID ticket = ticket(inStore, UUID.randomUUID(), "BAR", source, "ROUTED", onPrinter);
         UUID id = UUID.randomUUID();
         boolean queued = status.equals("QUEUED");
         jdbc.sql("""
@@ -147,29 +175,39 @@ class ProductionAlertsTest {
                 .param(resolution).param("alerts:" + id).update();
     }
 
-    /** A round on the kitchen display, queued at {@code queuedAt}, with the step times its status needs. */
+    /** A round of its own on the BAR station. */
     private void round(UUID inStore, String status, String queuedAt) {
-        UUID ticket = ticket(inStore, "BATCH", "UNROUTED", null);
+        round(inStore, UUID.randomUUID(), "BAR", status, queuedAt);
+    }
+
+    /**
+     * {@code batch}'s ticket for {@code destination} on the kitchen display, queued at {@code queuedAt}, with the step
+     * times its status needs: a round sent to two stations is one batch with two tickets.
+     */
+    private void round(UUID inStore, UUID batch, String destination, String status, String queuedAt) {
+        UUID ticket = ticket(inStore, batch, destination, "BATCH", "UNROUTED", null);
         boolean started = !status.equals("QUEUED");
         boolean ready = status.equals("READY") || status.equals("BUMPED");
         boolean bumped = status.equals("BUMPED");
         jdbc.sql("""
                 INSERT INTO production.kitchen_progress (ticket_id, store_id, destination, status, version,
                     queued_at, started_at, started_by, ready_at, ready_by, bumped_at, bumped_by)
-                VALUES (?, ?, 'BAR', ?, 0, %s, %s, %s, %s, %s, %s, %s)""".formatted(queuedAt,
+                VALUES (?, ?, ?, ?, 0, %s, %s, %s, %s, %s, %s, %s)""".formatted(queuedAt,
                         started ? "now()" : "null", started ? "gen_random_uuid()" : "null",
                         ready ? "now()" : "null", ready ? "gen_random_uuid()" : "null",
                         bumped ? "now()" : "null", bumped ? "gen_random_uuid()" : "null"))
-                .param(ticket).param(inStore).param(status).update();
+                .param(ticket).param(inStore).param(destination).param(status).update();
     }
 
-    private UUID ticket(UUID inStore, String source, String routing, UUID onPrinter) {
+    private UUID ticket(UUID inStore, UUID sourceId, String destination, String source, String routing,
+                        UUID onPrinter) {
         UUID id = UUID.randomUUID();
         jdbc.sql("""
                 INSERT INTO production.production_ticket (id, store_id, source_type, source_id, destination, kind,
                     printer_id, terminal_id, routing, suppressed, content, content_format, created_at)
-                VALUES (?, ?, ?, ?, 'BAR', 'ORIGINAL', ?, ?, ?, false, 'alerts', ?, now())""")
-                .param(id).param(inStore).param(source).param(UUID.randomUUID()).param(onPrinter).param(terminal)
+                VALUES (?, ?, ?, ?, ?, 'ORIGINAL', ?, ?, ?, false, 'alerts', ?, now())""")
+                .param(id).param(inStore).param(source).param(sourceId).param(destination).param(onPrinter)
+                .param(terminal)
                 .param(routing).param(source.equals("DRAWER_KICK") ? "KICK" : "PLAIN").update();
         return id;
     }

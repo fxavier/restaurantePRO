@@ -3,10 +3,10 @@ package com.xavier.backend.settlement.service;
 import com.xavier.backend.access.AccessPolicy;
 import com.xavier.backend.access.Permission;
 import com.xavier.backend.access.PosContext;
-import com.xavier.backend.settlement.model.AttemptStatus;
-import com.xavier.backend.settlement.model.PaymentAttempt;
 import com.xavier.backend.settlement.model.dto.SettlementAlertsView;
 import com.xavier.backend.settlement.repository.PaymentAttemptRepository;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,6 +16,8 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class SettlementAlertsService {
+
+    private static final Pageable FIRST = PageRequest.of(0, 1);
 
     private final AccessPolicy accessPolicy;
     private final PaymentAttemptRepository attempts;
@@ -28,12 +30,11 @@ public class SettlementAlertsService {
     @Transactional(readOnly = true)
     public SettlementAlertsView alertsForPos() {
         PosContext pos = accessPolicy.requirePosAny(Permission.PAYMENT_COLLECT, Permission.PAYMENT_RESOLVE);
-        long inDoubt = attempts.countByStoreIdAndStatus(pos.storeId(), AttemptStatus.UNKNOWN);
+        long inDoubt = attempts.countInDoubtInStore(pos.storeId());
         if (inDoubt == 0) {
             return new SettlementAlertsView(0, null);
         }
-        return new SettlementAlertsView(inDoubt, attempts
-                .findFirstByStoreIdAndStatusAndOrderIdNotNullOrderByCreatedAt(pos.storeId(), AttemptStatus.UNKNOWN)
-                .map(PaymentAttempt::getOrderId).orElse(null));
+        return new SettlementAlertsView(inDoubt, attempts.findInDoubtOrdersOfStore(pos.storeId(), FIRST).stream()
+                .findFirst().orElse(null));
     }
 }
