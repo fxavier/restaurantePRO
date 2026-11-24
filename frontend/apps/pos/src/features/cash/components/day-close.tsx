@@ -9,11 +9,11 @@ import {
   AlertDialogTitle,
   ConfirmButton,
   type StatusMap,
+  StatusBadge,
 } from '@restaurantpro/ui';
 import { CalendarCheck, CalendarClock, Lock, ShieldCheck, TriangleAlert } from 'lucide-react';
 import { useId, useState } from 'react';
 import { useCommandsBlocked } from '../../../lib/live/use-connection';
-import { StatusChip } from '../../../lib/state-tint';
 import { businessDay } from '../format';
 import type { CurrentDay } from '../hooks/use-cash';
 import { useCloseDay } from '../hooks/use-cash-commands';
@@ -56,7 +56,7 @@ export function DayClose({ day, canClose }: Props) {
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-muted-foreground">Dia comercial:</span>
         <span className="text-lg font-semibold">{date}</span>
-        {status ? <StatusChip status={status} statuses={STATUSES} /> : <span>{day.status}</span>}
+        {status ? <StatusBadge look="tint" status={status} statuses={STATUSES} /> : <span>{day.status}</span>}
       </div>
       {(day.earlierOpenDays ?? []).map((earlier) => (
         <p key={earlier.id} className="flex items-center gap-2 font-medium text-error">
@@ -73,7 +73,6 @@ export function DayClose({ day, canClose }: Props) {
           <ConfirmButton
             type="button"
             size="touch-primary"
-            className="rounded-xl"
             pending={close.pending}
             disabled={blocked}
             onClick={() => (awaitingRetry ? close.retry() : setConfirming(true))}
@@ -81,7 +80,7 @@ export function DayClose({ day, canClose }: Props) {
             {awaitingRetry ? 'Tentar novamente' : 'Fechar dia'}
           </ConfirmButton>
           <AlertDialog open={confirming} onOpenChange={setConfirming}>
-            <AlertDialogContent className="rounded-2xl">
+            <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>{`Fechar o dia ${date}?`}</AlertDialogTitle>
                 <AlertDialogDescription>
@@ -89,8 +88,8 @@ export function DayClose({ day, canClose }: Props) {
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel size="touch" className="rounded-xl bg-card">Voltar</AlertDialogCancel>
-                <AlertDialogAction size="touch" className="rounded-xl" onClick={() => close.start(day.version ?? 0, undefined)}>
+                <AlertDialogCancel size="touch">Voltar</AlertDialogCancel>
+                <AlertDialogAction size="touch" onClick={() => close.start(day.version ?? 0, undefined)}>
                   Confirmar fecho do dia
                 </AlertDialogAction>
               </AlertDialogFooter>

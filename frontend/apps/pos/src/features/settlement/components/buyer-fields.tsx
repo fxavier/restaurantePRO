@@ -49,7 +49,7 @@ function Field({ id, label, value, onChange }: { id: string; label: string; valu
   return (
     <div className="flex flex-col gap-1">
       <Label htmlFor={id}>{label}</Label>
-      <Input id={id} autoComplete="off" value={value} onChange={(event) => onChange(event.target.value)} className="h-12 rounded-xl" />
+      <Input id={id} autoComplete="off" value={value} onChange={(event) => onChange(event.target.value)} className="h-12" />
     </div>
   );
 }

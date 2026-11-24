@@ -84,11 +84,10 @@ function AttemptRow({
         <div className="flex flex-wrap items-end gap-2">
           <div className="flex min-w-40 flex-1 flex-col gap-1">
             <Label htmlFor={codeId}>Código de autorização</Label>
-            <Input id={codeId} autoComplete="off" value={code} onChange={(event) => setCode(event.target.value)} className="h-12 rounded-xl bg-card" />
+            <Input id={codeId} autoComplete="off" value={code} onChange={(event) => setCode(event.target.value)} className="h-12" />
           </div>
           <Button
             size="touch"
-            className="rounded-xl"
             disabled={busy}
             onClick={() => confirm.start({ attemptId: attempt.id, authorizationCode: code.trim() || undefined }, undefined)}
           >
@@ -98,7 +97,7 @@ function AttemptRow({
             variant="destructive"
             size="touch"
             // On white, not on the amber row: the red text keeps its contrast.
-            className="rounded-xl bg-card"
+            className="bg-card"
             disabled={busy}
             onClick={() => cancel.start({ attemptId: attempt.id, reason: 'Não aprovado no terminal' }, undefined)}
           >
@@ -106,7 +105,7 @@ function AttemptRow({
           </Button>
         </div>
       ) : (
-        <Button variant="outline" size="touch" className="rounded-xl bg-card" disabled={busy} onClick={() => resolve.start(attempt.id, undefined)}>
+        <Button variant="outline" size="touch" disabled={busy} onClick={() => resolve.start(attempt.id, undefined)}>
           Consultar o estado
         </Button>
       )}

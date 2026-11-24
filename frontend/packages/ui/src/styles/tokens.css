@@ -1,7 +1,8 @@
 /*
  * Design tokens (docs/design/frontend-design-system.md), in the variable names shadcn/ui expects.
- * `:root` is the light reference theme (docs/design/DESIGN.md "Light reference", 2026-11-23), which the POS uses;
- * `.dark` is the Google Stitch theme over the same names, which the BackOffice still turns on with `<html class="dark">`.
+ * `:root` is the light reference theme (docs/design/DESIGN.md "Light reference", 2026-11-23), which both apps use;
+ * `.dark` is the former Google Stitch theme over the same names. No app turns it on any more (the BackOffice dropped
+ * `<html class="dark">` in the light reference's BackOffice phase); it stays until it is removed on purpose.
  * A name `.dark` does not set (radius, route-*, the state tints) is shared, so its value here must suit both.
  * tokens.test.ts asserts these values and checks the contrast pairs.
  */

@@ -118,7 +118,7 @@ function Zones({ zoneId, onChange, disabled }: { zoneId?: string; onChange: (zon
         <p role="alert" className="text-error">
           {loadFailure(zones.error, 'as zonas de entrega')}
         </p>
-        <Button type="button" variant="outline" size="touch" className="rounded-xl bg-card" onClick={() => void zones.refetch()}>
+        <Button type="button" variant="outline" size="touch" onClick={() => void zones.refetch()}>
           Tentar novamente
         </Button>
       </div>

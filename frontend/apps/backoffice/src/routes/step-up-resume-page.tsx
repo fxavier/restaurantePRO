@@ -30,7 +30,7 @@ export function StepUpResumePage() {
           <ResumeTerminalCommand command={resumable.command} returnTo={resumable.returnTo} />
         </>
       ) : (
-        <div className="mt-6 flex flex-col gap-2">
+        <div className="mt-6 flex max-w-xl flex-col gap-2 rounded-2xl border bg-card p-6">
           <p>Não há nenhuma operação por continuar.</p>
           <p>
             <Link to="/" className="text-primary underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring">

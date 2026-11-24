@@ -22,7 +22,7 @@ export function UserMenu() {
       {logout.isError && <LogoutFailed />}
       <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" aria-label={`Menu do utilizador: ${name}`} disabled={logout.isPending}>
+          <Button variant="ghost" size="lg" aria-label={`Menu do utilizador: ${name}`} disabled={logout.isPending}>
             <UserRound aria-hidden="true" className="size-5" />
             <span className="max-w-48 truncate">{name}</span>
             <ChevronDown aria-hidden="true" />

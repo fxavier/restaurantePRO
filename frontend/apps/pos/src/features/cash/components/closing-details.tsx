@@ -4,6 +4,7 @@ import {
   Label,
   Money,
   type StatusMap,
+  StatusBadge,
   Table,
   TableBody,
   TableCaption,
@@ -15,7 +16,6 @@ import {
 import { CircleCheck, CircleX, FilePen, Send, TriangleAlert } from 'lucide-react';
 import { useId, useState } from 'react';
 import { useCommandsBlocked } from '../../../lib/live/use-connection';
-import { StatusChip } from '../../../lib/state-tint';
 import { type ClosingLine, closingLines, fullyJustified, isZero, linesWithDifference, methodLabel } from '../cash';
 import { type ClosingView, useClosingSteps } from '../hooks/use-cash-commands';
 import { cashRefusal } from '../messages';
@@ -44,7 +44,7 @@ export function ClosingDetails({ closing, onClosing }: Props) {
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2">
         <span className="text-muted-foreground">Estado do fecho:</span>
-        {status ? <StatusChip status={status} statuses={STATUSES} /> : <span>{closing.status}</span>}
+        {status ? <StatusBadge look="tint" status={status} statuses={STATUSES} /> : <span>{closing.status}</span>}
       </div>
       <ClosingTable lines={lines} />
       {closing.status === 'DRAFT' ? (
@@ -93,7 +93,6 @@ function DraftActions({ closing, lines, onClosing }: Props & { lines: ClosingLin
       <ConfirmButton
         type="button"
         size="touch-primary"
-        className="rounded-xl"
         pending={submit.pending}
         disabled={blocked || !fullyJustified(lines) || justify.pending}
         onClick={() => {
@@ -182,7 +181,6 @@ function Justifications({ differences, pending, awaitingRetry, disabled, onSave 
         type="button"
         variant="outline"
         size="touch"
-        className="rounded-xl bg-card"
         pending={pending}
         disabled={disabled || !typedAll}
         onClick={() => onSave(differences.map((line, index) => ({ methodCode: line.methodCode, text: (texts[index] ?? '').trim() })))}
@@ -208,7 +206,7 @@ function JustificationField({ method, value, onChange, readOnly }: FieldProps) {
         maxLength={500}
         readOnly={readOnly}
         onChange={(event) => onChange(event.target.value)}
-        className="h-12 rounded-xl text-base md:text-base"
+        className="h-12 text-base md:text-base"
       />
     </div>
   );

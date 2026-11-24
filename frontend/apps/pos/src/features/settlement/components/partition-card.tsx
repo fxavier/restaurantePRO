@@ -1,4 +1,4 @@
-import { Button, cn, LOCALE, Money, type StatusMap, type StatusTone } from '@restaurantpro/ui';
+import { Button, cn, LOCALE, Money, type StatusMap, StatusPill } from '@restaurantpro/ui';
 import { Circle, CircleCheck, CircleDot, FileText, NotebookText, Split, X } from 'lucide-react';
 import { useState } from 'react';
 import { type Buyer, type FiscalDocument, type Reprint, useCancelPartition, useIssuePartitionDocument } from '../hooks/use-settlement-commands';
@@ -18,20 +18,13 @@ const PAYMENT_STATUS: StatusMap<PaymentStatus> = {
   MIXED: { label: 'Misto', icon: Split, tone: 'info' },
 };
 
-/** The light reference's chips: the state's tint, its text colour (AA on the tint), the icon and the label. */
-const TINT: Partial<Record<StatusTone, string>> = {
-  success: 'bg-success-tint text-success-text',
-  warning: 'bg-warning-tint text-warning-text',
-  info: 'bg-info-tint text-info-text',
-};
-
 function PaymentPill({ status }: { status: PaymentStatus }) {
   const { label, icon: Icon, tone } = PAYMENT_STATUS[status];
   return (
-    <span className={cn('inline-flex items-center gap-1 rounded-full px-2 text-sm leading-5 font-medium', TINT[tone] ?? 'bg-muted')}>
-      <Icon aria-hidden="true" className="size-4" />
+    // The light reference's chip (the shared tint, AA text on it), as tall as a line of text.
+    <StatusPill tone={tone} icon={Icon} className="px-2 py-0 leading-5">
       {label}
-    </span>
+    </StatusPill>
   );
 }
 
@@ -76,7 +69,6 @@ export function PartitionCard({ orderId, partition, chosen, onChoose, buyer, blo
           <Button
             variant={chosen ? 'default' : 'outline'}
             size="touch"
-            className={cn('rounded-xl', !chosen && 'bg-card')}
             aria-pressed={chosen}
             aria-label={`Cobrar ${partition.label}`}
             disabled={disabled}
@@ -117,7 +109,6 @@ function PartitionDocument({ orderId, partition, buyer, blocked, disabled, can }
         <Button
           variant="outline"
           size="touch"
-          className="rounded-xl bg-card"
           disabled={disabled || !buyer.ready || issue.intent !== undefined}
           onClick={() => issue.start({ partitionId: partition.id, buyer: buyer.buyer }, undefined)}
         >
@@ -162,7 +153,6 @@ function CancelPartition({ orderId, partition, allowed, blocked, disabled }: Com
         <Button
           variant="ghost"
           size="touch"
-          className="rounded-xl"
           aria-label={`Cancelar ${partition.label}`}
           disabled={disabled || cancel.intent !== undefined}
           onClick={() => cancel.start({ partitionId: partition.id, version: partition.version }, undefined)}

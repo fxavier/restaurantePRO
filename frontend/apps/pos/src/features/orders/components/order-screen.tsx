@@ -153,7 +153,7 @@ export function OrderScreen({ order, blocked, back }: Props) {
               setQuery(event.target.value);
               setNotice(undefined);
             }}
-            className="h-12 rounded-xl bg-card pl-10 text-base md:text-base"
+            className="h-12 pl-10 text-base md:text-base"
           />
         </form>
         {/* One fixed line for what the last tap did, so the grid never moves when it changes. */}

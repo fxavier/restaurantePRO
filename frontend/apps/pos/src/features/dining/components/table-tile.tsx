@@ -1,4 +1,4 @@
-import { Money } from '@restaurantpro/ui';
+import { Money, type StatusTone, TONE_CARD, TONE_INK } from '@restaurantpro/ui';
 import { Clock, Lock, Receipt, TimerOff } from 'lucide-react';
 import { Fragment, type ReactNode } from 'react';
 import { useStoreTimeZone } from '../../../lib/auth/use-employee';
@@ -9,16 +9,19 @@ import type { DiningTable } from '../table-map';
 /** One fixed height for every tile, whatever its state: a table that changes never moves the map (DS: ≥ 120 × 96). */
 const TILE_SIZE = 'h-44 w-full';
 
-/** DESIGN.md "Light reference": the state's tint, its 2px border, and its text colour for everything but the code. */
-const STATE_STYLE: Record<TileState, string> = {
-  free: 'border-success-border bg-success-tint text-success-text',
-  occupied: 'border-warning-border bg-warning-tint text-warning-text',
-  overdue: 'border-destructive-border bg-destructive-tint text-destructive-text',
-  bill: 'border-info-border bg-info-tint text-info-text',
-  locked: 'border-destructive-border bg-destructive-tint text-destructive-text',
+/**
+ * DESIGN.md "Light reference": each state's tone, for its tint, its 2px border and its text colour (everything on a tile
+ * but the code); the detail panel's code block and the summary chips take the same.
+ */
+export const STATE_TONE: Record<TileState, StatusTone> = {
+  free: 'success',
+  occupied: 'warning',
+  overdue: 'destructive',
+  bill: 'info',
+  locked: 'destructive',
 };
 
-type Indicator = { label: string; icon: ReactNode; variant: 'destructive' | 'info' | 'warning' };
+type Indicator = { label: string; icon: ReactNode; variant: Extract<StatusTone, 'destructive' | 'info' | 'warning'> };
 
 /**
  * A table on the map (DESIGN.md "Light reference"): the state by tint and border, and always in words too: "Livre"
@@ -46,6 +49,7 @@ export function TableTile({
   const timeZone = useStoreTimeZone();
   const occupied = table.status === 'OCCUPIED';
   const state = tileState(table, activity?.overdue ?? false);
+  const tone = STATE_TONE[state];
   const lines = indicators(table, timeZone);
   if (state === 'overdue' && activity?.minutesWithoutRound != null) lines.unshift(overdueIndicator(activity.minutesWithoutRound));
 
@@ -55,8 +59,8 @@ export function TableTile({
       aria-pressed={selected}
       onClick={onSelect}
       className={`${TILE_SIZE} flex flex-col overflow-hidden rounded-xl border-2 p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card ${
-        STATE_STYLE[state]
-      } ${selected ? 'ring-2 ring-ring ring-offset-2 ring-offset-card' : ''}`}
+        TONE_CARD[tone]
+      } ${TONE_INK[tone]} ${selected ? 'ring-2 ring-ring ring-offset-2 ring-offset-card' : ''}`}
     >
       <span className="min-w-0 truncate text-3xl font-bold text-foreground tabular-nums">
         <span className="sr-only">Mesa</span> {table.code}

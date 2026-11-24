@@ -1,26 +1,11 @@
-import { Button } from '@restaurantpro/ui';
+import { Button, TONE_CARD, TONE_INK } from '@restaurantpro/ui';
 import { DoorOpen, ListPlus, X } from 'lucide-react';
 import { type ReactNode, useEffect, useRef } from 'react';
 import { useStoreTimeZone } from '../../../lib/auth/use-employee';
 import { clockTime, guestsLabel, seatsLabel } from '../format';
 import type { DiningTable } from '../table-map';
-import { type TableState, tableState } from '../table-state';
-import { indicators } from './table-tile';
-
-/** The code block: the state's tint and text, as on the tile (DESIGN.md "Light reference"). */
-const STATE_BLOCK: Record<TableState, string> = {
-  free: 'border-success-border bg-success-tint text-success-text',
-  occupied: 'border-warning-border bg-warning-tint text-warning-text',
-  bill: 'border-info-border bg-info-tint text-info-text',
-  locked: 'border-destructive-border bg-destructive-tint text-destructive-text',
-};
-
-/** An indicator's text in the panel: the same colour as its state on a tile. */
-const INDICATOR_TEXT = {
-  destructive: 'text-destructive-text',
-  info: 'text-info-text',
-  warning: 'text-warning-text',
-} as const;
+import { tableState } from '../table-state';
+import { indicators, STATE_TONE } from './table-tile';
 
 type Props = {
   /** The selected table; none yet before the first tap. */
@@ -65,6 +50,8 @@ export function TableDetailPanel({ table, areaName, onOpenTable, onGoToOrder, on
     .filter(Boolean)
     .join(' · ');
   const badges = indicators(table, timeZone);
+  // The code block: the state's tint and text, as on the tile (DESIGN.md "Light reference").
+  const tone = STATE_TONE[tableState(table)];
 
   return (
     <aside aria-label="Detalhe da mesa" className={shell}>
@@ -73,7 +60,7 @@ export function TableDetailPanel({ table, areaName, onOpenTable, onGoToOrder, on
         <div className="flex items-start gap-3">
           <span
             aria-hidden="true"
-            className={`flex size-10 shrink-0 items-center justify-center rounded-xl border-2 text-lg font-bold tabular-nums ${STATE_BLOCK[tableState(table)]}`}
+            className={`flex size-10 shrink-0 items-center justify-center rounded-xl border-2 text-lg font-bold tabular-nums ${TONE_CARD[tone]} ${TONE_INK[tone]}`}
           >
             {table.code}
           </span>
@@ -105,7 +92,7 @@ export function TableDetailPanel({ table, areaName, onOpenTable, onGoToOrder, on
         {badges.length > 0 && (
           <ul aria-label="Indicadores" className="flex flex-wrap gap-x-3 gap-y-1 text-sm font-medium">
             {badges.map((badge) => (
-              <li key={badge.label} className={`flex items-center gap-1 [&>svg]:size-4 ${INDICATOR_TEXT[badge.variant]}`}>
+              <li key={badge.label} className={`flex items-center gap-1 [&>svg]:size-4 ${TONE_INK[badge.variant]}`}>
                 {badge.icon}
                 {badge.label}
               </li>
@@ -118,12 +105,12 @@ export function TableDetailPanel({ table, areaName, onOpenTable, onGoToOrder, on
       ) : (
         <footer className="mt-auto flex flex-col gap-2 p-4">
           {occupied ? (
-            <Button size="touch-primary" className="w-full rounded-xl" onClick={() => onGoToOrder(table)}>
+            <Button size="touch-primary" className="w-full" onClick={() => onGoToOrder(table)}>
               <ListPlus aria-hidden="true" />
               Adicionar artigos
             </Button>
           ) : (
-            <Button size="touch-primary" className="w-full rounded-xl" onClick={() => onOpenTable(table)}>
+            <Button size="touch-primary" className="w-full" onClick={() => onOpenTable(table)}>
               <DoorOpen aria-hidden="true" />
               Abrir mesa
             </Button>

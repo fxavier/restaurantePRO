@@ -42,7 +42,7 @@ export function ClosingPanel({ settlement, buyer, blocked, onClosed, children, c
       {children}
       {!settlement.settled && <p className="text-muted-foreground">A conta ainda não está paga.</p>}
       {can.collect && (
-        <Button size="touch-primary" className="w-full rounded-xl" disabled={busy || !canClose(settlement)} onClick={() => close.start(settlement.orderVersion, undefined)}>
+        <Button size="touch-primary" className="w-full" disabled={busy || !canClose(settlement)} onClick={() => close.start(settlement.orderVersion, undefined)}>
           <CircleCheck aria-hidden="true" />
           Fechar conta
         </Button>
@@ -52,7 +52,7 @@ export function ClosingPanel({ settlement, buyer, blocked, onClosed, children, c
           <Button
             variant="outline"
             size="touch"
-            className="flex-1 rounded-xl bg-card"
+            className="flex-1"
             disabled={busy || !canIssueDocument(settlement) || !buyer.ready}
             onClick={() => issue.start(buyer.buyer, undefined)}
           >

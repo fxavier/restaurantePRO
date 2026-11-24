@@ -132,10 +132,10 @@ function ItemsTable({ items, families, taxCategories }: ItemsTableProps) {
   );
 }
 
-/** A route hue as a fill with dark text (DESIGN.md: never as small text on the dark surfaces). */
+/** A route hue as a border and a tint, the text in `foreground` (DESIGN.md "Light reference"). */
 function DestinationChip({ code }: { code: string | undefined }) {
   const destination = destinationOf(code);
   return (
-    <span className={`rounded-sm px-2 py-0.5 text-xs font-semibold ${destination.fill}`}>{destination.label}</span>
+    <span className={`rounded-sm border px-2 py-0.5 text-xs font-semibold ${destination.fill}`}>{destination.label}</span>
   );
 }

@@ -113,7 +113,7 @@ function ChargeForm({
             value={amountText}
             aria-invalid={amount === undefined}
             onChange={(event) => setAmountText(event.target.value)}
-            className="h-12 rounded-xl text-lg tabular-nums"
+            className="h-12 text-lg tabular-nums"
           />
         </div>
         <div className="flex flex-col gap-1">
@@ -125,11 +125,11 @@ function ChargeForm({
             value={tenderedText}
             aria-invalid={tenderedText.trim() !== '' && tendered === undefined}
             onChange={(event) => setTenderedText(event.target.value)}
-            className="h-12 rounded-xl text-lg tabular-nums"
+            className="h-12 text-lg tabular-nums"
           />
         </div>
       </div>
-      <Button type="submit" size="touch-primary" className="w-full rounded-xl" disabled={disabled || !valid}>
+      <Button type="submit" size="touch-primary" className="w-full" disabled={disabled || !valid}>
         {amount ? `Cobrar ${formatMoney({ amount, currency: due.currency })}` : 'Cobrar'}
       </Button>
     </form>

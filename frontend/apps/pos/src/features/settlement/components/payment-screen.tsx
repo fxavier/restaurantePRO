@@ -1,5 +1,5 @@
 import { ApiError } from '@restaurantpro/api-client';
-import { Button, cn, Money, type MoneyValue, Skeleton } from '@restaurantpro/ui';
+import { Button, cn, Money, type MoneyValue, Skeleton, TONE_TINT } from '@restaurantpro/ui';
 import { ArrowLeft, ClipboardList, ReceiptText } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router';
@@ -66,7 +66,7 @@ export function PaymentScreen({ orderId, blocked, splitFirst = false }: Props) {
         <div className="flex flex-col items-center gap-3 rounded-2xl border bg-card p-6 text-center">
           <p role="alert">{loadError(settlement.error)}</p>
           {!(settlement.error instanceof ApiError && settlement.error.status === 404) && (
-            <Button variant="outline" size="touch" className="rounded-xl bg-card" onClick={() => void settlement.refetch()}>
+            <Button variant="outline" size="touch" onClick={() => void settlement.refetch()}>
               Tentar novamente
             </Button>
           )}
@@ -79,13 +79,13 @@ export function PaymentScreen({ orderId, blocked, splitFirst = false }: Props) {
         </div>
       )}
       <nav aria-label="Navegação da conta" className="flex flex-wrap gap-2">
-        <Button asChild variant="outline" size="touch" className="rounded-xl bg-card">
+        <Button asChild variant="outline" size="touch">
           <Link to={`/orders/${orderId}`}>
             <ClipboardList aria-hidden="true" />
             Voltar ao pedido
           </Link>
         </Button>
-        <Button asChild variant="ghost" size="touch" className="rounded-xl">
+        <Button asChild variant="ghost" size="touch">
           <Link to="/tables">
             <ArrowLeft aria-hidden="true" />
             Voltar às mesas
@@ -175,8 +175,8 @@ function Summary({ settlement }: { settlement: Settlement }) {
     <div role="group" aria-label="Resumo da conta">
       <dl className="flex flex-wrap gap-2">
         <Stat label="Total da conta" value={settlement.due} className="bg-muted" />
-        <Stat label="Pago" value={settlement.paid} className="bg-success-tint text-success-text" />
-        <Stat label="Saldo pendente" value={settlement.balance} className="bg-warning-tint text-warning-text" />
+        <Stat label="Pago" value={settlement.paid} className={TONE_TINT.success} />
+        <Stat label="Saldo pendente" value={settlement.balance} className={TONE_TINT.warning} />
       </dl>
     </div>
   );

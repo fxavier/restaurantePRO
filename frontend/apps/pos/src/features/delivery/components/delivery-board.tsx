@@ -1,7 +1,6 @@
-import { Button, cn } from '@restaurantpro/ui';
+import { Button, cn, TONE_TINT } from '@restaurantpro/ui';
 import { TriangleAlert } from 'lucide-react';
 import { useState } from 'react';
-import { TONE_TEXT } from '../../../lib/state-tint';
 import { BOARD, type Delivery } from '../delivery';
 import { CHANGED_ELSEWHERE } from '../messages';
 import { DeliveryCard, STATUS_TONE } from './delivery-card';
@@ -23,7 +22,7 @@ export function DeliveryBoard({ deliveries }: { deliveries: Delivery[] }) {
         >
           <TriangleAlert aria-hidden="true" className="size-5 shrink-0" />
           <p className="flex-1 font-medium">{CHANGED_ELSEWHERE}</p>
-          <Button variant="outline" size="touch" className="rounded-xl bg-card" onClick={() => setChangedElsewhere(false)}>
+          <Button variant="outline" size="touch" onClick={() => setChangedElsewhere(false)}>
             Fechar aviso
           </Button>
         </div>
@@ -36,7 +35,7 @@ export function DeliveryBoard({ deliveries }: { deliveries: Delivery[] }) {
             <section key={status} aria-labelledby={headingId} className="flex min-w-0 flex-col gap-3 rounded-2xl border bg-card p-4">
               <h3 id={headingId} className="flex items-center justify-between gap-2 text-base font-semibold">
                 {title}
-                <span className={cn('min-w-8 rounded-full px-2.5 py-0.5 text-center text-sm font-bold tabular-nums', TONE_TEXT[STATUS_TONE[status]])}>
+                <span className={cn('min-w-8 rounded-full px-2.5 py-0.5 text-center text-sm font-bold tabular-nums', TONE_TINT[STATUS_TONE[status]])}>
                   {inColumn.length}
                 </span>
               </h3>

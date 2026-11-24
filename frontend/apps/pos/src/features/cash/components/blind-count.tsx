@@ -74,12 +74,12 @@ export function BlindCount({ session, sessionId }: { session: SessionDetails; se
         ))}
       </div>
       <CommandFeedback blocked={blocked} error={close.error && cashRefusal(close.error, 'o fecho da sessão')} />
-      <ConfirmButton type="submit" size="touch-primary" className="rounded-xl" pending={close.pending} disabled={blocked || !complete}>
+      <ConfirmButton type="submit" size="touch-primary" pending={close.pending} disabled={blocked || !complete}>
         <LockKeyhole aria-hidden="true" />
         {awaitingRetry ? 'Tentar novamente' : 'Fechar sessão'}
       </ConfirmButton>
       <AlertDialog open={confirming} onOpenChange={setConfirming}>
-        <AlertDialogContent className="rounded-2xl">
+        <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Fechar a sessão de caixa?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -87,8 +87,8 @@ export function BlindCount({ session, sessionId }: { session: SessionDetails; se
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel size="touch" className="rounded-xl bg-card">Voltar</AlertDialogCancel>
-            <AlertDialogAction size="touch" className="rounded-xl" onClick={confirm}>
+            <AlertDialogCancel size="touch">Voltar</AlertDialogCancel>
+            <AlertDialogAction size="touch" onClick={confirm}>
               Confirmar fecho
             </AlertDialogAction>
           </AlertDialogFooter>

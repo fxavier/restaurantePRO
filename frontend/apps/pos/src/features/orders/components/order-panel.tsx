@@ -136,7 +136,7 @@ export function OrderPanel({ order, catalog, commands, message, action, back, sh
           </p>
         </div>
         {/* The light reference: the outline action above the one green primary. */}
-        <Button asChild variant="outline" size="touch" className="w-full rounded-xl bg-card">
+        <Button asChild variant="outline" size="touch" className="w-full">
           <Link to={`/orders/${order.id}/payment`}>
             <ReceiptText aria-hidden="true" />
             Conta & Pagamento
@@ -295,8 +295,7 @@ function DraftRow({
       <div className="flex items-center gap-1">
         <Button
           variant="outline"
-          size="touch"
-          className="rounded-full bg-card px-0"
+          size="touch-round"
           aria-label={`Diminuir ${name}`}
           disabled={disabled || less === undefined}
           onClick={() => less !== undefined && onQuantity(line, less)}
@@ -308,8 +307,7 @@ function DraftRow({
         </span>
         <Button
           variant="outline"
-          size="touch"
-          className="rounded-full bg-card px-0"
+          size="touch-round"
           aria-label={`Aumentar ${name}`}
           disabled={disabled || more === undefined}
           onClick={() => more !== undefined && onQuantity(line, more)}
@@ -319,7 +317,7 @@ function DraftRow({
         <Button
           variant="outline"
           size="touch"
-          className="ml-auto rounded-xl bg-card px-0"
+          className="ml-auto px-0"
           aria-label={`Nota de ${name}`}
           disabled={disabled}
           onClick={() => onNote(line)}
@@ -329,7 +327,7 @@ function DraftRow({
         <Button
           variant="outline"
           size="touch"
-          className="rounded-xl bg-card px-0"
+          className="px-0"
           aria-label={`Remover ${name}`}
           disabled={disabled}
           onClick={() => onRemove(line)}

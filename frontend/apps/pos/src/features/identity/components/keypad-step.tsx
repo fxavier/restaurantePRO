@@ -74,7 +74,7 @@ export function KeypadStep({
             autoComplete="off"
             autoCapitalize="characters"
             spellCheck={false}
-            className="h-14 rounded-xl bg-card px-4 font-mono text-2xl tracking-widest md:text-2xl"
+            className="h-14 px-4 font-mono text-2xl tracking-widest md:text-2xl"
           />
         </div>
         <div className="min-h-18">
@@ -90,7 +90,7 @@ export function KeypadStep({
             )
           )}
         </div>
-        <ConfirmButton type="submit" size="touch-primary" className="mt-auto w-full rounded-xl" disabled={!canSubmit} pending={pending}>
+        <ConfirmButton type="submit" size="touch-primary" className="mt-auto w-full" disabled={!canSubmit} pending={pending}>
           {submitLabel}
         </ConfirmButton>
       </div>

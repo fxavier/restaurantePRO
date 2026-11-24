@@ -18,7 +18,7 @@ export function TextField({ label, value, onChange, className, ...input }: Props
         autoComplete="off"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-12 rounded-xl text-base md:text-base"
+        className="h-12 text-base md:text-base"
         {...input}
       />
     </div>

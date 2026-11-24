@@ -31,7 +31,6 @@ export function ReprintButton({ documentId, name, disabled, onPrinted }: {
     <>
       <Button
         variant="outline"
-        className="rounded-xl bg-card"
         size="touch"
         disabled={disabled || reprint.intent !== undefined}
         onClick={() => reprint.start(documentId, undefined)}

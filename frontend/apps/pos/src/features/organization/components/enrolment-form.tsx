@@ -44,7 +44,7 @@ export function EnrolmentForm({ onSubmit, pending, message }: Props) {
           autoCapitalize="characters"
           spellCheck={false}
           aria-describedby="enrolment-code-count"
-          className="h-14 rounded-xl bg-card px-4 font-mono text-2xl tracking-wider md:text-2xl"
+          className="h-14 px-4 font-mono text-2xl tracking-wider md:text-2xl"
         />
         <p id="enrolment-code-count" className="text-sm text-muted-foreground tabular-nums">
           {code.length} de {CODE_LENGTH} caracteres
@@ -62,7 +62,7 @@ export function EnrolmentForm({ onSubmit, pending, message }: Props) {
           </p>
         )}
       </div>
-      <ConfirmButton type="submit" size="touch-primary" className="w-full rounded-xl" disabled={!complete} pending={pending}>
+      <ConfirmButton type="submit" size="touch-primary" className="w-full" disabled={!complete} pending={pending}>
         Registar terminal
       </ConfirmButton>
     </form>

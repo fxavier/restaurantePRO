@@ -55,7 +55,7 @@ function LinkedCustomer({ customerId, canView, onUnlink, locked }: LinkedProps) 
       ) : (
         <p className="text-muted-foreground">Cliente associado</p>
       )}
-      <Button type="button" variant="outline" size="touch" className="ml-auto rounded-xl bg-card" disabled={locked} onClick={onUnlink}>
+      <Button type="button" variant="outline" size="touch" className="ml-auto" disabled={locked} onClick={onUnlink}>
         <X aria-hidden="true" />
         Desassociar cliente
       </Button>
@@ -88,14 +88,13 @@ function CustomerSearch({ onLink, locked }: { onLink: (customer: CustomerMatch) 
             readOnly={locked}
             onChange={(event) => setText(event.target.value)}
             onKeyDown={onKeyDown}
-            className="h-12 rounded-xl pl-10 text-base md:text-base"
+            className="h-12 pl-10 text-base md:text-base"
           />
         </div>
         <Button
           type="button"
           variant="outline"
           size="touch"
-          className="rounded-xl bg-card"
           disabled={locked || text.trim() === ''}
           onClick={submit}
         >
@@ -117,7 +116,7 @@ function CustomerSearch({ onLink, locked }: { onLink: (customer: CustomerMatch) 
               <Button
                 type="button"
                 size="touch"
-                className="ml-auto rounded-xl"
+                className="ml-auto"
                 aria-label={`Associar ${customer.name}`}
                 disabled={locked}
                 onClick={() => onLink(customer)}
@@ -152,7 +151,7 @@ function CreateCustomer({ contact, onLink, locked }: Pick<Props, 'contact' | 'on
         type="button"
         variant="outline"
         size="touch"
-        className="self-start rounded-xl bg-card"
+        className="self-start"
         aria-busy={create.pending}
         disabled={locked || blocked || create.pending || name === ''}
         onClick={run}

@@ -1,4 +1,4 @@
-import { Button } from '@restaurantpro/ui';
+import { Button, type StatusTone, StatusPill } from '@restaurantpro/ui';
 import { CircleUser, LoaderCircle, Monitor, RefreshCwOff, Store, Users, Wifi, WifiOff } from 'lucide-react';
 import { PrintChip } from '../features/alerts/components/print-chip';
 import { useEmployee } from '../lib/auth/use-employee';
@@ -15,12 +15,12 @@ const LABELS = {
 } as const;
 
 /** The connection chip: green "Ligado", red "Sem ligação", amber when only live updates are off, neutral meanwhile. */
-const CHIP = {
-  open: 'bg-success-tint text-success-text',
-  connecting: 'bg-muted text-muted-foreground',
-  down: 'bg-destructive-tint text-destructive-text',
-  refused: 'bg-warning-tint text-warning-text',
-} as const;
+const TONE = {
+  open: 'success',
+  connecting: 'neutral',
+  down: 'destructive',
+  refused: 'warning',
+} as const satisfies Record<keyof typeof LABELS, StatusTone>;
 
 /**
  * The POS status bar (DS layouts; light reference "Loja Baixa · POS-02 · Ana M."): the store, the terminal, the
@@ -63,11 +63,7 @@ export function StatusBar() {
         </div>
         {/* A fixed width, the chip at its end, so the button beside it never moves when the state changes (DS). */}
         <div className="flex w-64 justify-end">
-          <p
-            role="status"
-            aria-label="Ligação"
-            className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium [&>svg]:size-4 ${CHIP[connection]}`}
-          >
+          <StatusPill size="chip" tone={TONE[connection]} role="status" aria-label="Ligação">
             {connection === 'open' ? (
               <Wifi aria-hidden="true" />
             ) : connection === 'down' ? (
@@ -78,10 +74,10 @@ export function StatusBar() {
               <LoaderCircle aria-hidden="true" />
             )}
             {LABELS[connection]}
-          </p>
+          </StatusPill>
         </div>
         {/* The tinted destructive style for the action that hands the terminal over. */}
-        <Button variant="destructive" size="touch" className="rounded-xl" onClick={() => endSession('switch')}>
+        <Button variant="destructive" size="touch" onClick={() => endSession('switch')}>
           <Users aria-hidden="true" />
           Trocar empregado
         </Button>

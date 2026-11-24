@@ -2,17 +2,18 @@ import { LOCALE, type StatusMap } from '@restaurantpro/ui';
 import { Archive, CircleCheck, CircleHelp, PencilLine, Rocket } from 'lucide-react';
 import type { TaxCategorySummary } from './types';
 
-/** A destination without a route colour: the raised surface with light text. */
-const NEUTRAL = 'bg-muted text-foreground';
+/** A destination without a route colour: the raised surface, bordered like the others. */
+const NEUTRAL = 'border-border bg-muted text-foreground';
 
 /**
  * The production destinations the screen offers (CONTEXT "Destino de produção"). The contract takes any code
- * (`^[A-Z][A-Z0-9_]*$`); these are the three the design names, each with its route colour as a fill with dark text.
+ * (`^[A-Z][A-Z0-9_]*$`); these are the three the design names, each in its route colour as a border and a 15 % tint
+ * with `foreground` text, as on the POS (DESIGN.md "Light reference": light text on the hue is below AA).
  */
 export const DESTINATIONS = [
-  { code: 'KITCHEN', label: 'Cozinha', fill: 'bg-route-kitchen text-background' },
-  { code: 'BAR', label: 'Bar', fill: 'bg-route-bar text-background' },
-  { code: 'COPA', label: 'Copa', fill: 'bg-route-copa text-background' },
+  { code: 'KITCHEN', label: 'Cozinha', fill: 'border-route-kitchen bg-route-kitchen/15 text-foreground' },
+  { code: 'BAR', label: 'Bar', fill: 'border-route-bar bg-route-bar/15 text-foreground' },
+  { code: 'COPA', label: 'Copa', fill: 'border-route-copa bg-route-copa/15 text-foreground' },
 ] as const;
 
 /** A destination's label and fill; an unknown code shows as itself on a neutral fill, none as "Sem destino". */

@@ -39,10 +39,10 @@ export function CommandFooter({ label, error, pending, awaitingRetry, disabled =
         ) : null}
       </div>
       <DialogFooter>
-        <Button type="button" variant="outline" size="touch" className="rounded-xl bg-card" onClick={onClose} disabled={pending}>
+        <Button type="button" variant="outline" size="touch" onClick={onClose} disabled={pending}>
           Voltar
         </Button>
-        <ConfirmButton type="submit" size="touch-primary" className="rounded-xl" variant={variant} pending={pending} disabled={blocked || disabled}>
+        <ConfirmButton type="submit" size="touch-primary" variant={variant} pending={pending} disabled={blocked || disabled}>
           {awaitingRetry ? 'Tentar novamente' : label}
         </ConfirmButton>
       </DialogFooter>

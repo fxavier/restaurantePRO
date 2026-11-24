@@ -44,16 +44,16 @@ export function SendRound({
       {awaitingRetry ? (
         <div className="flex gap-2">
           {/* Both 56 px, and narrow enough to share the panel's 328 px. */}
-          <Button size="touch-primary" className="min-w-0 flex-1 rounded-xl px-4" onClick={send.retry} disabled={blocked}>
+          <Button size="touch-primary" className="min-w-0 flex-1 px-4" onClick={send.retry} disabled={blocked}>
             <RotateCcw aria-hidden="true" />
             Tentar novamente
           </Button>
-          <Button size="touch-primary" variant="outline" className="rounded-xl bg-card px-4 text-base font-medium" onClick={send.discard}>
+          <Button size="touch-primary" variant="outline" className="px-4 text-base font-medium" onClick={send.discard}>
             Descartar
           </Button>
         </div>
       ) : (
-        <Button size="touch-primary" className="w-full rounded-xl" disabled={disabled || send.intent !== undefined} onClick={onSend}>
+        <Button size="touch-primary" className="w-full" disabled={disabled || send.intent !== undefined} onClick={onSend}>
           {label}
         </Button>
       )}

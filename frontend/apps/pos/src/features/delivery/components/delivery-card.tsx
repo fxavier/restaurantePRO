@@ -1,8 +1,7 @@
-import { cn, type StatusTone } from '@restaurantpro/ui';
+import { cn, type StatusTone, TONE_CARD } from '@restaurantpro/ui';
 import { Clock, MapPin, Phone, ReceiptText, Undo2 } from 'lucide-react';
 import { Link } from 'react-router';
 import { useStoreTimeZone } from '../../../lib/auth/use-employee';
-import { TONE_CARD } from '../../../lib/state-tint';
 import { addressText, type Delivery, type DeliveryStatus, storeClock } from '../delivery';
 import { DeliveryCommands } from './delivery-commands';
 

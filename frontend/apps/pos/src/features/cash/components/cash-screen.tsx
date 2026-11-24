@@ -35,7 +35,7 @@ export function CashScreen() {
     return (
       <div className="flex flex-col items-center gap-3 rounded-2xl border bg-card p-6 text-center">
         <p role="alert">{loadError(failed, 'a caixa')}</p>
-        <Button variant="outline" size="touch" className="rounded-xl bg-card" onClick={reload}>
+        <Button variant="outline" size="touch" onClick={reload}>
           Tentar novamente
         </Button>
       </div>
@@ -54,7 +54,7 @@ export function CashScreen() {
       {failed && (
         <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-warning-border bg-warning-tint p-4 text-warning-text">
           <p>{refreshError(failed)}</p>
-          <Button variant="outline" size="touch" className="rounded-xl bg-card" onClick={reload}>
+          <Button variant="outline" size="touch" onClick={reload}>
             Atualizar
           </Button>
         </div>

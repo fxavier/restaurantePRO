@@ -1,7 +1,6 @@
-import { Money } from '@restaurantpro/ui';
+import { Money, StatusPill } from '@restaurantpro/ui';
 import { CalendarDays, CircleUser, Clock, LockOpen, Wallet } from 'lucide-react';
 import { useId, type ReactNode } from 'react';
-import { StateChip } from '../../../lib/state-tint';
 import { businessDay, clockTime } from '../format';
 import type { RegisterSummary, SessionDetails } from '../hooks/use-cash';
 
@@ -32,9 +31,9 @@ export function SessionCard({ session, register, operator, timeZone, children }:
             <h3 id={title} className="text-2xl font-semibold">
               {register ? `${register.name} (${register.code})` : 'Caixa'}
             </h3>
-            <StateChip tone="success" icon={LockOpen}>
+            <StatusPill tone="success" icon={LockOpen}>
               Sessão aberta
-            </StateChip>
+            </StatusPill>
           </div>
           <dl className="flex flex-wrap gap-x-6 gap-y-1 text-muted-foreground">
             <Detail icon={<CircleUser aria-hidden="true" className="size-5" />} term="Operador">

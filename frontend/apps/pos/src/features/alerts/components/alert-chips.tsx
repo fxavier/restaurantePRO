@@ -1,12 +1,10 @@
+import { cn, type StatusTone, statusPillVariants } from '@restaurantpro/ui';
 import { ChefHat, CircleAlert } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router';
 import { useEmployee } from '../../../lib/auth/use-employee';
 import { lateRoundsLabel, maySeePaymentAlerts, maySeeProductionAlerts, paymentsToConfirmLabel } from '../alerts';
 import { useProductionAlerts, useSettlementAlerts } from '../hooks/use-alerts';
-
-const PAYMENT = 'bg-destructive-tint text-destructive-text';
-const KITCHEN = 'bg-warning-tint text-warning-text';
 
 /**
  * The footer's alerts (light reference): the payments in doubt, red, to the payment screen of the oldest one's order
@@ -31,7 +29,7 @@ function PaymentsToConfirm() {
   const alerts = useSettlementAlerts().data;
   if (!alerts || alerts.paymentsToConfirm === 0) return null;
   return (
-    <Chip style={PAYMENT} to={alerts.oldestOrderId && `/orders/${alerts.oldestOrderId}/payment`}>
+    <Chip tone="destructive" to={alerts.oldestOrderId && `/orders/${alerts.oldestOrderId}/payment`}>
       <CircleAlert aria-hidden="true" className="size-4" />
       {paymentsToConfirmLabel(alerts.paymentsToConfirm)}
     </Chip>
@@ -43,21 +41,25 @@ function LateRounds() {
   const alerts = useProductionAlerts().data;
   if (!alerts || alerts.delayedKitchenRounds === 0) return null;
   return (
-    <Chip style={KITCHEN} to="/kds">
+    <Chip tone="warning" to="/kds">
       <ChefHat aria-hidden="true" className="size-4" />
       {lateRoundsLabel(alerts.delayedKitchenRounds, alerts.kitchenDelayMinutes)}
     </Chip>
   );
 }
 
-function Chip({ style, to, children }: { style: string; to: string | undefined; children: ReactNode }) {
-  const shape = `flex min-h-12 items-center gap-2 rounded-xl px-3 text-sm font-medium ${style}`;
+function Chip({ tone, to, children }: { tone: StatusTone; to: string | undefined; children: ReactNode }) {
+  // A footer chip in its tint (DESIGN.md "Light reference"), as tall as a touch target.
+  const shape = cn(statusPillVariants({ tone, size: 'chip' }), 'min-h-12 py-0');
   return (
     <li>
       {to ? (
         <Link
           to={to}
-          className={`${shape} underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background`}
+          className={cn(
+            shape,
+            'underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+          )}
         >
           {children}
         </Link>

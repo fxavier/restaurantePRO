@@ -1,4 +1,4 @@
-import { Button, cn, Money, type MoneyValue } from '@restaurantpro/ui';
+import { Button, Money, type MoneyValue } from '@restaurantpro/ui';
 import type { Can } from '../hooks/use-permissions';
 import type { Buyer } from '../hooks/use-settlement-commands';
 import type { Partition } from '../settlement';
@@ -54,7 +54,7 @@ export function PartitionList({ orderId, partitions, selected, residual, onSelec
           aria-pressed={selected === undefined}
           disabled={blocked || !open}
           onClick={() => onSelect(undefined)}
-          className={cn('justify-between rounded-xl', selected !== undefined && 'bg-card')}
+          className="justify-between"
         >
           <span>
             <span className="sr-only">Cobrar</span> Restante da conta

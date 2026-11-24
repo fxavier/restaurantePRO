@@ -1,4 +1,4 @@
-import { Badge } from '@restaurantpro/ui';
+import { Badge, type StatusTone, TONE_CARD } from '@restaurantpro/ui';
 import { Clock, TimerOff } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { StationChip } from './station-chip';
@@ -10,13 +10,12 @@ import { isLate, type KitchenItem, type KitchenStatus, type KitchenTicket, waiti
  * in preparation amber (as an occupied table), ready green, a late round red (as an overdue table); a round taken off is
  * neutral. The state is also in words: the column's title, and "Atrasada" on a late round.
  */
-const STATE_STYLE: Record<KitchenStatus, string> = {
-  QUEUED: 'border-info-border bg-info-tint',
-  IN_PREPARATION: 'border-warning-border bg-warning-tint',
-  READY: 'border-success-border bg-success-tint',
-  BUMPED: 'border-border bg-muted',
+const STATE_TONE: Record<KitchenStatus, StatusTone> = {
+  QUEUED: 'info',
+  IN_PREPARATION: 'warning',
+  READY: 'success',
+  BUMPED: 'neutral',
 };
-const LATE_STYLE = 'border-destructive-border bg-destructive-tint';
 
 type Props = {
   ticket: KitchenTicket;
@@ -35,7 +34,7 @@ export function KitchenCard({ ticket, lateAfterMinutes, children }: Props) {
   return (
     <article
       aria-label={`${ticket.title}, ${ticket.round}`}
-      className={`flex flex-col gap-3 rounded-xl border-2 p-4 ${late ? LATE_STYLE : STATE_STYLE[ticket.status]}`}
+      className={`flex flex-col gap-3 rounded-xl border-2 p-4 ${TONE_CARD[late ? 'destructive' : STATE_TONE[ticket.status]]}`}
     >
       <header className="flex flex-wrap items-center justify-between gap-2">
         <h4 className="text-2xl font-bold tabular-nums">{ticket.title}</h4>
