@@ -65,6 +65,9 @@ export const admin: SessionView = {
   storeName: null,
   storeTimezone: null,
   currency: null,
+  // A BackOffice account has no terminal.
+  terminalCode: null,
+  terminalName: null,
   posSession: null,
 };
 

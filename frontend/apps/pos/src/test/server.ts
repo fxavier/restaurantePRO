@@ -8,11 +8,17 @@ type EnrolmentRequest = components['schemas']['com.xavier.backend.organization.m
 /**
  * Every request must have a handler: an unexpected call fails the test. The one exception is the home screen every
  * login reaches (`/tables`): an empty table map and a change stream held open, so a test about the PIN pad need not
- * stand in for the map. A test about the map replaces both with `tablesEndpoint` and `notificationsEndpoint`.
+ * stand in for the map. A test about the map replaces both with `tablesEndpoint` and `notificationsEndpoint`. The
+ * status bar's and the footer's alerts (read only with the permission that shows them) answer "nothing to report"
+ * too; a test about them replaces them with the endpoints of ./alerts.
  */
 export const server = setupServer(
   http.get('*/api/v1/pos/tables', () => HttpResponse.json({ storeId: '6f1c2a9e-0000-4000-8000-0000000000aa', areas: [] })),
   http.get('*/api/v1/pos/notifications', ({ request }) => openStream(request).response),
+  http.get('*/api/v1/pos/production/alerts', () =>
+    HttpResponse.json({ pendingPrintJobs: 0, delayedKitchenRounds: 0, kitchenDelayMinutes: 15 }),
+  ),
+  http.get('*/api/v1/pos/settlement/alerts', () => HttpResponse.json({ paymentsToConfirm: 0, oldestOrderId: null })),
 );
 
 export const ISSUER = 'https://keycloak.test/realms/restaurantpro-devices';
@@ -85,6 +91,8 @@ export const SESSION = {
   storeName: 'Loja Baixa',
   storeTimezone: 'Africa/Maputo',
   currency: 'MZN',
+  terminalCode: 'POS-02',
+  terminalName: 'Caixa da sala',
   posSession: 'pos-session-ana',
 } satisfies SessionView;
 

@@ -14,12 +14,15 @@ function keysOf({ topic, id }: ChangeNotice): QueryKey[] {
     case 'CATALOG':
       return [['pos', 'catalog']];
     case 'PRINT_JOBS':
-      return [['pos', 'print-jobs']];
+      // The status bar's pending prints follow the queue.
+      return [['pos', 'print-jobs'], ['pos', 'production-alerts']];
     case 'PRODUCTION_TICKETS':
-      // ADR 0044: a round queued or moved on the kitchen display; every station's lists hold it, so all are read.
-      return [['pos', 'production-tickets']];
+      // ADR 0044: a round queued or moved on the kitchen display; every station's lists hold it, so all are read, and
+      // the footer's late rounds with them.
+      return [['pos', 'production-tickets'], ['pos', 'production-alerts']];
     case 'PAYMENT_ATTEMPT':
-      return id ? [['pos', 'payment-attempts', id]] : [['pos', 'payment-attempts']];
+      // The footer's payments in doubt follow every attempt of the store.
+      return [id ? ['pos', 'payment-attempts', id] : ['pos', 'payment-attempts'], ['pos', 'settlement-alerts']];
     default:
       return [];
   }

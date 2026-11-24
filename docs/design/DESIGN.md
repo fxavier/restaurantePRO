@@ -48,7 +48,20 @@ Decided by Xavier Francisco on 2026-11-23: the visual reference is now the light
 | overdue ("58 min sem ronda") | `destructive` tint | **not built**: the table map has no last-round time |
 | selected | the state's tile + a 2px `ring` outside it | `aria-pressed` |
 
-The image's per-table amount, the terminal name, the "impressão pendente" / "pagamento por confirmar" / kitchen-delay chips and the keyboard hints are not shown: no current POS query gives them (or no shortcut exists).
+The image's per-table amount is not shown: no current POS query gives it.
+
+**Status bar and footer (2026-11-23, backend extended):**
+
+| Reference | Built as | Source |
+| --- | --- | --- |
+| "Loja Baixa · POS-02 · Ana M." | store · terminal code (its name when it has none) · employee | `SessionView.terminalCode` / `terminalName` (identity, from `OrganizationApi.findTerminal`) |
+| "Ligado" | the existing connection chip (green when the change stream is open) | lib/live |
+| "1 impressão pendente" | amber chip in the status bar, when > 0; not a link (the POS has no print queue screen) | `GET /api/v1/pos/production/alerts` `pendingPrintJobs`: jobs waiting (QUEUED, PROCESSING, RETRY_WAIT) on a printer in NORMAL mode, as PRINT_QUEUE_STALLED counts them (a printer on HOLD, Espera §8.6, waits on purpose and is not pending), + FAILED/UNKNOWN of the last 24 h without a retry or acknowledgement on any printer; drawer kicks excluded |
+| "1 pagamento por confirmar" | red-tint chip in the `/tables` footer, linking to `/orders/{oldestOrderId}/payment` (unlinked when the only ones are debt payments) | `GET /api/v1/pos/settlement/alerts`: UNKNOWN attempts of the store |
+| "Cozinha: 2 rondas > 15 min" | amber chip in the `/tables` footer, linking to `/kds` | `GET /api/v1/pos/production/alerts` `delayedKitchenRounds`: **rounds**, not tickets (a round sent to Cozinha and Bar is one batch with two tickets, and counts once), with a ticket QUEUED or IN_PREPARATION queued longer than `kitchenDelayMinutes` (any station; `restaurantpro.production.kitchen-delay`, default `PT15M`) |
+| "F2 reserva · F3 takeaway · / pesquisa artigo" | "F2 reserva · F3 takeaway · / procurar mesa" on `/tables`; F2 only with `RESERVATION_MANAGE`; never while typing in a field or inside a dialog | `routes/tables-shortcuts.tsx` |
+
+Each alert is read only by a session holding the permission that shows it (production: `PRODUCTION_VIEW`; payments: `PAYMENT_COLLECT` or `PAYMENT_RESOLVE`); the backend refuses the others (403). **Two reads, composed in the POS**, not one: no module may depend on both production and settlement (production only listens to settlement's events), and a new module dependency is an architecture decision; each module owns its own count, permission and index. Both follow the change stream (`PRINT_JOBS`, `PRODUCTION_TICKETS`, `PAYMENT_ATTEMPT`); the production read is also polled every 15 s, since a round grows late with time alone.
 
 ## Screens used
 

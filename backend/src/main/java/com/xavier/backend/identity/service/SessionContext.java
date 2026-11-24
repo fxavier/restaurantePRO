@@ -11,7 +11,8 @@ import org.springframework.stereotype.Component;
  * Names, on a {@link SessionView}, the tenant the request was resolved in (its membership's {@link TenantContext},
  * D177), never the {@code X-Tenant-Id} the client sent: the BackOffice shows the company the server relays for. A
  * session with a store (a POS session) also gets that store's name, timezone and currency, so the POS shows the
- * store and its times in the store's zone, not the terminal's.
+ * store and its times in the store's zone, not the terminal's, and a session on a terminal that terminal's code and
+ * name.
  */
 @Component
 class SessionContext {
@@ -28,7 +29,17 @@ class SessionContext {
 
     SessionView stamp(SessionView view) {
         return tenants.current().map(TenantContext::tenantId)
-                .map(tenant -> withStore(view.withTenant(tenant, tenancy.legalName(tenant))))
+                .map(tenant -> withTerminal(withStore(view.withTenant(tenant, tenancy.legalName(tenant)))))
+                .orElse(view);
+    }
+
+    /** The status bar names the terminal next to the store (light reference: "Loja Baixa · POS-02 · Ana M."). */
+    private SessionView withTerminal(SessionView view) {
+        if (view.terminalId() == null) {
+            return view;
+        }
+        return organization.findTerminal(view.terminalId())
+                .map(terminal -> view.withTerminal(terminal.code(), terminal.name()))
                 .orElse(view);
     }
 
