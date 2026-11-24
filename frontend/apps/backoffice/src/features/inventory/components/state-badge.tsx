@@ -47,8 +47,11 @@ export function progressLabel(value: string | undefined): string | undefined {
   return value ? progress[value] : undefined;
 }
 
-/** A state the map does not know yet is shown by its name rather than hidden (never inferred, §8.3). */
+/**
+ * A document's state as the light reference's tinted pill. A state the map does not know yet is shown by its name
+ * rather than hidden (never inferred, §8.3).
+ */
 export function StateBadge({ status, states }: { status: string | undefined; states: StatusMap<string> }) {
   const name = status ?? '—';
-  return <StatusBadge status={name} statuses={name in states ? states : { [name]: state(name, CircleDot, 'neutral') }} />;
+  return <StatusBadge look="tint" status={name} statuses={name in states ? states : { [name]: state(name, CircleDot, 'neutral') }} />;
 }

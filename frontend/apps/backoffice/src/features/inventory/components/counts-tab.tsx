@@ -179,7 +179,7 @@ function CountLines({ count, editable, itemName }: { count: CountView; editable:
       <TableHeader>
         <TableRow>
           <TableHead>Artigo</TableHead>
-          <TableHead>Contado</TableHead>
+          <TableHead className="text-right">Contado</TableHead>
           {revealed && <TableHead className="text-right">Esperado</TableHead>}
           {revealed && <TableHead className="text-right">Diferença</TableHead>}
         </TableRow>
@@ -188,7 +188,7 @@ function CountLines({ count, editable, itemName }: { count: CountView; editable:
         {count.lines?.map((line) => (
           <TableRow key={line.stockItemId}>
             <TableCell className="font-medium">{itemName(line.stockItemId)}</TableCell>
-            <TableCell>
+            <TableCell className="text-right">
               {editable ? (
                 <CountLineInput countId={count.id!} line={line} name={itemName(line.stockItemId)} />
               ) : (
@@ -218,7 +218,7 @@ function CountLineInput({ countId, line, name }: { countId: string; line: Line; 
   };
   const errorId = `count-error-${line.stockItemId}`;
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col items-end gap-1">
       <div className="flex items-center gap-2">
         <Input
           aria-label={`Contado de ${name}`}

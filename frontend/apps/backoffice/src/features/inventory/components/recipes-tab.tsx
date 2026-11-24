@@ -74,10 +74,11 @@ function RecipeList({ recipes, current, onChoose }: { recipes: RecipeView[]; cur
     <ul aria-label="Fichas técnicas" className="flex flex-col gap-1">
       {recipes.map((candidate) => (
         <li key={candidate.id}>
+          {/* The chosen one as the POS's chosen register: the green border on the free state's tint. */}
           <Button
-            variant={candidate.id === current ? 'secondary' : 'ghost'}
+            variant="outline"
             aria-current={candidate.id === current}
-            className="h-auto min-h-12 w-full justify-start text-left whitespace-normal"
+            className="h-auto min-h-12 w-full justify-start text-left whitespace-normal aria-[current=true]:border-primary aria-[current=true]:bg-success-tint"
             onClick={() => onChoose(candidate.id)}
           >
             <CookingPot aria-hidden="true" />

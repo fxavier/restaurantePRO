@@ -116,5 +116,6 @@ export function SelectField<Values extends FieldValues>({
   );
 }
 
-/** The native select styled like the design system's inputs. */
-export const SELECT = 'h-9 w-full rounded-md border border-input bg-muted px-3 text-sm';
+/** The native select styled like the design system's inputs (the light reference's white field, `rounded-xl`). */
+export const SELECT =
+  'h-9 w-full rounded-xl border border-input bg-card px-3 text-sm focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none';

@@ -1,4 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
+import { cn, TONE_CARD } from '@restaurantpro/ui';
 import { useForm, useWatch } from 'react-hook-form';
 import { toDecimal, toInputDecimal } from '../decimal';
 import { formatQuantity } from '../format';
@@ -48,24 +49,34 @@ export function ReceiveTransferForm({ transfer, onDone }: { transfer: TransferVi
 
   return (
     <CommandForm form={form} onSubmit={submit} command={command} pending={mutation.isPending} submitLabel="Registar receção" onCancel={onDone}>
-      <fieldset className="flex flex-col gap-3">
+      <fieldset className="flex flex-col">
         <legend className="mb-2 text-sm font-medium">Recebido</legend>
-        {shipped.map((line, index) => {
-          const stockItem = item(line.stockItemId!);
-          return (
-            <div key={line.stockItemId} className="grid items-end gap-2 sm:grid-cols-2">
-              <TextField
-                control={form.control}
-                name={`lines.${index}.quantityReceived`}
-                label={`Recebido de ${stockItem?.name ?? '—'}`}
-                inputMode="decimal"
-              />
-              <p className="pb-2 text-sm text-muted-foreground">Enviado {formatQuantity(line.quantityShipped, stockItem?.baseUnit)}</p>
-            </div>
-          );
-        })}
+        {/* The lines as the POS order's: one compact row each, what was shipped right-aligned and tabular. */}
+        <div className="divide-y rounded-xl border">
+          {shipped.map((line, index) => {
+            const stockItem = item(line.stockItemId!);
+            return (
+              <div key={line.stockItemId} className="grid items-end gap-2 p-3 sm:grid-cols-2">
+                <TextField
+                  control={form.control}
+                  name={`lines.${index}.quantityReceived`}
+                  label={`Recebido de ${stockItem?.name ?? '—'}`}
+                  inputMode="decimal"
+                />
+                <p className="pb-2 text-sm text-muted-foreground tabular-nums sm:text-right">
+                  Enviado {formatQuantity(line.quantityShipped, stockItem?.baseUnit)}
+                </p>
+              </div>
+            );
+          })}
+        </div>
       </fieldset>
-      {short && <TextField control={form.control} name="reason" label="Motivo da diferença" maxLength={500} />}
+      {short && (
+        // Short: the amber of "a confirmar", the loss is posted with this reason; the field's label says why it shows.
+        <div className={cn('rounded-xl border p-3', TONE_CARD.warning)}>
+          <TextField control={form.control} name="reason" label="Motivo da diferença" maxLength={500} />
+        </div>
+      )}
     </CommandForm>
   );
 }

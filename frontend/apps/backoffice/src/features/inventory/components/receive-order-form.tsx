@@ -55,26 +55,29 @@ export function ReceiveOrderForm({ order, onDone }: { order: PurchaseOrderView; 
   return (
     <CommandForm form={form} onSubmit={submit} command={command} pending={mutation.isPending} submitLabel="Registar receção" onCancel={onDone}>
       <TextField control={form.control} name="supplierDocumentRef" label="Guia do fornecedor" maxLength={60} />
-      <fieldset className="flex flex-col gap-3">
+      <fieldset className="flex flex-col">
         <legend className="mb-2 text-sm font-medium">Recebido</legend>
-        {open.map((line, index) => {
-          const stockItem = item(line.stockItemId!);
-          const name = stockItem?.name ?? '—';
-          return (
-            <div key={line.id} className="grid items-end gap-2 sm:grid-cols-2">
-              <TextField
-                control={form.control}
-                name={`lines.${index}.packQuantity`}
-                label={`Recebido de ${name}`}
-                inputMode="decimal"
-              />
-              <p className="pb-2 text-sm text-muted-foreground">
-                Encomendado {formatQuantity(line.ordered, stockItem?.baseUnit)} · já recebido{' '}
-                {formatQuantity(line.received, stockItem?.baseUnit)}
-              </p>
-            </div>
-          );
-        })}
+        {/* One compact row per line, as the transfer receipt's. */}
+        <div className="divide-y rounded-xl border">
+          {open.map((line, index) => {
+            const stockItem = item(line.stockItemId!);
+            const name = stockItem?.name ?? '—';
+            return (
+              <div key={line.id} className="grid items-end gap-2 p-3 sm:grid-cols-2">
+                <TextField
+                  control={form.control}
+                  name={`lines.${index}.packQuantity`}
+                  label={`Recebido de ${name}`}
+                  inputMode="decimal"
+                />
+                <p className="pb-2 text-sm text-muted-foreground tabular-nums sm:text-right">
+                  Encomendado {formatQuantity(line.ordered, stockItem?.baseUnit)} · já recebido{' '}
+                  {formatQuantity(line.received, stockItem?.baseUnit)}
+                </p>
+              </div>
+            );
+          })}
+        </div>
       </fieldset>
     </CommandForm>
   );
