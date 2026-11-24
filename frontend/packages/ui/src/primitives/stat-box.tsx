@@ -24,8 +24,9 @@ type StatBoxProps = {
  * A summary figure (DESIGN.md "Light reference", KPI box): a tinted box inside a white card, its caption with an icon,
  * the value large and tabular. The words name the figure; the tint only groups it, never alone.
  */
-export function StatBox({ tone, caption, icon: Icon, value, meta, captionAs: Caption = 'span', className }: StatBoxProps) {
+export function StatBox({ tone, caption, icon: Icon, value, meta, captionAs, className }: StatBoxProps) {
   const id = useId();
+  const Caption = captionAs ?? 'span';
   return (
     <div
       role="group"
