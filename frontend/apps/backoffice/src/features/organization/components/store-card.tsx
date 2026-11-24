@@ -1,4 +1,4 @@
-import { Badge, Card, CardContent, CardHeader, CardTitle, StatusBadge, type StatusMap } from '@restaurantpro/ui';
+import { Badge, Card, CardContent, CardHeader, CardTitle, cn, StatusBadge, TONE_TINT, type StatusMap } from '@restaurantpro/ui';
 import { CircleCheck, CircleOff, Store } from 'lucide-react';
 import { useId, type ReactNode } from 'react';
 import { cutoffLabel } from '../store-values';
@@ -16,8 +16,8 @@ export function StoreCard({ store, children }: { store: StoreSummary; children?:
   return (
     <Card role="article" aria-labelledby={titleId} className="gap-4">
       <CardHeader className="flex flex-row items-start gap-3">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted">
-          <Store aria-hidden="true" className="size-5 text-primary" />
+        <span className={cn('flex size-10 shrink-0 items-center justify-center rounded-xl', TONE_TINT.success)}>
+          <Store aria-hidden="true" className="size-5" />
         </span>
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <Badge variant="secondary" className="w-fit font-mono">
@@ -27,11 +27,11 @@ export function StoreCard({ store, children }: { store: StoreSummary; children?:
             {store.name}
           </CardTitle>
         </div>
-        <StatusBadge status={store.active ? 'active' : 'inactive'} statuses={states} />
+        <StatusBadge look="tint" status={store.active ? 'active' : 'inactive'} statuses={states} />
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <Facts
-          className="sm:grid-cols-3"
+          className="sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3"
           facts={[
             ['Fuso horário', store.timezone],
             ['Fecho do dia', cutoffLabel(store.businessDayCutoff)],

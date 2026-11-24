@@ -1,3 +1,4 @@
+import { Card, CardContent } from '@restaurantpro/ui';
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { fromPendingCommand, ResumeTerminalCommand } from '../features/organization';
@@ -30,14 +31,16 @@ export function StepUpResumePage() {
           <ResumeTerminalCommand command={resumable.command} returnTo={resumable.returnTo} />
         </>
       ) : (
-        <div className="mt-6 flex max-w-xl flex-col gap-2 rounded-2xl border bg-card p-6">
-          <p>Não há nenhuma operação por continuar.</p>
-          <p>
-            <Link to="/" className="text-primary underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring">
-              Voltar à visão geral
-            </Link>
-          </p>
-        </div>
+        <Card className="mt-6 max-w-xl">
+          <CardContent className="flex flex-col gap-2">
+            <p>Não há nenhuma operação por continuar.</p>
+            <p>
+              <Link to="/" className="text-primary underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring">
+                Voltar à visão geral
+              </Link>
+            </p>
+          </CardContent>
+        </Card>
       )}
     </>
   );

@@ -59,7 +59,7 @@ export function OrderLines({ lines, batches }: { lines: LineView[]; batches: Bat
                 </TableCell>
                 <TableCell>{round === undefined ? '—' : `Ronda ${round}`}</TableCell>
                 <TableCell>
-                  <StatusBadge status={line.status} statuses={lineStatuses} />
+                  <StatusBadge look="tint" status={line.status} statuses={lineStatuses} />
                 </TableCell>
               </TableRow>
             );

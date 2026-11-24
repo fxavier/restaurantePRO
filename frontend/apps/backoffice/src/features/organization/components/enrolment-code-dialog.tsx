@@ -44,7 +44,7 @@ export function EnrolmentCodeDialog({ issued, terminalName, timeZone, onClose }:
             Introduza este código no terminal. Não volta a ser mostrado: se o perder, emita um novo.
           </DialogDescription>
         </DialogHeader>
-        <p className="rounded-md border bg-muted px-4 py-5 text-center font-mono text-3xl font-semibold tracking-widest break-words select-all">
+        <p className="rounded-xl border bg-muted px-4 py-5 text-center font-mono text-3xl font-semibold tracking-widest break-words select-all">
           {code.match(/.{1,4}/g)?.join(' ')}
         </p>
         <p className="text-sm">

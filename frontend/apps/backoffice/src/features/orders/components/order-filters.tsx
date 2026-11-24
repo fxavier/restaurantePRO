@@ -87,7 +87,7 @@ function Choice({ value, all, options, onChange, ...props }: ChoiceProps) {
       {...props}
       value={value ?? ''}
       onChange={(event) => onChange(event.target.value)}
-      className="h-9 min-w-40 rounded-md border border-input bg-muted px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+      className="h-9 min-w-40 rounded-xl border border-input bg-card px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
     >
       <option value="">{all}</option>
       {options.map((option) => (

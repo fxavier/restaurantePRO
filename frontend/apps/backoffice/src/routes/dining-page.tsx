@@ -1,3 +1,4 @@
+import { Card, CardContent } from '@restaurantpro/ui';
 import { Armchair } from 'lucide-react';
 import { StoreDining } from '../features/dining';
 import { useStoreSelection } from '../features/organization';
@@ -15,10 +16,12 @@ export function DiningPage() {
       {storeId ? (
         <StoreDining key={storeId} storeId={storeId} />
       ) : (
-        <div className="mt-6 flex flex-col items-center gap-3 rounded-xl border bg-card p-8 text-center">
-          <Armchair aria-hidden="true" className="size-8 text-muted-foreground" />
-          <p>Escolha uma loja na barra superior para ver as suas salas e mesas.</p>
-        </div>
+        <Card className="mt-6">
+          <CardContent className="flex flex-col items-center gap-3 py-2 text-center">
+            <Armchair aria-hidden="true" className="size-8 text-muted-foreground" />
+            <p>Escolha uma loja na barra superior para ver as suas salas e mesas.</p>
+          </CardContent>
+        </Card>
       )}
     </>
   );

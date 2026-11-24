@@ -1,14 +1,15 @@
 import { ApiError } from '@restaurantpro/api-client';
 import {
-  Badge,
   Button,
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
   DataState,
   StatusBadge,
+  StatusPill,
   Table,
   TableBody,
   TableCaption,
@@ -66,11 +67,6 @@ export function StoreTerminals({ storeId }: { storeId: string }) {
   const pages = data ? Math.ceil(data.totalElements / TERMINAL_PAGE_SIZE) : 0;
   return (
     <div className="mt-6 flex flex-col gap-4">
-      {data && (
-        <div className="flex justify-end">
-          <RegisterTerminalDialog storeId={storeId} returnTo={returnTo} />
-        </div>
-      )}
       {issue.error && !isStepUpRequired(issue.error) && (
         <CommandError error={issue.error} pending={issue.isPending} onRetry={() => issue.variables && issueCode(issue.variables)} />
       )}
@@ -82,6 +78,11 @@ export function StoreTerminals({ storeId }: { storeId: string }) {
         <CardHeader>
           <CardTitle className="text-lg">Terminais da loja</CardTitle>
           <CardDescription>Cada terminal pede um código de ativação para se ligar à loja.</CardDescription>
+          {data && (
+            <CardAction>
+              <RegisterTerminalDialog storeId={storeId} returnTo={returnTo} />
+            </CardAction>
+          )}
         </CardHeader>
         <CardContent>
           <DataState
@@ -107,10 +108,10 @@ export function StoreTerminals({ storeId }: { storeId: string }) {
                     <TableCell className="font-medium">{terminal.name}</TableCell>
                     <TableCell className="font-mono text-muted-foreground">{terminal.code}</TableCell>
                     <TableCell>
-                      <Badge variant="secondary">{kindLabel(terminal.kind)}</Badge>
+                      <StatusPill tone="neutral">{kindLabel(terminal.kind)}</StatusPill>
                     </TableCell>
                     <TableCell>
-                      <StatusBadge status={terminal.status} statuses={terminalStatuses(terminal.status)} />
+                      <StatusBadge look="tint" status={terminal.status} statuses={terminalStatuses(terminal.status)} />
                     </TableCell>
                     <TableCell>
                       {terminal.status !== 'REVOKED' && (
@@ -200,10 +201,12 @@ function ListError({ error, returnTo, onRetry }: { error: unknown; returnTo: str
 
 function Notice({ icon: Icon, text, children }: { icon: typeof Lock; text: string; children?: React.ReactNode }) {
   return (
-    <div className="mt-6 flex flex-col items-center gap-3 rounded-xl border bg-card p-8 text-center">
-      <Icon aria-hidden="true" className="size-8 text-muted-foreground" />
-      <p>{text}</p>
-      {children}
-    </div>
+    <Card className="mt-6">
+      <CardContent className="flex flex-col items-center gap-3 py-2 text-center">
+        <Icon aria-hidden="true" className="size-8 text-muted-foreground" />
+        <p>{text}</p>
+        {children}
+      </CardContent>
+    </Card>
   );
 }
