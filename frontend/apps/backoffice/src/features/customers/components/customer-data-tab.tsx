@@ -1,6 +1,7 @@
-import { Button } from '@restaurantpro/ui';
+import { Button, StatusBadge } from '@restaurantpro/ui';
 import { Pencil } from 'lucide-react';
 import { useUpdateCustomer } from '../hooks/use-customer-commands';
+import { customerStatus, customerStatuses } from '../labels';
 import { customerSchema } from '../schemas';
 import type { CustomerDetails } from '../types';
 import { CheckboxField, CommandDialog, TextField } from './command-dialog';
@@ -13,7 +14,9 @@ export function CustomerDataTab({ customer, canManage }: { customer: CustomerDet
         <Field label="Nome">{customer.name}</Field>
         <Field label="NIF">{customer.taxId ? <span className="font-mono">{customer.taxId}</span> : '—'}</Field>
         <Field label="Email">{customer.email ?? '—'}</Field>
-        <Field label="Estado">{customer.active === false ? 'Inativo' : 'Ativo'}</Field>
+        <Field label="Estado">
+          <StatusBadge status={customerStatus(customer)} statuses={customerStatuses} look="tint" />
+        </Field>
         <Field label="Notas">{customer.notes ?? '—'}</Field>
       </dl>
       {canManage && customer.id && <EditCustomerDialog customer={customer} customerId={customer.id} />}

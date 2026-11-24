@@ -4,7 +4,7 @@ import { expectNoAxeViolations } from '../axe';
 // The people screen of the built BackOffice, its API stood in by page.route (the preview has no BFF): the employees
 // tab, the new-employee dialog, the PIN reset's step-up hop back to this tab, the roles tab and a role's permission
 // matrix, with axe on each.
-// With E2E_SCREENS set, screenshots at 1440 and 390 wide go to SCREENSHOT_DIR (or the test's output folder).
+// With E2E_SCREENS set, screenshots at 1440 × 900, 1024 × 768 and 390 wide go to SCREENSHOT_DIR (or the test's output folder).
 
 const TENANT = 'aaaaaaaa-0000-4000-8000-000000000001';
 const STORE = '11111111-0000-4000-8000-000000000001';
@@ -70,12 +70,13 @@ async function standIn(page: Page) {
 async function screens(page: Page, testInfo: TestInfo, name: string) {
   if (!process.env.E2E_SCREENS) return;
   const dir = process.env.SCREENSHOT_DIR;
-  const height = page.viewportSize()!.height;
-  for (const width of [1440, 390]) {
-    await page.setViewportSize({ width, height });
-    await page.screenshot({ path: dir ? `${dir}/${name}-${width}.png` : testInfo.outputPath(`${name}-${width}.png`), fullPage: true });
+  const before = page.viewportSize()!;
+  const heights: Record<number, number> = { 1440: 900, 1024: 768, 390: 844 };
+  for (const width of [1440, 1024, 390]) {
+    await page.setViewportSize({ width, height: heights[width]! });
+    await page.screenshot({ path: dir ? `${dir}/${name}-${width}.png` : testInfo.outputPath(`${name}-${width}.png`), fullPage: true, animations: 'disabled' });
   }
-  await page.setViewportSize({ width: 1280, height });
+  await page.setViewportSize(before);
 }
 
 test('people: employees, the new-employee dialog and the roles tab pass axe', async ({ page }, testInfo) => {

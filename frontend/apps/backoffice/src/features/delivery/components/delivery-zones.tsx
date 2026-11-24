@@ -1,6 +1,7 @@
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, DataState } from '@restaurantpro/ui';
+import { Button, Card, CardContent, CardHeader, CardTitle, DataState, StatusBadge, StatusPill } from '@restaurantpro/ui';
 import { Pencil } from 'lucide-react';
 import { useState } from 'react';
+import { zoneStatuses } from '../delivery-labels';
 import { useFeeItems } from '../hooks/use-fee-items';
 import { useZones } from '../hooks/use-zones';
 import type { ZoneView } from '../types';
@@ -59,7 +60,7 @@ function ZonesHeader({ storeId, zones }: { storeId: string; zones: ZoneView[] })
     <div className="flex flex-wrap items-center gap-3">
       <h2 className="text-lg font-semibold">Zonas da loja</h2>
       {/* Stitch's count pill; a count of the server's list, not a figure of its own */}
-      <Badge variant="secondary">{`${zones.filter((zone) => zone.active).length} ativas`}</Badge>
+      <StatusPill tone="neutral">{`${zones.filter((zone) => zone.active).length} ativas`}</StatusPill>
       <div className="ml-auto">
         <NewZoneDialog storeId={storeId} />
       </div>
@@ -67,18 +68,18 @@ function ZonesHeader({ storeId, zones }: { storeId: string; zones: ZoneView[] })
   );
 }
 
-type ZoneCardProps ={ zone: ZoneView; feeName: string | undefined; onEdit: () => void };
+type ZoneCardProps = { zone: ZoneView; feeName: string | undefined; onEdit: () => void };
 
 function ZoneCard({ zone, feeName, onEdit }: ZoneCardProps) {
   return (
-    // Stitch's zone card: a left accent, emerald while the zone is offered, neutral once retired (the badge says which)
-    <Card className={`gap-3 border-l-4 ${zone.active ? 'border-l-primary' : 'border-l-border'}`}>
+    // A white card as the POS's; the tinted pill says whether the zone is offered
+    <Card className="gap-3">
       <CardHeader className="flex flex-row items-start justify-between gap-3">
         <CardTitle className="flex items-center gap-2 text-lg" role="heading" aria-level={3}>
-          <span className="rounded-sm border bg-muted px-1.5 font-mono text-sm text-muted-foreground">{zone.code}</span>{' '}
+          <span className="rounded-md border bg-muted px-1.5 font-mono text-sm text-muted-foreground">{zone.code}</span>{' '}
           {zone.name}
         </CardTitle>
-        <Badge variant={zone.active ? 'success' : 'secondary'}>{zone.active ? 'Ativa' : 'Inativa'}</Badge>
+        <StatusBadge status={zone.active ? 'ACTIVE' : 'INACTIVE'} statuses={zoneStatuses} look="tint" />
       </CardHeader>
       <CardContent className="flex items-end justify-between gap-3 text-sm">
         <div>

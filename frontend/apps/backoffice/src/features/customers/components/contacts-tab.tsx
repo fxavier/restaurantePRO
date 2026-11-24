@@ -7,15 +7,15 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  Badge,
   Button,
   FormControl,
   FormField,
   FormItem,
   FormLabel,
   FormMessage,
+  StatusPill,
 } from '@restaurantpro/ui';
-import { MapPin, Pencil, Phone, Plus, Trash2 } from 'lucide-react';
+import { MapPin, Pencil, Phone, Plus, Star, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import type { FieldValues, UseFormReturn } from 'react-hook-form';
 import type { z } from 'zod';
@@ -77,10 +77,14 @@ function Phones({ phones, customerId, canManage }: { phones: PhoneView[]; custom
 /** One phone; the remove button only when the user may manage customers (`onRemove` given). */
 function PhoneItem({ phone, onRemove, disabled }: { phone: PhoneView; onRemove?: () => void; disabled: boolean }) {
   return (
-    <li className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted px-3 py-2">
+    <li className="flex min-h-12 flex-wrap items-center gap-2 rounded-xl border bg-muted px-3 py-2">
       <span className="font-mono">{phone.digits}</span>
       {phone.label && <span className="text-sm text-muted-foreground">{phone.label}</span>}
-      {phone.primary && <Badge variant="success">Principal</Badge>}
+      {phone.primary && (
+        <StatusPill tone="success" icon={Star}>
+          Principal
+        </StatusPill>
+      )}
       {onRemove && (
         <Button
           variant="ghost"
@@ -157,9 +161,9 @@ function Addresses({ addresses, customerId, canManage }: { addresses: AddressVie
       {addresses.length === 0 && <p className="text-muted-foreground">Sem moradas.</p>}
       <ul aria-label="Moradas" className="flex flex-col gap-2">
         {addresses.map((address) => (
-          <li key={address.id} className="flex flex-col gap-1 rounded-lg border bg-muted px-3 py-2">
+          <li key={address.id} className="flex flex-col gap-1 rounded-xl border bg-muted px-3 py-2">
             <div className="flex items-center justify-between gap-2">
-              <Badge variant="secondary">{addressKindLabel(address.kind)}</Badge>
+              <StatusPill tone="neutral">{addressKindLabel(address.kind)}</StatusPill>
               {canManage && address.id && (
                 <EditAddressDialog address={address} addressId={address.id} customerId={customerId} />
               )}
@@ -250,7 +254,7 @@ function AddressFields<Values extends FieldValues>({ form: anyForm }: { form: Us
             <FormControl>
               <select
                 {...field}
-                className="h-9 w-full max-w-48 rounded-md border border-input bg-muted px-3 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                className="h-9 w-full max-w-48 rounded-xl border border-input bg-card px-3 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               >
                 <option value="BILLING">Faturação</option>
                 <option value="DELIVERY">Entrega</option>

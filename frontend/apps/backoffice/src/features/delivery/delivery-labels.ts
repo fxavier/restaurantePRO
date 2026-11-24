@@ -1,5 +1,5 @@
 import type { StatusMap } from '@restaurantpro/ui';
-import { CircleCheck, CircleDashed, CircleX, Truck, Undo2 } from 'lucide-react';
+import { CircleCheck, CircleDashed, CircleSlash, CircleX, Truck, Undo2 } from 'lucide-react';
 import type { DeliveryStatus } from './types';
 
 /** The delivery lifecycle (§8.3, D127): PENDING → OUT_FOR_DELIVERY → DELIVERED, or RETURNED, or CANCELLED. */
@@ -9,4 +9,10 @@ export const deliveryStatuses: StatusMap<DeliveryStatus> = {
   DELIVERED: { label: 'Entregue', icon: CircleCheck, tone: 'success' },
   RETURNED: { label: 'Devolvida', icon: Undo2, tone: 'warning' },
   CANCELLED: { label: 'Cancelada', icon: CircleX, tone: 'destructive' },
+};
+
+/** A zone is offered (active) or retired; the same words the zone card always said. */
+export const zoneStatuses: StatusMap<'ACTIVE' | 'INACTIVE'> = {
+  ACTIVE: { label: 'Ativa', icon: CircleCheck, tone: 'success' },
+  INACTIVE: { label: 'Inativa', icon: CircleSlash, tone: 'neutral' },
 };

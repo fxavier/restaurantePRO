@@ -2,8 +2,8 @@ import { expect, test, type Page } from '@playwright/test';
 import { expectNoAxeViolations } from '../axe';
 
 // The delivery area of the built BackOffice, its API stood in by page.route (the preview has no BFF): the zones with
-// the "Nova zona" dialog, and the deliveries report, with axe on each. With E2E_SCREENS set, screenshots at 1440 and
-// 390 wide go to SCREENSHOT_DIR (or the test output) for the comparison with the Stitch screens.
+// the "Nova zona" dialog, and the deliveries report, with axe on each. With E2E_SCREENS set, screenshots at 1440, 1024
+// and 390 wide go to SCREENSHOT_DIR (or the test output) for the comparison with the Stitch screens.
 
 const TENANT = 'aaaaaaaa-0000-4000-8000-000000000001';
 const STORE = '11111111-0000-4000-8000-000000000001';
@@ -65,13 +65,14 @@ async function standIn(page: Page) {
   );
 }
 
-/** Only with E2E_SCREENS: the screen at Stitch's desktop width and at a phone's, full page. */
+/** Only with E2E_SCREENS: the screen at the desktop widths (1440, and 1024 as the smallest) and at a phone's, full page. */
 async function screens(page: Page, name: string) {
   if (!process.env.E2E_SCREENS) return;
   const dir = process.env.SCREENSHOT_DIR ?? test.info().outputDir;
-  for (const width of [1440, 390]) {
-    await page.setViewportSize({ width, height: 900 });
-    await page.screenshot({ path: `${dir}/${name}-${width}.png`, fullPage: true });
+  const heights: Record<number, number> = { 1440: 900, 1024: 768, 390: 844 };
+  for (const width of [1440, 1024, 390]) {
+    await page.setViewportSize({ width, height: heights[width]! });
+    await page.screenshot({ path: `${dir}/${name}-${width}.png`, fullPage: true, animations: 'disabled' });
   }
   await page.setViewportSize({ width: 1280, height: 800 });
 }

@@ -1,7 +1,8 @@
-import { Badge, Card, CardContent, CardHeader, DataState, Tabs, TabsContent, TabsList, TabsTrigger } from '@restaurantpro/ui';
+import { Card, CardContent, CardHeader, DataState, StatusBadge, Tabs, TabsContent, TabsList, TabsTrigger } from '@restaurantpro/ui';
 import { Mail } from 'lucide-react';
 import { useId } from 'react';
 import { useCustomer } from '../hooks/use-customer-queries';
+import { customerStatuses } from '../labels';
 import type { Allowed } from '../permissions';
 import type { CustomerDetails } from '../types';
 import { ContactsTab } from './contacts-tab';
@@ -45,11 +46,22 @@ export function CustomerDetail({
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="data">
-          <TabsList className="max-w-full justify-start overflow-x-auto">
-            <TabsTrigger value="data">Dados</TabsTrigger>
-            <TabsTrigger value="contacts">Moradas & Contactos</TabsTrigger>
-            <TabsTrigger value="credit">Crédito</TabsTrigger>
-            {allowed.LOYALTY_VIEW && <TabsTrigger value="loyalty">Fidelização</TabsTrigger>}
+          {/* The POS area tabs: white bordered pills, the open one solid green. */}
+          <TabsList className="h-auto max-w-full flex-wrap justify-start gap-2 bg-transparent p-0 group-data-[orientation=horizontal]/tabs:h-auto">
+            <TabsTrigger value="data" className="min-h-10 flex-none rounded-xl border-border bg-card px-4 text-foreground data-[state=active]:border-primary data-[state=inactive]:hover:bg-muted">
+              Dados
+            </TabsTrigger>
+            <TabsTrigger value="contacts" className="min-h-10 flex-none rounded-xl border-border bg-card px-4 text-foreground data-[state=active]:border-primary data-[state=inactive]:hover:bg-muted">
+              Moradas & Contactos
+            </TabsTrigger>
+            <TabsTrigger value="credit" className="min-h-10 flex-none rounded-xl border-border bg-card px-4 text-foreground data-[state=active]:border-primary data-[state=inactive]:hover:bg-muted">
+              Crédito
+            </TabsTrigger>
+            {allowed.LOYALTY_VIEW && (
+              <TabsTrigger value="loyalty" className="min-h-10 flex-none rounded-xl border-border bg-card px-4 text-foreground data-[state=active]:border-primary data-[state=inactive]:hover:bg-muted">
+                Fidelização
+              </TabsTrigger>
+            )}
           </TabsList>
           <TabsContent value="data" className="pt-4">
             <CustomerDataTab customer={data} canManage={allowed.CUSTOMER_MANAGE} />
@@ -78,7 +90,7 @@ function CustomerHeading({ customer, titleId }: { customer: CustomerDetails; tit
         <h2 id={titleId} className="text-xl font-semibold">
           {customer.name}
         </h2>
-        {customer.active === false && <Badge variant="secondary">Inativo</Badge>}
+        {customer.active === false && <StatusBadge status="INACTIVE" statuses={customerStatuses} look="tint" />}
       </div>
       <p className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
         {customer.taxId && <span className="font-mono">NIF {customer.taxId}</span>}

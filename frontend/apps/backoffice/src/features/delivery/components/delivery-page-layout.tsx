@@ -1,3 +1,4 @@
+import { Card } from '@restaurantpro/ui';
 import { MapPinned, Truck, type LucideIcon } from 'lucide-react';
 import type { ComponentType } from 'react';
 import { DeliveryReport } from './delivery-report';
@@ -44,10 +45,10 @@ export function DeliveryPageLayout({ page, storeId }: { page: DeliveryPage; stor
       {storeId ? (
         <Content key={storeId} storeId={storeId} />
       ) : (
-        <div className="mt-6 flex flex-col items-center gap-3 rounded-xl border bg-card p-8 text-center">
+        <Card className="mt-6 items-center gap-3 p-8 text-center">
           <Icon aria-hidden="true" className="size-8 text-muted-foreground" />
           <p>{noStoreMessage}</p>
-        </div>
+        </Card>
       )}
     </>
   );

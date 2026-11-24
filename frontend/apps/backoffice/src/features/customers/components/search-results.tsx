@@ -1,7 +1,7 @@
 import {
-  Badge,
   Button,
   DataState,
+  StatusBadge,
   Table,
   TableBody,
   TableCaption,
@@ -12,6 +12,7 @@ import {
 } from '@restaurantpro/ui';
 import { dataState } from '../data-state';
 import { useCustomerSearch } from '../hooks/use-customer-queries';
+import { customerStatuses } from '../labels';
 
 /** The candidates of one search: name, tax id and phones, so the user tells two namesakes apart. */
 export function SearchResults({ q, onSelect }: { q: string; onSelect: (customerId: string) => void }) {
@@ -43,9 +44,9 @@ export function SearchResults({ q, onSelect }: { q: string; onSelect: (customerI
                   {customer.name}
                 </Button>
                 {customer.active === false && (
-                  <Badge variant="secondary" className="ml-2">
-                    Inativo
-                  </Badge>
+                  <span className="ml-2 inline-flex">
+                    <StatusBadge status="INACTIVE" statuses={customerStatuses} look="tint" />
+                  </span>
                 )}
               </TableCell>
               <TableCell className="font-mono">{customer.taxId}</TableCell>

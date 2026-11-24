@@ -117,7 +117,7 @@ function GrantRow({ grant, username, validUntil, revoking, onRevoke }: GrantRowP
       <TableCell className="font-mono">{username}</TableCell>
       <TableCell className="whitespace-normal">{grant.reason}</TableCell>
       <TableCell className="tabular-nums">{validUntil}</TableCell>
-      <TableCell>{grant.status && <StatusBadge status={grant.status} statuses={grantStatuses} />}</TableCell>
+      <TableCell>{grant.status && <StatusBadge status={grant.status} statuses={grantStatuses} look="tint" />}</TableCell>
       <TableCell>
         {grant.status === 'ACTIVE' && (
           <div className="flex justify-end">

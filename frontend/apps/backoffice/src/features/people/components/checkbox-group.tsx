@@ -20,7 +20,7 @@ export function CheckboxGroup({ legend, choices, value, onChange, emptyMessage, 
       <ul className="flex flex-wrap gap-2">
         {choices.map((choice) => (
           <li key={choice.value}>
-            <label className="flex min-h-9 items-center gap-2 rounded-md border bg-muted px-3 text-sm">
+            <label className="flex min-h-9 cursor-pointer items-center gap-2 rounded-xl border bg-card px-3 text-sm hover:bg-muted">
               <input
                 type="checkbox"
                 className="size-4 accent-primary"
