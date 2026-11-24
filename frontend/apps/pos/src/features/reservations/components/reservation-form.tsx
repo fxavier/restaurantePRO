@@ -50,7 +50,7 @@ export function ReservationForm({ draft, onChange, today, areas, locked, custome
                 aria-pressed={draft.date === day}
                 disabled={locked}
                 onClick={() => set({ date: day })}
-                              >
+              >
                 {label}
               </Button>
             ))}

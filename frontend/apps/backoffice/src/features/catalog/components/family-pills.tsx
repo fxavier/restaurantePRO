@@ -35,7 +35,7 @@ function Pill({ label, count, pressed, onClick }: { label: string; count: number
       className="inline-flex h-9 items-center gap-2 rounded-md border bg-muted px-3 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
     >
       {label}
-      <span className="rounded-sm bg-background/40 px-1.5 text-xs tabular-nums">{count}</span>
+      <span className="rounded-sm bg-card px-1.5 text-xs text-foreground tabular-nums">{count}</span>
     </button>
   );
 }
