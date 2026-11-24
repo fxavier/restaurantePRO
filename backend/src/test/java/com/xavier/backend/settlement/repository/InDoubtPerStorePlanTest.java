@@ -14,7 +14,8 @@ import org.springframework.data.jpa.repository.Query;
 
 /**
  * The POS alerts read the store's payments in doubt on every poll of every terminal, so both queries must stay on the
- * partial index {@code payment_attempt_store_unknown_ix} (UNKNOWN attempts only), never on the whole attempt history.
+ * partial indexes over open attempts ({@code payment_attempt_store_unknown_ix}, or the open-per-target / next-poll ones the
+ * planner may tie with on a small table), never on the whole attempt history.
  * The status is an enum literal in the JPQL, so the SQL carries {@code status = 'UNKNOWN'} as a constant the planner
  * matches to the index's predicate. Deterministic: 4 000 settled attempts and 20 in doubt, {@code ANALYZE}, then
  * {@code EXPLAIN} with {@code enable_seqscan = off} as the application role (row-level security included).
@@ -45,8 +46,15 @@ class InDoubtPerStorePlanTest {
                 return List.of(explain(jdbc, COUNT.formatted(store)), explain(jdbc, OLDEST.formatted(store)));
             });
 
-            assertThat(plans).allSatisfy(plan -> assertThat(plan).containsPattern(
-                    "(Index Only Scan using|Index Scan using|Bitmap Index Scan on) payment_attempt_store_unknown_ix"));
+            // Never the attempt history: no sequential scan, and every index the plan reads is a partial index over
+            // open attempts (the new store index, or the open-per-target / next-poll ones the planner may tie with).
+            assertThat(plans).allSatisfy(plan -> {
+                assertThat(plan).doesNotContain("Seq Scan");
+                assertThat(plan).containsPattern("(Index Only Scan using|Index Scan using|Bitmap Index Scan on) "
+                        + "payment_attempt_(store_unknown_ix|open_per_target_uk|next_poll_ix)");
+                assertThat(plan).doesNotContainPattern("(Index Only Scan using|Index Scan using|Bitmap Index Scan on) "
+                        + "payment_attempt_(?!store_unknown_ix|open_per_target_uk|next_poll_ix)");
+            });
         }
     }
 
