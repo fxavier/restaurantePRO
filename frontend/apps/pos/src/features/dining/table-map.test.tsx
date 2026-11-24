@@ -1,8 +1,17 @@
 import { formatMoney } from '@restaurantpro/ui';
-import { act, screen, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import { delay, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { problem, SESSION, tableActivityEndpoint, tableMap, tablesEndpoint, token, tokenEndpoint } from '../../test/server';
+import {
+  problem,
+  recording,
+  SESSION,
+  tableActivityEndpoint,
+  tableMap,
+  tablesEndpoint,
+  token,
+  tokenEndpoint,
+} from '../../test/server';
 import { id, M2_ORDER_ID, MAP, openFromMap } from '../../test/table-map';
 import { catalogEndpoint, json, ORDER, ORDER_ID, orderEndpoint } from '../../test/order';
 import { renderPos } from '../../test/render-pos';
@@ -125,6 +134,21 @@ describe('table map', () => {
     const m2 = await screen.findByRole('button', { name: /sem ronda/ });
     expect(m2).toHaveAccessibleName(`Mesa M2 Ocupada 3 pessoas · 1 h 55 min ${money('480.00')} 58 min sem ronda`);
     expect(m2).toHaveClass('bg-destructive-tint');
+  });
+
+  it('when the orders\' read fails the map still shows every tile, without amounts or "sem ronda", and works', async () => {
+    at14h();
+    const activity = recording<undefined>('get', '/api/v1/pos/orders/table-activity', () => problem(500, 'INTERNAL'));
+    const { user } = await atTables();
+
+    const m2 = await screen.findByRole('button', { name: /^Mesa M2 / });
+    await waitFor(() => expect(activity.length).toBeGreaterThan(0));
+    expect(m2).toHaveAccessibleName('Mesa M2 Ocupada 3 pessoas · 1 h 55 min');
+    expect(m2).toHaveClass('bg-warning-tint');
+    expect(tile(/^Mesa M1 /)).toHaveAccessibleName('Mesa M1 Livre 4 lugares');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await user.click(tile(/^Mesa M1 /));
+    expect(within(screen.getByRole('complementary', { name: 'Detalhe da mesa' })).getByRole('button', { name: 'Abrir mesa' })).toBeEnabled();
   });
 
   it('a table within the threshold is not overdue', async () => {

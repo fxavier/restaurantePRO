@@ -73,6 +73,8 @@ function OrderBody({ order, onAddItems }: { order: Order; onAddItems: () => void
 
   function sendRound() {
     forgetLastSend();
+    // A new round makes the last subtotal's "impresso" old news: the bill it printed no longer has every round.
+    setPrinted(false);
     const request = roundRequest(order);
     if (request) send.start(...request);
   }
@@ -207,7 +209,7 @@ function OrderBody({ order, onAddItems }: { order: Order; onAddItems: () => void
   );
 }
 
-/** "pronta" (every station has it ready) or "em preparação"; a round still queued, or already served, has no chip. */
+/** "pronta" (every station has it ready or served) or "em preparação" (one has started); a queued round has no chip. */
 function KitchenChip({ state }: { state: KitchenState | undefined }) {
   if (state === 'READY') {
     return (

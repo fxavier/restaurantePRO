@@ -4,7 +4,10 @@ import { useServices } from '../../../lib/services';
 
 type RoundKitchenView = components['schemas']['com.xavier.backend.production.model.dto.RoundKitchenView'];
 
-/** Where a round is in the kitchen (ADR 0044): that of its least advanced station, as the server says. */
+/**
+ * Where a round is in the kitchen (ADR 0044), as the server sums up its stations: READY when every station has it ready
+ * or served, IN_PREPARATION once any has started it, else QUEUED.
+ */
 export type KitchenState = RoundKitchenView['status'];
 
 function byRound(views: RoundKitchenView[] | undefined): ReadonlyMap<string, KitchenState> {
