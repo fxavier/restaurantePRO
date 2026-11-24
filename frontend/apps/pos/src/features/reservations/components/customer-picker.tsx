@@ -41,8 +41,8 @@ type LinkedProps = { customerId: string; canView: boolean; onUnlink: () => void;
 function LinkedCustomer({ customerId, canView, onUnlink, locked }: LinkedProps) {
   const customer = useCustomer(customerId, { enabled: canView });
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-primary bg-muted p-3">
-      <BadgeCheck aria-hidden="true" className="size-5 text-primary" />
+    <div className="flex flex-wrap items-center gap-3 rounded-xl border-2 border-primary bg-success-tint p-3">
+      <BadgeCheck aria-hidden="true" className="size-5 text-success-text" />
       {canView ? (
         <p>
           <span className="text-muted-foreground">Cliente associado:</span>{' '}
@@ -55,7 +55,7 @@ function LinkedCustomer({ customerId, canView, onUnlink, locked }: LinkedProps) 
       ) : (
         <p className="text-muted-foreground">Cliente associado</p>
       )}
-      <Button type="button" variant="ghost" size="touch" className="ml-auto" disabled={locked} onClick={onUnlink}>
+      <Button type="button" variant="outline" size="touch" className="ml-auto rounded-xl bg-card" disabled={locked} onClick={onUnlink}>
         <X aria-hidden="true" />
         Desassociar cliente
       </Button>
@@ -88,10 +88,17 @@ function CustomerSearch({ onLink, locked }: { onLink: (customer: CustomerMatch) 
             readOnly={locked}
             onChange={(event) => setText(event.target.value)}
             onKeyDown={onKeyDown}
-            className="h-12 pl-10 text-base md:text-base"
+            className="h-12 rounded-xl pl-10 text-base md:text-base"
           />
         </div>
-        <Button type="button" variant="outline" size="touch" disabled={locked || text.trim() === ''} onClick={submit}>
+        <Button
+          type="button"
+          variant="outline"
+          size="touch"
+          className="rounded-xl bg-card"
+          disabled={locked || text.trim() === ''}
+          onClick={submit}
+        >
           Procurar
         </Button>
       </div>
@@ -104,13 +111,13 @@ function CustomerSearch({ onLink, locked }: { onLink: (customer: CustomerMatch) 
       ) : found.data ? (
         <ul aria-label="Clientes encontrados" className="flex flex-col gap-2">
           {found.data.map((customer) => (
-            <li key={customer.id} className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted p-3">
+            <li key={customer.id} className="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-3">
               <span className="font-semibold">{customer.name}</span>
               <span className="text-sm text-muted-foreground tabular-nums">{customer.phones.join(', ')}</span>
               <Button
                 type="button"
                 size="touch"
-                className="ml-auto"
+                className="ml-auto rounded-xl"
                 aria-label={`Associar ${customer.name}`}
                 disabled={locked}
                 onClick={() => onLink(customer)}
@@ -145,7 +152,7 @@ function CreateCustomer({ contact, onLink, locked }: Pick<Props, 'contact' | 'on
         type="button"
         variant="outline"
         size="touch"
-        className="self-start"
+        className="self-start rounded-xl bg-card"
         aria-busy={create.pending}
         disabled={locked || blocked || create.pending || name === ''}
         onClick={run}

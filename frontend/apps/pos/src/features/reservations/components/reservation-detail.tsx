@@ -1,6 +1,7 @@
-import { Button, StatusBadge } from '@restaurantpro/ui';
+import { Button } from '@restaurantpro/ui';
 import { Armchair, Ban, Clock, NotebookPen, Pencil, Phone, UserX, Users } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { StatusChip } from '../../../lib/state-tint';
 import { guestsLabel } from '../labels';
 import type { Reservation } from '../reservation';
 import { STATUSES } from './reservation-card';
@@ -13,15 +14,15 @@ type Props = {
   actions: ReactNode;
 };
 
-/** Stitch's right-hand panel: the selected reservation in full, and what can be done with it. */
+/** The light reference's right card: the selected reservation in full, and what can be done with it. */
 export function ReservationDetail({ reservation, time, tables, actions }: Props) {
   return (
-    <aside aria-label="Detalhe da reserva" className="flex flex-col gap-4 rounded-xl border bg-card p-4 lg:w-96 lg:shrink-0">
+    <aside aria-label="Detalhe da reserva" className="flex flex-col gap-4 rounded-2xl border bg-card p-4 lg:w-96 lg:shrink-0">
       {reservation ? (
         <>
           <div className="flex flex-wrap items-start justify-between gap-2">
             <h3 className="text-2xl font-semibold">{reservation.contactName}</h3>
-            <StatusBadge status={reservation.status} statuses={STATUSES} />
+            <StatusChip status={reservation.status} statuses={STATUSES} />
           </div>
           <dl className="flex flex-col gap-2">
             <Fact icon={<Clock aria-hidden="true" className="size-5" />} term="Hora">
@@ -81,19 +82,19 @@ type ActionsProps = {
 export function BookedActions({ onSeat, onEdit, onNoShow, onCancel }: ActionsProps) {
   return (
     <div className="flex flex-col gap-2">
-      <Button size="touch-primary" onClick={onSeat}>
+      <Button size="touch-primary" className="rounded-xl" onClick={onSeat}>
         <Armchair aria-hidden="true" />
         Sentar
       </Button>
-      <Button variant="outline" size="touch" onClick={onEdit}>
+      <Button variant="outline" size="touch" className="rounded-xl bg-card" onClick={onEdit}>
         <Pencil aria-hidden="true" />
         Editar reserva
       </Button>
-      <Button variant="destructive" size="touch" onClick={onNoShow}>
+      <Button variant="destructive" size="touch" className="rounded-xl" onClick={onNoShow}>
         <UserX aria-hidden="true" />
         Registar não comparência
       </Button>
-      <Button variant="destructive" size="touch" onClick={onCancel}>
+      <Button variant="destructive" size="touch" className="rounded-xl" onClick={onCancel}>
         <Ban aria-hidden="true" />
         Cancelar reserva
       </Button>
