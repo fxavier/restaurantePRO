@@ -1,4 +1,4 @@
-import { Badge, Button } from '@restaurantpro/ui';
+import { Badge, Button, routeLabel } from '@restaurantpro/ui';
 import type { ReactNode } from 'react';
 import { StationName } from './station-chip';
 
@@ -16,6 +16,8 @@ type Props = {
  * the chosen one is pressed and solid green.
  */
 export function StationFilter({ stations, total, chosen, onChoose }: Props) {
+  const labels = stations.map(({ code }) => routeLabel(code));
+  const shared = (code: string) => labels.filter((label) => label === routeLabel(code)).length > 1;
   return (
     <div role="group" aria-label="Estação" className="flex flex-wrap gap-2">
       <Pill pressed={chosen === undefined} count={total} onPress={() => onChoose(undefined)}>
@@ -23,7 +25,7 @@ export function StationFilter({ stations, total, chosen, onChoose }: Props) {
       </Pill>
       {stations.map(({ code, count }) => (
         <Pill key={code} pressed={chosen === code} count={count} onPress={() => onChoose(code)}>
-          <StationName code={code} />
+          <StationName code={code} withCode={shared(code)} />
         </Pill>
       ))}
     </div>

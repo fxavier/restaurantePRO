@@ -16,11 +16,13 @@ export function StationChip({ code }: { code: string }) {
  * A station named on a filter pill: its route colour as a dot, then its name in the pill's own text colour, so it
  * reads on the pressed (green) pill as on the others.
  */
-export function StationName({ code }: { code: string }) {
+export function StationName({ code, withCode = false }: { code: string; withCode?: boolean }) {
   return (
     <>
       <span aria-hidden="true" className={`size-3 shrink-0 rounded-full border border-card ${routeDot(code)}`} />
       {routeLabel(code)}
+      {/* Two stations named alike (KITCHEN and COZINHA): the code tells them apart, on screen and read out. */}
+      {withCode && <>{' '}<span className="font-mono text-xs">{code}</span></>}
     </>
   );
 }
