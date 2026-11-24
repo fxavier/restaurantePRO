@@ -32,25 +32,26 @@ export function DeliveryCommands({ delivery, onChangedElsewhere }: Props) {
     <div className="flex flex-col gap-2">
       <Failure error={delivered.error} />
       {awaitingRetry ? (
-        <Button size="touch" className="w-full" disabled={blocked} onClick={delivered.retry}>
+        <Button size="touch" className="w-full rounded-xl" disabled={blocked} onClick={delivered.retry}>
           Tentar novamente
         </Button>
       ) : delivery.status === 'OUT_FOR_DELIVERY' ? (
         <div className="grid grid-cols-2 gap-2">
           <Button
             size="touch"
+            className="rounded-xl"
             disabled={disabled}
             aria-busy={delivered.pending}
             onClick={() => delivered.start({ kind: 'delivered', version: delivery.version }, undefined)}
           >
             Entregue
           </Button>
-          <Button variant="outline" size="touch" disabled={disabled} onClick={() => setAsking('return')}>
+          <Button variant="outline" size="touch" className="rounded-xl bg-card" disabled={disabled} onClick={() => setAsking('return')}>
             Devolvida
           </Button>
         </div>
       ) : (
-        <Button size="touch" className="w-full" disabled={blocked} onClick={() => setAsking('dispatch')}>
+        <Button size="touch" className="w-full rounded-xl" disabled={blocked} onClick={() => setAsking('dispatch')}>
           Expedir
         </Button>
       )}

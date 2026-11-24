@@ -1,12 +1,17 @@
-import { cn, StatusBadge, type StatusMap } from '@restaurantpro/ui';
+import { cn, type StatusMap } from '@restaurantpro/ui';
 import { Armchair, CalendarClock, CalendarX, Phone, UserX, Users, UtensilsCrossed } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { StateChip, TONE_CARD } from '../../../lib/state-tint';
 import type { Reservation, ReservationStatus } from '../reservation';
 import { guestsLabel } from '../labels';
 
+/**
+ * Each state with the table map's tint (DESIGN.md "Light reference"): booked as a reserved table (green), seated as an
+ * occupied one (amber), a no-show red, a cancellation muted.
+ */
 export const STATUSES: StatusMap<ReservationStatus> = {
-  BOOKED: { label: 'Por chegar', icon: CalendarClock, tone: 'warning' },
-  SEATED: { label: 'Sentada', icon: UtensilsCrossed, tone: 'success' },
+  BOOKED: { label: 'Por chegar', icon: CalendarClock, tone: 'success' },
+  SEATED: { label: 'Sentada', icon: UtensilsCrossed, tone: 'warning' },
   NO_SHOW: { label: 'Não compareceu', icon: UserX, tone: 'destructive' },
   CANCELLED: { label: 'Cancelada', icon: CalendarX, tone: 'neutral' },
 };
@@ -24,18 +29,24 @@ type Props = {
 };
 
 /**
- * One reservation of the day (Stitch's card): its time, name, state, party, tables, phone and notes. Its name selects
- * it for the detail panel; a selected card has the primary border.
+ * One reservation of the day, tinted by its state like a table tile (DESIGN.md "Light reference"): its time, name,
+ * state (in words too), party, tables, phone and notes. Its name selects it for the detail panel; a selected card has
+ * the tile's focus-blue ring.
  */
 export function ReservationCard({ reservation, time, tables, selected, onSelect, children }: Props) {
   const closed = reservation.status === 'CANCELLED' || reservation.status === 'NO_SHOW';
+  const status = STATUSES[reservation.status];
   return (
     <article
       aria-label={`${reservation.contactName}, ${time}`}
-      className={cn('flex gap-4 rounded-xl border-2 bg-card p-4', selected ? 'border-primary' : 'border-border')}
+      className={cn(
+        'flex items-start gap-4 rounded-xl border-2 px-4 py-3',
+        TONE_CARD[status.tone],
+        selected && 'ring-2 ring-ring ring-offset-2 ring-offset-card',
+      )}
     >
-      <p className="w-16 shrink-0 text-2xl font-semibold tabular-nums">{time}</p>
-      <div className="flex min-w-0 flex-1 flex-col gap-2">
+      <p className="w-16 shrink-0 pt-2 text-2xl font-bold tabular-nums">{time}</p>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex flex-wrap items-center gap-2">
           <h3>
             <button
@@ -50,7 +61,10 @@ export function ReservationCard({ reservation, time, tables, selected, onSelect,
               {reservation.contactName}
             </button>
           </h3>
-          <StatusBadge status={reservation.status} statuses={STATUSES} />
+          {/* White on the card's tint, so the pill stands out from it; the state's text colour stays AA on white. */}
+          <StateChip tone={status.tone} icon={status.icon} className="bg-card">
+            {status.label}
+          </StateChip>
         </div>
         <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-muted-foreground">
           <span className="flex items-center gap-1 font-medium text-foreground">

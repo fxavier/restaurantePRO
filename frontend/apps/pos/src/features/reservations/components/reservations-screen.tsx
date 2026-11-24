@@ -24,7 +24,7 @@ type Props = {
   areas: ReservableArea[];
 };
 
-/** `/reservations` (§4, Stitch "Gestão de Reservas"): the store's reservations of one day. */
+/** `/reservations` (§4; light reference): the store's reservations of one day. */
 export function ReservationsScreen({ areas }: Props) {
   const timeZone = useStoreTimeZone();
   const today = useStoreToday(timeZone);
@@ -40,10 +40,10 @@ export function ReservationsScreen({ areas }: Props) {
   return (
     <div className="flex flex-col gap-4">
       <h2 className="sr-only">Reservas</h2>
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border bg-card p-4">
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border bg-card p-4">
         <DayBar date={date} today={today} onDate={setDate} />
         {canManage && (
-          <Button size="touch-primary" onClick={() => setBooking(true)}>
+          <Button size="touch-primary" className="ml-auto rounded-xl" onClick={() => setBooking(true)}>
             <CalendarPlus aria-hidden="true" />
             Nova reserva
           </Button>
@@ -63,16 +63,16 @@ export function ReservationsScreen({ areas }: Props) {
       {day.data ? (
         <Day reservations={day.data} areas={areas} timeZone={timeZone} onCommand={canManage ? setCommand : undefined} />
       ) : day.isError ? (
-        <div className="flex flex-col items-center gap-3 py-6 text-center">
+        <div className="flex flex-col items-center gap-3 rounded-2xl border bg-card p-6 text-center">
           <p role="alert">{loadError(day.error)}</p>
-          <Button variant="outline" size="touch" onClick={() => void day.refetch()}>
+          <Button variant="outline" size="touch" className="rounded-xl bg-card" onClick={() => void day.refetch()}>
             Tentar novamente
           </Button>
         </div>
       ) : (
         <div role="status" aria-label="A carregar as reservas…" className="flex flex-col gap-3">
           {Array.from({ length: 4 }, (_, index) => (
-            <Skeleton key={index} className="h-28 rounded-xl" />
+            <Skeleton key={index} className="h-28 rounded-2xl" />
           ))}
         </div>
       )}
@@ -118,7 +118,7 @@ function Day({ reservations, areas, timeZone, onCommand }: DayProps) {
   const [query, setQuery] = useState('');
   // The id only: the panel shows the reservation as the day has it now, and nothing once it is gone.
   const [selectedId, setSelectedId] = useState<string>();
-  if (reservations.length === 0) return <p className="py-6 text-center text-muted-foreground">Não há reservas neste dia.</p>;
+  if (reservations.length === 0) return <p className="rounded-2xl border bg-card p-6 text-center text-muted-foreground">Não há reservas neste dia.</p>;
   const summary = summarize(reservations);
   const shown = reservations.filter((reservation) => matches(reservation, { status, query }));
   const selected = reservations.find((reservation) => reservation.id === selectedId);
@@ -127,12 +127,13 @@ function Day({ reservations, areas, timeZone, onCommand }: DayProps) {
     <>
       <DaySummary summary={summary} />
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-        <div className="flex min-w-0 flex-1 flex-col gap-3">
+        {/* The light reference's left card: the filter over the day's reservations, each tinted by its state. */}
+        <div className="flex min-w-0 flex-1 flex-col gap-3 rounded-2xl border bg-card p-4">
           <ListFilter summary={summary} status={status} onStatus={setStatus} query={query} onQuery={setQuery} />
           {shown.length === 0 ? (
             <p className="py-6 text-center text-muted-foreground">Nenhuma reserva corresponde à pesquisa.</p>
           ) : (
-            <ul className="flex flex-col gap-3">
+            <ul className="flex flex-col gap-2">
               {shown.map((reservation) => (
                 <li key={reservation.id}>
                   <ReservationCard
@@ -143,7 +144,7 @@ function Day({ reservations, areas, timeZone, onCommand }: DayProps) {
                     onSelect={() => setSelectedId(reservation.id)}
                   >
                     {onCommand && reservation.status === 'BOOKED' && (
-                      <Button size="touch" onClick={() => onCommand({ kind: 'seat', id: reservation.id })}>
+                      <Button size="touch" className="rounded-xl" onClick={() => onCommand({ kind: 'seat', id: reservation.id })}>
                         <Armchair aria-hidden="true" />
                         Sentar
                       </Button>

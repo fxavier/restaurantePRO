@@ -15,7 +15,7 @@ type ReservationRequest = components['schemas']['com.xavier.backend.dining.model
 
 type Shared = { today: string; areas: ReservableArea[]; onClose: () => void };
 
-/** Stitch's "Nova Reserva de Mesa": one intent per "Guardar reserva", the input locked while its outcome is unknown. */
+/** "Nova reserva": one intent per "Guardar reserva", the input locked while its outcome is unknown. */
 export function NewReservationDialog({ date, ...shared }: Shared & { date: string }) {
   const book = useBookReservation({ onDone: shared.onClose });
   const awaitingRetry = !book.pending && book.intent !== undefined;
@@ -93,12 +93,12 @@ function ReservationDialog({ icon, title, initial, label, pending, awaitingRetry
         <DialogHeader className="flex-row items-center gap-3">
           <span
             aria-hidden="true"
-            className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground"
+            className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground"
           >
             {icon}
           </span>
           <div className="flex flex-col gap-1">
-            <DialogTitle>{title}</DialogTitle>
+            <DialogTitle className="text-xl">{title}</DialogTitle>
             <DialogDescription>Registo informativo: pessoas, mesas e contacto. Não verifica a lotação.</DialogDescription>
           </div>
         </DialogHeader>
