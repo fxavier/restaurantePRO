@@ -34,7 +34,6 @@ export function ListFilter({ summary, status, onStatus, query, onQuery }: Props)
             size="touch"
             aria-pressed={pill.status === status}
             onClick={() => onStatus(pill.status)}
-            className={pill.status === status ? 'rounded-xl' : 'rounded-xl bg-card'}
           >
             {pill.label} ({summary[pill.status].count})
           </Button>
@@ -51,7 +50,7 @@ export function ListFilter({ summary, status, onStatus, query, onQuery }: Props)
           placeholder="Procurar por nome ou telefone"
           value={query}
           onChange={(event) => onQuery(event.target.value)}
-          className="h-12 rounded-xl bg-card pl-10 text-base md:text-base"
+          className="h-12 pl-10 text-base md:text-base"
         />
       </div>
     </div>

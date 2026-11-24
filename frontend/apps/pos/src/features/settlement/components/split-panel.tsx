@@ -55,7 +55,7 @@ export function SplitPanel({ settlement, guests, disabled, mode = 'whole' }: Pro
             <span className="flex items-center gap-2">
               <Button
                 variant="outline"
-                size="touch"
+                size="touch-round"
                 aria-label="Menos uma pessoa"
                 disabled={people <= MIN_PEOPLE}
                 onClick={() => setPeople(people - 1)}
@@ -65,7 +65,7 @@ export function SplitPanel({ settlement, guests, disabled, mode = 'whole' }: Pro
               <output className="w-10 text-center text-xl font-bold tabular-nums">{people}</output>
               <Button
                 variant="outline"
-                size="touch"
+                size="touch-round"
                 aria-label="Mais uma pessoa"
                 disabled={people >= MAX_PEOPLE}
                 onClick={() => setPeople(people + 1)}

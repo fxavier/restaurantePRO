@@ -1,5 +1,5 @@
 import { ApiError } from '@restaurantpro/api-client';
-import { Button, DataState, Money } from '@restaurantpro/ui';
+import { Button, DataState, Money, StatusPill } from '@restaurantpro/ui';
 import { CircleCheck, Clock, CookingPot, ListPlus, Minus, Plus, Printer, RotateCcw } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router';
@@ -143,7 +143,7 @@ function OrderBody({ order, onAddItems }: { order: Order; onAddItems: () => void
               ))}
             </ul>
           )}
-          <Button variant="outline" size="touch" className="w-full rounded-xl bg-card" onClick={onAddItems}>
+          <Button variant="outline" size="touch" className="w-full" onClick={onAddItems}>
             <ListPlus aria-hidden="true" />
             Adicionar artigos
           </Button>
@@ -162,11 +162,11 @@ function OrderBody({ order, onAddItems }: { order: Order; onAddItems: () => void
         <div className="grid grid-cols-2 gap-2">
           {subtotalAwaitsRetry ? (
             <>
-              <Button size="touch" className="rounded-xl" onClick={subtotal.retry} disabled={!canCommand}>
+              <Button size="touch" onClick={subtotal.retry} disabled={!canCommand}>
                 <RotateCcw aria-hidden="true" />
                 Tentar novamente
               </Button>
-              <Button variant="outline" size="touch" className="rounded-xl bg-card" onClick={subtotal.discard}>
+              <Button variant="outline" size="touch" onClick={subtotal.discard}>
                 Descartar
               </Button>
             </>
@@ -175,7 +175,6 @@ function OrderBody({ order, onAddItems }: { order: Order; onAddItems: () => void
               <Button
                 variant="outline"
                 size="touch"
-                className="rounded-xl bg-card"
                 disabled={!canCommand || subtotal.intent !== undefined}
                 onClick={() => {
                   // One outcome at a time in the one-line place under "Enviar": the last send's is old news now.
@@ -187,7 +186,7 @@ function OrderBody({ order, onAddItems }: { order: Order; onAddItems: () => void
                 <Printer aria-hidden="true" />
                 Subtotal
               </Button>
-              <Button asChild variant="outline" size="touch" className="rounded-xl bg-card">
+              <Button asChild variant="outline" size="touch">
                 {/* The bill, its split section on equal parts (the payment screen reads `?dividir`). */}
                 <Link to={`/orders/${order.id}/payment?dividir`}>Dividir</Link>
               </Button>
@@ -214,18 +213,16 @@ function OrderBody({ order, onAddItems }: { order: Order; onAddItems: () => void
 function KitchenChip({ state }: { state: KitchenState | undefined }) {
   if (state === 'READY') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-success-tint px-2 text-sm leading-4 font-medium text-success-text">
-        <CircleCheck aria-hidden="true" className="size-4" />
+      <StatusPill tone="success" icon={CircleCheck} className="px-2 py-0 leading-4">
         pronta
-      </span>
+      </StatusPill>
     );
   }
   if (state === 'IN_PREPARATION') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-warning-tint px-2 text-sm leading-4 font-medium text-warning-text">
-        <CookingPot aria-hidden="true" className="size-4" />
+      <StatusPill tone="warning" icon={CookingPot} className="px-2 py-0 leading-4">
         em preparação
-      </span>
+      </StatusPill>
     );
   }
   return null;
@@ -270,8 +267,7 @@ function DraftLine({
       <div role="group" aria-label={`Quantidade de ${name}`} className="flex shrink-0 items-center gap-1">
         <Button
           variant="outline"
-          size="touch"
-          className="rounded-full bg-card px-0"
+          size="touch-round"
           aria-label={`Diminuir ${name}`}
           disabled={disabled || less === undefined}
           onClick={() => less !== undefined && onStep(less)}
@@ -283,8 +279,7 @@ function DraftLine({
         </span>
         <Button
           variant="outline"
-          size="touch"
-          className="rounded-full bg-card px-0"
+          size="touch-round"
           aria-label={`Aumentar ${name}`}
           disabled={disabled || more === undefined}
           onClick={() => more !== undefined && onStep(more)}

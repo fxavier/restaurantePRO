@@ -38,7 +38,6 @@ export function KitchenScreen({ lateAfterMinutes, children }: Props) {
         <Button
           variant={showBumped ? 'default' : 'outline'}
           size="touch"
-          className={`rounded-xl ${showBumped ? '' : 'bg-card'}`}
           aria-pressed={showBumped}
           onClick={() => setShowBumped(!showBumped)}
         >
@@ -98,7 +97,7 @@ function ActiveRounds({
     return (
       <div className="flex flex-col items-center gap-3 rounded-2xl border bg-card p-6 text-center">
         <p role="alert">{loadFailure(tickets.error)}</p>
-        <Button variant="outline" size="touch" className="rounded-xl bg-card" onClick={() => void tickets.refetch()}>
+        <Button variant="outline" size="touch" onClick={() => void tickets.refetch()}>
           Tentar novamente
         </Button>
       </div>
@@ -133,7 +132,7 @@ function ChangedElsewhere({ onClose }: { onClose: () => void }) {
     <div role="alert" className={NOTICE}>
       <TriangleAlert aria-hidden="true" className="size-5 shrink-0" />
       <p className="flex-1 font-medium">{CHANGED_ELSEWHERE}</p>
-      <Button variant="outline" size="touch" className="rounded-xl bg-card text-foreground" onClick={onClose}>
+      <Button variant="outline" size="touch" className="text-foreground" onClick={onClose}>
         Fechar aviso
       </Button>
     </div>

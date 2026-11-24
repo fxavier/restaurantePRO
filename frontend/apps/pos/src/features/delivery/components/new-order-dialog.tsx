@@ -51,7 +51,7 @@ export function NewOrderDialog({ onClose, onOpened }: Props) {
 
   return (
     <Dialog open onOpenChange={(next) => !next && !held && onClose()}>
-      <DialogContent showCloseButton={false} className="max-h-screen overflow-y-auto rounded-2xl sm:max-w-5xl">
+      <DialogContent showCloseButton={false} className="max-h-screen overflow-y-auto sm:max-w-5xl">
         <form onSubmit={submit} className="flex flex-col gap-4">
           <DialogHeader>
             <DialogTitle className="text-xl">Novo pedido fora de sala</DialogTitle>
@@ -124,10 +124,10 @@ type FooterProps = { pending: boolean; canCancel: boolean; canSubmit: boolean; l
 function Footer({ pending, canCancel, canSubmit, label, onCancel }: FooterProps) {
   return (
     <DialogFooter>
-      <Button type="button" variant="outline" size="touch" className="rounded-xl bg-card" onClick={onCancel} disabled={!canCancel}>
+      <Button type="button" variant="outline" size="touch" onClick={onCancel} disabled={!canCancel}>
         Cancelar
       </Button>
-      <Button type="submit" size="touch-primary" className="rounded-xl" disabled={!canSubmit || pending} aria-busy={pending}>
+      <Button type="submit" size="touch-primary" disabled={!canSubmit || pending} aria-busy={pending}>
         {label}
       </Button>
     </DialogFooter>

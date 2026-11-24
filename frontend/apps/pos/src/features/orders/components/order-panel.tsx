@@ -293,14 +293,14 @@ function DraftRow({
       <div className="flex gap-2">
         <Button
           variant="outline"
-          size="touch"
+          size="touch-round"
           aria-label={`Diminuir ${name}`}
           disabled={disabled || less === undefined}
           onClick={() => less !== undefined && onQuantity(line, less)}
         >
           <Minus aria-hidden="true" />
         </Button>
-        <Button variant="outline" size="touch" aria-label={`Aumentar ${name}`} disabled={disabled || more === undefined} onClick={() => more !== undefined && onQuantity(line, more)}>
+        <Button variant="outline" size="touch-round" aria-label={`Aumentar ${name}`} disabled={disabled || more === undefined} onClick={() => more !== undefined && onQuantity(line, more)}>
           <Plus aria-hidden="true" />
         </Button>
         <Button variant="outline" size="touch" aria-label={`Nota de ${name}`} disabled={disabled} onClick={() => onNote(line)}>

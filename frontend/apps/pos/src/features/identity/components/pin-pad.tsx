@@ -12,8 +12,8 @@ type Props = {
 /** Keeps the focus in the field, so a keyboard or scanner still types there after a tap. */
 const keepFocus = (event: PointerEvent) => event.preventDefault();
 
-/** DS: PIN pad keys are 72 × 72 px, 12 px apart; light reference: white keys, rounded as its buttons. */
-const SHAPE = 'size-18 rounded-xl bg-card px-0';
+/** DS: PIN pad keys are 72 × 72 px, 12 px apart (white and rounded: the light reference's outline button). */
+const SHAPE = 'size-18 px-0';
 const KEY = `${SHAPE} text-3xl font-semibold tabular-nums`;
 
 /** The numeric pad of the PIN screens: 1–9, then "Limpar", 0 and "Apagar", as on a phone. */

@@ -284,13 +284,14 @@ test('the guests pad is accessible', async ({ page }) => {
   await expectNoAxeViolations(page);
 });
 
-test('screens for the PR, at 1024 × 768 and 1366 × 768', async ({ page }) => {
+test('screens for the PR, at 1024 × 768, 1366 × 768 and 1440 × 900', async ({ page }) => {
   const dir = process.env.E2E_SCREENS;
   test.skip(!dir, 'E2E_SCREENS not set');
   await atOrder(page);
   for (const [width, height] of [
     [1024, 768],
     [1366, 768],
+    [1440, 900],
   ] as const) {
     await page.setViewportSize({ width, height });
     await page.getByRole('button', { name: 'Bebidas' }).click();
@@ -340,6 +341,13 @@ test('the selected table\'s order: on screen at 1024 × 768, touch-sized, and ac
   ]) {
     const { width, height } = (await target.boundingBox())!;
     expect(Math.min(width, height)).toBeGreaterThanOrEqual(48);
+  }
+  // The light reference's −/+ steppers: 48 × 48 circles, not 56-wide pills.
+  const steppers = await panel.getByRole('list', { name: 'Por enviar' }).getByRole('button', { name: /^(Diminuir|Aumentar) / }).all();
+  expect(steppers.length).toBeGreaterThan(0);
+  for (const stepper of steppers) {
+    const { width, height } = (await stepper.boundingBox())!;
+    expect([Math.round(width), Math.round(height)]).toEqual([48, 48]);
   }
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024);
 

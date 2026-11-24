@@ -9,7 +9,7 @@ import { DocumentNotice, ReprintButton } from './document-actions';
 
 const quantity = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 3 });
 
-/** Stitch's pills: the state by label and icon, never colour alone (§8.4). */
+/** The light reference's tinted pills: the state by label and icon, never colour alone (§8.4). */
 const PAYMENT_STATUS: StatusMap<PaymentStatus> = {
   UNPAID: { label: 'Por pagar', icon: Circle, tone: 'warning' },
   PARTIALLY_PAID: { label: 'Pago em parte', icon: CircleDot, tone: 'info' },
@@ -45,7 +45,7 @@ export function PartitionCard({ orderId, partition, chosen, onChoose, buyer, blo
       <div className="flex items-start justify-between gap-3">
         <span className="flex flex-wrap items-center gap-2">
           <span className="font-semibold">{partition.label}</span>
-          <StatusBadge status={partition.paymentStatus} statuses={PAYMENT_STATUS} />
+          <StatusBadge look="tint" status={partition.paymentStatus} statuses={PAYMENT_STATUS} />
         </span>
         <Money value={partition.settled ? partition.due : partition.balance} className="text-xl font-bold" />
       </div>

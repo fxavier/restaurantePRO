@@ -1,3 +1,4 @@
+import { StatusPill } from '@restaurantpro/ui';
 import { Printer } from 'lucide-react';
 import { useEmployee } from '../../../lib/auth/use-employee';
 import { maySeeProductionAlerts, pendingPrintsWords } from '../alerts';
@@ -20,14 +21,13 @@ function PendingPrints() {
   return (
     <div role="status" aria-label="Impressões">
       {pending > 0 && (
-        <p className="flex items-center gap-2 rounded-xl bg-warning-tint px-3 py-2 text-sm font-medium text-warning-text">
-          <Printer aria-hidden="true" className="size-4" />
+        <StatusPill size="chip" tone="warning" icon={Printer}>
           {/* At 1024 px the status bar keeps one row only with the count alone; the words stay for assistive technology. */}
           <span>
             <span className="tabular-nums">{pending}</span>
             <span className="sr-only xl:not-sr-only"> {pendingPrintsWords(pending)}</span>
           </span>
-        </p>
+        </StatusPill>
       )}
     </div>
   );

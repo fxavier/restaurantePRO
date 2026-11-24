@@ -76,7 +76,6 @@ export function LoginScreen({ endedBy }: { endedBy?: EndReason }) {
           type="button"
           variant="outline"
           size="touch"
-          className="rounded-xl bg-card"
           disabled={login.pending}
           onClick={() => {
             setPin('');

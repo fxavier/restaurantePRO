@@ -46,7 +46,6 @@ export function ChangePinScreen({ name }: { name: string }) {
           type="button"
           variant="outline"
           size="touch"
-          className="rounded-xl bg-card"
           disabled={choose.pending}
           onClick={() => endSession('switch')}
         >

@@ -24,3 +24,4 @@ export { ConnectionBanner } from './primitives/connection-banner';
 export { DataState, type DataStateValue } from './primitives/data-state';
 export { formatMoney, LOCALE, Money, type MoneyValue } from './primitives/money';
 export { StatusBadge, type StatusMap, type StatusTone } from './primitives/status-badge';
+export { StatusPill, statusPillVariants, TONE_CARD, TONE_INK, TONE_TINT } from './primitives/status-pill';

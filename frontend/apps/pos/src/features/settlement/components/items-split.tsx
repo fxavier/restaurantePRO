@@ -39,12 +39,12 @@ export function ItemsSplit({ settlement, disabled, onSplit }: Props) {
               <span className="text-muted-foreground tabular-nums">
                 {quantity.format(value / UNIT)} de {quantity.format(available / UNIT)}
               </span>
-              <Button variant="outline" size="touch" aria-label={`Menos ${description}`} disabled={value < UNIT} onClick={() => step(lineId, -UNIT)}>
+              <Button variant="outline" size="touch-round" aria-label={`Menos ${description}`} disabled={value < UNIT} onClick={() => step(lineId, -UNIT)}>
                 <Minus aria-hidden="true" />
               </Button>
               <Button
                 variant="outline"
-                size="touch"
+                size="touch-round"
                 aria-label={`Mais ${description}`}
                 disabled={value + UNIT > available}
                 onClick={() => step(lineId, UNIT)}

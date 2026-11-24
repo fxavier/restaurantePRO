@@ -43,7 +43,7 @@ export function ReservationsScreen({ areas }: Props) {
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border bg-card p-4">
         <DayBar date={date} today={today} onDate={setDate} />
         {canManage && (
-          <Button size="touch-primary" className="ml-auto rounded-xl" onClick={() => setBooking(true)}>
+          <Button size="touch-primary" className="ml-auto" onClick={() => setBooking(true)}>
             <CalendarPlus aria-hidden="true" />
             Nova reserva
           </Button>
@@ -65,7 +65,7 @@ export function ReservationsScreen({ areas }: Props) {
       ) : day.isError ? (
         <div className="flex flex-col items-center gap-3 rounded-2xl border bg-card p-6 text-center">
           <p role="alert">{loadError(day.error)}</p>
-          <Button variant="outline" size="touch" className="rounded-xl bg-card" onClick={() => void day.refetch()}>
+          <Button variant="outline" size="touch" onClick={() => void day.refetch()}>
             Tentar novamente
           </Button>
         </div>
@@ -144,7 +144,7 @@ function Day({ reservations, areas, timeZone, onCommand }: DayProps) {
                     onSelect={() => setSelectedId(reservation.id)}
                   >
                     {onCommand && reservation.status === 'BOOKED' && (
-                      <Button size="touch" className="rounded-xl" onClick={() => onCommand({ kind: 'seat', id: reservation.id })}>
+                      <Button size="touch" onClick={() => onCommand({ kind: 'seat', id: reservation.id })}>
                         <Armchair aria-hidden="true" />
                         Sentar
                       </Button>

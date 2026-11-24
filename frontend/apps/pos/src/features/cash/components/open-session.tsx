@@ -43,7 +43,7 @@ export function OpenSession({ session, register, children }: Props) {
         {(Object.keys(MOVEMENTS) as MovementType[]).map((type) => {
           const Icon = ICONS[type];
           return (
-            <Button key={type} variant="outline" size="touch" className="rounded-xl bg-card" onClick={() => setMoving(type)}>
+            <Button key={type} variant="outline" size="touch" onClick={() => setMoving(type)}>
               <Icon aria-hidden="true" />
               {MOVEMENTS[type].action}
             </Button>
@@ -52,7 +52,6 @@ export function OpenSession({ session, register, children }: Props) {
         <Button
           variant="outline"
           size="touch"
-          className="rounded-xl bg-card"
           disabled={blocked || drawer.pending}
           aria-busy={drawer.pending}
           // After no answer, the next tap resends the same request (same key): the drawer opens once.

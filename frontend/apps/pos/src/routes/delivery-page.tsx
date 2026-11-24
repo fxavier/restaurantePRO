@@ -22,7 +22,7 @@ export function DeliveryPage() {
             <h2 className="text-2xl font-semibold">Takeaway & Delivery</h2>
             <p className="text-muted-foreground">Pedidos para levar e entregas ao domicílio, do registo à expedição.</p>
           </div>
-          <Button size="touch-primary" className="rounded-xl" onClick={() => setCreating(true)}>
+          <Button size="touch-primary" onClick={() => setCreating(true)}>
             <CirclePlus aria-hidden="true" />
             Novo pedido
           </Button>
@@ -36,7 +36,7 @@ export function DeliveryPage() {
         ) : deliveries.isError ? (
           <div className="flex flex-col items-center gap-3 rounded-2xl border bg-card p-6 text-center">
             <p role="alert">{loadFailure(deliveries.error, 'as entregas')}</p>
-            <Button variant="outline" size="touch" className="rounded-xl bg-card" onClick={() => void deliveries.refetch()}>
+            <Button variant="outline" size="touch" onClick={() => void deliveries.refetch()}>
               Tentar novamente
             </Button>
           </div>

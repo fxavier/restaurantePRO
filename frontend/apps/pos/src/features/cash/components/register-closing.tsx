@@ -60,7 +60,6 @@ export function RegisterClosing({ registers, dayId }: Props) {
           <ConfirmButton
             type="button"
             size="touch"
-            className="rounded-xl"
             pending={create.pending}
             disabled={blocked || !registerId}
             onClick={prepare}

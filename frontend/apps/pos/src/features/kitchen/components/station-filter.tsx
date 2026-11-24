@@ -35,7 +35,7 @@ function Pill({ pressed, count, onPress, children }: { pressed: boolean; count: 
     <Button
       variant={pressed ? 'default' : 'outline'}
       size="touch"
-      className={`rounded-xl ${pressed ? 'border border-primary' : 'bg-card'}`}
+      className={pressed ? 'border border-primary' : undefined}
       aria-pressed={pressed}
       onClick={onPress}
     >

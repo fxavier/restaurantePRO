@@ -45,7 +45,6 @@ export function OpenSessionForm({ registers }: { registers: RegisterSummary[] })
       <ConfirmButton
         type="submit"
         size="touch-primary"
-        className="rounded-xl"
         pending={open.pending}
         disabled={blocked || !registerId || amount === undefined}
       >

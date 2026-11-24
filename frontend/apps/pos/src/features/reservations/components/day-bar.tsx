@@ -38,7 +38,6 @@ export function DayBar({ date, today, onDate }: Props) {
             size="touch"
             aria-pressed={date === day}
             onClick={() => onDate(day)}
-            className={date === day ? 'rounded-xl' : 'rounded-xl bg-card'}
           >
             {label}
           </Button>

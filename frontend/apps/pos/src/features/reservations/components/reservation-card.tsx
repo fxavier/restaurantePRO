@@ -1,7 +1,6 @@
-import { cn, type StatusMap } from '@restaurantpro/ui';
+import { cn, type StatusMap, StatusPill, TONE_CARD } from '@restaurantpro/ui';
 import { Armchair, CalendarClock, CalendarX, Phone, UserX, Users, UtensilsCrossed } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { StateChip, TONE_CARD } from '../../../lib/state-tint';
 import type { Reservation, ReservationStatus } from '../reservation';
 import { guestsLabel } from '../labels';
 
@@ -62,9 +61,9 @@ export function ReservationCard({ reservation, time, tables, selected, onSelect,
             </button>
           </h3>
           {/* White on the card's tint, so the pill stands out from it; the state's text colour stays AA on white. */}
-          <StateChip tone={status.tone} icon={status.icon} className="bg-card">
+          <StatusPill tone={status.tone} icon={status.icon} className="bg-card">
             {status.label}
-          </StateChip>
+          </StatusPill>
         </div>
         <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-muted-foreground">
           <span className="flex items-center gap-1 font-medium text-foreground">

@@ -58,7 +58,7 @@ export function TableMapView({ areas, area, onArea, selected, onSelect, activity
             autoComplete="off"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            className="h-12 rounded-xl bg-card pl-10 text-base md:text-base"
+            className="h-12 pl-10 text-base md:text-base"
           />
         </div>
       </div>
