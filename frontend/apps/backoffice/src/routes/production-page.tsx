@@ -1,3 +1,4 @@
+import { Card } from '@restaurantpro/ui';
 import { Store } from 'lucide-react';
 import { useStoreSelection } from '../features/organization';
 import { ProductionScreen } from '../features/production';
@@ -17,10 +18,10 @@ export function ProductionPage() {
       {storeId ? (
         <ProductionScreen key={storeId} storeId={storeId} />
       ) : (
-        <div className="mt-6 flex flex-col items-center gap-3 rounded-xl border bg-card p-8 text-center">
+        <Card className="mt-6 items-center gap-3 p-8 text-center">
           <Store aria-hidden="true" className="size-8 text-muted-foreground" />
           <p>Escolha uma loja na barra superior para ver as suas impressoras.</p>
-        </div>
+        </Card>
       )}
     </>
   );

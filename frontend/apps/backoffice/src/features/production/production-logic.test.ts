@@ -1,7 +1,7 @@
 import { ApiError } from '@restaurantpro/api-client';
 import { describe, expect, it } from 'vitest';
 import { fieldErrors } from './form-errors';
-import { jobTitle } from './labels';
+import { jobTitle, routeFill } from './labels';
 import { canAcknowledge, canRetry, nameOf, parseJobs, parsePrinters, type PrintJob } from './parse';
 import { holdsIn } from './permissions';
 import { createRequest, updateRequest } from './printer-requests';
@@ -66,6 +66,18 @@ describe('jobTitle', () => {
     expect(jobTitle('BATCH', 'COZINHA')).toBe('Pedido · COZINHA');
     expect(jobTitle('SUBTOTAL', null)).toBe('Consulta de mesa');
     expect(jobTitle('NEW_SOURCE', undefined)).toBe('NEW_SOURCE');
+  });
+});
+
+describe('routeFill', () => {
+  it("gives a conventional code its route's hue, in either language, and any other the neutral surface", () => {
+    expect(routeFill('COZINHA')).toBe(routeFill('KITCHEN'));
+    expect(routeFill('KITCHEN')).toContain('border-route-kitchen');
+    expect(routeFill('BAR')).toContain('bg-route-bar/15');
+    expect(routeFill('PANTRY')).toBe(routeFill('COPA'));
+    expect(routeFill('SOBREMESAS')).toContain('border-border bg-muted');
+    // The text stays `foreground` on every chip: light text on the route hues is below AA.
+    for (const code of ['COZINHA', 'BAR', 'COPA', 'SOBREMESAS']) expect(routeFill(code)).toContain('text-foreground');
   });
 });
 

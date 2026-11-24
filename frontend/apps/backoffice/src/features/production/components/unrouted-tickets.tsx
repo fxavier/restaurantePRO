@@ -1,4 +1,4 @@
-import { Button } from '@restaurantpro/ui';
+import { Button, cn, TONE_CARD, TONE_INK } from '@restaurantpro/ui';
 import type { UseQueryResult } from '@tanstack/react-query';
 import { Send, Unplug } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -26,9 +26,9 @@ export function UnroutedTickets({ tickets, mayOperate }: UnroutedTicketsProps) {
   };
   const resend = () => route.variables && route.mutate(route.variables);
   return (
-    <section aria-labelledby="unrouted-title" className="flex flex-col gap-3 rounded-xl border bg-card p-4">
+    <section aria-labelledby="unrouted-title" className="flex flex-col gap-3 rounded-2xl border bg-card p-4">
       <h2 id="unrouted-title" className="flex items-center gap-2 text-lg font-semibold">
-        <Unplug aria-hidden="true" className="size-5 text-warning" />
+        <Unplug aria-hidden="true" className={cn('size-5', TONE_INK.warning)} />
         Talões sem rota
       </h2>
       {route.error ? <ProblemAlert error={route.error} pending={route.isPending} onRetry={resend} /> : null}
@@ -60,7 +60,7 @@ export function UnroutedTickets({ tickets, mayOperate }: UnroutedTicketsProps) {
 function TicketItem({ ticket, children }: { ticket: Ticket; children: ReactNode }) {
   const title = jobTitle(ticket.sourceType, ticket.destination);
   return (
-    <li aria-label={title} className="flex flex-wrap items-center gap-2 rounded-md border bg-muted p-3 text-sm">
+    <li aria-label={title} className={cn('flex flex-wrap items-center gap-2 rounded-xl border p-3 text-sm', TONE_CARD.warning)}>
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="font-medium">{title}</span>
         {ticket.lines?.length ? <span className="text-muted-foreground">{ticket.lines.join(', ')}</span> : null}
