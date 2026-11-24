@@ -26,7 +26,7 @@ import org.springframework.test.web.servlet.ResultActions;
 /**
  * The kitchen state of an order's rounds for the POS order panel (ADR 0044, light reference 2026-11-23): one read per
  * order, each round with the state of its least advanced station, so a round shows "pronta" only when every station
- * has it READY or further. Orders cannot read production (production depends on orders, D35), so the read is here.
+ * has it READY or further, and "servida" only once every station has bumped it. Orders cannot read production (production depends on orders, D35), so the read is here.
  */
 @ProductionModuleTest
 class RoundKitchenHttpTest {
@@ -71,7 +71,8 @@ class RoundKitchenHttpTest {
     }
 
     @Test
-    void aRoundOnTwoStationsIsInPreparationOnceOneStartsAndReadyOnlyWhenBothAre() throws Exception {
+    void aRoundOnTwoStationsIsInPreparationOnceOneStartsReadyOnlyWhenBothAreAndServedOnlyWhenBothBumped()
+            throws Exception {
         Round round = fixtures.confirmedRound(shop, waiter, terminal, "1");
         UUID bar = queued(round);
         UUID kitchen = stationTicket(round, "KITCHEN");
@@ -85,8 +86,9 @@ class RoundKitchenHttpTest {
         move(kitchen, "ready", 1);
         rounds(round.order()).andExpect(jsonPath("$[0].status").value("READY"));
         move(kitchen, "bump", 2);
-        move(bar, "bump", 2);
         rounds(round.order()).andExpect(jsonPath("$[0].status").value("READY"));
+        move(bar, "bump", 2);
+        rounds(round.order()).andExpect(jsonPath("$[0].status").value("SERVED"));
     }
 
     @Test

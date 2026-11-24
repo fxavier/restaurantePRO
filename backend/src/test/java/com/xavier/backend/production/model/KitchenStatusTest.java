@@ -10,15 +10,22 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
- * A round on several stations, as the POS order panel shows it: READY when every station has it ready or served,
- * IN_PREPARATION once any station has started it, else QUEUED.
+ * A round on several stations, as the POS order panel shows it: SERVED when every station has bumped it, READY when
+ * every station has it ready or bumped (but not all bumped), IN_PREPARATION once any station has started it, else
+ * QUEUED.
  */
 class KitchenStatusTest {
 
     @Test
-    void aRoundIsReadyWhenEveryStationHasItReadyOrServed() {
+    void aRoundIsServedWhenEveryStationHasBumpedIt() {
+        assertThat(RoundKitchenState.of(List.of(BUMPED, BUMPED))).isEqualTo(RoundKitchenState.SERVED);
+        assertThat(RoundKitchenState.of(List.of(BUMPED))).isEqualTo(RoundKitchenState.SERVED);
+    }
+
+    @Test
+    void aRoundIsReadyWhenEveryStationHasItReadyOrBumpedButNotAllBumped() {
         assertThat(RoundKitchenState.of(List.of(READY, BUMPED))).isEqualTo(RoundKitchenState.READY);
-        assertThat(RoundKitchenState.of(List.of(BUMPED, BUMPED))).isEqualTo(RoundKitchenState.READY);
+        assertThat(RoundKitchenState.of(List.of(READY, READY))).isEqualTo(RoundKitchenState.READY);
     }
 
     @Test

@@ -10596,7 +10596,8 @@
             "enum": [
               "QUEUED",
               "IN_PREPARATION",
-              "READY"
+              "READY",
+              "SERVED"
             ],
             "type": "string"
           }

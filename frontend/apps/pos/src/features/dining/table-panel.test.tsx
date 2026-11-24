@@ -153,6 +153,7 @@ describe('the selected table\'s order', () => {
     await waitFor(() => expect(rounds.length).toBeGreaterThan(0));
     expect(within(panel()).queryByText('pronta')).not.toBeInTheDocument();
     expect(within(panel()).queryByText('em preparação')).not.toBeInTheDocument();
+    expect(within(panel()).queryByText('servida')).not.toBeInTheDocument();
     expect(within(panel()).queryByRole('alert')).not.toBeInTheDocument();
     expect(within(panel()).getByRole('button', { name: 'Enviar ronda 2' })).toBeEnabled();
   });
@@ -169,6 +170,17 @@ describe('the selected table\'s order', () => {
 
     await waitFor(() => expect(within(panel()).getByRole('status', { name: 'Envio' })).toHaveTextContent('Ronda 2 enviada.'));
     expect(within(panel()).queryByText('Subtotal impresso.')).not.toBeInTheDocument();
+  });
+
+  it('a round every station has bumped says "servida", in the info tint and not the green of "pronta"', async () => {
+    roundsEndpoint([{ batchId: BATCH_ID, status: 'SERVED' }]);
+    await atM2();
+
+    const sent = await within(panel()).findByRole('list', { name: 'Ronda 1, 12:10' });
+    const served = await within(sent.parentElement!).findByText('servida');
+    expect(served).toHaveClass('text-info-text');
+    expect(served).not.toHaveClass('text-success-text');
+    expect(within(sent.parentElement!).queryByText('pronta')).not.toBeInTheDocument();
   });
 
   it('a round being cooked says "em preparação"', async () => {
