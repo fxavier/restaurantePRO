@@ -155,6 +155,19 @@ export function waitingMinutes(queuedAt: string, now: Date): number {
   return Math.max(0, Math.floor((now.getTime() - Date.parse(queuedAt)) / 60_000));
 }
 
+/**
+ * A round not yet ready queued longer ago than the server's kitchen delay (`kitchenDelayMinutes` of production's
+ * alerts), as the "Cozinha: N rondas > 15 min" alert counts it; never before the delay is known.
+ */
+export function isLate(
+  { status, queuedAt }: Pick<KitchenTicket, 'status' | 'queuedAt'>,
+  now: Date,
+  delayMinutes: number | undefined,
+): boolean {
+  if (delayMinutes === undefined || (status !== 'QUEUED' && status !== 'IN_PREPARATION')) return false;
+  return now.getTime() - Date.parse(queuedAt) > delayMinutes * 60_000;
+}
+
 /** Whether the session may watch the kitchen display; for showing it only, the backend enforces. */
 export function mayWatchKitchen(employee: Pick<Employee, 'permissions' | 'storeId'> | undefined): boolean {
   return !!employee?.permissions.includes(`PERM_PRODUCTION_VIEW@${employee.storeId}`);

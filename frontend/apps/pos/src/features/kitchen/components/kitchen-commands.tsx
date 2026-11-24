@@ -24,14 +24,14 @@ export function KitchenCommands({ ticket, onChangedElsewhere }: Props) {
     <div className="flex flex-col gap-2">
       <Failure error={move.error} />
       {awaitingRetry ? (
-        <Button size="touch-primary" className="w-full" disabled={blocked} onClick={move.retry}>
+        <Button size="touch-primary" className="w-full rounded-xl" disabled={blocked} onClick={move.retry}>
           Tentar novamente
         </Button>
       ) : (
         <>
           <Button
             size="touch-primary"
-            className="w-full"
+            className="w-full rounded-xl"
             disabled={blocked || move.pending}
             aria-busy={move.pending}
             onClick={() => move.start({ command: main.command, version: ticket.version }, undefined)}
@@ -43,7 +43,7 @@ export function KitchenCommands({ ticket, onChangedElsewhere }: Props) {
               key={command}
               variant="outline"
               size="touch"
-              className="w-full"
+              className="w-full rounded-xl bg-card"
               disabled={blocked || move.pending}
               onClick={() => move.start({ command, version: ticket.version }, undefined)}
             >
@@ -60,7 +60,7 @@ export function KitchenCommands({ ticket, onChangedElsewhere }: Props) {
 function Failure({ error }: { error: Error | undefined }) {
   if (!error || isChangedElsewhere(error)) return null;
   return (
-    <p role="alert" className="text-sm font-medium text-error">
+    <p role="alert" className="rounded-lg bg-card px-2 py-1 text-sm font-medium text-error">
       {refusal(error)}
     </p>
   );
