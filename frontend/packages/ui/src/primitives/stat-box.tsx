@@ -15,6 +15,8 @@ type StatBoxProps = {
   value: ReactNode;
   /** A line of context below the figure. */
   meta?: ReactNode;
+  /** The caption as a heading of this level, where the figures are sections of the page; plain text by default. */
+  captionAs?: 'h2' | 'h3' | 'h4';
   className?: string;
 };
 
@@ -22,7 +24,7 @@ type StatBoxProps = {
  * A summary figure (DESIGN.md "Light reference", KPI box): a tinted box inside a white card, its caption with an icon,
  * the value large and tabular. The words name the figure; the tint only groups it, never alone.
  */
-export function StatBox({ tone, caption, icon: Icon, value, meta, className }: StatBoxProps) {
+export function StatBox({ tone, caption, icon: Icon, value, meta, captionAs: Caption = 'span', className }: StatBoxProps) {
   const id = useId();
   return (
     <div
@@ -32,9 +34,9 @@ export function StatBox({ tone, caption, icon: Icon, value, meta, className }: S
       className={cn('flex flex-col gap-2 rounded-xl px-4 py-3', tone === 'muted' ? 'bg-muted' : TONE_TINT[tone], className)}
     >
       <div className="flex items-start justify-between gap-2">
-        <span id={id} className="text-xs font-semibold tracking-wide uppercase">
+        <Caption id={id} className="text-xs font-semibold tracking-wide uppercase">
           {caption}
-        </span>
+        </Caption>
         <Icon aria-hidden="true" className="size-5 shrink-0" />
       </div>
       <div className="text-2xl font-semibold tabular-nums">{value}</div>

@@ -18,4 +18,12 @@ describe('StatBox', () => {
     expect(screen.getByRole('group')).toHaveClass('bg-muted');
     expect(screen.getByRole('group')).not.toHaveClass('text-muted-foreground');
   });
+
+  it('names its caption as a heading of the level asked, and as plain text otherwise', () => {
+    const { rerender } = render(<StatBox tone="muted" caption="Impostos" icon={Banknote} value="0,00 MTn" captionAs="h3" />);
+    expect(screen.getByRole('heading', { level: 3, name: 'Impostos' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Impostos' })).toBeInTheDocument();
+    rerender(<StatBox tone="muted" caption="Impostos" icon={Banknote} value="0,00 MTn" />);
+    expect(screen.queryByRole('heading')).not.toBeInTheDocument();
+  });
 });

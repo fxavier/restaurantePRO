@@ -62,15 +62,16 @@ function Kpis({ sales, receipts }: { sales: SalesReport | undefined; receipts: R
   return (
     <Card className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
       <StatBox
+        captionAs="h3"
         caption="Faturação bruta"
         icon={Receipt}
         tone="muted"
         value={<Amount value={totals?.gross} />}
         meta={totals && `${totals.documents ?? 0} documentos`}
       />
-      <StatBox caption="Faturação líquida" icon={Landmark} tone="muted" value={<Amount value={totals?.net} />} />
-      <StatBox caption="Impostos" icon={Percent} tone="muted" value={<Amount value={totals?.tax} />} />
-      <StatBox caption="Recebido" icon={Banknote} tone="success" value={<Amount value={receipts?.totals?.received} />} />
+      <StatBox captionAs="h3" caption="Faturação líquida" icon={Landmark} tone="muted" value={<Amount value={totals?.net} />} />
+      <StatBox captionAs="h3" caption="Impostos" icon={Percent} tone="muted" value={<Amount value={totals?.tax} />} />
+      <StatBox captionAs="h3" caption="Recebido" icon={Banknote} tone="success" value={<Amount value={receipts?.totals?.received} />} />
     </Card>
   );
 }
