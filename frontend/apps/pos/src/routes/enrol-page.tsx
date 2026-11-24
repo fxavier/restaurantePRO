@@ -21,7 +21,8 @@ export function EnrolPage() {
     <PosScreen>
       <section
         aria-labelledby="enrol-title"
-        className="flex w-full max-w-[840px] flex-col gap-4 rounded-xl border bg-card p-6"
+        // Light reference: a white rounded card centred on the grey page, wide enough for the code's 11-key rows.
+        className="flex w-full max-w-4xl flex-col gap-4 rounded-2xl border bg-card p-6"
       >
         <div className="flex flex-col gap-1">
           <h2 id="enrol-title" className="text-2xl font-semibold">
