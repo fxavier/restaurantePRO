@@ -1,21 +1,20 @@
 import { ApiError } from '@restaurantpro/api-client';
 import { Button, DataState, Money } from '@restaurantpro/ui';
-import { CircleCheck, Clock, CookingPot, ListPlus, Minus, Plus } from 'lucide-react';
+import { CircleCheck, Clock, CookingPot, ListPlus, Minus, Plus, Printer, RotateCcw } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router';
-import { useStoreTimeZone } from '../../../lib/auth/use-employee';
-import { isOffline } from '../../../lib/error-messages';
+import { errorMessage, isOffline } from '../../../lib/error-messages';
 import { useCommandsBlocked } from '../../../lib/live/use-connection';
 import { ScrollRegion } from '../../../lib/scroll-region';
+import { isInProgress } from '../../../lib/use-intent';
 import { useCatalog } from '../../catalog/hooks/use-catalog';
-import { clockTime } from '../../dining/format';
 import { roundRequest, useConfirmBatch } from '../hooks/use-confirm-batch';
 import { useOrder } from '../hooks/use-order';
+import { useDraftLineCommands, usePrintSubtotal } from '../hooks/use-order-commands';
 import { type KitchenState, useRoundKitchen } from '../hooks/use-round-kitchen';
-import { useDraftLineCommands } from '../hooks/use-order-commands';
 import { nextRoundNo, type Order, type OrderLine, quantityLabel, stepQuantity } from '../order';
 import { draftMessage } from './order-screen';
-import { lineName } from './order-panel';
+import { lineName, SentRounds } from './order-panel';
 import { SendRound } from './send-round';
 
 type Props = {
@@ -26,8 +25,14 @@ type Props = {
 
 /**
  * The selected table's open order on the table map (light reference, 2026-11-23): its rounds as sent, the drafts as the
- * next round with quantity steppers, the server's total, the ways to the bill and "Enviar ronda N". The order screen's
- * queries and commands, the same intent and key per "Enviar"; nothing is shown as changed before the server says so.
+ * next round with quantity steppers, the server's total, "Subtotal" (printed), "Dividir" (the bill on its split) and
+ * "Enviar ronda N". The order screen's queries and commands, the same intent and key per "Enviar"; nothing is shown as
+ * changed before the server says so.
+ *
+ * The page keys this by the order, so selecting another table drops a send or subtotal whose outcome is unknown, with
+ * its "Tentar novamente". That loses no safety: the order is read again, and a resend with a new key would carry the
+ * `orderVersion` the screen then shows, so a round that did commit makes the server refuse a duplicate
+ * (`VERSION_CONFLICT`) rather than send its drafts twice.
  */
 export function TableOrder({ orderId, onAddItems }: Props) {
   const order = useOrder(orderId);
@@ -49,7 +54,6 @@ export function TableOrder({ orderId, onAddItems }: Props) {
 function OrderBody({ order, onAddItems }: { order: Order; onAddItems: () => void }) {
   const catalog = useCatalog();
   const blocked = useCommandsBlocked();
-  const timeZone = useStoreTimeZone();
   const { update } = useDraftLineCommands(order.id);
   // Supplementary: until it answers, or if it fails, the rounds show no kitchen state.
   const kitchen = useRoundKitchen(order.id);
@@ -81,10 +85,19 @@ function OrderBody({ order, onAddItems }: { order: Order; onAddItems: () => void
     });
   }
 
+  // Whether the last "Subtotal" was printed, as the server answered (not a discarded or refused one).
+  const [printed, setPrinted] = useState(false);
+  const subtotal = usePrintSubtotal(order.id, () => setPrinted(true));
+  const subtotalAwaitsRetry = subtotal.intent !== undefined && subtotal.error !== undefined && !subtotal.pending;
+
   const canSend = canCommand && order.drafts.length > 0 && order.catalogVersion !== null && !update.isPending;
-  // A draft is named from the catalog: while it loads the name waits, rather than reading "fora do catálogo".
+  // A draft is named from the catalog (it has no snapshot): while the catalog loads, or when it cannot be read, the
+  // name says so rather than "Artigo fora do catálogo", which would be untrue.
   const nameOf = (line: OrderLine) =>
-    line.status === 'DRAFT' && catalog.isPending ? 'A carregar…' : lineName(line, catalog.data);
+    line.status !== 'DRAFT' ? lineName(line, catalog.data)
+    : catalog.isPending ? 'A carregar…'
+    : catalog.isError ? 'Nome indisponível'
+    : lineName(line, catalog.data);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -98,37 +111,15 @@ function OrderBody({ order, onAddItems }: { order: Order; onAddItems: () => void
         {order.rounds.length === 0 && order.unbatched.length === 0 ? (
           <p className="text-muted-foreground">Nada enviado ainda.</p>
         ) : (
-          <>
-            {order.rounds.map((round) => {
-              const time = clockTime(round.confirmedAt, timeZone);
-              return (
-                <section key={round.id} className="flex flex-col gap-1">
-                  {/* Every round the server confirmed has been sent to production; the kitchen says how far along it is. */}
-                  <div className="flex flex-wrap items-center gap-x-2">
-                    <h3 className="text-sm font-medium text-muted-foreground">
-                      Ronda {round.batchNo} · enviada · {time}
-                    </h3>{' '}
-                    <KitchenChip state={kitchen.data?.get(round.id)} />
-                  </div>
-                  <ul aria-label={`Ronda ${round.batchNo}, ${time}`} className="flex flex-col">
-                    {round.lines.map((line) => (
-                      <SentLine key={line.id} line={line} name={nameOf(line)} />
-                    ))}
-                  </ul>
-                </section>
-              );
-            })}
-            {order.unbatched.length > 0 && (
-              <section className="flex flex-col gap-1">
-                <h3 className="text-sm font-medium text-muted-foreground">Sem ronda (transferidas)</h3>
-                <ul aria-label="Sem ronda" className="flex flex-col">
-                  {order.unbatched.map((line) => (
-                    <SentLine key={line.id} line={line} name={nameOf(line)} />
-                  ))}
-                </ul>
-              </section>
-            )}
-          </>
+          // Every round the server confirmed has been sent to production; the kitchen says how far along it is.
+          <SentRounds
+            order={order}
+            catalog={catalog.data}
+            headingLevel="h3"
+            dense
+            heading={(batchNo, time) => `Ronda ${batchNo} · enviada · ${time}`}
+            badge={(roundId) => <KitchenChip state={kitchen.data?.get(roundId)} />}
+          />
         )}
         <section aria-labelledby="table-draft-title" className="flex flex-col gap-1">
           <h3 id="table-draft-title" className="text-sm font-medium text-muted-foreground">
@@ -169,13 +160,39 @@ function OrderBody({ order, onAddItems }: { order: Order; onAddItems: () => void
           <Money value={order.due} className="shrink-0 text-2xl font-bold" />
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <Button asChild variant="outline" size="touch" className="rounded-xl bg-card">
-            <Link to={`/orders/${order.id}/payment`}>Subtotal</Link>
-          </Button>
-          <Button asChild variant="outline" size="touch" className="rounded-xl bg-card">
-            <Link to={`/orders/${order.id}/payment`}>Dividir</Link>
-          </Button>
+          {subtotalAwaitsRetry ? (
+            <>
+              <Button size="touch" className="rounded-xl" onClick={subtotal.retry} disabled={!canCommand}>
+                <RotateCcw aria-hidden="true" />
+                Tentar novamente
+              </Button>
+              <Button variant="outline" size="touch" className="rounded-xl bg-card" onClick={subtotal.discard}>
+                Descartar
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                variant="outline"
+                size="touch"
+                className="rounded-xl bg-card"
+                disabled={!canCommand || subtotal.intent !== undefined}
+                onClick={() => {
+                  setPrinted(false);
+                  subtotal.start(undefined, undefined);
+                }}
+              >
+                <Printer aria-hidden="true" />
+                Subtotal
+              </Button>
+              <Button asChild variant="outline" size="touch" className="rounded-xl bg-card">
+                {/* The bill, its split section on equal parts (the payment screen reads `?dividir`). */}
+                <Link to={`/orders/${order.id}/payment?dividir`}>Dividir</Link>
+              </Button>
+            </>
+          )}
         </div>
+        {/* What the last "Subtotal" did shares the send's two-line place under it (compact: no line kept twice). */}
         <SendRound
           send={send}
           disabled={!canSend}
@@ -183,6 +200,7 @@ function OrderBody({ order, onAddItems }: { order: Order; onAddItems: () => void
           sentBatchNo={sentBatchNo}
           onSend={sendRound}
           label={`Enviar ronda ${next}`}
+          otherStatus={<SubtotalStatus subtotal={subtotal} printed={printed} />}
         />
       </footer>
     </div>
@@ -208,17 +226,6 @@ function KitchenChip({ state }: { state: KitchenState | undefined }) {
     );
   }
   return null;
-}
-
-function SentLine({ line, name }: { line: OrderLine; name: string }) {
-  return (
-    <li className="flex items-baseline justify-between gap-2">
-      <span>
-        {quantityLabel(line.quantity)}× {name}
-      </span>{' '}
-      {line.gross ? <Money value={line.gross} className="shrink-0" /> : <span className="shrink-0">Sem preço</span>}
-    </li>
-  );
 }
 
 /**
@@ -284,4 +291,35 @@ function DraftLine({
       </div>
     </li>
   );
+}
+
+/** What the last "Subtotal" did: printing, printed (once the server said so), unknown (its key kept), or refused. */
+function SubtotalStatus({ subtotal, printed }: { subtotal: ReturnType<typeof usePrintSubtotal>; printed: boolean }) {
+  if (subtotal.pending) {
+    return (
+      <p role="status" aria-label="Subtotal" className="text-muted-foreground">
+        A imprimir o subtotal…
+      </p>
+    );
+  }
+  if (subtotal.error) {
+    const text = subtotal.intent
+      ? isInProgress(subtotal.error)
+        ? 'O subtotal ainda está a ser processado pelo servidor.'
+        : 'Sem ligação — o subtotal não foi confirmado.'
+      : `O subtotal não foi impresso. ${subtotal.error instanceof ApiError ? errorMessage(subtotal.error) : 'A resposta do servidor está incompleta.'}`;
+    return (
+      <p role="alert" className="font-medium text-error">
+        {text}
+      </p>
+    );
+  }
+  if (printed) {
+    return (
+      <p role="status" aria-label="Subtotal" className="text-success-text">
+        Subtotal impresso.
+      </p>
+    );
+  }
+  return null;
 }
