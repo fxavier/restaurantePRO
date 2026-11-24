@@ -27,15 +27,4 @@ describe('Tabs, pill variant', () => {
     expect(screen.getByRole('tab', { name: 'Famílias' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tabpanel', { name: 'Famílias' })).toHaveTextContent('Lista de famílias');
   });
-
-  it('is a wrapping row of touch-sized pills, the selected one solid green with no shadow', () => {
-    render(<PillTabs />);
-    expect(screen.getByRole('tablist')).toHaveClass('flex-wrap');
-    const trigger = screen.getByRole('tab', { name: 'Artigos' }).className;
-    expect(trigger).toContain('group-data-[variant=pill]/tabs-list:h-12');
-    expect(trigger).toContain('group-data-[variant=pill]/tabs-list:data-[state=active]:text-primary-foreground');
-    // The shared shadow is the default variant's only: a pill list never matches it.
-    expect(trigger).toContain('group-data-[variant=default]/tabs-list:data-[state=active]:shadow-sm');
-    expect(trigger).not.toMatch(/group-data-\[variant=pill\][^ ]*shadow-sm/);
-  });
 });

@@ -37,13 +37,13 @@ export function SplitPanel({ settlement, guests, disabled, mode = 'whole' }: Pro
       <Tabs defaultValue={mode}>
         {/* The area tabs (the shared pill variant), here as three equal columns. */}
         <TabsList variant="pill" className="grid w-full grid-cols-3">
-          <TabsTrigger value="whole" className="whitespace-normal">
+          <TabsTrigger value="whole" className="whitespace-normal group-data-[variant=pill]/tabs-list:text-base">
             Conta total
           </TabsTrigger>
-          <TabsTrigger value="equal" className="whitespace-normal">
+          <TabsTrigger value="equal" className="whitespace-normal group-data-[variant=pill]/tabs-list:text-base">
             Partes iguais
           </TabsTrigger>
-          <TabsTrigger value="items" className="whitespace-normal">
+          <TabsTrigger value="items" className="whitespace-normal group-data-[variant=pill]/tabs-list:text-base">
             Por artigos
           </TabsTrigger>
         </TabsList>

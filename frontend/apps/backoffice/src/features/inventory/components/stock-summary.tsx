@@ -50,7 +50,7 @@ function KpiValue({ label, read, children }: { label: string; read: Read; childr
   if (read.isError) {
     return (
       <div className="flex flex-wrap items-center gap-2">
-        <span role="alert" className="text-sm">
+        <span role="alert" className="text-sm font-normal">
           {isUnavailable(read.error) ? 'Sem ligação ao serviço.' : 'Não foi possível carregar.'}
         </span>
         <Button variant="outline" size="sm" aria-label={`Tentar novamente: ${label}`} onClick={() => void read.refetch()}>

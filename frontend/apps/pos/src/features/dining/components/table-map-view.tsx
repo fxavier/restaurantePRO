@@ -33,7 +33,7 @@ export function TableMapView({ areas, area, onArea, selected, onSelect, activity
       <div className="flex flex-wrap items-center gap-3">
         <TabsList variant="pill" className="flex-1">
           {areas.map(({ id, name, tables }) => (
-            <TabsTrigger key={id} value={id}>
+            <TabsTrigger key={id} value={id} className="group-data-[variant=pill]/tabs-list:px-5 group-data-[variant=pill]/tabs-list:text-base">
               {name}
               {/* "Sala 12" on screen, "Sala, 12 mesas" read out; the spaces between flex items take no room. */}
               <span className="sr-only">,</span>{' '}
