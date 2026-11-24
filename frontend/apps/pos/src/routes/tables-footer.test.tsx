@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { productionAlerts, productionAlertsEndpoint, settlementAlerts, settlementAlertsEndpoint } from '../test/alerts';
 import { renderPos } from '../test/render-pos';
 import { notificationsEndpoint, SESSION, tableMap, tablesEndpoint, token, tokenEndpoint } from '../test/server';
-import { MAP } from '../test/table-map';
+import { MAP, openFromMap } from '../test/table-map';
 
 const ORDER = '6f1c2a9e-0000-4000-8000-000000000777';
 const perm = (name: string) => `PERM_${name}@${SESSION.storeId}`;
@@ -14,7 +14,7 @@ async function atTables(permissions?: string[]) {
   tablesEndpoint(tableMap(MAP));
   const rendered = await renderPos({ device: 'enrolled', loggedIn: true, path: '/tables' });
   if (permissions) act(() => rendered.services.session.start({ ...SESSION, permissions }));
-  await screen.findByRole('tab', { name: 'Sala' });
+  await screen.findByRole('tab', { name: /^Sala,/ });
   return rendered;
 }
 
@@ -130,6 +130,21 @@ describe('/tables keyboard shortcuts', () => {
     expect(screen.getByRole('note', { name: 'Atalhos de teclado' })).toHaveTextContent(
       'F2 reserva · F3 takeaway · / procurar mesa',
     );
+  });
+
+  it('F3 inside an open dialog leaves it alone and opens no new order', async () => {
+    const { user } = await atTables();
+    await openFromMap(user, /^Mesa M1 /);
+    const opening = await screen.findByRole('dialog', { name: 'Abrir mesa M1' });
+    // A button of the dialog has the focus, not a field: only the dialog guard keeps F3 out.
+    const cancel = within(opening).getByRole('button', { name: 'Cancelar' });
+    act(() => cancel.focus());
+    expect(cancel).toHaveFocus();
+
+    await user.keyboard('{F3}');
+
+    expect(screen.queryByRole('dialog', { name: 'Novo pedido fora de sala' })).not.toBeInTheDocument();
+    expect(opening).toBeInTheDocument();
   });
 
   it('leaves a key typed in a field alone', async () => {
