@@ -157,10 +157,17 @@ describe('finance tabs', () => {
     expect(await screen.findByRole('tab', { name: 'Resumo' })).toBeInTheDocument();
   });
 
-  it('says when the selected store is not in the company', async () => {
-    financeServer();
-    renderApp('/finance?storeId=99990000-0000-4000-8000-000000000099');
-    expect(await screen.findByText('Loja não encontrada. Escolha outra na barra superior.')).toBeInTheDocument();
+  it('says when the selected store is not in the company, by asking for one of its stores', async () => {
+    // The area's "Loja não encontrada" lasts only one render: the same store list answers the top bar's store
+    // selector, whose effect then drops the unknown ?storeId (store-select.tsx). Waiting for that frame raced the
+    // effect (flaky in CI); what the user is left with is the address without it and the request to choose a store.
+    const { requests } = financeServer();
+    const { currentUrl } = renderApp('/finance?storeId=99990000-0000-4000-8000-000000000099');
+
+    expect(await screen.findByText('Escolha uma loja na barra superior para ver o seu financeiro.')).toBeInTheDocument();
+    expect(currentUrl()).toBe('/finance');
+    expect(screen.getByRole('combobox', { name: 'Loja' })).toHaveValue('');
+    expect(requests.filter((url) => url.includes('99990000-0000-4000-8000-000000000099'))).toEqual([]);
   });
 
   it('asks for a store first', async () => {
