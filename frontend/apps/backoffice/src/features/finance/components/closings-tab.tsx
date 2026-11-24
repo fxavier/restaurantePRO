@@ -136,7 +136,7 @@ function ClosingRow({ closing, name, decidable, pending, onApprove, onReject }: 
         {closing.dayRound}.{closing.attemptNo}
       </TableCell>
       <TableCell>
-        <StatusBadge status={closing.status ?? ''} statuses={closingStatuses(closing.status)} />
+        <StatusBadge look="tint" status={closing.status ?? ''} statuses={closingStatuses(closing.status)} />
       </TableCell>
       <TableCell>
         {decidable && (
@@ -159,7 +159,7 @@ function ClosingRow({ closing, name, decidable, pending, onApprove, onReject }: 
 /** Stitch's "Discriminação por modalidade": one row per method, the amounts as the server computed them. */
 function ClosingLines({ closing, name }: { closing: ClosingView; name: string }) {
   return (
-    <div className="rounded-lg border p-3">
+    <div className="rounded-xl border p-3">
       <Table>
         <TableCaption className="text-left">Fecho {name}</TableCaption>
         <TableHeader>

@@ -61,7 +61,7 @@ function LinesTable({ storeId, lines }: { storeId: string; lines: Reconciliation
             <TableCell>{nameById(registers.data, line.registerId)}</TableCell>
             <TableCell className="font-mono">{line.methodCode}</TableCell>
             <TableCell>
-              <StatusBadge status={line.closingStatus ?? ''} statuses={closingStatuses(line.closingStatus)} />
+              <StatusBadge look="tint" status={line.closingStatus ?? ''} statuses={closingStatuses(line.closingStatus)} />
             </TableCell>
             <TableCell className="text-right">
               <Amount value={line.expected} />
@@ -101,7 +101,7 @@ function InDoubtTable({ attempts, timeZone }: { attempts: InDoubtAttemptView[]; 
             <TableCell className="tabular-nums">{formatInstant(attempt.createdAt, timeZone)}</TableCell>
             <TableCell className="font-mono">{attempt.methodCode}</TableCell>
             <TableCell>
-              <StatusBadge status="PENDING" statuses={IN_DOUBT} />
+              <StatusBadge look="tint" status="PENDING" statuses={IN_DOUBT} />
             </TableCell>
             <TableCell className="text-right tabular-nums">{attempt.pollCount ?? 0}</TableCell>
             <TableCell className="text-right font-medium">

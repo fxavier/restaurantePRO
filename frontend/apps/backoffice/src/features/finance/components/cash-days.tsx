@@ -98,7 +98,7 @@ function DayRow({ day, canClose, canReopen, closing, onClose, onReopen }: DayRow
     <TableRow>
       <TableCell className="font-medium tabular-nums">{date}</TableCell>
       <TableCell>
-        <StatusBadge status={day.status} statuses={dayStatuses(day.status)} />
+        <StatusBadge look="tint" status={day.status} statuses={dayStatuses(day.status)} />
       </TableCell>
       <TableCell>
         <div className="flex justify-end gap-2">

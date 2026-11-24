@@ -69,7 +69,7 @@ export function PaymentMethodsTab({ storeId }: { storeId: string }) {
                     <Badge variant="secondary">{KIND_LABELS[method.kind ?? ''] ?? method.kind}</Badge>
                   </TableCell>
                   <TableCell>
-                    <StatusBadge status={method.active ? 'true' : 'false'} statuses={ACTIVE} />
+                    <StatusBadge look="tint" status={method.active ? 'true' : 'false'} statuses={ACTIVE} />
                   </TableCell>
                   <TableCell>
                     <div className="flex justify-end">

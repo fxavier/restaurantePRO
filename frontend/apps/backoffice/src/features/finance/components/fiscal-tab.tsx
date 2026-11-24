@@ -1,6 +1,7 @@
 import {
   Button,
   StatusBadge,
+  StatusPill,
   Table,
   TableBody,
   TableCaption,
@@ -100,7 +101,7 @@ function SeriesRow({ series, pending, onDeactivate }: { series: SeriesView; pend
       <TableCell>{TYPES[type] ?? type}</TableCell>
       <TableCell className="text-right tabular-nums">{series.nextNumber}</TableCell>
       <TableCell>
-        <StatusBadge status={series.active ? 'true' : 'false'} statuses={ACTIVE} />
+        <StatusBadge look="tint" status={series.active ? 'true' : 'false'} statuses={ACTIVE} />
       </TableCell>
       <TableCell>
         {series.active && (
@@ -156,7 +157,12 @@ function DocumentRow({ document, timeZone }: { document: DocumentSummary; timeZo
       <TableCell className="whitespace-nowrap tabular-nums">{formatInstant(document.issuedAt, timeZone)}</TableCell>
       <TableCell>{document.buyerName}</TableCell>
       <TableCell>
-        {status in DOCUMENT ? <StatusBadge status={status as keyof typeof DOCUMENT} statuses={DOCUMENT} /> : status}
+        {status in DOCUMENT ? (
+          <StatusBadge look="tint" status={status as keyof typeof DOCUMENT} statuses={DOCUMENT} />
+        ) : (
+          // A state this screen does not know yet: the server's name, in the neutral pill (never inferred, §8.3).
+          status && <StatusPill tone="neutral">{status}</StatusPill>
+        )}
       </TableCell>
       <TableCell className="text-right font-medium">
         <Amount value={document.totalGross} />
