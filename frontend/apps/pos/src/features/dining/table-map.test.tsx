@@ -50,14 +50,13 @@ describe('table map', () => {
   it('shows one tab per area, the first selected, with its tables', async () => {
     await atTables();
 
-    // Each tab shows its table count too, hidden from assistive technology (the summary says it).
+    // Each tab shows its table count; a screen reader hears it as words.
     const tabs = await screen.findAllByRole('tab');
     expect(tabs).toHaveLength(2);
-    expect(tabs[0]).toHaveAccessibleName('Sala');
-    expect(tabs[0]).toHaveTextContent('Sala4');
-    expect(tabs[1]).toHaveAccessibleName('Esplanada');
-    expect(screen.getByRole('tab', { name: 'Sala' })).toHaveAttribute('aria-selected', 'true');
-    const panel = screen.getByRole('tabpanel', { name: 'Sala' });
+    expect(tabs[0]).toHaveAccessibleName('Sala, 4 mesas');
+    expect(tabs[1]).toHaveAccessibleName('Esplanada, 1 mesa');
+    expect(screen.getByRole('tab', { name: /^Sala,/ })).toHaveAttribute('aria-selected', 'true');
+    const panel = screen.getByRole('tabpanel', { name: /^Sala,/ });
     expect(within(panel).getAllByRole('button').map((button) => button.textContent)).toEqual([
       expect.stringContaining('M1'),
       expect.stringContaining('M2'),
@@ -69,9 +68,9 @@ describe('table map', () => {
   it('another area shows its own tables', async () => {
     const { user } = await atTables();
 
-    await user.click(await screen.findByRole('tab', { name: 'Esplanada' }));
+    await user.click(await screen.findByRole('tab', { name: /^Esplanada,/ }));
 
-    const panel = screen.getByRole('tabpanel', { name: 'Esplanada' });
+    const panel = screen.getByRole('tabpanel', { name: /^Esplanada,/ });
     expect(within(panel).getByRole('button', { name: /E1/ })).toHaveAccessibleName('Mesa E1 Livre 2 lugares');
     expect(screen.queryByRole('button', { name: /M1/ })).not.toBeInTheDocument();
   });
@@ -149,7 +148,7 @@ describe('table map', () => {
 
     await user.type(await screen.findByRole('searchbox', { name: 'Procurar mesa' }), 'm3');
 
-    const panel = screen.getByRole('tabpanel', { name: 'Sala' });
+    const panel = screen.getByRole('tabpanel', { name: /^Sala,/ });
     expect(within(panel).getAllByRole('button').map((button) => button.textContent)).toEqual([expect.stringContaining('M3')]);
     await user.clear(screen.getByRole('searchbox', { name: 'Procurar mesa' }));
     await user.type(screen.getByRole('searchbox', { name: 'Procurar mesa' }), 'X9');
@@ -183,12 +182,12 @@ describe('table map', () => {
     orderEndpoint(ORDER_ID, json(e1));
     const { user } = await atTables(tableMap(E1_OCCUPIED));
 
-    await user.click(await screen.findByRole('tab', { name: 'Esplanada' }));
+    await user.click(await screen.findByRole('tab', { name: /^Esplanada,/ }));
     await openFromMap(user, /^Mesa E1 /);
     await screen.findByRole('heading', { name: 'Mesa E1' });
     await user.click(screen.getByRole('link', { name: 'Voltar às mesas' }));
 
-    expect(await screen.findByRole('tab', { name: 'Esplanada' })).toHaveAttribute('aria-selected', 'true');
+    expect(await screen.findByRole('tab', { name: /^Esplanada,/ })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('button', { name: /^Mesa E1 / })).toBeInTheDocument();
   });
 
@@ -199,7 +198,7 @@ describe('table map', () => {
     // The login lands on the plain map; the unknown area comes after, as from an old link.
     await act(() => router.navigate('/tables?area=gone'));
 
-    expect(await screen.findByRole('tab', { name: 'Sala' })).toHaveAttribute('aria-selected', 'true');
+    expect(await screen.findByRole('tab', { name: /^Sala,/ })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('button', { name: /^Mesa M1 / })).toBeInTheDocument();
   });
 

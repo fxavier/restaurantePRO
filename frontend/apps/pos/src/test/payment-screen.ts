@@ -9,14 +9,21 @@ import { MAP } from './table-map';
  * M2's "Conta & Pagamento" screen, for a cashier (or `permissions`): the login lands on the map, then the payment
  * route. The test stands in for the settlement endpoint (`serverSettlement`) before calling this.
  */
-export async function atPayment({ permissions = CASHIER_PERMISSIONS }: { permissions?: string[] } = {}) {
+export async function atPayment({
+  permissions = CASHIER_PERMISSIONS,
+  search = '',
+}: {
+  permissions?: string[];
+  /** The route's query, as the table map's "Dividir" sends it (`?dividir`). */
+  search?: string;
+} = {}) {
   tokenEndpoint(token('jwt-1'));
   tablesEndpoint(tableMap(MAP));
   const order = orderEndpoint(ORDER_ID, json(ORDER));
   const rendered = await renderPos({ device: 'enrolled', loggedIn: true, path: '/tables' });
   act(() => rendered.services.session.start({ ...SESSION, permissions }));
   await screen.findByRole('heading', { name: 'Mesas' });
-  await act(() => rendered.router.navigate(`/orders/${ORDER_ID}/payment`));
+  await act(() => rendered.router.navigate(`/orders/${ORDER_ID}/payment${search}`));
   return { ...rendered, order };
 }
 

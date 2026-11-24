@@ -12,13 +12,15 @@ type Props = {
   guests: number | null | undefined;
   /** "Sem ligação" or a closed order: no command. */
   disabled: boolean;
+  /** The mode shown first: the whole bill, or equal parts when the bill was opened to split it. */
+  mode?: 'whole' | 'equal';
 };
 
 const MIN_PEOPLE = 2;
 const MAX_PEOPLE = 50;
 
 /** Stitch's "Modo de repartição": the whole bill, equal parts, or by items (§4 "divisão por artigos ou partes"). */
-export function SplitPanel({ settlement, guests, disabled }: Props) {
+export function SplitPanel({ settlement, guests, disabled, mode = 'whole' }: Props) {
   const split = useSplitEqually(settlement.orderId);
   // Each split by items the server made starts the quantities again; a refused one keeps them.
   const [itemsSplits, setItemsSplits] = useState(0);
@@ -32,7 +34,7 @@ export function SplitPanel({ settlement, guests, disabled }: Props) {
       <h3 id="split-title" className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
         Divisão da conta
       </h3>
-      <Tabs defaultValue="whole">
+      <Tabs defaultValue={mode}>
         <TabsList className="grid h-auto! w-full grid-cols-3 gap-1">
           <TabsTrigger value="whole" className="h-14 text-base whitespace-normal">
             Conta total

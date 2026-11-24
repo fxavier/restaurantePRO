@@ -18,8 +18,8 @@ type Props = {
 
 /**
  * The store's tables (the light reference's left card): one tab per area with its table count, the selected one solid
- * green; a "Mesa ou nº" search over the area's codes; a grid of fixed-height tiles. The count is hidden from assistive
- * technology, which reads the summary instead, so a tab is named by its area alone.
+ * green, named with its count ("Sala, 12 mesas"); a "Mesa ou nº" search over the area's codes; a grid of fixed-height
+ * tiles.
  */
 export function TableMapView({ areas, area, onArea, selected, onSelect }: Props) {
   const active = areas.some((candidate) => candidate.id === area) ? area : areas[0]?.id;
@@ -36,9 +36,10 @@ export function TableMapView({ areas, area, onArea, selected, onSelect }: Props)
               className="min-h-12 flex-none gap-2 rounded-xl border-border bg-card px-5 text-base text-foreground data-[state=active]:border-primary"
             >
               {name}
-              <span aria-hidden="true" className="text-sm font-semibold tabular-nums">
-                {tables.length}
-              </span>
+              {/* "Sala 12" on screen, "Sala, 12 mesas" read out; the spaces between flex items take no room. */}
+              <span className="sr-only">,</span>{' '}
+              <span className="text-sm font-semibold tabular-nums">{tables.length}</span>{' '}
+              <span className="sr-only">{tables.length === 1 ? 'mesa' : 'mesas'}</span>
             </TabsTrigger>
           ))}
         </TabsList>

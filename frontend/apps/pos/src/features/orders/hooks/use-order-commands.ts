@@ -58,6 +58,34 @@ export function useAddLine(orderId: string) {
 }
 
 /**
+ * `POST /api/v1/pos/orders/{id}/subtotal/print` ("Subtotal", §4: the bill printed before payment; `ORDER_EDIT`): one
+ * intent per press, its key kept for "Tentar novamente" after an unknown outcome, never resent on its own (bar the
+ * shared 409 "in progress" wait). Whatever the answer, the table map is read again: a printed subtotal marks the
+ * table `subtotalPrinted` ("Conta pedida").
+ */
+export function usePrintSubtotal(orderId: string, onPrinted?: () => void) {
+  const { api } = useServices();
+  const queryClient = useQueryClient();
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: ['pos', 'tables'] });
+  return useIntent<undefined, unknown>(
+    async (_request, key) =>
+      (
+        await api.POST('/api/v1/pos/orders/{id}/subtotal/print', {
+          params: { path: { id: orderId }, header: { 'Idempotency-Key': key } },
+        })
+      ).data,
+    {
+      onSuccess() {
+        refresh();
+        onPrinted?.();
+      },
+      onError: refresh,
+      onDiscard: refresh,
+    },
+  );
+}
+
+/**
  * A draft line's change (`PUT`, a full replacement of variant, quantity and notes) or removal (`DELETE`), each with
  * the line's version (D17). The contract has no Idempotency-Key on either: the version guards a repeat. The order is
  * read again after either answer, so a version conflict shows the current lines.

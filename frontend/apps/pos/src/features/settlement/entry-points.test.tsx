@@ -20,7 +20,7 @@ describe('reaching the bill', () => {
     expect(await screen.findByRole('heading', { name: 'Conta da mesa M2' })).toBeInTheDocument();
   });
 
-  it('from an occupied table on the map, "Subtotal" (and "Dividir"); a free table has neither', async () => {
+  it('from an occupied table on the map, "Dividir" (the bill on its split); a free table has none', async () => {
     serverSettlement();
     tokenEndpoint(token('jwt-1'));
     tablesEndpoint(tableMap(MAP));
@@ -30,10 +30,9 @@ describe('reaching the bill', () => {
     const panel = () => screen.getByRole('complementary', { name: 'Detalhe da mesa' });
 
     await user.click(await screen.findByRole('button', { name: /^Mesa M1 / }));
-    expect(within(panel()).queryByRole('link', { name: 'Subtotal' })).not.toBeInTheDocument();
     expect(within(panel()).queryByRole('link', { name: 'Dividir' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /^Mesa M2 / }));
-    await user.click(await within(panel()).findByRole('link', { name: 'Subtotal' }));
+    await user.click(await within(panel()).findByRole('link', { name: 'Dividir' }));
 
     await waitFor(() => expect(router.state.location.pathname).toBe(`/orders/${ORDER_ID}/payment`));
   });
