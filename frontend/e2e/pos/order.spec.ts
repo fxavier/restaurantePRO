@@ -316,6 +316,21 @@ test('screens for the PR, at 1024 × 768, 1366 × 768 and 1440 × 900', async ({
   }
 });
 
+test('screens of the order screen (light reference) at 1024 × 768 and 1440 × 900', async ({ page }) => {
+  const dir = process.env.E2E_SCREENS;
+  test.skip(!dir, 'E2E_SCREENS not set');
+  await atOrder(page);
+  await expect(page.getByText('pronta', { exact: true })).toBeVisible();
+  for (const [width, height] of [
+    [1024, 768],
+    [1440, 900],
+  ] as const) {
+    await page.setViewportSize({ width, height });
+    await page.getByRole('button', { name: 'Bebidas' }).click();
+    await page.screenshot({ path: `${dir}/order-${width}x${height}.png`, animations: 'disabled' });
+  }
+});
+
 // The table map with M2 selected (light reference, 2026-11-23): its order in the right card, at the smallest POS viewport.
 async function atM2OnMap(page: Page) {
   await standIn(page);

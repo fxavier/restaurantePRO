@@ -28,16 +28,18 @@ export function PaymentPanel({ settlement, target, disabled }: Props) {
   const lastHere = last && (last.partitionId ?? undefined) === target.partitionId ? last : undefined;
 
   return (
-    <section aria-labelledby="pay-title" className="flex flex-col gap-4">
-      <div className="flex flex-col gap-2 rounded-xl border bg-card p-4">
-        <h3 id="pay-title" className="sr-only">
-          Pagamento
-        </h3>
-        <h4 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Valor a cobrar — {target.label}</h4>
-        <Money value={target.balance} className="text-4xl font-bold lg:text-5xl" />
+    // Light reference: one card, as the table's order on /tables: what is owed, large, then the method and the one
+    // green action.
+    <section aria-labelledby="pay-title" className="flex flex-col gap-3 rounded-2xl border bg-card p-4">
+      <h3 id="pay-title" className="sr-only">
+        Pagamento
+      </h3>
+      <div className="flex flex-col">
+        <h4 className="text-muted-foreground">Valor a cobrar — {target.label}</h4>
+        <Money value={target.balance} className="text-4xl font-bold" />
       </div>
       {inDoubt && (
-        <p className="rounded-lg border border-warning p-3 font-medium">
+        <p className="rounded-xl border border-warning-border bg-warning-tint p-3 font-medium text-warning-text">
           Há um pagamento em curso nesta conta. Resolva-o antes de cobrar de novo.
         </p>
       )}
@@ -83,20 +85,21 @@ function ChargeForm({
 
   return (
     <form
-      className="flex flex-col gap-4 rounded-xl border bg-card p-4"
+      className="flex flex-col gap-3 border-t pt-3"
       onSubmit={(event) => {
         event.preventDefault();
         if (valid && !disabled) onCharge(amount, tendered);
       }}
     >
       <fieldset className="flex flex-col gap-2">
-        <legend className="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">Forma de pagamento</legend>
-        <label className="flex min-h-20 cursor-pointer items-center gap-3 rounded-lg border-2 border-primary bg-muted p-3 has-focus-visible:ring-2 has-focus-visible:ring-ring">
+        <legend className="mb-2 text-sm font-medium text-muted-foreground">Forma de pagamento</legend>
+        {/* The chosen method in the free state's tint (the only one the POS lists yet), its border the green. */}
+        <label className="flex min-h-16 cursor-pointer items-center gap-3 rounded-xl border-2 border-primary bg-success-tint p-3 has-focus-visible:ring-2 has-focus-visible:ring-ring">
           <input type="radio" name="method" value={CASH.code} checked readOnly className="sr-only" />
-          <Banknote aria-hidden="true" className="size-6 text-primary" />
+          <Banknote aria-hidden="true" className="size-6 text-success-text" />
           <span className="flex flex-col">
             <span className="font-semibold">{CASH.name}</span>
-            <span className="text-sm text-muted-foreground">{CASH.detail}</span>
+            <span className="text-sm text-success-text">{CASH.detail}</span>
           </span>
         </label>
       </fieldset>
@@ -126,7 +129,7 @@ function ChargeForm({
           />
         </div>
       </div>
-      <Button type="submit" size="touch-primary" disabled={disabled || !valid}>
+      <Button type="submit" size="touch-primary" className="w-full" disabled={disabled || !valid}>
         {amount ? `Cobrar ${formatMoney({ amount, currency: due.currency })}` : 'Cobrar'}
       </Button>
     </form>

@@ -37,7 +37,7 @@ export function OrderPage() {
       {order.data ? (
         <OrderScreen order={order.data} blocked={blocked} back={back} />
       ) : order.isError ? (
-        <main className="flex flex-col items-center gap-3 p-6 text-center">
+        <main className="m-4 flex flex-col items-center gap-3 rounded-2xl border bg-card p-6 text-center">
           {back}
           <p role="alert">{loadError(order.error)}</p>
           {!(order.error instanceof ApiError && order.error.status === 404) && (
@@ -47,10 +47,10 @@ export function OrderPage() {
           )}
         </main>
       ) : (
-        <main role="status" aria-label="A carregar o pedido…" className="grid flex-1 grid-cols-[160px_1fr_360px] gap-3 p-3">
-          <Skeleton className="h-full" />
-          <Skeleton className="h-full" />
-          <Skeleton className="h-full" />
+        <main role="status" aria-label="A carregar o pedido…" className="grid flex-1 grid-cols-[160px_1fr_360px] gap-3 p-4">
+          <Skeleton className="h-full rounded-2xl" />
+          <Skeleton className="h-full rounded-2xl" />
+          <Skeleton className="h-full rounded-2xl" />
         </main>
       )}
     </div>

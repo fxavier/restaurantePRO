@@ -1,4 +1,4 @@
-import { Button, cn, LOCALE, Money, type StatusMap, StatusBadge } from '@restaurantpro/ui';
+import { Button, cn, LOCALE, Money, type StatusMap, StatusPill } from '@restaurantpro/ui';
 import { Circle, CircleCheck, CircleDot, FileText, NotebookText, Split, X } from 'lucide-react';
 import { useState } from 'react';
 import { type Buyer, type FiscalDocument, type Reprint, useCancelPartition, useIssuePartitionDocument } from '../hooks/use-settlement-commands';
@@ -9,7 +9,7 @@ import { DocumentNotice, ReprintButton } from './document-actions';
 
 const quantity = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 3 });
 
-/** The light reference's tinted pills: the state by label and icon, never colour alone (§8.4). */
+/** Stitch's pills: the state by label and icon, never colour alone (§8.4). */
 const PAYMENT_STATUS: StatusMap<PaymentStatus> = {
   UNPAID: { label: 'Por pagar', icon: Circle, tone: 'warning' },
   PARTIALLY_PAID: { label: 'Pago em parte', icon: CircleDot, tone: 'info' },
@@ -17,6 +17,16 @@ const PAYMENT_STATUS: StatusMap<PaymentStatus> = {
   ON_ACCOUNT: { label: 'A crédito', icon: NotebookText, tone: 'info' },
   MIXED: { label: 'Misto', icon: Split, tone: 'info' },
 };
+
+function PaymentPill({ status }: { status: PaymentStatus }) {
+  const { label, icon: Icon, tone } = PAYMENT_STATUS[status];
+  return (
+    // The light reference's chip (the shared tint, AA text on it), as tall as a line of text.
+    <StatusPill tone={tone} icon={Icon} className="px-2 py-0 leading-5">
+      {label}
+    </StatusPill>
+  );
+}
 
 type Props = {
   orderId: string;
@@ -41,11 +51,11 @@ export function PartitionCard({ orderId, partition, chosen, onChoose, buyer, blo
   const disabled = blocked || !open;
 
   return (
-    <li className={cn('flex flex-col gap-2 rounded-xl border-2 bg-card p-4', chosen ? 'border-primary' : 'border-border')}>
+    <li className={cn('flex flex-col gap-2 rounded-xl border-2 bg-card p-3', chosen ? 'border-primary' : 'border-border')}>
       <div className="flex items-start justify-between gap-3">
         <span className="flex flex-wrap items-center gap-2">
           <span className="font-semibold">{partition.label}</span>
-          <StatusBadge look="tint" status={partition.paymentStatus} statuses={PAYMENT_STATUS} />
+          <PaymentPill status={partition.paymentStatus} />
         </span>
         <Money value={partition.settled ? partition.due : partition.balance} className="text-xl font-bold" />
       </div>

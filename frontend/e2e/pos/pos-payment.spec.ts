@@ -231,6 +231,34 @@ test('one bill from the map to its close: cash with change, the document, the cl
   await expect(page).toHaveURL(/\/tables$/);
 });
 
+test('screens of the bill opened by "Dividir" (light reference) at 1024 × 768 and 1440 × 900', async ({ page }) => {
+  const dir = process.env.E2E_SCREENS;
+  test.skip(!dir, 'E2E_SCREENS not set');
+  await atBill(page);
+  for (const [width, height] of [
+    [1024, 768],
+    [1440, 900],
+  ] as const) {
+    await page.setViewportSize({ width, height });
+    await page.screenshot({ path: `${dir}/payment-dividir-${width}x${height}.png`, animations: 'disabled' });
+  }
+});
+
+test('screens of a split bill with a payment in doubt (light reference) at 1024 × 768 and 1440 × 900', async ({ page }) => {
+  const dir = process.env.E2E_SCREENS;
+  test.skip(!dir, 'E2E_SCREENS not set');
+  await atBill(page, SPLIT);
+  await page.getByRole('button', { name: 'Cobrar Parte 3 de 3' }).click();
+  await page.getByLabel('Valor recebido').fill('600');
+  for (const [width, height] of [
+    [1024, 768],
+    [1440, 900],
+  ] as const) {
+    await page.setViewportSize({ width, height });
+    await page.screenshot({ path: `${dir}/payment-split-${width}x${height}.png`, animations: 'disabled', fullPage: true });
+  }
+});
+
 test('screens for the PR, at 1440, 1024 and 390 wide', async ({ page }) => {
   const dir = process.env.E2E_SCREENS;
   test.skip(!dir, 'E2E_SCREENS not set');

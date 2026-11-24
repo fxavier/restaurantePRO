@@ -35,14 +35,14 @@ export function ClosingPanel({ settlement, buyer, blocked, onClosed, children, c
   const busy = blocked || issue.intent !== undefined || close.intent !== undefined;
 
   return (
-    <section aria-labelledby="closing-title" className="flex flex-col gap-3">
+    <section aria-labelledby="closing-title" className="flex flex-col gap-3 rounded-2xl border bg-card p-4">
       <h3 id="closing-title" className="sr-only">
         Documento e fecho
       </h3>
       {children}
       {!settlement.settled && <p className="text-muted-foreground">A conta ainda não está paga.</p>}
       {can.collect && (
-        <Button size="touch-primary" disabled={busy || !canClose(settlement)} onClick={() => close.start(settlement.orderVersion, undefined)}>
+        <Button size="touch-primary" className="w-full" disabled={busy || !canClose(settlement)} onClick={() => close.start(settlement.orderVersion, undefined)}>
           <CircleCheck aria-hidden="true" />
           Fechar conta
         </Button>
