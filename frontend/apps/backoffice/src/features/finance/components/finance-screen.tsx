@@ -1,6 +1,5 @@
-import { Card, cn, Tabs, TabsContent, TabsList, TabsTrigger } from '@restaurantpro/ui';
+import { Card, NativeSelect, Tabs, TabsContent, TabsList, TabsTrigger } from '@restaurantpro/ui';
 import { useId, useState } from 'react';
-import { AREA_TAB, AREA_TABS_LIST } from '../../../shell/area-tabs';
 import { useFinanceTab, type FinanceTab } from '../hooks/use-finance-tab';
 import { useStore } from '../hooks/use-store';
 import { lastDays } from '../period';
@@ -13,7 +12,6 @@ import { QueryState } from './query-state';
 import { ReconciliationTab } from './reconciliation-tab';
 import { ResumeFinanceCommand } from './resume-finance-command';
 import { SummaryTab } from './summary-tab';
-import { selectClass } from './styles';
 
 const TAB_LABELS: Record<FinanceTab, string> = {
   resumo: 'Resumo',
@@ -65,9 +63,9 @@ function FinanceArea({ storeId, timeZone }: { storeId: string; timeZone: string 
       <Tabs value={tab} onValueChange={selectTab} className="gap-4">
         {/* As the POS map's card: the area tabs on the left, the one filter (the period) on the right. */}
         <Card className="flex-row flex-wrap items-end justify-between gap-3 p-2">
-          <TabsList className={cn(AREA_TABS_LIST, 'flex-1')}>
+          <TabsList variant="pill" className="flex-1">
             {Object.entries(TAB_LABELS).map(([value, label]) => (
-              <TabsTrigger key={value} value={value} className={AREA_TAB}>
+              <TabsTrigger key={value} value={value}>
                 {label}
               </TabsTrigger>
             ))}
@@ -76,13 +74,13 @@ function FinanceArea({ storeId, timeZone }: { storeId: string; timeZone: string 
             <label htmlFor={periodId} className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
               Período
             </label>
-            <select id={periodId} className={selectClass} value={days} onChange={(event) => setDays(Number(event.target.value))}>
+            <NativeSelect id={periodId} className="h-10 w-auto" value={days} onChange={(event) => setDays(Number(event.target.value))}>
               {PERIODS.map((option) => (
                 <option key={option.days} value={option.days}>
                   {option.label}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
         </Card>
         <TabsContent value="resumo">

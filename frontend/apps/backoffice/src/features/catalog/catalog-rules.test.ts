@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { availabilityLabel, warningsLabel } from './catalog-labels';
+import { availabilityLabel, destinationOf, warningsLabel } from './catalog-labels';
 import { familySchema, newPriceSchema } from './schemas';
 
 /** The first message a form would show for each field, as a user reads it under the field. */
@@ -34,5 +34,14 @@ describe('catalog labels', () => {
   it('names an item’s availability', () => {
     expect(availabilityLabel('INACTIVE')).toBe('Inativo');
     expect(availabilityLabel('ACTIVE')).toBe('Ativo');
+  });
+});
+
+describe('destinationOf', () => {
+  it("names the design's destinations, and gives every code the shared route hue (COZINHA the kitchen's)", () => {
+    expect(destinationOf('KITCHEN')).toEqual({ label: 'Cozinha', fill: expect.stringContaining('border-route-kitchen') });
+    expect(destinationOf('COZINHA')).toEqual({ label: 'COZINHA', fill: destinationOf('KITCHEN').fill });
+    expect(destinationOf('GRILL').fill).toContain('border-border bg-muted');
+    expect(destinationOf(null)).toEqual({ label: 'Sem destino', fill: destinationOf('GRILL').fill });
   });
 });

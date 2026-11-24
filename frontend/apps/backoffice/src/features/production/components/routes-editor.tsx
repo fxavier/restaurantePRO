@@ -1,12 +1,22 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Button, ConfirmButton, Form, FormControl, FormField, FormItem, FormLabel, FormMessage, Input } from '@restaurantpro/ui';
+import {
+  Button,
+  ConfirmButton,
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+  Input,
+  NativeSelect,
+} from '@restaurantpro/ui';
 import { Plus, Trash2 } from 'lucide-react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { useReplaceRoutes } from '../hooks/use-routing';
 import type { Printer } from '../parse';
 import { routesSchema, type RoutesFormValues } from '../schemas';
 import type { DestinationRouteView } from '../types';
-import { NativeSelect } from './native-select';
 import { ProblemAlert } from './problem-alert';
 
 type RoutesEditorProps = { storeId: string; routes: DestinationRouteView[]; printers: Printer[] };

@@ -1,7 +1,7 @@
-import { Badge, cn, StatusBadge, StatusPill, TONE_TINT } from '@restaurantpro/ui';
+import { Badge, cn, routeChipFill, StatusBadge, StatusPill, TONE_TINT } from '@restaurantpro/ui';
 import { CircleOff, Printer } from 'lucide-react';
 import { useId, type ReactNode } from 'react';
-import { printerModes, routeFill } from '../labels';
+import { printerModes } from '../labels';
 import type { Printer as PrinterData } from '../parse';
 
 type PrinterCardProps = {
@@ -58,7 +58,7 @@ export function PrinterCard({ printer, redirectName, destinations, terminals, ch
 /** A destination as its route chip (the POS's border + tint, `foreground` text). */
 function routeChip(code: string) {
   return (
-    <Badge variant="outline" className={cn('rounded-full font-mono', routeFill(code))}>
+    <Badge variant="outline" className={cn('rounded-full font-mono', routeChipFill(code))}>
       {code}
     </Badge>
   );

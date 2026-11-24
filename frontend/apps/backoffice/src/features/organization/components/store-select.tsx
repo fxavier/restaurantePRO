@@ -1,3 +1,4 @@
+import { NativeSelect } from '@restaurantpro/ui';
 import { Store } from 'lucide-react';
 import { useEffect, useId } from 'react';
 import { errorMessage } from '../../../lib/error-messages';
@@ -56,12 +57,12 @@ export function StoreSelect() {
         {icon}
         Loja
       </label>
-        <select
+        <NativeSelect
           id={id}
           value={selected}
           disabled={stores.isPending}
           onChange={(event) => event.target.value && selectStore(event.target.value)}
-          className="h-10 max-w-64 rounded-xl border border-input bg-card px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50"
+          className="h-10 w-auto max-w-64"
         >
           {stores.isPending && <option value="">A carregar…</option>}
           {!stores.isPending && !selected && <option value="">Escolher loja</option>}
@@ -70,7 +71,7 @@ export function StoreSelect() {
               {store.active === false ? `${store.name} (inativa)` : store.name}
             </option>
           ))}
-        </select>
+        </NativeSelect>
     </div>
   );
 }

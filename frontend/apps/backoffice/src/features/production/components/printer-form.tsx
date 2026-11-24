@@ -1,11 +1,20 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ConfirmButton, Form, FormControl, FormField, FormItem, FormLabel, FormMessage, Input } from '@restaurantpro/ui';
+import {
+  ConfirmButton,
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+  Input,
+  NativeSelect,
+} from '@restaurantpro/ui';
 import type { ReactNode } from 'react';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 import { fieldErrors } from '../form-errors';
 import { CODE_PAGES } from '../parse';
 import { printerSchema, type PrinterFormValues } from '../schemas';
-import { NativeSelect } from './native-select';
 import { ProblemAlert } from './problem-alert';
 
 const FIELDS = ['code', 'name', 'host', 'port', 'codePage'] as const;

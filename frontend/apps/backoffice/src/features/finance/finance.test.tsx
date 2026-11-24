@@ -46,6 +46,10 @@ describe('finance summary', () => {
     expect(await within(await screen.findByRole('group', { name: 'Faturação líquida' })).findByText(money('2449.05'))).toBeInTheDocument();
     expect(within(screen.getByRole('group', { name: 'Impostos' })).getByText(money('391.85'))).toBeInTheDocument();
     expect(await within(screen.getByRole('group', { name: 'Recebido' })).findByText(money('1831.30'))).toBeInTheDocument();
+    // Each KPI's caption is a section heading (level 3, under the page's), so a screen reader can jump between them.
+    for (const name of ['Faturação bruta', 'Faturação líquida', 'Impostos', 'Recebido']) {
+      expect(within(screen.getByRole('group', { name })).getByRole('heading', { level: 3, name })).toBeInTheDocument();
+    }
     const byDay = screen.getByRole('table', { name: 'Vendas por dia' });
     expect(within(byDay).getByRole('row', { name: /19\/11\/2026.*30/ })).toHaveTextContent(money('1200.00'));
     const byMethod = await screen.findByRole('table', { name: 'Recebimentos por meio de pagamento' });

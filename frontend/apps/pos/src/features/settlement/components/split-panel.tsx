@@ -35,15 +35,15 @@ export function SplitPanel({ settlement, guests, disabled, mode = 'whole' }: Pro
         Divisão da conta
       </h3>
       <Tabs defaultValue={mode}>
-        {/* The light reference's area tabs: outline, the chosen one solid green. */}
-        <TabsList className="grid h-auto! w-full grid-cols-3 gap-2 bg-transparent p-0">
-          <TabsTrigger value="whole" className="h-12 rounded-xl border-border bg-card text-base whitespace-normal text-foreground data-[state=active]:border-primary">
+        {/* The area tabs (the shared pill variant), here as three equal columns. */}
+        <TabsList variant="pill" className="grid w-full grid-cols-3">
+          <TabsTrigger value="whole" className="whitespace-normal group-data-[variant=pill]/tabs-list:text-base">
             Conta total
           </TabsTrigger>
-          <TabsTrigger value="equal" className="h-12 rounded-xl border-border bg-card text-base whitespace-normal text-foreground data-[state=active]:border-primary">
+          <TabsTrigger value="equal" className="whitespace-normal group-data-[variant=pill]/tabs-list:text-base">
             Partes iguais
           </TabsTrigger>
-          <TabsTrigger value="items" className="h-12 rounded-xl border-border bg-card text-base whitespace-normal text-foreground data-[state=active]:border-primary">
+          <TabsTrigger value="items" className="whitespace-normal group-data-[variant=pill]/tabs-list:text-base">
             Por artigos
           </TabsTrigger>
         </TabsList>

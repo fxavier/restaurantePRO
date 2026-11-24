@@ -1,4 +1,4 @@
-import { FormControl, FormField, FormItem, FormLabel, FormMessage, Input } from '@restaurantpro/ui';
+import { FormControl, FormField, FormItem, FormLabel, FormMessage, Input, NativeSelect } from '@restaurantpro/ui';
 import type { ComponentProps } from 'react';
 import type { Control, FieldPath, FieldValues } from 'react-hook-form';
 import { useStoreAndRoleChoices, type ChoiceList } from '../hooks/use-choices';
@@ -49,17 +49,14 @@ export function SelectField<Values extends FieldValues>({
         <FormItem>
           <FormLabel>{label}</FormLabel>
           <FormControl>
-            <select
-              {...field}
-              className="h-9 w-full rounded-xl border border-input bg-card px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring aria-invalid:border-destructive"
-            >
+            <NativeSelect {...field}>
               <option value="">{list.pending ? 'A carregar…' : placeholder}</option>
               {list.choices.map((choice) => (
                 <option key={choice.value} value={choice.value}>
                   {choice.label}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </FormControl>
           <FormMessage />
           <ChoicesError list={list} />

@@ -13,6 +13,11 @@ describe('DestinationBadge', () => {
     expect(screen.getByText(label)).toHaveClass(colour);
   });
 
+  it('gives COZINHA the kitchen colour, the code as itself', () => {
+    render(<DestinationBadge code="COZINHA" />);
+    expect(screen.getByText('COZINHA')).toHaveClass('border-route-kitchen');
+  });
+
   it("shows a tenant's own code as itself, on a neutral badge", () => {
     render(<DestinationBadge code="GRILL" />);
     expect(screen.getByText('GRILL')).toHaveAttribute('data-variant', 'secondary');

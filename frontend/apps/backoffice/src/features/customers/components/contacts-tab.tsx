@@ -13,6 +13,7 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
+  NativeSelect,
   StatusPill,
 } from '@restaurantpro/ui';
 import { MapPin, Pencil, Phone, Plus, Star, Trash2 } from 'lucide-react';
@@ -252,13 +253,10 @@ function AddressFields<Values extends FieldValues>({ form: anyForm }: { form: Us
           <FormItem>
             <FormLabel>Tipo</FormLabel>
             <FormControl>
-              <select
-                {...field}
-                className="h-9 w-full max-w-48 rounded-xl border border-input bg-card px-3 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-              >
+              <NativeSelect {...field} className="max-w-48">
                 <option value="BILLING">Faturação</option>
                 <option value="DELIVERY">Entrega</option>
-              </select>
+              </NativeSelect>
             </FormControl>
             <FormMessage />
           </FormItem>

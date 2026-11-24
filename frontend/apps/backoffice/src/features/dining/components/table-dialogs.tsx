@@ -1,5 +1,17 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Button, cn, ConfirmButton, Form, FormControl, FormField, FormItem, FormLabel, FormMessage, TONE_CARD } from '@restaurantpro/ui';
+import {
+  Button,
+  cn,
+  ConfirmButton,
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+  NativeSelect,
+  TONE_CARD,
+} from '@restaurantpro/ui';
 import { Plus } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
@@ -132,16 +144,13 @@ function TableForm({ defaultValues, areas, submitLabel, onSubmit, onCancel }: Ta
                 <FormItem>
                   <FormLabel>Área</FormLabel>
                   <FormControl>
-                    <select
-                      {...field}
-                      className="h-9 rounded-xl border border-input bg-card px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-                    >
+                    <NativeSelect {...field} className="w-auto">
                       {areas.map((area) => (
                         <option key={area.id} value={area.id}>
                           {area.active ? area.name : `${area.name} (inativa)`}
                         </option>
                       ))}
-                    </select>
+                    </NativeSelect>
                   </FormControl>
                   <FormMessage />
                 </FormItem>

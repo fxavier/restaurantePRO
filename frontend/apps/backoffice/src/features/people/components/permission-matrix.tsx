@@ -28,7 +28,8 @@ export function PermissionMatrix({ catalogue, value, onChange }: PermissionMatri
         <h3 id={titleId} className="text-sm font-semibold tracking-wide uppercase">
           Matriz de permissões
         </h3>
-        <StatusPill tone="success">{value.length} ativas</StatusPill>
+        {/* As the per-area counter: green while any is granted, the neutral grey at none. */}
+        <StatusPill tone={value.length > 0 ? 'success' : 'neutral'}>{value.length} ativas</StatusPill>
       </div>
       <CatalogueNotice catalogue={catalogue} />
       {/* The page's grey under the areas' white cards, as the POS lays its cards out. */}

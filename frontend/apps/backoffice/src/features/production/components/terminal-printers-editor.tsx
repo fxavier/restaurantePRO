@@ -1,10 +1,9 @@
-import { ConfirmButton, Form, FormControl, FormField, FormItem, FormLabel } from '@restaurantpro/ui';
+import { ConfirmButton, Form, FormControl, FormField, FormItem, FormLabel, NativeSelect } from '@restaurantpro/ui';
 import { useForm } from 'react-hook-form';
 import { useReplaceTerminalPrinters } from '../hooks/use-routing';
 import type { StoreTerminal } from '../hooks/use-store-terminals';
 import type { Printer } from '../parse';
 import type { TerminalPrinterView } from '../types';
-import { NativeSelect } from './native-select';
 import { ProblemAlert } from './problem-alert';
 
 type TerminalPrintersEditorProps = {
