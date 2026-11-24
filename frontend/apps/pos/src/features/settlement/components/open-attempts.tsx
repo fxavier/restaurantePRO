@@ -22,8 +22,8 @@ type Props = {
 export function OpenAttempts({ orderId, attempts, targetLabel, disabled, canResolve }: Props) {
   if (attempts.length === 0) return null;
   return (
-    <section aria-labelledby="attempts-title" className="flex flex-col gap-3 rounded-xl border bg-card p-4">
-      <h3 id="attempts-title" className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+    <section aria-labelledby="attempts-title" className="flex flex-col gap-3 rounded-2xl border bg-card p-4">
+      <h3 id="attempts-title" className="text-base font-semibold">
         Pagamentos em curso
       </h3>
       <ul className="flex flex-col gap-3">
@@ -64,16 +64,17 @@ function AttemptRow({
   const awaitingOperator = attempt.status === 'PENDING' && attempt.methodKind === 'EXTERNAL_TERMINAL';
 
   return (
-    <li className="flex flex-col gap-3 rounded-lg bg-muted p-3">
+    // Pending, never failed (§7.4): the amber tint of "a confirmar" on /tables, with its icon and its words.
+    <li className="flex flex-col gap-3 rounded-xl border border-warning-border bg-warning-tint p-3">
       <div className="flex items-start gap-3">
         {awaitingOperator ? (
-          <Hourglass aria-hidden="true" className="size-6 shrink-0 text-warning" />
+          <Hourglass aria-hidden="true" className="size-6 shrink-0 text-warning-text" />
         ) : (
-          <CircleHelp aria-hidden="true" className="size-6 shrink-0 text-warning" />
+          <CircleHelp aria-hidden="true" className="size-6 shrink-0 text-warning-text" />
         )}
         <div className="flex min-w-0 flex-1 flex-col">
-          <span className="font-semibold">{statusText(attempt)}</span>
-          <span className="text-sm text-muted-foreground">
+          <span className="font-semibold text-warning-text">{statusText(attempt)}</span>
+          <span className="text-sm">
             {attempt.methodCode} · {target}
           </span>
         </div>
@@ -83,10 +84,11 @@ function AttemptRow({
         <div className="flex flex-wrap items-end gap-2">
           <div className="flex min-w-40 flex-1 flex-col gap-1">
             <Label htmlFor={codeId}>Código de autorização</Label>
-            <Input id={codeId} autoComplete="off" value={code} onChange={(event) => setCode(event.target.value)} className="h-12" />
+            <Input id={codeId} autoComplete="off" value={code} onChange={(event) => setCode(event.target.value)} className="h-12 rounded-xl bg-card" />
           </div>
           <Button
             size="touch"
+            className="rounded-xl"
             disabled={busy}
             onClick={() => confirm.start({ attemptId: attempt.id, authorizationCode: code.trim() || undefined }, undefined)}
           >
@@ -95,6 +97,8 @@ function AttemptRow({
           <Button
             variant="destructive"
             size="touch"
+            // On white, not on the amber row: the red text keeps its contrast.
+            className="rounded-xl bg-card"
             disabled={busy}
             onClick={() => cancel.start({ attemptId: attempt.id, reason: 'Não aprovado no terminal' }, undefined)}
           >
@@ -102,7 +106,7 @@ function AttemptRow({
           </Button>
         </div>
       ) : (
-        <Button variant="outline" size="touch" disabled={busy} onClick={() => resolve.start(attempt.id, undefined)}>
+        <Button variant="outline" size="touch" className="rounded-xl bg-card" disabled={busy} onClick={() => resolve.start(attempt.id, undefined)}>
           Consultar o estado
         </Button>
       )}
