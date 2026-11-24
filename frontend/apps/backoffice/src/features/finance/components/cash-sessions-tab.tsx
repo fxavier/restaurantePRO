@@ -72,7 +72,7 @@ function SessionsTable({ rows, timeZone }: { rows: SessionRow[]; timeZone: strin
               <TableCell className="whitespace-nowrap tabular-nums">{formatInstant(row.openedAt, timeZone)}</TableCell>
               <TableCell className="whitespace-nowrap tabular-nums">{formatInstant(row.closedAt ?? undefined, timeZone)}</TableCell>
               <TableCell>
-                <StatusBadge status={row.status} statuses={sessionStatuses(row.status)} />
+                <StatusBadge look="tint" status={row.status} statuses={sessionStatuses(row.status)} />
                 <span className="mt-1 block text-xs text-muted-foreground">{closeKindLabel(row.closeKind)}</span>
               </TableCell>
               <TableCell className="text-right">
@@ -125,7 +125,7 @@ function SessionAdjustments({ session, timeZone }: { session: SessionRow; timeZo
   const adjustments = useSessionAdjustments(session.id);
   const rows = adjustments.data ?? [];
   return (
-    <div id={adjustmentsPanelId(session)} className="rounded-lg border p-3">
+    <div id={adjustmentsPanelId(session)} className="rounded-xl border p-3">
       <QueryState query={adjustments} empty={rows.length === 0} emptyMessage="Sem ajustes nesta sessão." subject="os ajustes desta sessão">
         <Table>
           <TableCaption className="text-left">

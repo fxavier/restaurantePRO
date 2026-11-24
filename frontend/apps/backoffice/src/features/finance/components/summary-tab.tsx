@@ -1,4 +1,15 @@
-import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@restaurantpro/ui';
+import {
+  Card,
+  cn,
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  TONE_TINT,
+} from '@restaurantpro/ui';
 import { Banknote, Info, Landmark, Percent, Receipt } from 'lucide-react';
 import { formatBusinessDate } from '../format';
 import { useReceiptsByMethod, useSalesByDay } from '../hooks/use-reports';
@@ -20,7 +31,8 @@ export function SummaryTab({ storeId, period }: Props) {
     <div className="flex flex-col gap-6">
       <Kpis sales={sales.data} receipts={receipts.data} />
       <Provisional report={sales.data} />
-      <div className="grid gap-6 lg:grid-cols-2">
+      {/* Side by side from xl: at 1024 px each half is narrower than the sales table's four columns. */}
+      <div className="grid gap-6 xl:grid-cols-2">
         <SectionCard title="Vendas por dia">
           <QueryState query={sales} empty={!sales.data?.rows?.length} emptyMessage="Sem vendas neste período." subject={REPORTS}>
             <SalesTable rows={sales.data?.rows ?? []} />
@@ -41,21 +53,25 @@ export function SummaryTab({ storeId, period }: Props) {
   );
 }
 
-/** Stitch's stat cards: the server's totals of the period. */
+/**
+ * The server's totals of the period, as the POS payment summary: tinted boxes in one white card, what was received in
+ * the green of "pago", the rest on the muted surface.
+ */
 function Kpis({ sales, receipts }: { sales: SalesReport | undefined; receipts: ReceiptsReport | undefined }) {
   const totals = sales?.totals;
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <Card className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
       <KpiCard
         label="Faturação bruta"
         icon={Receipt}
+        tint="bg-muted"
         value={<Amount value={totals?.gross} />}
         meta={totals && `${totals.documents ?? 0} documentos`}
       />
-      <KpiCard label="Faturação líquida" icon={Landmark} value={<Amount value={totals?.net} />} />
-      <KpiCard label="Impostos" icon={Percent} value={<Amount value={totals?.tax} />} />
-      <KpiCard label="Recebido" icon={Banknote} value={<Amount value={receipts?.totals?.received} />} />
-    </div>
+      <KpiCard label="Faturação líquida" icon={Landmark} tint="bg-muted" value={<Amount value={totals?.net} />} />
+      <KpiCard label="Impostos" icon={Percent} tint="bg-muted" value={<Amount value={totals?.tax} />} />
+      <KpiCard label="Recebido" icon={Banknote} tint={TONE_TINT.success} value={<Amount value={receipts?.totals?.received} />} />
+    </Card>
   );
 }
 
@@ -64,7 +80,8 @@ function Provisional({ report }: { report: SalesReport | undefined }) {
   const pending = report?.final === false ? (report.pendingFacts ?? 0) : 0;
   if (pending <= 0) return null;
   return (
-    <p className="flex items-center gap-2 text-sm text-muted-foreground">
+    // Not final yet: the amber of "a confirmar", as the POS footer's chips.
+    <p className={cn('flex w-fit items-center gap-2 rounded-xl px-3 py-2 text-sm', TONE_TINT.warning)}>
       <Info aria-hidden="true" className="size-4" />
       Valores provisórios: {pending} movimentos ainda por processar.
     </p>

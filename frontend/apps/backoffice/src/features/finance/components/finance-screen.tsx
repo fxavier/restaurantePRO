@@ -1,5 +1,6 @@
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@restaurantpro/ui';
+import { Card, cn, Tabs, TabsContent, TabsList, TabsTrigger } from '@restaurantpro/ui';
 import { useId, useState } from 'react';
+import { AREA_TAB, AREA_TABS_LIST } from '../../../shell/area-tabs';
 import { useFinanceTab, type FinanceTab } from '../hooks/use-finance-tab';
 import { useStore } from '../hooks/use-store';
 import { lastDays } from '../period';
@@ -62,10 +63,11 @@ function FinanceArea({ storeId, timeZone }: { storeId: string; timeZone: string 
     <div className="flex min-w-0 flex-col gap-6">
       <ResumeFinanceCommand storeId={storeId} />
       <Tabs value={tab} onValueChange={selectTab} className="gap-4">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <TabsList className="max-w-full justify-start overflow-x-auto">
+        {/* As the POS map's card: the area tabs on the left, the one filter (the period) on the right. */}
+        <Card className="flex-row flex-wrap items-end justify-between gap-3 p-2">
+          <TabsList className={cn(AREA_TABS_LIST, 'flex-1')}>
             {Object.entries(TAB_LABELS).map(([value, label]) => (
-              <TabsTrigger key={value} value={value} className="shrink-0">
+              <TabsTrigger key={value} value={value} className={AREA_TAB}>
                 {label}
               </TabsTrigger>
             ))}
@@ -82,7 +84,7 @@ function FinanceArea({ storeId, timeZone }: { storeId: string; timeZone: string 
               ))}
             </select>
           </div>
-        </div>
+        </Card>
         <TabsContent value="resumo">
           <SummaryTab storeId={storeId} period={period} />
         </TabsContent>

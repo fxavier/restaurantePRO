@@ -17,7 +17,7 @@ export function FinancePage() {
       {storeId ? (
         <FinanceScreen key={storeId} storeId={storeId} />
       ) : (
-        <div className="mt-6 flex flex-col items-center gap-3 rounded-xl border bg-card p-8 text-center">
+        <div className="mt-6 flex flex-col items-center gap-3 rounded-2xl border bg-card p-8 text-center">
           <Store aria-hidden="true" className="size-8 text-muted-foreground" />
           <p>Escolha uma loja na barra superior para ver o seu financeiro.</p>
         </div>

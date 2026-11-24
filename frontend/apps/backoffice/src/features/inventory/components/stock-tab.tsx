@@ -139,7 +139,7 @@ function StockTable({ rows, currency }: { rows: StockRow[]; currency: string | u
               <Amount value={row.value} currency={currency} />
             </TableCell>
             <TableCell>
-              <StatusBadge status={row.belowMinimum ? 'LOW' : 'OK'} statuses={levels} />
+              <StatusBadge look="tint" status={row.belowMinimum ? 'LOW' : 'OK'} statuses={levels} />
             </TableCell>
           </TableRow>
         ))}
