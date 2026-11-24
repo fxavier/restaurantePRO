@@ -89,7 +89,7 @@ export function DeliveryFields({
             rows={2}
             readOnly={disabled}
             onChange={(event) => set({ notes: event.target.value })}
-            className="min-h-14 rounded-md border border-input bg-muted px-3 py-2 text-base focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            className="min-h-14 rounded-xl border border-input bg-card px-3 py-2 text-base focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           />
         </div>
       </div>
@@ -118,7 +118,7 @@ function Zones({ zoneId, onChange, disabled }: { zoneId?: string; onChange: (zon
         <p role="alert" className="text-error">
           {loadFailure(zones.error, 'as zonas de entrega')}
         </p>
-        <Button type="button" variant="outline" size="touch" onClick={() => void zones.refetch()}>
+        <Button type="button" variant="outline" size="touch" className="rounded-xl bg-card" onClick={() => void zones.refetch()}>
           Tentar novamente
         </Button>
       </div>
@@ -130,7 +130,7 @@ function Zones({ zoneId, onChange, disabled }: { zoneId?: string; onChange: (zon
 function Section({ icon: Icon, title, children }: { icon: typeof UserRound; title: string; children: ReactNode }) {
   return (
     <section aria-label={title} className="flex flex-col gap-2">
-      <h3 className="flex items-center gap-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+      <h3 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
         <Icon aria-hidden="true" className="size-4" />
         {title}
       </h3>

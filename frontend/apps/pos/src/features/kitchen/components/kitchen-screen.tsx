@@ -1,6 +1,6 @@
 import { Button, Skeleton } from '@restaurantpro/ui';
 import { History, TriangleAlert } from 'lucide-react';
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { useKitchenTickets } from '../hooks/use-kitchen-tickets';
 import { useProductionDestinations } from '../hooks/use-production-destinations';
 import { ACTIVE, stationsOf } from '../kitchen';
@@ -9,12 +9,20 @@ import { BumpedRounds } from './bumped-rounds';
 import { KitchenBoard } from './kitchen-board';
 import { StationFilter } from './station-filter';
 
+type Props = {
+  /** The server's kitchen delay (production's alerts), after which a round not ready is shown late. */
+  lateAfterMinutes?: number;
+  /** The page's heading, at the start of the toolbar card. */
+  children?: ReactNode;
+};
+
 /**
- * The display's content: the station filter and the history toggle, then the chosen station's active rounds (every
- * station's by default) and, when asked for, the latest taken off. A command refused because the round moved meanwhile
- * is said here, above both: its card may have moved column, or left the history.
+ * The display's content (light reference): a toolbar card with the heading, the station filter and the history toggle,
+ * then the chosen station's active rounds (every station's by default) and, when asked for, the latest taken off. A
+ * command refused because the round moved meanwhile is said here, above both: its card may have moved column, or left
+ * the history.
  */
-export function KitchenScreen() {
+export function KitchenScreen({ lateAfterMinutes, children }: Props) {
   const [station, setStation] = useState<string>();
   const [showBumped, setShowBumped] = useState(false);
   const [changedElsewhere, setChangedElsewhere] = useState(false);
@@ -22,14 +30,23 @@ export function KitchenScreen() {
   return (
     <div className="flex flex-1 flex-col gap-4">
       {changedElsewhere && <ChangedElsewhere onClose={() => setChangedElsewhere(false)} />}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <Stations chosen={station} onChoose={setStation} />
-        <Button variant={showBumped ? 'default' : 'outline'} size="touch" aria-pressed={showBumped} onClick={() => setShowBumped(!showBumped)}>
+      <div className="flex flex-wrap items-center gap-3 rounded-2xl border bg-card p-3">
+        {children}
+        <div className="min-w-0 flex-1">
+          <Stations chosen={station} onChoose={setStation} />
+        </div>
+        <Button
+          variant={showBumped ? 'default' : 'outline'}
+          size="touch"
+          className={`rounded-xl ${showBumped ? '' : 'bg-card'}`}
+          aria-pressed={showBumped}
+          onClick={() => setShowBumped(!showBumped)}
+        >
           <History aria-hidden="true" />
           Retirados
         </Button>
       </div>
-      <ActiveRounds destination={station} onChangedElsewhere={onChangedElsewhere} />
+      <ActiveRounds destination={station} lateAfterMinutes={lateAfterMinutes} onChangedElsewhere={onChangedElsewhere} />
       {showBumped && <BumpedRounds destination={station} onChangedElsewhere={onChangedElsewhere} />}
     </div>
   );
@@ -44,7 +61,7 @@ export function KitchenScreen() {
 function Stations({ chosen, onChoose }: { chosen?: string; onChoose: (station: string | undefined) => void }) {
   const all = useKitchenTickets({ statuses: ACTIVE });
   const destinations = useProductionDestinations();
-  if (!all.data || destinations.isPending) return <div />;
+  if (!all.data || destinations.isPending) return null;
   return (
     <StationFilter
       stations={stationsOf(all.data.tickets, chosen, destinations.data)}
@@ -55,23 +72,33 @@ function Stations({ chosen, onChoose }: { chosen?: string; onChoose: (station: s
   );
 }
 
-function ActiveRounds({ destination, onChangedElsewhere }: { destination?: string; onChangedElsewhere: () => void }) {
+function ActiveRounds({
+  destination,
+  lateAfterMinutes,
+  onChangedElsewhere,
+}: {
+  destination?: string;
+  lateAfterMinutes?: number;
+  onChangedElsewhere: () => void;
+}) {
   const tickets = useKitchenTickets({ destination, statuses: ACTIVE });
   if (tickets.data) {
     const { tickets: shown, notShown } = tickets.data;
-    if (shown.length === 0 && notShown === 0) return <p className="py-6 text-center text-muted-foreground">Nenhuma ronda em curso.</p>;
+    if (shown.length === 0 && notShown === 0) {
+      return <p className="rounded-2xl border bg-card py-10 text-center text-lg text-muted-foreground">Nenhuma ronda em curso.</p>;
+    }
     return (
       <>
         {notShown > 0 && <NotShown count={notShown} />}
-        <KitchenBoard tickets={shown} onChangedElsewhere={onChangedElsewhere} />
+        <KitchenBoard tickets={shown} lateAfterMinutes={lateAfterMinutes} onChangedElsewhere={onChangedElsewhere} />
       </>
     );
   }
   if (tickets.isError) {
     return (
-      <div className="flex flex-col items-center gap-3 py-6 text-center">
+      <div className="flex flex-col items-center gap-3 rounded-2xl border bg-card p-6 text-center">
         <p role="alert">{loadFailure(tickets.error)}</p>
-        <Button variant="outline" size="touch" onClick={() => void tickets.refetch()}>
+        <Button variant="outline" size="touch" className="rounded-xl bg-card" onClick={() => void tickets.refetch()}>
           Tentar novamente
         </Button>
       </div>
@@ -80,17 +107,20 @@ function ActiveRounds({ destination, onChangedElsewhere }: { destination?: strin
   return (
     <div role="status" aria-label="A carregar as rondas…" className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       {Array.from({ length: 3 }, (_, index) => (
-        <Skeleton key={index} className="h-64 rounded-xl" />
+        <Skeleton key={index} className="h-64 rounded-2xl" />
       ))}
     </div>
   );
 }
 
+/** The amber notice strip (light reference's footer chips): an icon and the words, on the warning tint. */
+const NOTICE = 'flex items-center gap-3 rounded-2xl border border-warning-border bg-warning-tint px-4 py-2 text-warning-text';
+
 /** More active rounds than one page holds (spec §7: confirmed work is never hidden without a word). */
 function NotShown({ count }: { count: number }) {
   return (
-    <div role="status" aria-label="Rondas por mostrar" className="flex items-center gap-3 rounded-lg border border-warning bg-warning/15 px-4 py-2">
-      <TriangleAlert aria-hidden="true" className="size-5 shrink-0 text-warning" />
+    <div role="status" aria-label="Rondas por mostrar" className={NOTICE}>
+      <TriangleAlert aria-hidden="true" className="size-5 shrink-0" />
       <p className="flex-1 font-medium">
         Mais {count} {count === 1 ? 'ronda' : 'rondas'} em curso não {count === 1 ? 'cabe' : 'cabem'} no ecrã. Escolha uma estação ou retire as prontas.
       </p>
@@ -100,10 +130,10 @@ function NotShown({ count }: { count: number }) {
 
 function ChangedElsewhere({ onClose }: { onClose: () => void }) {
   return (
-    <div role="alert" className="flex items-center gap-3 rounded-lg border border-warning bg-warning/15 px-4 py-2">
-      <TriangleAlert aria-hidden="true" className="size-5 shrink-0 text-warning" />
+    <div role="alert" className={NOTICE}>
+      <TriangleAlert aria-hidden="true" className="size-5 shrink-0" />
       <p className="flex-1 font-medium">{CHANGED_ELSEWHERE}</p>
-      <Button variant="outline" size="touch" onClick={onClose}>
+      <Button variant="outline" size="touch" className="rounded-xl bg-card text-foreground" onClick={onClose}>
         Fechar aviso
       </Button>
     </div>

@@ -35,7 +35,7 @@ export function RegisterClosing({ registers, dayId }: Props) {
   }
 
   return (
-    <section aria-labelledby={title} className="flex flex-col gap-4 rounded-xl border bg-card p-4 lg:p-6">
+    <section aria-labelledby={title} className="flex flex-col gap-4 rounded-2xl border bg-card p-4">
       <div className="flex flex-col gap-1">
         <h3 id={title} className="flex items-center gap-2 text-xl font-semibold">
           <ClipboardCheck aria-hidden="true" className="size-6 text-primary-hover" />
@@ -60,6 +60,7 @@ export function RegisterClosing({ registers, dayId }: Props) {
           <ConfirmButton
             type="button"
             size="touch"
+            className="rounded-xl"
             pending={create.pending}
             disabled={blocked || !registerId}
             onClick={prepare}

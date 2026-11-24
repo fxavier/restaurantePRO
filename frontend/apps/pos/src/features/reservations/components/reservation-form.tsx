@@ -50,6 +50,7 @@ export function ReservationForm({ draft, onChange, today, areas, locked, custome
                 aria-pressed={draft.date === day}
                 disabled={locked}
                 onClick={() => set({ date: day })}
+                className={draft.date === day ? 'rounded-xl' : 'rounded-xl bg-card'}
               >
                 {label}
               </Button>
@@ -61,7 +62,7 @@ export function ReservationForm({ draft, onChange, today, areas, locked, custome
                 value={draft.date}
                 readOnly={locked}
                 onChange={(event) => set({ date: event.target.value })}
-                className="h-12 text-base md:text-base"
+                className="h-12 rounded-xl text-base md:text-base"
               />
             </Field>
           </div>
@@ -74,7 +75,7 @@ export function ReservationForm({ draft, onChange, today, areas, locked, custome
               value={draft.time}
               readOnly={locked}
               onChange={(event) => set({ time: event.target.value })}
-              className="h-12 text-base md:text-base"
+              className="h-12 rounded-xl text-base md:text-base"
             />
           </Field>
         </Step>
@@ -92,7 +93,7 @@ export function ReservationForm({ draft, onChange, today, areas, locked, custome
               aria-pressed={draft.partySize === String(size)}
               disabled={locked}
               onClick={() => set({ partySize: String(size) })}
-              className="min-w-14 text-lg tabular-nums"
+              className={cn('min-w-14 rounded-xl text-lg tabular-nums', draft.partySize !== String(size) && 'bg-card')}
             >
               {size}
             </Button>
@@ -107,7 +108,7 @@ export function ReservationForm({ draft, onChange, today, areas, locked, custome
               value={draft.partySize}
               readOnly={locked}
               onChange={(event) => set({ partySize: event.target.value.replace(/\D/g, '').slice(0, 3) })}
-              className="h-12 w-28 text-base md:text-base"
+              className="h-12 w-28 rounded-xl text-base md:text-base"
             />
           </Field>
         </div>
@@ -125,8 +126,8 @@ export function ReservationForm({ draft, onChange, today, areas, locked, custome
                   <label
                     key={table.id}
                     className={cn(
-                      'flex min-h-14 cursor-pointer items-center gap-3 rounded-lg border-2 bg-muted px-3 has-focus-visible:ring-2 has-focus-visible:ring-ring',
-                      draft.tableIds.includes(table.id) ? 'border-primary' : 'border-border',
+                      'flex min-h-14 cursor-pointer items-center gap-3 rounded-xl border-2 px-3 has-focus-visible:ring-2 has-focus-visible:ring-ring has-focus-visible:ring-offset-2 has-focus-visible:ring-offset-card',
+                      draft.tableIds.includes(table.id) ? 'border-primary bg-success-tint' : 'border-border bg-card',
                       locked && 'cursor-not-allowed opacity-50',
                     )}
                   >
@@ -158,7 +159,7 @@ export function ReservationForm({ draft, onChange, today, areas, locked, custome
               autoComplete="off"
               readOnly={locked}
               onChange={(event) => set({ contactName: event.target.value })}
-              className="h-12 text-base md:text-base"
+              className="h-12 rounded-xl text-base md:text-base"
             />
           </Field>
           <Field label="Telefone" htmlFor="reservation-phone">
@@ -171,7 +172,7 @@ export function ReservationForm({ draft, onChange, today, areas, locked, custome
               autoComplete="off"
               readOnly={locked}
               onChange={(event) => set({ contactPhone: event.target.value })}
-              className="h-12 text-base md:text-base"
+              className="h-12 rounded-xl text-base md:text-base"
             />
           </Field>
         </div>
@@ -183,7 +184,7 @@ export function ReservationForm({ draft, onChange, today, areas, locked, custome
             rows={2}
             readOnly={locked}
             onChange={(event) => set({ notes: event.target.value })}
-            className="rounded-md border border-input bg-muted px-3 py-2 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="rounded-xl border border-input bg-card px-3 py-2 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
         </Field>
       </Step>
@@ -194,7 +195,7 @@ export function ReservationForm({ draft, onChange, today, areas, locked, custome
 function Step({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-3">
-      <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{title}</h3>
+      <h3 className="text-sm font-semibold text-muted-foreground">{title}</h3>
       {children}
     </section>
   );

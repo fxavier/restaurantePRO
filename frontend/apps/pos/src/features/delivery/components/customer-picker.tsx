@@ -33,8 +33,8 @@ export function CustomerPicker({ customerId, onChange, disabled, create }: Props
 function ChosenCustomer({ customerId, onChange, disabled }: { customerId: string; onChange: () => void; disabled: boolean }) {
   const customer = useCustomer(customerId);
   return (
-    <div className="flex min-h-14 items-center gap-3 rounded-lg border border-primary bg-primary/15 px-3 py-2">
-      <UserRound aria-hidden="true" className="size-6 shrink-0 text-primary-hover" />
+    <div className="flex min-h-14 items-center gap-3 rounded-xl border-2 border-primary bg-success-tint px-3 py-2">
+      <UserRound aria-hidden="true" className="size-6 shrink-0 text-success-text" />
       <div className="flex min-w-0 flex-1 flex-col">
         {customer.data ? (
           <>
@@ -51,7 +51,7 @@ function ChosenCustomer({ customerId, onChange, disabled }: { customerId: string
           <Skeleton className="h-6 w-40" />
         )}
       </div>
-      <Button type="button" variant="outline" size="touch" onClick={onChange} disabled={disabled}>
+      <Button type="button" variant="outline" size="touch" className="rounded-xl bg-card" onClick={onChange} disabled={disabled}>
         Trocar
       </Button>
     </div>
@@ -86,7 +86,7 @@ function CustomerSearch({ onChoose, onCreate, disabled }: { onChoose: (id: strin
           onKeyDown={onKeyDown}
           disabled={disabled}
         />
-        <Button type="button" variant="outline" size="touch" onClick={search} disabled={disabled || !ready}>
+        <Button type="button" variant="outline" size="touch" className="rounded-xl bg-card" onClick={search} disabled={disabled || !ready}>
           <Search aria-hidden="true" />
           Procurar
         </Button>
@@ -103,7 +103,7 @@ function CustomerSearch({ onChoose, onCreate, disabled }: { onChoose: (id: strin
                     type="button"
                     variant="outline"
                     size="touch"
-                    className="h-auto min-h-14 w-full justify-start py-2 text-left"
+                    className="h-auto min-h-14 w-full justify-start rounded-xl bg-card py-2 text-left"
                     onClick={() => onChoose(id)}
                     disabled={disabled}
                   >
@@ -123,7 +123,7 @@ function CustomerSearch({ onChoose, onCreate, disabled }: { onChoose: (id: strin
           {loadFailure(found.error, 'os clientes')}
         </p>
       )}
-      <Button type="button" variant="outline" size="touch" className="self-start" onClick={onCreate} disabled={disabled}>
+      <Button type="button" variant="outline" size="touch" className="self-start rounded-xl bg-card" onClick={onCreate} disabled={disabled}>
         <UserPlus aria-hidden="true" />
         Novo cliente
       </Button>
@@ -156,10 +156,10 @@ function NewCustomer({ create, onCancel }: { create: CustomerCreation; onCancel:
       <CommandMessage blocked={false} error={create.error} what="a criação do cliente" />
       {awaitingRetry && <p className="text-muted-foreground">{CUSTOMER_UNSETTLED}</p>}
       <div className="flex gap-2">
-        <Button type="button" variant="outline" size="touch" onClick={onCancel} disabled={locked}>
+        <Button type="button" variant="outline" size="touch" className="rounded-xl bg-card" onClick={onCancel} disabled={locked}>
           Voltar à pesquisa
         </Button>
-        <Button type="button" size="touch" onClick={submit} disabled={blocked || !request || create.pending} aria-busy={create.pending}>
+        <Button type="button" size="touch" className="rounded-xl" onClick={submit} disabled={blocked || !request || create.pending} aria-busy={create.pending}>
           {awaitingRetry ? 'Tentar novamente' : 'Criar cliente'}
         </Button>
       </div>

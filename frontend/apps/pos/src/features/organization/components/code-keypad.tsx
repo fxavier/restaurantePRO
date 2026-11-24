@@ -13,7 +13,8 @@ type Props = {
 const keepFocus = (event: PointerEvent) => event.preventDefault();
 
 // ponytail: below `sm` five 48 px columns (the touch minimum) instead of eleven 64 px ones, so a handheld fits it.
-const SIZE = 'size-16 max-sm:h-12 max-sm:w-full';
+// Light reference: white keys, rounded as its buttons.
+const SIZE = 'size-16 rounded-xl bg-card max-sm:h-12 max-sm:w-full';
 const KEY = `${SIZE} px-0 font-mono text-2xl font-semibold`;
 
 /**

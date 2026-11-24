@@ -1,10 +1,11 @@
 import { expect, type Page, test } from '@playwright/test';
 import { expectNoAxeViolations } from '../axe';
+import { saveScreens } from './screens';
 import { id, logIn, SESSION, standInDevice, STORE } from './stand-in';
 
 // The cash screen ("Caixa & Turno") in the built POS, its API stood in by page.route (the preview has no backend):
 // what jsdom cannot check, its touch targets and layout at the POS viewports, and axe on the screen and its dialogs.
-// With E2E_SCREENS set, the screens are saved there at 1440, 1024 and 390 px wide, to compare with Stitch.
+// With E2E_SCREENS set, the screens are saved there at 1024 × 768 and 1440 × 900, to compare with the light reference.
 
 const money = (amount: string) => ({ amount, currency: 'MZN' });
 const DAY = { id: id(810), storeId: STORE, businessDate: '2026-11-19', status: 'OPEN', version: 4, earlierOpenDays: [] };
@@ -131,21 +132,31 @@ test('the blind count close asks for a confirmation, which is accessible', async
   await expectNoAxeViolations(page);
 });
 
-test('screens for the PR, at 1440, 1024 and 390 px wide', async ({ page }) => {
-  const dir = process.env.E2E_SCREENS;
-  test.skip(!dir, 'E2E_SCREENS not set');
+test('screens for the PR, at 1024 × 768 and 1440 × 900', async ({ page }) => {
+  test.skip(!process.env.E2E_SCREENS, 'E2E_SCREENS not set');
   await standIn(page, { open: true });
   await atCash(page);
   await expect(sessionCard(page)).toBeVisible();
-  for (const [width, height] of [
-    [1440, 1000],
-    [1024, 768],
-    [390, 844],
-  ] as const) {
-    await page.setViewportSize({ width, height });
-    await page.screenshot({ path: `${dir}/cash-session-${width}.png`, animations: 'disabled', fullPage: true });
-    await sessionCard(page).getByRole('button', { name: 'Despesa autorizada' }).click();
-    await page.screenshot({ path: `${dir}/cash-expense-${width}.png`, animations: 'disabled' });
-    await page.getByRole('dialog').getByRole('button', { name: 'Cancelar' }).click();
-  }
+  await saveScreens(page, 'cash-session');
+  await sessionCard(page).getByRole('button', { name: 'Despesa autorizada' }).click();
+  await expect(page.getByRole('dialog', { name: 'Despesa autorizada' })).toBeVisible();
+  await saveScreens(page, 'cash-expense', { fullPage: false });
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancelar' }).click();
+  const count = page.getByRole('form', { name: 'Contagem cega' });
+  await count.getByLabel(/^Numerário/).fill('4850,50');
+  await count.getByLabel(/^CARD/).fill('3210,40');
+  await count.getByRole('button', { name: 'Fechar sessão' }).click();
+  await expect(page.getByRole('alertdialog', { name: 'Fechar a sessão de caixa?' })).toBeVisible();
+  await saveScreens(page, 'cash-close-confirm', { fullPage: false });
+});
+
+test('screens without a session, at 1024 × 768 and 1440 × 900', async ({ page }) => {
+  test.skip(!process.env.E2E_SCREENS, 'E2E_SCREENS not set');
+  await standIn(page, { open: false });
+  await atCash(page);
+  const closing = page.getByRole('region', { name: 'Fecho da caixa' });
+  await closing.getByRole('radio', { name: /Caixa Principal/ }).check();
+  await closing.getByRole('button', { name: 'Preparar fecho' }).click();
+  await expect(closing.getByRole('table', { name: 'Diferenças por meio de pagamento' })).toBeVisible();
+  await saveScreens(page, 'cash-no-session');
 });

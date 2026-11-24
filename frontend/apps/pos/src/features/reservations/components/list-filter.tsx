@@ -18,21 +18,14 @@ type Props = {
   onQuery: (query: string) => void;
 };
 
-/** Stitch's search box and state pills over the list; each pill counts its state. Local input only. */
+/**
+ * The state pills and the search over the list, as the table map's area tabs and "Mesa ou nº": the chosen pill solid
+ * green, the others outlined on white; each pill counts its state. Local input only.
+ */
 export function ListFilter({ summary, status, onStatus, query, onQuery }: Props) {
   return (
-    <div className="flex flex-col gap-3 rounded-xl border bg-card p-3">
-      <div className="relative">
-        <Search aria-hidden="true" className="absolute top-1/2 left-3 size-5 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          type="search"
-          aria-label="Procurar por nome ou telefone"
-          placeholder="Procurar por nome ou telefone"
-          value={query}
-          onChange={(event) => onQuery(event.target.value)}
-          className="h-12 pl-10 text-base md:text-base"
-        />
-      </div>
+    // No flex-1 on the pills: they keep their row and wrap within it, and the search takes the next row when they fill it.
+    <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="flex flex-wrap gap-2">
         {PILLS.map((pill) => (
           <Button
@@ -41,10 +34,25 @@ export function ListFilter({ summary, status, onStatus, query, onQuery }: Props)
             size="touch"
             aria-pressed={pill.status === status}
             onClick={() => onStatus(pill.status)}
+            className={pill.status === status ? 'rounded-xl' : 'rounded-xl bg-card'}
           >
             {pill.label} ({summary[pill.status].count})
           </Button>
         ))}
+      </div>
+      <div className="relative w-full sm:w-80">
+        <Search
+          aria-hidden="true"
+          className="pointer-events-none absolute top-1/2 left-3 size-5 -translate-y-1/2 text-muted-foreground"
+        />
+        <Input
+          type="search"
+          aria-label="Procurar por nome ou telefone"
+          placeholder="Procurar por nome ou telefone"
+          value={query}
+          onChange={(event) => onQuery(event.target.value)}
+          className="h-12 rounded-xl bg-card pl-10 text-base md:text-base"
+        />
       </div>
     </div>
   );

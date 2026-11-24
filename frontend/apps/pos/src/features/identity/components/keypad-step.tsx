@@ -55,8 +55,9 @@ export function KeypadStep({
   }
 
   return (
-    <form onSubmit={submit} className="grid w-full max-w-[720px] gap-8 rounded-xl border bg-card p-6 sm:grid-cols-[1fr_auto]">
-      <div className="flex flex-col gap-4">
+    // Light reference: a white rounded card centred on the grey page; the field and its action left, the pad right.
+    <form onSubmit={submit} className="flex w-full max-w-3xl flex-col gap-8 rounded-2xl border bg-card p-6 sm:flex-row sm:p-8">
+      <div className="flex min-w-0 flex-1 flex-col gap-4">
         {children}
         <div className="flex flex-col gap-2">
           <Label htmlFor={id} className="text-base">
@@ -73,7 +74,7 @@ export function KeypadStep({
             autoComplete="off"
             autoCapitalize="characters"
             spellCheck={false}
-            className="h-14 px-4 font-mono text-2xl tracking-widest md:text-2xl"
+            className="h-14 rounded-xl bg-card px-4 font-mono text-2xl tracking-widest md:text-2xl"
           />
         </div>
         <div className="min-h-18">
@@ -89,7 +90,7 @@ export function KeypadStep({
             )
           )}
         </div>
-        <ConfirmButton type="submit" size="touch-primary" className="mt-auto w-full" disabled={!canSubmit} pending={pending}>
+        <ConfirmButton type="submit" size="touch-primary" className="mt-auto w-full rounded-xl" disabled={!canSubmit} pending={pending}>
           {submitLabel}
         </ConfirmButton>
       </div>

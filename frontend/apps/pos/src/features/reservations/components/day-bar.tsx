@@ -10,7 +10,7 @@ type Props = {
   onDate: (date: string) => void;
 };
 
-/** Stitch's date header: the day, the previous and next ones, and the two days a host books most. */
+/** The date header: the day, the previous and next ones, and the two days a host books most (the chosen one green). */
 export function DayBar({ date, today, onDate }: Props) {
   const tomorrow = addDays(today, 1);
   return (
@@ -38,6 +38,7 @@ export function DayBar({ date, today, onDate }: Props) {
             size="touch"
             aria-pressed={date === day}
             onClick={() => onDate(day)}
+            className={date === day ? 'rounded-xl' : 'rounded-xl bg-card'}
           >
             {label}
           </Button>

@@ -16,14 +16,14 @@ type Props<V extends string> = {
 };
 
 /**
- * One choice among a few, as touch cards (Stitch's channel and zone tiles): native radios, so the arrow keys, the
+ * One choice among a few, as touch cards (the light reference's outlined white cards; the chosen one green-tinted): native radios, so the arrow keys, the
  * screen reader and the form behave as the platform does. The chosen card is filled and checked, never by colour only.
  */
 export function ChoiceGroup<V extends string>({ legend, name, choices, value, onChange, disabled, className }: Props<V>) {
   const idPrefix = useId();
   return (
     <fieldset className="flex min-w-0 flex-col gap-2" disabled={disabled}>
-      <legend className="mb-2 flex items-center gap-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+      <legend className="mb-2 flex items-center gap-2 text-sm font-semibold text-muted-foreground">
         {legend}
       </legend>
       <div className={cn('grid gap-2', className)}>
@@ -34,7 +34,7 @@ export function ChoiceGroup<V extends string>({ legend, name, choices, value, on
           return (
             <label
               key={choice}
-              className="relative flex min-h-14 items-center gap-3 rounded-lg border bg-muted px-3 py-2 has-checked:border-primary has-checked:bg-primary/15 has-focus-visible:ring-2 has-focus-visible:ring-ring has-disabled:opacity-50"
+              className="relative flex min-h-14 items-center gap-3 rounded-xl border-2 bg-card px-3 py-2 has-checked:border-primary has-checked:bg-success-tint has-focus-visible:ring-2 has-focus-visible:ring-ring has-focus-visible:ring-offset-2 has-focus-visible:ring-offset-card has-disabled:opacity-50"
             >
               {/* The radio itself covers the card, transparent: a tap anywhere on it is a tap on the radio. */}
               <input
@@ -45,9 +45,9 @@ export function ChoiceGroup<V extends string>({ legend, name, choices, value, on
                 onChange={() => onChange(choice)}
                 aria-labelledby={labelId}
                 aria-describedby={hint ? hintId : undefined}
-                className="peer absolute inset-0 cursor-pointer appearance-none rounded-lg opacity-0 disabled:cursor-not-allowed"
+                className="peer absolute inset-0 cursor-pointer appearance-none rounded-xl opacity-0 disabled:cursor-not-allowed"
               />
-              {Icon && <Icon aria-hidden="true" className="size-6 shrink-0 text-primary-hover" />}
+              {Icon && <Icon aria-hidden="true" className="size-6 shrink-0 text-success-text" />}
               <span className="flex min-w-0 flex-1 flex-col">
                 <span id={labelId} className="font-semibold">
                   {label}

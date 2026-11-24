@@ -1,5 +1,6 @@
 import { expect, type Page, test } from '@playwright/test';
 import { expectNoAxeViolations } from '../axe';
+import { saveScreens } from './screens';
 import { id, logIn, SESSION, standInDevice, STORE } from './stand-in';
 
 // The reservations screen in the built POS, its API stood in by page.route (the preview has no backend): what jsdom
@@ -141,19 +142,12 @@ test('a reservation booked in the dialog is sent as the store time, with its par
   ]);
 });
 
-test('screenshots of the screen and its dialog (E2E_SCREENS)', async ({ page }, testInfo) => {
+test('screenshots of the screen and its dialog (E2E_SCREENS)', async ({ page }) => {
   test.skip(!process.env.E2E_SCREENS, 'screenshots only on request');
   await atReservations(page);
   await page.getByRole('article', { name: 'Ana Ferreira, 19:30' }).getByRole('button', { name: 'Ana Ferreira' }).click();
-  for (const width of [1440, 1024, 390]) {
-    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
-    await page.screenshot({ path: testInfo.outputPath(`reservations-${width}.png`), fullPage: true });
-  }
-  await page.setViewportSize({ width: 1440, height: 900 });
+  await saveScreens(page, 'reservations');
   await page.getByRole('button', { name: 'Nova reserva' }).click();
   await expect(page.getByRole('dialog', { name: 'Nova reserva' })).toBeVisible();
-  for (const width of [1440, 1024, 390]) {
-    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
-    await page.screenshot({ path: testInfo.outputPath(`nova-reserva-${width}.png`) });
-  }
+  await saveScreens(page, 'nova-reserva', { fullPage: false });
 });

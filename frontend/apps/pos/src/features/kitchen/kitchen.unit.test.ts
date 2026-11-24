@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readLines, stationsOf, toKitchenPage, toKitchenTickets, waitingMinutes } from './kitchen';
+import { isLate, readLines, stationsOf, toKitchenPage, toKitchenTickets, waitingMinutes } from './kitchen';
 
 describe('readLines', () => {
   it('reads a takeaway header, a decimal quantity, and keeps a line it cannot read as an item', () => {
@@ -98,5 +98,22 @@ describe('waitingMinutes', () => {
     const now = new Date('2026-11-22T10:00:30Z');
     expect(waitingMinutes('2026-11-22T09:36:00Z', now)).toBe(24);
     expect(waitingMinutes('2026-11-22T10:01:00Z', now)).toBe(0);
+  });
+});
+
+describe('isLate', () => {
+  const now = new Date('2026-11-22T10:00:00Z');
+  const round = (status: 'QUEUED' | 'IN_PREPARATION' | 'READY' | 'BUMPED', queuedAt: string) => ({ status, queuedAt });
+
+  it("a round not ready, queued longer ago than the server's delay, is late (as the kitchen alert counts it)", () => {
+    expect(isLate(round('QUEUED', '2026-11-22T09:44:59Z'), now, 15)).toBe(true);
+    expect(isLate(round('IN_PREPARATION', '2026-11-22T09:40:00Z'), now, 15)).toBe(true);
+    expect(isLate(round('QUEUED', '2026-11-22T09:45:00Z'), now, 15)).toBe(false);
+  });
+
+  it('a ready or bumped round is never late, nor any round before the delay is known', () => {
+    expect(isLate(round('READY', '2026-11-22T09:00:00Z'), now, 15)).toBe(false);
+    expect(isLate(round('BUMPED', '2026-11-22T09:00:00Z'), now, 15)).toBe(false);
+    expect(isLate(round('QUEUED', '2026-11-22T09:00:00Z'), now, undefined)).toBe(false);
   });
 });

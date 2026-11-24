@@ -2,6 +2,7 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import { HttpResponse } from 'msw';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import { atKitchen, byStation, firstPageOf, kdsEndpoint, page, stations, TICKET } from '../../test/kitchen';
+import { productionAlerts, productionAlertsEndpoint } from '../../test/alerts';
 import { renderPos } from '../../test/render-pos';
 import { notificationsEndpoint, problem, token, tokenEndpoint } from '../../test/server';
 
@@ -33,6 +34,20 @@ describe('the kitchen display', () => {
 
     expect(await screen.findByRole('article', { name: 'Mesa 04 - Pedido #4092, Ronda 2' })).toHaveTextContent('Em espera há 24 min');
     expect(screen.getByRole('article', { name: 'Mesa 08 - Pedido #4105, Ronda 1' })).toHaveTextContent('Em espera há 11 min');
+  });
+
+  it("says a round is late once it has waited longer than the server's kitchen delay, until it is ready", async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-11-22T10:00:30Z') });
+    onTestFinished(() => void vi.useRealTimers());
+    productionAlertsEndpoint(productionAlerts({ kitchenDelayMinutes: 20 }));
+    const longReady = { ...TICKET.ready, kitchen: { ...TICKET.ready.kitchen!, queuedAt: '2026-11-22T09:00:00Z' } };
+    kdsEndpoint(page(TICKET.queued, TICKET.cooking, longReady));
+    await atKitchen();
+
+    const queued = await screen.findByRole('article', { name: 'Mesa 04 - Pedido #4092, Ronda 2' });
+    expect(await within(queued).findByText('Atrasada')).toBeInTheDocument();
+    expect(within(screen.getByRole('article', { name: 'Mesa 08 - Pedido #4105, Ronda 1' })).queryByText('Atrasada')).not.toBeInTheDocument();
+    expect(within(screen.getByRole('article', { name: 'Mesa 03 - Pedido #4112, Ronda 1' })).queryByText('Atrasada')).not.toBeInTheDocument();
   });
 
   it("filters by station: each station seen is offered with its count, and one chosen is read on its own", async () => {

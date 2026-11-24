@@ -50,7 +50,7 @@ export function BlindCount({ session, sessionId }: { session: SessionDetails; se
   }
 
   return (
-    <form aria-labelledby={title} onSubmit={submit} className="flex flex-col gap-4 rounded-xl border bg-card p-4 lg:p-6">
+    <form aria-labelledby={title} onSubmit={submit} className="flex flex-col gap-4 rounded-2xl border bg-card p-4">
       <div className="flex flex-col gap-1">
         <h3 id={title} className="flex items-center gap-2 text-xl font-semibold">
           <EyeOff aria-hidden="true" className="size-6 text-primary-hover" />
@@ -74,12 +74,12 @@ export function BlindCount({ session, sessionId }: { session: SessionDetails; se
         ))}
       </div>
       <CommandFeedback blocked={blocked} error={close.error && cashRefusal(close.error, 'o fecho da sessão')} />
-      <ConfirmButton type="submit" size="touch-primary" pending={close.pending} disabled={blocked || !complete}>
+      <ConfirmButton type="submit" size="touch-primary" className="rounded-xl" pending={close.pending} disabled={blocked || !complete}>
         <LockKeyhole aria-hidden="true" />
         {awaitingRetry ? 'Tentar novamente' : 'Fechar sessão'}
       </ConfirmButton>
       <AlertDialog open={confirming} onOpenChange={setConfirming}>
-        <AlertDialogContent>
+        <AlertDialogContent className="rounded-2xl">
           <AlertDialogHeader>
             <AlertDialogTitle>Fechar a sessão de caixa?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -87,8 +87,8 @@ export function BlindCount({ session, sessionId }: { session: SessionDetails; se
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel size="touch">Voltar</AlertDialogCancel>
-            <AlertDialogAction size="touch" onClick={confirm}>
+            <AlertDialogCancel size="touch" className="rounded-xl bg-card">Voltar</AlertDialogCancel>
+            <AlertDialogAction size="touch" className="rounded-xl" onClick={confirm}>
               Confirmar fecho
             </AlertDialogAction>
           </AlertDialogFooter>

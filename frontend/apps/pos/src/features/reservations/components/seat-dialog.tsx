@@ -49,7 +49,7 @@ export function SeatDialog({ reservation, areas, onClose, onSeated }: Props) {
             <div className="flex max-h-80 flex-col gap-4 overflow-y-auto">
               {free.map((area) => (
                 <fieldset key={area.id} className="flex flex-col gap-2">
-                  <legend className="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                  <legend className="mb-2 text-sm font-medium text-muted-foreground">
                     {area.name}
                   </legend>
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -57,8 +57,8 @@ export function SeatDialog({ reservation, areas, onClose, onSeated }: Props) {
                       <label
                         key={table.id}
                         className={cn(
-                          'flex min-h-14 cursor-pointer items-center gap-3 rounded-lg border-2 bg-muted px-3 has-focus-visible:ring-2 has-focus-visible:ring-ring',
-                          table.id === tableId ? 'border-primary' : 'border-border',
+                          'flex min-h-14 cursor-pointer items-center gap-3 rounded-xl border-2 px-3 has-focus-visible:ring-2 has-focus-visible:ring-ring has-focus-visible:ring-offset-2 has-focus-visible:ring-offset-card',
+                          table.id === tableId ? 'border-primary bg-success-tint' : 'border-border bg-card',
                           locked && 'cursor-not-allowed opacity-50',
                         )}
                       >

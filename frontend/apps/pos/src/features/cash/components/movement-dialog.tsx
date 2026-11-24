@@ -63,10 +63,10 @@ export function MovementDialog({ type, sessionId, currency, onClose, onRecorded 
     // With no answer the server may already hold the movement: the dialog keeps its intent (and key) until a retry
     // gets a definitive answer, so a second "Registar" can never record it twice (FC §8).
     <Dialog open onOpenChange={(open) => !open && !locked && onClose()}>
-      <DialogContent showCloseButton={false} className="sm:max-w-lg">
+      <DialogContent showCloseButton={false} className="rounded-2xl sm:max-w-lg">
         <form onSubmit={submit} className="flex flex-col gap-4">
           <DialogHeader>
-            <DialogTitle>{MOVEMENTS[type].action}</DialogTitle>
+            <DialogTitle className="text-xl">{MOVEMENTS[type].action}</DialogTitle>
             <DialogDescription>{DESCRIPTIONS[type]}</DialogDescription>
           </DialogHeader>
           <AmountField label="Valor" currency={currency} value={typed.amount} onChange={set('amount')} readOnly={locked} />
@@ -79,10 +79,10 @@ export function MovementDialog({ type, sessionId, currency, onClose, onRecorded 
           )}
           <CommandFeedback blocked={blocked} error={record.error && refusal(record.error, expense)} />
           <DialogFooter>
-            <Button type="button" variant="outline" size="touch" onClick={onClose} disabled={locked}>
+            <Button type="button" variant="outline" size="touch" className="rounded-xl bg-card" onClick={onClose} disabled={locked}>
               Cancelar
             </Button>
-            <ConfirmButton type="submit" size="touch-primary" pending={record.pending} disabled={blocked || !request}>
+            <ConfirmButton type="submit" size="touch-primary" className="rounded-xl" pending={record.pending} disabled={blocked || !request}>
               {awaitingRetry ? 'Tentar novamente' : 'Registar'}
             </ConfirmButton>
           </DialogFooter>
@@ -127,7 +127,7 @@ function TextField({ label, value, onChange, readOnly, maxLength, numeric, secre
         value={value}
         readOnly={readOnly}
         onChange={(event) => onChange(numeric ? event.target.value.replace(/\D/g, '') : event.target.value)}
-        className="h-12 text-base md:text-base"
+        className="h-12 rounded-xl text-base md:text-base"
       />
     </div>
   );

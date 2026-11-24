@@ -39,7 +39,7 @@ export function CancelDialog({ reservation, onClose }: Props) {
             rows={3}
             readOnly={cancel.pending || awaitingRetry}
             onChange={(event) => setReason(event.target.value)}
-            className="rounded-md border border-input bg-muted px-3 py-2 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="rounded-xl border border-input bg-card px-3 py-2 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
         </div>
         <CommandFooter
