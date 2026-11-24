@@ -1,4 +1,4 @@
-import { Badge, Card, CardContent, CardHeader, CardTitle, cn, DataState, TONE_TINT } from '@restaurantpro/ui';
+import { Badge, Card, CardContent, CardHeader, CardTitle, DataState } from '@restaurantpro/ui';
 import { Building2, ShieldCheck } from 'lucide-react';
 import { useId } from 'react';
 import { useSession } from '../../identity';
@@ -53,7 +53,7 @@ export function CompanyProfileCard() {
   return (
     <Card role="region" aria-labelledby={titleId} className="mt-6 gap-4">
       <CardHeader className="flex flex-row flex-wrap items-start gap-3">
-        <span className={cn('flex size-12 shrink-0 items-center justify-center rounded-xl', TONE_TINT.success)}>
+        <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-muted text-primary">
           <Building2 aria-hidden="true" className="size-6" />
         </span>
         <div className="flex min-w-0 flex-1 basis-48 flex-col gap-1">

@@ -1,4 +1,4 @@
-import { Badge, Card, CardContent, CardHeader, CardTitle, cn, StatusBadge, TONE_TINT, type StatusMap } from '@restaurantpro/ui';
+import { Badge, Card, CardContent, CardHeader, CardTitle, StatusBadge, type StatusMap } from '@restaurantpro/ui';
 import { CircleCheck, CircleOff, Store } from 'lucide-react';
 import { useId, type ReactNode } from 'react';
 import { cutoffLabel } from '../store-values';
@@ -16,7 +16,7 @@ export function StoreCard({ store, children }: { store: StoreSummary; children?:
   return (
     <Card role="article" aria-labelledby={titleId} className="gap-4">
       <CardHeader className="flex flex-row items-start gap-3">
-        <span className={cn('flex size-10 shrink-0 items-center justify-center rounded-xl', TONE_TINT.success)}>
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted text-primary">
           <Store aria-hidden="true" className="size-5" />
         </span>
         <div className="flex min-w-0 flex-1 flex-col gap-1">

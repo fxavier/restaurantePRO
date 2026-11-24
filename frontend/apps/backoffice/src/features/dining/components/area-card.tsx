@@ -64,8 +64,8 @@ export function tableTone(table: RestaurantTableSummary): StatusTone | undefined
 
 function TableChip({ table }: { table: RestaurantTableSummary }) {
   return (
-    <span className="flex flex-col items-start gap-1">
-      <span className="text-base font-semibold">{table.code}</span>
+    <span className="flex w-full min-w-0 flex-col items-start gap-1">
+      <span className="w-full text-base font-semibold break-all">{table.code}</span>
       <span className="text-xs font-normal text-muted-foreground">{table.seats} lugares</span>
       {table.locked && (
         <span className={cn(TILE_STATE, TONE_INK.destructive)}>

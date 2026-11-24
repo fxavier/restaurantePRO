@@ -62,7 +62,7 @@ export function EditTableDialog({ table, areas, children }: { table: RestaurantT
       description={`Mesa ${table.code}`}
       trigger={
         // The name starts with the action and keeps the visible text (WCAG 2.5.3 label in name): "Editar mesa M01 4 lugares".
-        <Button variant="outline" className={cn('h-full w-full flex-col items-start justify-start px-3 py-2 text-left', tone && TONE_CARD[tone])}>
+        <Button variant="outline" className={cn('h-full w-full min-w-0 flex-col items-start justify-start px-3 py-2 text-left whitespace-normal', tone && TONE_CARD[tone])}>
           <span className="sr-only">Editar mesa</span> {children}
         </Button>
       }

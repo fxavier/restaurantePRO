@@ -9,7 +9,7 @@ import {
   CardTitle,
   DataState,
   StatusBadge,
-  StatusPill,
+  Badge,
   Table,
   TableBody,
   TableCaption,
@@ -108,7 +108,7 @@ export function StoreTerminals({ storeId }: { storeId: string }) {
                     <TableCell className="font-medium">{terminal.name}</TableCell>
                     <TableCell className="font-mono text-muted-foreground">{terminal.code}</TableCell>
                     <TableCell>
-                      <StatusPill tone="neutral">{kindLabel(terminal.kind)}</StatusPill>
+                      <Badge variant="secondary">{kindLabel(terminal.kind)}</Badge>
                     </TableCell>
                     <TableCell>
                       <StatusBadge look="tint" status={terminal.status} statuses={terminalStatuses(terminal.status)} />
