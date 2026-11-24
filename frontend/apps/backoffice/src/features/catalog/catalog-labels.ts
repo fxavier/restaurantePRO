@@ -1,25 +1,20 @@
-import { LOCALE, routeChipFill, type StatusMap } from '@restaurantpro/ui';
+import { LOCALE, routeChipFill, routeLabel, type StatusMap } from '@restaurantpro/ui';
 import { Archive, CircleCheck, CircleHelp, PencilLine, Rocket } from 'lucide-react';
 import type { TaxCategorySummary } from './types';
 
 /**
  * The production destinations the screen offers (CONTEXT "Destino de produção"). The contract takes any code
- * (`^[A-Z][A-Z0-9_]*$`); these are the three the design names. Their colour is the shared route hue
- * (`routeChipFill`, DESIGN.md "Light reference"), as on the POS and the production screen.
+ * (`^[A-Z][A-Z0-9_]*$`); these are the three the design names. Their name and colour are the shared route's
+ * (`routeLabel`, `routeChipFill`, DESIGN.md "Light reference"), as on the POS.
  */
-export const DESTINATIONS = [
-  { code: 'KITCHEN', label: 'Cozinha' },
-  { code: 'BAR', label: 'Bar' },
-  { code: 'COPA', label: 'Copa' },
-] as const;
+export const DESTINATIONS = ['KITCHEN', 'BAR', 'COPA'].map((code) => ({ code, label: routeLabel(code) }));
 
 /**
- * A destination's label and fill; an unknown code shows as itself (COZINHA in the kitchen's hue, any other on the
- * neutral fill), none as "Sem destino".
+ * A destination's label and fill: a conventional code by its route's name (COZINHA "Cozinha", as KITCHEN), any other
+ * as itself on the neutral fill, none as "Sem destino".
  */
 export function destinationOf(code: string | undefined | null): { label: string; fill: string } {
-  const label = DESTINATIONS.find((destination) => destination.code === code)?.label ?? (code || 'Sem destino');
-  return { label, fill: routeChipFill(code) };
+  return { label: code ? routeLabel(code) : 'Sem destino', fill: routeChipFill(code) };
 }
 
 /** The rate in force at `at` (ISO-8601 UTC): the latest one already effective; none when every rate is future. */

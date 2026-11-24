@@ -117,6 +117,22 @@ test('catalog: the items list and the item form, axe clean', async ({ page }) =>
   await screen(page, 'catalog-item-form');
 });
 
+test('catalog: an item on the COZINHA destination is named "Cozinha" in the kitchen colour, as KITCHEN', async ({ page }) => {
+  await standIn(page);
+  const onCozinha = item('e0000000-0000-4000-8000-000000000003', 'C12', 'Arroz de Pato', families[0]!.id, 'COZINHA');
+  await page.route('**/api/v1/backoffice/catalog/items?**', (route) => route.fulfill({ json: pageOf([...items, onCozinha]) }));
+
+  await page.goto(`/catalog?storeId=${STORE}`);
+  const row = page.getByRole('table', { name: 'Artigos do catálogo' }).getByRole('row').filter({ hasText: 'Arroz de Pato' });
+  await expect(row.getByText('Cozinha', { exact: true })).toBeVisible();
+  await expect(row.getByText('Cozinha', { exact: true })).toHaveClass(/border-route-kitchen/);
+  await expect(row.getByText('COZINHA', { exact: true })).toHaveCount(0);
+  if (process.env.E2E_SCREENS) {
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await page.screenshot({ path: `${process.env.E2E_SCREENS}/catalog-cozinha-1024x768.png`, animations: 'disabled' });
+  }
+});
+
 test("catalog: an item's sheet, the families and the store's prices, axe clean", async ({ page }) => {
   await standIn(page);
 

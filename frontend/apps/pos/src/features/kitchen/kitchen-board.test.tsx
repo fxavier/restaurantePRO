@@ -80,6 +80,17 @@ describe('the kitchen display', () => {
     expect(new URL(reads.at(-1)!.url).searchParams.get('destination')).toBe('COPA');
   });
 
+  it('names the COZINHA station "Cozinha", on its pill and on its rounds, as KITCHEN', async () => {
+    kdsEndpoint(page({ ...TICKET.queued, destination: 'COZINHA' }));
+    await atKitchen({ destinations: stations('COZINHA') });
+
+    const pills = await screen.findByRole('group', { name: 'Estação' });
+    expect(await within(pills).findByRole('button', { name: 'Cozinha 1' })).toBeInTheDocument();
+    const card = await screen.findByRole('article', { name: 'Mesa 04 - Pedido #4092, Ronda 2' });
+    expect(within(card).getByText('Cozinha')).toHaveClass('border-route-kitchen');
+    expect(screen.queryByText('COZINHA')).not.toBeInTheDocument();
+  });
+
   it("still offers the stations its rounds name when the store's stations cannot be read", async () => {
     kdsEndpoint(page(TICKET.queued, TICKET.ready));
     await atKitchen({ destinations: () => problem(500, 'INTERNAL') });

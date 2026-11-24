@@ -1,17 +1,13 @@
-import { Badge, routeChipFill, routeDot } from '@restaurantpro/ui';
+import { Badge, routeChipFill, routeDot, routeLabel } from '@restaurantpro/ui';
 
 /**
- * A station's route chip (DESIGN.md "Route chips"): the shared route hue (`routeChipFill`, COZINHA the kitchen's) as a
- * border and tint with `foreground` text, the design's stations by name and any other code as itself. The names are
- * a minimal copy of the catalog's DestinationBadge, which is that feature's internal (FC: a feature never imports
- * another's internals).
+ * A station's route chip (DESIGN.md "Route chips"): the shared route hue and name (`routeChipFill`, `routeLabel`:
+ * COZINHA the kitchen's) as a border and tint with `foreground` text; any other code as itself.
  */
-const LABELS: Record<string, string> = { KITCHEN: 'Cozinha', BAR: 'Bar', COPA: 'Copa', PANTRY: 'Copa' };
-
 export function StationChip({ code }: { code: string }) {
   return (
     <Badge variant="secondary" className={routeChipFill(code)}>
-      {LABELS[code] ?? code}
+      {routeLabel(code)}
     </Badge>
   );
 }
@@ -24,7 +20,7 @@ export function StationName({ code }: { code: string }) {
   return (
     <>
       <span aria-hidden="true" className={`size-3 shrink-0 rounded-full border border-card ${routeDot(code)}`} />
-      {LABELS[code] ?? code}
+      {routeLabel(code)}
     </>
   );
 }
