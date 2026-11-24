@@ -1,6 +1,6 @@
 import { ApiError } from '@restaurantpro/api-client';
 import { Button, DataState, Money } from '@restaurantpro/ui';
-import { CircleCheck, Clock, CookingPot, ListPlus, Minus, Plus, Printer, RotateCcw } from 'lucide-react';
+import { Clock, ListPlus, Minus, Plus, Printer, RotateCcw } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { errorMessage, isOffline } from '../../../lib/error-messages';
@@ -11,8 +11,9 @@ import { useCatalog } from '../../catalog/hooks/use-catalog';
 import { roundRequest, useConfirmBatch } from '../hooks/use-confirm-batch';
 import { useOrder } from '../hooks/use-order';
 import { useDraftLineCommands, usePrintSubtotal } from '../hooks/use-order-commands';
-import { type KitchenState, useRoundKitchen } from '../hooks/use-round-kitchen';
+import { useRoundKitchen } from '../hooks/use-round-kitchen';
 import { nextRoundNo, type Order, type OrderLine, quantityLabel, stepQuantity } from '../order';
+import { KitchenChip } from './kitchen-chip';
 import { draftMessage } from './order-screen';
 import { lineName, SentRounds } from './order-panel';
 import { SendRound } from './send-round';
@@ -208,27 +209,6 @@ function OrderBody({ order, onAddItems }: { order: Order; onAddItems: () => void
       </footer>
     </div>
   );
-}
-
-/** "pronta" (every station has it ready or served) or "em preparação" (one has started); a queued round has no chip. */
-function KitchenChip({ state }: { state: KitchenState | undefined }) {
-  if (state === 'READY') {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-success-tint px-2 text-sm leading-4 font-medium text-success-text">
-        <CircleCheck aria-hidden="true" className="size-4" />
-        pronta
-      </span>
-    );
-  }
-  if (state === 'IN_PREPARATION') {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-warning-tint px-2 text-sm leading-4 font-medium text-warning-text">
-        <CookingPot aria-hidden="true" className="size-4" />
-        em preparação
-      </span>
-    );
-  }
-  return null;
 }
 
 /**

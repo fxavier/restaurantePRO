@@ -11,10 +11,13 @@ type Props = {
 /** Keeps the focus in the search field, so the barcode scanner still types there after a tap. */
 const keepFocus = (event: PointerEvent) => event.preventDefault();
 
-/** The order screen's left rail (DS: 160 px): one 56 px pill per family (Stitch's family pills, stacked), the shown one filled. */
+/**
+ * The order screen's left rail (DS: 160 px), a white card as on /tables: one 56 px family tab per family, stacked,
+ * outline, the shown one solid green (the light reference's area tabs).
+ */
 export function FamilyRail({ families, selected, onSelect }: Props) {
   return (
-    <nav aria-label="Famílias" className="flex min-h-0 flex-col overflow-y-auto border-r bg-background p-2">
+    <nav aria-label="Famílias" className="flex min-h-0 flex-col overflow-y-auto rounded-2xl border bg-card p-2">
       <ul className="flex flex-col gap-2">
         {families.map((family) => (
           <li key={family.id}>
@@ -23,7 +26,7 @@ export function FamilyRail({ families, selected, onSelect }: Props) {
               aria-pressed={family.id === selected}
               onPointerDown={keepFocus}
               onClick={() => onSelect(family.id)}
-              className="flex min-h-14 w-full items-center rounded-lg border bg-card px-3 text-left text-base font-medium hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:font-semibold aria-pressed:text-primary-foreground"
+              className="flex min-h-14 w-full items-center rounded-xl border bg-card px-3 text-left text-base font-medium hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card focus-visible:outline-none aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:font-semibold aria-pressed:text-primary-foreground aria-pressed:hover:bg-primary-hover"
             >
               {family.name}
             </button>

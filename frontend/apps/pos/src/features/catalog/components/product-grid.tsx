@@ -18,7 +18,8 @@ const keepFocus = (event: PointerEvent) => event.preventDefault();
 export function ProductGrid({ items, disabled, onPick }: Props) {
   if (items.length === 0) return <p className="py-6 text-center text-muted-foreground">Nenhum artigo encontrado.</p>;
   return (
-    <ul aria-label="Artigos" className="grid grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-3">
+    // Three columns at 1024 × 768 (the smallest POS), four from `xl`: each tile stays ≥ 112 × 80 px.
+    <ul aria-label="Artigos" className="grid grid-cols-3 gap-2 xl:grid-cols-4">
       {items.map((item) => (
         <li key={item.id}>
           <button
@@ -26,14 +27,14 @@ export function ProductGrid({ items, disabled, onPick }: Props) {
             disabled={disabled}
             onPointerDown={keepFocus}
             onClick={() => onPick(item)}
-            className="flex h-32 w-full flex-col gap-1 rounded-xl border bg-card p-3 text-left hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none active:border-primary active:bg-background disabled:opacity-50"
+            className="flex h-32 w-full flex-col gap-1 rounded-xl border bg-card p-3 text-left hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card focus-visible:outline-none active:border-primary active:bg-success-tint disabled:opacity-50"
           >
             <span className="line-clamp-2 text-base leading-tight font-semibold">{item.name}</span>{' '}
             <span className="order-first flex min-h-5 items-center justify-between gap-2">
               <DestinationBadge code={item.productionDestination} />{' '}
-              <span className="ml-auto font-mono text-xs text-muted-foreground">#{item.code}</span>
+              <span className="ml-auto truncate font-mono text-xs text-muted-foreground">#{item.code}</span>
             </span>{' '}
-            <span className="mt-auto flex items-center justify-between gap-1 text-base font-bold xl:text-lg text-primary tabular-nums">
+            <span className="mt-auto flex items-center justify-between gap-1 text-base font-bold tabular-nums xl:text-lg">
               {formatMoney(item.price)}
               {needsChoices(item) ? (
                 <ListPlus aria-hidden="true" className="size-5 shrink-0 text-muted-foreground" />

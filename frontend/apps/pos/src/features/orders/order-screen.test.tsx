@@ -3,6 +3,7 @@ import { delay, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   addLineEndpoint,
+  BATCH_ID,
   catalogEndpoint,
   created,
   deleteLineEndpoint,
@@ -22,7 +23,16 @@ import {
 } from '../../test/order';
 import { atOrder, drafts, panel, ready } from '../../test/order-screen';
 import { renderPos } from '../../test/render-pos';
-import { notificationsEndpoint, problem, tableMap, tablesEndpoint, token, tokenEndpoint } from '../../test/server';
+import {
+  notificationsEndpoint,
+  problem,
+  recording,
+  roundsEndpoint,
+  tableMap,
+  tablesEndpoint,
+  token,
+  tokenEndpoint,
+} from '../../test/server';
 import { MAP } from '../../test/table-map';
 
 const added: LineView = draft(899, { itemId: ITEM.steak.id, gross: { amount: '450.00', currency: 'MZN' } });
@@ -111,6 +121,26 @@ describe('order screen', () => {
     const [steak] = within(within(panel()).getByRole('list', { name: 'Ronda 1, 12:10' })).getAllByRole('listitem');
     expect(within(steak!).getByText('Cozinha')).toHaveClass('border-route-kitchen');
     expect(within(panel()).getByText('1 ronda')).toBeInTheDocument();
+  });
+
+  it('a sent round shows its kitchen state, as on the table map', async () => {
+    roundsEndpoint([{ batchId: BATCH_ID, status: 'IN_PREPARATION' }]);
+    await atOrder();
+    await ready();
+
+    const sent = within(panel()).getByRole('list', { name: 'Ronda 1, 12:10' });
+    expect(await within(sent.parentElement!).findByText('em preparação')).toHaveClass('text-warning-text');
+  });
+
+  it('a round whose kitchen state cannot be read shows no chip', async () => {
+    const rounds = recording<undefined>('get', '/api/v1/pos/production-tickets/rounds', () => problem(500, 'INTERNAL'));
+    await atOrder();
+    await ready();
+
+    await waitFor(() => expect(rounds.length).toBeGreaterThan(0));
+    const sent = within(panel()).getByRole('list', { name: 'Ronda 1, 12:10' });
+    expect(within(sent.parentElement!).queryByText('pronta')).not.toBeInTheDocument();
+    expect(within(sent.parentElement!).queryByText('em preparação')).not.toBeInTheDocument();
   });
 
   it('"Por enviar" ends with the server\'s draft total, marked provisional and never a sum made here', async () => {

@@ -28,6 +28,8 @@ type Props = {
   back: ReactNode;
   /** After a price or catalog conflict: each draft's gross as shown before, so a changed one says so. */
   shownBefore?: ReadonlyMap<string, MoneyValue | null>;
+  /** What follows a sent round's heading (its kitchen state, as on the table map); nothing while it is unknown. */
+  roundBadge?: (roundId: string) => ReactNode;
 };
 
 /** A draft's name comes from the catalog (a draft has no snapshot); a confirmed line's from its snapshot. */
@@ -43,37 +45,38 @@ export function lineName(line: OrderLine, catalog: PosCatalog | undefined): stri
  * "Enviado" (the confirmed lines, per round), then the server's total. Every amount is the server's; a draft's is its
  * provisional price and the drafts' subtotal the server's provisional `draftGross`.
  */
-export function OrderPanel({ order, catalog, commands, message, action, back, shownBefore }: Props) {
+export function OrderPanel({ order, catalog, commands, message, action, back, shownBefore, roundBadge }: Props) {
   const details = [order.guests !== null ? guestsLabel(order.guests) : undefined, `Pedido n.º ${order.orderNumber}`]
     .filter(Boolean)
     .join(' · ');
   return (
-    <aside aria-label="Pedido" className="flex min-h-0 flex-col border-l bg-card">
-      <header className="flex items-start gap-3 border-b px-4 py-3">
+    // The light reference's right card (as on /tables): the order's heading, its rounds, the total and the actions.
+    <aside aria-label="Pedido" className="flex min-h-0 flex-col rounded-2xl border bg-card">
+      <header className="flex items-center gap-3 border-b px-4 py-2">
         {order.tableCode && (
-          // Stitch's amber table block: the table is open, so occupied's colour.
+          // The table's code block, in occupied's tint as on the map: the table is open.
           <span
             aria-hidden="true"
-            className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-warning text-lg font-bold text-warning-foreground tabular-nums"
+            className="flex size-10 shrink-0 items-center justify-center rounded-xl border-2 border-warning-border bg-warning-tint text-lg font-bold text-warning-text tabular-nums"
           >
             {order.tableCode}
           </span>
         )}
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-2xl font-semibold">{order.tableCode ? `Mesa ${order.tableCode}` : 'Pedido'}</h2>
-          <p className="text-muted-foreground">{details}</p>
+          <h2 className="truncate text-lg leading-6 font-semibold">{order.tableCode ? `Mesa ${order.tableCode}` : 'Pedido'}</h2>
+          <p className="truncate text-sm text-muted-foreground">{details}</p>
         </div>
         {back}
       </header>
-      <ScrollRegion label="Linhas do pedido" className="flex min-h-0 flex-1 flex-col gap-4 px-4 py-3">
+      <ScrollRegion label="Linhas do pedido" className="flex min-h-0 flex-1 flex-col gap-3 px-4 py-2">
         {message && (
-          <p role="alert" className="rounded-md border border-destructive px-3 py-2 font-medium text-error">
+          <p role="alert" className="rounded-lg border border-destructive px-3 py-2 font-medium text-error">
             {message}
           </p>
         )}
-        <section aria-labelledby="sent-title" className="flex flex-col gap-2">
+        <section aria-labelledby="sent-title" className="flex flex-col gap-1">
           <div className="flex items-baseline justify-between gap-2">
-            <h3 id="sent-title" className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">
+            <h3 id="sent-title" className="text-sm font-medium text-muted-foreground">
               Enviado
             </h3>
             {order.rounds.length > 0 && (
@@ -85,15 +88,11 @@ export function OrderPanel({ order, catalog, commands, message, action, back, sh
           {order.rounds.length === 0 && order.unbatched.length === 0 ? (
             <p className="text-muted-foreground">Nada enviado ainda.</p>
           ) : (
-            <SentRounds order={order} catalog={catalog} />
+            <SentRounds order={order} catalog={catalog} badge={roundBadge} />
           )}
         </section>
-        <section
-          aria-labelledby="drafts-title"
-          // Stitch: the draft round is dashed until it is sent.
-          className="flex flex-col gap-2 rounded-lg border border-dashed border-primary p-3"
-        >
-          <h3 id="drafts-title" className="text-sm font-semibold tracking-wide text-primary uppercase">
+        <section aria-labelledby="drafts-title" className="flex flex-col gap-1 border-t pt-2">
+          <h3 id="drafts-title" className="text-sm font-medium text-muted-foreground">
             Por enviar
           </h3>
           {order.drafts.length === 0 ? (
@@ -125,24 +124,25 @@ export function OrderPanel({ order, catalog, commands, message, action, back, sh
           )}
         </section>
       </ScrollRegion>
-      <footer className="flex flex-col gap-3 border-t px-4 py-3">
+      <footer className="flex flex-col gap-2 border-t px-4 pt-2">
         <div role="group" aria-label="Total" className="flex flex-col">
-          <div className="flex items-baseline justify-between">
-            <span className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">Total</span>
-            <Money value={order.due} className="text-4xl font-bold text-primary" />
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-muted-foreground">Total</span>
+            <Money value={order.due} className="text-3xl font-bold" />
           </div>
-          {/* Always one line high, so the button below never moves. */}
+          {/* Always one line high, so the buttons below never move. */}
           <p className="min-h-5 text-sm text-muted-foreground">
             {order.drafts.length > 0 ? 'Não inclui as linhas por enviar' : ''}
           </p>
         </div>
-        {action}
-        <Button asChild variant="outline" size="touch" className="w-full">
+        {/* The light reference: the outline action above the one green primary. */}
+        <Button asChild variant="outline" size="touch" className="w-full rounded-xl bg-card">
           <Link to={`/orders/${order.id}/payment`}>
             <ReceiptText aria-hidden="true" />
             Conta & Pagamento
           </Link>
         </Button>
+        {action}
       </footer>
     </aside>
   );
@@ -170,7 +170,8 @@ export function SentRounds({
   dense?: boolean;
 }) {
   const timeZone = useStoreTimeZone();
-  const group = dense ? 'flex flex-col' : 'flex flex-col rounded-lg border bg-background p-3';
+  // Light reference: a round is its heading and its rows, no box around it.
+  const group = dense ? 'flex flex-col' : 'flex flex-col gap-0.5';
   return (
     <>
       {order.rounds.map((round) => {
@@ -290,23 +291,49 @@ function DraftRow({
       </div>{' '}
       <Details line={line} catalog={catalog} />
       {before && <PriceChange before={before.gross} now={line.gross} />}
-      <div className="flex gap-2">
+      {/* The light reference's steppers: round, outline, the quantity between them; the line's tools on the right. */}
+      <div className="flex items-center gap-1">
         <Button
           variant="outline"
           size="touch"
+          className="rounded-full bg-card px-0"
           aria-label={`Diminuir ${name}`}
           disabled={disabled || less === undefined}
           onClick={() => less !== undefined && onQuantity(line, less)}
         >
           <Minus aria-hidden="true" />
         </Button>
-        <Button variant="outline" size="touch" aria-label={`Aumentar ${name}`} disabled={disabled || more === undefined} onClick={() => more !== undefined && onQuantity(line, more)}>
+        <span aria-hidden="true" className="min-w-8 text-center font-semibold tabular-nums">
+          {quantityLabel(line.quantity)}
+        </span>
+        <Button
+          variant="outline"
+          size="touch"
+          className="rounded-full bg-card px-0"
+          aria-label={`Aumentar ${name}`}
+          disabled={disabled || more === undefined}
+          onClick={() => more !== undefined && onQuantity(line, more)}
+        >
           <Plus aria-hidden="true" />
         </Button>
-        <Button variant="outline" size="touch" aria-label={`Nota de ${name}`} disabled={disabled} onClick={() => onNote(line)}>
+        <Button
+          variant="outline"
+          size="touch"
+          className="ml-auto rounded-xl bg-card px-0"
+          aria-label={`Nota de ${name}`}
+          disabled={disabled}
+          onClick={() => onNote(line)}
+        >
           <NotebookPen aria-hidden="true" />
         </Button>
-        <Button variant="outline" size="touch" className="ml-auto" aria-label={`Remover ${name}`} disabled={disabled} onClick={() => onRemove(line)}>
+        <Button
+          variant="outline"
+          size="touch"
+          className="rounded-xl bg-card px-0"
+          aria-label={`Remover ${name}`}
+          disabled={disabled}
+          onClick={() => onRemove(line)}
+        >
           <Trash2 aria-hidden="true" />
         </Button>
       </div>
@@ -326,7 +353,7 @@ function SentRow({
   dense: boolean;
 }) {
   return (
-    <li className={`flex flex-col gap-1 ${dense ? 'text-sm' : 'border-b py-2 last:border-b-0'}`}>
+    <li className={`flex flex-col gap-1 ${dense ? 'text-sm' : 'py-0.5'}`}>
       <div className="flex items-start gap-2">
         <span className="flex-1">
           <Quantity line={line} /> {name}
