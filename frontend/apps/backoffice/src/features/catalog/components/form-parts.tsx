@@ -9,6 +9,7 @@ import {
   FormLabel,
   FormMessage,
   Input,
+  NativeSelect,
 } from '@restaurantpro/ui';
 import { TriangleAlert, WifiOff } from 'lucide-react';
 import type { Control, FieldPath, FieldValues, UseFormReturn } from 'react-hook-form';
@@ -65,18 +66,14 @@ export function SelectField<Values extends FieldValues>({
         <FormItem>
           <FormLabel>{label}</FormLabel>
           <FormControl>
-            <select
-              {...field}
-              value={(field.value as string | undefined) ?? ''}
-              className="h-9 w-full rounded-xl border border-input bg-card px-3 text-sm shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-            >
+            <NativeSelect {...field} value={(field.value as string | undefined) ?? ''}>
               <option value="">{placeholder}</option>
               {options.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </FormControl>
           <FormMessage />
         </FormItem>

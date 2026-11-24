@@ -8,13 +8,13 @@ import {
   DialogHeader,
   DialogTitle,
   Label,
+  NativeSelect,
 } from '@restaurantpro/ui';
 import { useId, useState } from 'react';
 import { useChangeMode } from '../hooks/use-printer-commands';
 import { printerModes } from '../labels';
 import { PRINTER_MODES, type Printer } from '../parse';
 import type { PrinterMode } from '../types';
-import { NativeSelect } from './native-select';
 import { ProblemAlert } from './problem-alert';
 
 const hints: Record<PrinterMode, string> = {

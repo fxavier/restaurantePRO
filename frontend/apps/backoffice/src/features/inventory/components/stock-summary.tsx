@@ -1,6 +1,6 @@
-import { Button, Card, cn, Skeleton, TONE_TINT } from '@restaurantpro/ui';
+import { Button, Card, Skeleton, StatBox } from '@restaurantpro/ui';
 import { TriangleAlert, Warehouse, type LucideIcon } from 'lucide-react';
-import { useId, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { isUnavailable } from '../../../lib/errors';
 import { useBelowMinimum, useValuation } from '../hooks/use-inventory-reads';
 import { Amount } from './amount';
@@ -18,33 +18,31 @@ export function StockSummary({ storeId, currency }: { storeId: string; currency:
   const lowCount = low.data?.rows?.length ?? 0;
   return (
     <Card className="grid gap-3 p-4 sm:grid-cols-2">
-      <Kpi label="Valor total em stock" icon={Warehouse} read={valuation} tint="bg-muted">
+      <Kpi label="Valor total em stock" icon={Warehouse} read={valuation} tone="muted">
         <Amount value={valuation.data?.totalValue} currency={currency} />
       </Kpi>
-      <Kpi label="Abaixo do mínimo" icon={TriangleAlert} read={low} tint={lowCount > 0 ? TONE_TINT.warning : 'bg-muted'}>
+      <Kpi label="Abaixo do mínimo" icon={TriangleAlert} read={low} tone={lowCount > 0 ? 'warning' : 'muted'}>
         {`${lowCount} ${lowCount === 1 ? 'artigo' : 'artigos'}`}
       </Kpi>
     </Card>
   );
 }
 
-type KpiProps = { label: string; icon: LucideIcon; read: Read; tint: string; children: ReactNode };
+type KpiProps = { label: string; icon: LucideIcon; read: Read; tone: 'warning' | 'muted'; children: ReactNode };
 
-/** One box: a skeleton while its read is pending, a compact error or "Sem ligação" with retry, else the value. */
-function Kpi({ label, icon: Icon, read, tint, children }: KpiProps) {
-  const id = useId();
+/** One box (the shared StatBox): a skeleton while its read is pending, a compact error or "Sem ligação" with retry, else the value. */
+function Kpi({ label, icon, read, tone, children }: KpiProps) {
   return (
-    <div role="group" aria-labelledby={id} className={cn('flex items-start justify-between gap-2 rounded-xl px-4 py-3', tint)}>
-      <div className="flex min-h-16 flex-col gap-2">
-        <span id={id} className="text-xs font-semibold tracking-wide uppercase">
-          {label}
-        </span>
+    <StatBox
+      caption={label}
+      icon={icon}
+      tone={tone}
+      value={
         <KpiValue label={label} read={read}>
           {children}
         </KpiValue>
-      </div>
-      <Icon aria-hidden="true" className="size-6" />
-    </div>
+      }
+    />
   );
 }
 
@@ -69,5 +67,5 @@ function KpiValue({ label, read, children }: { label: string; read: Read; childr
       </div>
     );
   }
-  return <span className="text-2xl font-semibold tabular-nums">{children}</span>;
+  return children;
 }

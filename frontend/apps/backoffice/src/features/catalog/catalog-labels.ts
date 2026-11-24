@@ -1,25 +1,25 @@
-import { LOCALE, type StatusMap } from '@restaurantpro/ui';
+import { LOCALE, routeChipFill, type StatusMap } from '@restaurantpro/ui';
 import { Archive, CircleCheck, CircleHelp, PencilLine, Rocket } from 'lucide-react';
 import type { TaxCategorySummary } from './types';
 
-/** A destination without a route colour: the raised surface, bordered like the others. */
-const NEUTRAL = 'border-border bg-muted text-foreground';
-
 /**
  * The production destinations the screen offers (CONTEXT "Destino de produção"). The contract takes any code
- * (`^[A-Z][A-Z0-9_]*$`); these are the three the design names, each in its route colour as a border and a 15 % tint
- * with `foreground` text, as on the POS (DESIGN.md "Light reference": light text on the hue is below AA).
+ * (`^[A-Z][A-Z0-9_]*$`); these are the three the design names. Their colour is the shared route hue
+ * (`routeChipFill`, DESIGN.md "Light reference"), as on the POS and the production screen.
  */
 export const DESTINATIONS = [
-  { code: 'KITCHEN', label: 'Cozinha', fill: 'border-route-kitchen bg-route-kitchen/15 text-foreground' },
-  { code: 'BAR', label: 'Bar', fill: 'border-route-bar bg-route-bar/15 text-foreground' },
-  { code: 'COPA', label: 'Copa', fill: 'border-route-copa bg-route-copa/15 text-foreground' },
+  { code: 'KITCHEN', label: 'Cozinha' },
+  { code: 'BAR', label: 'Bar' },
+  { code: 'COPA', label: 'Copa' },
 ] as const;
 
-/** A destination's label and fill; an unknown code shows as itself on a neutral fill, none as "Sem destino". */
+/**
+ * A destination's label and fill; an unknown code shows as itself (COZINHA in the kitchen's hue, any other on the
+ * neutral fill), none as "Sem destino".
+ */
 export function destinationOf(code: string | undefined | null): { label: string; fill: string } {
-  if (!code) return { label: 'Sem destino', fill: NEUTRAL };
-  return DESTINATIONS.find((destination) => destination.code === code) ?? { label: code, fill: NEUTRAL };
+  const label = DESTINATIONS.find((destination) => destination.code === code)?.label ?? (code || 'Sem destino');
+  return { label, fill: routeChipFill(code) };
 }
 
 /** The rate in force at `at` (ISO-8601 UTC): the latest one already effective; none when every rate is future. */

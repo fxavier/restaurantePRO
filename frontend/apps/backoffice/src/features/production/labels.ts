@@ -2,21 +2,6 @@ import type { StatusMap } from '@restaurantpro/ui';
 import { CircleCheck, CircleHelp, CircleX, Clock, EyeOff, Forward, Loader, Pause, Printer, RotateCcw, RotateCw } from 'lucide-react';
 import type { JobResolution, PrinterMode, PrintJobStatus } from './types';
 
-const KITCHEN = 'border-route-kitchen bg-route-kitchen/15';
-const BAR = 'border-route-bar bg-route-bar/15';
-const COPA = 'border-route-copa bg-route-copa/15';
-
-/**
- * A destination code's route chip, as on the POS and the catalog (DESIGN.md "Light reference"): the route's hue as a
- * border and a 15 % tint, the text in `foreground`. The codes are the tenant's (`^[A-Z][A-Z0-9_]*$`); the conventional
- * ones in either language take their route's hue, any other the neutral surface. The chip shows the code itself.
- */
-const routeFills: Record<string, string> = { KITCHEN, COZINHA: KITCHEN, BAR, COPA, PANTRY: COPA };
-
-export function routeFill(code: string): string {
-  return `${routeFills[code] ?? 'border-border bg-muted'} text-foreground`;
-}
-
 /** `PrinterMode` (CONTEXT: Normal / Espera / Ignorar / Redirecionar), by label, icon and colour together. */
 export const printerModes: StatusMap<PrinterMode> = {
   NORMAL: { label: 'Normal', icon: Printer, tone: 'success' },
@@ -31,7 +16,8 @@ export const printerModes: StatusMap<PrinterMode> = {
  */
 export const jobStatuses: StatusMap<PrintJobStatus> = {
   QUEUED: { label: 'Em fila', icon: Clock, tone: 'neutral' },
-  PROCESSING: { label: 'A enviar', icon: Loader, tone: 'primary' },
+  // In progress, not done: the blue of a state under way, not SENT's green.
+  PROCESSING: { label: 'A enviar', icon: Loader, tone: 'info' },
   SENT: { label: 'Enviado', icon: CircleCheck, tone: 'success' },
   RETRY_WAIT: { label: 'Nova tentativa em breve', icon: RotateCw, tone: 'warning' },
   FAILED: { label: 'Falhou', icon: CircleX, tone: 'destructive' },

@@ -3,13 +3,14 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
+  NativeSelect,
   StatusBadge,
+  type StatusMap,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
-  type StatusMap,
 } from '@restaurantpro/ui';
 import { CircleCheck, TriangleAlert } from 'lucide-react';
 import { useState } from 'react';
@@ -18,7 +19,6 @@ import { STOCK_PAGE_SIZE, useStock, useWarehouses } from '../hooks/use-inventory
 import { usePermission } from '../hooks/use-permission';
 import type { StockRow, WarehouseView } from '../types';
 import { Amount } from './amount';
-import { SELECT } from './command-form';
 import { MovementDialog } from './movement-dialog';
 import { Pages, QueryState } from './query-state';
 import { ScrollTable } from './scroll-table';
@@ -79,8 +79,7 @@ function StockFilters({ warehouses, warehouseId, belowMinimum, canMove, onChange
     <div className="flex flex-wrap items-end gap-4">
       <label className="flex w-fit flex-col gap-1 text-sm font-medium">
         Armazém
-        <select
-          className={SELECT}
+        <NativeSelect
           value={warehouseId ?? ''}
           onChange={(event) => onChange({ warehouseId: event.target.value, belowMinimum })}
         >
@@ -89,7 +88,7 @@ function StockFilters({ warehouses, warehouseId, belowMinimum, canMove, onChange
               {warehouse.name}
             </option>
           ))}
-        </select>
+        </NativeSelect>
       </label>
       <label className="flex h-9 items-center gap-2 text-sm">
         <input

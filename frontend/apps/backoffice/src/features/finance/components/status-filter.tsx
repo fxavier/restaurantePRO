@@ -1,5 +1,5 @@
+import { NativeSelect } from '@restaurantpro/ui';
 import { useId } from 'react';
-import { selectClass } from './styles';
 
 type StatusFilterProps<Value extends string> = {
   label: string;
@@ -16,13 +16,13 @@ export function StatusFilter<Value extends string>({ label, value, options, onCh
       <label htmlFor={id} className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
         {label}
       </label>
-      <select id={id} className={selectClass} value={value} onChange={(event) => onChange(event.target.value as Value)}>
+      <NativeSelect id={id} className="h-10 w-auto" value={value} onChange={(event) => onChange(event.target.value as Value)}>
         {options.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
           </option>
         ))}
-      </select>
+      </NativeSelect>
     </div>
   );
 }

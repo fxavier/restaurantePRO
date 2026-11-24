@@ -30,6 +30,8 @@ const tabsListVariants = cva(
       variant: {
         default: "bg-muted",
         line: "gap-1 bg-transparent",
+        // The light reference's area tabs (DESIGN.md): a wrapping row of pills, every tab in reach at 1024 px.
+        pill: "max-w-full flex-wrap justify-start gap-2 rounded-none bg-transparent p-0 group-data-[orientation=horizontal]/tabs:h-auto",
       },
     },
     defaultVariants: {
@@ -66,6 +68,11 @@ function TabsTrigger({
         "group-data-[variant=line]/tabs-list:bg-transparent group-data-[variant=line]/tabs-list:data-[state=active]:bg-transparent dark:group-data-[variant=line]/tabs-list:data-[state=active]:border-transparent dark:group-data-[variant=line]/tabs-list:data-[state=active]:bg-transparent",
         // Stitch: the active tab is filled with the primary
         "data-[state=active]:bg-primary data-[state=active]:text-primary-foreground group-data-[variant=line]/tabs-list:data-[state=active]:text-foreground",
+        // The pill variant: white bordered 48 px pills as the sidebar's, the selected one solid green (no shadow: the
+        // default variant's alone), darker on hover. Each rule names the state so it outranks the shared ones above.
+        "group-data-[variant=pill]/tabs-list:h-12 group-data-[variant=pill]/tabs-list:flex-none group-data-[variant=pill]/tabs-list:gap-2 group-data-[variant=pill]/tabs-list:rounded-xl group-data-[variant=pill]/tabs-list:border-border group-data-[variant=pill]/tabs-list:px-4",
+        "group-data-[variant=pill]/tabs-list:data-[state=inactive]:bg-card group-data-[variant=pill]/tabs-list:data-[state=inactive]:text-foreground group-data-[variant=pill]/tabs-list:data-[state=inactive]:hover:bg-muted",
+        "group-data-[variant=pill]/tabs-list:data-[state=active]:border-primary group-data-[variant=pill]/tabs-list:data-[state=active]:font-semibold group-data-[variant=pill]/tabs-list:data-[state=active]:text-primary-foreground group-data-[variant=pill]/tabs-list:data-[state=active]:hover:bg-primary-hover",
         "after:absolute after:bg-foreground after:opacity-0 after:transition-opacity group-data-[orientation=horizontal]/tabs:after:inset-x-0 group-data-[orientation=horizontal]/tabs:after:bottom-[-5px] group-data-[orientation=horizontal]/tabs:after:h-0.5 group-data-[orientation=vertical]/tabs:after:inset-y-0 group-data-[orientation=vertical]/tabs:after:-right-1 group-data-[orientation=vertical]/tabs:after:w-0.5 group-data-[variant=line]/tabs-list:data-[state=active]:after:opacity-100",
         className
       )}

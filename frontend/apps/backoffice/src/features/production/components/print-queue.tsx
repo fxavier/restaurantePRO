@@ -1,11 +1,10 @@
-import { Button, LOCALE, StatusBadge, StatusPill } from '@restaurantpro/ui';
+import { Button, LOCALE, NativeSelect, StatusBadge, StatusPill } from '@restaurantpro/ui';
 import { Check, Copy, RefreshCw, RotateCcw } from 'lucide-react';
 import { useId, useState, type ReactNode } from 'react';
 import { useAcknowledgeJob, usePrintJobs, useRetryJob, JOB_PAGE_SIZE } from '../hooks/use-print-jobs';
 import { jobFilters, jobStatuses, jobTitle, resolutions } from '../labels';
 import { canAcknowledge, canRetry, type PrintJob } from '../parse';
 import type { PrintJobStatus } from '../types';
-import { NativeSelect } from './native-select';
 import { ProblemAlert } from './problem-alert';
 import { QueryState } from './query-state';
 

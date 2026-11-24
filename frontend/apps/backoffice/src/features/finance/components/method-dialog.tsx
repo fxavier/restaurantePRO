@@ -16,6 +16,7 @@ import {
   FormLabel,
   FormMessage,
   Input,
+  NativeSelect,
 } from '@restaurantpro/ui';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 import type { FinanceCommand } from '../finance-commands';
@@ -26,7 +27,6 @@ import { METHOD_KINDS, methodSchema, type MethodValues } from '../schemas';
 import type { PaymentMethodView } from '../types';
 import { CommandAlert } from './command-alert';
 import { FormProblem } from './form-problem';
-import { selectClass } from './styles';
 
 export const KIND_LABELS: Record<string, string> = {
   CASH: 'Dinheiro',
@@ -150,13 +150,13 @@ function CreateFields({ form }: { form: MethodFormApi }) {
           <FormItem>
             <FormLabel>Tipo</FormLabel>
             <FormControl>
-              <select {...field} className={selectClass}>
+              <NativeSelect {...field} className="h-10 w-auto">
                 {METHOD_KINDS.map((kind) => (
                   <option key={kind} value={kind}>
                     {KIND_LABELS[kind]}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </FormControl>
             <FormMessage />
           </FormItem>

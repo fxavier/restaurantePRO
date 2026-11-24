@@ -1,8 +1,7 @@
-import { Input, Label } from '@restaurantpro/ui';
+import { Input, Label, NativeSelect } from '@restaurantpro/ui';
 import { useId } from 'react';
 import type { DeliveryFilter } from '../hooks/use-deliveries';
 import type { EmployeeSummary } from '../types';
-import { NativeSelect } from './fee-select';
 
 type ReportFiltersProps = {
   filter: DeliveryFilter;

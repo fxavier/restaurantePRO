@@ -31,13 +31,9 @@ export function TableMapView({ areas, area, onArea, selected, onSelect, activity
   return (
     <Tabs value={active} onValueChange={onArea} className="gap-4">
       <div className="flex flex-wrap items-center gap-3">
-        <TabsList className="h-auto flex-1 flex-wrap justify-start gap-2 bg-transparent p-0 group-data-[orientation=horizontal]/tabs:h-auto">
+        <TabsList variant="pill" className="flex-1">
           {areas.map(({ id, name, tables }) => (
-            <TabsTrigger
-              key={id}
-              value={id}
-              className="min-h-12 flex-none gap-2 rounded-xl border-border bg-card px-5 text-base text-foreground data-[state=active]:border-primary"
-            >
+            <TabsTrigger key={id} value={id}>
               {name}
               {/* "Sala 12" on screen, "Sala, 12 mesas" read out; the spaces between flex items take no room. */}
               <span className="sr-only">,</span>{' '}

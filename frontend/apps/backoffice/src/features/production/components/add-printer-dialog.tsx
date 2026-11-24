@@ -10,6 +10,7 @@ import {
   FormField,
   FormItem,
   FormLabel,
+  NativeSelect,
 } from '@restaurantpro/ui';
 import { Plus } from 'lucide-react';
 import { useState } from 'react';
@@ -19,7 +20,6 @@ import { useCreatePrinter, usePrinterPresets } from '../hooks/use-printer-comman
 import { createRequest } from '../printer-requests';
 import type { PrinterFormValues } from '../schemas';
 import type { PrinterPresetView } from '../types';
-import { NativeSelect } from './native-select';
 import { PrinterForm } from './printer-form';
 
 const EMPTY: PrinterFormValues = { code: '', name: '', host: '', port: '9100', codePage: 'CP860', preset: '', active: true };

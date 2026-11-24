@@ -2,7 +2,6 @@ import { Card, Tabs, TabsContent, TabsList, TabsTrigger } from '@restaurantpro/u
 import { ArrowLeftRight, Boxes, ChartColumn, ClipboardList, CookingPot, ShoppingCart, type LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useSearchParams } from 'react-router';
-import { AREA_TAB, AREA_TABS_LIST } from '../../../shell/area-tabs';
 import { useSession } from '../../identity';
 import { useStore } from '../hooks/use-inventory-reads';
 import { holds } from '../permissions';
@@ -93,9 +92,9 @@ export function InventoryScreen({ storeId }: { storeId: string }) {
       <StockSummary storeId={storeId} currency={context.currency} />
       <Tabs value={tab} onValueChange={select} className="gap-4">
         <Card className="p-2">
-          <TabsList className={AREA_TABS_LIST}>
+          <TabsList variant="pill">
             {TABS.map(({ value, label, icon: Icon }) => (
-              <TabsTrigger key={value} value={value} className={AREA_TAB}>
+              <TabsTrigger key={value} value={value}>
                 <Icon aria-hidden="true" />
                 {label}
               </TabsTrigger>

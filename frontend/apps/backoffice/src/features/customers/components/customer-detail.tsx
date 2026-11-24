@@ -46,19 +46,19 @@ export function CustomerDetail({
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="data">
-          {/* The POS area tabs: white bordered pills, the open one solid green. */}
-          <TabsList className="h-auto max-w-full flex-wrap justify-start gap-2 bg-transparent p-0 group-data-[orientation=horizontal]/tabs:h-auto">
-            <TabsTrigger value="data" className="min-h-10 flex-none rounded-xl border-border bg-card px-4 text-foreground data-[state=active]:border-primary data-[state=inactive]:hover:bg-muted">
+          {/* The area tabs (the shared pill variant): white bordered pills, the open one solid green. */}
+          <TabsList variant="pill">
+            <TabsTrigger value="data">
               Dados
             </TabsTrigger>
-            <TabsTrigger value="contacts" className="min-h-10 flex-none rounded-xl border-border bg-card px-4 text-foreground data-[state=active]:border-primary data-[state=inactive]:hover:bg-muted">
+            <TabsTrigger value="contacts">
               Moradas & Contactos
             </TabsTrigger>
-            <TabsTrigger value="credit" className="min-h-10 flex-none rounded-xl border-border bg-card px-4 text-foreground data-[state=active]:border-primary data-[state=inactive]:hover:bg-muted">
+            <TabsTrigger value="credit">
               Crédito
             </TabsTrigger>
             {allowed.LOYALTY_VIEW && (
-              <TabsTrigger value="loyalty" className="min-h-10 flex-none rounded-xl border-border bg-card px-4 text-foreground data-[state=active]:border-primary data-[state=inactive]:hover:bg-muted">
+              <TabsTrigger value="loyalty">
                 Fidelização
               </TabsTrigger>
             )}

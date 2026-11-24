@@ -7,6 +7,7 @@ import {
   CardTitle,
   ConfirmButton,
   Input,
+  NativeSelect,
   TableBody,
   TableCell,
   TableHead,
@@ -25,7 +26,6 @@ import { useRowCommand } from '../hooks/use-row-command';
 import { nextIntent, type Intent } from '../intent';
 import type { CountRequest, CountView } from '../types';
 import { CommandError } from './command-error';
-import { SELECT } from './command-form';
 import { QueryState } from './query-state';
 import { ScrollTable } from './scroll-table';
 import { countStates, StateBadge } from './state-badge';
@@ -88,14 +88,14 @@ function NewCount({ storeId, onCreated }: { storeId: string; onCreated: (id: str
         <div className="flex flex-wrap items-end gap-4">
           <label className="flex flex-col gap-1 text-sm font-medium">
             Armazém a contar
-            <select className={SELECT} value={warehouseId} onChange={(event) => setWarehouseId(event.target.value)}>
+            <NativeSelect value={warehouseId} onChange={(event) => setWarehouseId(event.target.value)}>
               <option value="">Escolha…</option>
               {warehouses.data?.map((warehouse) => (
                 <option key={warehouse.id} value={warehouse.id}>
                   {warehouse.name}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </label>
           <ConfirmButton
             pending={create.isPending}

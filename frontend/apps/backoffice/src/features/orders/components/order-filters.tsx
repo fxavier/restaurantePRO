@@ -1,4 +1,4 @@
-import { Button, Input, Label } from '@restaurantpro/ui';
+import { Button, Input, Label, NativeSelect } from '@restaurantpro/ui';
 import { Search } from 'lucide-react';
 import { useId, useState, type ComponentProps, type ReactNode } from 'react';
 import { withField } from '../filters';
@@ -83,11 +83,11 @@ type ChoiceProps = {
 
 function Choice({ value, all, options, onChange, ...props }: ChoiceProps) {
   return (
-    <select
+    <NativeSelect
       {...props}
       value={value ?? ''}
       onChange={(event) => onChange(event.target.value)}
-      className="h-9 min-w-40 rounded-xl border border-input bg-card px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+      className="w-auto min-w-40"
     >
       <option value="">{all}</option>
       {options.map((option) => (
@@ -95,6 +95,6 @@ function Choice({ value, all, options, onChange, ...props }: ChoiceProps) {
           {option.label}
         </option>
       ))}
-    </select>
+    </NativeSelect>
   );
 }

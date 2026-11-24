@@ -1,20 +1,9 @@
 import { ApiError } from '@restaurantpro/api-client';
-import { FormControl, FormField, FormItem, FormLabel, FormMessage } from '@restaurantpro/ui';
-import type { ComponentProps } from 'react';
+import { FormControl, FormField, FormItem, FormLabel, FormMessage, NativeSelect } from '@restaurantpro/ui';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { errorMessage } from '../../../lib/error-messages';
 import { useFeeItems, useItemVariants } from '../hooks/use-fee-items';
 import type { ZoneValues } from '../schemas';
-
-/** The native select of the zone form, in the field tokens of `Input` (a picker of a few options, no search). */
-export function NativeSelect(props: ComponentProps<'select'>) {
-  return (
-    <select
-      {...props}
-      className="h-9 w-full rounded-xl border border-input bg-card px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50 aria-invalid:border-destructive"
-    />
-  );
-}
 
 /** Why the fee items are not there: the catalog's refusal, or the general reason (no connection, an error). */
 function itemsError(error: unknown): string {

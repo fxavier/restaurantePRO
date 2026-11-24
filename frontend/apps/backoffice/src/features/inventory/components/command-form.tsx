@@ -8,6 +8,7 @@ import {
   FormLabel,
   FormMessage,
   Input,
+  NativeSelect,
 } from '@restaurantpro/ui';
 import type { ComponentProps, FormEvent, ReactNode } from 'react';
 import type { Control, FieldValues, Path, UseFormReturn } from 'react-hook-form';
@@ -100,14 +101,14 @@ export function SelectField<Values extends FieldValues>({
         <FormItem>
           <FormLabel>{label}</FormLabel>
           <FormControl>
-            <select className={SELECT} {...field} value={(field.value as string | undefined) ?? ''}>
+            <NativeSelect {...field} value={(field.value as string | undefined) ?? ''}>
               <option value="">{placeholder}</option>
               {options.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </FormControl>
           <FormMessage />
         </FormItem>
@@ -115,7 +116,3 @@ export function SelectField<Values extends FieldValues>({
     />
   );
 }
-
-/** The native select styled like the design system's inputs (the light reference's white field, `rounded-xl`). */
-export const SELECT =
-  'h-9 w-full rounded-xl border border-input bg-card px-3 text-sm focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none';

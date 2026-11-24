@@ -1,6 +1,7 @@
 import {
   Card,
   cn,
+  StatBox,
   Table,
   TableBody,
   TableCaption,
@@ -15,7 +16,6 @@ import { formatBusinessDate } from '../format';
 import { useReceiptsByMethod, useSalesByDay } from '../hooks/use-reports';
 import type { Period } from '../period';
 import type { ReceiptsReport, SalesReport } from '../types';
-import { KpiCard } from './kpi-card';
 import { QueryState } from './query-state';
 import { Amount, SectionCard } from './section-card';
 
@@ -61,16 +61,16 @@ function Kpis({ sales, receipts }: { sales: SalesReport | undefined; receipts: R
   const totals = sales?.totals;
   return (
     <Card className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
-      <KpiCard
-        label="Faturação bruta"
+      <StatBox
+        caption="Faturação bruta"
         icon={Receipt}
-        tint="bg-muted"
+        tone="muted"
         value={<Amount value={totals?.gross} />}
         meta={totals && `${totals.documents ?? 0} documentos`}
       />
-      <KpiCard label="Faturação líquida" icon={Landmark} tint="bg-muted" value={<Amount value={totals?.net} />} />
-      <KpiCard label="Impostos" icon={Percent} tint="bg-muted" value={<Amount value={totals?.tax} />} />
-      <KpiCard label="Recebido" icon={Banknote} tint={TONE_TINT.success} value={<Amount value={receipts?.totals?.received} />} />
+      <StatBox caption="Faturação líquida" icon={Landmark} tone="muted" value={<Amount value={totals?.net} />} />
+      <StatBox caption="Impostos" icon={Percent} tone="muted" value={<Amount value={totals?.tax} />} />
+      <StatBox caption="Recebido" icon={Banknote} tone="success" value={<Amount value={receipts?.totals?.received} />} />
     </Card>
   );
 }
