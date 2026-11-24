@@ -54,7 +54,7 @@ export function OrdersTable({ orders, timeZone, selectedId, onSelect }: OrdersTa
             <TableCell className="font-mono">{order.tableCode ?? '—'}</TableCell>
             <TableCell className="tabular-nums">{order.guests ?? '—'}</TableCell>
             <TableCell>
-              <StatusBadge status={order.lifecycle} statuses={lifecycles} />
+              <StatusBadge look="tint" status={order.lifecycle} statuses={lifecycles} />
             </TableCell>
             <TableCell className="tabular-nums">{businessDate(order.businessDay)}</TableCell>
             <TableCell className="tabular-nums">{storeTime(order.openedAt, timeZone)}</TableCell>

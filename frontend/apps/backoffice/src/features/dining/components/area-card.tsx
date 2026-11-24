@@ -1,4 +1,4 @@
-import { Badge, Card, CardContent, CardHeader, CardTitle, StatusBadge, type StatusMap } from '@restaurantpro/ui';
+import { Badge, Card, CardContent, CardHeader, CardTitle, cn, StatusBadge, TONE_INK, type StatusMap, type StatusTone } from '@restaurantpro/ui';
 import { CircleCheck, CircleOff, Lock } from 'lucide-react';
 import { useId, type ReactNode } from 'react';
 import type { AreaFloor } from '../floor';
@@ -31,7 +31,7 @@ export function AreaCard({ floor: { area, tables, seats }, actions, renderTable 
             {area.name}
           </CardTitle>
         </div>
-        <StatusBadge status={area.active ? 'active' : 'inactive'} statuses={states} />
+        <StatusBadge look="tint" status={area.active ? 'active' : 'inactive'} statuses={states} />
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <p className="text-sm text-muted-foreground">
@@ -39,7 +39,7 @@ export function AreaCard({ floor: { area, tables, seats }, actions, renderTable 
           <span className="font-semibold text-foreground">{seats}</span> lugares
         </p>
         {tables.length > 0 ? (
-          <ul aria-label={`Mesas de ${area.name}`} className="flex flex-wrap gap-2">
+          <ul aria-label={`Mesas de ${area.name}`} className="grid grid-cols-3 gap-2">
             {tables.map((table) => (
               <li key={table.id}>{renderTable(table, <TableChip table={table} />)}</li>
             ))}
@@ -53,22 +53,31 @@ export function AreaCard({ floor: { area, tables, seats }, actions, renderTable 
   );
 }
 
+/** In a tile the state is a line of its AA text with its icon, as the POS map's ("Livre", "Conta pedida"). */
+const TILE_STATE = 'flex items-center gap-1 text-xs font-medium';
+
+/** A table's tile tint, as the POS map's (DESIGN.md "Light reference"): locked red, inactive grey, in service white. */
+export function tableTone(table: RestaurantTableSummary): StatusTone | undefined {
+  if (table.locked) return 'destructive';
+  return table.active ? undefined : 'neutral';
+}
+
 function TableChip({ table }: { table: RestaurantTableSummary }) {
   return (
-    <span className="flex flex-col items-start gap-0.5">
-      <span className="font-mono font-semibold">{table.code}</span>
-      <span className="text-xs text-muted-foreground">{table.seats} lugares</span>
+    <span className="flex w-full min-w-0 flex-col items-start gap-1">
+      <span className="w-full text-base font-semibold break-all">{table.code}</span>
+      <span className="text-xs font-normal text-muted-foreground">{table.seats} lugares</span>
       {table.locked && (
-        <Badge variant="destructive">
-          <Lock aria-hidden="true" />
+        <span className={cn(TILE_STATE, TONE_INK.destructive)}>
+          <Lock aria-hidden="true" className="size-3.5" />
           Bloqueada
-        </Badge>
+        </span>
       )}
       {!table.active && (
-        <Badge variant="secondary">
-          <CircleOff aria-hidden="true" />
+        <span className={cn(TILE_STATE, TONE_INK.neutral)}>
+          <CircleOff aria-hidden="true" className="size-3.5" />
           Inativa
-        </Badge>
+        </span>
       )}
     </span>
   );

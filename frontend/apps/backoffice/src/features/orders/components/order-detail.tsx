@@ -61,7 +61,7 @@ function OrderBody({ order, timeZone }: { order: OrderView; timeZone: string | u
       <div className="flex flex-wrap items-start justify-between gap-4">
         <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
           <Fact term="Estado">
-            <StatusBadge status={order.lifecycle} statuses={lifecycles} />
+            <StatusBadge look="tint" status={order.lifecycle} statuses={lifecycles} />
           </Fact>
           <Fact term="Modo">{modes[order.mode]}</Fact>
           <Fact term="Mesa">{order.tableCode ?? '—'}</Fact>
@@ -70,9 +70,9 @@ function OrderBody({ order, timeZone }: { order: OrderView; timeZone: string | u
           <Fact term="Aberto">{storeTime(order.openedAt, timeZone, true)}</Fact>
           <Fact term="Fechado">{storeTime(order.closedAt, timeZone, true)}</Fact>
         </dl>
-        <div role="group" aria-label="A pagar" className="min-w-40 rounded-xl border bg-muted p-4">
+        <div role="group" aria-label="A pagar" className="min-w-40 rounded-xl bg-muted p-4">
           <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">A pagar</p>
-          <Money value={order.due} className="text-2xl font-semibold text-primary" />
+          <Money value={order.due} className="text-2xl font-bold tabular-nums" />
         </div>
       </div>
       <OrderLines lines={order.lines} batches={order.batches} />

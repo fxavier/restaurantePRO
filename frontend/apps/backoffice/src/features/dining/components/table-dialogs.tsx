@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Button, ConfirmButton, Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@restaurantpro/ui';
+import { Button, cn, ConfirmButton, Form, FormControl, FormField, FormItem, FormLabel, FormMessage, TONE_CARD } from '@restaurantpro/ui';
 import { Plus } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
@@ -17,6 +17,7 @@ import { tableFormValues } from '../form-values';
 import { useCreateTable, useReadFloorItem, useUpdateTable } from '../hooks/use-floor-commands';
 import { tableSchema, type TableValues } from '../schemas';
 import type { RestaurantTableSummary, RoomAreaSummary } from '../types';
+import { tableTone } from './area-card';
 import { DINING_TAKEN } from './dining-messages';
 
 const FIELDS = ['code', 'seats', 'areaId', 'active'] as const;
@@ -54,13 +55,14 @@ export function NewTableDialog({ area }: { area: RoomAreaSummary }) {
 
 /** "Editar mesa": its code, seats, area and whether it is active, at the version read; the trigger is the table. */
 export function EditTableDialog({ table, areas, children }: { table: RestaurantTableSummary; areas: RoomAreaSummary[]; children: ReactNode }) {
+  const tone = tableTone(table);
   return (
     <FormDialog
       title="Editar mesa"
       description={`Mesa ${table.code}`}
       trigger={
         // The name starts with the action and keeps the visible text (WCAG 2.5.3 label in name): "Editar mesa M01 4 lugares".
-        <Button variant="outline" className="h-auto min-w-20 justify-start px-3 py-2">
+        <Button variant="outline" className={cn('h-full w-full min-w-0 flex-col items-start justify-start px-3 py-2 text-left whitespace-normal', tone && TONE_CARD[tone])}>
           <span className="sr-only">Editar mesa</span> {children}
         </Button>
       }
@@ -132,7 +134,7 @@ function TableForm({ defaultValues, areas, submitLabel, onSubmit, onCancel }: Ta
                   <FormControl>
                     <select
                       {...field}
-                      className="h-9 rounded-md border border-input bg-muted px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                      className="h-9 rounded-xl border border-input bg-card px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                     >
                       {areas.map((area) => (
                         <option key={area.id} value={area.id}>

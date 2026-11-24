@@ -53,8 +53,8 @@ export function CompanyProfileCard() {
   return (
     <Card role="region" aria-labelledby={titleId} className="mt-6 gap-4">
       <CardHeader className="flex flex-row flex-wrap items-start gap-3">
-        <span className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-muted">
-          <Building2 aria-hidden="true" className="size-6 text-primary" />
+        <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-muted text-primary">
+          <Building2 aria-hidden="true" className="size-6" />
         </span>
         <div className="flex min-w-0 flex-1 basis-48 flex-col gap-1">
           <CardTitle id={titleId} className="text-xl">

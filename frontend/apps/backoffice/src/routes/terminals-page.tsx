@@ -1,3 +1,4 @@
+import { Card, CardContent } from '@restaurantpro/ui';
 import { Store } from 'lucide-react';
 import { StoreTerminals, useStoreSelection } from '../features/organization';
 
@@ -15,10 +16,12 @@ export function TerminalsPage() {
       {storeId ? (
         <StoreTerminals key={storeId} storeId={storeId} />
       ) : (
-        <div className="mt-6 flex flex-col items-center gap-3 rounded-xl border bg-card p-8 text-center">
-          <Store aria-hidden="true" className="size-8 text-muted-foreground" />
-          <p>Escolha uma loja na barra superior para ver os seus terminais.</p>
-        </div>
+        <Card className="mt-6">
+          <CardContent className="flex flex-col items-center gap-3 py-2 text-center">
+            <Store aria-hidden="true" className="size-8 text-muted-foreground" />
+            <p>Escolha uma loja na barra superior para ver os seus terminais.</p>
+          </CardContent>
+        </Card>
       )}
     </>
   );

@@ -10,7 +10,7 @@ export function OverviewPage() {
       <p className="mt-1 text-muted-foreground">Bem-vindo, {session?.name}.</p>
       <Card className="mt-6 max-w-xl">
         <CardHeader>
-          <CardTitle>Por onde começar</CardTitle>
+          <CardTitle className="text-lg">Por onde começar</CardTitle>
           <CardDescription>Escolha a loja na barra superior e uma área no menu lateral.</CardDescription>
         </CardHeader>
         <CardContent>

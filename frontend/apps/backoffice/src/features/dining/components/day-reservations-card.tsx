@@ -113,7 +113,7 @@ function ReservationRow({ reservation, timeZone, codes }: RowProps) {
       <TableCell>{reservation.partySize}</TableCell>
       <TableCell className="font-mono">{(reservation.tableIds ?? []).map((id) => codes.get(id) ?? '?').join(', ')}</TableCell>
       <TableCell>
-        <StatusBadge status={status} statuses={statusesOf(status)} />
+        <StatusBadge look="tint" status={status} statuses={statusesOf(status)} />
       </TableCell>
     </TableRow>
   );
