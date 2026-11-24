@@ -47,9 +47,9 @@ export function LoyaltyTab({ customerId, allowed, storeId }: LoyaltyTabProps) {
 function LoyaltyAccount({ account }: { account: LoyaltyBalance }) {
   const status = account.status === 'SUSPENDED' ? 'SUSPENDED' : 'ACTIVE';
   return (
-    <div className="flex flex-wrap items-center gap-4 rounded-lg border bg-muted p-4">
+    <div className="flex flex-wrap items-center gap-4 rounded-xl border bg-muted p-4">
       <p className="text-3xl font-bold tabular-nums">{formatPoints(account.points)} pontos</p>
-      <StatusBadge status={status} statuses={accountStatuses} />
+      <StatusBadge status={status} statuses={accountStatuses} look="tint" />
     </div>
   );
 }

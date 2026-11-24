@@ -3,7 +3,7 @@ import { expectNoAxeViolations } from '../axe';
 
 // The customers area of the built BackOffice ("Clientes, Crédito & Conta Corrente"), its API stood in by page.route (the
 // preview has no BFF): the debts list, a customer's detail with its credit account and statement, the limit dialog,
-// and the loyalty tab; axe on each. Screenshots at 1440 and 390 wide only when E2E_SCREENS is set (SCREENSHOT_DIR
+// and the loyalty tab; axe on each. Screenshots at 1440, 1024 and 390 wide only when E2E_SCREENS is set (SCREENSHOT_DIR
 // names where; else the test's output folder).
 
 const TENANT = 'aaaaaaaa-0000-4000-8000-000000000001';
@@ -109,7 +109,7 @@ async function screenshot(page: Page, testInfo: TestInfo, name: string) {
   const dir = process.env.SCREENSHOT_DIR;
   const { width } = page.viewportSize()!;
   const path = dir ? `${dir}/${name}-${width}.png` : testInfo.outputPath(`${name}-${width}.png`);
-  await page.screenshot({ path, fullPage: true });
+  await page.screenshot({ path, fullPage: true, animations: 'disabled' });
 }
 
 test('customers: the debts, a customer with its credit and statement, the limit dialog and loyalty, axe clean', async ({
@@ -146,7 +146,8 @@ test('customers: the debts, a customer with its credit and statement, the limit 
 });
 
 for (const viewport of [
-  { width: 1440, height: 1100 },
+  { width: 1440, height: 900 },
+  { width: 1024, height: 768 },
   { width: 390, height: 844 },
 ]) {
   test(`customers screenshots at ${viewport.width}`, async ({ page }, testInfo) => {
@@ -156,6 +157,8 @@ for (const viewport of [
 
     await page.goto(`/customers?storeId=${STORE}&customerId=${CUSTOMER}`);
     const detail = page.getByRole('region', { name: 'Lusitânia Tech, Lda.' });
+    await expect(page.getByRole('table', { name: 'Clientes com saldo devedor' }).getByRole('row')).toHaveCount(4);
+    await screenshot(page, testInfo, 'bo-customers-data');
     await detail.getByRole('tab', { name: 'Crédito' }).click();
     await expect(detail.getByRole('table', { name: 'Extrato de conta corrente' })).toBeVisible();
     await screenshot(page, testInfo, 'bo-customers-credit');
@@ -163,5 +166,10 @@ for (const viewport of [
     await detail.getByRole('button', { name: 'Alterar limite' }).click();
     await expect(page.getByRole('dialog', { name: 'Alterar limite de crédito' })).toBeVisible();
     await screenshot(page, testInfo, 'bo-customers-limit-dialog');
+    await page.getByRole('dialog', { name: 'Alterar limite de crédito' }).getByRole('button', { name: 'Cancelar' }).click();
+
+    await detail.getByRole('tab', { name: 'Fidelização' }).click();
+    await expect(detail.getByText('320 pontos')).toBeVisible();
+    await screenshot(page, testInfo, 'bo-customers-loyalty');
   });
 }

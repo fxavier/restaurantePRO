@@ -1,4 +1,4 @@
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@restaurantpro/ui';
+import { Card, Tabs, TabsContent, TabsList, TabsTrigger } from '@restaurantpro/ui';
 import { Lock } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useSearchParams } from 'react-router';
@@ -49,9 +49,14 @@ export function PeopleScreen() {
       </p>
       {current ? (
         <Tabs value={current} onValueChange={open} className="mt-6 gap-4">
-          <TabsList className="h-auto flex-wrap">
+          {/* The POS area tabs: white bordered pills, the open one solid green. */}
+          <TabsList className="h-auto flex-wrap justify-start gap-2 bg-transparent p-0 group-data-[orientation=horizontal]/tabs:h-auto">
             {tabs.map((tab) => (
-              <TabsTrigger key={tab.id} value={tab.id} className="min-h-9 px-4">
+              <TabsTrigger
+                key={tab.id}
+                value={tab.id}
+                className="min-h-10 flex-none rounded-xl border-border bg-card px-4 text-foreground data-[state=active]:border-primary data-[state=inactive]:hover:bg-muted"
+              >
                 {tab.label}
               </TabsTrigger>
             ))}
@@ -63,10 +68,10 @@ export function PeopleScreen() {
           ))}
         </Tabs>
       ) : (
-        <div className="mt-6 flex flex-col items-center gap-3 rounded-xl border bg-card p-8 text-center">
+        <Card className="mt-6 items-center gap-3 p-8 text-center">
           <Lock aria-hidden="true" className="size-8 text-muted-foreground" />
           <p>Sem permissão para gerir empregados, funções ou utilizadores.</p>
-        </div>
+        </Card>
       )}
     </>
   );

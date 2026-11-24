@@ -1,4 +1,4 @@
-import { Badge, Button, TableCell, TableRow } from '@restaurantpro/ui';
+import { Button, StatusPill, TableCell, TableRow } from '@restaurantpro/ui';
 import { Pencil, ShieldPlus } from 'lucide-react';
 import { useState } from 'react';
 import { useEditing } from '../hooks/use-editing';
@@ -44,6 +44,7 @@ export function RolesTab() {
         description="Dê-lhe um nome e as permissões que concede. Atribua-a depois a empregados ou a contas."
         open={creating}
         onClose={stopCreating}
+        className="md:max-w-3xl"
       >
         <RoleForm onClose={stopCreating} />
       </FormDialog>
@@ -52,6 +53,7 @@ export function RolesTab() {
         description="As alterações valem de imediato para todos os que têm esta função."
         open={editing !== undefined}
         onClose={stopEditing}
+        className="md:max-w-3xl"
       >
         <RoleForm role={editing} onClose={stopEditing} />
       </FormDialog>
@@ -69,9 +71,9 @@ function RoleRow({ role, onEdit }: { role: RoleSummary; onEdit: () => void }) {
         <span className="sr-only">{permissions.length} permissões: </span>
         <span className="flex flex-wrap gap-1">
           {permissions.map((permission) => (
-            <Badge key={permission} variant="secondary" className="font-mono normal-case">
+            <StatusPill key={permission} tone="neutral" className="font-mono text-xs">
               {permission}
-            </Badge>
+            </StatusPill>
           ))}
         </span>
       </TableCell>

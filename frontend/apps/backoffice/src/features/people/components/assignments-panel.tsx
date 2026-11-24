@@ -36,7 +36,7 @@ export function AssignmentsPanel({ employee, onClose }: { employee: EmployeeSumm
         emptyMessage="Sem lojas: o empregado ainda não abre sessão em nenhuma loja."
         onRetry={() => void assignments.refetch()}
       >
-        <ul aria-label="Atribuições" className="flex flex-col divide-y rounded-md border">
+        <ul aria-label="Atribuições" className="flex flex-col divide-y rounded-xl border">
           {assignments.data?.map((assignment) => {
             const label = `${roleName(assignment.roleId)} em ${storeName(assignment.storeId)}`;
             return (

@@ -1,5 +1,5 @@
-import { Badge, Button, StatusBadge, TableCell, TableRow } from '@restaurantpro/ui';
-import { Pencil, UserPlus } from 'lucide-react';
+import { Button, StatusBadge, StatusPill, TableCell, TableRow } from '@restaurantpro/ui';
+import { LifeBuoy, Pencil, UserPlus, UserRound } from 'lucide-react';
 import { useState } from 'react';
 import { useStoreAndRoleChoices } from '../hooks/use-choices';
 import { useEditing } from '../hooks/use-editing';
@@ -79,10 +79,12 @@ function AccountRow({
       <TableCell className="font-mono">{account.username}</TableCell>
       <TableCell className="whitespace-normal">{roleIds.length ? roleIds.map(roleName).join(', ') : '—'}</TableCell>
       <TableCell>
-        <Badge variant={account.support ? 'info' : 'secondary'}>{account.support ? 'Suporte' : 'Conta'}</Badge>
+        <StatusPill tone={account.support ? 'info' : 'neutral'} icon={account.support ? LifeBuoy : UserRound}>
+          {account.support ? 'Suporte' : 'Conta'}
+        </StatusPill>
       </TableCell>
       <TableCell>
-        <StatusBadge status={account.active === false ? 'INACTIVE' : 'ACTIVE'} statuses={accountStatuses} />
+        <StatusBadge status={account.active === false ? 'INACTIVE' : 'ACTIVE'} statuses={accountStatuses} look="tint" />
       </TableCell>
       <TableCell>
         <div className="flex justify-end">

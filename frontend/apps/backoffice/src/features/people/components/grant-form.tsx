@@ -64,7 +64,7 @@ export function GrantForm({ supportAccounts, onClose }: GrantFormProps) {
                   {...field}
                   rows={3}
                   maxLength={500}
-                  className="w-full rounded-md border border-input bg-muted px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring aria-invalid:border-destructive"
+                  className="w-full rounded-xl border border-input bg-card px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring aria-invalid:border-destructive"
                 />
               </FormControl>
               <FormMessage />

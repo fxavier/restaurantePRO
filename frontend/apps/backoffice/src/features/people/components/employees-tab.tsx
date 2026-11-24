@@ -135,7 +135,7 @@ function EmployeeRow({ employee, unlocking, onEdit, onUnlock, onAssignments, onR
       <TableCell className="font-medium">{employee.name}</TableCell>
       <TableCell className="font-mono text-muted-foreground">{employee.code}</TableCell>
       <TableCell>
-        <StatusBadge status={employeeState(employee)} statuses={employeeStatuses} />
+        <StatusBadge status={employeeState(employee)} statuses={employeeStatuses} look="tint" />
       </TableCell>
       <TableCell>
         <div className="flex justify-end gap-2">

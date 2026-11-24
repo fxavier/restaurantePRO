@@ -1,4 +1,4 @@
-import { Badge } from '@restaurantpro/ui';
+import { StatusPill } from '@restaurantpro/ui';
 import { ShieldAlert } from 'lucide-react';
 import { useId } from 'react';
 import type { ReadState } from '../hooks/use-choices';
@@ -28,10 +28,11 @@ export function PermissionMatrix({ catalogue, value, onChange }: PermissionMatri
         <h3 id={titleId} className="text-sm font-semibold tracking-wide uppercase">
           Matriz de permissões
         </h3>
-        <span className="text-xs font-semibold text-primary">{value.length} ativas</span>
+        <StatusPill tone="success">{value.length} ativas</StatusPill>
       </div>
       <CatalogueNotice catalogue={catalogue} />
-      <div className="flex max-h-96 flex-col gap-4 overflow-y-auto pr-1">
+      {/* The page's grey under the areas' white cards, as the POS lays its cards out. */}
+      <div className="grid max-h-96 grid-cols-1 items-start gap-3 overflow-y-auto rounded-xl bg-background p-3 md:grid-cols-2">
         {catalogue.areas.map((area) => (
           <AreaGroup key={area.area} area={area} granted={value} onToggle={toggle} />
         ))}
@@ -56,15 +57,15 @@ function AreaGroup({ area, granted, onToggle }: AreaGroupProps) {
   const on = area.permissions.filter((permission) => granted.includes(permission.name)).length;
   const total = area.permissions.length;
   return (
-    <div role="group" aria-labelledby={id} className="flex flex-col gap-1">
-      <div className="flex items-baseline justify-between gap-2 border-b pb-1">
+    <div role="group" aria-labelledby={id} className="flex flex-col gap-1 rounded-xl border bg-card p-2">
+      <div className="flex items-center justify-between gap-2 border-b px-2 pb-2">
         <h4 id={id} className="text-sm font-semibold">
           {area.label}
         </h4>
-        <span className="text-xs text-muted-foreground">
+        <StatusPill tone={on > 0 ? 'success' : 'neutral'} className="text-xs tabular-nums">
           <span aria-hidden="true">{`${on} / ${total}`}</span>
           <span className="sr-only">{`${on} de ${total} ativas`}</span>
-        </span>
+        </StatusPill>
       </div>
       <ul className="flex flex-col">
         {area.permissions.map((permission) => (
@@ -93,7 +94,7 @@ function PermissionSwitch({ permission, checked, onChange }: PermissionSwitchPro
   const label = permissionLabel(permission.name);
   const described = [label && `${id}-code`, permission.sensitive && `${id}-badge ${id}-why`].filter(Boolean).join(' ');
   return (
-    <label className="flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-md px-2 py-1 hover:bg-muted">
+    <label className="flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-lg px-2 py-1 hover:bg-muted">
       <span className="flex flex-col gap-0.5">
         <span className="flex flex-wrap items-center gap-2">
           {label ? (
@@ -111,10 +112,9 @@ function PermissionSwitch({ permission, checked, onChange }: PermissionSwitchPro
             </span>
           )}
           {permission.sensitive && (
-            <Badge id={`${id}-badge`} variant="warning">
-              <ShieldAlert aria-hidden="true" />
+            <StatusPill id={`${id}-badge`} tone="warning" icon={ShieldAlert} className="text-xs">
               Sensível
-            </Badge>
+            </StatusPill>
           )}
         </span>
         {permission.sensitive && (

@@ -1,4 +1,5 @@
-import { LOCALE } from '@restaurantpro/ui';
+import { LOCALE, type StatusMap } from '@restaurantpro/ui';
+import { CircleCheck, CircleSlash } from 'lucide-react';
 
 /**
  * A business day (`LocalDate`, "2026-11-02") as the store reads it, "02/11/2026": shown as given, never through a
@@ -49,4 +50,14 @@ export function addressKindLabel(kind: string | undefined): string {
 /** A balance of points ("1 320"). */
 export function formatPoints(points: number | undefined): string {
   return points === undefined ? '' : plain.format(points);
+}
+
+/** A customer is active or not (`active === false` is inactive): a tinted pill with its icon and word. */
+export const customerStatuses: StatusMap<'ACTIVE' | 'INACTIVE'> = {
+  ACTIVE: { label: 'Ativo', icon: CircleCheck, tone: 'success' },
+  INACTIVE: { label: 'Inativo', icon: CircleSlash, tone: 'neutral' },
+};
+
+export function customerStatus(customer: { active?: boolean }): 'ACTIVE' | 'INACTIVE' {
+  return customer.active === false ? 'INACTIVE' : 'ACTIVE';
 }
