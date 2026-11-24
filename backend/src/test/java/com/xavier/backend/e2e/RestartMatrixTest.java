@@ -769,6 +769,12 @@ class RestartMatrixTest {
         UUID order = order("Mf");
         confirm(order, List.of(line(order, "AGUA", "1")), "(f) round");
         pay(order, null, "37.00", "(f) pay in cash");
+        // Mockito's doThrow().when(spy) is not thread-safe: a listener thread calling the spy meanwhile (the payment's
+        // async projectPayment) can take the consecutive answers, leaving projectDocument failing "(1)" forever. Wait
+        // until no projection runs; then the resubmissions below also have only (f)'s publication to hand reporting.
+        Awaitility.await().atMost(RECOVERED).until(() -> count("""
+                SELECT count(*) FROM event_publication WHERE completion_date IS NULL
+                  AND listener_id LIKE '%ProjectionListeners%'""") == 0);
         Projections spy = AopTestUtils.getUltimateTargetObject(projections);
         doThrow(new IllegalStateException("reporting down (1)")).doThrow(new IllegalStateException("reporting down (2)"))
                 .doCallRealMethod().when(spy).projectDocument(any());
