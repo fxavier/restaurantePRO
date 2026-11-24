@@ -31,7 +31,8 @@ const BUMPED = [round(2004, 'COPA', 'Mesa 05 - Pedido #4098', 'BUMPED', 3, '2 x 
 
 const page_ = (content: object[]) => ({ content, page: 0, size: 50, totalElements: content.length });
 
-async function atKitchen(page: Page) {
+/** The POS at /kds, `active` the rounds on screen (by default table 04's first among them). */
+async function atKitchen(page: Page, active: object[] = ACTIVE) {
   await standInDevice(page);
   // Ana may watch the display and move its rounds here (the shared stand-in's session may not).
   await page.route('**/api/v1/auth/pos-login', (route) =>
@@ -43,11 +44,11 @@ async function atKitchen(page: Page) {
   await page.route('**/api/v1/pos/notifications', () => undefined);
   await page.route('**/api/v1/pos/production-tickets/kds?*', (route) => {
     const status = new URL(route.request().url()).searchParams.getAll('status');
-    return route.fulfill({ json: page_(status.includes('BUMPED') ? BUMPED : ACTIVE) });
+    return route.fulfill({ json: page_(status.includes('BUMPED') ? BUMPED : active) });
   });
   await logIn(page);
   await page.getByRole('navigation', { name: 'Secções' }).getByRole('link', { name: 'KDS' }).click();
-  await expect(page.getByRole('article', { name: 'Mesa 04 - Pedido #4092, Ronda 1' })).toBeVisible();
+  await expect(page.getByRole('article').first()).toBeVisible();
 }
 
 async function screens(page: Page, name: string) {
@@ -88,6 +89,19 @@ test('with the KDS link too, every section label keeps to one line at 1024 × 76
     });
     expect(lines, (await link.textContent()) ?? '').toBe(1);
     expect((await link.boundingBox())!.height).toBeGreaterThanOrEqual(56);
+  }
+});
+
+test('a round on the COZINHA station is named "Cozinha" in the kitchen colour, as KITCHEN', async ({ page }) => {
+  await atKitchen(page, [round(2005, 'COZINHA', 'Mesa 06 - Pedido #4120', 'QUEUED', 0, '1 x Arroz de Pato')]);
+
+  const card = page.getByRole('article', { name: 'Mesa 06 - Pedido #4120, Ronda 1' });
+  await expect(card.getByText('Cozinha', { exact: true })).toBeVisible();
+  await expect(card.getByText('Cozinha', { exact: true })).toHaveClass(/border-route-kitchen/);
+  await expect(page.getByRole('button', { name: 'Cozinha 1', exact: true })).toBeVisible();
+  await expect(page.getByText('COZINHA', { exact: true })).toHaveCount(0);
+  if (process.env.E2E_SCREENS) {
+    await page.screenshot({ path: `${process.env.E2E_SCREENS}/kds-cozinha-1024x768.png`, animations: 'disabled' });
   }
 });
 

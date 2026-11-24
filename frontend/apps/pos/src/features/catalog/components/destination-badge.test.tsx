@@ -5,17 +5,13 @@ import { DestinationBadge } from './destination-badge';
 describe('DestinationBadge', () => {
   it.each([
     ['KITCHEN', 'Cozinha', 'border-route-kitchen'],
+    ['COZINHA', 'Cozinha', 'border-route-kitchen'],
     ['BAR', 'Bar', 'border-route-bar'],
     ['COPA', 'Copa', 'border-route-copa'],
     ['PANTRY', 'Copa', 'border-route-copa'],
   ])('names %s "%s" in its fixed colour', (code, label, colour) => {
     render(<DestinationBadge code={code} />);
     expect(screen.getByText(label)).toHaveClass(colour);
-  });
-
-  it('gives COZINHA the kitchen colour, the code as itself', () => {
-    render(<DestinationBadge code="COZINHA" />);
-    expect(screen.getByText('COZINHA')).toHaveClass('border-route-kitchen');
   });
 
   it("shows a tenant's own code as itself, on a neutral badge", () => {

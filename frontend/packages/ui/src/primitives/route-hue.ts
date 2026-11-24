@@ -2,7 +2,8 @@
  * The one source of a production route's hue (DESIGN.md "Light reference", "Route chips"). Destination and station
  * codes are the tenant's (`^[A-Z][A-Z0-9_]*$`); the conventional ones, in either language, take their route's hue and
  * any other the neutral surface. The hue is a border and a 15 % tint, the text stays `foreground`: light text on
- * these hues is below AA. The label is the caller's: this names the colour only.
+ * these hues is below AA. The conventional codes' pt-PT names are here too ({@link routeLabel}), the one copy the POS
+ * and the BackOffice show.
  */
 const FILL = {
   kitchen: 'border-route-kitchen bg-route-kitchen/15',
@@ -25,7 +26,20 @@ export const ROUTE_HUES: Readonly<Record<string, keyof typeof FILL>> = {
   PANTRY: 'copa',
 };
 
+/** Each route's pt-PT name: a conventional code is named by its route, so COZINHA reads "Cozinha" as KITCHEN does. */
+const LABEL: Record<keyof typeof FILL, string> = {
+  kitchen: 'Cozinha',
+  bar: 'Bar',
+  copa: 'Copa',
+};
+
 const hueOf = (code: string | null | undefined) => (code ? ROUTE_HUES[code] : undefined);
+
+/** A destination or station's name: a conventional code's pt-PT label, any other code a tenant chose as itself. */
+export function routeLabel(code: string): string {
+  const hue = hueOf(code);
+  return hue ? LABEL[hue] : code;
+}
 
 /** A route chip's fill: the hue's border and tint with `foreground` text; an unknown or absent code, the neutral surface. */
 export function routeChipFill(code: string | null | undefined): string {

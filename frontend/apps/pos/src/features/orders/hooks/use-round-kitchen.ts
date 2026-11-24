@@ -5,8 +5,9 @@ import { useServices } from '../../../lib/services';
 type RoundKitchenView = components['schemas']['com.xavier.backend.production.model.dto.RoundKitchenView'];
 
 /**
- * Where a round is in the kitchen (ADR 0044), as the server sums up its stations: READY when every station has it ready
- * or served, IN_PREPARATION once any has started it, else QUEUED.
+ * Where a round is in the kitchen (ADR 0044), as the server sums up its stations: SERVED when every station has bumped
+ * it, READY when every station has it ready or bumped (not all bumped), IN_PREPARATION once any has started it, else
+ * QUEUED.
  */
 export type KitchenState = RoundKitchenView['status'];
 

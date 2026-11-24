@@ -373,6 +373,23 @@ test('the selected table\'s order: on screen at 1024 × 768, touch-sized, and ac
   await expectNoAxeViolations(page);
 });
 
+test('a round every station has bumped says "servida" on the selected table\'s order, accessibly', async ({ page }) => {
+  await standIn(page);
+  await page.route('**/api/v1/pos/production-tickets/rounds?*', (route) =>
+    route.fulfill({ json: [{ batchId: BATCH, status: 'SERVED' }] }),
+  );
+  await logIn(page);
+  await page.getByRole('button', { name: /^Mesa M2 / }).click();
+  const panel = page.getByRole('complementary', { name: 'Detalhe da mesa' });
+
+  await expect(panel.getByText('servida', { exact: true })).toBeVisible();
+  await expect(panel.getByText('pronta', { exact: true })).toHaveCount(0);
+  if (process.env.E2E_SCREENS) {
+    await page.screenshot({ path: `${process.env.E2E_SCREENS}/tables-served-1024x768.png`, animations: 'disabled' });
+  }
+  await expectNoAxeViolations(page);
+});
+
 test('the map shows each seated table\'s total, and a table too long without a round in red', async ({ page }) => {
   await atM2OnMap(page);
 

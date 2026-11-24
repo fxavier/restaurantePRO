@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { routeChipFill, routeDot } from './route-hue';
+import { routeChipFill, routeDot, routeLabel } from './route-hue';
 
 describe('routeChipFill', () => {
   it("gives a conventional code its route's hue, in either language, and any other the neutral surface", () => {
@@ -21,5 +21,16 @@ describe('routeDot', () => {
     expect(routeDot('COZINHA')).toBe('bg-route-kitchen');
     expect(routeDot('PANTRY')).toBe('bg-route-copa');
     expect(routeDot('GRILL')).toBe('bg-muted-foreground');
+  });
+});
+
+describe('routeLabel', () => {
+  it('names a conventional code in pt-PT, in either language, and shows any other code as itself', () => {
+    expect(routeLabel('KITCHEN')).toBe('Cozinha');
+    expect(routeLabel('COZINHA')).toBe('Cozinha');
+    expect(routeLabel('BAR')).toBe('Bar');
+    expect(routeLabel('COPA')).toBe('Copa');
+    expect(routeLabel('PANTRY')).toBe('Copa');
+    expect(routeLabel('GRILL')).toBe('GRILL');
   });
 });

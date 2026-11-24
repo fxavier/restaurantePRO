@@ -132,6 +132,16 @@ describe('order screen', () => {
     expect(await within(sent.parentElement!).findByText('em preparação')).toHaveClass('text-warning-text');
   });
 
+  it('a sent round every station has bumped says "servida", in the info tint', async () => {
+    roundsEndpoint([{ batchId: BATCH_ID, status: 'SERVED' }]);
+    await atOrder();
+    await ready();
+
+    const sent = within(panel()).getByRole('list', { name: 'Ronda 1, 12:10' });
+    expect(await within(sent.parentElement!).findByText('servida')).toHaveClass('text-info-text');
+    expect(within(sent.parentElement!).queryByText('pronta')).not.toBeInTheDocument();
+  });
+
   it('a round whose kitchen state cannot be read shows no chip', async () => {
     const rounds = recording<undefined>('get', '/api/v1/pos/production-tickets/rounds', () => problem(500, 'INTERNAL'));
     await atOrder();
@@ -141,6 +151,7 @@ describe('order screen', () => {
     const sent = within(panel()).getByRole('list', { name: 'Ronda 1, 12:10' });
     expect(within(sent.parentElement!).queryByText('pronta')).not.toBeInTheDocument();
     expect(within(sent.parentElement!).queryByText('em preparação')).not.toBeInTheDocument();
+    expect(within(sent.parentElement!).queryByText('servida')).not.toBeInTheDocument();
   });
 
   it('"Por enviar" ends with the server\'s draft total, marked provisional and never a sum made here', async () => {

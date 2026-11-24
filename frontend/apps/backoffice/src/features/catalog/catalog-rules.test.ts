@@ -38,9 +38,10 @@ describe('catalog labels', () => {
 });
 
 describe('destinationOf', () => {
-  it("names the design's destinations, and gives every code the shared route hue (COZINHA the kitchen's)", () => {
+  it("names the design's destinations, COZINHA as KITCHEN, and gives every code the shared route hue", () => {
     expect(destinationOf('KITCHEN')).toEqual({ label: 'Cozinha', fill: expect.stringContaining('border-route-kitchen') });
-    expect(destinationOf('COZINHA')).toEqual({ label: 'COZINHA', fill: destinationOf('KITCHEN').fill });
+    expect(destinationOf('COZINHA')).toEqual({ label: 'Cozinha', fill: destinationOf('KITCHEN').fill });
+    expect(destinationOf('GRILL').label).toBe('GRILL');
     expect(destinationOf('GRILL').fill).toContain('border-border bg-muted');
     expect(destinationOf(null)).toEqual({ label: 'Sem destino', fill: destinationOf('GRILL').fill });
   });
