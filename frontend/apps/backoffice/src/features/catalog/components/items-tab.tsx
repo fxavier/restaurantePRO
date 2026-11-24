@@ -1,8 +1,10 @@
 import {
   Card,
   CardContent,
+  cn,
   DataState,
   Input,
+  StatusPill,
   Table,
   TableBody,
   TableCaption,
@@ -11,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from '@restaurantpro/ui';
-import { Search } from 'lucide-react';
+import { CircleCheck, CircleOff, Search } from 'lucide-react';
 import { useState } from 'react';
 import { availabilityLabel, destinationOf, taxLabel } from '../catalog-labels';
 import { useFamilies, useItems, useTaxCategories } from '../hooks/use-catalog-queries';
@@ -118,7 +120,9 @@ function ItemsTable({ items, families, taxCategories }: ItemsTableProps) {
               <DestinationChip code={item.productionDestination} />
             </TableCell>
             <TableCell>{taxLabel(taxOf(item.taxCategoryId), now)}</TableCell>
-            <TableCell>{availabilityLabel(item.availability)}</TableCell>
+            <TableCell>
+              <Availability availability={item.availability} />
+            </TableCell>
             <TableCell>
               <div className="flex justify-end gap-2">
                 <ItemSheet item={item} />
@@ -136,6 +140,16 @@ function ItemsTable({ items, families, taxCategories }: ItemsTableProps) {
 function DestinationChip({ code }: { code: string | undefined }) {
   const destination = destinationOf(code);
   return (
-    <span className={`rounded-sm border px-2 py-0.5 text-xs font-semibold ${destination.fill}`}>{destination.label}</span>
+    <span className={cn('rounded-full border px-2.5 py-0.5 text-xs font-semibold', destination.fill)}>{destination.label}</span>
+  );
+}
+
+/** The item's state as a tinted pill, its word and icon together (never colour alone). */
+function Availability({ availability }: { availability: string | undefined }) {
+  const inactive = availability === 'INACTIVE';
+  return (
+    <StatusPill tone={inactive ? 'neutral' : 'success'} icon={inactive ? CircleOff : CircleCheck}>
+      {availabilityLabel(availability)}
+    </StatusPill>
   );
 }

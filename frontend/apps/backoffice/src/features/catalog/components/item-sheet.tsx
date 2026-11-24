@@ -136,7 +136,7 @@ function AddBarcodeForm({ itemId, variants }: { itemId: string; variants: ItemVa
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="flex flex-col gap-3 rounded-lg border bg-muted/40 p-4">
+    <section className="flex flex-col gap-3 rounded-2xl border p-4">
       <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{title}</h3>
       {children}
     </section>

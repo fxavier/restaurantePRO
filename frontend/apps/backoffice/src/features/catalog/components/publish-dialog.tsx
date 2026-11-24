@@ -92,7 +92,7 @@ function PublishForm({ releaseId, storeId, onDone }: Props & { onDone: () => voi
           maxLength={500}
           rows={3}
           onChange={(event) => setNote(event.target.value)}
-          className="rounded-md border border-input bg-muted px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          className="rounded-xl border border-input bg-card px-3 py-2 text-sm shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         />
       </div>
       {publish.error && <CommandAlert error={publish.error} pending={publish.isPending} onRetry={send} />}
