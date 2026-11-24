@@ -326,7 +326,7 @@ function SentRow({
   dense: boolean;
 }) {
   return (
-    <li className={`flex flex-col gap-1 ${dense ? '' : 'border-b py-2 last:border-b-0'}`}>
+    <li className={`flex flex-col gap-1 ${dense ? 'text-sm' : 'border-b py-2 last:border-b-0'}`}>
       <div className="flex items-start gap-2">
         <span className="flex-1">
           <Quantity line={line} /> {name}

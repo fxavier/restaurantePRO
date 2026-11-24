@@ -4830,8 +4830,20 @@
               "null"
             ]
           },
+          "terminalCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "terminalId": {
             "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "terminalName": {
             "type": [
               "string",
               "null"
@@ -4855,7 +4867,9 @@
           "storeTimezone",
           "tenantId",
           "tenantName",
+          "terminalCode",
           "terminalId",
+          "terminalName",
           "userId"
         ],
         "type": "object"
@@ -10542,6 +10556,28 @@
         },
         "type": "object"
       },
+      "com.xavier.backend.production.model.dto.ProductionAlertsView": {
+        "properties": {
+          "delayedKitchenRounds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kitchenDelayMinutes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "pendingPrintJobs": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "delayedKitchenRounds",
+          "kitchenDelayMinutes",
+          "pendingPrintJobs"
+        ],
+        "type": "object"
+      },
       "com.xavier.backend.production.model.dto.ProductionDestinationView": {
         "properties": {
           "code": {
@@ -13312,6 +13348,26 @@
           "orderVersion",
           "quantity",
           "reason"
+        ],
+        "type": "object"
+      },
+      "com.xavier.backend.settlement.model.dto.SettlementAlertsView": {
+        "properties": {
+          "oldestOrderId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "paymentsToConfirm": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "oldestOrderId",
+          "paymentsToConfirm"
         ],
         "type": "object"
       },
@@ -32922,6 +32978,31 @@
         ]
       }
     },
+    "/api/v1/pos/production/alerts": {
+      "get": {
+        "operationId": "productionAlerts",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/com.xavier.backend.production.model.dto.ProductionAlertsView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
+        "tags": [
+          "production-alerts-controller"
+        ]
+      }
+    },
     "/api/v1/pos/promotions/current": {
       "get": {
         "operationId": "current",
@@ -33180,6 +33261,31 @@
         ],
         "tags": [
           "reservation-controller"
+        ]
+      }
+    },
+    "/api/v1/pos/settlement/alerts": {
+      "get": {
+        "operationId": "settlementAlerts",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/com.xavier.backend.settlement.model.dto.SettlementAlertsView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
+        "tags": [
+          "settlement-alerts-controller"
         ]
       }
     },

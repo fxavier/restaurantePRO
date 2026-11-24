@@ -104,7 +104,7 @@ function OrderBody({ order, onAddItems }: { order: Order; onAddItems: () => void
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* Compact (light reference): at 1024 × 768 the sent round and three drafts show without scrolling. */}
-      <ScrollRegion label="Linhas do pedido" className="flex min-h-0 flex-1 flex-col gap-2 px-4 py-2">
+      <ScrollRegion label="Linhas do pedido" className="flex min-h-0 flex-1 flex-col gap-1.5 px-4 py-2">
         {update.error && (
           <p role="alert" className="rounded-lg border border-destructive px-3 py-2 font-medium text-error">
             {draftMessage(update.error)}
@@ -123,8 +123,8 @@ function OrderBody({ order, onAddItems }: { order: Order; onAddItems: () => void
             badge={(roundId) => <KitchenChip state={kitchen.data?.get(roundId)} />}
           />
         )}
-        <section aria-labelledby="table-draft-title" className="flex flex-col gap-1">
-          <h3 id="table-draft-title" className="text-sm font-medium text-muted-foreground">
+        <section aria-labelledby="table-draft-title" className="flex flex-col gap-0.5">
+          <h3 id="table-draft-title" className="text-sm leading-4 font-medium text-muted-foreground">
             Ronda {next} · rascunho
           </h3>
           {order.drafts.length === 0 ? (
@@ -149,16 +149,14 @@ function OrderBody({ order, onAddItems }: { order: Order; onAddItems: () => void
           </Button>
         </section>
       </ScrollRegion>
-      <footer className="flex flex-col gap-2 border-t px-4 pt-2">
+      <footer className="flex flex-col gap-1.5 border-t px-4 pt-1.5">
         {blocked && <p className="text-sm font-medium text-error">Sem ligação — nenhuma ronda é enviada.</p>}
-        <div role="group" aria-label="Total" className="flex items-end justify-between gap-3">
-          <div className="flex min-w-0 flex-col">
-            <span className="text-sm text-muted-foreground">Total</span>{' '}
-            {/* Always one line high, so the buttons below never move. */}
-            <span className="min-h-4 text-xs text-muted-foreground">
-              {order.drafts.length > 0 ? 'Não inclui as linhas por enviar' : ''}
-            </span>
-          </div>{' '}
+        <div role="group" aria-label="Total" className="flex items-baseline justify-between gap-3">
+          {/* The label and its note on one line, whether the note is there or not, so the buttons below never move. */}
+          <span className="flex min-w-0 items-baseline gap-2 text-muted-foreground">
+            <span className="text-sm">Total</span>{' '}
+            {order.drafts.length > 0 && <span className="text-xs">Não inclui as linhas por enviar</span>}
+          </span>{' '}
           <Money value={order.due} className="shrink-0 text-2xl font-bold" />
         </div>
         <div className="grid grid-cols-2 gap-2">
@@ -180,6 +178,8 @@ function OrderBody({ order, onAddItems }: { order: Order; onAddItems: () => void
                 className="rounded-xl bg-card"
                 disabled={!canCommand || subtotal.intent !== undefined}
                 onClick={() => {
+                  // One outcome at a time in the one-line place under "Enviar": the last send's is old news now.
+                  forgetLastSend();
                   setPrinted(false);
                   subtotal.start(undefined, undefined);
                 }}
@@ -194,8 +194,9 @@ function OrderBody({ order, onAddItems }: { order: Order; onAddItems: () => void
             </>
           )}
         </div>
-        {/* What the last "Subtotal" did shares the send's two-line place under it (compact: no line kept twice). */}
+        {/* What the last "Subtotal" did shares the send's place under it: one line kept (compact), one outcome shown. */}
         <SendRound
+          statusLines={1}
           send={send}
           disabled={!canSend}
           blocked={!canCommand}
@@ -213,7 +214,7 @@ function OrderBody({ order, onAddItems }: { order: Order; onAddItems: () => void
 function KitchenChip({ state }: { state: KitchenState | undefined }) {
   if (state === 'READY') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-success-tint px-2 text-sm font-medium text-success-text">
+      <span className="inline-flex items-center gap-1 rounded-full bg-success-tint px-2 text-sm leading-4 font-medium text-success-text">
         <CircleCheck aria-hidden="true" className="size-4" />
         pronta
       </span>
@@ -221,7 +222,7 @@ function KitchenChip({ state }: { state: KitchenState | undefined }) {
   }
   if (state === 'IN_PREPARATION') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-warning-tint px-2 text-sm font-medium text-warning-text">
+      <span className="inline-flex items-center gap-1 rounded-full bg-warning-tint px-2 text-sm leading-4 font-medium text-warning-text">
         <CookingPot aria-hidden="true" className="size-4" />
         em preparação
       </span>

@@ -8,6 +8,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -22,6 +23,26 @@ public interface PaymentAttemptRepository extends JpaRepository<PaymentAttempt, 
     Optional<PaymentAttempt> findFirstByStoreIdAndStatusIn(UUID storeId, Collection<AttemptStatus> statuses);
 
     List<PaymentAttempt> findByStoreIdAndStatusInOrderByCreatedAt(UUID storeId, Collection<AttemptStatus> statuses);
+
+    /**
+     * The POS's payments to confirm in a store: its UNKNOWN attempts. The status is a literal, so the partial index
+     * {@code payment_attempt_store_unknown_ix} applies (InDoubtPerStorePlanTest).
+     */
+    @Query("""
+            select count(a) from PaymentAttempt a
+            where a.storeId = :storeId and a.status = com.xavier.backend.settlement.model.AttemptStatus.UNKNOWN""")
+    long countInDoubtInStore(@Param("storeId") UUID storeId);
+
+    /**
+     * The orders of a store's UNKNOWN attempts, oldest attempt first (a debt payment has no order), at most
+     * {@code limit}'s page size; index {@code payment_attempt_store_unknown_ix}.
+     */
+    @Query("""
+            select a.orderId from PaymentAttempt a
+            where a.storeId = :storeId and a.status = com.xavier.backend.settlement.model.AttemptStatus.UNKNOWN
+                and a.orderId is not null
+            order by a.createdAt""")
+    List<UUID> findInDoubtOrdersOfStore(@Param("storeId") UUID storeId, Pageable limit);
 
     boolean existsByOrderIdAndStatusIn(UUID orderId, Collection<AttemptStatus> statuses);
 

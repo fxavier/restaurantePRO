@@ -61,7 +61,7 @@ class ProductionTenantIsolationTest {
     static final UUID A_OTHER_JOB = UUID.fromString("0190b400-0000-7000-8000-0000000009a2");
     static final UUID B_JOB = UUID.fromString("0190b400-0000-7000-8000-0000000009b1");
     static final String ROUNDS = "/api/v1/pos/production-tickets/rounds";
-    static final UUID A_ORDER =UUID.fromString("0190b400-0000-7000-8000-000000000ea1");
+    static final UUID A_ORDER = UUID.fromString("0190b400-0000-7000-8000-000000000ea1");
     static final UUID A_OTHER_ORDER = UUID.fromString("0190b400-0000-7000-8000-000000000ea2");
     static final UUID B_ORDER = UUID.fromString("0190b400-0000-7000-8000-000000000eb1");
 
@@ -77,6 +77,7 @@ class ProductionTenantIsolationTest {
         seedRound(A, A_STORE, A_ORDER);
         seedRound(A, A_OTHER_STORE, A_OTHER_ORDER);
         seedRound(B, B_STORE, B_ORDER);
+        alerting(B, B_STORE, B_PRINTER);
     }
 
     /** An order with one round queued on the kitchen display, as orders and production write them. */
@@ -99,6 +100,28 @@ class ProductionTenantIsolationTest {
                     INSERT INTO production.kitchen_progress (ticket_id, store_id, destination, status, version,
                         queued_at)
                     VALUES (?, ?, 'BAR', 'QUEUED', 0, now())""").param(ticket).param(store).update();
+        }
+    }
+
+    /** A failed job and a late round of {@code store}: one alert of each kind on its POS. */
+    private static void alerting(UUID tenant, UUID store, UUID printer) {
+        try (AppRoleSession app = AppRoleSession.open().tenant(tenant).allStores()) {
+            UUID ticket = UUID.randomUUID();
+            app.jdbc().sql("""
+                    INSERT INTO production.production_ticket (id, store_id, source_type, source_id, destination,
+                        kind, printer_id, suppressed, content, created_at, routing, content_format)
+                    VALUES (?, ?, 'BATCH', gen_random_uuid(), 'BAR', 'ORIGINAL', ?, false, 'late', now(), 'ROUTED',
+                        'PLAIN')""").param(ticket).param(store).param(printer).update();
+            app.jdbc().sql("""
+                    INSERT INTO production.print_job (id, store_id, ticket_id, printer_id, kind, status, attempts,
+                        next_attempt_at, started_at, dedupe_key, created_at, version)
+                    VALUES (gen_random_uuid(), ?, ?, ?, 'ORIGINAL', 'FAILED', 1, now(), now(), ?, now(), 0)""")
+                    .param(store).param(ticket).param(printer).param("failed:" + ticket).update();
+            app.jdbc().sql("""
+                    INSERT INTO production.kitchen_progress (ticket_id, store_id, destination, status, version,
+                        queued_at)
+                    VALUES (?, ?, 'BAR', 'QUEUED', 0, now() - interval '1 hour')""").param(ticket).param(store)
+                    .update();
         }
     }
 
@@ -181,6 +204,19 @@ class ProductionTenantIsolationTest {
                 .andExpect(jsonPath("$.content[0].id").value(A_JOB.toString()));
     }
 
+    /** The POS alerts count the bound tenant's store only; another tenant's store is no store of this one (403). */
+    @Test
+    void thePosAlertsCountOnlyTheTenantsOwnStore() throws Exception {
+        mvc.perform(get("/api/v1/pos/production/alerts").with(viewer(B, B_STORE))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.pendingPrintJobs").value(1))
+                .andExpect(jsonPath("$.delayedKitchenRounds").value(1));
+        mvc.perform(get("/api/v1/pos/production/alerts").with(viewer(A, A_STORE))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.pendingPrintJobs").value(0))
+                .andExpect(jsonPath("$.delayedKitchenRounds").value(0));
+        mvc.perform(get("/api/v1/pos/production/alerts").with(viewer(A, B_STORE)))
+                .andExpect(status().isForbidden());
+    }
+
     @Test
     void aRowWithAnotherTenantsIdIsRefused() {
         try (AppRoleSession app = AppRoleSession.open().tenant(A).allStores()) {
@@ -232,7 +268,16 @@ class ProductionTenantIsolationTest {
 
     /** A POS session of {@code tenant} in {@code store} with ORDER_VIEW (a waiter). */
     private static RequestPostProcessor waiter(UUID tenant, UUID store) {
-        Set<String> authorities = Set.of(Permission.ORDER_VIEW.authority(store));
+        return posSession(tenant, store, Permission.ORDER_VIEW);
+    }
+
+    /** A POS session of {@code tenant} in {@code store} with PRODUCTION_VIEW (its membership as the details). */
+    private static RequestPostProcessor viewer(UUID tenant, UUID store) {
+        return posSession(tenant, store, Permission.PRODUCTION_VIEW);
+    }
+
+    private static RequestPostProcessor posSession(UUID tenant, UUID store, Permission permission) {
+        Set<String> authorities = Set.of(permission.authority(store));
         Actor actor = Actor.employee(UUID.randomUUID(), UUID.randomUUID(), store, authorities);
         UsernamePasswordAuthenticationToken token = UsernamePasswordAuthenticationToken.authenticated(actor, null,
                 authorities.stream().map(SimpleGrantedAuthority::new).toList());

@@ -1,6 +1,6 @@
 import { expect, type Page, test } from '@playwright/test';
 import { expectNoAxeViolations } from '../axe';
-import { id, logIn, openFromMap, standInDevice, STORE } from './stand-in';
+import { id, logIn, openFromMap, SESSION, standInDevice, STORE } from './stand-in';
 
 // The order screen in the built POS, its API stood in by page.route: what jsdom cannot check, the three panes' real
 // geometry at the smallest POS viewport (DS: 1024 × 768), the touch targets, and axe on the screen and its dialogs.
@@ -395,11 +395,48 @@ test('"Subtotal" on the map prints with an Idempotency-Key and says so on the se
   await expectThreeDraftsShown(page);
 });
 
+/**
+ * The light reference's whole /tables: a session that may see the alerts (production and payments), one pending print,
+ * two late rounds and one payment to confirm, beside the tiles' totals and overdue state.
+ */
+async function atM2WithAlerts(page: Page) {
+  await standIn(page);
+  await page.route('**/api/v1/auth/pos-login', (route) =>
+    route.fulfill({
+      json: {
+        ...SESSION,
+        permissions: [...SESSION.permissions, `PERM_PRODUCTION_VIEW@${STORE}`, `PERM_PAYMENT_COLLECT@${STORE}`],
+      },
+    }),
+  );
+  await page.route('**/api/v1/pos/production/alerts', (route) =>
+    route.fulfill({ json: { pendingPrintJobs: 1, delayedKitchenRounds: 2, kitchenDelayMinutes: 15 } }),
+  );
+  await page.route('**/api/v1/pos/settlement/alerts', (route) =>
+    route.fulfill({ json: { paymentsToConfirm: 1, oldestOrderId: id(503) } }),
+  );
+  await logIn(page);
+  await page.getByRole('button', { name: /^Mesa M2 / }).click();
+  await expect(page.getByText('pronta', { exact: true })).toBeVisible();
+}
+
+test('tiles with totals and overdue, the footer\'s alerts and the shortcuts, together', async ({ page }) => {
+  await atM2WithAlerts(page);
+
+  await expect(page.getByRole('button', { name: /^Mesa M3 / })).toHaveAccessibleName(/sem ronda$/);
+  await expect(page.getByRole('button', { name: /^Mesa M2 / })).toHaveAccessibleName(/1530,00\sMTn$/);
+  await expect(page.getByText(/1 pagamento por confirmar/)).toBeVisible();
+  await expect(page.getByText(/2 rondas > 15 min/)).toBeVisible();
+  await expect(page.getByText(/1 impressão pendente/)).toBeVisible();
+  await expect(page.getByText(/F3 takeaway/)).toBeVisible();
+  await expectThreeDraftsShown(page);
+  await expectNoAxeViolations(page);
+});
+
 test('screens of the table map, M2 selected, at 1024 × 768 and 1440 × 900', async ({ page }) => {
   const dir = process.env.E2E_SCREENS;
   test.skip(!dir, 'E2E_SCREENS not set');
-  await atM2OnMap(page);
-  await expect(page.getByText('pronta', { exact: true })).toBeVisible();
+  await atM2WithAlerts(page);
   await expect(page.getByRole('button', { name: /sem ronda/ })).toBeVisible();
   for (const [width, height] of [
     [1024, 768],

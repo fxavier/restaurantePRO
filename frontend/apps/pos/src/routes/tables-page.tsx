@@ -1,7 +1,9 @@
 import { ApiError } from '@restaurantpro/api-client';
 import { Button, Skeleton } from '@restaurantpro/ui';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
+import { AlertChips } from '../features/alerts/components/alert-chips';
+import { NewOrderDialog } from '../features/delivery/components/new-order-dialog';
 import { TableDetailPanel } from '../features/dining/components/table-detail-panel';
 import { TableMapView } from '../features/dining/components/table-map-view';
 import { TableSummary } from '../features/dining/components/table-summary';
@@ -10,13 +12,21 @@ import { useTableMap } from '../features/dining/hooks/use-table-map';
 import type { DiningTable } from '../features/dining/table-map';
 import { OpenTableDialog } from '../features/orders/components/open-table-dialog';
 import { TableOrder } from '../features/orders/components/table-order';
+import { NewReservationDialog } from '../features/reservations/components/reservation-dialog';
+import { useCan } from '../features/reservations/hooks/use-can';
+import { useStoreToday } from '../features/reservations/hooks/use-store-today';
+import type { ReservableArea } from '../features/reservations/reservation';
+import { useStoreTimeZone } from '../lib/auth/use-employee';
 import { errorMessage, isOffline } from '../lib/error-messages';
 import { StatusBar } from './status-bar';
+import { ShortcutHints, useTablesShortcuts } from './tables-shortcuts';
 
 /**
  * `/tables`, the POS home (§4, FC §4; light reference 2026-11-23): the store's table map, kept current by the change
  * stream, and the selected table on the right. A free table opens with its guests; an occupied one shows its open
  * order (the orders feature's `TableOrder`, composed here), sends its next round, and goes to its order to add items.
+ * The footer has the store's alerts and the keyboard shortcuts: F2 a new reservation (who may book), F3 a new
+ * takeaway, "/" the table search.
  */
 export function TablesPage() {
   const map = useTableMap();
@@ -31,6 +41,15 @@ export function TablesPage() {
   const selected = selectedArea?.tables.find((table) => table.id === selectedId);
   // Tables whose opening had an unknown outcome here: a later "taken" may be this terminal's own opening.
   const [mayHaveOpened, setMayHaveOpened] = useState<ReadonlySet<string>>(new Set());
+  const [booking, setBooking] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const mayBook = useCan('RESERVATION_MANAGE');
+  const mapCard = useRef<HTMLElement>(null);
+  useTablesShortcuts({
+    reservation: mayBook ? () => setBooking(true) : undefined,
+    takeaway: () => setCreating(true),
+    search: () => mapCard.current?.querySelector<HTMLInputElement>('input[type="search"]')?.focus(),
+  });
 
   /** Taken, perhaps by this terminal: the map read again, and an occupied table goes to its order. */
   async function goToOrderIfTaken(tableId: string) {
@@ -61,6 +80,7 @@ export function TablesPage() {
             <>
               <div className="flex min-h-0 flex-1 gap-4">
                 <section
+                  ref={mapCard}
                   aria-labelledby="tables-title"
                   className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto rounded-2xl border bg-card p-4"
                 >
@@ -90,8 +110,12 @@ export function TablesPage() {
                   )}
                 </TableDetailPanel>
               </div>
-              <footer>
-                <TableSummary areas={map.data} />
+              <footer className="flex flex-col gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <TableSummary areas={map.data} />
+                  <AlertChips />
+                </div>
+                <ShortcutHints reservation={mayBook} />
               </footer>
             </>
           )
@@ -123,8 +147,16 @@ export function TablesPage() {
           onTakenMaybeHere={() => void goToOrderIfTaken(opening.id)}
         />
       )}
+      {booking && <BookingDialog areas={map.data ?? []} onClose={() => setBooking(false)} />}
+      {creating && <NewOrderDialog onClose={() => setCreating(false)} onOpened={(orderId) => navigate(`/orders/${orderId}`)} />}
     </div>
   );
+}
+
+/** F2's "Nova reserva" for the store's day, as `/reservations` opens it. */
+function BookingDialog({ areas, onClose }: { areas: ReservableArea[]; onClose: () => void }) {
+  const today = useStoreToday(useStoreTimeZone());
+  return <NewReservationDialog date={today} today={today} areas={areas} onClose={onClose} />;
 }
 
 function loadError(error: Error): string {
