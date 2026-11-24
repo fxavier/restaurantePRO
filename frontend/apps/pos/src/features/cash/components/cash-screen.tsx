@@ -16,7 +16,7 @@ import { OpenSessionForm } from './open-session-form';
 import { RegisterClosing } from './register-closing';
 
 /**
- * `/cash` (§4, Stitch "Caixa e Fecho de Turno"): the operator's cash session, from opening with a float to the blind
+ * `/cash` (§4; light reference, as on `/tables`): the operator's cash session, from opening with a float to the blind
  * count, the register's closing and the day's operational close. Every amount and state is the server's.
  */
 export function CashScreen() {
@@ -33,9 +33,9 @@ export function CashScreen() {
   // would drop a kept intent and its Idempotency-Key, and the next attempt would be a second command (FC §8).
   if (failed && !loaded) {
     return (
-      <div className="flex flex-col items-center gap-3 py-6 text-center">
+      <div className="flex flex-col items-center gap-3 rounded-2xl border bg-card p-6 text-center">
         <p role="alert">{loadError(failed, 'a caixa')}</p>
-        <Button variant="outline" size="touch" onClick={reload}>
+        <Button variant="outline" size="touch" className="rounded-xl bg-card" onClick={reload}>
           Tentar novamente
         </Button>
       </div>
@@ -44,17 +44,17 @@ export function CashScreen() {
   if (session.data === undefined || !registers.data) {
     return (
       <div role="status" aria-label="A carregar a caixa…" className="flex flex-col gap-4">
-        <Skeleton className="h-40 rounded-xl" />
-        <Skeleton className="h-72 rounded-xl" />
+        <Skeleton className="h-40 rounded-2xl" />
+        <Skeleton className="h-72 rounded-2xl" />
       </div>
     );
   }
   return (
     <div className="flex flex-col gap-4">
       {failed && (
-        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-4">
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-warning-border bg-warning-tint p-4 text-warning-text">
           <p>{refreshError(failed)}</p>
-          <Button variant="outline" size="touch" onClick={reload}>
+          <Button variant="outline" size="touch" className="rounded-xl bg-card" onClick={reload}>
             Atualizar
           </Button>
         </div>
@@ -78,7 +78,7 @@ function CashContent({ session, registers }: { session: SessionDetails | null; r
   const dayCard = day.data?.id ? (
     <DayClose day={{ ...day.data, id: day.data.id }} canClose={holds(employee, 'CASH_DAY_CLOSE')} />
   ) : day.error ? (
-    <p role="alert" className="rounded-xl border bg-card p-4">
+    <p role="alert" className="rounded-2xl border bg-card p-4">
       {loadError(day.error, 'o dia comercial')}
     </p>
   ) : null;

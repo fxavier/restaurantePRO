@@ -26,7 +26,7 @@ export function AmountField({ label, value, onChange, readOnly, currency }: Prop
         value={value}
         readOnly={readOnly}
         onChange={(event) => onChange(event.target.value.replace(/[^\d.,]/g, ''))}
-        className="h-14 text-right text-2xl font-semibold tabular-nums md:text-2xl"
+        className="h-14 rounded-xl text-right text-2xl font-semibold tabular-nums md:text-2xl"
       />
     </div>
   );

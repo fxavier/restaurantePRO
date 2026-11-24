@@ -14,7 +14,7 @@ export function RegisterChoice({ name, registers, value, onChange, disabled }: P
   const active = registers.filter((register) => register.active);
   return (
     <fieldset className="flex flex-col gap-2" disabled={disabled}>
-      <legend className="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">Caixa</legend>
+      <legend className="mb-2 text-sm font-medium text-muted-foreground">Caixa</legend>
       {active.length === 0 ? (
         <p className="text-muted-foreground">Esta loja não tem caixas ativas. Um gestor cria as caixas no BackOffice.</p>
       ) : (
@@ -22,7 +22,7 @@ export function RegisterChoice({ name, registers, value, onChange, disabled }: P
           {active.map((register) => (
             <label
               key={register.id}
-              className="flex min-h-14 cursor-pointer items-center gap-3 rounded-lg border bg-muted px-4 text-base font-semibold has-checked:border-primary has-checked:bg-primary/15 has-focus-visible:ring-2 has-focus-visible:ring-ring"
+              className="flex min-h-14 cursor-pointer items-center gap-3 rounded-xl border-2 bg-card px-4 text-base font-semibold has-checked:border-primary has-checked:bg-success-tint has-focus-visible:ring-2 has-focus-visible:ring-ring has-focus-visible:ring-offset-2 has-focus-visible:ring-offset-card"
             >
               <input
                 type="radio"

@@ -32,7 +32,7 @@ export function OpenSessionForm({ registers }: { registers: RegisterSummary[] })
   }
 
   return (
-    <form aria-labelledby={title} onSubmit={submit} className="flex flex-col gap-4 rounded-xl border bg-card p-4 lg:p-6">
+    <form aria-labelledby={title} onSubmit={submit} className="flex flex-col gap-4 rounded-2xl border bg-card p-4">
       <div className="flex flex-col gap-1">
         <h3 id={title} className="text-xl font-semibold">
           Abrir sessão de caixa
@@ -45,6 +45,7 @@ export function OpenSessionForm({ registers }: { registers: RegisterSummary[] })
       <ConfirmButton
         type="submit"
         size="touch-primary"
+        className="rounded-xl"
         pending={open.pending}
         disabled={blocked || !registerId || amount === undefined}
       >
