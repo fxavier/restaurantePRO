@@ -1,10 +1,11 @@
 import { expect, type Page, test } from '@playwright/test';
 import { expectNoAxeViolations } from '../axe';
+import { saveScreens } from './screens';
 import { id, logIn, SESSION, standInDevice, STORE } from './stand-in';
 
 // The takeaway and delivery section in the built POS, its API stood in by page.route (the preview has no backend):
 // axe on the dispatch board and on the new-order dialog, the board's touch targets, and (with E2E_SCREENS set)
-// screenshots to compare with the Stitch screens.
+// screenshots at 1024 × 768 and 1440 × 900 to compare with the light reference.
 
 const address = (line1: string, line2?: string) => ({ line1, line2, city: 'Maputo' });
 const delivery = (n: number, fields: object) => ({
@@ -77,15 +78,6 @@ async function atDelivery(page: Page) {
   await expect(page.getByRole('article', { name: 'Entrega n.º 82' })).toBeVisible();
 }
 
-async function screens(page: Page, name: string) {
-  if (!process.env.E2E_SCREENS) return;
-  for (const width of [1440, 1024, 390]) {
-    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
-    await page.screenshot({ path: test.info().outputPath(`${name}-${width}.png`), fullPage: true });
-  }
-  await page.setViewportSize({ width: 1024, height: 768 });
-}
-
 test('the dispatch board is accessible, and its commands are touch-sized', async ({ page }) => {
   await atDelivery(page);
 
@@ -95,7 +87,7 @@ test('the dispatch board is accessible, and its commands are touch-sized', async
   }
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024);
   await expectNoAxeViolations(page);
-  await screens(page, 'delivery-board');
+  await saveScreens(page, 'delivery-board');
 });
 
 test('the dispatch dialog is accessible, its couriers touch-sized, and sends the courier picked', async ({ page }) => {
@@ -116,7 +108,7 @@ test('the dispatch dialog is accessible, its couriers touch-sized, and sends the
   }
   await rita.check();
   await expectNoAxeViolations(page);
-  await screens(page, 'delivery-dispatch');
+  await saveScreens(page, 'delivery-dispatch', { fullPage: false });
 
   await dialog.getByRole('button', { name: 'Expedir' }).click();
   await expect(dialog).toBeHidden();
@@ -139,5 +131,5 @@ test('the new delivery dialog is accessible once filled in', async ({ page }) =>
 
   await expect(dialog.getByRole('button', { name: 'Criar entrega' })).toBeEnabled();
   await expectNoAxeViolations(page);
-  await screens(page, 'delivery-new-order');
+  await saveScreens(page, 'delivery-new-order', { fullPage: false });
 });

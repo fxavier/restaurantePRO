@@ -42,20 +42,20 @@ export function ReturnDialog({ delivery, onClose, onChangedElsewhere }: Props) {
 
   return (
     <Dialog open onOpenChange={(open) => !open && !returned.pending && onClose()}>
-      <DialogContent showCloseButton={false} className="sm:max-w-md">
+      <DialogContent showCloseButton={false} className="rounded-2xl sm:max-w-md">
         <form onSubmit={submit} className="flex flex-col gap-4">
           <DialogHeader>
-            <DialogTitle>Devolver a entrega n.º {delivery.orderNumber}</DialogTitle>
+            <DialogTitle className="text-xl">Devolver a entrega n.º {delivery.orderNumber}</DialogTitle>
             <DialogDescription>Indique porque é que a entrega voltou à loja.</DialogDescription>
           </DialogHeader>
           <TextField label="Motivo" maxLength={MAX_REASON} value={reason} readOnly={locked} onChange={setReason} />
           {/* A refusal because the delivery moved closes this dialog: the board says why. */}
           <CommandMessage blocked={blocked} error={returned.error} what="a devolução" />
           <DialogFooter>
-            <Button type="button" variant="outline" size="touch" onClick={onClose} disabled={returned.pending}>
+            <Button type="button" variant="outline" size="touch" className="rounded-xl bg-card" onClick={onClose} disabled={returned.pending}>
               Cancelar
             </Button>
-            <Button type="submit" size="touch-primary" disabled={blocked || !valid || returned.pending} aria-busy={returned.pending}>
+            <Button type="submit" size="touch-primary" className="rounded-xl" disabled={blocked || !valid || returned.pending} aria-busy={returned.pending}>
               {awaitingRetry ? 'Tentar novamente' : 'Registar devolução'}
             </Button>
           </DialogFooter>

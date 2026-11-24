@@ -49,22 +49,23 @@ export function DispatchDialog({ delivery, onClose, onChangedElsewhere }: Props)
 
   return (
     <Dialog open onOpenChange={(open) => !open && !locked && onClose()}>
-      <DialogContent showCloseButton={false} className="sm:max-w-md">
+      <DialogContent showCloseButton={false} className="rounded-2xl sm:max-w-md">
         <form onSubmit={submit} className="flex flex-col gap-4">
           <DialogHeader>
-            <DialogTitle>Expedir a entrega n.º {delivery.orderNumber}</DialogTitle>
+            <DialogTitle className="text-xl">Expedir a entrega n.º {delivery.orderNumber}</DialogTitle>
             <DialogDescription>Escolha o estafeta que leva a entrega.</DialogDescription>
           </DialogHeader>
           <Couriers couriers={couriers} courierId={courierId} onChange={setPicked} disabled={locked} />
           {/* A refusal because the delivery moved closes this dialog: the board says why. */}
           <CommandMessage blocked={blocked} error={dispatch.error} what="a expedição" />
           <DialogFooter>
-            <Button type="button" variant="outline" size="touch" onClick={onClose} disabled={locked}>
+            <Button type="button" variant="outline" size="touch" className="rounded-xl bg-card" onClick={onClose} disabled={locked}>
               Cancelar
             </Button>
             <Button
               type="submit"
               size="touch-primary"
+              className="rounded-xl"
               disabled={blocked || !courierId || dispatch.pending}
               aria-busy={dispatch.pending}
             >
@@ -102,7 +103,7 @@ function Couriers({ couriers, courierId, onChange, disabled }: CouriersProps) {
         <p role="alert" className="text-error">
           {loadFailure(couriers.error, 'os estafetas')}
         </p>
-        <Button type="button" variant="outline" size="touch" onClick={() => void couriers.refetch()}>
+        <Button type="button" variant="outline" size="touch" className="rounded-xl bg-card" onClick={() => void couriers.refetch()}>
           Tentar novamente
         </Button>
       </div>
