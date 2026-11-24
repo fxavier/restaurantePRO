@@ -41,6 +41,7 @@ export function TenantSwitcher() {
         <DropdownMenuTrigger asChild>
           <Button
             variant="outline"
+            size="lg"
             disabled={select.isPending}
             aria-label={`Empresa: ${label}`}
             className="max-w-72"

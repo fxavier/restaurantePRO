@@ -61,7 +61,7 @@ export function StoreSelect() {
           value={selected}
           disabled={stores.isPending}
           onChange={(event) => event.target.value && selectStore(event.target.value)}
-          className="h-9 max-w-64 rounded-md border border-input bg-muted px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50"
+          className="h-10 max-w-64 rounded-xl border border-input bg-card px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50"
         >
           {stores.isPending && <option value="">A carregar…</option>}
           {!stores.isPending && !selected && <option value="">Escolher loja</option>}

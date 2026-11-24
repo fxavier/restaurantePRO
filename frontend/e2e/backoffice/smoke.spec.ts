@@ -109,3 +109,18 @@ for (const viewport of [
     await expect(switcher).toBeFocused();
   });
 }
+
+test('screens of the home, at 1024 × 768 and 1440 × 900', async ({ page }) => {
+  const dir = process.env.E2E_SCREENS;
+  test.skip(!dir, 'E2E_SCREENS not set');
+  await signedIn(page);
+  await page.goto(`/?storeId=${selectedStore}`);
+  await expect(page.getByRole('combobox', { name: 'Loja' })).toHaveValue(selectedStore);
+  for (const [width, height] of [
+    [1024, 768],
+    [1440, 900],
+  ] as const) {
+    await page.setViewportSize({ width, height });
+    await page.screenshot({ path: `${dir}/bo-home-${width}x${height}.png`, animations: 'disabled', fullPage: true });
+  }
+});

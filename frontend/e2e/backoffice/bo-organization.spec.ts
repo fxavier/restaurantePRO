@@ -83,13 +83,14 @@ async function standIn(page: Page) {
   await page.route('**/api/v1/backoffice/reservations?**', (route) => route.fulfill({ json: reservations }));
 }
 
-/** With E2E_SCREENS set, the full page at Stitch's desktop width and at a phone's. */
+/** With E2E_SCREENS set, the full page at the desktop widths (1440, and 1024 as the smallest) and at a phone's. */
 async function screens(page: Page, name: string) {
   const dir = process.env.E2E_SCREENS;
   if (!dir) return;
   const before = page.viewportSize()!;
-  for (const width of [1440, 390]) {
-    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+  const heights: Record<number, number> = { 1440: 900, 1024: 768, 390: 844 };
+  for (const width of [1440, 1024, 390]) {
+    await page.setViewportSize({ width, height: heights[width]! });
     await page.screenshot({ path: `${dir}/${name}-${width}.png`, fullPage: true });
   }
   await page.setViewportSize(before);
