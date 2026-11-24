@@ -10,7 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * What production tells orders (D35): it has received a round. Called from production's idempotent
  * {@code OrderBatchConfirmed} listener, in its transaction, with no session (audited as the system). R4: what a
- * delivery slip prints (D129).
+ * delivery slip prints (D129). The store of an order, for production's POS reads keyed by order.
  */
 @Service
 public class OrdersProductionApi {
@@ -32,6 +32,17 @@ public class OrdersProductionApi {
     @Transactional(propagation = Propagation.MANDATORY)
     public void markBatchDispatched(UUID batchId) {
         coordination.markBatchDispatched(batchId);
+    }
+
+    /**
+     * The store of an order, for production's reads keyed by order (the kitchen state of its rounds, ADR 0044): seen
+     * across the tenant's stores, so another store's order is found (403 for the caller), not absent (D42).
+     *
+     * @throws com.xavier.backend.shared.exception.NotFoundException (404) for an unknown order
+     */
+    @Transactional(readOnly = true)
+    public UUID storeOf(UUID orderId) {
+        return coordination.storeOf(orderId);
     }
 
     /**

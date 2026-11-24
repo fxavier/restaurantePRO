@@ -27,6 +27,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import com.xavier.backend.orders.model.dto.OpenOrderRequest;
 import com.xavier.backend.orders.model.dto.OpenTableRequest;
 import com.xavier.backend.orders.model.dto.OrderView;
+import com.xavier.backend.orders.model.dto.TableActivityView;
 import com.xavier.backend.orders.service.OrderOpeningService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -73,6 +74,12 @@ class PosOrderController {
                                     @PageableDefault(size = 50, sort = "openedAt", direction = Sort.Direction.ASC)
                                     @ParameterObject Pageable pageable) {
         return queries.list(lifecycle, pageable);
+    }
+
+    /** The table map's order side: each seated OPEN order's total and last round, and the overdue threshold. */
+    @GetMapping(ORDERS + "/table-activity")
+    TableActivityView tableActivity() {
+        return queries.tableActivity();
     }
 
     @GetMapping(ORDERS + "/{id}")

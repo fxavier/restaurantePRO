@@ -150,43 +150,55 @@ export function OrderPanel({ order, catalog, commands, message, action, back, sh
 
 /**
  * The confirmed lines, per round, then those outside any round; the order screen's "Enviado" and the table map's
- * order. Each round's list is named "Ronda N, HH:MM"; `heading` gives its visible heading another form, and
- * `headingLevel` its level under the caller's own headings.
+ * order. Each round's list is named "Ronda N, HH:MM"; `heading` gives its visible heading another form,
+ * `headingLevel` its level under the caller's own headings, and `badge` what follows the heading on its line (the table
+ * map's kitchen state). `dense` (the table map's narrow panel): no card around a round, and rows without padding.
  */
 export function SentRounds({
   order,
   catalog,
   heading = (batchNo, time) => `Ronda ${batchNo}, ${time}`,
   headingLevel: Heading = 'h4',
+  badge,
+  dense = false,
 }: {
   order: Order;
   catalog?: PosCatalog;
   heading?: (batchNo: number, time: string) => string;
   headingLevel?: 'h3' | 'h4';
+  badge?: (roundId: string) => ReactNode;
+  dense?: boolean;
 }) {
   const timeZone = useStoreTimeZone();
+  const group = dense ? 'flex flex-col' : 'flex flex-col rounded-lg border bg-background p-3';
   return (
     <>
       {order.rounds.map((round) => {
         const time = clockTime(round.confirmedAt, timeZone);
         const title = `Ronda ${round.batchNo}, ${time}`;
         return (
-          <div key={round.id} className="flex flex-col rounded-lg border bg-background p-3">
-            <Heading className="text-sm font-semibold">{heading(round.batchNo, time)}</Heading>
+          <div key={round.id} className={group}>
+            {badge ? (
+              <div className="flex flex-wrap items-center gap-x-2">
+                <Heading className="text-sm font-semibold">{heading(round.batchNo, time)}</Heading> {badge(round.id)}
+              </div>
+            ) : (
+              <Heading className="text-sm font-semibold">{heading(round.batchNo, time)}</Heading>
+            )}
             <ul aria-label={title} className="flex flex-col">
               {round.lines.map((line) => (
-                <SentRow key={line.id} line={line} name={lineName(line, catalog)} catalog={catalog} />
+                <SentRow key={line.id} line={line} name={lineName(line, catalog)} catalog={catalog} dense={dense} />
               ))}
             </ul>
           </div>
         );
       })}
       {order.unbatched.length > 0 && (
-        <div className="flex flex-col rounded-lg border bg-background p-3">
+        <div className={group}>
           <Heading className="text-sm font-semibold">Sem ronda (transferidas)</Heading>
           <ul aria-label="Sem ronda" className="flex flex-col">
             {order.unbatched.map((line) => (
-              <SentRow key={line.id} line={line} name={lineName(line, catalog)} catalog={catalog} />
+              <SentRow key={line.id} line={line} name={lineName(line, catalog)} catalog={catalog} dense={dense} />
             ))}
           </ul>
         </div>
@@ -302,9 +314,19 @@ function DraftRow({
   );
 }
 
-function SentRow({ line, name, catalog }: { line: OrderLine; name: string; catalog: PosCatalog | undefined }) {
+function SentRow({
+  line,
+  name,
+  catalog,
+  dense,
+}: {
+  line: OrderLine;
+  name: string;
+  catalog: PosCatalog | undefined;
+  dense: boolean;
+}) {
   return (
-    <li className="flex flex-col gap-1 border-b py-2 last:border-b-0">
+    <li className={`flex flex-col gap-1 ${dense ? 'text-sm' : 'border-b py-2 last:border-b-0'}`}>
       <div className="flex items-start gap-2">
         <span className="flex-1">
           <Quantity line={line} /> {name}

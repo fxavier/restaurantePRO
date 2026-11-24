@@ -7,13 +7,16 @@ type EnrolmentRequest = components['schemas']['com.xavier.backend.organization.m
 
 /**
  * Every request must have a handler: an unexpected call fails the test. The one exception is the home screen every
- * login reaches (`/tables`): an empty table map and a change stream held open, so a test about the PIN pad need not
- * stand in for the map. A test about the map replaces both with `tablesEndpoint` and `notificationsEndpoint`. The
+ * login reaches (`/tables`): an empty table map, no table activity, no kitchen progress for a selected table's rounds
+ * and a change stream held open, so a test about the PIN pad need not stand in for the map. A test about the map
+ * replaces them with `tablesEndpoint`, `tableActivityEndpoint`, `roundsEndpoint` and `notificationsEndpoint`. The
  * status bar's and the footer's alerts (read only with the permission that shows them) answer "nothing to report"
  * too; a test about them replaces them with the endpoints of ./alerts.
  */
 export const server = setupServer(
   http.get('*/api/v1/pos/tables', () => HttpResponse.json({ storeId: '6f1c2a9e-0000-4000-8000-0000000000aa', areas: [] })),
+  http.get('*/api/v1/pos/orders/table-activity', () => HttpResponse.json({ overdueAfterMinutes: 30, tables: [] })),
+  http.get('*/api/v1/pos/production-tickets/rounds', () => HttpResponse.json([])),
   http.get('*/api/v1/pos/notifications', ({ request }) => openStream(request).response),
   http.get('*/api/v1/pos/production/alerts', () =>
     HttpResponse.json({ pendingPrintJobs: 0, delayedKitchenRounds: 0, kitchenDelayMinutes: 15 }),
@@ -175,6 +178,19 @@ export function tablesEndpoint(...answers: (() => Response | Promise<Response>)[
 }
 
 export const tableMap = (body: TableMap) => () => HttpResponse.json(body);
+
+type TableActivity = components['schemas']['com.xavier.backend.orders.model.dto.TableActivityView'];
+type RoundKitchen = components['schemas']['com.xavier.backend.production.model.dto.RoundKitchenView'];
+
+/** `GET /api/v1/pos/orders/table-activity`: the seated orders' totals and last rounds, and the overdue threshold. */
+export function tableActivityEndpoint(body: TableActivity) {
+  return recording<undefined>('get', '/api/v1/pos/orders/table-activity', () => HttpResponse.json(body));
+}
+
+/** `GET /api/v1/pos/production-tickets/rounds?orderId=`: the kitchen state of the order's rounds. */
+export function roundsEndpoint(body: RoundKitchen[]) {
+  return recording<undefined>('get', '/api/v1/pos/production-tickets/rounds', () => HttpResponse.json(body));
+}
 
 /** One open `GET /api/v1/pos/notifications`, as the backend writes it (Spring `SseEmitter`). */
 export type ChangeStream = {

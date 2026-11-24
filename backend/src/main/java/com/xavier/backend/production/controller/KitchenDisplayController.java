@@ -4,11 +4,13 @@ import com.xavier.backend.access.IdempotentRequests;
 import com.xavier.backend.production.model.KitchenCommand;
 import com.xavier.backend.production.model.KitchenStatus;
 import com.xavier.backend.production.model.dto.KitchenCommandRequest;
+import com.xavier.backend.production.model.dto.RoundKitchenView;
 import com.xavier.backend.production.model.dto.TicketView;
 import com.xavier.backend.production.service.KitchenDisplayService;
 import com.xavier.backend.shared.web.PageResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
@@ -51,6 +53,12 @@ class KitchenDisplayController {
                                                 direction = Sort.Direction.ASC)
                                         @ParameterObject Pageable pageable) {
         return kitchen.listForPos(destination, status, pageable);
+    }
+
+    /** The kitchen state of each round of an order, for the POS order panel ("pronta", "em preparação"). */
+    @GetMapping(ProductionTicketController.POS + "/rounds")
+    List<RoundKitchenView> roundsOfOrder(@RequestParam UUID orderId) {
+        return kitchen.roundsOfOrder(orderId);
     }
 
     @PostMapping(TICKET + "/start")

@@ -8,8 +8,9 @@
  * <p>Production consumes the {@code orders} and {@code fiscal} events (rounds, voids, subtotals, documents and
  * their copies, R4 delivery dispatches, D129) and settlement's debt-payment slips (D65, D75) through idempotent
  * listeners, and tells orders that a round was received through
- * {@link com.xavier.backend.orders.OrdersProductionApi}, which also gives a delivery slip's content. Nothing depends
- * on production. Allowed dependencies follow D35.
+ * {@link com.xavier.backend.orders.OrdersProductionApi}, which also gives a delivery slip's content and, for the POS
+ * read of an order's rounds in the kitchen ({@code GET /pos/production-tickets/rounds}), the order's store (D42).
+ * Nothing depends on production. Allowed dependencies follow D35.
  */
 @ApplicationModule(displayName = "Production", allowedDependencies = {
         "shared", "audit", "access", "organization", "organization :: dto", "orders", "orders :: event",

@@ -1,6 +1,7 @@
 import { ApiError } from '@restaurantpro/api-client';
 import { Button } from '@restaurantpro/ui';
 import { RotateCcw } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { errorMessage, isVersionConflict } from '../../../lib/error-messages';
 import { isInProgress } from '../../../lib/use-intent';
 import type { useConfirmBatch } from '../hooks/use-confirm-batch';
@@ -16,6 +17,10 @@ type Props = {
   onSend: () => void;
   /** The button's name, which a refusal also names: "Pedir" on the order screen, "Enviar ronda N" on the table map. */
   label?: string;
+  /** Another command's outcome, in the same two-line place (the table map's "Subtotal"), so no line is kept twice. */
+  otherStatus?: ReactNode;
+  /** Lines kept for the outcome: two on the order screen; one on the table map's compact panel. */
+  statusLines?: 1 | 2;
 };
 
 /**
@@ -23,7 +28,16 @@ type Props = {
  * did. An unknown outcome (no answer, or the key still running) keeps its intent: "Tentar novamente" resends the same
  * key, "Descartar" gives it up. Nothing here says a round was sent before the server has.
  */
-export function SendRound({ send, disabled, blocked, sentBatchNo, onSend, label = 'Pedir' }: Props) {
+export function SendRound({
+  send,
+  disabled,
+  blocked,
+  sentBatchNo,
+  onSend,
+  label = 'Pedir',
+  otherStatus,
+  statusLines = 2,
+}: Props) {
   const awaitingRetry = send.intent !== undefined && send.error !== undefined && !send.pending;
   return (
     <div className="flex flex-col gap-1">
@@ -44,8 +58,9 @@ export function SendRound({ send, disabled, blocked, sentBatchNo, onSend, label 
         </Button>
       )}
       {/* Two lines high whatever it says, so nothing above moves when it changes. */}
-      <div className="min-h-10 text-sm">
+      <div className={`${statusLines === 1 ? 'min-h-5' : 'min-h-10'} text-sm`}>
         <SendStatus send={send} sentBatchNo={sentBatchNo} label={label} />
+        {otherStatus}
       </div>
     </div>
   );

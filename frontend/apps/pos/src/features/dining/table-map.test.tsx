@@ -1,9 +1,18 @@
 import { formatMoney } from '@restaurantpro/ui';
-import { act, screen, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import { delay, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { problem, SESSION, tableMap, tablesEndpoint, token, tokenEndpoint } from '../../test/server';
-import { id, MAP, openFromMap } from '../../test/table-map';
+import {
+  problem,
+  recording,
+  SESSION,
+  tableActivityEndpoint,
+  tableMap,
+  tablesEndpoint,
+  token,
+  tokenEndpoint,
+} from '../../test/server';
+import { id, M2_ORDER_ID, MAP, openFromMap } from '../../test/table-map';
 import { catalogEndpoint, json, ORDER, ORDER_ID, orderEndpoint } from '../../test/order';
 import { renderPos } from '../../test/render-pos';
 
@@ -24,6 +33,8 @@ const E1_OCCUPIED = {
 };
 
 const tile = (name: RegExp) => screen.getByRole('button', { name });
+/** An amount as the tile shows it (the accessible name keeps the locale's no-break space). */
+const money = (amount: string) => formatMoney({ amount, currency: 'MZN' });
 
 /** The terminal's clock at 14:00 in the store (12:00Z): M2 opened 1 h 55 min ago, M3 20 min ago. */
 function at14h() {
@@ -97,6 +108,60 @@ describe('table map', () => {
     const m3 = await screen.findByRole('button', { name: /^Mesa M3 / });
     expect(m3).toHaveAccessibleName('Mesa M3 Ocupada 1 pessoa · 20 min Bloqueada Conta pedida Reservada 20:30');
     expect(tile(/^Mesa M4 /)).toHaveAccessibleName('Mesa M4 Livre 1 lugar Reservada 21:00');
+  });
+
+  it("shows an occupied table's total as the server computed it, from the orders' read", async () => {
+    at14h();
+    const requests = tableActivityEndpoint({
+      overdueAfterMinutes: 30,
+      tables: [{ tableId: id(2), orderId: M2_ORDER_ID, total: { amount: '1250.00', currency: 'MZN' }, lastRoundAt: '2026-11-18T11:50:00Z' }],
+    });
+    await atTables();
+
+    const m2 = await screen.findByRole('button', { name: /^Mesa M2 .*250,00/ });
+    expect(m2).toHaveAccessibleName(`Mesa M2 Ocupada 3 pessoas · 1 h 55 min ${money('1250.00')}`);
+    expect(requests[0]!.url).toMatch(/\/api\/v1\/pos\/orders\/table-activity$/);
+  });
+
+  it('shows a table too long without a round as "N min sem ronda" in red, from the server\'s threshold', async () => {
+    at14h();
+    tableActivityEndpoint({
+      overdueAfterMinutes: 30,
+      tables: [{ tableId: id(2), orderId: M2_ORDER_ID, total: { amount: '480.00', currency: 'MZN' }, lastRoundAt: '2026-11-18T11:02:00Z' }],
+    });
+    await atTables();
+
+    const m2 = await screen.findByRole('button', { name: /sem ronda/ });
+    expect(m2).toHaveAccessibleName(`Mesa M2 Ocupada 3 pessoas · 1 h 55 min ${money('480.00')} 58 min sem ronda`);
+    expect(m2).toHaveClass('bg-destructive-tint');
+  });
+
+  it('when the orders\' read fails the map still shows every tile, without amounts or "sem ronda", and works', async () => {
+    at14h();
+    const activity = recording<undefined>('get', '/api/v1/pos/orders/table-activity', () => problem(500, 'INTERNAL'));
+    const { user } = await atTables();
+
+    const m2 = await screen.findByRole('button', { name: /^Mesa M2 / });
+    await waitFor(() => expect(activity.length).toBeGreaterThan(0));
+    expect(m2).toHaveAccessibleName('Mesa M2 Ocupada 3 pessoas · 1 h 55 min');
+    expect(m2).toHaveClass('bg-warning-tint');
+    expect(tile(/^Mesa M1 /)).toHaveAccessibleName('Mesa M1 Livre 4 lugares');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await user.click(tile(/^Mesa M1 /));
+    expect(within(screen.getByRole('complementary', { name: 'Detalhe da mesa' })).getByRole('button', { name: 'Abrir mesa' })).toBeEnabled();
+  });
+
+  it('a table within the threshold is not overdue', async () => {
+    at14h();
+    tableActivityEndpoint({
+      overdueAfterMinutes: 60,
+      tables: [{ tableId: id(2), orderId: M2_ORDER_ID, total: { amount: '480.00', currency: 'MZN' }, lastRoundAt: '2026-11-18T11:02:00Z' }],
+    });
+    await atTables();
+
+    const m2 = await screen.findByRole('button', { name: /480,00/ });
+    expect(m2).not.toHaveAccessibleName(/sem ronda/);
+    expect(m2).toHaveClass('bg-warning-tint');
   });
 
   it('sums up the store by state, each table once (locked before occupied)', async () => {

@@ -1,6 +1,6 @@
 import { expect, type Page, test } from '@playwright/test';
 import { expectNoAxeViolations } from '../axe';
-import { id, logIn, openFromMap, standInDevice, STORE } from './stand-in';
+import { id, logIn, openFromMap, SESSION, standInDevice, STORE } from './stand-in';
 
 // The order screen in the built POS, its API stood in by page.route: what jsdom cannot check, the three panes' real
 // geometry at the smallest POS viewport (DS: 1024 × 768), the touch targets, and axe on the screen and its dialogs.
@@ -85,6 +85,9 @@ const CATALOG = {
   },
 };
 
+/** An instant `minutes` before now: the map's times are recent, as on a working terminal, not days old. */
+const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+
 const ORDER_ID = id(500);
 const BATCH = id(550);
 const draft = (n: number, fields: object) => ({
@@ -135,7 +138,7 @@ const ORDER = {
   version: 4,
   catalogVersion: 7,
   lines: LINES,
-  batches: [{ id: BATCH, orderId: ORDER_ID, batchNo: 1, status: 'DISPATCHED', confirmedAt: '2026-11-18T10:10:00Z', lines: [] }],
+  batches: [{ id: BATCH, orderId: ORDER_ID, batchNo: 1, status: 'DISPATCHED', confirmedAt: ago(20), lines: [] }],
   due: { amount: 1530, currency: 'MZN' },
 };
 const table = (n: number, code: string, fields: object = {}) => ({
@@ -155,10 +158,31 @@ const MAP = {
       id: id(900),
       code: 'SALA',
       name: 'Sala',
-      tables: [table(1, 'M1'), table(2, 'M2', { status: 'OCCUPIED', guests: 3, openedAt: '2026-11-18T10:05:00Z', openOrderId: ORDER_ID })],
+      tables: [
+        table(1, 'M1'),
+        table(2, 'M2', { status: 'OCCUPIED', guests: 3, openedAt: ago(32), openOrderId: ORDER_ID }),
+        // Too long without a round (the server's threshold is 30 min): red, "58 min sem ronda".
+        table(3, 'M3', { status: 'OCCUPIED', guests: 2, openedAt: ago(75), openOrderId: id(503) }),
+        table(4, 'M4', { status: 'OCCUPIED', guests: 4, openedAt: ago(90), openOrderId: id(504), subtotalPrinted: true }),
+        table(5, 'M5', { reserved: true, nextReservationAt: new Date(Date.now() + 90 * 60_000).toISOString() }),
+        table(6, 'M6'),
+      ],
     },
   ],
 };
+
+/** The orders' side of the map: each seated order's total and last round, and the overdue threshold. */
+const ACTIVITY = {
+  overdueAfterMinutes: 30,
+  tables: [
+    { tableId: id(2), orderId: ORDER_ID, total: mzn('1530.00'), lastRoundAt: ago(20) },
+    { tableId: id(3), orderId: id(503), total: mzn('480.00'), lastRoundAt: ago(58) },
+    { tableId: id(4), orderId: id(504), total: mzn('2010.00'), lastRoundAt: ago(45) },
+  ],
+};
+
+/** M2's first round is ready in the kitchen. */
+const ROUNDS = [{ batchId: BATCH, status: 'READY' }];
 
 /** Twelve rounds' worth of sent lines and no draft: the panel's body scrolls at 1024 × 768 with nothing to tab to. */
 const ALL_SENT = {
@@ -174,6 +198,8 @@ async function standIn(page: Page, order: object = ORDER) {
   await page.route('**/api/v1/pos/notifications', () => undefined);
   await page.route('**/api/v1/pos/catalog', (route) => route.fulfill({ json: CATALOG }));
   await page.route(`**/api/v1/pos/orders/${ORDER_ID}`, (route) => route.fulfill({ json: order }));
+  await page.route('**/api/v1/pos/orders/table-activity', (route) => route.fulfill({ json: ACTIVITY }));
+  await page.route('**/api/v1/pos/production-tickets/rounds?*', (route) => route.fulfill({ json: ROUNDS }));
 }
 
 async function atOrder(page: Page, order: object = ORDER) {
@@ -317,8 +343,36 @@ test('the selected table\'s order: on screen at 1024 × 768, touch-sized, and ac
   }
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024);
 
+  // Compact enough that the three drafts show under the sent round without scrolling the panel's body.
+  await expectThreeDraftsShown(page);
+  await expect(panel.getByText('pronta', { exact: true })).toBeVisible();
+
   await expectNoAxeViolations(page);
 });
+
+test('the map shows each seated table\'s total, and a table too long without a round in red', async ({ page }) => {
+  await atM2OnMap(page);
+
+  // The times are minutes before the spec loaded: a slow run may add a minute.
+  await expect(page.getByRole('button', { name: /^Mesa M2 / })).toHaveAccessibleName(/^Mesa M2 Ocupada 3 pessoas · 3\d min 1530,00\sMTn$/);
+  const m3 = page.getByRole('button', { name: /^Mesa M3 / });
+  await expect(m3).toHaveAccessibleName(/^Mesa M3 Ocupada 2 pessoas · 1 h 1\d min 480,00\sMTn [56]\d min sem ronda$/);
+  await expect(m3).toHaveClass(/bg-destructive-tint/);
+  await expect(page.getByRole('button', { name: /^Mesa M4 / })).toHaveAccessibleName(/2010,00\sMTn Conta pedida$/);
+});
+
+/** The three drafts lie inside the panel's body: shown at 1024 × 768 without scrolling it. */
+async function expectThreeDraftsShown(page: Page) {
+  const panel = page.getByRole('complementary', { name: 'Detalhe da mesa' });
+  const body = await box(panel.getByRole('region', { name: 'Linhas do pedido' }));
+  const drafts = await panel.getByRole('list', { name: 'Por enviar' }).getByRole('listitem').all();
+  expect(drafts).toHaveLength(3);
+  for (const line of drafts) {
+    const { y, height } = (await line.boundingBox())!;
+    expect(y).toBeGreaterThanOrEqual(body.y);
+    expect(y + height).toBeLessThanOrEqual(body.y + body.height);
+  }
+}
 
 test('"Subtotal" on the map prints with an Idempotency-Key and says so on the server\'s 202', async ({ page }) => {
   const keys: (string | undefined)[] = [];
@@ -337,12 +391,53 @@ test('"Subtotal" on the map prints with an Idempotency-Key and says so on the se
   await expect(panel.getByRole('status', { name: 'Subtotal' })).toHaveText('Subtotal impresso.');
   expect(keys).toHaveLength(1);
   expect(keys[0]).toMatch(/^[0-9a-f-]{36}$/);
+  // With its status line shown, the three drafts are still on screen.
+  await expectThreeDraftsShown(page);
+});
+
+/**
+ * The light reference's whole /tables: a session that may see the alerts (production and payments), one pending print,
+ * two late rounds and one payment to confirm, beside the tiles' totals and overdue state.
+ */
+async function atM2WithAlerts(page: Page) {
+  await standIn(page);
+  await page.route('**/api/v1/auth/pos-login', (route) =>
+    route.fulfill({
+      json: {
+        ...SESSION,
+        permissions: [...SESSION.permissions, `PERM_PRODUCTION_VIEW@${STORE}`, `PERM_PAYMENT_COLLECT@${STORE}`],
+      },
+    }),
+  );
+  await page.route('**/api/v1/pos/production/alerts', (route) =>
+    route.fulfill({ json: { pendingPrintJobs: 1, delayedKitchenRounds: 2, kitchenDelayMinutes: 15 } }),
+  );
+  await page.route('**/api/v1/pos/settlement/alerts', (route) =>
+    route.fulfill({ json: { paymentsToConfirm: 1, oldestOrderId: id(503) } }),
+  );
+  await logIn(page);
+  await page.getByRole('button', { name: /^Mesa M2 / }).click();
+  await expect(page.getByText('pronta', { exact: true })).toBeVisible();
+}
+
+test('tiles with totals and overdue, the footer\'s alerts and the shortcuts, together', async ({ page }) => {
+  await atM2WithAlerts(page);
+
+  await expect(page.getByRole('button', { name: /^Mesa M3 / })).toHaveAccessibleName(/sem ronda$/);
+  await expect(page.getByRole('button', { name: /^Mesa M2 / })).toHaveAccessibleName(/1530,00\sMTn$/);
+  await expect(page.getByText(/1 pagamento por confirmar/)).toBeVisible();
+  await expect(page.getByText(/2 rondas > 15 min/)).toBeVisible();
+  await expect(page.getByText(/1 impressão pendente/)).toBeVisible();
+  await expect(page.getByText(/F3 takeaway/)).toBeVisible();
+  await expectThreeDraftsShown(page);
+  await expectNoAxeViolations(page);
 });
 
 test('screens of the table map, M2 selected, at 1024 × 768 and 1440 × 900', async ({ page }) => {
   const dir = process.env.E2E_SCREENS;
   test.skip(!dir, 'E2E_SCREENS not set');
-  await atM2OnMap(page);
+  await atM2WithAlerts(page);
+  await expect(page.getByRole('button', { name: /sem ronda/ })).toBeVisible();
   for (const [width, height] of [
     [1024, 768],
     [1440, 900],

@@ -60,6 +60,10 @@ class ProductionTenantIsolationTest {
     static final UUID A_JOB = UUID.fromString("0190b400-0000-7000-8000-0000000009a1");
     static final UUID A_OTHER_JOB = UUID.fromString("0190b400-0000-7000-8000-0000000009a2");
     static final UUID B_JOB = UUID.fromString("0190b400-0000-7000-8000-0000000009b1");
+    static final String ROUNDS = "/api/v1/pos/production-tickets/rounds";
+    static final UUID A_ORDER = UUID.fromString("0190b400-0000-7000-8000-000000000ea1");
+    static final UUID A_OTHER_ORDER = UUID.fromString("0190b400-0000-7000-8000-000000000ea2");
+    static final UUID B_ORDER = UUID.fromString("0190b400-0000-7000-8000-000000000eb1");
 
     @Autowired
     MockMvc mvc;
@@ -70,7 +74,33 @@ class ProductionTenantIsolationTest {
         seed(A, A_STORE, A_PRINTER, A_TICKET, A_JOB);
         seed(B, B_STORE, B_PRINTER, B_TICKET, B_JOB);
         seed(A, A_OTHER_STORE, A_OTHER_PRINTER, A_OTHER_TICKET, A_OTHER_JOB);
+        seedRound(A, A_STORE, A_ORDER);
+        seedRound(A, A_OTHER_STORE, A_OTHER_ORDER);
+        seedRound(B, B_STORE, B_ORDER);
         alerting(B, B_STORE, B_PRINTER);
+    }
+
+    /** An order with one round queued on the kitchen display, as orders and production write them. */
+    private static void seedRound(UUID tenant, UUID store, UUID order) {
+        UUID ticket = UUID.randomUUID();
+        try (AppRoleSession app = AppRoleSession.open().tenant(tenant).allStores()) {
+            app.jdbc().sql("""
+                    INSERT INTO orders.order_header (id, store_id, terminal_id, order_number, mode, table_id,
+                        lifecycle, billing_lock, business_day, currency, opened_at, opened_by_employee_id,
+                        next_batch_no, version)
+                    VALUES (?, ?, gen_random_uuid(), nextval('orders.order_number_seq'), 'COUNTER', NULL, 'OPEN',
+                        'NONE', current_date, 'MZN', now(), gen_random_uuid(), 2, 0)""").param(order).param(store)
+                    .update();
+            app.jdbc().sql("""
+                    INSERT INTO production.production_ticket (id, store_id, source_type, source_id, destination,
+                        kind, order_id, suppressed, content, created_at, routing, content_format)
+                    VALUES (?, ?, 'BATCH', gen_random_uuid(), 'BAR', 'ORIGINAL', ?, false, 'iso', now(), 'UNROUTED',
+                        'PLAIN')""").param(ticket).param(store).param(order).update();
+            app.jdbc().sql("""
+                    INSERT INTO production.kitchen_progress (ticket_id, store_id, destination, status, version,
+                        queued_at)
+                    VALUES (?, ?, 'BAR', 'QUEUED', 0, now())""").param(ticket).param(store).update();
+        }
     }
 
     /** A failed job and a late round of {@code store}: one alert of each kind on its POS. */
@@ -153,6 +183,18 @@ class ProductionTenantIsolationTest {
                 .andExpect(status().isForbidden());
     }
 
+    /** The kitchen state of an order's rounds (POS order panel): own order 200, another store 403, another tenant 404. */
+    @Test
+    void theRoundsOfAnotherTenantsOrder404AnotherStores403AndOwn200() throws Exception {
+        mvc.perform(get(ROUNDS).param("orderId", A_ORDER.toString()).with(waiter(A, A_STORE)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1)).andExpect(jsonPath("$[0].status").value("QUEUED"));
+        mvc.perform(get(ROUNDS).param("orderId", A_OTHER_ORDER.toString()).with(waiter(A, A_STORE)))
+                .andExpect(status().isForbidden());
+        mvc.perform(get(ROUNDS).param("orderId", B_ORDER.toString()).with(waiter(A, A_STORE)))
+                .andExpect(status().isNotFound());
+    }
+
     @Test
     void theListOfAnotherTenantsStoreIsEmptyAndOwnIsNot() throws Exception {
         mvc.perform(get("/api/v1/backoffice/print-jobs").param("storeId", B_STORE.toString())
@@ -224,9 +266,18 @@ class ProductionTenantIsolationTest {
         CompositeForeignKeyCoverageTest.assertModuleKeysIncludeTheTenant("production");
     }
 
+    /** A POS session of {@code tenant} in {@code store} with ORDER_VIEW (a waiter). */
+    private static RequestPostProcessor waiter(UUID tenant, UUID store) {
+        return posSession(tenant, store, Permission.ORDER_VIEW);
+    }
+
     /** A POS session of {@code tenant} in {@code store} with PRODUCTION_VIEW (its membership as the details). */
     private static RequestPostProcessor viewer(UUID tenant, UUID store) {
-        Set<String> authorities = Set.of(Permission.PRODUCTION_VIEW.authority(store));
+        return posSession(tenant, store, Permission.PRODUCTION_VIEW);
+    }
+
+    private static RequestPostProcessor posSession(UUID tenant, UUID store, Permission permission) {
+        Set<String> authorities = Set.of(permission.authority(store));
         Actor actor = Actor.employee(UUID.randomUUID(), UUID.randomUUID(), store, authorities);
         UsernamePasswordAuthenticationToken token = UsernamePasswordAuthenticationToken.authenticated(actor, null,
                 authorities.stream().map(SimpleGrantedAuthority::new).toList());

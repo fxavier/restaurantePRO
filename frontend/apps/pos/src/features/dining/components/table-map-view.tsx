@@ -3,6 +3,7 @@ import { Search } from 'lucide-react';
 import { useState } from 'react';
 import { useNow } from '../../../lib/use-now';
 import { matchesTable } from '../format';
+import { type Activity, tileActivity } from '../table-activity';
 import type { DiningArea } from '../table-map';
 import { TableTile } from './table-tile';
 
@@ -14,6 +15,8 @@ type Props = {
   /** The table shown in the detail panel. */
   selected: string | undefined;
   onSelect: (tableId: string) => void;
+  /** The seated orders' totals and last rounds; until it answers (or if it fails) the tiles show the map alone. */
+  activity: Activity | undefined;
 };
 
 /**
@@ -21,7 +24,7 @@ type Props = {
  * green, named with its count ("Sala, 12 mesas"); a "Mesa ou nº" search over the area's codes; a grid of fixed-height
  * tiles.
  */
-export function TableMapView({ areas, area, onArea, selected, onSelect }: Props) {
+export function TableMapView({ areas, area, onArea, selected, onSelect, activity }: Props) {
   const active = areas.some((candidate) => candidate.id === area) ? area : areas[0]?.id;
   const [query, setQuery] = useState('');
   const now = useNow();
@@ -71,7 +74,13 @@ export function TableMapView({ areas, area, onArea, selected, onSelect }: Props)
               <ul aria-label={`Mesas de ${name}`} className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
                 {shown.map((table) => (
                   <li key={table.id}>
-                    <TableTile table={table} now={now} selected={table.id === selected} onSelect={() => onSelect(table.id)} />
+                    <TableTile
+                      table={table}
+                      now={now}
+                      activity={tileActivity(table, activity, now)}
+                      selected={table.id === selected}
+                      onSelect={() => onSelect(table.id)}
+                    />
                   </li>
                 ))}
               </ul>

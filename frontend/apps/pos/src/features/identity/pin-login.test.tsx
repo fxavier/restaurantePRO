@@ -409,7 +409,8 @@ describe('leaving the terminal', () => {
     async function withCachedData(options: Parameters<typeof renderPos>[0] = {}) {
       const rendered = await loggedIn(options);
       rendered.queryClient.setQueryData(['pos', 'tables'], [{ id: 'table-1' }]);
-      expect(rendered.queryClient.getQueryCache().getAll()).toHaveLength(1);
+      // The home screen's reads (the map, its activity) are in the cache: the session has data to drop.
+      expect(rendered.queryClient.getQueryCache().find({ queryKey: ['pos', 'tables'], exact: true })).toBeDefined();
       return rendered;
     }
 

@@ -68,31 +68,35 @@ export function TableDetailPanel({ table, areaName, onOpenTable, onGoToOrder, on
 
   return (
     <aside aria-label="Detalhe da mesa" className={shell}>
-      <header className="flex flex-col gap-2 border-b px-4 py-3">
+      {/* Compact (light reference): at 1024 × 768 the order under it shows three drafts without scrolling. */}
+      <header className="flex flex-col gap-1 border-b px-4 py-2">
         <div className="flex items-start gap-3">
           <span
             aria-hidden="true"
-            className={`flex size-12 shrink-0 items-center justify-center rounded-xl border-2 text-xl font-bold tabular-nums ${STATE_BLOCK[tableState(table)]}`}
+            className={`flex size-10 shrink-0 items-center justify-center rounded-xl border-2 text-lg font-bold tabular-nums ${STATE_BLOCK[tableState(table)]}`}
           >
             {table.code}
           </span>
           <div className="min-w-0 flex-1">
-            <h2 ref={heading} tabIndex={-1} className="truncate text-xl font-semibold focus-visible:outline-none">
+            <h2 ref={heading} tabIndex={-1} className="truncate text-base font-semibold focus-visible:outline-none">
               Mesa {table.code}
             </h2>
-            <p className="text-muted-foreground">{meta}</p>
-            <dl className="flex flex-wrap gap-x-4 text-sm">
-              <div className="flex gap-1">
-                <dt className="text-muted-foreground">Estado</dt>
-                <dd className="font-semibold">{occupied ? 'Ocupada' : 'Livre'}</dd>
-              </div>
-              {table.openedAt && (
+            {/* One line: where and how many, the state (its term read out only; the code block's tint shows it), the opening. */}
+            <div className="flex flex-wrap gap-x-3 text-sm">
+              <p className="text-muted-foreground">{meta}</p>
+              <dl className="flex flex-wrap gap-x-3">
                 <div className="flex gap-1">
-                  <dt className="text-muted-foreground">Abertura</dt>
-                  <dd className="font-semibold tabular-nums">{clockTime(table.openedAt, timeZone)}</dd>
+                  <dt className="sr-only">Estado</dt>
+                  <dd className="font-semibold">{occupied ? 'Ocupada' : 'Livre'}</dd>
                 </div>
-              )}
-            </dl>
+                {table.openedAt && (
+                  <div className="flex gap-1">
+                    <dt className="text-muted-foreground">Abertura</dt>
+                    <dd className="font-semibold tabular-nums">{clockTime(table.openedAt, timeZone)}</dd>
+                  </div>
+                )}
+              </dl>
+            </div>
           </div>
           <Button variant="ghost" size="touch" aria-label="Fechar" className="lg:hidden" onClick={onClose}>
             <X aria-hidden="true" />

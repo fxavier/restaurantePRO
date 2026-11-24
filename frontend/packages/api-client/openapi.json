@@ -9432,6 +9432,54 @@
         },
         "type": "object"
       },
+      "com.xavier.backend.orders.model.dto.TableActivityView": {
+        "properties": {
+          "overdueAfterMinutes": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "tables": {
+            "items": {
+              "$ref": "#/components/schemas/com.xavier.backend.orders.model.dto.TableActivityView.Table"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "overdueAfterMinutes",
+          "tables"
+        ],
+        "type": "object"
+      },
+      "com.xavier.backend.orders.model.dto.TableActivityView.Table": {
+        "properties": {
+          "lastRoundAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "orderId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "tableId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "total": {
+            "$ref": "#/components/schemas/com.xavier.backend.shared.Money"
+          }
+        },
+        "required": [
+          "lastRoundAt",
+          "orderId",
+          "tableId",
+          "total"
+        ],
+        "type": "object"
+      },
       "com.xavier.backend.orders.model.dto.TableMoveRequest": {
         "properties": {
           "orderVersion": {
@@ -10536,6 +10584,27 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "com.xavier.backend.production.model.dto.RoundKitchenView": {
+        "properties": {
+          "batchId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "QUEUED",
+              "IN_PREPARATION",
+              "READY"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "batchId",
+          "status"
+        ],
         "type": "object"
       },
       "com.xavier.backend.production.model.dto.RoutesRequest": {
@@ -30557,6 +30626,31 @@
         ]
       }
     },
+    "/api/v1/pos/orders/table-activity": {
+      "get": {
+        "operationId": "tableActivity",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/com.xavier.backend.orders.model.dto.TableActivityView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
+        "tags": [
+          "pos-order-controller"
+        ]
+      }
+    },
     "/api/v1/pos/orders/{id}": {
       "get": {
         "operationId": "get_30",
@@ -32525,6 +32619,45 @@
               "*/*": {
                 "schema": {
                   "$ref": "#/components/schemas/com.xavier.backend.shared.web.PageResponseCom.xavier.backend.production.model.dto.TicketView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "posSession": []
+          }
+        ],
+        "tags": [
+          "kitchen-display-controller"
+        ]
+      }
+    },
+    "/api/v1/pos/production-tickets/rounds": {
+      "get": {
+        "operationId": "roundsOfOrder",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "orderId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/com.xavier.backend.production.model.dto.RoundKitchenView"
+                  },
+                  "type": "array"
                 }
               }
             },
