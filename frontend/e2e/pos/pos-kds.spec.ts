@@ -75,6 +75,22 @@ test('the kitchen display is accessible, and its commands are touch-sized', asyn
   await screens(page, 'kds-board');
 });
 
+test('with the KDS link too, every section label keeps to one line at 1024 × 768', async ({ page }) => {
+  await atKitchen(page);
+
+  const sections = page.getByRole('navigation', { name: 'Secções' });
+  await expect(sections.getByRole('link')).toHaveCount(5);
+  for (const link of await sections.getByRole('link').all()) {
+    const lines = await link.evaluate((element) => {
+      const text = document.createRange();
+      text.selectNodeContents(element);
+      return new Set([...text.getClientRects()].map((rect) => Math.round(rect.top))).size;
+    });
+    expect(lines, (await link.textContent()) ?? '').toBe(1);
+    expect((await link.boundingBox())!.height).toBeGreaterThanOrEqual(56);
+  }
+});
+
 test('the history of rounds taken off is accessible', async ({ page }) => {
   await atKitchen(page);
 
