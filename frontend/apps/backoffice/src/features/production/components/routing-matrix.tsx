@@ -20,7 +20,7 @@ type RoutingMatrixProps = {
 /** Stitch's "Matriz rápida": which printer each destination and each terminal prints on. */
 export function RoutingMatrix({ storeId, printers, routes, assignments, terminals }: RoutingMatrixProps) {
   return (
-    <section aria-labelledby="routing-title" className="flex flex-col gap-4 rounded-xl border bg-card p-4 lg:col-span-5">
+    <section aria-labelledby="routing-title" className="flex flex-col gap-4 rounded-2xl border bg-card p-4 lg:col-span-5">
       <div className="flex items-center gap-2">
         <Network aria-hidden="true" className="size-5 text-primary" />
         <h2 id="routing-title" className="text-xl font-semibold">

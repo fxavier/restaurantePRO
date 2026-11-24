@@ -95,7 +95,7 @@ function ModeForm({ printer, printers, maySuppress, change, onClose }: ModeFormP
           return (
             <div
               key={one}
-              className="flex items-start gap-3 rounded-md border p-3 has-checked:border-primary has-checked:bg-primary/10"
+              className="flex items-start gap-3 rounded-xl border p-3 has-checked:border-success-border has-checked:bg-success-tint"
             >
               <input
                 id={id}

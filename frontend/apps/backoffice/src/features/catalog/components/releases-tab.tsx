@@ -146,7 +146,7 @@ function ReleasesTable({ releases, timeZone, actions }: ReleasesTableProps) {
         {releases.map((release) => (
           <TableRow key={release.id}>
             <TableCell>
-              <StatusBadge status={release.status ?? ''} statuses={releaseStatusesFor(release.status ?? '')} />
+              <StatusBadge status={release.status ?? ''} statuses={releaseStatusesFor(release.status ?? '')} look="tint" />
             </TableCell>
             <TableCell className="tabular-nums">{instant(release.createdAt, timeZone)}</TableCell>
             <TableCell className="tabular-nums">{instant(release.validatedAt, timeZone)}</TableCell>
@@ -196,7 +196,7 @@ function Warnings({ release }: { release: ReleaseSummary }) {
   if (!warnings.length) return <span className="text-muted-foreground">—</span>;
   return (
     <details className="text-sm">
-      <summary className="cursor-pointer rounded-sm font-medium text-warning focus-visible:outline-2 focus-visible:outline-ring">
+      <summary className="cursor-pointer rounded-sm font-medium text-warning-text focus-visible:outline-2 focus-visible:outline-ring">
         {warningsLabel(warnings.length)}
       </summary>
       <ul className="mt-2 flex flex-col gap-1 text-muted-foreground">

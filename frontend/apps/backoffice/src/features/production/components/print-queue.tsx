@@ -1,5 +1,5 @@
-import { Badge, Button, LOCALE, StatusBadge } from '@restaurantpro/ui';
-import { Check, RefreshCw, RotateCcw } from 'lucide-react';
+import { Button, LOCALE, StatusBadge, StatusPill } from '@restaurantpro/ui';
+import { Check, Copy, RefreshCw, RotateCcw } from 'lucide-react';
 import { useId, useState, type ReactNode } from 'react';
 import { useAcknowledgeJob, usePrintJobs, useRetryJob, JOB_PAGE_SIZE } from '../hooks/use-print-jobs';
 import { jobFilters, jobStatuses, jobTitle, resolutions } from '../labels';
@@ -26,7 +26,7 @@ export function PrintQueue({ storeId, timeZone, printerName, mayOperate }: Print
   const commands = useJobCommands();
 
   return (
-    <section aria-labelledby={titleId} className="flex flex-col gap-3 rounded-xl border bg-card p-4">
+    <section aria-labelledby={titleId} className="flex flex-col gap-3 rounded-2xl border bg-card p-4">
       <QueueHeader
         titleId={titleId}
         status={status}
@@ -157,15 +157,19 @@ type JobItemProps = { job: PrintJob; timeZone: string | undefined; printerName: 
 function JobItem({ job, timeZone, printerName, children }: JobItemProps) {
   const title = jobTitle(job.sourceType, job.destination);
   return (
-    <li aria-label={title} className="flex flex-col gap-1.5 rounded-md border bg-muted p-3 text-sm">
+    <li aria-label={title} className="flex flex-col gap-1.5 rounded-xl border p-3 text-sm">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium">{title}</span>
-        {job.kind === 'COPY' && <Badge variant="outline">Cópia</Badge>}
+        {job.kind === 'COPY' && (
+          <StatusPill tone="neutral" icon={Copy}>
+            Cópia
+          </StatusPill>
+        )}
         <span className="ml-auto">
           {job.resolution ? (
-            <StatusBadge status={job.resolution} statuses={resolutions} />
+            <StatusBadge status={job.resolution} statuses={resolutions} look="tint" />
           ) : (
-            <StatusBadge status={job.status} statuses={jobStatuses} />
+            <StatusBadge status={job.status} statuses={jobStatuses} look="tint" />
           )}
         </span>
       </div>

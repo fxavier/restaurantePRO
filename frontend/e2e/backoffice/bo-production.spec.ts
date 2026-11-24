@@ -3,8 +3,8 @@ import { expectNoAxeViolations } from '../axe';
 
 // The production area of the built BackOffice ("Produção, Encaminhamento & Impressoras"), its API stood in by
 // page.route (the preview has no BFF): the summary, the printer cards, the print queue, the tickets with no route and
-// the routing matrix, then the "Adicionar impressora" and "Modo" dialogs, with axe on each. Screenshots at 1440 and
-// 390 wide only when E2E_SCREENS names a directory.
+// the routing matrix, then the "Adicionar impressora" and "Modo" dialogs, with axe on each. Screenshots at 1024 × 768
+// and 1440 × 900 only when E2E_SCREENS names a directory.
 
 const TENANT = 'aaaaaaaa-0000-4000-8000-000000000001';
 const STORE = '11111111-0000-4000-8000-000000000001';
@@ -35,7 +35,9 @@ const printer = (id: string, code: string, name: string, host: string, extra: Re
 const kitchen = printer('1', 'COZ', 'Cozinha Quentes', '192.168.1.181');
 const copa = printer('2', 'COPA', 'Copa & Linha Fria', '192.168.1.182', { mode: 'HOLD' });
 const bar = printer('3', 'BAR', 'Bar Central', '192.168.1.183', { mode: 'REDIRECT', redirectPrinterId: kitchen.id });
-const printers = [kitchen, copa, bar];
+// The fourth is ignored and inactive, so each mode's pill (and "Inativa") is on screen.
+const office = printer('4', 'ESC', 'Escritório', '192.168.1.184', { mode: 'IGNORE', active: false });
+const printers = [kitchen, copa, bar, office];
 const terminals = [
   { id: 'aaaa0000-0000-4000-8000-000000000001', storeId: STORE, code: 'CX1', name: 'Caixa 1', status: 'ACTIVE', kind: 'POS' },
   { id: 'aaaa0000-0000-4000-8000-000000000002', storeId: STORE, code: 'SALA', name: 'Sala', status: 'ACTIVE', kind: 'POS' },
@@ -62,6 +64,12 @@ const jobs = [
   job('2', { destination: 'BAR', printerId: bar.id, createdAt: '2026-11-20T12:11:02Z' }),
   job('3', { sourceType: 'SUBTOTAL', destination: null, status: 'FAILED', attempts: 5, lastError: 'Connection refused' }),
   job('4', { kind: 'COPY', status: 'UNKNOWN', createdAt: '2026-11-20T12:02:18Z' }),
+  // The other states and both resolutions, so every pill of the queue is on screen.
+  job('5', { status: 'QUEUED', attempts: 0, createdAt: '2026-11-20T12:16:00Z' }),
+  job('6', { status: 'PROCESSING', createdAt: '2026-11-20T12:16:10Z' }),
+  job('7', { status: 'RETRY_WAIT', attempts: 2, createdAt: '2026-11-20T12:16:20Z' }),
+  job('8', { status: 'FAILED', attempts: 5, resolution: 'RETRIED', createdAt: '2026-11-20T11:50:00Z' }),
+  job('9', { status: 'UNKNOWN', resolution: 'CONFIRMED_PRINTED', createdAt: '2026-11-20T11:45:00Z' }),
 ];
 const tickets = [
   {
@@ -105,12 +113,21 @@ async function standIn(page: Page) {
   await page.route('**/api/v1/backoffice/production-tickets?**', (route) => filtered(route, tickets, 'routing'));
 }
 
+/** Only with E2E_SCREENS, and once (from the desktop run): the page at 1024 × 768 and 1440 × 900, then back. */
 async function screenshot(page: Page, testInfo: TestInfo, name: string) {
   const dir = process.env.E2E_SCREENS;
-  if (!dir) return;
-  const { width } = page.viewportSize()!;
-  await page.screenshot({ path: `${dir}/${name}-${width}.png`, fullPage: true });
-  testInfo.annotations.push({ type: 'screenshot', description: `${dir}/${name}-${width}.png` });
+  const viewport = page.viewportSize()!;
+  if (!dir || viewport.width < 1024) return;
+  for (const { width, height } of [
+    { width: 1024, height: 768 },
+    { width: 1440, height: 900 },
+  ]) {
+    await page.setViewportSize({ width, height });
+    const path = `${dir}/${name}-${width}x${height}.png`;
+    await page.screenshot({ path, fullPage: true, animations: 'disabled' });
+    testInfo.annotations.push({ type: 'screenshot', description: path });
+  }
+  await page.setViewportSize(viewport);
 }
 
 for (const viewport of [
@@ -125,7 +142,7 @@ for (const viewport of [
     await expect(page.getByRole('heading', { name: 'Produção, Encaminhamento & Impressoras' })).toBeVisible();
     const cards = page.getByRole('list', { name: 'Impressoras da loja' });
     await expect(cards.getByRole('listitem', { name: 'Bar Central' }).getByText('Envia para Cozinha Quentes')).toBeVisible();
-    await expect(page.getByRole('list', { name: 'Trabalhos de impressão' }).getByRole('listitem')).toHaveCount(4);
+    await expect(page.getByRole('list', { name: 'Trabalhos de impressão' }).getByRole('listitem')).toHaveCount(jobs.length);
     await expect(page.getByRole('list', { name: 'Talões por encaminhar' }).getByRole('listitem')).toHaveCount(1);
     await expect(page.getByRole('form', { name: 'Rotas por destino' }).getByRole('textbox', { name: 'Destino 3' })).toHaveValue('BAR');
     await expect(page.getByRole('form', { name: 'Impressora por terminal' }).getByRole('combobox', { name: 'Caixa 1' })).toHaveValue(bar.id);

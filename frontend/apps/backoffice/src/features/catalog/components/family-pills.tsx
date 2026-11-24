@@ -8,7 +8,10 @@ type FamilyPillsProps = {
   onSelect: (familyId: string | undefined) => void;
 };
 
-/** Stitch's family pills with their counts: one pressed at a time, "Todas as famílias" first. */
+/**
+ * The family pills with their counts, as the POS's area tabs: white bordered pills, the pressed one solid green; one
+ * pressed at a time, "Todas as famílias" first.
+ */
 export function FamilyPills({ families, counts, total, selected, onSelect }: FamilyPillsProps) {
   return (
     <div role="group" aria-label="Famílias" className="flex flex-wrap items-center gap-2">
@@ -32,10 +35,11 @@ function Pill({ label, count, pressed, onClick }: { label: string; count: number
       type="button"
       aria-pressed={pressed}
       onClick={onClick}
-      className="inline-flex h-9 items-center gap-2 rounded-md border bg-muted px-3 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
+      className="group inline-flex h-10 items-center gap-2 rounded-xl border bg-card px-3 text-sm font-medium hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:font-semibold aria-pressed:text-primary-foreground aria-pressed:hover:bg-primary-hover"
     >
       {label}
-      <span className="rounded-sm bg-card px-1.5 text-xs text-foreground tabular-nums">{count}</span>
+      {/* The count on the muted surface, white on the pressed (green) pill: foreground text on both (AA). */}
+      <span className="rounded-md bg-muted px-1.5 text-xs text-foreground tabular-nums group-aria-pressed:bg-card">{count}</span>
     </button>
   );
 }

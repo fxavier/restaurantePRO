@@ -1,4 +1,4 @@
-import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, ConfirmButton } from '@restaurantpro/ui';
+import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, ConfirmButton, TONE_CARD } from '@restaurantpro/ui';
 import { useId, useState } from 'react';
 import { clearPendingCommand, isStepUpRequired, readPendingCommand } from '../../../lib/step-up';
 import { useTenantPin } from '../../../lib/tenant-pin';
@@ -32,7 +32,8 @@ export function ResumePublication({ storeId }: { storeId: string }) {
   // The command was cleared when sent: a resend would meet the same step-up, so only closing is left.
   const expired = isStepUpRequired(publish.error);
   return (
-    <Card role="region" aria-labelledby={titleId} className="border-primary">
+    // The success tint and border, as the POS's "ready" state: identity confirmed, the publication waits for one tap.
+    <Card role="region" aria-labelledby={titleId} className={TONE_CARD.success}>
       <CardHeader>
         <CardTitle id={titleId}>Publicação por continuar</CardTitle>
         <CardDescription>Identidade confirmada. Continue a publicação da versão que tinha confirmado.</CardDescription>

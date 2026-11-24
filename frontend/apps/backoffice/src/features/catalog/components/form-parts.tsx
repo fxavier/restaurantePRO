@@ -68,7 +68,7 @@ export function SelectField<Values extends FieldValues>({
             <select
               {...field}
               value={(field.value as string | undefined) ?? ''}
-              className="h-9 w-full rounded-md border border-input bg-muted px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              className="h-9 w-full rounded-xl border border-input bg-card px-3 text-sm shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
             >
               <option value="">{placeholder}</option>
               {options.map((option) => (
