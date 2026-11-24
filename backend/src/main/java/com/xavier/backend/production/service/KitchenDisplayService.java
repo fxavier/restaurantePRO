@@ -11,6 +11,7 @@ import com.xavier.backend.production.model.KitchenCommand;
 import com.xavier.backend.production.model.KitchenProgress;
 import com.xavier.backend.production.model.KitchenStatus;
 import com.xavier.backend.production.model.ProductionTicket;
+import com.xavier.backend.production.model.RoundKitchenState;
 import com.xavier.backend.production.model.TicketSource;
 import com.xavier.backend.production.model.dto.RoundKitchenView;
 import com.xavier.backend.production.model.dto.TicketView;
@@ -115,7 +116,7 @@ public class KitchenDisplayService {
                         LinkedHashMap::new, Collectors.mapping(KitchenProgressRepository.StationProgress::getStatus,
                                 Collectors.toList())));
         return stations.entrySet().stream()
-                .map(round -> new RoundKitchenView(round.getKey(), KitchenStatus.leastAdvanced(round.getValue())))
+                .map(round -> new RoundKitchenView(round.getKey(), RoundKitchenState.of(round.getValue())))
                 .toList();
     }
 

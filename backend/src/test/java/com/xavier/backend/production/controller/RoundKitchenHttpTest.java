@@ -71,18 +71,21 @@ class RoundKitchenHttpTest {
     }
 
     @Test
-    void aRoundOnTwoStationsIsReadyOnlyWhenBothAre() throws Exception {
+    void aRoundOnTwoStationsIsInPreparationOnceOneStartsAndReadyOnlyWhenBothAre() throws Exception {
         Round round = fixtures.confirmedRound(shop, waiter, terminal, "1");
         UUID bar = queued(round);
         UUID kitchen = stationTicket(round, "KITCHEN");
-        move(bar, "start", 0);
-        move(bar, "ready", 1);
 
         rounds(round.order()).andExpect(jsonPath("$[0].status").value("QUEUED"));
+        move(bar, "start", 0);
+        rounds(round.order()).andExpect(jsonPath("$[0].status").value("IN_PREPARATION"));
+        move(bar, "ready", 1);
+        rounds(round.order()).andExpect(jsonPath("$[0].status").value("IN_PREPARATION"));
         move(kitchen, "start", 0);
         move(kitchen, "ready", 1);
         rounds(round.order()).andExpect(jsonPath("$[0].status").value("READY"));
         move(kitchen, "bump", 2);
+        move(bar, "bump", 2);
         rounds(round.order()).andExpect(jsonPath("$[0].status").value("READY"));
     }
 

@@ -3,7 +3,9 @@ package com.xavier.backend.orders.controller;
 import static com.xavier.backend.orders.OrdersFixtures.POS;
 import static com.xavier.backend.orders.OrdersFixtures.id;
 import static org.hamcrest.Matchers.contains;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -19,6 +21,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
@@ -100,6 +103,34 @@ class TableActivityHttpTest {
         activity(other.store())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.tables[?(@.orderId == '%s')]".formatted(order)).isEmpty());
+    }
+
+    @Test
+    void anOrderWithoutATableStaysOut() throws Exception {
+        UUID takeaway = id(OrdersFixtures.json(mvc.perform(post(POS + "/orders")
+                        .with(OrdersActors.pos(shop.store(), employee, terminal, Permission.ORDER_EDIT)).with(csrf())
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"mode\": \"TAKEAWAY\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()));
+
+        activity(shop.store()).andExpect(status().isOk())
+                .andExpect(jsonPath("$.tables[?(@.orderId == '%s')]".formatted(takeaway)).isEmpty());
+    }
+
+    @Test
+    void anOrderNoLongerOpenStaysOut() throws Exception {
+        UUID cancelled = id(fixtures.openedOrder(shop, employee, terminal));
+        activity(shop.store()).andExpect(jsonPath("$.tables[?(@.orderId == '%s')]".formatted(cancelled)).isNotEmpty());
+
+        mvc.perform(post(POS + "/orders/" + cancelled + "/cancel")
+                        .with(OrdersActors.pos(shop.store(), employee, terminal, Permission.ORDER_CANCEL)).with(csrf())
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"orderVersion\": 0, \"reason\": \"left before ordering\"}"))
+                .andExpect(status().isOk());
+
+        activity(shop.store()).andExpect(status().isOk())
+                .andExpect(jsonPath("$.tables[?(@.orderId == '%s')]".formatted(cancelled)).isEmpty());
     }
 
     @Test

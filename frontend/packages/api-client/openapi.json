@@ -10560,8 +10560,7 @@
             "enum": [
               "QUEUED",
               "IN_PREPARATION",
-              "READY",
-              "BUMPED"
+              "READY"
             ],
             "type": "string"
           }
