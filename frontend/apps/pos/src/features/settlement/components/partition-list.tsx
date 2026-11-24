@@ -1,4 +1,4 @@
-import { Button, Money, type MoneyValue } from '@restaurantpro/ui';
+import { Button, cn, Money, type MoneyValue } from '@restaurantpro/ui';
 import type { Can } from '../hooks/use-permissions';
 import type { Buyer } from '../hooks/use-settlement-commands';
 import type { Partition } from '../settlement';
@@ -23,8 +23,8 @@ type Props = {
 /** Stitch's "Subcontas": the bill's live parts; one is chosen to be charged. */
 export function PartitionList({ orderId, partitions, selected, residual, onSelect, buyer, blocked, open, can }: Props) {
   return (
-    <section aria-labelledby="parts-title" className="flex flex-col gap-2">
-      <h3 id="parts-title" className="text-xl font-semibold">
+    <section aria-labelledby="parts-title" className="flex flex-col gap-2 rounded-2xl border bg-card p-4">
+      <h3 id="parts-title" className="text-base font-semibold">
         Divisões ({partitions.length})
       </h3>
       {partitions.length === 0 ? (
@@ -54,7 +54,7 @@ export function PartitionList({ orderId, partitions, selected, residual, onSelec
           aria-pressed={selected === undefined}
           disabled={blocked || !open}
           onClick={() => onSelect(undefined)}
-          className="justify-between"
+          className={cn('justify-between rounded-xl', selected !== undefined && 'bg-card')}
         >
           <span>
             <span className="sr-only">Cobrar</span> Restante da conta

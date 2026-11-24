@@ -11,8 +11,10 @@ import { ProductGrid } from '../../catalog/components/product-grid';
 import { useCatalog } from '../../catalog/hooks/use-catalog';
 import { isCatalogConflict, roundRequest, type Shown, useConfirmBatch } from '../hooks/use-confirm-batch';
 import { useAddLine, useDraftLineCommands } from '../hooks/use-order-commands';
+import { useRoundKitchen } from '../hooks/use-round-kitchen';
 import type { Order, OrderLine } from '../order';
 import { ChoiceSheet, type Choices } from './choice-sheet';
+import { KitchenChip } from './kitchen-chip';
 import { NoteDialog } from './note-dialog';
 import { lineName, OrderPanel } from './order-panel';
 import { SendRound } from './send-round';
@@ -34,6 +36,8 @@ type Choosing = { item: CatalogItem; variantId?: string };
  */
 export function OrderScreen({ order, blocked, back }: Props) {
   const catalog = useCatalog();
+  // Supplementary, as on the table map: until it answers, or if it fails, the rounds show no kitchen state.
+  const kitchen = useRoundKitchen(order.id);
   const add = useAddLine(order.id);
   const { update, remove } = useDraftLineCommands(order.id);
   const [family, setFamily] = useState<string>();
@@ -125,7 +129,8 @@ export function OrderScreen({ order, blocked, back }: Props) {
     !remove.isPending;
 
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-[160px_minmax(0,1fr)_360px]">
+    // Light reference: three white cards on the grey page, as /tables; the rail and the panel keep their DS widths.
+    <div className="grid min-h-0 flex-1 grid-cols-[160px_minmax(0,1fr)_360px] gap-3 p-4">
       <FamilyRail
         families={catalog.data?.families ?? []}
         selected={query.trim() ? undefined : shownFamily}
@@ -134,7 +139,7 @@ export function OrderScreen({ order, blocked, back }: Props) {
           setQuery('');
         }}
       />
-      <section aria-label="Produtos" className="flex min-h-0 flex-col gap-3 p-3">
+      <section aria-label="Produtos" className="flex min-h-0 flex-col gap-2 rounded-2xl border bg-card p-3">
         <form role="search" onSubmit={enterCode} className="relative">
           <Search aria-hidden="true" className="pointer-events-none absolute top-1/2 left-3 size-5 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -148,7 +153,7 @@ export function OrderScreen({ order, blocked, back }: Props) {
               setQuery(event.target.value);
               setNotice(undefined);
             }}
-            className="h-14 rounded-lg pl-10 text-base md:text-base"
+            className="h-12 rounded-xl bg-card pl-10 text-base md:text-base"
           />
         </form>
         {/* One fixed line for what the last tap did, so the grid never moves when it changes. */}
@@ -174,9 +179,9 @@ export function OrderScreen({ order, blocked, back }: Props) {
               </Button>
             </div>
           ) : (
-            <div role="status" aria-label="A carregar os artigos…" className="grid grid-cols-[repeat(auto-fill,minmax(7rem,1fr))] gap-2">
+            <div role="status" aria-label="A carregar os artigos…" className="grid grid-cols-3 gap-2 xl:grid-cols-4">
               {Array.from({ length: 12 }, (_, index) => (
-                <Skeleton key={index} className="h-24 rounded-lg" />
+                <Skeleton key={index} className="h-32 rounded-xl" />
               ))}
             </div>
           )}
@@ -189,6 +194,7 @@ export function OrderScreen({ order, blocked, back }: Props) {
         back={back}
         message={!open ? closedMessage(order) : draftError ? draftMessage(draftError) : undefined}
         shownBefore={shownBefore}
+        roundBadge={(roundId) => <KitchenChip state={kitchen.data?.get(roundId)} />}
         action={<SendRound send={send} disabled={!canSend} blocked={!canCommand} sentBatchNo={sentBatchNo} onSend={pedir} />}
       />
       {choosing && catalog.data && (

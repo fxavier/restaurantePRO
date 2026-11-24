@@ -30,19 +30,20 @@ export function SplitPanel({ settlement, guests, disabled, mode = 'whole' }: Pro
   const people = chosen ?? Math.min(Math.max(guests ?? MIN_PEOPLE, MIN_PEOPLE), MAX_PEOPLE);
 
   return (
-    <section aria-labelledby="split-title" className="flex flex-col gap-3 rounded-xl border bg-card p-4">
-      <h3 id="split-title" className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+    <section aria-labelledby="split-title" className="flex flex-col gap-3 rounded-2xl border bg-card p-4">
+      <h3 id="split-title" className="text-base font-semibold">
         Divisão da conta
       </h3>
       <Tabs defaultValue={mode}>
-        <TabsList className="grid h-auto! w-full grid-cols-3 gap-1">
-          <TabsTrigger value="whole" className="h-14 text-base whitespace-normal">
+        {/* The light reference's area tabs: outline, the chosen one solid green. */}
+        <TabsList className="grid h-auto! w-full grid-cols-3 gap-2 bg-transparent p-0">
+          <TabsTrigger value="whole" className="h-12 rounded-xl border-border bg-card text-base whitespace-normal text-foreground data-[state=active]:border-primary">
             Conta total
           </TabsTrigger>
-          <TabsTrigger value="equal" className="h-14 text-base whitespace-normal">
+          <TabsTrigger value="equal" className="h-12 rounded-xl border-border bg-card text-base whitespace-normal text-foreground data-[state=active]:border-primary">
             Partes iguais
           </TabsTrigger>
-          <TabsTrigger value="items" className="h-14 text-base whitespace-normal">
+          <TabsTrigger value="items" className="h-12 rounded-xl border-border bg-card text-base whitespace-normal text-foreground data-[state=active]:border-primary">
             Por artigos
           </TabsTrigger>
         </TabsList>
@@ -50,12 +51,13 @@ export function SplitPanel({ settlement, guests, disabled, mode = 'whole' }: Pro
           A conta é paga por inteiro.
         </TabsContent>
         <TabsContent value="equal" className="flex flex-col gap-3 pt-2">
-          <div role="group" aria-label="Pessoas" className="flex items-center justify-between gap-3 rounded-lg bg-muted p-2">
+          <div role="group" aria-label="Pessoas" className="flex items-center justify-between gap-3 rounded-xl border p-2">
             <span className="px-2">Pessoas</span>
             <span className="flex items-center gap-2">
               <Button
                 variant="outline"
                 size="touch"
+                className="rounded-full bg-card px-0"
                 aria-label="Menos uma pessoa"
                 disabled={people <= MIN_PEOPLE}
                 onClick={() => setPeople(people - 1)}
@@ -66,6 +68,7 @@ export function SplitPanel({ settlement, guests, disabled, mode = 'whole' }: Pro
               <Button
                 variant="outline"
                 size="touch"
+                className="rounded-full bg-card px-0"
                 aria-label="Mais uma pessoa"
                 disabled={people >= MAX_PEOPLE}
                 onClick={() => setPeople(people + 1)}
@@ -76,6 +79,7 @@ export function SplitPanel({ settlement, guests, disabled, mode = 'whole' }: Pro
           </div>
           <Button
             size="touch"
+            className="rounded-xl"
             disabled={disabled || split.intent !== undefined}
             onClick={() => split.start({ orderVersion: settlement.orderVersion, parts: people }, undefined)}
           >

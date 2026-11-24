@@ -37,16 +37,20 @@ export function PaymentScreen({ orderId, blocked, splitFirst = false }: Props) {
     .join(' · ');
 
   return (
-    <main className="flex min-h-0 flex-1 flex-col gap-4 p-4 lg:p-6">
-      {/* The page's eyebrow: the section bar has no tab for it, since it is one order's page. */}
-      <h2 className="text-xs font-semibold tracking-wide text-primary uppercase">Conta & Pagamento</h2>
-      <header className="-mt-2 flex flex-wrap items-center gap-4 rounded-xl border bg-card p-4">
-        <span aria-hidden="true" className="flex size-14 shrink-0 items-center justify-center rounded-lg bg-warning text-warning-foreground">
-          <ReceiptText className="size-7" />
+    <main className="flex min-h-0 flex-1 flex-col gap-3 p-4">
+      {/* Light reference: the bill's heading card, as /tables' status bar, then the bill's cards below it. */}
+      <header className="flex flex-wrap items-center gap-3 rounded-2xl border bg-card px-4 py-3">
+        <span
+          aria-hidden="true"
+          className="flex size-12 shrink-0 items-center justify-center rounded-xl border-2 border-info-border bg-info-tint text-info-text"
+        >
+          <ReceiptText className="size-6" />
         </span>
         <div className="min-w-0 flex-1">
-          <h3 className="truncate text-2xl font-semibold">{tableCode ? `Conta da mesa ${tableCode}` : 'Conta do pedido'}</h3>
-          <p className="text-muted-foreground">{meta}</p>
+          {/* The page's eyebrow: the section bar has no tab for it, since it is one order's page. */}
+          <h2 className="text-sm font-medium text-muted-foreground">Conta & Pagamento</h2>
+          <h3 className="truncate text-xl font-semibold">{tableCode ? `Conta da mesa ${tableCode}` : 'Conta do pedido'}</h3>
+          <p className="text-sm text-muted-foreground">{meta}</p>
         </div>
         {settlement.data && <Summary settlement={settlement.data} />}
       </header>
@@ -59,29 +63,29 @@ export function PaymentScreen({ orderId, blocked, splitFirst = false }: Props) {
           onClosed={() => void navigate('/tables')}
         />
       ) : settlement.isError ? (
-        <div className="flex flex-col items-center gap-3 p-6 text-center">
+        <div className="flex flex-col items-center gap-3 rounded-2xl border bg-card p-6 text-center">
           <p role="alert">{loadError(settlement.error)}</p>
           {!(settlement.error instanceof ApiError && settlement.error.status === 404) && (
-            <Button variant="outline" size="touch" onClick={() => void settlement.refetch()}>
+            <Button variant="outline" size="touch" className="rounded-xl bg-card" onClick={() => void settlement.refetch()}>
               Tentar novamente
             </Button>
           )}
         </div>
       ) : (
-        <div role="status" aria-label="A carregar a conta…" className="grid gap-4 lg:grid-cols-3">
-          <Skeleton className="h-96" />
-          <Skeleton className="h-96" />
-          <Skeleton className="h-96" />
+        <div role="status" aria-label="A carregar a conta…" className="grid gap-3 lg:grid-cols-3">
+          <Skeleton className="h-96 rounded-2xl" />
+          <Skeleton className="h-96 rounded-2xl" />
+          <Skeleton className="h-96 rounded-2xl" />
         </div>
       )}
       <nav aria-label="Navegação da conta" className="flex flex-wrap gap-2">
-        <Button asChild variant="outline" size="touch">
+        <Button asChild variant="outline" size="touch" className="rounded-xl bg-card">
           <Link to={`/orders/${orderId}`}>
             <ClipboardList aria-hidden="true" />
             Voltar ao pedido
           </Link>
         </Button>
-        <Button asChild variant="ghost" size="touch">
+        <Button asChild variant="ghost" size="touch" className="rounded-xl">
           <Link to="/tables">
             <ArrowLeft aria-hidden="true" />
             Voltar às mesas
@@ -119,15 +123,15 @@ function Bill({
   return (
     <>
       {!open && (
-        <p role="alert" className="rounded-lg border border-border bg-muted p-3 font-medium">
+        <p role="alert" className="rounded-2xl border bg-card p-3 font-medium">
           {settlement.lifecycle === 'CANCELLED' ? 'Este pedido foi cancelado.' : 'Esta conta está fechada.'}
         </p>
       )}
       {!can.split && !can.collect && (
-        <p className="rounded-lg border border-border bg-muted p-3 font-medium">Sem permissão para dividir ou cobrar esta conta.</p>
+        <p className="rounded-2xl border bg-card p-3 font-medium">Sem permissão para dividir ou cobrar esta conta.</p>
       )}
-      <div className="grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <div className="flex flex-col gap-4">
+      <div className="grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="flex flex-col gap-3">
           {can.split && <SplitPanel settlement={settlement} guests={guests} disabled={disabled} mode={splitFirst ? 'equal' : 'whole'} />}
           <PartitionList
             orderId={settlement.orderId}
@@ -141,7 +145,7 @@ function Bill({
             can={can}
           />
         </div>
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3">
           {can.collect && <PaymentPanel settlement={settlement} target={target} disabled={disabled} />}
           <OpenAttempts
             orderId={settlement.orderId}
@@ -151,7 +155,7 @@ function Bill({
             canResolve={can.collect}
           />
         </div>
-        <div className="flex flex-col gap-4 sm:col-span-2 lg:col-span-1">
+        <div className="flex flex-col gap-3 sm:col-span-2 lg:col-span-1">
           <ClosingPanel settlement={settlement} buyer={documentBuyer} blocked={blocked} onClosed={onClosed} can={can}>
             <BuyerFields value={buyer} onChange={setBuyer} />
           </ClosingPanel>
@@ -161,26 +165,29 @@ function Bill({
   );
 }
 
-/** Stitch's three figures: the total, what is paid, and what is still outstanding, as the server has them. */
+/**
+ * The three figures: the total, what is paid, and what is still outstanding, as the server has them. Light reference:
+ * the state tints of /tables' chips (paid green, outstanding amber), each also named by its term.
+ */
 function Summary({ settlement }: { settlement: Settlement }) {
   return (
     // The group on a wrapper: a role on the <dl> itself would orphan its terms (axe dlitem).
     <div role="group" aria-label="Resumo da conta">
       <dl className="flex flex-wrap gap-2">
-        <Stat label="Total da conta" value={settlement.due} />
-        <Stat label="Pago" value={settlement.paid} className="text-primary" />
-        <Stat label="Saldo pendente" value={settlement.balance} className="text-warning" />
+        <Stat label="Total da conta" value={settlement.due} className="bg-muted" />
+        <Stat label="Pago" value={settlement.paid} className="bg-success-tint text-success-text" />
+        <Stat label="Saldo pendente" value={settlement.balance} className="bg-warning-tint text-warning-text" />
       </dl>
     </div>
   );
 }
 
-function Stat({ label, value, className }: { label: string; value: MoneyValue; className?: string }) {
+function Stat({ label, value, className }: { label: string; value: MoneyValue; className: string }) {
   return (
-    <div className="flex min-w-36 flex-col rounded-lg bg-muted px-4 py-2">
-      <dt className="text-sm text-muted-foreground">{label}</dt>
+    <div className={cn('flex min-w-32 flex-col rounded-xl px-3 py-1.5', className)}>
+      <dt className="text-sm">{label}</dt>
       <dd>
-        <Money value={value} className={cn('text-2xl font-bold', className)} />
+        <Money value={value} className="text-xl font-bold" />
       </dd>
     </div>
   );
